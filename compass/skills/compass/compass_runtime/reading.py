@@ -4507,16 +4507,15 @@ def _departure_on_words(
 
 
 def _shows_it_done(entry: Mapping[str, Any], window_start: float) -> bool:
-    """A write inside the window, or a check, CI check, created pull request or used skill that may
-    carry a `consistent`. A command is never one: its exit status says it ran, not what it
-    checked."""
-    if entry.get("subject") == WRITE_SUBJECT:
-        return entry.get("type") == TOOL_REPORT_TYPE and not _before_window(entry, window_start)
-    if entry.get("subject") == COMMAND_SUBJECT or entry.get("subject") == CI_SUBJECT:
+    """A published citation that keeps a `consistent` beside a recorded write: a check, a CI
+    command or a CI check that passed, a pull request created or a skill used, each as
+    `check_supports` admits it. A tier-3 command, `git commit` included, never does: its exit
+    status says it ran, not what it checked (DEC-29 item 2, narrowed beside a write)."""
+    if entry.get("subject") == COMMAND_SUBJECT:
         return False
     return (
         str(entry.get("type") or "") == CI_CHECK_TYPE
-        or entry.get("subject") in (CHECK_SUBJECT, PR_SUBJECT, SKILL_SUBJECT)
+        or entry.get("subject") in (CHECK_SUBJECT, CI_SUBJECT, PR_SUBJECT, SKILL_SUBJECT)
     ) and check_supports(entry, RESULT_CONSISTENT, window_start)
 
 
@@ -4527,18 +4526,16 @@ def _consistent_on_words(
     *,
     wrote: bool,
     window_start: float,
-    cited_write: bool = False,
 ) -> Criterion:
-    """A `consistent` on the Goal or a line, in a window holding a recorded write, that cites no
-    write and no passing check, read as not verifiable: the write outlives the agent's word and a
-    command that only ran. The claims question keeps its own rules.
+    """A `consistent` on the Goal or a line that rests only on the agent's message or a tier-3
+    command, in a window holding a recorded write, read as not verifiable: the write outlives the
+    agent's word and a command that only ran. The claims question keeps its own rules.
 
-    `cited_write` is whether the reply cited a write inside the window. Item 8 never publishes one
-    under a `consistent`, because a write carries no result, so the reply's own citations say it.
+    Judged on the published citations, as `_departure_on_words` is. A write never survives item 8
+    under a `consistent`, because it carries no result, so citing one keeps nothing.
     """
     if (
         not wrote
-        or cited_write
         or name == CONSTRAINT_CLAIMS
         or criterion.get("result") != RESULT_CONSISTENT
         or any(
@@ -4549,30 +4546,16 @@ def _consistent_on_words(
     return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
 
 
-def _cited_write(
-    row: Mapping[str, Any], by_index: Mapping[int, LedgerEntry], window_start: float
-) -> bool:
-    """Whether a reply's own citations name a recorded write inside the window."""
-    cites = row.get("cites")
-    return any(
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and value in by_index
-        and _shows_it_done(by_index[value], window_start)
-        and by_index[value].get("subject") == WRITE_SUBJECT
-        for value in (cites if isinstance(cites, (tuple, list)) else ())
-    )
-
-
-def _goal_beside_lines(out: dict[str, Criterion]) -> None:
+def _goal_beside_lines(out: dict[str, Criterion], *, lines_asked: bool) -> None:
     """The Goal's `consistent`, withdrawn when an outcome line asked beside it is not consistent.
 
     The lines are the reader's own account of what the Goal means, so a Goal cannot be shown
     while one of them is not. Its citations are emptied like any withdrawal the page reads as
-    `check-does-not-show-it`. A line that was never asked does not count.
+    `check-does-not-show-it`. Lines the prompt never posed do not count, including those it had
+    no room to pose (`checks-not-read`): `lines_asked` is the selection's `asked_output`.
     """
     goal = out.get(CONSTRAINT_GOAL)
-    if goal is None or goal.get("result") != RESULT_CONSISTENT:
+    if not lines_asked or goal is None or goal.get("result") != RESULT_CONSISTENT:
         return
     if any(
         row.get("result") != RESULT_CONSISTENT
@@ -6053,9 +6036,8 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
             known,
             wrote=wrote,
             window_start=window_start,
-            cited_write=_cited_write(parsed.get(name) or {}, by_index, window_start),
         )
-    _goal_beside_lines(out)
+    _goal_beside_lines(out, lines_asked=selection.asked_output is True)
     return out
 
 

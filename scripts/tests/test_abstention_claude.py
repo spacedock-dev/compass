@@ -2846,7 +2846,7 @@ class Q7EveryCaseIsMarkedBeforeAnyCallTest(_Packet):
 
 
 class Q8AWriteAloneIsTheAgentsAccountTest(_Packet):
-    def test_a_goal_consistent_citing_only_a_written_file_is_account(self) -> None:
+    def test_a_goal_consistent_on_the_agent_and_a_written_file_abstains(self) -> None:
         write = _fact(
             "w1",
             sid=CLAUDE_SID,
@@ -2864,9 +2864,10 @@ class Q8AWriteAloneIsTheAgentsAccountTest(_Packet):
             _check("k1", at=95.0),
         ]
         self.cases[0]["tool_output"] = {"tails": {}, "changed_after": []}
-        # Citing the agent's own words and the write: before the fix the write
-        # alone made this `tool`. The lines rest on a pass, since the Goal reads
-        # consistent only beside consistent lines (DEC-17, amended 2026-10-30).
+        # Citing the agent's own words and the write. Item 8 drops the write, so the Goal rests
+        # on the agent's account alone in a window holding a write, and abstains (DEC-17,
+        # amended 2026-10-30). The lines rest on a pass, so the Goal-beside-lines guard is not
+        # why. The direct test below still covers the account basis.
         reply = _reply(
             goal=("consistent", (1, 2)),
             line_1=("consistent", (3,)),
@@ -2874,8 +2875,8 @@ class Q8AWriteAloneIsTheAgentsAccountTest(_Packet):
         )
         self.score(_Model((reply, "ok")))
         case = self.committed()["cases"][self.cases[0]["id"]]
-        self.assertEqual("judged:consistent", case["outcomes"]["goal"])
-        self.assertEqual("account", case["basis"]["goal"])
+        self.assertEqual("abstained", case["outcomes"]["goal"])
+        self.assertEqual("judged:consistent", case["outcomes"]["line_1"])
 
     def test_basis_calls_a_cited_write_account_and_only_a_recorded_check_tool(self) -> None:
         # Direct, because the producer's own item 8 drops a write from what a

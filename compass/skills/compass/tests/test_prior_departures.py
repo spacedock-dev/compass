@@ -725,7 +725,8 @@ class TwoTurnsOfOneSessionTest(unittest.TestCase):
             now=120.0,
         )
         # The explanation does not clear the line beside the failure and the write the record
-        # holds: the re-reading cannot tell, and the departure stays listed.
+        # holds: the re-reading cannot tell, and the departure is kept in the store, not listed on
+        # the page (the page lists one only beside a row the later reading reads consistent).
         self.assertEqual(reading.RESULT_UNVERIFIABLE, second["criteria"]["line_2"]["result"])
         with mock.patch("time.time", return_value=self.START + 121.0):
             annotation_store.record_reading(

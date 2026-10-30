@@ -1493,18 +1493,24 @@ named, that "a line whose words name no folder ... stays the model's judgment":
   on the agent's message, because a stated change of direction is what words are good for there.
   Measured: case `8b8c1a02` line_1, marked to abstain because approval is unknown, departed on
   messages in repeats 2 and 3.
-- **C2, a consistent beside a write needs a write or a passing check.** Where the reading's window
-  holds a recorded write, a `consistent` on the Goal or a line reads not verifiable unless the reply
-  cited a write or a check that passed. A created pull request, a used skill or a passing CI check
-  the record holds also carries one, as the
-  [2026-10-23 ruling](#amended-2026-10-23-owner-pr-and-skill-facts) lets it. The agent's word
-  cannot clear the line. Nor can a command whose exit status says nothing about what it checks,
-  such as a `git commit` that exited 0. The write counts whether or not a grant sent it, as the
-  record-settles guard reads it. Measured: case `19f966db` line_1 read `consistent` on a `git commit`
-  and the agent's closing message in repeat 2, beside the edit the marks depart on.
+- **C2, a consistent beside a write needs more than words or a command that ran.** Where the
+  reading's window holds a recorded write, a `consistent` on the Goal or a line that rests only on
+  the agent's message or a tier-3 command reads not verifiable. As with C1, what it rests on is
+  what it publishes, after item 8. A check, a CI command or a CI check that passed keeps it
+  ([DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+  items 1 and 6), and so do a created pull request and a used skill, as the
+  [2026-10-23 ruling](#amended-2026-10-23-owner-pr-and-skill-facts) lets them. A cited write keeps
+  nothing, because item 8 never publishes a write under a `consistent`. A tier-3 command, a
+  `git commit` that exited 0 included, no longer carries a `consistent` beside a write: this
+  narrows DEC-29 item 2 there. Whether a cited pass covers the line is still the model's judgment,
+  as item 2 leaves it, and the page shows the pass the row rests on. The write counts whether or
+  not a grant sent it, as the record-settles guard reads it. Measured: case `19f966db` line_1 read
+  `consistent` on a `git commit` and the agent's closing message in repeat 2, beside the edit the
+  marks depart on.
 - **C6, the Goal is consistent only beside consistent lines.** A Goal's `consistent` reads not
-  verifiable when any outcome line asked in the same reading is not `consistent`. The lines are the
-  reader's own account of what the Goal means. It copies no line's verdict onto the Goal and raises
+  verifiable when any outcome line asked in the same reading is not `consistent`. Lines the prompt
+  never posed, including those it had no room for (`checks-not-read`), do not count. The lines are
+  the reader's own account of what the Goal means. It copies no line's verdict onto the Goal and raises
   nothing, so the clauses stay independent judgments. Measured: case `d92bebe6`'s Goal read
   `consistent` on a pass that exercised half of it in repeat 3, while its line restating the Goal
   was `unverifiable`.
@@ -1521,16 +1527,25 @@ describes or asks for the work rather than showing it", holds for a message and 
 only ran. C6 stores `check-does-not-show-it` and empties the citations, like every withdrawal the page
 reads under that token: what the Goal cited does not show the Goal while a line is not shown. C5b
 stores `claim-record-unread`, whose sentence says not all of the session's checks were read. A run
-whose result Compass never recorded is one of those. The guards run in every reading, whichever
-producer made it, because `resolve` does not know the producer. A Codex reading of a Codex session
-carries no agent messages, so a line there already needs work and C1 changes nothing, while C2 and
-C6 apply there as anywhere.
+whose result Compass never recorded is one of those.
+
+The guards apply to every producer, Claude Code and Codex alike, because `resolve` does not know
+which producer made a reading. The approval was asked for the Claude Code reader, so this scope is
+stated here for the owner to confirm. A Codex reading of a Codex session carries no agent messages,
+so a line there already needs work and C1 changes nothing, while C2 and C6 apply there as anywhere.
 
 What this costs a reader. A line can no longer depart on what the agent admits alone: "the agent says
 PR #284 is still behind" reads Can't tell on a line, and still departs on the Goal. In a session that
-wrote files, which is most of them, a line reads `consistent` only on a cited write or passing check.
-"Consistent with what the agent said at #n; not a check" is now possible only where the window holds
-no recorded write. A departure on a Goal resting on an agent message still reads Medium. A line's
+wrote files, which is most of them, a line reads `consistent` only on a passing check, CI command or
+CI check, a created pull request or a used skill. "Consistent with what the agent said at #n; not a
+check" is now possible only where the window holds no recorded write. That includes a line about
+what the agent tells the reader ("the counts are reported"): beside a write it needs a cited pass as
+well as the message, so it often reads Can't tell. A "don't do X" line whose X then ran and succeeded
+cannot depart on the record either, because item 8 drops the passing run from a departure and C1
+then finds only words. A created pull request or a used skill still keeps a `consistent` beside a
+write without saying anything about the line's content; that residual is kept under the
+2026-10-23 ruling and is the owner's to confirm. The frozen `19f966db` window holds no pull request,
+skill or CI fact, so the measured case cannot recur through either. A departure on a Goal resting on an agent message still reads Medium. A line's
 departure no longer can, because none rests on messages alone. The page lists
 [an earlier departure](#amended-2026-10-30-owner-an-earlier-departure-stays-listed) only beside a
 row the later reading rests `consistent` on the agent's messages. In a window holding a write, that
@@ -1539,14 +1554,16 @@ keeps it. Listing it beside such a Can't tell row too would be a page change, an
 follow-up.
 
 The replay. `scripts/tests/test_tenth_replay.py` sends each of the tenth's thirty recorded resolved
-answers through the real `score_case` with a fake model and no process, on this tree. The scorer
-keeps resolved criteria, not raw replies, and each guard only demotes, so this reproduces every
-judged outcome. Recorded, result 10 graded 68 correct, 2 false reassurances, 2 false alarms, 8 missed
+answers through the real `score_case` with a fake model and no process, on this tree. Every guard
+reads the published citations, which the scorer keeps. Whether an earlier rule read a citation
+item 8 then dropped, the scorer keeps nothing to say. Recorded, result 10 graded 68 correct, 2 false reassurances, 2 false alarms, 8 missed
 departures and 16 over-abstentions, with five failing readings. Replayed with the guards, it grades 72
 correct, no false reassurance, no false alarm, 9 missed departures and 15 over-abstentions, with no
 failing reading. The test also asserts that every prompt equals the one the tenth packet froze. It
 reads the private packet and run material and skips where they are absent, so CI never runs it. It
-holds the parser stamp to the packet's own, since `reading.py` is stamped and the retry re-freezes.
+holds the parser stamp and the reviewed-export receipts' intake-code stamp to the packet's own,
+since `reading.py` and `score_abstention.py` are both stamped. The retry re-freezes and re-issues
+every receipt with both new digests.
 Every earlier run has produced at least one failure class not seen before, so a passing replay is
 not a prediction.
 

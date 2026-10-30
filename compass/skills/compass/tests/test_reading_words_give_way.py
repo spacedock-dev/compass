@@ -6,9 +6,10 @@ deterministic guards that only ever move an answer toward not verifiable
 
 - An outcome line's departure that rests only on messages, the agent's or the reader's, must cite
   recorded work. The Goal keeps a departure on words.
-- Where the window holds a recorded write, a `consistent` on the Goal or a line needs a cited write
-  or a passing check. The agent's word, or a command whose exit status says nothing about what it
-  checks, cannot clear it.
+- Where the window holds a recorded write, a `consistent` on the Goal or a line that rests only on
+  the agent's message or a tier-3 command reads not verifiable. What it publishes is what it rests
+  on: a passing check, CI command or CI check, a created pull request or a used skill keeps it, and
+  a cited write, which item 8 drops, keeps nothing.
 - The Goal reads `consistent` only when every outcome line asked beside it does.
 - A claim the record "does not show" is withdrawn when a check or command that can fail ran before
   the claim and Compass recorded no result for it: the record cannot say what that run showed.
@@ -27,6 +28,7 @@ from typing import Any
 from compass_runtime import reading
 
 from . import test_reading as base
+from .test_pr_and_skill_facts import pr_fact
 from .test_reading_record_guards import write_fact
 from .test_reading_unfinished_and_cleared import said
 
@@ -177,10 +179,51 @@ class AConsistentBesideARecordedWriteNeedsAWriteOrAPassingCheck(unittest.TestCas
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
         self.assertEqual(reading.WHY_STANDS, row["why"])
 
-    def test_a_cited_write_carries_it(self) -> None:
+    def test_a_cited_write_beside_the_message_keeps_nothing(self) -> None:
+        # Judged on what it publishes: a write carries no result, so item 8 drops it under a
+        # consistent and the row rests on the agent's message alone.
         facts = [base.WORDS_FACT, write_fact("src/handler.py", at=95.0), said(110.0)]
         row = read(facts, {"line_1": ("consistent", ("write-1", "m1"))})["line_1"]
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+        self.assertEqual(("m1",), row["cites"])
+
+    def test_a_passing_ci_command_carries_it_and_a_failing_one_does_not(self) -> None:
+        # DEC-29 items 1 and 6: `gh pr checks` is a CI command, not a tier-3 one.
+        for result, expected in (
+            ("passed", reading.RESULT_CONSISTENT),
+            ("failed", reading.RESULT_UNVERIFIABLE),
+        ):
+            with self.subTest(result=result):
+                ci = check("k2", 100.0, result, subject="ci_command", summary="gh pr checks 7")
+                facts = [base.WORDS_FACT, write_fact("src/handler.py", at=95.0), ci, said(110.0)]
+                row = read(facts, {"line_1": ("consistent", ("k2", "m1"))})["line_1"]
+                self.assertEqual(expected, row["result"])
+                if result == "passed":
+                    self.assertIn("k2", row["cites"])
+
+    def test_a_tier_three_command_beside_a_write_does_not_carry_it(self) -> None:
+        facts = [
+            base.WORDS_FACT,
+            write_fact("src/handler.py", at=95.0),
+            command("k1", 100.0, "passed", "make deploy"),
+        ]
+        row = read(facts, {"goal": ("consistent", ("k1",))}, lines=())["goal"]
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+
+    def test_a_pull_request_the_record_holds_carries_it(self) -> None:
+        # The 2026-10-23 ruling lets a created pull request carry a consistent; a write beside it
+        # does not take that away.
+        facts = [
+            base.WORDS_FACT,
+            write_fact("src/handler.py", at=95.0),
+            pr_fact(at=105.0),
+            said(110.0),
+        ]
+        row = read(facts, {"line_1": ("consistent", ("pr-1", "m1"))})["line_1"]
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
+        self.assertIn("pr-1", row["cites"])
 
     def test_the_agents_word_stands_where_the_window_holds_no_write(self) -> None:
         facts = [base.WORDS_FACT, command("k1", 100.0, "passed"), said(110.0)]
@@ -239,6 +282,33 @@ class TheGoalIsConsistentOnlyBesideConsistentLines(unittest.TestCase):
 
     def test_a_goal_with_no_line_stands(self) -> None:
         out = read(list(self.FACTS), {"goal": ("consistent", ("c1",))}, lines=())
+        self.assertEqual(reading.RESULT_CONSISTENT, out["goal"]["result"])
+
+    def test_lines_the_prompt_had_no_room_to_ask_do_not_withdraw_it(self) -> None:
+        # The budget crowded out every check, so the lines were never put to the model and read
+        # `checks-not-read`. The approval is about the lines asked beside the Goal.
+        ledger = reading.build_ledger(
+            [base.WORDS_FACT, said(110.0), check("c9", 100.0, "passed")],
+            "claude",
+            "s1",
+            tool_output={},
+            read_agent_words=True,
+        )
+        message = next(row for row in ledger if row["id"] == "m1")
+        crowded = next(row for row in ledger if row["id"] == "c9")
+        person = next(row for row in ledger if row["id"] == base.WORDS_FACT["fact_id"])
+        selection = reading.Selection(
+            (person, {**message, "work": False}),
+            unread_checks=(crowded,),
+            asked_output=False,
+            lines=self.LINES,
+        )
+        parsed = reading.parse_reply(
+            json.dumps({"goal": {"result": "consistent", "cites": [2]}}),
+            reading.constraints_for(selection.lines, claims=selection.asked_claims),
+        )
+        out = reading.resolve(parsed, selection, goal=GOAL, lines=self.LINES, detail_cap_chars=200)
+        self.assertEqual(reading.WHY_CHECKS_NOT_READ, out["line_1"]["why"])
         self.assertEqual(reading.RESULT_CONSISTENT, out["goal"]["result"])
 
 

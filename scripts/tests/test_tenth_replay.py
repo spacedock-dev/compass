@@ -1,17 +1,18 @@
 """The tenth Claude Code qualification's recorded answers, replayed through the corrected producer.
 
 In-sample, and only that. The four guards this replays (an outcome-line departure needs recorded
-work, a `consistent` needs a write or a passing check where the window holds a write, a Goal is
-`consistent` only beside consistent lines, and a claim is not "not shown" past a run with no
-recorded result) were derived from these same thirty readings. That they would have cleared them
+work, a `consistent` resting only on the agent's message or a tier-3 command gives way where the
+window holds a write, a Goal is `consistent` only beside consistent lines, and a claim is not
+"not shown" past a run with no recorded result) were derived from these same thirty readings. That they would have cleared them
 is what they were built to do, and says nothing about a fresh run's answers
 ([DEC-17](docs/design-reading-a-session.md#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record)).
 
 No model is called and no process starts: each repeat's resolved answers come back from a fake,
-and `subprocess.Popen` raises. The scorer keeps resolved criteria rather than raw replies. A judged
-answer's resolved token is the model's own and its published cites are a subset of what it cited,
-so replaying them reproduces every judged outcome; an abstained answer replays as `unverifiable`,
-and every guard here only demotes, so it cannot move.
+and `subprocess.Popen` raises. The scorer keeps resolved criteria rather than raw replies: each
+judged answer's token and its published citations. Every guard reads the published citations,
+which the scorer keeps. Whether an earlier rule read a citation item 8 then dropped, the scorer
+keeps nothing to say. An abstained answer replays as `unverifiable`, and every guard here only
+demotes, so it cannot move.
 
 The fake also holds the prompt bytes: each of the ten cases, built by this tree, must send exactly
 the prompt the tenth packet froze, so the marks transfer unchanged.

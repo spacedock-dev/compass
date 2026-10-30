@@ -215,8 +215,9 @@ class TheRecordShowsWorkUnderWayWithoutAGrant(base.AClaudeCodeReadingProducer):
 class AClearingOnTheAgentsWordDoesNotOutliveADepartingWrite(base.AClaudeCodeReadingProducer):
     """The steer-then-explain shape: a write breaks a line, the reader pastes Compass's correction,
     the agent explains the write, and the model answers the line `consistent` on that explanation.
-    The record settles the line as a departure whatever the reply said, and only where a recorded
-    write does: a line with no folder in its words stays the model's judgment."""
+    The record settles the line as a departure whatever the reply said where a recorded write
+    breaks a folder the line names. Since 2026-10-30 the explanation clears no line in a window
+    holding a write, folder or not: it reads not verifiable instead."""
 
     PASTED: dict[str, Any] = {  # noqa: RUF012 - read only
         **base.WORDS_FACT,

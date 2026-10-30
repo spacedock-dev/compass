@@ -390,11 +390,14 @@ class AnOutcomeLineRestsOnWhatTheAgentSaidTest(unittest.TestCase):
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
         self.assertEqual(reading.WHY_CHECK_DOES_NOT_SHOW_IT, row["why"])
 
-    def test_a_write_cited_beside_the_agent_does_not_withdraw_it(self) -> None:
-        # Not a check, so not the record saying the claim is false (a Q8A shape).
+    def test_a_write_cited_beside_the_agent_does_not_carry_it(self) -> None:
+        # Not a check, so not the record saying the claim is false (a Q8A shape). Item 8 drops the
+        # write, so the line rests on the agent's message alone in a window holding a write, which
+        # reads not verifiable since 2026-10-30 (DEC-17).
         facts = [_agent("a1", 1_700_000_600.0, SAID), _write()]
         row = self.resolve("consistent", (1, 2), facts)
-        self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
         self.assertEqual(("a1",), row["cites"])
 
     def test_the_level_reads_a_departure_on_it_medium_and_a_consistent_never_the_floor(
