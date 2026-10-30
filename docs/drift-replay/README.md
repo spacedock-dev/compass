@@ -134,10 +134,13 @@ admits one more epoch, six, under the same measurement rule. It carries the held
 renews thirty attempts, for ceilings of 99 native and 279 shared. If it fails, one retry epoch,
 seven, may follow with at most 31 more calls (at most 130 native and 310 shared). Replay and
 live stay held.
-The [preparation record](../abstention/README.md#tenth-qualification-preparation-2026-10-30)
-says what is planned; nothing is frozen or spent yet. The spend ledgers this README names stay
-under `~/.cargento`, where they were written; the cases, marks and outputs still follow
-`COMPASS_HOME`.
+The [tenth Claude result](../abstention/claude-results-continuation-10.json) completed all
+thirty registered readings in epoch six and failed, with five semantic failures and no unusable
+attempt. Native charges are 98 of 99 and shared charges are 70. Its unused availability retry
+carries to the one funded retry epoch, seven, whose ceilings would be 129 native and 309 shared.
+The [outcome record](../abstention/README.md#tenth-qualification-outcome-2026-10-30) owns the
+counts and interpretation. The spend ledgers this README names stay under `~/.cargento`, where
+they were written; the cases, marks and outputs still follow `COMPASS_HOME`.
 
 Technical guards and the finite cap remain. An independently reviewed batch is measured,
 not qualified. Only a full passing result and
