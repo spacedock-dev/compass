@@ -26,7 +26,14 @@ export function IntentHowTo({
   const harness = String(session?.['harness'] || '');
   const labels = harnessLabels(payload);
   const label = (key: string) =>
-    labels.get(key) || ({ claude: 'Claude Code', pi: 'Pi' }[key] ?? key);
+    labels.get(key) || ({ claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[key] ?? key);
+  /* "Claude Code, Codex and Pi": a list of three read as one with a serial "and". */
+  const listed = (keys: readonly string[]) => {
+    const words = keys.map(label);
+    return words.length > 1
+      ? `${words.slice(0, -1).join(', ')} and ${String(words.at(-1))}`
+      : words.join('');
+  };
   const route = session ? readingRoute(payload, session) : null;
   const reader = route?.['provider']
     ? String(route['label'] || route['provider'])
@@ -57,7 +64,7 @@ export function IntentHowTo({
       <p>3. Read where the work left your goal. On Claude Code, copy a correction to steer back.</p>
       <p
         data-next-intent-howto-limit
-      >{`Drift level: ${WORK_HARNESSES.map(label).join(' and ')} sessions only. Analyze drift here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
+      >{`Drift level: ${listed(WORK_HARNESSES)} only. Analyze drift here: ${reader}${reader.endsWith('.') ? '' : '.'} Steer back: ${steer}. Compass never writes into sessions.`}</p>
       <p data-next-intent-howto-no-line>
         With no outcome line, Compass reads your goal's end state; a goal too vague to read is
         refused.

@@ -103,6 +103,13 @@ export function outputLimit(payload: Row, harness: string): string {
   const label = harnessLabels(payload).get(harness) || humanLabel(harness);
   /* Its own sentence, not the record's: this row is in the panel and the record is in the activity column
      beside it, so the record line's "above" would point the wrong way here. */
+  if (harness === 'codex') {
+    /* Codex's agent messages are not sent, so only a check can carry a line's verdict, and only where a
+       reading can carry the checks. */
+    const route = readingRoute(payload, { harness });
+    if (route?.['provider'] && route['destination']) return '';
+    return `${label} records the checks a session ran, but no reading can carry them here, so a reading cannot judge an expected output here.`;
+  }
   if (harness !== 'claude') {
     return `${label} publishes no demonstrated work results, so nothing in this session’s observed record is an inspected file, test or deliverable.`;
   }

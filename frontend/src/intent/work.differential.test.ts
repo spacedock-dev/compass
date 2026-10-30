@@ -24,11 +24,29 @@ const WORK_ROWS_PROBE = 20;
 const CASES = 60;
 const SEEDS = CASES;
 
-function projectRecordedLoadedSource(source: Record<string, unknown>): Record<string, unknown> {
-  if (!Array.isArray(source['all']) || source['state'] !== 'read') return source;
-  const all = source['all'] as { type: string }[];
+/* A Codex session's check is work since 2026-10-30, when its record began to list checks; the retired page
+   never read one, so its recorded `work: false` on a Codex `tool_report` is projected to the new answer
+   (docs/design-frontend-migration.md#held-to-recorded-answers). */
+function codexChecksAreWork(entries: unknown, harness: unknown): unknown {
+  if (harness !== 'codex' || !Array.isArray(entries)) return entries;
+  return entries.map((entry: Record<string, unknown>) =>
+    entry['type'] === 'tool_report' ? { ...entry, work: true } : entry,
+  );
+}
+
+function projectRecordedLoadedSource(
+  source: Record<string, unknown>,
+  harness: unknown,
+): Record<string, unknown> {
+  if (!Array.isArray(source['all']) || source['state'] !== 'read') {
+    return Array.isArray(source['entries'])
+      ? { ...source, entries: codexChecksAreWork(source['entries'], harness) }
+      : source;
+  }
+  const all = codexChecksAreWork(source['all'], harness) as { type: string }[];
   return {
     ...source,
+    all,
     entries: all,
     shown: all.filter((entry) => entry.type !== 'tool_report').length,
   };
@@ -147,7 +165,7 @@ describe('the observed record and the later directions read as the legacy page r
       if (mine.state === 'read' && (mine.total ?? 0) > WORK_ROWS_PROBE) note('windowed');
       const found = [
         firstDifference(
-          canonical(projectRecordedLoadedSource(theirs)),
+          canonical(projectRecordedLoadedSource(theirs, session['harness'])),
           canonical(withoutLaterFields(mine)),
         ),
         firstDifference(
@@ -168,6 +186,15 @@ describe('the observed record and the later directions read as the legacy page r
         null,
       ];
       const all = (mine as { all?: readonly unknown[] }).all ?? [];
+      /* The legacy functions are asked with what the retired page held, a Codex check that is not work. */
+      const asRecorded =
+        session['harness'] === 'codex'
+          ? all.map((entry) =>
+              (entry as Record<string, unknown>)['type'] === 'tool_report'
+                ? { ...(entry as Record<string, unknown>), work: false }
+                : entry,
+            )
+          : all;
       const annotate = legacy.run<boolean>('nextData.annotate === true');
       const own = annotationOf(session);
       const draft = intentDraft(session, { annotate, unreadable: '' }, null);
@@ -180,8 +207,13 @@ describe('the observed record and the later directions read as the legacy page r
         [pick(rnd, annotationPool), null, null],
       ];
       for (const [annotation, forSession, drafted] of cases) {
-        const later = legacy.call('nextCockpitLaterDirections', annotation, all, forSession);
-        const open = legacy.call('nextCockpitConflictCandidates', annotation, all, forSession);
+        const later = legacy.call('nextCockpitLaterDirections', annotation, asRecorded, forSession);
+        const open = legacy.call(
+          'nextCockpitConflictCandidates',
+          annotation,
+          asRecorded,
+          forSession,
+        );
         const baseline = legacy.call('nextCockpitBaselineAt', annotation, forSession);
         const again = [
           firstDifference(
@@ -211,7 +243,7 @@ describe('the observed record and the later directions read as the legacy page r
         if (conflictCandidates(annotation, all as never, forSession, drafted as never).length)
           note('open');
       }
-      for (const entry of all) {
+      for (const entry of asRecorded) {
         const theirsAuthor = legacy.call('nextReadingPersonAuthored', entry);
         if (personAuthored(entry as never) !== theirsAuthor)
           failures.push(`seed ${String(seed)} author of ${JSON.stringify(entry).slice(0, 60)}`);

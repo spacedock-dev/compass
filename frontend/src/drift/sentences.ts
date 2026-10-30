@@ -498,8 +498,15 @@ export const FLIP_CLOSED = 'Analyze closed: the session went quiet.';
 export const FLIP_CLOSED_REVISION =
   'Analyze closed: your intent was saved after the session ended.';
 
-export const WORK_HARNESSES: readonly string[] = ['claude', 'pi'];
-export const WORK_READ_FROM = 'Compass reads work results from Claude Code and Pi only.';
+export const WORK_HARNESSES: readonly string[] = ['claude', 'codex', 'pi'];
+export const WORK_READ_FROM = 'Compass reads work results from Claude Code, Codex and Pi only.';
+/* The sentence Codex's record earns: the checks its own rollout lists, from codex-cli 0.149, and not its
+   subagents'
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)). */
+export const CODEX_RECORD =
+  'records the checks a session ran and the files it patched, from codex-cli 0.149 on, and they are listed here. A result is the command’s exit code; Compass inspects no file, test or deliverable, and reads no subagent’s commands.';
+export const CODEX_COMMANDS_UNREAD =
+  'This Codex version records no exit status, so its commands are not read and no check is counted.';
 export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected.';
 
 /* The copy route's cap (`copied_corrections.CORRECTION_CAP_CHARS`): the lines' own 2,760 and room for eight

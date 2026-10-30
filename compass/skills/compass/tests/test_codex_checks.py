@@ -24,6 +24,7 @@ from compass_runtime import (
     git_status,
     observer,
     project_context,
+    reading,
     reading_route,
     semantic_history,
 )
@@ -793,6 +794,10 @@ class WhereCodexChecksGoOnceCollected(CodexChecksTestCase):
 
 
 class TheGatesAdmitCodex(unittest.TestCase):
+    def test_a_codex_check_is_work(self) -> None:
+        self.assertEqual(frozenset({"tool_report"}), reading.WORK_EVIDENCE_BY_HARNESS["codex"])
+        self.assertIn("codex", reading_route.OUTCOME_HARNESSES)
+
     def test_a_codex_route_names_tool_output(self) -> None:
         self.assertIn("codex", reading_route.TOOL_OUTPUT_HARNESSES)
 

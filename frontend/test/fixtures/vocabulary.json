@@ -322,6 +322,9 @@
     "claude": [
       "tool_report"
     ],
+    "codex": [
+      "tool_report"
+    ],
     "pi": [
       "result",
       "work_result"

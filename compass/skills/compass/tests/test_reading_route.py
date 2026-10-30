@@ -811,6 +811,24 @@ class AClaudeCodeReaderIsToldWhatTheChecksSendBeforeThePress(unittest.TestCase):
             "your expected outcome lines when a work result is among them", route["disclosure"]
         )
 
+    def test_a_codex_route_says_the_lines_go_beside_its_checks(self) -> None:
+        # A Codex session's checks are work evidence, so its lines are put to the model beside
+        # them, and the `Sent:` item must say so on every route that sends tool output.
+        self.assertIn(
+            "your expected outcome lines when a work result is among them",
+            reading_route._base_parts("claude", harness="codex")[0],
+        )
+        for installed in ({"codex"}, {"claude"}):
+            with self.subTest(installed=installed):
+                route = reading_route.resolve(
+                    "codex", binary_resolver=_resolver(installed), environ={}, root=Path("/x")
+                )
+                self.assertTrue(route["tool_output"])
+                self.assertIn(
+                    "your expected outcome lines when a work result is among them",
+                    route["disclosure"],
+                )
+
 
 def _named(harness: str, installed: set[str]) -> dict[str, Any]:
     with named_platform():
@@ -971,7 +989,8 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
     def test_outcome_lines_are_named_only_where_they_can_be_sent(self) -> None:
         # They go beside work evidence or the agent's messages: on Claude Code with the
         # agent's messages, whether or not tool output may go (owner, 2026-10-03), and
-        # beside a work result on Pi. A Codex session has neither, so its list is silent.
+        # beside a work result on Pi and Codex. A Gemini session has neither, so its list is
+        # silent.
         self.assertEqual(
             set(reading.WORK_EVIDENCE_BY_HARNESS), set(reading_route.OUTCOME_HARNESSES)
         )
@@ -987,7 +1006,10 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
         self.assertIn("expected outcome lines", pi["disclosure"])
         self.assertIn("work result", pi["disclosure"])
         codex = _named("codex", {"codex"})
-        self.assertNotIn("outcome", codex["disclosure"])
+        self.assertIn("expected outcome lines", codex["disclosure"])
+        self.assertIn("work result", codex["disclosure"])
+        gemini = _named("gemini", {"codex"})
+        self.assertNotIn("outcome", gemini["disclosure"])
 
     def test_the_tool_output_item_names_each_thing_it_sends(self) -> None:
         for name in ("claude", "claude-by-codex"):

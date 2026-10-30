@@ -13,6 +13,7 @@ import { stripPasteWrapper, type Annotation } from './annotation';
 export const WORK_BY_HARNESS: Readonly<Record<string, readonly string[]>> = {
   pi: ['work_result', 'result'],
   claude: ['tool_report'],
+  codex: ['tool_report'],
 };
 
 /* Per harness, as `reading.WORK_EVIDENCE_BY_HARNESS` says: `result` is Pi's work result and, on Codex, the

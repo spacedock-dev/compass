@@ -397,6 +397,7 @@ QUOTED_AS = "quoted_as"
 WORK_EVIDENCE_BY_HARNESS = {
     "pi": frozenset({"work_result", "result"}),
     "claude": frozenset({"tool_report"}),
+    "codex": frozenset({"tool_report"}),
 }
 
 # The checks a Claude Code session ran and the files it wrote, as

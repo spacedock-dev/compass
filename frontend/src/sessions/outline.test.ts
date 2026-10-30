@@ -154,10 +154,15 @@ describe('the outline card model', () => {
     );
   });
 
-  it('never counts checks or files, or agent replies, where the harness does not read them', () => {
+  it('never counts checks or files, or agent replies, where the harness does not outline them', () => {
     expect(blockLine(block(), CODEX)).toBe('');
+    /* Codex's checks and files are read for a reading, so the note says the outline leaves them out,
+       never that they are not read. */
     expect(coverageNotes(CODEX, 0)).toEqual([
-      'Only your messages are read for this harness: the outline has no agent replies, checks or files.',
+      'Only your messages are outlined for this harness: the outline has no agent replies, checks or files.',
+    ]);
+    expect(coverageNotes({ ...CODEX, agentReplies: 'read' }, 0)).toEqual([
+      'The outline has no checks or files: they are not outlined for this harness.',
     ]);
   });
 

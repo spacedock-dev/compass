@@ -171,13 +171,14 @@ export const ReadFailed: Story = {
   },
 };
 
-/* Codex: the reader's own messages as blocks, and a plain statement that it has no agent replies or checks. */
+/* Codex: the reader's own messages as blocks, and a plain statement that the outline has no agent replies or
+   checks. Its checks are read for a reading, so the note says they are not outlined, never that they are not read. */
 export const Codex: Story = {
   render: () => <OutlinePage harness="codex" outline={codexOutline()} />,
   play: async ({ canvasElement }) => {
     const region = await card(canvasElement);
     await within(region).findByText(
-      'Only your messages are read for this harness: the outline has no agent replies, checks or files.',
+      'Only your messages are outlined for this harness: the outline has no agent replies, checks or files.',
     );
     const blocks = [...region.querySelectorAll<HTMLElement>('[data-next-outline-block]')];
     await expect(blocks).toHaveLength(2);

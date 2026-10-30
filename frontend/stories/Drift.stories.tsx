@@ -374,7 +374,7 @@ export const NoReaderClaudeUnqualifiedCodexMissing: Story = routeStory(
 );
 export const NoReaderNeitherQualified: Story = routeStory('not-qualified');
 
-/* Harness limits. Compass reads work results from Claude Code and Pi only, the live estimate from Claude
+/* Harness limits. Compass reads work results from Claude Code, Codex and Pi only, the live estimate from Claude
    Code only, and corrections for Claude Code only; a card for any other harness says so and draws no level,
    because a level from work it cannot read would measure nothing. Claude Code's own row is the live monitor
    story above. */
@@ -409,10 +409,66 @@ export const PiShowsAnalysisLevelWithNoSwitchAndNoSteerBack: Story = {
   },
 };
 
-/* Codex and Antigravity: the sentence in place of a level, and neither a meter nor a switch. Analyze is still
-   offered, because a reading needs the saved words and the messages, not work results. The meter and its
-   scale are decorative and hidden from assistive tech, so their absence is read from their words. */
-const limited = (harness: 'codex' | 'antigravity'): Story => ({
+/* A Codex session's failing test is a check on its page, as its rollout recorded it: the failed row, read from
+   the command's exit code, and the record's own line saying what Codex's record holds. There is no live
+   estimate and no Steer back on Codex, and the harness limit that stood here before is gone.
+   ([the amendment](../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)) */
+const CODEX_FAILED = fact(
+  'c1',
+  500,
+  {
+    subject: 'check',
+    result: 'failed',
+    result_source: 'flag',
+    summary: 'pytest -q',
+    source: 'Codex command and its exit status',
+  },
+  'codex',
+);
+export const CodexShowsAFailedCheck: Story = {
+  ...scenario({ harness: 'codex', facts: [personSaid('codex'), CODEX_FAILED] }),
+  play: async ({ canvasElement }) => {
+    const card = await drawn(canvasElement);
+    const canvas = within(canvasElement);
+    /* The row is the failed check's own in Full activity, found by the fact it was drawn from; its mark is a
+       CSS-drawn glyph on an empty span, so the row is what is seen and the mark's name is what is read. */
+    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    const row = await waitFor(
+      () => {
+        const node = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c1"]');
+        if (!node) throw new Error('no row for the failed check');
+        return node;
+      },
+      { timeout: 8000 },
+    );
+    await waitFor(() => expect(row).toBeVisible(), { timeout: 8000 });
+    await expect(row).toHaveTextContent('pytest -q');
+    await expect(within(row).getByLabelText('Failed, as the tool reported')).toBeInTheDocument();
+    await expect(within(card).queryByText(HARNESS_LIMIT)).toBeNull();
+    await expect(within(canvasElement).queryByRole('switch')).toBeNull();
+    await expect(within(card).queryByRole('button', { name: 'Steer back' })).toBeNull();
+    const about = await canvas.findByRole('button', { name: /About this record/ });
+    if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
+    await waitFor(() =>
+      expect(canvasElement).toHaveTextContent(
+        'Compass reads work results from Claude Code, Codex and Pi only.',
+      ),
+    );
+    await expect(canvasElement).toHaveTextContent('Codex records the checks a session ran');
+    await expect(canvasElement).not.toHaveTextContent(
+      'Compass reads work results from Claude Code and Pi only.',
+    );
+    await expect(canvasElement).not.toHaveTextContent(
+      'Codex publishes no demonstrated work results',
+    );
+    await neverDone(card);
+  },
+};
+
+/* Antigravity: the sentence in place of a level, and neither a meter nor a switch. Analyze is still offered,
+   because a reading needs the saved words and the messages, not work results. The meter and its scale are
+   decorative and hidden from assistive tech, so their absence is read from their words. */
+const limited = (harness: 'antigravity'): Story => ({
   ...scenario({ harness, facts: [personSaid(harness), failedCheck('c1', 500, harness)] }),
   play: async ({ canvasElement }) => {
     const card = await drawn(canvasElement);
@@ -429,7 +485,6 @@ const limited = (harness: 'codex' | 'antigravity'): Story => ({
   },
 });
 
-export const CodexSaysItCannotReadWork: Story = limited('codex');
 export const AntigravitySaysItCannotReadWork: Story = limited('antigravity');
 
 const firstNotice = {

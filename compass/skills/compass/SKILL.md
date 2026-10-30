@@ -532,7 +532,7 @@ marked, with the attempt count and disclosure still beside it. A screen reader h
 when the box appears and how the analysis ended once when it goes, never again on a redraw or reload. The box comes from the published
 board, so a reload or another tab shows the same analysis at the same step, and a second press
 starts nothing. The result, or why there is none, replaces the box when it is stored; an analysis
-a stop or restart cut short is recorded as an interrupted attempt. On a Claude Code session the
+a stop or restart cut short is recorded as an interrupted attempt. On a Claude Code, Codex or Pi session the
 result shows the analysis level (worked out again from the stored reading on every view, never
 stored, never on a row) with its time. A level above None or low is drawn only beside a departure the
 reading shows. With none, the card draws no level or bar, and the answer says what the reading did
