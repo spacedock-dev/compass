@@ -150,7 +150,19 @@ class MatchedScopeControls(unittest.TestCase):
                     type="agent_message",
                     at=100,
                     source_session={"harness": "claude", "sid": "s1"},
-                )
+                ),
+                # The work the line waits on, recorded after the message: a `not reached` stands
+                # only where the record shows the line's work under way
+                # (`reading._unfinished_shown`).
+                fact(
+                    fact_id="w1",
+                    type="tool_report",
+                    subject="write",
+                    result="",
+                    summary="ci/status.json",
+                    at=120,
+                    source_session={"harness": "claude", "sid": "s1"},
+                ),
             ]
             answers: list[dict[str, Any]] = []
             for control in (self.legacy, self.turn):

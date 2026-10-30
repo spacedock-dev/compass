@@ -1367,6 +1367,66 @@ The correction Steer back offers asks about the same sentence. It quoted the fir
 own copy of the word list (`correction.CLAIM_WORDS`), and a test reads both claims rules from `reading.py` and
 fails when that list and they drift, as the page's test does for its own.
 
+### Amended 2026-10-30: a not reached line needs its work shown, and a recorded write outlives an explanation
+
+The owner approved this correction on 2026-10-30, to land before the tenth Claude Code qualification run,
+so that run measures a corrected producer. It adds one guard and pins one that was already built. Neither
+reads English for a keyword, and neither changes the prompt, what a reading sends or the header's bytes.
+
+A `not reached` line needs its work shown. `reading._unfinished_shown`, which `resolve` applies after
+`_while_running`, lets `not reached at this stop` stand on an outcome line only when the record shows that
+line's work under way. That means a cited check or write that bears on the line (`_bears_on`), a call
+still in flight after the latest cited entry, or a check or write recorded after that entry that bears on
+the line. The last two are the test `_while_running` already uses
+([a running turn is unfinished](#amended-2026-10-21-a-running-turn-is-unfinished)), except that here the
+recorded writes and checks include the ones no grant sent, read from the facts the way the record-settles
+guard reads them. A press with no tool-output grant carries no write, and without this every `not reached`
+on it would fall. Nothing more is sent. Otherwise the line
+reads `not verifiable`, its explanation is dropped and its token is `no-work-shown`. This applies
+[the 2026-10-07 clarification](#clarified-2026-10-07-known-applicability-and-an-actual-claim): a pending
+item whose applicability is unknown cannot establish `not reached`, and a message saying work is coming
+does not show that work is under way. The Goal is left alone, because it has no narrower meaning than the
+whole session. A subagent dispatch is not counted, because it shows what was started and not that it bears
+on the line. The token is reused rather than new: its page sentence ("Nothing cited here demonstrates
+that the requested output exists; each entry describes or asks for the work rather than showing it")
+holds for this row, and a new token would be a page change and a rebuilt bundle. Like every demotion
+here it is one-way, toward the result that raises no level and no Steer back.
+
+A recorded write outlives the agent's explanation. This was already enforced, and is now pinned.
+`_settled_by_record` has replaced any reply with a `recorded-write` departure since
+[the record settles a line](#amended-2026-10-21-the-record-settles-a-line). It does so on a line whose
+words carry a folder rule when a write inside the window and after the line's request breaks that rule,
+including a `consistent` resting on the agent's message alone. In the steer-then-explain shape, the
+correction the reader pasted moves neither the window nor the line's request, because it is Compass's
+words. The write is therefore still read after the agent explains it. A line whose words name no folder,
+such as "Leave the existing fixtures alone", stays the model's judgment, and the record cannot tie a
+write to it without a keyword rule. A guard fed from the stored earlier departure was considered and not
+built. Item 8 drops a written path from a model's departure, so a stored departure never cites the write
+and could not name the edit. The live producer's `consistent` on the walked two-turn case therefore stays
+a qualification risk unless its line carries a folder rule.
+
+What the ninth run's failures would have been. The stored ninth-run criteria were replayed through
+guard (i):
+
+- Case `8b8c1a02` line_1 (marked abstain) was answered `not reached` in repeats 1 and 3, on messages
+  alone at a finished turn. Both now read `not verifiable`. Repeat 2's `departure` is untouched and still
+  fails.
+- Case `a3c76f89` line_3 (marked abstain, `consistent` in all three repeats on a passing check and a
+  later message) is changed by neither guard. The run-once question it asks needs an owner ruling, and
+  its mark may not change after the output was seen.
+- Synthetic case `957ba71d`'s claims `consistent` in repeat 2 is changed by neither guard, because the
+  claims question is outside both.
+
+With both guards in place, every ninth repeat would still have failed, on `a3c76f89` line_3 at least.
+
+A model-free dry pass. The ten frozen ninth cases were sent through `produce` with fake models that
+answer every question `unverifiable`, `consistent`, `not reached` or `departure`, once with guard (i) on
+and once with it off. No answer moved toward a judged outcome. Under the all-`not reached` model, nine
+lines marked abstain moved to abstained, and five lines marked judge became over-abstentions, which never
+fail a run. The other three models changed nothing. The pass ran outside the scorer's prompt pin, so it is
+a construction check and not a measurement. `reading.py` is one of the parser-stamped files, so the
+tenth packet is re-frozen in any case. The guards are held by `test_reading_unfinished_and_cleared.py`.
+
 ### Repeated calls
 
 A reading is produced only in response to a discrete reader action, asserted rather than assumed,

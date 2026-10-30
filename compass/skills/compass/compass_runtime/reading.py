@@ -4309,15 +4309,70 @@ def _while_running(
     latest = max(_number(entry.get("at")) or 0.0 for entry in cited)
     if latest <= 0.0:
         return criterion
-    if open_call_at is not None and open_call_at > latest:
+    if _going_on_after(latest, name, work=work, open_call_at=open_call_at, line_text=line_text):
         return {**criterion, "result": RESULT_NOT_REACHED}
-    if any(
+    return criterion
+
+
+def _going_on_after(
+    latest: float,
+    name: str,
+    *,
+    work: Sequence[LedgerEntry],
+    open_call_at: float | None,
+    line_text: str,
+) -> bool:
+    """Whether work is going on after `latest`: a call still in flight, or a check or write
+    recorded after it that bears on the line (any work bears on the Goal)."""
+    if open_call_at is not None and open_call_at > latest:
+        return True
+    return any(
         (evidence_at(entry) or 0.0) > latest
         and (not is_outcome_line(name) or _bears_on(line_text, entry))
         for entry in work
+    )
+
+
+def _unfinished_shown(
+    criterion: Criterion,
+    name: str,
+    by_id: Mapping[str, LedgerEntry],
+    *,
+    work: Sequence[LedgerEntry],
+    open_call_at: float | None,
+    line_text: str,
+) -> Criterion:
+    """A `not reached` on an outcome line that shows no work on the line under way, read as not
+    verifiable.
+
+    `not reached` is a judgment that the line's work is pending, and a pending item whose
+    applicability is unknown cannot establish it
+    ([DEC-17](docs/design-reading-a-session.md#clarified-2026-10-07-known-applicability-and-an-actual-claim)).
+    The record shows the line's work under way by a cited check or write that bears on the line, or
+    by what `_while_running` reads as work going on after the latest citation, where `work` here
+    also holds the record's writes and checks that no grant sent. Anything else is a
+    message saying work is coming, which shows no more than the rule-7 entries `no-work-shown`
+    already names, so that is its token
+    ([DEC-17](docs/design-reading-a-session.md#amended-2026-10-30-a-not-reached-line-needs-its-work-shown-and-a-recorded-write-outlives-an-explanation)).
+    The Goal is left: it has no narrower meaning than the whole session. One-way, like every
+    demotion here.
+    """
+    if criterion.get("result") != RESULT_NOT_REACHED or not is_outcome_line(name):
+        return criterion
+    cited = [by_id[key] for key in criterion["cites"] if key in by_id]
+    if any(
+        entry.get("type") == TOOL_REPORT_TYPE
+        and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
+        and _bears_on(line_text, entry)
+        for entry in cited
     ):
-        return {**criterion, "result": RESULT_NOT_REACHED}
-    return criterion
+        return criterion
+    latest = max((_number(entry.get("at")) or 0.0 for entry in cited), default=0.0)
+    if latest > 0.0 and _going_on_after(
+        latest, name, work=work, open_call_at=open_call_at, line_text=line_text
+    ):
+        return criterion
+    return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
 
 
 def _without_settled_words(
@@ -5646,6 +5701,9 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         if entry.get("type") == TOOL_REPORT_TYPE
         and entry.get("subject") in (CHECK_SUBJECT, WRITE_SUBJECT)
     ]
+    # What the record holds whether or not a grant sent it, for the not-reached guard: a write or
+    # check shows the line's work under way though no prompt carried it, and nothing here is sent.
+    held = [*work, *_recorded_work(recorded, window_start)] if recorded is not None else work
     texts = [line for line in lines if line.strip()]
     names = constraints_for(texts, claims=selection.asked_claims)
     # The claims question has no words of the reader's to caption it; the
@@ -5726,38 +5784,66 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                 },
             )
             continue
+        running = _while_running(
+            _resolve_one(
+                parsed.get(name) or {},
+                by_index,
+                name=name,
+                clause=clause,
+                detail_cap_chars=detail_cap_chars,
+                window_start=window_start,
+                unread_failures=selection.unread_failures,
+                failed_on_record=failed_on_record,
+                line_text=clauses[name],
+                latest_check_at=latest_check_at,
+                checks_unread=selection.checks_unsent
+                or bool(selection.unread_checks)
+                or bool(selection.unlisted),
+                scope=scope,
+                requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
+                uncitable=uncitable,
+                masked_values=masked_values,
+                scrub_partial=scrub_partial,
+            ),
+            name,
+            by_id,
+            scope=scope,
+            work=work,
+            open_call_at=open_call_at,
+            line_text=clauses[name],
+        )
         out[name] = settled(
             name,
-            _while_running(
-                _resolve_one(
-                    parsed.get(name) or {},
-                    by_index,
-                    name=name,
-                    clause=clause,
-                    detail_cap_chars=detail_cap_chars,
-                    window_start=window_start,
-                    unread_failures=selection.unread_failures,
-                    failed_on_record=failed_on_record,
-                    line_text=clauses[name],
-                    latest_check_at=latest_check_at,
-                    checks_unread=selection.checks_unsent
-                    or bool(selection.unread_checks)
-                    or bool(selection.unlisted),
-                    scope=scope,
-                    requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
-                    uncitable=uncitable,
-                    masked_values=masked_values,
-                    scrub_partial=scrub_partial,
-                ),
+            _unfinished_shown(
+                running,
                 name,
                 by_id,
-                scope=scope,
-                work=work,
+                work=held,
                 open_call_at=open_call_at,
                 line_text=clauses[name],
             ),
         )
     return out
+
+
+def _recorded_work(recorded: Recorded, window_start: float) -> list[LedgerEntry]:
+    """The record's writes and checks inside the window, in the shape `_bears_on` reads."""
+    writes = [
+        LedgerEntry(
+            id=write.id,
+            type=TOOL_REPORT_TYPE,
+            by="agent",
+            summary=write.path,
+            at=write.at,
+            author=AUTHOR_AGENT,
+            source="recorded write",
+            subject=WRITE_SUBJECT,
+        )
+        for write in recorded.writes
+    ]
+    return [
+        entry for entry in (*writes, *recorded.checks) if not _before_window(entry, window_start)
+    ]
 
 
 def _readable(
