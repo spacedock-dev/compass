@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2240287,
+    "bytes": 2241431,
     "file": "react.html",
-    "sha256": "045b550d2298d244fb1e2ed936cb46cac73fde911d15a80f4af9cbfbcac275a5"
+    "sha256": "8b323b2c1c035f2c3d6783ed271f320273be8cc8518b2e99f5140bec59b88e5c"
   },
   "format": 1,
   "frontend": "react",
@@ -699,11 +699,11 @@
       },
       {
         "file": "frontend/src/drift/level.ts",
-        "sha256": "a75be506f26961d840144d83cfc6d3c94f3dbd2eb612e484cd99b1628301b030"
+        "sha256": "8d50aff3c6e8ad9f50594ed13b0261acdc16b99925dc9243e69d8ffd61c162e0"
       },
       {
         "file": "frontend/src/drift/model.ts",
-        "sha256": "b29ea800b0d65121bf160ac6144fdcd921f8a9ce8c8bbfe778ad188ad09c9b24"
+        "sha256": "19bbf32248af0fa10c6638eeda59701ee6e33d9e11f00332af1c0929ad25829d"
       },
       {
         "file": "frontend/src/drift/monitor.ts",
@@ -731,7 +731,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "1b2112f29999196c2816a22521df8a81b2cf2fcc1032ef0bce0d8874c7176cbe"
+        "sha256": "e1a9413acdf4da70bf0eba6dfd389f8ef62e8d034f579857c5dae819f8f2b1b9"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -759,7 +759,7 @@
       },
       {
         "file": "frontend/src/drift/workList.ts",
-        "sha256": "296173aec77e77e2e3063733f2bf845f551d2b4c1b0e699abf8aadae9c13e934"
+        "sha256": "39646994efe56c0070e0adb8c8130562f41cbdf04eb635325452fdc523a11d3c"
       },
       {
         "file": "frontend/src/intent/ActionButton.tsx",
@@ -795,7 +795,7 @@
       },
       {
         "file": "frontend/src/intent/HowTo.tsx",
-        "sha256": "676d6f4cc2b01307752552714f618fb752e835e031681fe4ec85fec78fe93351"
+        "sha256": "a8864d901834e8c5a21402305f1ce0d3d2bcd1af682b7d5e75ad7dec242c3ef2"
       },
       {
         "file": "frontend/src/intent/IntentLog.tsx",
@@ -907,7 +907,7 @@
       },
       {
         "file": "frontend/src/intent/work.ts",
-        "sha256": "c6da3a17bba78c9e737f932cf6d93f532e9b2d18f7af8955c018219314d1e563"
+        "sha256": "1d90b56da94052dd729769933e2a6782e252607ccfe1a2e62d378581fd47d72c"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -1231,7 +1231,7 @@
       },
       {
         "file": "frontend/src/sessions/outline.ts",
-        "sha256": "5b6d80ae4661ef349767721ff83c840155510d8dba32c352c431294557e00700"
+        "sha256": "317cd55e659fea3563d0ceb75786d92bd9c8489854348f4ae4ef3a7c660c6576"
       },
       {
         "file": "frontend/src/sessions/rows.ts",
