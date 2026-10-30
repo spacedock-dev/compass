@@ -2774,7 +2774,7 @@ item 5's fields and the closed lists.
    backtick, and a heredoc operator or redirection with no word after it, is a syntax error in every
    shell. The call is not listed, it is counted in `not_run`, and nothing from its text is published.
    It still counts as a change, because bash runs the complete lines before it, so an earlier pass
-   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions, and any other
+   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions (quoted or not: `$(…)`, `<(…)`, `>(…)`, `$((…))`, `${…}`; a backtick run and a plain `( … )` subshell are not counted), and any other
    fault in the parser are read the same way. A shell wrapper whose command string is unbalanced is
    different: the inner shell fails and the rest of the call runs, so only that wrapper segment is
    unread, and it is a change. A trailing lone backslash is not unbalanced: measured, bash runs the
@@ -2887,7 +2887,9 @@ and item 3's measured note that a written path comes only from a file-write tool
    counts outside. `-L`, `-P`, `-e`, `-@` and `--` are options to `cd`, not directories. A group's
    or a wrapper's own redirect (`(cd sub && pytest) > out`) is read from the directory the group
    started in, where the outer shell opens it. A redirect into `/dev/null`, `/dev/stdout`,
-   `/dev/stderr`, `/dev/tty` or `/dev/fd/N`, by any operator, writes no file. The redirect does
+   `/dev/stderr`, `/dev/tty` or `/dev/fd/N`, by any operator, writes no file. A file redirect on
+   a `cd` or on an empty command (`cd sub > out`, `> out`) opens or truncates its file all the
+   same, so it ages an earlier pass; `cd sub 2>&1` and `cd sub > /dev/null` age nothing. The redirect does
    not age its own check's pass. It ages an earlier check in the same call, setting both
    `before_last_change` and `changed_after`, and any pass from an earlier call, and it does not
    set `last_changing_command_at`, because it is now a recorded write. Measured (counts only): 90
