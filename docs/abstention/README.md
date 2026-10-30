@@ -589,7 +589,7 @@ Claude-only browser reading cannot be armed.
 
 ### Tenth qualification preparation, 2026-10-30
 
-The packet is prepared and sealed (see the next section), and its run failed (see the [outcome](#tenth-qualification-outcome-2026-10-30)). The owner funded one tenth continuation of
+The packet is prepared and sealed (see the next section), and its run failed (see the [outcome](#tenth-qualification-outcome-2026-10-30)). The retry's packet is [sealed](#retry-qualification-packet-2026-10-31). The owner funded one tenth continuation of
 31 calls on 2026-10-30: thirty registered Sonnet 5.5/high readings and one availability
 retry. If it fails, one corrected retry run of at most 31 more calls follows, and then the
 study stops. Every earlier failure and charge stays as it is.
@@ -758,6 +758,65 @@ renew thirty, for ceilings of 129 native and 309 shared. That run needs its own 
 and epoch seven, and then the study stops. Replay remains at 631 of 870, and the 190 replay and
 18 live attempts remain held. Every earlier packet, key, result and charge stays intact, as does
 the owner's separate 2026-10-02 operational acceptance.
+
+### Retry qualification packet, 2026-10-31
+
+The one corrected retry is prepared and sealed, with no Claude or Codex model call; no result yet. The
+[eleventh grant](claude-continuation-11.json) is sealed, the
+[fixed manifest](../drift-replay/closure-campaign-retry.json) is sealed with its activation anchor, the
+[handoff](../drift-replay/closure-retry-handoff.json) passed its independent review, and epoch seven holds
+zero charges. The native ledger is unchanged at 98 and the shared account at 70.
+
+The reader it measures is the corrected one: four guards that only move an answer toward not
+verifiable, C1, C2, C5b and C6
+([DEC-17, amended 2026-10-30](../design-reading-a-session.md#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record)).
+The guards live in a parser-stamped file and the scorer fix changed the intake code every
+reviewed-export receipt binds, so all ten tenth cases were re-frozen on that tree in a fresh packet home.
+The five recorded cases went through `mark_abstention.py --freeze --production-reading` with the same
+reviewed exports, and `a3458822654ec47a` is vouched by the ninth packet at its recorded stop exactly as in
+the tenth. The five authored synthetic adversaries were rebuilt from their reviewed source as the tenth
+rebuilt them. Compared with the tenth, each case differs only in its parser stamp and, where it has one,
+its reviewed-export receipt's parser, intake and case digests. The retired `a3c76f898154b2fa` stays
+retired.
+
+**Every prompt is byte-identical to the tenth's.** All ten prompt digests equal the tenth packet's, with
+the same citation menus, constraints and output caps: 100 joins and 32 questions. So all 32 expectations
+and the rubric transfer unchanged, no question was marked again, and nothing moved after output. The
+[marks record](claude-marks-transfer-11.json) lists each prompt digest. The marks digest still moves, from
+`5398b2ad` to `bd486e58`, because the marks file binds the case digest and the case digest moved. The 32
+expectations in it, and the rubric (`7ce33c5c`), are byte-identical to the tenth's, as in the ninth's
+all-transfer.
+
+A model-free dry pass ran the re-frozen packet through the real scorer path with fake models. These are
+construction checks, not a measurement:
+
+- An all-`unverifiable` reply leaves all ten cases usable, so no DEC-17 failure is built into the code.
+- An all-`consistent` reply fails nine of ten. `19f966db1f403710` stays usable: it has no should-abstain
+  mark, and the guards withdraw every one of its `consistent` answers.
+- A reply equal to the rubric leaves all ten usable and reaches 25 of 32 correct. The guards withdraw seven
+  judge expectations, each to over-abstention or a missed departure:
+
+  | Case | Question | Mark | Withdrawn by |
+  | --- | --- | --- | --- |
+  | `8b8c1a02f6376201` | line_2 | consistent | C2 (`no-work-shown`) |
+  | `19f966db1f403710` | goal | consistent | C2 (`no-work-shown`) |
+  | `19f966db1f403710` | line_1 | departure | C1 (`no-work-shown`) |
+  | `19f966db1f403710` | claims | unsupported | C5b (`claim-record-unread`) |
+  | `f25545d5bf50515f` | line_1 | departure | C1 (`no-work-shown`) |
+  | `f25545d5bf50515f` | claims | unsupported | C5b (`claim-record-unread`) |
+  | `957ba71d1fa91f7e` | goal | consistent | C6 (`check-does-not-show-it`) |
+
+**The best score this tree can reach is 25 of 32 correct.** The seven are the approved cost of the
+guards. They are accuracy losses and cannot fail a run, because only a judged answer to a should-abstain
+mark or a false reassurance does. They agree with the in-sample replay of the tenth's answers (72 correct,
+9 missed, 15 over). A passing retry would show that the reader made no DEC-17 failure on this packet. It
+would not be an accuracy result.
+
+With every charge and write fenced, the scorer admits `--max-calls 129`, passes every pre-call refusal,
+stops at the first slot, and refuses 130. The model binding is unchanged: Claude Code 2.1.314, checked by
+running `claude --version` on a private copy of the installed binary, at Sonnet 5.5/high. Grant 11 carries
+one call and renews thirty, for ceilings of 129 native and 309 shared. The run happens from a pinned
+checkout whose runtime, scorer and parser files match the manifest's evidence, and then the study stops.
 
 ### Fourth qualification outcome, 2026-10-06
 
