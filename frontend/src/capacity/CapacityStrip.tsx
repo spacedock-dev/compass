@@ -298,7 +298,7 @@ export function CapacityStrip() {
     if (read) lane.set(selectedKey);
   }, [lane, read, selectedKey]);
   if (!picked) {
-    return <UsageSwitch />;
+    return <UsageSwitch windows={false} />;
   }
   const { selected, shown } = picked;
   const generated = nextNumber(payload['generated']);

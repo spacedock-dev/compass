@@ -73,6 +73,22 @@ describe('the quota fetch is on until it is turned off', () => {
     expect(line()?.querySelector('button')?.textContent).toBe('Turn on');
   });
 
+  it('declined with no window published does not describe a cached read', async () => {
+    const page = mount({ storage: { [CONSENT]: 'declined' }, data: board({ usage: [] }) });
+    await page.settle();
+    expect(line()?.textContent).toContain('Quota reading is off. No window has been read.');
+    expect(line()?.textContent).not.toContain('last cached read');
+    expect(line()?.querySelector('button')?.textContent).toBe('Turn on');
+  });
+
+  it('declined with windows published keeps the last-cached-read sentence', async () => {
+    const page = mount({ storage: { [CONSENT]: 'declined' } });
+    await page.settle();
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Windows above are the last cached read and will lapse.',
+    );
+  });
+
   it('Turn off stops the parameter at once and is remembered', async () => {
     const page = mount();
     await page.settle();
