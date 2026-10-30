@@ -73,14 +73,33 @@ describe('the mark on a passing check when work was not read', () => {
     expect(marks.map((mark) => mark.short)).toEqual(['Passed', 'May not cover subagent work']);
   });
 
-  it('says it for unread calls, and for both', () => {
-    expect(marksOf(incompletePass(passed, { unread_calls: 4 }))[1]?.short).toBe(
-      'May not cover every call',
-    );
-    expect(
-      marksOf(incompletePass(passed, { unread_calls: 4, subagent_transcripts_unread: 1 }))[1]
-        ?.short,
-    ).toBe('May not cover subagent work or every call');
+  it('adds no mark for unread calls alone, which a pass after them already excludes', () => {
+    expect(incompletePass(passed, { unread_calls: 4 })).toBe(passed);
+  });
+
+  it('says only the subagent clause where calls were unread too', () => {
+    const scan = { unread_calls: 4, subagent_transcripts_unread: 1 };
+    expect(marksOf(incompletePass(passed, scan))[1]?.short).toBe('May not cover subagent work');
+  });
+
+  it('leaves a stale pass with only its stale mark when calls were unread', () => {
+    const stale = activityRow(4, {
+      result: 'passed',
+      resultSource: 'flag',
+      beforeLastChange: true,
+    });
+    const row = incompletePass(stale, { unread_calls: 4 });
+    expect(row).toBe(stale);
+    expect(marksOf(row).map((mark) => mark.icon)).not.toContain('incomplete');
+  });
+
+  it('ignores counts that are not whole positive numbers', () => {
+    expect(unreadWork({ subagent_transcripts_unread: 1.5, unread_calls: -1 })).toEqual({
+      subagents: 0,
+      calls: 0,
+    });
+    expect(incompletePass(passed, { subagent_transcripts_unread: 1.5 })).toBe(passed);
+    expect(incompletePass(passed, { subagent_transcripts_unread: -1 })).toBe(passed);
   });
 
   it('adds nothing where everything was read, or no scan was published', () => {
@@ -104,8 +123,9 @@ describe('the legend for the unread-work mark', () => {
 
   it('names the words in the mark accessible name', () => {
     const passed = activityRow(1, { result: 'passed', resultSource: 'flag' });
-    const row = incompletePass(passed, { unread_calls: 4 });
+    const row = incompletePass(passed, { subagent_transcripts_unread: 2 });
     const marks = 'check' in row.head && row.head.check ? row.head.check.marks : [];
-    expect(marks[1]?.words).toContain('may not cover every call');
+    expect(marks[1]?.words).toContain('2 subagents were not read');
+    expect(marks[1]?.words).toContain('may not cover subagent work');
   });
 });

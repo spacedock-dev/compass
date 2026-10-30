@@ -134,8 +134,8 @@ export const LISTED_BY_READER_MARK: ActivityMark = {
    not a pass of the subagents or calls that were not. */
 export const INCOMPLETE_PASS_MARK: ActivityMark = {
   icon: 'incomplete',
-  short: 'May not cover all work',
-  words: 'Passed, but some subagent work or calls were not read, so the pass may not cover them',
+  short: 'May not cover subagent work',
+  words: 'Passed, but some subagent work was not read, so the pass may not cover it',
 };
 export const LAST_TURN_MARK = { short: 'Last turn', words: 'from the last turn' };
 export const MARK_LEGEND = [
@@ -281,6 +281,12 @@ function humanLabel(value: string): string {
   return words ? (words[0] ?? '').toUpperCase() + words.slice(1) : 'Work';
 }
 
+/* A count is used only as a whole positive number; a fraction or a negative reads as nothing. */
+function wholeCount(value: unknown): number {
+  const n = nextNumber(value);
+  return Number.isInteger(n) && (n as number) > 0 ? (n as number) : 0;
+}
+
 /* How much of a session's work the scan did not read: the subagent transcripts left out and the calls whose
    effect on files was not read. Zero on both is a session read in full, and an absent count is the same. */
 export function unreadWork(scan: Row | null | undefined): {
@@ -289,8 +295,8 @@ export function unreadWork(scan: Row | null | undefined): {
 } {
   if (!scan || typeof scan !== 'object') return { subagents: 0, calls: 0 };
   return {
-    subagents: nextNumber(scan['subagent_transcripts_unread']) || 0,
-    calls: nextNumber(scan['unread_calls']) || 0,
+    subagents: wholeCount(scan['subagent_transcripts_unread']),
+    calls: wholeCount(scan['unread_calls']),
   };
 }
 
@@ -305,20 +311,18 @@ function unreadSentence(scan: Row | null | undefined): string {
   return `${parts.join(' and ')} ${subagents + calls === 1 ? 'was' : 'were'} not read`;
 }
 
-/* A passing check gets one more mark when the scan left work unread, so Full activity does not show a bare
-   "Passed" for a session whose subagents or calls were not read. Only a pass: a failure stands whatever else
-   was unread, and a check with no recorded result claims nothing to qualify. */
+/* A passing check gets one more mark when the scan left subagent transcripts unread, so Full activity does not
+   show a bare "Passed" for a session whose subagent work was not read. Only a pass: a failure stands whatever
+   else was unread, and a check with no recorded result claims nothing to qualify. Unread calls get no mark: each
+   one is recorded as a change, so a pass before it already carries the stale mark and a pass after it saw it. */
 export function incompletePass(row: WorkRow, scan: Row | null | undefined): WorkRow {
-  const { subagents, calls } = unreadWork(scan);
-  if (!subagents && !calls) return row;
+  const { subagents } = unreadWork(scan);
+  if (!subagents) return row;
   const head = row.head;
   if (!('check' in head) || !head.check || head.check.result !== 'passed') return row;
-  const covers =
-    subagents && calls ? 'subagent work or every call' : subagents ? 'subagent work' : 'every call';
   const mark: ActivityMark = {
     ...INCOMPLETE_PASS_MARK,
-    short: `May not cover ${covers}`,
-    words: `Passed, as the tool reported, but ${unreadSentence(scan)}, so this may not cover ${covers}`,
+    words: `Passed, as the tool reported, but ${unreadSentence({ subagent_transcripts_unread: subagents })}, so this may not cover subagent work`,
   };
   return {
     ...row,

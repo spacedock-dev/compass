@@ -221,7 +221,7 @@ export const CodexWithUnreadSubagentsAndCalls: Story = {
   play: async ({ canvasElement }) => {
     await fullActivity(canvasElement);
     const mark = canvasElement.querySelector<HTMLElement>('[data-activity-mark="incomplete"]');
-    await expect(mark).toHaveTextContent('May not cover subagent work or every call');
+    await expect(mark).toHaveTextContent('May not cover subagent work');
     await expect(await sentence(canvasElement)).toHaveTextContent(
       '2 subagents and 4 calls were not read.',
     );
