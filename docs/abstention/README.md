@@ -747,7 +747,9 @@ The result's `recorded_on_transcript_stop` and `recorded_on_prior_packet` counts
 repeat, although `8b8c1a02f6376201` and `19f966db1f403710` are vouched by their transcript stops
 and `a3458822654ec47a` by the ninth packet. The repeated-qualification summary does not pass the
 vouched-stop sets that the single-pass summary does. That is a reporting gap in the result, not a
-change to any case's vouch, which the scorer checked before each charge.
+change to any case's vouch, which the scorer checked before each charge. The scorer now passes them
+to each repeat ([DEC-17, amended 2026-10-30](../design-reading-a-session.md#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record)),
+and result 10 stays as committed.
 
 Thirty of the tenth's 31 attempts are spent. The native ledger holds 98 charges under its 99-call
 ceiling and the shared account 70 across the original and six successor epochs. The unused
