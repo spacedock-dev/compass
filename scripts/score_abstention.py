@@ -2174,15 +2174,15 @@ def parser_mismatch(corpus: Corpus, *, rechecked: bool = False) -> list[str]:
     here = mark_abstention.parser_digest()
     other = [c for c in cases if "parser" in c and c["parser"] != here]
     # A recorded Claude Code case's contents are rebuilt under its stamp, so an absent
-    # one is demoted exactly as a differing one is. Recorded Codex, explicitly synthetic
-    # and reviewed-export cases never reach that rebuild and may legitimately omit it.
+    # one is demoted exactly as a differing one is, reviewed exports included, since
+    # their validation runs the same rebuild. Recorded Codex and explicitly synthetic
+    # cases never reach it and may legitimately omit the stamp.
     missing = [
         c
         for c in cases
         if rechecked
         and c.get("harness") == "claude"
         and c.get("origin") == ORIGIN_RECORDED
-        and "reviewed_export" not in c
         and "parser" not in c
     ]
     if not other and not missing:
@@ -2829,6 +2829,7 @@ def report(
     summary: Mapping[str, Any] | None,
     *,
     vouch: Callable[[Mapping[str, Any]], list[str]] | None = None,
+    rechecked: bool | None = None,
 ) -> int:
     """Where the corpus stands, and what the last run said. Spends nothing.
 
@@ -2841,7 +2842,9 @@ def report(
     live = {str(c.get("id")) for c in cases}
     print(f"{sum(1 for k in marks if k in live)} of {len(cases)} cases marked.")
     # Said at the preflight, so the refusal `--score` would make is no surprise.
-    for line in parser_mismatch(corpus, rechecked=vouch is not None):
+    for line in parser_mismatch(
+        corpus, rechecked=vouch is not None if rechecked is None else rechecked
+    ):
         print(line.replace("Refused:", "--score will refuse:", 1))
     if _is_replay(corpus):
         if not _replay_preflight(corpus):
@@ -3394,7 +3397,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0915 
             if corpus.cases.get("v") == mark_abstention.FORMAT_INTENT
             else None
         )
-        return report(corpus, summary or None, vouch=vouch)
+        # Exactly score()'s rule: a Codex producer never scores, so it rechecks nothing.
+        return report(
+            corpus,
+            summary or None,
+            vouch=vouch,
+            rechecked=vouch is not None and args.producer != "codex",
+        )
     destination = reading_route.destination("claude")
     if destination != reading_route.VENDORS["claude"]:
         where = destination or "an unnamed host"

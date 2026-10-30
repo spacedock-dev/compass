@@ -3611,6 +3611,27 @@ class AScoreFromAnotherParserIsRefusedBeforeAnyChargeTest(_Ledgered):
             score_abstention.report(self.corpus(), None, vouch=self.as_the_machine_would)
         self.assertIn("--score will refuse:", "\n".join(printed))
 
+    def test_an_unstamped_reviewed_export_claude_case_is_refused_before_the_ledger(self) -> None:
+        # ReviewedExports.validate runs content_refusal, which demotes a missing stamp.
+        del self.cases[0]["parser"]
+        self.cases[0]["reviewed_export"] = {"manifest": "m"}
+        model, printed = _Model(), list[str]()
+        with self.sentinel_ledger():
+            code = self.score(model, vouch=self.as_the_machine_would, printed=printed)
+        self.assertEqual(2, code, "\n".join(printed))
+        self.assertEqual([], model.prompts)
+        self.assertIn("carry no parser stamp", "\n".join(printed))
+
+    def test_the_report_follows_the_rule_the_score_will_apply(self) -> None:
+        # A Codex producer never scores, so it rechecks nothing and refuses nothing.
+        del self.cases[0]["parser"]
+        printed: list[str] = []
+        with mock.patch("builtins.print", side_effect=_collect_into(printed)):
+            score_abstention.report(
+                self.corpus(), None, vouch=self.as_the_machine_would, rechecked=False
+            )
+        self.assertNotIn("--score will refuse:", "\n".join(printed))
+
     def test_a_recorded_codex_and_a_synthetic_claude_case_may_omit_the_stamp(self) -> None:
         self.cases[0]["origin"] = "synthetic"
         self.assertNotIn("parser", _codex_case())
