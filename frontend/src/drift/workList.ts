@@ -98,7 +98,7 @@ export const CHECK_NOT_RECORDED_REASONS: Readonly<Record<string, string>> = {
    notes at the right edge, as a reader's flag is, and `toolReportLine` is the same words in one line. */
 export type CheckResult = 'unrecorded' | 'passed' | 'failed';
 export interface ActivityMark {
-  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed' | 'checks';
+  readonly icon: CheckResult | 'command' | 'stale' | 'earlier-failed' | 'checks' | 'incomplete';
   readonly short: string;
   readonly words: string;
 }
@@ -130,6 +130,13 @@ export const LISTED_BY_READER_MARK: ActivityMark = {
   short: 'Listed by you',
   words: 'Counted because you listed it',
 };
+/* Said on a passing check when the scan did not read all of the session's work: a pass of what was read is
+   not a pass of the subagents or calls that were not. */
+export const INCOMPLETE_PASS_MARK: ActivityMark = {
+  icon: 'incomplete',
+  short: 'May not cover subagent work',
+  words: 'Passed, but some subagent work was not read, so the pass may not cover it',
+};
 export const LAST_TURN_MARK = { short: 'Last turn', words: 'from the last turn' };
 export const MARK_LEGEND = [
   RESULT_MARKS.unrecorded,
@@ -138,6 +145,7 @@ export const MARK_LEGEND = [
   STALE_MARK,
   EARLIER_FAILED_MARK,
   LISTED_BY_READER_MARK,
+  INCOMPLETE_PASS_MARK,
 ];
 
 /* A tier 2 CI read or a tier 3 command, drawn with the words the server composed for it: a CI read says
@@ -273,6 +281,58 @@ function humanLabel(value: string): string {
   return words ? (words[0] ?? '').toUpperCase() + words.slice(1) : 'Work';
 }
 
+/* A count is used only as a whole positive number; a fraction or a negative reads as nothing. */
+function wholeCount(value: unknown): number {
+  const n = nextNumber(value);
+  return Number.isInteger(n) && (n as number) > 0 ? (n as number) : 0;
+}
+
+/* How much of a session's work the scan did not read: the subagent transcripts left out and the calls whose
+   effect on files was not read. Zero on both is a session read in full, and an absent count is the same. */
+export function unreadWork(scan: Row | null | undefined): {
+  readonly subagents: number;
+  readonly calls: number;
+} {
+  if (!scan || typeof scan !== 'object') return { subagents: 0, calls: 0 };
+  return {
+    subagents: wholeCount(scan['subagent_transcripts_unread']),
+    calls: wholeCount(scan['unread_calls']),
+  };
+}
+
+/* "2 subagents and 4 calls were not read", or one kind alone; empty where all of it was read. */
+function unreadSentence(scan: Row | null | undefined): string {
+  const { subagents, calls } = unreadWork(scan);
+  const parts = [
+    subagents ? `${String(subagents)} ${subagents === 1 ? 'subagent' : 'subagents'}` : '',
+    calls ? `${String(calls)} ${calls === 1 ? 'call' : 'calls'}` : '',
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return `${parts.join(' and ')} ${subagents + calls === 1 ? 'was' : 'were'} not read`;
+}
+
+/* A passing check gets one more mark when the scan left subagent transcripts unread, so Full activity does not
+   show a bare "Passed" for a session whose subagent work was not read. Only a pass: a failure stands whatever
+   else was unread, and a check with no recorded result claims nothing to qualify. Unread calls get no mark: each
+   one is recorded as a change, so a pass before it already carries the stale mark and a pass after it saw it. */
+export function incompletePass(row: WorkRow, scan: Row | null | undefined): WorkRow {
+  const { subagents } = unreadWork(scan);
+  if (!subagents) return row;
+  const head = row.head;
+  if (!('check' in head) || !head.check || head.check.result !== 'passed') return row;
+  const mark: ActivityMark = {
+    ...INCOMPLETE_PASS_MARK,
+    words: `Passed, as the tool reported, but ${unreadSentence({ subagent_transcripts_unread: subagents })}, so this may not cover subagent work`,
+  };
+  return {
+    ...row,
+    head: {
+      ...head,
+      check: { ...head.check, marks: [...head.check.marks, mark] },
+    },
+  };
+}
+
 /* What the whole scan found, from the counts `claude_tool_reports` publishes beside the rows. Every figure is
    the full scan, never the listed rows: a dropped entry must not turn into "no check" or into a reassurance. A
    background launch is named, because a background run records no result and a sentence that said no check
@@ -295,8 +355,10 @@ export function checkScan(scan: Row | null | undefined): string {
   /* The file where the reader lists checks was written by the session, so none of its entries counted. Said
      whatever else was found, because a reader who listed a command is owed the reason it read as a command. */
   const listing = scan['reader_checks_written'] === true ? ` ${LISTING_WRITTEN}` : '';
+  /* Said whatever else the scan found, so "no check ran" never stands for work that was not read. */
+  const unread = unreadSentence(scan);
   if (!runs && !background && !written && !other && !outside && !pulls && !skills) {
-    return `No check ran in the part of the transcript read.${listing}`;
+    return `No check ran in the part of the transcript read${unread ? `; ${unread}` : ''}.${listing}`;
   }
   /* The latest results, always, so a failure is never left for the listed rows alone to carry; the files are a
      sentence of their own, so they never read as a latest-run result. */
@@ -326,6 +388,7 @@ export function checkScan(scan: Row | null | undefined): string {
     (more
       ? ` Failures are listed first, and ${String(more)} more are counted and not listed.`
       : '') +
+    (unread ? ` ${unread.replace(/^./, (c) => c.toUpperCase())}.` : '') +
     listing
   );
 }
@@ -592,7 +655,7 @@ export function workList(input: WorkListInput): WorkList {
     const stamp = nextNumber(entry.at);
     const n = numbers.get(entry);
     const copied = readingCopied(entry);
-    return {
+    const row: WorkRow = {
       entry,
       n: n ?? null,
       head:
@@ -632,6 +695,7 @@ export function workList(input: WorkListInput): WorkList {
       ),
       add: later.has(entry),
     };
+    return incompletePass(row, source.scan);
   });
   /* Where the words' window opens, a message of the reader's should sit: the latest one at or before the save
      for typed words, the prompt itself for adopted ones. A window at the save time is typed words with no
