@@ -38,6 +38,31 @@ class TheRecordSaysHowEachRunOfACheckRan(test_claude_checks.ClaudeChecksTestCase
         check = self.only_check()
         self.assertEqual([False], [run["piped"] for run in check["runs"]])
 
+    def test_a_pipe_later_in_the_call_is_not_the_checks_own(self) -> None:
+        # Review, 2026-10-30: the row says "piped" of the check, so only the check's own
+        # pipeline counts, not a pipe in a later command of the same call.
+        self.session.bash("node --test tests/game.test.js && git log --oneline | head -3", COUNTS)
+        check = self.only_check()
+        self.assertEqual([False], [run["piped"] for run in check["runs"]])
+
+    def test_a_check_another_pipes_into_is_piped(self) -> None:
+        self.session.bash("printf '' | node --test tests/game.test.js", COUNTS)
+        check = self.only_check()
+        self.assertEqual([True], [run["piped"] for run in check["runs"]])
+
+    def test_a_narrower_failure_a_later_pass_covers_is_not_a_run_of_the_pass(self) -> None:
+        # Review, 2026-10-30: the covered failure joins the pass's history for its result, and
+        # the pass ran once, so its row must not say it ran twice.
+        self.session.bash(
+            "python3 -m unittest tests.test_a.T.test_x",
+            "Ran 1 test in 0.01s\n\nFAILED (failures=1)",
+            is_error=True,
+        )
+        self.session.bash("python3 -m unittest tests.test_a", "Ran 4 tests in 0.01s\n\nOK")
+        passed = [check for check in self.checks() if check["result"] == "passed"]
+        self.assertEqual(1, len(passed), self.checks())
+        self.assertEqual(1, len(passed[0]["runs"]))
+
     def test_the_runs_reach_the_published_fact(self) -> None:
         self.session.bash("node --test tests/game.test.js", COUNTS)
         event = self.only_check()
@@ -100,7 +125,49 @@ class AReadingIsGivenTheRunFactsAndAskedToJudgeThem(base.AClaudeCodeReadingProdu
     def test_the_header_asks_the_model_to_judge_a_run_from_those_facts(self) -> None:
         prompt = self._prompt(check_with_runs((100.0, True)))
         self.assertIn(reading.RUN_FACTS_RULE, prompt)
-        self.assertNotIn("run count or piping", prompt)
+
+    def test_counts_still_prove_no_run_count_where_a_row_states_no_runs(self) -> None:
+        # Review, 2026-10-30: a check recorded before this build, or another harness's, carries no
+        # runs, and nothing else stops its counts being read as one unpiped run.
+        prompt = self._prompt(base.check_fact(result="passed", at=100.0))
+        self.assertRegex(
+            prompt, r"Counts prove no untested toggle, scorekeeping.*run count or piping"
+        )
+
+    def test_the_run_words_never_take_the_commands_room(self) -> None:
+        # Review, 2026-10-30: a failed check with every flag clipped its command to nothing once
+        # the run words joined the capped suffix, and fell out of the citable menu.
+        fact = base.check_fact(
+            result="failed",
+            result_source="marker",
+            summary="python3 -m pytest tests/test_board.py::test_a_full_board_is_a_draw -q",
+            earlier_failed=True,
+            before_last_change=True,
+            listed_by_reader=True,
+            read_incomplete=True,
+            at=100.0,
+        )
+        cap = reading.LEDGER_SUMMARY_CAP_CHARS
+        without = reading._tool_report_summary(fact, cap, window_start=50.0)
+        with_runs = reading._tool_report_summary(
+            {**fact, "runs": [{"at": 60.0 + n, "piped": False} for n in range(3)]},
+            cap,
+            window_start=50.0,
+        )
+        self.assertIn(reading.ran_words(3, 0), with_runs)
+        self.assertTrue(reading._check_text({"summary": without}).strip())  # type: ignore[typeddict-item]
+        self.assertEqual(
+            reading._check_text({"summary": without}),  # type: ignore[typeddict-item]
+            reading._check_text({"summary": with_runs}),  # type: ignore[typeddict-item]
+        )
+        ledger = reading.build_ledger(
+            [{**fact, "runs": [{"at": 60.0 + n, "piped": False} for n in range(3)]}],
+            "claude",
+            "s1",
+            tool_output={},
+            window_start=50.0,
+        )
+        self.assertEqual(["check-1"], [row["id"] for row in ledger if reading._citable(row)])
 
     def test_a_check_with_no_run_facts_says_nothing_of_its_runs(self) -> None:
         # An older fact, or another harness's check, carries no runs: nothing is said rather than

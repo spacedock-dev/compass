@@ -876,7 +876,10 @@ and preserve all 81 selected citation joins and 34 questions. Individually check
 transfer is prospective preparation requiring independent source admission, not a qualification
 pass or measured model improvement. Earlier failed results and marks remain unchanged.
 
-The run-once question also retains its original scope and expectation. A latest-only check
+Superseded 2026-10-30 by
+[the DEC-29 amendment](#amended-2026-10-30-owner-a-line-about-how-a-check-ran-is-judged-from-the-records-facts-about-that-run)
+(owner ruling): a line about how a check ran is judged from the record's facts about that run. The rest of
+this paragraph is the earlier ruling, kept as it was. The run-once question also retains its original scope and expectation. A latest-only check
 does not establish execution cardinality across the saved interval. Changing that question
 to a latest-direction interval requires the interval to be declared before outputs, complete
 recorded execution evidence for it and fresh source-only adjudication. No global intent window
@@ -1371,7 +1374,11 @@ fails when that list and they drift, as the page's test does for its own.
 
 The owner approved this correction on 2026-10-30, to land before the tenth Claude Code qualification run,
 so that run measures a corrected producer. It adds one guard and pins one that was already built. Neither
-reads English for a keyword, and neither changes the prompt, what a reading sends or the header's bytes.
+adds a word rule of its own, and neither changes the prompt, what a reading sends or the header's bytes.
+Guard (i) does reuse one existing rule that reads the line's words, as the next paragraphs say.
+
+The approval, as relayed from the owner: a "not reached" answer on a line stands only when it "cites work
+actually in progress (a recorded entry showing the work is underway after the line's window)".
 
 A `not reached` line needs its work shown. `reading._unfinished_shown`, which `resolve` applies after
 `_while_running`, lets `not reached at this stop` stand on an outcome line only when the record shows that
@@ -1380,9 +1387,25 @@ still in flight after the latest cited entry, or a check or write recorded after
 the line. The last two are the test `_while_running` already uses
 ([a running turn is unfinished](#amended-2026-10-21-a-running-turn-is-unfinished)), except that here the
 recorded writes and checks include the ones no grant sent, read from the facts the way the record-settles
-guard reads them. A press with no tool-output grant carries no write, and without this every `not reached`
-on it would fall. Nothing more is sent. Otherwise the line
-reads `not verifiable`, its explanation is dropped and its token is `no-work-shown`. This applies
+guard reads them. Nothing more is sent.
+
+This is looser than the approval's words, deliberately. The approval asks for cited work, and the code
+also keeps a `not reached` the record backs without a citation: a call in flight, or a later check or write
+that bears on the line. A call in flight has no entry until its result arrives, so it can never be cited.
+A press with no tool-output grant sends no write or check at all, so the model cannot cite one there, and
+requiring a citation would drop every `not reached` on such a press, however plainly the record shows the
+work going on. The looser test is the running-turn guard's, which already ruled what work going on means.
+
+`_bears_on` reads the line's own words. A line that names a path is borne on only by a check whose command
+names it or a write to it, and a line that claims a kind of check's result ("the tests pass") only by a
+check of that kind. A line that does neither is borne on by any later work. So whether a `not reached`
+keeps depends partly on how the line is worded. That is the 2026-10-21 rule, unchanged.
+[The closed lists](#the-closed-lists) record the 2026-09-30 rejection of keyword overlap as proof that a
+check covers a line. That rejection is about a verdict resting on such a match, and here the match only
+decides whether a `not reached` the model gave survives; it never creates or raises a verdict.
+
+A `not reached` the record does not back reads `not verifiable`, its explanation is dropped and its token
+is `no-work-shown`. This applies
 [the 2026-10-07 clarification](#clarified-2026-10-07-known-applicability-and-an-actual-claim): a pending
 item whose applicability is unknown cannot establish `not reached`, and a message saying work is coming
 does not show that work is under way. The Goal is left alone, because it has no narrower meaning than the
@@ -1415,8 +1438,7 @@ guard (i):
   later message) is changed by neither guard. The owner has since ruled that such a line is judged from
   the record's facts about the run
   ([DEC-29's 2026-10-30 amendment](#amended-2026-10-30-owner-a-line-about-how-a-check-ran-is-judged-from-the-records-facts-about-that-run)).
-  That ruling changes what the line asks, not this run's answer. Its mark is for the marker to revisit
-  under the ruling, never against an output already seen.
+  The question is re-adjudicated blind under the 2026-10-30 ruling.
 - Synthetic case `957ba71d`'s claims `consistent` in repeat 2 is changed by neither guard, because the
   claims question is outside both.
 
@@ -1424,7 +1446,8 @@ With both guards in place, every ninth repeat would still have failed, on `a3c76
 against the marks the ninth run was scored with.
 
 Rule 7 meets the run-facts ruling here. A line about how a check ran rests on the record's facts about that
-run: the run count inside the window, whether its call piped, and the output the tier allows. A recorded
+run: the run count inside the window, whether its own pipeline piped, and the output the tier allows. A
+row that states no runs keeps the older warning that counts prove neither run count nor piping. A recorded
 fact that contradicts the line is a departure, as any contradiction is. The facts and the header sentence
 belong to DEC-29, which owns what a command's run may show.
 
@@ -8393,38 +8416,45 @@ records what it does to the shape contract. It supersedes the last paragraph of
 [the 2026-10-07 clarification](#clarified-2026-10-07-known-applicability-and-an-actual-claim), which kept such a
 line on its original expectation because a check published only its latest run.
 
-The facts are the ones the record already holds. Each run of a check now keeps its time and whether its call piped
-any output, and the published check lists them as `runs`, oldest first. Only the newest 16 are kept, because a
-fact goes to the page and the history store and needs a bound. Before this, a check collapsed every run into its
-latest one, so the record could not say how many times it ran. The reading's row for the check says how many of
-those runs fall inside the window and how many of them piped, in Compass's words: "ran once in the window read,
-not piped", or "ran 2 times in the window read, 1 piped". Where 16 runs are listed and all of them are inside
-the window, the row says "at least", because older runs were cut. The output the check printed already reaches
-the reading under the tier and the grant DEC-23 sets. Nothing new is sent beyond those words.
+The run facts are new. Before this, a check collapsed every run into its latest one, so the record could not
+say how many times it ran. Each run of a check now keeps its time and whether the check's own pipeline piped,
+into the next command or from the one before it, and the published check lists them as `runs`, oldest first.
+Only the check's own runs are listed: a narrower failure that a later pass covers joins that pass's history for
+its result, and its runs stay its own. Only the newest 16 are kept, because the fact reaches the page and needs
+a bound. The session history store keeps no check fact at all (`semantic_history.is_check_fact`), so `runs` is
+not stored there either.
 
-The trusted header no longer tells the model that counts prove no run count or piping. It says instead: "A line
-on how a check ran rests on its row's run facts and output; a fact contradicting it is departure." That
-sentence is the whole of the rule. No code reads the line for "once" or "unpiped", so the 2026-09-30 rejection of
-keyword relevance stands, and whether a line is about how a check ran stays the model's judgement. The sentence
-is 86 bytes. It moved no selected menu row on the ten frozen ninth-run cases. The header digests pinned in
-`test_reading.py` were re-pinned for it.
+The reading's row for the check says how many of those runs fall inside the window and how many of them piped,
+in Compass's words: "ran once in the window read, not piped", or "ran 2 times in the window read, 1 piped".
+Where 16 runs are listed and all of them are inside the window, the row says "at least", because older runs
+were cut. The run words have room of their own: they never shorten the command below the 180 characters it had
+before, so a check with every flag keeps its command, stays citable, and is still read by the rules that match
+a line to a check. The output the check printed already reaches the reading under the tier and the grant
+DEC-23 sets. Nothing new is sent beyond those words.
+
+The trusted header keeps its warning that counts prove no run count or piping, because a check recorded before
+this build, and another harness's check, state no runs. It adds: "Where a row states its runs, a line on how
+that check ran rests on them and its output; a fact contradicting it is departure." That sentence is the whole
+of the rule. No code reads the line for "once" or "unpiped", so the 2026-09-30 rejection of keyword relevance
+stands, and whether a line is about how a check ran stays the model's judgement. The sentence is 126 bytes. It
+moved no selected menu row on the ten frozen ninth-run cases. The header digests pinned in `test_reading.py`
+were re-pinned for it, and three tests with a tight byte budget gained the same 126 bytes. A changed header
+changes every request, so the tenth packet must be re-frozen and its request digests rebuilt from the new
+prompts; the parser stamp moves too, because `project_context.py` and `reading.py` changed.
 
 What it does not do:
 
 - A check recorded before this build, and another harness's check, carry no `runs`. The row then says nothing
-  about runs rather than guessing one unpiped run.
-- "Piped" means the call held a pipe anywhere, which is the same test the attribution rules use to withhold a
-  piped check's result. It does not say which command the pipe fed.
+  about runs rather than guessing one unpiped run, and the header's warning applies to it.
+- "Piped" is about the check's own pipeline. It does not say what the pipe fed, and a pipe in another command
+  of the same call is not counted.
+- The same command run from another folder, or with other arguments, is another check, so each row can say
+  "once" while the session ran similar commands more often. That understates, which is the cautious direction.
 - Whether the agent reported the counts is still read from the agent's messages, by
   [the 2026-10-01 rule](#amended-2026-10-01-a-line-about-what-the-agent-tells-you-cannot-be-shown).
 
-What it means for the ninth run's measured failure. Case `a3c76f89` line_3 was marked abstain under the old
-ruling and answered `consistent` in all three repeats. Its own transcript, read with this build, holds two runs
-of `node --test tests/game.test.js`, both unpiped, and the frozen case's window covers both. The row therefore
-reads "ran 2 times in the window read, none piped", which contradicts "run once". The record never showed
-piping, so the contradicting fact is the run count, not the pipe. The mark is the marker's to revisit under this
-ruling, after it and before any output; nothing here changes a mark. The facts are held by
-`test_check_run_facts.py`.
+The ninth run's question on case `a3c76f89` line_3 is re-adjudicated blind under the 2026-10-30 ruling. This
+record states no expected answer for it. The facts are held by `test_check_run_facts.py`.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
