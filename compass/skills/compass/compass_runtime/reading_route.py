@@ -442,22 +442,31 @@ def _tool_output_sentence(provider: str, harness: str, where: str) -> str:
         return ""
     # The agent's messages go whether or not tool output may, and an agent
     # repeats what its commands printed, so each form says so (review,
-    # 2026-10-03): "not sent" must not read as "never leaves".
+    # 2026-10-03): "not sent" must not read as "never leaves". Where no agent
+    # message is sent (Codex), nothing can quote it.
+    quoted = harness in AGENT_MESSAGE_HARNESSES
     if not where:
-        return (
-            "Tool output is not sent, because Compass cannot name where it would go, though "
-            "the agent's messages may quote it."
+        return "Tool output is not sent, because Compass cannot name where it would go" + (
+            ", though the agent's messages may quote it." if quoted else "."
         )
     commands = (
         "Other commands go too, with their output"
         if same_vendor(provider, harness)
         else "Other commands go with their exit status and no output"
     )
+    # A created pull request and a skill are read from Claude Code's own records alone; a Codex
+    # rollout records neither (`project_context._CODEX_EDGES`).
+    claude_only = (
+        "the paths of the files it wrote, the repository and number of a pull request it created, "
+        "and the names of skills it used"
+        if harness == "claude"
+        else "and the paths of the files it wrote"
+    )
     return (
         "Tool output is included by default: a check's command, result and last "
-        f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, the paths of the files it "
-        "wrote, the repository and number of a pull request it created, and the names of skills "
-        f"it used; agent messages may quote it. {commands}."
+        f"{TOOL_OUTPUT_TAIL_CHARS} characters of output as printed, {claude_only}"
+        + ("; agent messages may quote it" if quoted else "")
+        + f". {commands}."
     )
 
 

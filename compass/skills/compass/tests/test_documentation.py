@@ -1769,10 +1769,10 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
         }
         self.assertEqual(
-            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 4, "transcripts.py": 2},
+            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 5, "transcripts.py": 2},
             found,
         )
-        self.assertIn("nine expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn("ten expressions in `compass_runtime` reach an input payload", self.FLAT)
         for named in (
             "`claude_data.input_summary`",
             "`transcripts.codex_plan`",

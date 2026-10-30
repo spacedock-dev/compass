@@ -106,6 +106,40 @@ class Rollout:
         )
         return item_id
 
+    def item_at(self, item: dict[str, Any], started: int, completed: int) -> str:
+        """An item whose start and end are given, for calls that overlap."""
+        self.items += 1
+        item_id = f"item_{self.items:03d}"
+        self.ms = max(self.ms, completed)
+        self.rows.append(
+            {
+                "timestamp": dt.datetime.fromtimestamp(completed / 1000, tz=dt.UTC)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "thread_id": SID,
+                    "turn_id": "turn-1",
+                    "started_at_ms": started,
+                    "completed_at_ms": completed,
+                    "item": {"id": item_id, **item},
+                },
+            }
+        )
+        return item_id
+
+    @staticmethod
+    def command_item(script: str, output: str, cwd: str, exit_code: Any = 0) -> dict[str, Any]:
+        return {
+            "type": "CommandExecution",
+            "command": ["/bin/bash", "-lc", script],
+            "cwd": cwd,
+            "exit_code": exit_code,
+            "status": "completed" if exit_code == 0 else "failed",
+            "aggregated_output": output,
+        }
+
     def command(
         self,
         script: str,
@@ -170,7 +204,7 @@ class Rollout:
             }
         )
 
-    def function_call(self, name: str, arguments: dict[str, Any]) -> None:
+    def function_call(self, name: str, arguments: dict[str, Any] | str) -> None:
         self._tick()
         self.rows.append(
             {
@@ -179,7 +213,7 @@ class Rollout:
                 "payload": {
                     "type": "function_call",
                     "name": name,
-                    "arguments": json.dumps(arguments),
+                    "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments),
                     "call_id": f"call_{len(self.rows)}",
                 },
             }
@@ -257,11 +291,45 @@ class AFailingTestIsShownAsAFailedCheck(CodexChecksTestCase):
         self.assertEqual("passed", self.only_check()["result"])
 
     def test_a_negative_exit_is_ran_with_no_result(self) -> None:
-        # A process Codex killed or timed out: never a pass and never a failure (DEC-23 item 1).
-        self.rollout.command("pytest -q", "", exit_code=-1)
+        # A process Codex killed or timed out: never a pass and never a failure (DEC-23 item 1),
+        # whatever its last line says.
+        self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=-1)
         check = self.only_check()
         self.assertEqual("not-recorded", check["result"])
         self.assertNotIn("result_source", check)
+
+
+class AnUnknownExitStatusRecordsNoResult(CodexChecksTestCase):
+    """A negative, missing or non-integer exit code is an unknown status: the summary line a
+    killed process printed is never read as its result."""
+
+    def results(self) -> list[str]:
+        return [row["result"] for row in self.of("check")]
+
+    def test_a_killed_pass_summary_is_no_result(self) -> None:
+        self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=-9)
+        self.assertEqual(["not-recorded"], self.results())
+
+    def test_a_killed_failure_summary_is_no_result(self) -> None:
+        self.rollout.command("pytest -q", "1 failed in 0.2s", exit_code=-15)
+        self.assertEqual(["not-recorded"], self.results())
+
+    def test_a_missing_exit_code_is_no_result(self) -> None:
+        item = Rollout.command_item("pytest -q", "3 passed in 0.1s", "file://" + str(self.cwd))
+        del item["exit_code"]
+        self.rollout.item(item)
+        self.assertEqual(["not-recorded"], self.results())
+
+    def test_a_null_exit_code_in_a_chain_is_no_result_for_either_check(self) -> None:
+        self.rollout.item(
+            Rollout.command_item(
+                "ruff check . && pytest -q",
+                "All checks passed!\n3 passed in 0.1s",
+                "file://" + str(self.cwd),
+                exit_code=None,
+            )
+        )
+        self.assertEqual(["not-recorded", "not-recorded"], self.results())
 
     def test_a_failure_line_with_exit_zero_is_never_a_pass(self) -> None:
         self.rollout.command("pytest -q | tail -1", "1 failed in 0.2s", exit_code=0)
@@ -408,6 +476,96 @@ class ToolsCompassCannotReadAgeAPass(CodexChecksTestCase):
         self.assertEqual(1, self.read()[1]["unread_calls"])
 
 
+class AChangeThatOverlapsAPassAgesIt(CodexChecksTestCase):
+    """A change is dated by its end and a check by its start, so a change still running when a
+    pass began ages it: dating both by their starts read a pass as current while a `sed -i` begun
+    a second earlier went on rewriting the file for twenty seconds after it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.base = self.rollout.ms
+        self.uri = "file://" + str(self.cwd)
+
+    def at(self, item: dict[str, Any], started: int, completed: int) -> str:
+        return self.rollout.item_at(item, self.base + started, self.base + completed)
+
+    def a_pass(self, started: int = 2000, completed: int = 10000) -> str:
+        return self.at(
+            Rollout.command_item("pytest -q", "3 passed in 0.1s", self.uri), started, completed
+        )
+
+    def assert_aged(self, call: str) -> None:
+        check = self.only_check()
+        self.assertIs(True, check["before_last_change"])
+        self.assertIs(True, check["changed_after"])
+        press = project_context.codex_check_press(
+            self.config, str(self.path), goal_texts=self.goal_texts
+        )
+        self.assertIn((call, "pytest -q"), press.changed_after)
+
+    def assert_current(self) -> None:
+        check = self.only_check()
+        self.assertIs(False, check["before_last_change"])
+        self.assertIs(False, check["changed_after"])
+
+    def test_a_command_begun_before_a_pass_and_ended_after_it_ages_it(self) -> None:
+        call = self.a_pass()
+        self.at(Rollout.command_item("sed -i s/a/b/ src/x.py", "", self.uri), 1000, 30000)
+        self.assert_aged(call)
+
+    def test_a_patch_begun_before_a_pass_and_ended_after_it_ages_it(self) -> None:
+        call = self.a_pass()
+        self.at(
+            {
+                "type": "FileChange",
+                "changes": {self.file("src/x.py"): {"type": "update", "unified_diff": "x"}},
+                "status": "completed",
+            },
+            1000,
+            30000,
+        )
+        self.assert_aged(call)
+
+    def test_a_shell_open_across_a_pass_ages_it(self) -> None:
+        call = self.a_pass(5000, 6000)
+        self.at(Rollout.command_item("bash", "", self.uri), 1000, 60000)
+        self.assert_aged(call)
+
+    def test_a_change_inside_the_pass_still_ages_it(self) -> None:
+        call = self.a_pass()
+        self.at(Rollout.command_item("sed -i s/a/b/ src/x.py", "", self.uri), 5000, 6000)
+        self.assert_aged(call)
+
+    def test_a_change_ended_before_the_pass_began_does_not(self) -> None:
+        self.at(Rollout.command_item("sed -i s/a/b/ src/x.py", "", self.uri), 500, 1500)
+        self.a_pass()
+        self.assert_current()
+
+
+class InputToARunningShellAgesAPass(CodexChecksTestCase):
+    """Text written into a running process may change files, and Compass does not read what it
+    did: it ages every earlier pass, as a tool whose effect is not read does."""
+
+    def test_input_written_after_a_pass_ages_it(self) -> None:
+        self.rollout.function_call("exec_command", {"cmd": "bash", "tty": True})
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.rollout.function_call("write_stdin", {"session_id": 1, "chars": "sed -i s/a/b/ x\n"})
+        self.assertIs(True, self.only_check()["before_last_change"])
+
+    def test_arguments_that_do_not_parse_age_it(self) -> None:
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.rollout.function_call("write_stdin", "{not json")
+        self.assertIs(True, self.only_check()["before_last_change"])
+
+    def test_an_empty_poll_does_not(self) -> None:
+        self.rollout.function_call("exec_command", {"cmd": "npm test", "yield_time_ms": 1000})
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.rollout.function_call("write_stdin", {"session_id": 1, "chars": ""})
+        check = self.only_check()
+        self.assertIs(False, check["before_last_change"])
+        self.assertEqual(0, self.read()[1]["unread_calls"])
+
+
 class SubagentsAreNotRead(CodexChecksTestCase):
     def test_a_pass_in_a_session_that_ran_a_subagent_is_read_incomplete(self) -> None:
         self.rollout.subagent()
@@ -418,6 +576,30 @@ class SubagentsAreNotRead(CodexChecksTestCase):
         self.rollout.function_call("spawn_agent", {"message": "go"})
         self.rollout.command("pytest -q", "3 passed in 0.1s")
         self.assertIs(True, self.only_check()["read_incomplete"])
+
+    def test_any_subagent_call_in_a_clipped_read_marks_it(self) -> None:
+        # The spawn is outside the window read; a later call to the same child is inside it.
+        for name in (
+            "wait_agent",
+            "send_message",
+            "followup_task",
+            "interrupt_agent",
+            "close_agent",
+        ):
+            with self.subTest(name=name):
+                self.setUp()
+                self.rollout.function_call("spawn_agent", {"message": "go"})
+                for i in range(60):
+                    self.rollout.command(f"ls -la dir{i}", "x" * 400)
+                self.rollout.command("pytest -q", "3 passed in 0.1s")
+                self.rollout.function_call(name, {"target": "worker"})
+                self.rollout.save(self.path)
+                entries, scan = project_context.codex_tool_reports(
+                    self.config, str(self.path), SHORT, max_bytes=16 * 1024
+                )
+                self.assertIsNotNone(scan.get("reads_from"))
+                (check,) = [row for row in entries if row["subject"] == "check"]
+                self.assertIs(True, check["read_incomplete"])
 
     def test_a_failure_stays_a_failure(self) -> None:
         self.rollout.subagent()
@@ -504,6 +686,31 @@ class ACiReadUsesTheStructuredExitCode(CodexChecksTestCase):
         )
         self.assertTrue(press.tails)
         self.assertFalse(any("Exit code" in tail for tail in press.tails.values()))
+
+
+class ATimeIsReadOnlyWhenFinite(CodexChecksTestCase):
+    """A time a browser could not parse never reaches the published payload."""
+
+    def test_a_time_that_is_not_a_finite_millisecond_count_is_not_read(self) -> None:
+        for value in (float("inf"), float("nan"), 1e300, 2**53, 0, -5):
+            with self.subTest(value=value):
+                self.assertIsNone(project_context._codex_ms(value))
+        self.assertEqual(1.5, project_context._codex_ms(1500))
+
+    def test_the_record_timestamp_stands_in(self) -> None:
+        for value in (float("inf"), float("nan"), 1e300):
+            with self.subTest(value=value):
+                self.setUp()
+                self.rollout.command("pytest -q", "1 failed in 0.2s", exit_code=1)
+                row = self.rollout.rows[-1]
+                row["payload"]["started_at_ms"] = value
+                row["payload"]["completed_at_ms"] = value
+                entries, scan = self.read()
+                check = next(row for row in entries if row["subject"] == "check")
+                self.assertEqual(
+                    dt.datetime.fromisoformat(row["timestamp"]).timestamp(), check["at"]
+                )
+                json.dumps([entries, scan], allow_nan=False)
 
 
 class NoClaudeCodeTrailerIsStripped(unittest.TestCase):
@@ -605,6 +812,24 @@ class TheGatesAdmitCodex(unittest.TestCase):
         other = reading_route._tool_output_sentence("claude", "codex", "Anthropic")
         self.assertIn("Other commands go too, with their output", own)
         self.assertIn("Other commands go with their exit status and no output", other)
+
+    def test_no_codex_sentence_names_what_codex_does_not_record(self) -> None:
+        # Codex sends no agent messages, and its record names no pull request or skill.
+        for provider, where in (("codex", "OpenAI"), ("claude", "Anthropic"), ("codex", "")):
+            with self.subTest(provider=provider, where=where):
+                sentence = reading_route._tool_output_sentence(provider, "codex", where)
+                self.assertTrue(sentence)
+                for word in ("pull request", "skill", "agent messages", "agent's messages"):
+                    self.assertNotIn(word, sentence)
+
+    def test_claude_code_sentences_still_name_them(self) -> None:
+        sentence = reading_route._tool_output_sentence("claude", "claude", "Anthropic")
+        for word in ("pull request", "skills", "agent messages may quote it"):
+            self.assertIn(word, sentence)
+        self.assertIn(
+            "agent's messages may quote it",
+            reading_route._tool_output_sentence("claude", "claude", ""),
+        )
 
 
 if __name__ == "__main__":

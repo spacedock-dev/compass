@@ -3619,10 +3619,15 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   or `zsh` by basename), `-c` or `-lc`, and the script, which is then read exactly as a Claude
   Code `Bash` command is. A call's time is `started_at_ms` and its result's `completed_at_ms`.
   Codex writes the item only once the command ends, so a command still running has no entry.
+  A change (a command that may change files, a patch, a tool whose effect is not read) is dated by
+  its `completed_at_ms` and a check by its `started_at_ms`, so a change still running when a pass
+  began ages it. Dating both by their starts read a pass as current while a `sed -i` begun a
+  second before it went on for twenty seconds after; dating both by their ends would read a change
+  made while the check ran as earlier than it.
 - `exit_code` is the call's status, as Claude Code's error flag is: zero passes,
-  a positive code fails. A negative code, a process Codex killed or timed out, records no result
-  (item 1: an unknown status is never success, and a killed run is not a failure either, the Pi
-  timeout precedent). A `gh pr checks` reads its failure from that structured code, exit 1 alone,
+  a positive code fails. A negative code, a process Codex killed or timed out, and a missing or
+  non-integer one record no result, whatever the output's last line says (item 1: an unknown
+  status is never success, and a killed run is not a failure either, the Pi timeout precedent). A `gh pr checks` reads its failure from that structured code, exit 1 alone,
   never from text Compass writes into the output.
 - `cwd` is a `file://` URI. It is read as a path only with an empty host and no
   percent-encoding, query or fragment, as all 70,012 recorded items are; anything else leaves the
@@ -3635,13 +3640,17 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   `unified_diff` are file content and are never read (item 5).
 - Some tools' effect on files is not read: the `js` tool, whatever its `readOnlyHint` says, since it
   runs Node with filesystem reach and every recorded call of it says `true`; any connector call
-  whose `readOnlyHint` is not `true`; and a command in any other shape. Each ages every earlier pass
+  whose `readOnlyHint` is not `true`; a command in any other shape; and a `write_stdin` call that
+  sends input to a running command, or whose arguments do not parse (an empty one only polls for
+  output). Each ages every earlier pass
   and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool only reads is
   what would produce a false `consistent`.
 - The root rollout alone is read. A child thread writes its commands into its own
-  rollout, about 44% of all recorded commands, so when the root names one (a `SubAgentActivity` or
-  `CollabAgentToolCall` item, or a `spawn_agent` call) every pass is read as incomplete and never
-  supports a `consistent`. A child's failure is not listed. Reading the children is a later build.
+  rollout, about 44% of all recorded commands, so a pass is marked incomplete when the part read
+  names a subagent (a `SubAgentActivity` or `CollabAgentToolCall` item, or a `spawn_agent`,
+  `wait_agent`, `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call) and never
+  supports a `consistent`. A child spawned before a clipped read, with no later call naming it, is
+  not seen. A child's failure is not listed. Reading the children is a later build.
 - A rollout written before 0.149 records no exit status. Its commands are
   not read or counted, and the scan publishes `commands_unreadable` and no count, so the page never
   says no check ran. Where the head names no version, shell calls with no command item say the same.

@@ -2178,12 +2178,15 @@ the check's own segment. Any other command on the same line is a separate comman
 The same ruling, applied to Codex
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)).
 `project_context.codex_tool_reports` reads a Codex session's rollout, codex-cli 0.149 and later, into
-the observed record: each finished command's script (the third word of its `bash -c` or `bash -lc`
-command), its exit code, the folder it ran in and the last 180 characters of its output, and each
+the observed record: each finished command's script (the third word of a `bash`, `sh` or `zsh`
+command with `-c` or `-lc`), its exit code, the folder it ran in and the last 180 characters of its output, and each
 applied patch's paths and kind (added, changed, deleted, moved), never the patch's content or diff.
-The output is read from its last 64 KiB, the window redaction runs over before the tail is cut.
+The output is read from its last 65,536 characters, the window redaction runs over before the tail
+is cut.
 
-A non-zero exit code is a failure, and a negative one, a process Codex killed, records no result. A
+A non-zero exit code is a failure. A negative one, a process Codex killed, and a missing one record
+no result, whatever the output's last line says. A change is dated by when it ended and a check by
+when it began, so a command or patch still running when a pass began ages the pass. A
 command is the check, command or CI read the Claude Code entry above defines, under the same closed
 lists, masking, listing cap and redaction. Claude Code's trailer lines are not stripped and no hook
 rewrite, structured `gitOperation` record or pull request link is read, since Codex writes none of
@@ -2193,9 +2196,10 @@ running has no entry, because Codex writes one only when the command ends.
 
 What is not read is said rather than guessed. A rollout written before 0.149 records no exit status,
 and its commands are not read or counted. A subagent's commands are in its own rollout, which is not
-read, so a pass in a session that delegated is marked incomplete and supports no `consistent`, and a
-subagent's failure is not listed. The `js` tool, any connector call not marked read-only and a
-command in any other shape age every earlier pass, since each may have changed files.
+read, so a pass is marked incomplete when the part read names a subagent (a spawn, or a call that
+waits on, messages, interrupts or closes one) and supports no `consistent`, and a subagent's failure
+is not listed. The `js` tool, any connector call not marked read-only, a command in any other shape
+and input written into a running command age every earlier pass, since each may have changed files.
 
 Where it may go follows the vendor rule above: a Codex reading of a Codex session may be sent every
 command's masked line and redacted tail; a Claude Code reading of one is sent each command's line
@@ -3965,12 +3969,13 @@ The operator-cockpit prototype also reads dispatch evidence:
   its `readOnlyHint`, never its arguments or result. [Tool output in a Codex
   reading](#tool-output-in-a-codex-reading) states its bounds.
 
-These are evidence reads, not command execution. In total, nine expressions in `compass_runtime`
+These are evidence reads, not command execution. In total, ten expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
 DEC-23's named read for the checks a Claude Code session ran is the eighth, and
 [its entry](#tool-output-in-a-claude-code-reading) states its bounds. The ninth is the same
 ruling's read of a Codex session's commands, which is neither an `input` nor an `arguments` read
-and is counted by its own fields.
+and is counted by its own fields. The tenth is that read's one look at a `write_stdin` call's
+`arguments`, parsed only to ask whether its `chars` is empty; nothing of them is kept.
 The prototype has no additional switch that disables just these dispatch reads.
 
 A shape match is a different kind of read from those. It happens in the hook, inside

@@ -4024,6 +4024,9 @@ class _Result(NamedTuple):
     # The harness's own structured exit code, where it records one (Codex's `CommandExecution`).
     # Claude Code records none: its exit code is only ever the `Exit code N` line of the text.
     exit_code: int | None = None
+    # True where the harness records a status that is not known (a Codex exit code that is
+    # negative, missing or not an integer): no line of the output is read as the result.
+    status_unknown: bool = False
 
 
 def _tool_result_blocks(
@@ -5431,6 +5434,10 @@ class _ToolReportTally:
         # ordered by segment instead (`fixes`, `changes_later_in_call`), which
         # is what keeps `black . && pytest` current.
         self.write_calls: list[tuple[float, str]] = []
+        # Codex alone: when each call ended, by call id. A change is dated by its end there and a
+        # check by its start, so a change still running when a pass began ages it (`_changed_at`).
+        self.change_ends: Mapping[str, float] = {}
+        self._newest_writes: tuple[int, tuple[tuple[float, str], ...]] = (0, ())
         # Order of the shell calls that ran, and which of them may change files,
         # for the press alone (`changed_after`); layer 1's fields are untouched.
         self.shell_seq = 0
@@ -5498,10 +5505,28 @@ class _ToolReportTally:
         [amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)
         """
         self.scan["unread_calls"] = self.scan.get("unread_calls", 0) + 1
-        self.write_calls.append((at, call_id))
+        self.write_calls.append((self._changed_at(at, call_id), call_id))
         self.shell_seq += 1
         self.changing_seqs.append(self.shell_seq)
-        self.scan["last_changing_command_at"] = at
+        self._note_change(at, call_id)
+
+    def _changed_at(self, at: float, call_id: str) -> float:
+        """When a call's change is dated: its start on Claude Code, and its end on Codex.
+
+        Codex writes a call only once it ends, and two of its calls can overlap: a `sed -i` begun a
+        second before a pass and ended twenty after it changed files the pass ran against, which its
+        start alone would order before the pass. Dating a change by its start and a check by its end
+        would trade that for the opposite error, a change made while the check ran read as earlier.
+        """
+        return self.change_ends.get(call_id, at) if self.edges is _CODEX_EDGES else at
+
+    def _note_change(self, at: float, call_id: str) -> None:
+        changed = self._changed_at(at, call_id)
+        previous = self.scan["last_changing_command_at"]
+        # Codex's calls are ordered by start, so a later one may have ended first.
+        if self.edges is _CODEX_EDGES and previous is not None:
+            changed = max(previous, changed)
+        self.scan["last_changing_command_at"] = changed
 
     def _add_pull_request(self, at: float, call_id: str, worker: str) -> None:
         """A pull request Claude Code says a ran Bash call created.
@@ -5598,7 +5623,7 @@ class _ToolReportTally:
         if name == CODEX_PATCH_TOOL and removed in ("deleted", "moved"):
             # A patch that took a file away changed the work tree: it ages every earlier pass, and
             # is kept for the press's removals alone, never published as written.
-            self.write_calls.append((at, call_id))
+            self.write_calls.append((self._changed_at(at, call_id), call_id))
             path = _written_path(tool_input.get("file_path"), cwd, self.session_dir)
             if path is not None:
                 self.removed[path] = {"at": at, "record_id": call_id, "kind": removed}
@@ -5620,7 +5645,7 @@ class _ToolReportTally:
     def _record_write(
         self, at: float, call_id: str, tool: str, path: str | None, worker: str
     ) -> None:
-        self.write_calls.append((at, call_id))
+        self.write_calls.append((self._changed_at(at, call_id), call_id))
         if path is None:
             self.scan["outside_paths"] += 1
             return
@@ -5685,14 +5710,20 @@ class _ToolReportTally:
         )
         self.shell_seq += 1
         self._keep_masked_values(call.masked_values)
-        if call.changes():
+        changes = call.changes()
+        # On Codex every call that may change files is dated as a change, fixer or not, since a
+        # call's order by start cannot place one that overlapped a pass (`_changed_at`).
+        dated = changes and self.edges is _CODEX_EDGES
+        if changes:
             self.changing_seqs.append(self.shell_seq)
-            self.scan["last_changing_command_at"] = at
+            self._note_change(at, call_id)
+        if dated:
+            self.write_calls.append((self._changed_at(at, call_id), call_id))
         if call.unbalanced:
             self.scan["not_run"] += 1
             return
         self.scan["shell_calls"] += 1
-        if call.fixers:
+        if call.fixers and not dated:
             self.write_calls.append((at, call_id))
         self._record_removals(call, at, cwd, call_id, text, result)
         for _index, target, start in call.redirect_writes:
@@ -5766,6 +5797,8 @@ class _ToolReportTally:
         text = _without_trailer(text) if result is not None and self.edges.trailers else text
         tail = _redacted(text)[-TOOL_REPORT_TAIL_CHARS:]
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
+        found = self.results.get(call_id)
+        status_unknown = found is not None and found.status_unknown
         # V8: output speaks for a check only when it is the call's one check,
         # background ones counted, and nothing else in the call may print.
         attributable = call.output_attributable()
@@ -5778,7 +5811,12 @@ class _ToolReportTally:
                 outcome, source = "not-recorded", ""
             else:
                 self.scan["check_runs"] += 1
-                if result is None or call.unestablished(index) or call.negated(index):
+                if (
+                    result is None
+                    or status_unknown
+                    or call.unestablished(index)
+                    or call.negated(index)
+                ):
                     outcome, source = "not-recorded", ""
                 else:
                     flag_result = _flag_result(
@@ -5872,7 +5910,7 @@ class _ToolReportTally:
             )
             self._last_added_runs.append((identity, self.runs[identity][-1]))
             added[index] = self.runs[identity][-1]
-        if result is not None:
+        if result is not None and not status_unknown:
             _chain_passes(call, text, added, trailers=self.edges.trailers)
             _ordered_summaries(call, text, added, trailers=self.edges.trailers)
 
@@ -5963,7 +6001,10 @@ class _ToolReportTally:
             outcome, source = "not-recorded", ""
             masked = call.status_masked(index)
             if result is not None and not (
-                call.unestablished(index) or call.negated(index) or masked
+                (found is not None and found.status_unknown)
+                or call.unestablished(index)
+                or call.negated(index)
+                or masked
             ):
                 flag_result = _flag_result(
                     flag,
@@ -6518,8 +6559,28 @@ class _ToolReportTally:
     def _changed_after(self, run: dict[str, Any]) -> bool:
         # `changing_seqs` only ever grows, so the newest decides: with a command per entry the scan
         # of every changing command made the listing quadratic in a session's commands.
-        return bool(run["changes_later_in_call"]) or (
-            bool(self.changing_seqs) and self.changing_seqs[-1] > run["seq"]
+        return (
+            bool(run["changes_later_in_call"])
+            or (bool(self.changing_seqs) and self.changing_seqs[-1] > run["seq"])
+            or (self.edges is _CODEX_EDGES and self._changed_since(run))
+        )
+
+    def _changed_since(self, run: dict[str, Any]) -> bool:
+        """Whether another call's change is dated at or after the run's start (`_changed_at`).
+
+        Order by start cannot place a change that overlapped the run. Only the newest change of two
+        calls is kept, which is all one run's exclusion of its own call needs, so the press stays
+        linear in a session's commands.
+        """
+        count, newest = self._newest_writes
+        if count != len(self.write_calls):
+            ends: dict[str, float] = {}
+            for at, call_id in self.write_calls:
+                ends[call_id] = max(at, ends.get(call_id, at))
+            newest = tuple(sorted(((at, cid) for cid, at in ends.items()), reverse=True)[:2])
+            self._newest_writes = (len(self.write_calls), newest)
+        return next(
+            (at >= run["at"] for at, call_id in newest if call_id != run["record_id"]), False
         )
 
     def _read_incomplete(self, run: dict[str, Any]) -> bool:
@@ -7514,7 +7575,14 @@ _CODEX_SHELL_CALLS = frozenset(
     {"shell", "shell_command", "exec_command", "exec", "local_shell_call"}
 )
 # Delegation: a child thread writes its commands into its own rollout, which this read never opens.
-_CODEX_SPAWN_CALLS = frozenset({"spawn_agent"})
+# Each call that names a child marks it, so a read clipped past the spawn still sees one that a
+# later call waits on, messages or closes (local counts 1,549 `wait_agent`, 753 `send_message`).
+_CODEX_SUBAGENT_CALLS = frozenset(
+    {"spawn_agent", "wait_agent", "send_message", "followup_task", "interrupt_agent", "close_agent"}
+)
+# Input to a process an earlier call left running. What it ran is not read, so it ages a pass;
+# an empty `chars` is a poll for output and changes nothing.
+_CODEX_STDIN_CALL = "write_stdin"
 _CODEX_SUBAGENT_ITEMS = frozenset({"SubAgentActivity", "CollabAgentToolCall"})
 # A command's output may reach about 1 MiB. Redaction runs over the window read, and only the last
 # lines are ever read as a result, so the window is the output's end (p99 measured 65 KB).
@@ -7527,7 +7595,11 @@ def _codex_version(text: object) -> tuple[int, int] | None:
 
 
 def _codex_ms(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+    """Milliseconds since the epoch, read only as a positive count below 2**53: an `Infinity` or
+    `NaN` would otherwise be published, and a browser's `JSON.parse` refuses both."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not (math.isfinite(value) and 0 < value < 2**53):
         return None
     return float(value) / 1000
 
@@ -7551,6 +7623,8 @@ def _codex_cwd(raw: object) -> str:
 class _CodexRead(NamedTuple):
     calls: list[tuple[float, str, str, str, dict[str, Any], str]]
     results: dict[str, _Result]
+    # When each call ended, by call id (`_ToolReportTally._changed_at`).
+    ends: dict[str, float]
     # Child threads the read names, by their own ids where an item carries one.
     subagents: int
     shell_calls: bool
@@ -7563,8 +7637,9 @@ def _codex_command(
     """One `CommandExecution`: its script, folder, exit code and the end of its output.
 
     The script is read as Claude Code's `Bash` command is, through the same parser and lists. A
-    nonzero exit is a failure and a negative one, a process Codex killed or timed out, records no
-    result: an unknown status is never success (item 1 of the ruling `codex_tool_reports` cites).
+    nonzero exit is a failure. A negative one, a process Codex killed or timed out, and a missing or
+    non-integer one record no result whatever the output's last line says: an unknown status is
+    never success (item 1 of the ruling `codex_tool_reports` cites).
     """
     command = item.get("command")
     if not (
@@ -7585,9 +7660,12 @@ def _codex_command(
     }
     code = item.get("exit_code")
     exit_code = code if isinstance(code, int) and not isinstance(code, bool) else None
-    if exit_code is not None and exit_code >= 0:
+    known = exit_code is not None and exit_code >= 0
+    if known:
         block["is_error"] = exit_code != 0
-    found.results[item_id] = _Result(block, ended if ended is not None else at, None, exit_code)
+    found.results[item_id] = _Result(
+        block, ended if ended is not None else at, None, exit_code, status_unknown=not known
+    )
 
 
 def _codex_patch(item: dict[str, Any], item_id: str, at: float, found: _CodexRead) -> None:
@@ -7616,16 +7694,70 @@ def _codex_patch(item: dict[str, Any], item_id: str, at: float, found: _CodexRea
             found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
 
 
+def _codex_stdin(record: dict[str, Any], payload: dict[str, Any], found: _CodexRead) -> None:
+    """A `write_stdin` call that sent input, as a call whose effect is not read, at its record's
+    time. Arguments that do not parse are read as input: a guess that they only polled is what
+    would leave a pass current."""
+    try:
+        arguments = json.loads(payload.get("arguments") or "")
+    except (TypeError, ValueError):
+        arguments = None
+    chars = arguments.get("chars", "") if isinstance(arguments, dict) else None
+    at = _record_timestamp(record)
+    if (chars in ("", None) and isinstance(arguments, dict)) or at is None:
+        return
+    call_id = payload.get("call_id")
+    found.calls.append(
+        (
+            at,
+            "",
+            call_id if isinstance(call_id, str) and call_id else f"stdin:{len(found.calls)}",
+            CODEX_UNREAD_TOOL,
+            {},
+            "",
+        )
+    )
+
+
+def _codex_item(
+    record: dict[str, Any],
+    payload: dict[str, Any],
+    item: dict[str, Any],
+    item_id: str,
+    found: _CodexRead,
+) -> _CodexRead:
+    """One completed item that is a call: its start is the call's time, and its end is kept."""
+    started = _codex_ms(payload.get("started_at_ms"))
+    ended = _codex_ms(payload.get("completed_at_ms"))
+    at = started or ended or _record_timestamp(record)
+    if at is None:
+        return found
+    if ended is not None:
+        found.ends[item_id] = ended
+    item_type = item.get("type")
+    if item_type == "CommandExecution":
+        found = found._replace(command_items=True)
+        _codex_command(item, item_id, at, ended, found)
+    elif item_type == "FileChange":
+        _codex_patch(item, item_id, at, found)
+    elif item_type == "McpToolCall" and (
+        item.get("tool") == "js" or item.get("readOnlyHint") is not True
+    ):
+        found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
+    return found
+
+
 def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:
     """A Codex rollout's calls in the tally's `(at, cwd, call id, tool, input, worker)` shape.
 
     Read from `event_msg` rows of type `item_completed`: a command and a patch as the tally reads
     Claude Code's `Bash` and write calls, and a tool whose effect on files is not read as a call
     that ages every earlier pass (the `js` tool whatever its hint says, since it can write through
-    Node, and any connector call not marked `readOnlyHint: true`). Codex writes an item only when
-    the call ends, so the call's time is its `started_at_ms`.
+    Node, and any connector call not marked `readOnlyHint: true`), as is a `write_stdin` that sent
+    input. Codex writes an item only when the call ends, so the call's time is its `started_at_ms`
+    and its `completed_at_ms` is kept as `ends`, the time a change is dated by.
     """
-    found = _CodexRead([], {}, 0, shell_calls=False, command_items=False)
+    found = _CodexRead([], {}, {}, 0, shell_calls=False, command_items=False)
     threads: set[str] = set()
     spawned = 0
     for record in rollout:
@@ -7639,8 +7771,10 @@ def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:
             "local_shell_call",
         ):
             name = "local_shell_call" if kind == "local_shell_call" else payload.get("name")
-            spawned += name in _CODEX_SPAWN_CALLS
+            spawned += name in _CODEX_SUBAGENT_CALLS
             found = found._replace(shell_calls=found.shell_calls or name in _CODEX_SHELL_CALLS)
+            if name == _CODEX_STDIN_CALL and kind == "function_call":
+                _codex_stdin(record, payload, found)
             continue
         item = payload.get("item")
         if (
@@ -7654,20 +7788,8 @@ def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:
             thread = item.get("agent_thread_id")
             threads.add(thread if isinstance(thread, str) and thread else "")
             continue
-        started = _codex_ms(payload.get("started_at_ms"))
-        ended = _codex_ms(payload.get("completed_at_ms"))
-        at = started or ended or _record_timestamp(record)
-        if not isinstance(item_id, str) or not item_id or at is None:
-            continue
-        if item_type == "CommandExecution":
-            found = found._replace(command_items=True)
-            _codex_command(item, item_id, at, ended, found)
-        elif item_type == "FileChange":
-            _codex_patch(item, item_id, at, found)
-        elif item_type == "McpToolCall" and (
-            item.get("tool") == "js" or item.get("readOnlyHint") is not True
-        ):
-            found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
+        if isinstance(item_id, str) and item_id:
+            found = _codex_item(record, payload, item, item_id, found)
     found.calls.sort(key=lambda call: call[0])
     named = len(threads - {""}) or (1 if threads else 0)
     return found._replace(subagents=max(named, 1 if spawned else 0))
@@ -7742,6 +7864,7 @@ def _codex_tally(
     )
     horizon = None if scan.read.complete else _oldest_at(scan.rollout) or _mtime(rollout_path)
     tally.reads_from = horizon
+    tally.change_ends = found.ends
     tally.scan["last_user_at"] = _last_person_at(scan.rollout, "codex")
     tally.named_unread = found.subagents > 0
     tally.parent_failed = scan.read.failed
