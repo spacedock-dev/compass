@@ -1769,10 +1769,10 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
         }
         self.assertEqual(
-            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 4, "transcripts.py": 2},
+            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 5, "transcripts.py": 2},
             found,
         )
-        self.assertIn("eight expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn("ten expressions in `compass_runtime` reach an input payload", self.FLAT)
         for named in (
             "`claude_data.input_summary`",
             "`transcripts.codex_plan`",
@@ -1783,9 +1783,33 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             "`project_context._pi_changes`",
             "`project_context.codex_dispatch_events`",
             "`project_context.claude_tool_reports`",
+            "`project_context.codex_tool_reports`",
         ):
             with self.subTest(read=named):
                 self.assertIn(named, self.FLAT)
+
+    def test_the_codex_command_read_is_the_ninth_and_never_reads_a_patch_body(self) -> None:
+        # The pattern above counts `input` and `arguments` reads, and a Codex command is neither:
+        # its script is `item["command"]`, its output `aggregated_output` and a patch's paths the
+        # keys of `changes`. So the ninth read is counted by its own fields, in one module, and a
+        # second reader of any of them fails here until SECURITY.md names it.
+        pattern = r'item\.get\("command"\)|\.get\("(?:aggregated_output|changes)"\)'
+        found = {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+        self.assertEqual({"project_context.py": 3}, found)
+        # A patch's `content` and `unified_diff` are file content, which DEC-23 item 5 never reads.
+        for path in sorted(self.RUNTIME.rglob("*.py")):
+            with self.subTest(module=path.name):
+                self.assertNotIn("unified_diff", path.read_text(encoding="utf-8"))
+        for phrase in (
+            "never the patch's content or diff",
+            "the last 180 characters of its output",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.FLAT)
 
     def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
         # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from

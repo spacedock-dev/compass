@@ -159,7 +159,12 @@ than leaving an empty list to read as no work done.
 On Claude Code, the observed record lists the checks a session ran and the files it wrote, with what
 the harness recorded as each check's result
 ([DEC-23](design-reading-a-session.md#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work)).
-That includes subagent checks and writes, labelled by their source. A pass older than the part of
+That includes subagent checks and writes, labelled by their source.
+On Codex, from codex-cli 0.149, the record lists the same from the session's own rollout, each
+result its exit code
+([the Codex amendment](design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)).
+A Codex subagent's commands are not read, so a pass in a session that delegated cannot reassure,
+and a session recorded by an older codex-cli says its commands are not read. A pass older than the part of
 the work record read cannot reassure, and incompleteness alone establishes no departure. The live
 estimate reads checks and file paths, not the meaning of your intent; too little evidence reads
 "Not enough recorded yet"

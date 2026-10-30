@@ -413,6 +413,8 @@ a reading has up to seven (item 3).
 Rule 7 and its 2026-09-10 amendment: on Claude Code a check's recorded result, read under
 [DEC-23](#dec-23-a-claude-code-sessions-record-of-its-checks-may-show-the-work), now demonstrates
 work, so "On Claude and Codex nothing does" holds for Codex and for everything else on Claude Code.
+Since [DEC-23's amendment of 2026-10-30](#amended-2026-10-30-owner-dec-23-applied-to-codex) a Codex
+check's recorded result demonstrates work the same way, so it holds for neither harness's checks.
 A `consistent` on an outcome line needs the latest run of a relevant check passing inside the
 evidence window with no later write, and says it is as the tool reported, not inspected. On an
 outcome line the agent's own account still yields `not verifiable`, as rule 7 says. On the Goal, a
@@ -3601,6 +3603,74 @@ The stored `coverage` mapping may carry one more optional key, `commands_floor`,
 both counts. A `false`, a non-boolean or a floor with no counts refuses the reading. The cutoff's bound rose
 from 832 to 850 characters, because the two "at least" phrases lengthen the measured worst case from 825 to
 843. The page draws the stored sentence, so it needs no new wording of its own.
+
+### Amended 2026-10-30 (owner): DEC-23 applied to Codex
+
+[DEC-29](#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+item 8 named Codex next among the harnesses whose record carries commands and their exit status.
+This is the build, and what it decided. A Codex session's observed record now lists the checks it
+ran, its other commands and the files it patched, as the same `tool_report` fact a Claude Code
+session's carries, under the same closed lists, masking, 12-entry listing, 120-character line,
+180-character tail and redaction. `project_context.codex_tool_reports` is the reader.
+
+- The carrier is an `event_msg` row of type `item_completed` whose `item` is a `CommandExecution`,
+  codex-cli 0.149 and later, as [the capture](captures/codex/tool-calls-0.149-0.164-macos.jsonl)
+  records it. The command is read only in the shape every recorded item has, a shell (`bash`, `sh`
+  or `zsh` by basename), `-c` or `-lc`, and the script, which is then read exactly as a Claude
+  Code `Bash` command is. A call's time is `started_at_ms` and its result's `completed_at_ms`.
+  Codex writes the item only once the command ends, so a command still running has no entry.
+  A change (a command that may change files, a patch, a tool whose effect is not read) is dated by
+  its `completed_at_ms` and a check by its `started_at_ms`, so a change still running when a pass
+  began ages it. Dating both by their starts read a pass as current while a `sed -i` begun a
+  second before it went on for twenty seconds after; dating both by their ends would read a change
+  made while the check ran as earlier than it.
+- `exit_code` is the call's status, as Claude Code's error flag is: zero passes,
+  a positive code fails. A negative code, a process Codex killed or timed out, and a missing or
+  non-integer one record no result, whatever the output's last line says (item 1: an unknown
+  status is never success, and a killed run is not a failure either, the Pi timeout precedent). A `gh pr checks` reads its failure from that structured code, exit 1 alone,
+  never from text Compass writes into the output.
+- `cwd` is a `file://` URI. It is read as a path only with an empty host and no
+  percent-encoding, query or fragment, as all 70,012 recorded items are; anything else leaves the
+  folder unknown, so a redirect into a file is counted and not published, as after a `cd` Compass
+  cannot follow. Each command starts its own shell, so a `cd` in one never moves the next. Written
+  paths are read from `session_meta.cwd`, the folder the session began in.
+- A `FileChange`'s keys are its paths and each change's `type` and `move_path` its
+  kind. An added or changed path is written; a deleted path and the old path of a move age every
+  earlier pass and are never shown as written; the new path of a move is written. `content` and
+  `unified_diff` are file content and are never read (item 5).
+- Some tools' effect on files is not read: the `js` tool, whatever its `readOnlyHint` says, since it
+  runs Node with filesystem reach and every recorded call of it says `true`; any connector call
+  whose `readOnlyHint` is not `true`; a command in any other shape; and a `write_stdin` call that
+  sends input to a running command, or whose arguments do not parse (an empty one only polls for
+  output). Each ages every earlier pass
+  and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool only reads is
+  what would produce a false `consistent`.
+- The root rollout alone is read. A child thread writes its commands into its own
+  rollout, about 44% of all recorded commands, so a pass is marked incomplete when the part read
+  names a subagent (a `SubAgentActivity` or `CollabAgentToolCall` item, or a `spawn_agent`,
+  `wait_agent`, `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call) and never
+  supports a `consistent`. A child spawned before a clipped read, with no later call naming it, is
+  not seen. A child's failure is not listed. Reading the children is a later build.
+- A rollout written before 0.149 records no exit status. Its commands are
+  not read or counted, and the scan publishes `commands_unreadable` and no count, so the page never
+  says no check ran. Where the head names no version, shell calls with no command item say the same.
+- Claude Code's own records are not read. No trailer line is stripped, since Codex appends none
+  and the same words are the program's; no hook rewrite, no `gitOperation` record, no pull request
+  link and no background-launch pairing is read, because Codex writes none of them. A Codex CI
+  poll binds through the goal's own link.
+- It lives in the observed record only, out of the semantic history store and every session
+  row field (item 6). A press sends it under the vendor rule:
+  [DEC-31](#dec-31-the-text-of-a-command-that-is-not-a-check-may-leave-the-machine-by-vendor). A
+  Codex reading of a Codex session may be sent every masked line and tail; a Claude Code reading
+  of one is sent each line and status and the tails of checks and CI reads alone. The live
+  estimate, the Live monitor and steer back stay Claude Code's.
+- The unasked lane stays Claude Code's. Claude Code checking a Codex session would send its
+  failures to another vendor, which item 2 of the vendor rule allows but nobody has walked, so the
+  lane's failed-results admission keeps to the harness it was ruled on.
+
+What was rejected: reading Codex's own `parsed_cmd`, a second parser that would have to agree with
+this one; parsing the `Exit code:` text of 0.77 to 0.91 rollouts, which covers a few old versions
+and none since; and reading the child rollouts now, which needs their lineage inside the reader.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 
