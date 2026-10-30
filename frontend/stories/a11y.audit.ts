@@ -104,6 +104,21 @@ export const grayOf = ([r, g, b]: Rgb, amount: number): Rgb => {
    gradient or a filter other than `grayscale` sits between. A `grayscale()` ancestor turns the colours it
    draws grey, and the page backdrop outside it is not touched, so the filter is applied to the group's own
    layers only. The one level of filter the page uses is all this models. */
+/* The page's hatch, the pattern that says a value is absent: 1px lines at 26% alpha over the surface's own colour.
+   Text over it is measured against that colour, as the lines are faint enough not to be its backdrop; any other
+   image or gradient under text stays unmeasured. */
+let hatchValue: string | null = null;
+const isHatch = (backgroundImage: string): boolean => {
+  if (hatchValue === null) {
+    const probe = document.createElement('div');
+    probe.style.background = 'var(--hatch)';
+    document.body.append(probe);
+    hatchValue = getComputedStyle(probe).backgroundImage;
+    probe.remove();
+  }
+  return backgroundImage === hatchValue;
+};
+
 function resolve(
   element: Element,
   textColor?: string,
@@ -115,7 +130,7 @@ function resolve(
   let amount = 0;
   for (const node of chain) {
     const style = getComputedStyle(node);
-    if (style.backgroundImage !== 'none') return null;
+    if (style.backgroundImage !== 'none' && !isHatch(style.backgroundImage)) return null;
     if (style.filter !== 'none') {
       const match = /^grayscale\(([\d.]+)\)$/.exec(style.filter);
       if (!match || amount) return null;
@@ -256,19 +271,37 @@ export function clippedControls(root: ParentNode): string[] {
   return clipped;
 }
 
-export const hasFocusRing = (element: Element): boolean => {
+export interface RingStyle {
+  readonly outline: string;
+  readonly shadow: string;
+}
+const ringStyle = (element: Element): RingStyle => {
   const style = getComputedStyle(element);
-  const outline = style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0;
-  const shadow = style.boxShadow !== 'none';
-  return outline || shadow;
+  const outline =
+    style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
+      ? `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`
+      : 'none';
+  return { outline, shadow: style.boxShadow };
+};
+
+/* Taken before focus, so a ring is a change the focus made. A shadow or outline the control wears at rest does
+   not mark it as focused, and a ring the focus leaves unchanged does not count. */
+export const restingRing = ringStyle;
+export const hasFocusRing = (element: Element, resting: RingStyle): boolean => {
+  const now = ringStyle(element);
+  return (
+    (now.outline !== 'none' && now.outline !== resting.outline) ||
+    (now.shadow !== 'none' && now.shadow !== resting.shadow)
+  );
 };
 
 /* A computed CSS colour as the sRGB triple the browser paints, on an opaque black ground. */
 export const rgbOf = (color: string): Rgb => over([0, 0, 0], color);
 
-/* Waits for the page's finite transitions and animations to land, so a colour is measured where it ends and
+/* Waits for the fonts and for the page's finite transitions and animations to land, so a colour is measured where it ends and
    not part-way through a fade. An animation that never ends (a pulse) is left running. */
 export async function settled(limitMs = 2000): Promise<void> {
+  await document.fonts.ready;
   const finite = document
     .getAnimations()
     .filter(
@@ -279,3 +312,14 @@ export async function settled(limitMs = 2000): Promise<void> {
     new Promise((resolve) => setTimeout(resolve, limitMs)),
   ]);
 }
+
+/* The text the audit cannot measure, and why each kind may stay unmeasured. Anything else that lands here fails
+   the story, so a new gradient, image or filter under text is a decision someone makes, not a gap nobody sees.
+   Each entry matches `path "text"` as `describe` and the text give it. */
+export const UNMEASURED_ALLOWED: readonly RegExp[] = [
+  // None today: the hatch that marks an absent value is measured against its surface (see `isHatch`), and a
+  // glyph with no letter or digit is measured at 3:1. A new entry names the pattern it permits and why.
+];
+
+export const unexpectedlyUnmeasured = (report: ContrastReport): string[] =>
+  report.unmeasured.filter((label) => !UNMEASURED_ALLOWED.some((allowed) => allowed.test(label)));

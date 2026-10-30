@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, expect } from 'vitest';
 import { commands } from 'vitest/browser';
-import { auditContrast, formatFailures, settled } from '../stories/a11y.audit';
+import {
+  auditContrast,
+  formatFailures,
+  settled,
+  unexpectedlyUnmeasured,
+} from '../stories/a11y.audit';
 
 declare module 'vitest/browser' {
   interface BrowserCommands {
@@ -30,4 +35,8 @@ afterEach(async () => {
   await settled();
   const report = auditContrast(document.body);
   expect(report.failures, formatFailures(report)).toEqual([]);
+  expect(
+    unexpectedlyUnmeasured(report),
+    'Text the audit cannot measure (add it to UNMEASURED_ALLOWED with the reason, or fix it)',
+  ).toEqual([]);
 });

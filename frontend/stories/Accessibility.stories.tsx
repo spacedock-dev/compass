@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import '../src/drift/drift.css';
 import { Meter, Scale } from '../src/drift/DriftLevelView';
 import { LEVEL_SCALE } from '../src/drift/sentences';
 import {
   analysisRow,
   DriftScenario,
+  fact,
   failedCheck,
+  JOB,
   passedCheck,
   STORED_READING,
   written,
@@ -20,7 +22,9 @@ import {
   grayOf,
   hasFocusRing,
   overflowReport,
+  restingRing,
   rgbOf,
+  settled,
 } from './a11y.audit';
 
 /* The accessibility pass, held by measurement. Contrast is audited on every story by `vitest.setup.ts`, so every
@@ -227,48 +231,131 @@ export const ProjectsAt1280Zoomed200: Story = fitsAt('Projects', 640);
 const FOCUSABLE =
   'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
-/* Every control on the session page in a result state takes focus from Tab, in the order the page reads, and
-   shows a ring when it does. The keys are real key presses through the browser, so `:focus-visible` applies as
-   it does for a person, and the page is checked from its start so a control that Tab skips shows as missing. */
+const tabber = async () =>
+  '__vitest_browser_runner__' in window ? (await import('vitest/browser')).userEvent : null;
+
+const reachable = (canvasElement: HTMLElement): HTMLElement[] =>
+  [...canvasElement.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (control) =>
+      !control.matches(':disabled') &&
+      control.checkVisibility({ visibilityProperty: true }) &&
+      control.getBoundingClientRect().width > 0 &&
+      !control.closest('[inert]'),
+  );
+
+/* Presses Tab from the start of the page, and returns what took focus in order. Each ring is a change the focus
+   made to the control's own resting style, so a shadow it wears all the time does not pass as one. */
+async function tabThrough(
+  canvasElement: HTMLElement,
+  controls: HTMLElement[],
+): Promise<HTMLElement[]> {
+  const driver = await tabber();
+  if (!driver) return [];
+  const resting = new Map(controls.map((control) => [control, restingRing(control)]));
+  (document.activeElement as HTMLElement | null)?.blur();
+  const visited: HTMLElement[] = [];
+  for (let press = 0; press < controls.length + 6; press += 1) {
+    await driver.tab();
+    const now = document.activeElement as HTMLElement;
+    if (!canvasElement.contains(now) || visited.includes(now)) break;
+    visited.push(now);
+    await expect(
+      hasFocusRing(now, resting.get(now) ?? restingRing(now)),
+      `no focus ring on ${now.outerHTML.slice(0, 80)}`,
+    ).toBe(true);
+  }
+  return visited;
+}
+
+/* Every control the page offers takes focus from Tab, in the order the page reads, with a ring, and nothing
+   inert takes it. */
+async function everyControlTakesFocus(canvasElement: HTMLElement, ready: string): Promise<void> {
+  if (!(await tabber())) return;
+  await waitFor(() => expect(canvasElement.querySelector(ready)).not.toBeNull(), {
+    timeout: 5000,
+  });
+  await within(canvasElement).findAllByRole('button');
+  await settled();
+  const controls = reachable(canvasElement);
+  await expect(controls.length).toBeGreaterThan(5);
+  const visited = await tabThrough(canvasElement, controls);
+  await expect(visited.length, 'Tab moved focus through the page').toBeGreaterThan(5);
+  const missed = controls.filter((control) => !visited.includes(control));
+  await expect(
+    missed.map((control) => control.outerHTML.slice(0, 80)),
+    'controls Tab never reached',
+  ).toEqual([]);
+  await expect(
+    visited.filter((control) => control.closest('[inert]')).length,
+    'Tab entered an inert block',
+  ).toBe(0);
+  const places = visited.map((control) => controls.indexOf(control));
+  await expect(places, 'Tab follows the order the page reads').toEqual(
+    [...places].sort((a, b) => a - b),
+  );
+}
+
 export const EveryControlTakesFocusInReadingOrderWithARing: Story = {
   args: { scenario: RESULT },
+  play: ({ canvasElement }) => everyControlTakesFocus(canvasElement, '[data-next-result]'),
+};
+
+/* A re-run in progress dims the old result and makes it inert; the controls outside it stay reachable. */
+export const FocusWhileAnalyzing: Story = {
+  args: {
+    scenario: { ...RESULT, payload: { reading_jobs: { 'claude:s1': JOB } } },
+  },
   play: async ({ canvasElement }) => {
-    const driver =
-      '__vitest_browser_runner__' in window ? (await import('vitest/browser')).userEvent : null;
+    await everyControlTakesFocus(canvasElement, '[data-next-result-dimmed]');
+    await expect(canvasElement.querySelector('[data-next-result-dimmed]')).toHaveAttribute('inert');
+  },
+};
+
+export const FocusOnAStaleResult: Story = {
+  args: {
+    scenario: {
+      ...RESULT,
+      facts: [
+        ...WRITES,
+        ...FAILED,
+        passedCheck('c2', 600),
+        passedCheck('c3', 1200),
+        fact('m1', 1250, { type: 'agent_message', by: 'agent' }),
+      ],
+    },
+  },
+  play: ({ canvasElement }) =>
+    everyControlTakesFocus(canvasElement, '[data-next-result-stale="work"]'),
+};
+
+/* Steer back opens its box with focus inside it, and Tab from there reaches Copy with a ring. */
+export const FocusInTheSteerBackBox: Story = {
+  args: {
+    scenario: {
+      ...RESULT,
+      clipboard: true,
+      correction: {
+        ok: true,
+        parts: ['Back to my goal: Ship the queue\nPlease continue from here.'],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const driver = await tabber();
     if (!driver) return;
-    await waitFor(() => expect(canvasElement.querySelector('[data-next-result]')).not.toBeNull(), {
-      timeout: 5000,
-    });
-    await within(canvasElement).findByRole('button', { name: 'Steer back' });
-    const controls = [...canvasElement.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-      (control) =>
-        !control.matches(':disabled') &&
-        (control as HTMLElement).checkVisibility({ visibilityProperty: true }) &&
-        control.getBoundingClientRect().width > 0 &&
-        !control.closest('[inert]'),
-    );
-    await expect(controls.length).toBeGreaterThan(8);
-    (document.activeElement as HTMLElement | null)?.blur();
-    const visited: HTMLElement[] = [];
-    for (let press = 0; press < controls.length + 6; press += 1) {
+    const card = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await userEvent.click(await within(card).findByRole('button', { name: 'Steer back' }));
+    const copy = await within(card).findByRole('button', { name: 'Copy correction' });
+    await settled();
+    const box = copy.closest('[data-next-steer-section], section') ?? card;
+    await expect(box.contains(document.activeElement), 'focus moved into the box').toBe(true);
+    const resting = restingRing(copy);
+    let reached = document.activeElement === copy;
+    for (let press = 0; press < 6 && !reached; press += 1) {
       await driver.tab();
-      const now = document.activeElement as HTMLElement;
-      if (!canvasElement.contains(now)) break;
-      if (visited.includes(now)) break;
-      visited.push(now);
-      await expect(hasFocusRing(now), `no focus ring on ${now.outerHTML.slice(0, 80)}`).toBe(true);
+      reached = document.activeElement === copy;
     }
-    await expect(visited.length, 'Tab moved focus through the page').toBeGreaterThan(8);
-    const missed = controls.filter((control) => !visited.includes(control));
-    await expect(
-      missed.map((control) => control.outerHTML.slice(0, 80)),
-      'controls Tab never reached',
-    ).toEqual([]);
-    const places = visited.map((control) =>
-      controls.indexOf(control) >= 0 ? controls.indexOf(control) : -1,
-    );
-    await expect(places, 'Tab follows the order the page reads').toEqual(
-      [...places].sort((a, b) => a - b),
-    );
+    await expect(reached, 'Tab reaches Copy correction').toBe(true);
+    await expect(hasFocusRing(copy, resting), 'Copy correction shows a ring').toBe(true);
   },
 };
