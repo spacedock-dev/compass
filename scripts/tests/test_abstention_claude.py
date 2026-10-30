@@ -3213,6 +3213,9 @@ def _invented(harness: str, index: int) -> dict[str, Any]:
     }
     if harness == "claude":
         case["tool_output"] = {"tails": {}, "changed_after": []}
+        # Every real Claude Code freeze stamps its parser; this fixture's subject is
+        # invented provenance, not a missing stamp.
+        case["parser"] = mark_abstention.parser_digest()
     return case
 
 
@@ -3582,6 +3585,43 @@ class AScoreFromAnotherParserIsRefusedBeforeAnyChargeTest(_Ledgered):
         said = "\n".join(printed)
         self.assertIn("--score will refuse: this checkout's io.py", said)
         self.assertIn("1 of 2 cases carry another parser digest", said)
+
+    def sentinel_ledger(self) -> Any:
+        return mock.patch.object(
+            abstention_ledger.Ledger, "check", side_effect=AssertionError("ledger read")
+        )
+
+    def test_a_recorded_claude_case_with_no_stamp_is_refused_before_the_ledger(self) -> None:
+        # The stale check read `"parser" in case`, so an absent stamp passed it.
+        del self.cases[0]["parser"]
+        model, printed = _Model(), list[str]()
+        with self.sentinel_ledger():
+            code = self.score(model, vouch=self.as_the_machine_would, printed=printed)
+        said = "\n".join(printed)
+        self.assertEqual(2, code, said)
+        self.assertEqual([], model.prompts)
+        self.assertFalse(self.ledger_path.exists() and self.calls())
+        self.assertIn("carry no parser stamp", said)
+        self.assertIn("Nothing was charged", said)
+
+    def test_the_report_says_a_missing_stamp_will_refuse(self) -> None:
+        del self.cases[0]["parser"]
+        printed: list[str] = []
+        with mock.patch("builtins.print", side_effect=_collect_into(printed)):
+            score_abstention.report(self.corpus(), None, vouch=self.as_the_machine_would)
+        self.assertIn("--score will refuse:", "\n".join(printed))
+
+    def test_a_recorded_codex_and_a_synthetic_claude_case_may_omit_the_stamp(self) -> None:
+        self.cases[0]["origin"] = "synthetic"
+        self.assertNotIn("parser", _codex_case())
+        codex = _codex_case()
+        self.cases.append(codex)
+        self.assertEqual([], score_abstention.parser_mismatch(self.corpus()))
+        del self.cases[0]["parser"]
+        self.assertEqual([], score_abstention.parser_mismatch(self.corpus()))
+
+    def test_a_current_stamp_passes_the_check(self) -> None:
+        self.assertEqual([], score_abstention.parser_mismatch(self.corpus()))
 
     def test_a_packet_this_checkout_froze_is_scored(self) -> None:
         model = _Model()

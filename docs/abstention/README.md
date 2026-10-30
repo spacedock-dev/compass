@@ -284,7 +284,8 @@ reads (DRC-4711):
   is opened, and refuses the whole run when any differs, since each such case would only be
   withheld while the rest were charged. It names the fix: check out the commit the packet was
   frozen on, or re-freeze from this checkout and mark the new packet. `--report` says the same at
-  the preflight.
+  the preflight. A recorded Claude Code case with no `parser` stamp at all is refused the same way,
+  before the ledger; recorded Codex, synthetic and reviewed-export cases may omit it.
 
 Turns appended after `captured_at` are not a mismatch. A Codex case has no transcript this check
 reads, and under the per-producer floor it is a control that never covers. A case that fails any of

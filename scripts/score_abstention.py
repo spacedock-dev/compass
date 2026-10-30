@@ -2157,29 +2157,58 @@ def _binding_refusal(corpus: Corpus, binding: Mapping[str, str] | None) -> str:
     return ""
 
 
-def parser_mismatch(corpus: Corpus) -> list[str]:
+def parser_mismatch(corpus: Corpus, *, rechecked: bool = False) -> list[str]:
     """Why this checkout cannot score the packet's stamped cases, or nothing.
 
     The score-time re-check demotes a case whose `parser` stamp differs from
     this checkout's (`frozen-on-another-parser`). Measured before this refusal:
     the run still went ahead, withheld each such case unscored and charged
     every other case to the ledger, so the calls bought a result that could
-    only read short.
+    only read short. `rechecked` says the run will vouch for its cases; only then
+    does a recorded Claude Code case with no stamp at all count, since an
+    unvouched run never rebuilds it and demotes nothing.
     """
     if corpus.cases.get("v") != mark_abstention.FORMAT_INTENT:
         return []
     cases = [c for c in corpus.cases.get("cases") or () if isinstance(c, dict)]
     here = mark_abstention.parser_digest()
     other = [c for c in cases if "parser" in c and c["parser"] != here]
-    if not other:
+    # A recorded Claude Code case's contents are rebuilt under its stamp, so an absent
+    # one is demoted exactly as a differing one is. Recorded Codex, explicitly synthetic
+    # and reviewed-export cases never reach that rebuild and may legitimately omit it.
+    missing = [
+        c
+        for c in cases
+        if rechecked
+        and c.get("harness") == "claude"
+        and c.get("origin") == ORIGIN_RECORDED
+        and "reviewed_export" not in c
+        and "parser" not in c
+    ]
+    if not other and not missing:
         return []
+    if not other:
+        return [
+            (
+                "Refused: these cases were frozen without the parser stamp a recorded Claude "
+                "Code case must carry."
+            ),
+            (
+                f"  {len(missing)} of {len(cases)} cases carry no parser stamp, and every one "
+                "of them would be demoted to synthetic and withheld, while the rest were "
+                "still charged."
+            ),
+            "  Fix: re-freeze the packet from this checkout (it then needs marking again).",
+        ]
     return [
         (
             "Refused: this checkout's io.py, project_context.py or reading.py differs from the one "
             "these cases were frozen on."
         ),
         (
-            f"  {len(other)} of {len(cases)} cases carry another parser digest, and every one "
+            f"  {len(other)} of {len(cases)} cases carry another parser digest"
+            + (f" and {len(missing)} carry none" if missing else "")
+            + ", and every one "
             "of them would be demoted to synthetic and withheld, while the rest were still charged."
         ),
         (
@@ -2195,12 +2224,14 @@ def _may_score(
     resume: Mapping[str, Any] | None,
     binding: Mapping[str, str] | None,
     ledger: abstention_ledger.Ledger | None,
+    *,
+    rechecked: bool = False,
 ) -> bool:
     """Every refusal a run makes before its first call, in one place.
 
     The parser check comes first, before the ledger is read or charged.
     """
-    stale = parser_mismatch(corpus)
+    stale = parser_mismatch(corpus, rechecked=rechecked)
     if stale:
         for line in [*stale, "Nothing was charged and no model was called."]:
             print(line)
@@ -2326,7 +2357,14 @@ def score(  # noqa: C901, PLR0913 - legacy route plus isolated closure admission
     closure = ledger is not None and ledger.campaign is not None
     replay = _is_replay(corpus)
     if (
-        not _may_score(corpus, tool_destination, resume, binding, ledger)
+        not _may_score(
+            corpus,
+            tool_destination,
+            resume,
+            binding,
+            ledger,
+            rechecked=vouch is not None or (binding or {}).get("producer") == "claude",
+        )
         or not _chain_holds(ledger, summary_path)
         or _overwrites(ledger, resume, summary_path)
     ):
@@ -2803,7 +2841,7 @@ def report(
     live = {str(c.get("id")) for c in cases}
     print(f"{sum(1 for k in marks if k in live)} of {len(cases)} cases marked.")
     # Said at the preflight, so the refusal `--score` would make is no surprise.
-    for line in parser_mismatch(corpus):
+    for line in parser_mismatch(corpus, rechecked=vouch is not None):
         print(line.replace("Refused:", "--score will refuse:", 1))
     if _is_replay(corpus):
         if not _replay_preflight(corpus):
