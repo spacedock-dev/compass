@@ -3223,9 +3223,9 @@ measured charges, its four batch reviews, its failed result, every earlier epoch
 68-call prefix. Initialization appends only epoch six. Merged software and passing current-head
 CI come before any spending.
 
-**Where the study's state lives.** Every ledger, epoch, receipt and packet of this study was
+Every ledger, epoch, receipt and packet of this study was
 written under `~/.cargento`, before the rename moved the default store to `~/.compass`. They stay
-there. The scripts read the native ledger (`drc-4666-spend.json`), the shared campaign ledger
+there. The scripts read the native qualification ledger, the shared campaign ledger
 (`analyze-closure-spend.json`, with its `.epochs` and `.reservations`) and the replay ledger
 (`drift-replay/spend.json`) at fixed paths under `~/.cargento` in the account's own home. Neither
 `COMPASS_HOME` nor `HOME` moves them, and nothing reads a study ledger from `~/.compass`. Nothing
@@ -3234,19 +3234,19 @@ missing ledger always has. An empty ledger cannot begin with the committed chain
 charge is refused. The freeze still reads lifecycle evidence from the live dashboard store. The
 old `~/.cargento` history store holds none of the carried cases' stops, so it was not wired in.
 
-**Blind markers and reviewers.** For this study only, blind markers and reviewers may run in
+For this study only, blind markers and reviewers may run in
 Antigravity (AGY) on Google's Gemini models `gemini-3.8-flash-medium` or
 `gemini-3.8-flash-high`. Each receipt names the model and effort it used. The operator runs these
 calls from AGY under their own Google account. The dashboard never sends anything to Gemini. What
 is sent:
 
-- **Source and kind admission, and blind marks.** The frozen case as the marker shows it: the
-  case's title and project name, its recorded lifecycle and capture time, the opening request, the
+- For source and kind admission and for blind marks, the frozen case as the marker shows it:
+  its title and project name, its recorded lifecycle and capture time, the opening request, the
   goal and outcome lines, and the frozen evidence entries. Those entries are the reader's messages,
   the agent's messages within the frozen window, and each check's command, result, times and
   redacted output tail. The questions to mark are sent too. Marks are made before any output exists,
   so a marker never sees the producer's answers.
-- **Batch and handoff reviews.** The batch's charge receipts, statuses and counts, the producer's
+- For batch and handoff reviews, the batch's charge receipts, statuses and counts, the producer's
   parsed answers and rubric grades, and the case material those answers cite, all as above. The
   handoff review gets the digests and counts it binds.
 
