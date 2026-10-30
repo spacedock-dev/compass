@@ -85,7 +85,7 @@ describe('the session activity list', () => {
     );
     const legend = document.querySelector('[data-activity-legend]');
     expect(legend?.textContent).toContain('Failed checks are always listed and never folded.');
-    expect(legend?.querySelectorAll('li')).toHaveLength(6);
+    expect(legend?.querySelectorAll('li')).toHaveLength(7);
   });
 
   it('reads Agent said once and keeps an unpublished time in the head', async () => {

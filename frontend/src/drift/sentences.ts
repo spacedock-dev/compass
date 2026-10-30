@@ -539,11 +539,20 @@ export const FLIP_CLOSED_REVISION =
 
 export const WORK_HARNESSES: readonly string[] = ['claude', 'codex', 'pi'];
 export const WORK_READ_FROM = 'Compass reads work results from Claude Code, Codex and Pi only.';
-/* The sentence Codex's record earns: the checks its own rollout lists, from codex-cli 0.149, and not its
-   subagents'
-   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)). */
-export const CODEX_RECORD =
-  'records the checks a session ran and the files it patched, from codex-cli 0.149 on, and they are listed here. A result is the command’s exit code; Compass inspects no file, test or deliverable, and reads no subagent’s commands.';
+/* The sentence Codex's record earns: the checks its rollouts list, from codex-cli 0.149, a subagent's read from
+   its own rollout and labelled by its source
+   ([the amendment](../../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)).
+   It claims the subagents only as far as the scan read them: included where some were read and none was left
+   unread, the number not read where any was, and nothing in a session that had none. */
+export function codexRecord(read: number, unread: number): string {
+  const lead = 'records the checks a session ran and the files it patched, from codex-cli 0.149 on';
+  const subagents = unread
+    ? `, and they are listed here, except those of ${String(unread)} ${unread === 1 ? 'subagent that was' : 'subagents that were'} not read.`
+    : read
+      ? ', its subagents’ included and labelled as theirs, and they are listed here.'
+      : ', and they are listed here.';
+  return `${lead}${subagents} A result is the command’s exit code; Compass inspects no file, test or deliverable.`;
+}
 export const CODEX_COMMANDS_UNREAD =
   'This Codex version records no exit status, so its commands are not read and no check is counted.';
 export const WORK_AS_REPORTED = 'Results are as the tool reported; not inspected.';

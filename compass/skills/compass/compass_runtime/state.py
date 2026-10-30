@@ -112,6 +112,14 @@ class RuntimeState:
     claude_subagent_cache: dict[str, tuple[tuple[float, ...], list[str]]] = field(
         default_factory=dict
     )
+    # (rollout path, the bounds a read depends on) -> (stamps of the root and every child, the
+    # read), for `CODEX_CHECK_CACHE_SEC`.
+    codex_check_cache: ExpiringCache = field(
+        default_factory=lambda: ExpiringCache(CODEX_CHECK_CACHE_ENTRIES, CODEX_CHECK_CACHE_SEC)
+    )
+    # (the store directories' mtimes, every child rollout by its root's session id), so a collect
+    # and a press list no store per session. See `observer.codex_child_rollouts`.
+    codex_child_index: tuple[tuple[Any, ...], dict[str, list[str]]] | None = None
     delegated_work_cache: dict[
         str, tuple[tuple[tuple[str, int, int], ...], list[dict[str, Any]], bool, float]
     ] = field(default_factory=dict)
@@ -250,6 +258,51 @@ class RuntimeState:
 
 def build_runtime_state(config: RuntimeConfig, *, started: float) -> RuntimeState:
     return RuntimeState(config=config, server_started=started)
+
+
+# A Codex session's check read is kept while the rollout and every child's stat are unchanged, and
+# at most this long: the read also depends on the work tree (a declared script), the reader's
+# listed commands and the folder's remote, none of which a rollout stat can see. 64 entries because
+# a held read keeps up to a listing's worth of 64 KiB output tails, and only analysis sessions read.
+CODEX_CHECK_CACHE_SEC = 30.0
+CODEX_CHECK_CACHE_ENTRIES = 64
+
+
+class ExpiringCache:
+    """A small keyed cache whose entries carry a stamp and a deadline, under its own lock.
+
+    `get` returns a value only for the stamp it was put under and before its deadline, and drops
+    an entry it finds expired. `put` first sweeps every expired entry, so what a held value
+    outlives its deadline by is the gap to the next read or put, never an eviction at the limit.
+    Its own lock and not `RuntimeState.cache_lock`, because a field default cannot see that lock
+    and the read it guards is long: it never holds either while reading.
+    """
+
+    def __init__(self, limit: int, ttl: float) -> None:
+        self._limit = max(1, limit)
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._held: dict[Any, tuple[Any, float, Any]] = {}
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._held)
+
+    def get(self, key: Any, stamp: Any, now: float) -> tuple[bool, Any]:
+        with self._lock:
+            held = self._held.get(key)
+            if held is not None and now >= held[1]:
+                del self._held[key]
+                held = None
+            if held is not None and held[0] == stamp:
+                return True, held[2]
+        return False, None
+
+    def put(self, key: Any, stamp: Any, value: Any, now: float) -> None:
+        with self._lock:
+            for expired in [k for k, held in self._held.items() if now >= held[1]]:
+                del self._held[expired]
+            bounded_put(self._held, key, (stamp, now + self._ttl, value), limit=self._limit)
 
 
 def bounded_put(

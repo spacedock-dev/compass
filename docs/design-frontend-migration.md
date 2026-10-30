@@ -1468,6 +1468,14 @@ ink, including the hollow absence circle. Time moves into the head's right clust
 "Last turn", whose accessible name and tooltip remain "from the last turn". The entry's own words
 remain in its body.
 
+A passing check gains one more mark, an eye-slash with "May not cover subagent work", when the scan counts
+subagent transcripts it did not read; its accessible name says the pass was as the tool reported and how many
+were not read. Unread calls get no row mark: each is recorded as a change, so a pass before it already carries
+the stale mark and a pass after it saw it. A failure and a check with no recorded result are never marked, and a
+count that is not a whole positive number is ignored. The scan sentence states both counts ("No check ran in the
+part of the transcript read; 2 subagents and 4 calls were not read."), so "no check ran" never stands for work
+that was not read. The mark is in the Marks legend.
+
 Three or more consecutive eligible checks fold into a closed Collapsible. Failed checks, checks
 with an earlier failure, cited checks, selected finding entries and written files split a run and
 stay listed. The header states counts, number range and newest-to-oldest times. Members stay mounted

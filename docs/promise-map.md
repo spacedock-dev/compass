@@ -163,8 +163,9 @@ That includes subagent checks and writes, labelled by their source.
 On Codex, from codex-cli 0.149, the record lists the same from the session's own rollout, each
 result its exit code
 ([the Codex amendment](design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)).
-A Codex subagent's commands are not read, so a pass in a session that delegated cannot reassure,
-and a session recorded by an older codex-cli says its commands are not read. A pass older than the part of
+A Codex subagent's checks and files are read from its own rollout and labelled as its. A pass
+cannot reassure while a subagent's rollout could not be read, and a session recorded by an older
+codex-cli says its commands are not read. A pass older than the part of
 the work record read cannot reassure, and incompleteness alone establishes no departure. The live
 estimate reads checks and file paths, not the meaning of your intent; too little evidence reads
 "Not enough recorded yet"

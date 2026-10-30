@@ -13,6 +13,7 @@ import {
   PiClockCounterClockwise,
   PiCompass,
   PiCopy,
+  PiEyeSlash,
   PiInfo,
   PiListChecks,
   PiMagnifyingGlass,
@@ -30,6 +31,7 @@ export type IconName =
   | 'stale'
   | 'earlier-failed'
   | 'checks'
+  | 'incomplete'
   | 'info'
   | 'expand'
   | 'remove'
@@ -46,6 +48,7 @@ const ICONS = {
   stale: PiClockCounterClockwise,
   'earlier-failed': PiWarning,
   checks: PiListChecks,
+  incomplete: PiEyeSlash,
   info: PiInfo,
   expand: PiCaretRight,
   remove: PiX,
