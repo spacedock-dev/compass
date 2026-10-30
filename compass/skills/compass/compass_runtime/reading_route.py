@@ -478,7 +478,7 @@ CAVEAT = (
 # The harnesses whose record can carry work evidence, beside which the expected
 # outcome lines are put to the model (`reading.WORK_EVIDENCE_BY_HARNESS`).
 # Copied rather than imported, as `_WORDS_CAP` is; a test holds the two equal.
-OUTCOME_HARNESSES = ("claude", "pi")
+OUTCOME_HARNESSES = ("claude", "codex", "pi")
 # The harnesses whose agent's own messages a reading sends, beside which the
 # lines are put to the model too (`project_context.AGENT_MESSAGE_HARNESSES`,
 # copied for the same reason and held equal by a test).

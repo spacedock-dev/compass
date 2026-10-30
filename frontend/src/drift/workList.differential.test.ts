@@ -11,7 +11,9 @@ import { baselineAt, workSource, type WorkSource } from '../intent/work';
 import type { ContextEntry } from '../store/board';
 import { genEntries, mulberry32, pick, type Rng } from './generate.test.helper';
 import { loadLegacyDrift } from './legacy.test.helper';
+import { WORK_READ_FROM } from './sentences';
 import { workList } from './workList';
+import { harnessLabels } from '../sessions/rows';
 import { recordedActivityActor } from '../../test/recorded-activity';
 import { projectRecordedLoadedActivity } from '../../test/recorded-loaded-activity';
 
@@ -54,6 +56,23 @@ legacy.lift([
 ]);
 legacy.lift(['nextSessionStop'], 'next-observed.js');
 legacy.lift(['nextHarnessLabels'], 'next-boot.js');
+
+/* Two departures from the recording since 2026-10-30, when Codex's record began to list checks
+   (docs/design-frontend-migration.md#held-to-recorded-answers). The sentence naming the harnesses Compass reads
+   work from now names Codex, so the recorded one is read as the new one; and a Codex session's list now carries
+   its record line under "About this record" as Claude Code's does, so on Codex this page's list is compared in the
+   shape the retired page drew, with its "publishes no demonstrated work results" line, and every row, number,
+   flag and count is still held to the recording. The new Codex line is held by the Drift stories. */
+const RECORDED_READ_FROM = 'Compass reads work results from Claude Code and Pi only.';
+function asRecorded(list: ReturnType<typeof workList>, harness: string, payload: unknown) {
+  if (harness !== 'codex') return list;
+  const label = harnessLabels(payload as never).get('codex') || 'Codex';
+  return {
+    ...list,
+    reads: false,
+    limit: `${WORK_READ_FROM} ${label} publishes no demonstrated work results, so nothing above is an inspected file, test or deliverable.`,
+  };
+}
 
 const CASES = 80;
 const SEEDS = CASES;
@@ -201,7 +220,7 @@ describe('the numbered list reads as the legacy page reads it', () => {
         generated: 1000,
       });
       if (mine.rows.length) drew += 1;
-      const a = text(
+      const recorded = text(
         projectRecordedLoadedActivity(
           html,
           legacySource,
@@ -211,7 +230,8 @@ describe('the numbered list reads as the legacy page reads it', () => {
           baselineAt(annotation, session, draft),
         ),
       );
-      const b = assemble(mine, false);
+      const a = recorded.replace(squash(RECORDED_READ_FROM), squash(WORK_READ_FROM));
+      const b = assemble(asRecorded(mine, String(session['harness']), payload), false);
       if (a !== b) {
         let at = 0;
         while (a[at] === b[at]) at += 1;

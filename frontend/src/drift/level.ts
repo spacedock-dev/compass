@@ -295,7 +295,7 @@ export function evidenceRows(
       kind,
       who: [harness || 'Harness not recorded', entry.workerKind].filter(Boolean).join(' · '),
       eventLabel:
-        entry.type === 'tool_report' && check && harness === 'claude'
+        entry.type === 'tool_report' && check && (harness === 'claude' || harness === 'codex')
           ? 'Call recorded at'
           : 'Evidence recorded at',
       at: recordedTime(entry.at),

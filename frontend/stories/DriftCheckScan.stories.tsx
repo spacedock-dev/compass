@@ -17,6 +17,16 @@ type Story = StoryObj<typeof meta>;
 const LISTING =
   'The session wrote the file where you list checks, so none of the commands you listed counted as checks.';
 
+const codexScanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => ({
+  args: {
+    scenario: {
+      harness: 'codex',
+      facts: [fact('u1', 200, { type: 'user_message', by: 'person:me' }, 'codex')],
+      work: { tool_reports: [{ harness: 'codex', sid: 's1', ...scan }] },
+    },
+  },
+});
+
 const scanned = (scan: Record<string, unknown>): Pick<Story, 'args'> => {
   const value: Scenario = {
     facts: [passedCheck('c1', 500), fact('u1', 200, { type: 'user_message', by: 'person:me' })],
@@ -34,6 +44,19 @@ const sentence = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
     if (!node) throw new Error('no check scan sentence');
     return node;
   });
+};
+
+/* A Codex rollout written before codex-cli 0.149 records no exit status. Its scan publishes that alone, and the
+   sentence says so, never "No check ran", which would be the schema speaking rather than the session. */
+export const ACodexVersionWithNoExitStatusIsNotRead: Story = {
+  ...codexScanned({ commands_unreadable: true }),
+  play: async ({ canvasElement }) => {
+    const node = await sentence(canvasElement);
+    await expect(node).toHaveTextContent(
+      'This Codex version records no exit status, so its commands are not read and no check is counted.',
+    );
+    await expect(node).not.toHaveTextContent('No check ran');
+  },
 };
 
 export const NoCheckRan: Story = {

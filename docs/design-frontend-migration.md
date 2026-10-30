@@ -17,6 +17,17 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-10-30, a Codex session's checks are work. Its record now lists the checks it ran and the files it
+patched ([the amendment](design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)),
+so the page reads a Codex `tool_report` as work, draws the Drift level for a Codex session from a stored
+reading, and says "Compass reads work results from Claude Code, Codex and Pi only." with a line of Codex's
+own under About this record. The retired page read no Codex work and said "Claude Code and Pi only". No
+golden file is changed. `work.differential.test.ts` asks the legacy functions with the recorded `work: false`
+on a Codex check and projects its answer to `work: true`; `workList.differential.test.ts` reads the recorded
+sentence as the new one and compares a Codex list in the shape the retired page drew it, so every row,
+number, flag and count is still held to the recording. The `Drift/Stages, harness limits and no reader` story for a Codex session and
+the `Drift/Check scan sentence` story for a rollout with no exit status hold the new words.
+
 2026-10-29, several later directions are listed by the picker alone. The question quoted every unsettled
 direction whole, each under its time, above a Direction picker that listed the same directions again, so a
 long session put 23 messages between the reader and the buttons. The page now says "You sent 23 messages after

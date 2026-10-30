@@ -21,7 +21,13 @@ import {
 import { PROMPT_SOURCES } from '../sessions/intent';
 import { harnessLabels } from '../sessions/rows';
 import { readingRoute } from './route';
-import { WORK_AS_REPORTED, WORK_READ_FROM, WORK_HARNESSES } from './sentences';
+import {
+  CODEX_COMMANDS_UNREAD,
+  CODEX_RECORD,
+  WORK_AS_REPORTED,
+  WORK_READ_FROM,
+  WORK_HARNESSES,
+} from './sentences';
 import { readingAuthor, readingCopied } from './shape';
 
 /* The session's activity, numbered. It sits right after CURRENT ACTIVITY in Full activity, under that
@@ -273,6 +279,9 @@ function humanLabel(value: string): string {
    ran would be false. */
 export function checkScan(scan: Row | null | undefined): string {
   if (!scan || typeof scan !== 'object') return '';
+  /* A Codex rollout with no structured exit status publishes this alone, never a count: "No check ran" would
+     be the schema speaking, not the session. */
+  if (scan['commands_unreadable'] === true) return CODEX_COMMANDS_UNREAD;
   const count = (n: number, one: string, many: string): string =>
     `${String(n)} ${n === 1 ? one : many}`;
   const runs = nextNumber(scan['check_runs']) || 0;
@@ -415,6 +424,11 @@ export function evidenceOwn(payload: Row, harness: string, sent = true): string 
       `${label} records the checks a session ran and the files it wrote, and they are listed here. A result is what the tool reported; Compass inspects no file, test or deliverable.` +
       (output ? ` ${output}` : '')
     );
+  }
+  if (harness === 'codex') {
+    const route = sent ? readingRoute(payload, { harness }) : null;
+    const output = route?.['provider'] ? String(route['tool_output'] || '') : '';
+    return `${label} ${CODEX_RECORD}` + (output ? ` ${output}` : '');
   }
   /* "Compass reads those on Pi alone" stood here, and stopped being true when Claude Code's checks were read
      too. The panel's own harness limit is the level's, so this line says only what the record above is. */

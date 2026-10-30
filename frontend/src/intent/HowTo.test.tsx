@@ -75,7 +75,7 @@ describe('the Intent how-to', () => {
       );
       expect(popup.textContent).toContain('2. Press Analyze drift.');
       expect(popup.textContent).toContain('3. Read where the work left your goal.');
-      expect(popup.textContent).toContain('Drift level: Claude Code and Pi sessions only.');
+      expect(popup.textContent).toContain('Drift level: Claude Code, Codex and Pi only.');
       expect(popup.textContent).toContain(
         reader
           ? `Analyze drift here: ${harness === 'pi' ? 'Codex' : 'Claude Code'}.`
