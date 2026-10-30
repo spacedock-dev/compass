@@ -575,7 +575,7 @@ check" where it rests on the agent's messages alone, "Consistent with what the s
 not a check", "Not reached at this stop" or "Can't tell · <your line>" with its own reason under it; the result's own words never say "Done" (an agent message it cites is quoted and attributed to the agent). A line that rules out a folder, or limits the work to one, departs on a file write the record holds
 there, whatever the reading said; a recorded passing check that covers a line is cited ahead of the agent's
 message on it, which it does only where the line claims that kind of check's result ("the tests pass"), never for a line that merely names the subject ("the lint config is left alone"). Unfinished work in flight
-at a non-final stop has its own result and cited explanation in view. It raises no
+at a non-final stop has its own result and cited explanation in view, where the record shows that line's work under way: a check or write that bears on it, or a call still running. A line only a message says is coming reads "Can't tell". It raises no
 departure, Medium level or Steer back offer, and cannot establish None or low. An unkept promise
 to continue or finish, a needless wait on you or a stated remainder of the asked-for set still
 counts as departure. While a turn is open, a departure that rests on messages alone is stored as not

@@ -3742,6 +3742,9 @@ CHECK_NOT_RECORDED_REASONS = {
     "ci_poll_unbound": "a CI poll of a pull request or repository this session is not bound to",
 }
 CI_POLL_UNBOUND = "ci_poll_unbound"
+# The most runs of one check a published entry lists, newest kept. A reading that finds this many
+# inside its window says "at least", because older ones may be cut.
+MAX_PUBLISHED_RUNS = 16
 
 
 def _withheld_reason(
@@ -5915,6 +5918,12 @@ class _ToolReportTally:
                     "result": outcome,
                     "result_source": source,
                     "result_reason": reason,
+                    # Whether the check's own pipeline pipes: into the next command, or from the
+                    # one before it. A pipe in another command of the same call is not the
+                    # check's (review, 2026-10-30). A line about how the check ran is judged from
+                    # this (owner, 2026-10-30).
+                    "piped": call.parts[index].joiner == "|"
+                    or (index > 0 and call.parts[index - 1].joiner == "|"),
                     "recorded": result is not None,
                     # When the result arrived (DRC-4702): it decides the window
                     # and which run is latest, never a change comparison.
@@ -6172,7 +6181,9 @@ class _ToolReportTally:
             key=lambda i: (_evidence_at(history[i]), i),
         )
 
-    def _check_entry(self, history: list[dict[str, Any]]) -> dict[str, Any]:
+    def _check_entry(
+        self, history: list[dict[str, Any]], own: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         index = self._latest(history)
         latest = history[index]
         source = self._run_source(latest)
@@ -6218,6 +6229,17 @@ class _ToolReportTally:
             entry["worker_kind"] = latest["worker"]
         if latest.get("listed"):
             entry["listed_by_reader"] = True
+        # Every run's time and whether its own pipeline piped, oldest first and newest kept: a line
+        # about how the check ran is judged from these, not from the latest run alone (owner,
+        # 2026-10-30,
+        # [DEC-29](docs/design-reading-a-session.md#amended-2026-10-30-owner-a-line-about-how-a-check-ran-is-judged-from-the-records-facts-about-that-run)).  # noqa: E501
+        # The check's own runs only: a covered failure joins this history for its result, and its
+        # runs are another check's (review, 2026-10-30).
+        mine = own if own is not None else history
+        runs = sorted(mine, key=lambda run: (run.get("at") or 0.0, run.get("seq", 0)))[
+            -MAX_PUBLISHED_RUNS:
+        ]
+        entry["runs"] = [{"at": run["at"], "piped": run.get("piped") is True} for run in runs]
         return entry
 
     def _histories(self) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -6373,7 +6395,7 @@ class _ToolReportTally:
         for identity, history in histories:
             entry = self._entry_cache.get(identity)
             if entry is None:
-                entry = self._check_entry(history)
+                entry = self._check_entry(history, self.runs[identity])
                 self._entry_cache[identity] = entry
             # Its own first run, not the merged history's: a failed run another pass covers joins
             # that pass's history, and the covered run's earlier time must not move the pass's
@@ -10984,6 +11006,7 @@ def _semantic_fact_from_event(
         "result",
         "result_source",
         "result_reason",
+        "runs",
         "earlier_failed",
         "before_last_change",
         "changed_after",

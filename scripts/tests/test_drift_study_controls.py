@@ -93,7 +93,8 @@ class MatchedScopeControls(unittest.TestCase):
             )
             for n in range(80)
         )
-        for budget in (2300, 3000, 4096, 8192, 16384):
+        # 2,426 since 2026-10-30: the trusted header grew by the run-facts sentence's 126 bytes.
+        for budget in (2426, 3000, 4096, 8192, 16384):
             with self.subTest(budget=budget):
                 a, sa = self.legacy.module.build_prompt(
                     ledger,
@@ -150,7 +151,19 @@ class MatchedScopeControls(unittest.TestCase):
                     type="agent_message",
                     at=100,
                     source_session={"harness": "claude", "sid": "s1"},
-                )
+                ),
+                # The work the line waits on, recorded after the message: a `not reached` stands
+                # only where the record shows the line's work under way
+                # (`reading._unfinished_shown`).
+                fact(
+                    fact_id="w1",
+                    type="tool_report",
+                    subject="write",
+                    result="",
+                    summary="ci/status.json",
+                    at=120,
+                    source_session={"harness": "claude", "sid": "s1"},
+                ),
             ]
             answers: list[dict[str, Any]] = []
             for control in (self.legacy, self.turn):

@@ -121,7 +121,16 @@ class NotReachedIsNeitherUnverifiableNorADeparture(unittest.TestCase):
         agent = reading_tests.entry(
             id="a1", type="agent_message", summary="CI is pending", at=level_tests.SAVE + 10
         )
-        selected = reading.Selection((agent,), asked_output=True)
+        # The work the line waits on, recorded after the message: a `not reached` stands only
+        # where the record shows the line's work under way (`reading._unfinished_shown`).
+        pushed = reading_tests.entry(
+            id="w1",
+            type="tool_report",
+            subject="write",
+            summary="ci/status.json",
+            at=level_tests.SAVE + 20,
+        )
+        selected = reading.Selection((agent, pushed), asked_output=True)
         return reading.resolve(
             {
                 "goal": {"token": "consistent", "cites": [1]},

@@ -2167,7 +2167,9 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   named later (owner, 2026-10-02). On Windows this is every route.
 
 It is quoted into the prompt as untrusted data, never into an instruction Compass writes: each
-check is one numbered row whose result words are Compass's own, and its output tail is one
+check is one numbered row whose result words are Compass's own (since 2026-10-30 they include how
+many of its runs fall inside the window and how many of those piped, composed from the times and a
+yes or no the collector keeps, and nothing else of the commands), and its output tail is one
 JSON-quoted field on that row with line breaks and the menu heading neutralised. A reply that obeys
 an instruction in that output is held to the same shape rules as any other. The unasked lane receives
 it for a failed result alone. The live drift estimate (DEC-26) reads
