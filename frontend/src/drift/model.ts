@@ -26,6 +26,7 @@ import { analysisLevel, liveEstimate, type Contexts, type DriftLevel } from './l
 import { ciEntries } from './ciRead';
 import { readingJob, readingRoute } from './route';
 import { LEVEL_SCALE } from './sentences';
+import { priorDepartures, type PriorDeparture } from './prior';
 import { lineRequestFloors, readingShape, type Shape } from './shape';
 
 /* What the Drift section and the activity list below it both read, derived once per render from the board, the
@@ -63,6 +64,8 @@ export interface DriftModel {
   readonly unsettled: boolean;
   readonly raw: Row | null;
   readonly shape: Shape | null;
+  /** Earlier departures the store kept that the standing reading answers only with the agent's message. */
+  readonly priors: readonly PriorDeparture[];
   /** The entries the surviving departures rest on, which the activity list flags "Cited". */
   readonly cited: ReadonlySet<string>;
   readonly job: Row | null;
@@ -323,6 +326,7 @@ export function buildModel(input: ModelInput): DriftModel {
     unsettled,
     raw,
     shape,
+    priors: annotate ? priorDepartures(session['annotation_prior_departures'], shape, entries) : [],
     cited: new Set((shape?.departures ?? []).flatMap((row) => row.citedIds || []).filter(Boolean)),
     job: readingJob(payload, session),
     route: readingRoute(payload, session),

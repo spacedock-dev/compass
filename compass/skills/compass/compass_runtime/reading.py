@@ -3784,6 +3784,37 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
     return False
 
 
+def lines_on_a_check(assessment: Assessment, facts: Iterable[Mapping[str, Any]]) -> frozenset[str]:
+    """The Goal and outcome lines this reading answers consistent on a check that passed.
+
+    Handed to the annotation store with the reading, because the store keeps fact ids and not what
+    they were: a departure a passing check answered is cleared for good (owner, 2026-10-30), so the
+    store drops the earlier departure it kept on such a line, and a later reading resting that line
+    on the agent's message lists nothing. The claims question is not a line.
+    """
+    by_id = {str(fact.get("fact_id")): fact for fact in facts}
+    start = float(assessment.get("window_start") or 0.0)
+
+    def passed(fact_id: str) -> bool:
+        fact = by_id.get(fact_id)
+        return (
+            fact is not None
+            and (
+                str(fact.get("type") or "") == CI_CHECK_TYPE
+                or fact.get("subject") in RESULT_SUBJECTS
+            )
+            and check_supports(fact, RESULT_CONSISTENT, start)
+        )
+
+    return frozenset(
+        key
+        for key, row in assessment["criteria"].items()
+        if key != CONSTRAINT_CLAIMS
+        and row.get("result") == RESULT_CONSISTENT
+        and any(passed(cite) for cite in row["cites"])
+    )
+
+
 # `semantic_history.PI_CHECK_SOURCE_PREFIX`, spelled again rather than imported:
 # this module does not depend on the store, and the import graph is reviewed.
 _PI_CHECK_SOURCE_PREFIX = "Pi bash tool call"

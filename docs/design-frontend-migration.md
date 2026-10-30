@@ -348,6 +348,10 @@ recorded once and the React page stays held to the recording:
   remade.
 - A check entry now carries `resultReason`, the rule that withheld its result. The retired page had no
   such field, so `withoutLaterFields` drops it too, and the recorded answers stay unchanged.
+- The annotation a row carries now names `prior_departures`, the earlier departures the store keeps
+  beside a reading. The retired page had no such field, so `withoutLaterFields` drops it from the
+  annotation the Intent differential tests hand the retired functions, and their recorded answers stay
+  unchanged.
 - The recordings cannot be remade. A changed generator, input, step or label has no recorded answer
   and fails. A deliberate departure from a recorded behaviour is an edit to the test that says so and an
   entry under the surface's deviations below, so the departure is a recorded fact rather than a

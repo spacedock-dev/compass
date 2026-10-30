@@ -121,6 +121,15 @@ The posture rests on two invariants:
    because any local process can rewrite the file. Everything else a reading holds is a value the
    code selected from a closed set or composed from counts it measured.
 
+   Since 2026-10-30 the entry can also hold up to seven **earlier departures**, one per Goal or
+   outcome line: a departure a reading found that the reading replacing it no longer finds, kept
+   so the page can list it beside the later reading. Each carries the same scrubbed `detail` and
+   the clause it was about, so model prose now outlives the reading that wrote it. Each is parsed
+   by the reading's own validator, redacted on the way in and again on the way out, and goes when
+   a later reading departs on that line again or answers it on a check that passed, when the
+   line's words change, and with the annotation itself. It is published as `annotation_prior_departures` and never enters session
+   history ([the ruling](docs/design-reading-a-session.md#amended-2026-10-30-owner-an-earlier-departure-stays-listed)).
+
    Delegated owner acceptance, 2026-10-05: a local rewrite of `detail` is scrubbed and
    escaped, but the prose verdict backstop used at production is not reapplied when loading the
    file. A rewritten detail can therefore say the work succeeded beside a valid departure token.
@@ -140,11 +149,12 @@ The posture rests on two invariants:
 
    Two consequences of storing it here rather than in session history, both accepted rather than
    discovered. `--forget` deletes the session-history, session-end and summary stores and **deletes nothing
-   a reader typed and no reading of it**, so a reader who wants a model-authored reading gone
-   clears that session's annotation, which deletes the reading with the words that produced it.
+   a reader typed and no reading of it**, nor any earlier departure kept beside one, so a reader who
+   wants a model-authored reading gone clears that session's annotation, which deletes the reading
+   and its earlier departures with the words that produced them.
    The one thing that command does take out of this file is the discard records described below,
    which hold no text at all. And there is no
-   fourteen-day expiry: a reading is evicted when its annotation is, oldest-save-first at the
+   fourteen-day expiry: a reading and its earlier departures are evicted when the annotation is, oldest-save-first at the
    session count above. The fourth disk writer, `POST /api/tripwire`, saves, rearms or removes
    workflow stage conditions in Compass's own store; [Saved workflow stage conditions](#saved-workflow-stage-conditions)
    owns its bounds. The fifth, `POST /api/reading/cancel`, marks the running analysis cancelled,

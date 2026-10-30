@@ -187,6 +187,10 @@ OBSERVATION_FIELDS: Final[tuple[str, ...]] = (
 # `tool_report` is tool-derived rather than prompt-derived: a Claude Code or Codex
 # session's check lines and written paths. It is named here because item 6 of
 # the ruling `reading.build_ledger` cites holds it to the same rule.
+#
+# `annotation_prior_departures` is model prose beside the reader's clause, kept after the
+# reading that wrote it is replaced. Named here for the same reason, so the comparison rather
+# than review keeps it out of the store (DEC-15b's 2026-10-30 amendment).
 PROMPT_DERIVED_CARRIERS: Final[tuple[str, ...]] = (
     "first_prompt",
     "annotation_goal",
@@ -202,6 +206,7 @@ PROMPT_DERIVED_CARRIERS: Final[tuple[str, ...]] = (
     "state_detail",
     "title",
     "tool_report",
+    "annotation_prior_departures",
 )
 
 # [DEC-13](SECURITY.md#local-history-the-session-history-store)'s allowlist, in code, and empty

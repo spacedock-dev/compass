@@ -361,3 +361,142 @@ export const AReplacedDepartureWithNoCorrectionIsNamed: Story = {
     await expect(canvasElement.querySelectorAll('[data-next-departure]')).toHaveLength(1);
   },
 };
+
+/* After the steer, the agent explained the departing edit and the next reading answered the line with that
+   message alone: "Consistent with what the agent said at #n; not a check". The store kept the earlier departure
+   beside the reading (`annotation_prior_departures`), so the card lists it under the later reading, with the
+   write it cited and its reason, and the verdict says it is still listed rather than that it no longer holds.
+   A line a check answers after the correction lists nothing, and keeps the sentence the steer earned. */
+const STYLES_LINE = 'Leave the stylesheets alone';
+const STYLES_WRITE = fact('w1', 650, { subject: 'write', summary: 'src/styles/queue.css' });
+const STYLES_DETAIL = 'A stylesheet was written, which this line rules out.';
+const STYLES_DEPARTURE = {
+  result: 'departure',
+  cites: ['w1'],
+  detail: STYLES_DETAIL,
+  clause: STYLES_LINE,
+  why: 'recorded-write',
+};
+const STYLES_READING = {
+  ...DEPARTURE_READING,
+  criteria: {
+    goal: { ...CANT_TELL, clause: 'Ship the queue' },
+    line_1: DEPARTURE_READING.criteria.line_1,
+    line_2: STYLES_DEPARTURE,
+  },
+};
+const STYLES_CORRECTION = fact('p1', 1050, {
+  type: 'user_message',
+  by: 'person:me',
+  copied: true,
+  summary: 'Back to my goal: Ship the queue, and leave the stylesheets alone.',
+});
+const EXPLAINED = fact('m6', 1080, {
+  type: 'agent_message',
+  by: 'agent',
+  summary: 'The stylesheet edit was needed for the queue page, so I kept it and committed it.',
+});
+const RECHECKED = passedCheck('c3', 1090);
+const STYLES_PRIOR = [
+  { key: 'line_2', read_at: 1000, revision_read: 3, criterion: STYLES_DEPARTURE },
+];
+const restyled = (line2: Record<string, unknown>) => ({
+  ...STYLES_READING,
+  read_at: 1100,
+  evidence_through: 1100,
+  criteria: {
+    ...STYLES_READING.criteria,
+    line_2: { detail: '', clause: STYLES_LINE, ...line2 },
+  },
+});
+const stylesSession = (): Record<string, unknown> => ({
+  annotation_line_2: STYLES_LINE,
+  annotation_assessment: STYLES_READING,
+  annotation_reading_count: 1,
+  state: 'idle',
+});
+
+const LISTED_SESSION = stylesSession();
+const LISTING = readingScenario([null]);
+export const AnEarlierDepartureClearedOnlyByTheAgentStaysListed: Story = {
+  ...scenario({
+    session: LISTED_SESSION,
+    facts: [PERSON, PASSED, STYLES_WRITE, STYLES_CORRECTION, EXPLAINED],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'] }] },
+    reading: LISTING,
+  }),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
+    );
+    await expect(canvasElement.querySelector('[data-next-prior-departures]')).toBeNull();
+    LISTED_SESSION['annotation_assessment'] = restyled({
+      result: 'consistent with the evidence read',
+      cites: ['m6'],
+    });
+    LISTED_SESSION['annotation_reading_count'] = 2;
+    LISTED_SESSION['annotation_prior_departures'] = STYLES_PRIOR;
+    await LISTING.finish?.();
+    const group = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-prior-departures]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    const card = group.querySelector<HTMLElement>('[data-next-prior-departure="line_2"]');
+    await expect(card).not.toBeNull();
+    await expect(card?.querySelector('[data-next-departure-label]')).toHaveTextContent(
+      'Earlier departure · Expected outcome 2',
+    );
+    // What the earlier reading cited and why, through the same card a standing departure draws.
+    await expect(card?.querySelector('[data-next-cite="w1"]')).not.toBeNull();
+    await expect(card).toHaveTextContent(STYLES_DETAIL);
+    await expect(card?.querySelector('[data-next-prior-departure-source]')).toHaveTextContent(
+      new RegExp(
+        `^From the ${clock(1000)} reading\\. The ${clock(1100)} reading rests this line on what the agent said at #\\d+, which is not a check\\.$`,
+      ),
+    );
+    // No departure stands, and the reader is not told the steer worked.
+    await expect(canvasElement.querySelector('[data-next-departures]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
+    await expect(canvasElement.textContent).not.toContain('no longer holds');
+    await expect(canvasElement.querySelector('[data-next-drift-prior-listed]')).toHaveTextContent(
+      `The departure from the ${clock(1000)} reading is still listed below: the reading after it rests on what the agent said.`,
+    );
+  },
+};
+
+const CHECKED_SESSION = stylesSession();
+const CHECKING = readingScenario([null]);
+export const AnEarlierDepartureAnsweredByACheckIsNotListed: Story = {
+  ...scenario({
+    session: CHECKED_SESSION,
+    facts: [PERSON, PASSED, STYLES_WRITE, STYLES_CORRECTION, EXPLAINED, RECHECKED],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'] }] },
+    reading: CHECKING,
+  }),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
+    );
+    CHECKED_SESSION['annotation_assessment'] = restyled({
+      result: 'consistent with the evidence read',
+      cites: ['c3'],
+    });
+    CHECKED_SESSION['annotation_reading_count'] = 2;
+    // The store keeps it all the same; the page lists it only where the agent's word alone answers the line.
+    CHECKED_SESSION['annotation_prior_departures'] = STYLES_PRIOR;
+    await CHECKING.finish?.();
+    const cleared = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-drift-cleared]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(cleared).toHaveTextContent(
+      `The departure your correction named, from the ${clock(1000)} reading, no longer holds.`,
+    );
+    await expect(canvasElement.querySelector('[data-next-prior-departures]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-prior-listed]')).toBeNull();
+  },
+};

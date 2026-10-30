@@ -965,6 +965,60 @@ class NoCommandRunsWithoutAPressABindingAndTheSwitchOn(_PressCase):
             seen["ci"]()
             self.assertEqual([1], launched)
 
+    def test_the_press_tells_its_job_which_lines_a_passing_check_answered(self) -> None:
+        # The store keeps fact ids only, so the press, which holds the facts and the CI checks it
+        # read, names the lines a passing check answered; an earlier departure there goes for good.
+        passed = {
+            "fact_id": "c1",
+            "type": "tool_report",
+            "subject": "check",
+            "result": "passed",
+            "at": 120.0,
+        }
+        said = {"fact_id": "m1", "type": reading.AGENT_MESSAGE_TYPE, "at": 125.0}
+        green = {
+            "fact_id": "ci:7:0",
+            "type": reading.CI_CHECK_TYPE,
+            "result": reading.CI_RESULT_PASSED,
+            "ci_counts": True,
+            "at": 130.0,
+        }
+
+        def row(cite: str) -> dict[str, Any]:
+            return {
+                "result": reading.RESULT_CONSISTENT,
+                "cites": (cite,),
+                "detail": "",
+                "clause": "x",
+                "why": "",
+            }
+
+        def produce(*_args: Any, **kwargs: Any) -> tuple[dict[str, Any], str, bool]:
+            kwargs["ci"]()
+            criteria = {"line_1": row("c1"), "line_2": row("ci:7:0"), "line_3": row("m1")}
+            return {"window_start": 50.0, "criteria": criteria}, "", True
+
+        entry = {"revisions": [{"n": 1, "at": 50.0, "goal": GOAL_TEXT}]}
+        with (
+            mock.patch.object(http_api, "_read_ci", return_value={"number": 7}),
+            mock.patch.object(ci_read, "facts", return_value=[green]),
+            mock.patch.object(reading, "produce", side_effect=produce),
+            mock.patch.object(observer, "resolve_transcript", return_value=""),
+            mock.patch.object(http_api, "_session_context", return_value={}),
+            mock.patch.object(http_api, "_facts_of", return_value=[passed, said]),
+            self.boom(),
+        ):
+            self.hooks.phase = lambda *_a: None
+            self.handler._reading_arguments = lambda *_a, **_kw: {}
+            http_api._RequestHandler._compose_reading(
+                cast("Any", self.handler),
+                {"harness": "claude", "sid": "s1", "state": "working", "ended_at": None},
+                cast("Any", entry),
+                cast("Any", types.SimpleNamespace()),
+                cast("Any", self.hooks),
+            )
+        self.assertEqual(frozenset({"line_1", "line_2"}), self.hooks.on_a_check)
+
     def test_turning_it_back_on_removes_the_marker(self) -> None:
         cfg = cast("Any", self.config)
         ci_read.set_setting(cfg, on=False)

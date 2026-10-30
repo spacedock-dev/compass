@@ -400,14 +400,53 @@ export const GOAL_VERDICT_LINES: Readonly<Record<string, (why: string) => string
 
 /* Said once, on the reading that no longer finds a departure the one before it did, with that reading's time:
    a departure that clears names itself, since nothing else on the card says the earlier one ended. When the
-   reader pasted corrections between the two readings it says they named it, in the singular for the one. */
-export const clearedLine = (count: number, at: string, corrections = 0): string => {
-  const subject = count === 1 ? 'The departure' : `The ${String(count)} departures`;
+   reader pasted corrections between the two readings it says they named it, in the singular for the one.
+   `alongside` is set when the verdict also says another departure of that reading is still listed, so neither
+   sentence reads as being about every departure that reading found. */
+export const clearedLine = (
+  count: number,
+  at: string,
+  corrections = 0,
+  alongside = false,
+): string => {
+  const subject =
+    count === 1
+      ? alongside
+        ? 'One departure'
+        : 'The departure'
+      : alongside
+        ? `${String(count)} departures`
+        : `The ${String(count)} departures`;
   const verb = count === 1 ? 'no longer holds' : 'no longer hold';
   if (corrections === 0) return `${subject} from the ${at} reading ${verb}.`;
   const who = corrections === 1 ? 'your correction' : 'your corrections';
   return `${subject} ${who} named, from the ${at} reading, ${verb}.`;
 };
+/* An earlier departure the next reading answered with the agent's own message, and nothing that shows the work,
+   is not said to be gone: the card lists it, and the verdict says so in place of `clearedLine`. With no single
+   time to name, the readings are named together. Beside a `clearedLine` it is the other one (`alongside`). */
+export const priorListedLine = (count: number, at: string, alongside = false): string => {
+  const subject =
+    count === 1
+      ? alongside
+        ? 'Another departure'
+        : 'The departure'
+      : alongside
+        ? `${String(count)} other departures`
+        : `The ${String(count)} departures`;
+  const verb = count === 1 ? 'is' : 'are';
+  const from = at ? `the ${at} reading` : 'earlier readings';
+  const after = at ? 'it' : 'them';
+  return `${subject} from ${from} ${verb} still listed below: the reading after ${after} rests on what the agent said.`;
+};
+export const PRIOR_DEPARTURE_LABEL = 'Earlier departure';
+export const priorDepartureLine = (
+  earlier: string,
+  later: string,
+  where: string,
+  key = '',
+): string =>
+  `From the ${earlier} reading. The ${later} reading rests ${key === 'goal' ? 'the goal' : 'this line'} on what the agent said at ${where}, which is not a check.`;
 export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";

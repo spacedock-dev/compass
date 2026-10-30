@@ -46,6 +46,9 @@ import {
   DEPARTURE,
   NOT_REACHED,
   LEVEL_SCALE,
+  PRIOR_DEPARTURE_LABEL,
+  priorDepartureLine,
+  priorListedLine,
   READ_INTENT,
   READ_MODEL,
   READ_NEVER,
@@ -66,6 +69,7 @@ import {
 } from './sentences';
 import { datedClock } from '../observed/values';
 import { ReadingCount, WhatIsSent, type SteerSlot } from './ReadingControl';
+import { PRIOR_FINDING, type PriorDeparture } from './prior';
 import { isOutcomeLine, type Criterion, type Shape } from './shape';
 import { CitationLink } from './CitationLink';
 import { CitedText } from './CitedText';
@@ -96,7 +100,14 @@ function jumpName(key: string): string {
    agent's or yours, never as the result's). A number opens Full activity at that entry; an entry the page does
    not hold yet keeps the press that reads older pages for it. The shape demotes a departure with no held
    citation, so a departure always reaches at least one number. */
-function CitedEntries({ row }: { readonly row: Criterion }) {
+function CitedEntries({
+  row,
+  findingKey = row.key,
+}: {
+  readonly row: Criterion;
+  /** What a press names: the row's own key, or an earlier departure's (`PRIOR_FINDING`). */
+  readonly findingKey?: string;
+}) {
   const { model, chooseFinding, jumpMissing } = useDrift();
   const record = useDisplayed((snapshot) =>
     snapshot.records.get(contextKey(model.projectKey, model.identity)),
@@ -121,10 +132,10 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
         id={id}
         className="ml-1.5"
         data-next-cockpit-action="finding-jump"
-        data-next-finding={row.key}
+        data-next-finding={findingKey}
         data-next-cite={id}
         aria-label={`Show ${where} in Full activity for ${named}`}
-        onJump={(origin) => chooseFinding(row.key, origin, id)}
+        onJump={(origin) => chooseFinding(findingKey, origin, id)}
       >
         {where.startsWith('#') ? `[${where.slice(1)}]` : `[${where}]`}
       </CitationLink>
@@ -155,15 +166,15 @@ function CitedEntries({ row }: { readonly row: Criterion }) {
   /* Kept while its "could not be loaded" sentence stands, so the way back from that sentence has a place to
      land. */
   const load =
-    !held.length && (loadable || jumpMissing?.press.key === row.key) ? (
+    !held.length && (loadable || jumpMissing?.press.key === findingKey) ? (
       <Button
         type="button"
         variant="bare"
         data-next-cockpit-action="finding-jump"
-        data-next-finding={row.key}
+        data-next-finding={findingKey}
         data-next-cite=""
         aria-label={`Load the cited entries in Full activity for ${named}`}
-        onClick={(event) => chooseFinding(row.key, event.currentTarget)}
+        onClick={(event) => chooseFinding(findingKey, event.currentTarget)}
       >
         Load the cited entries
       </Button>
@@ -221,11 +232,26 @@ function StatusQualifier({ row, status }: { readonly row: Criterion; readonly st
 
 /* One departure from the reader's intent, as its own card: which constraint, the constraint's own words as the
    headline: what happened, derived from the cited entry because no model writes one ([DEC-28](../../../docs/design-session-summary.md#the-ruling) answer 7), What
-   as the cited entries, and Why as the reading's stored `detail`, the one string a model wrote. */
-function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly outcomes: number }) {
-  const { model } = useDrift();
+   as the cited entries, and Why as the reading's stored `detail`, the one string a model wrote. An earlier
+   departure the store kept (`prior`) is the same card under its own label, with the sentence that says which
+   reading found it and what the later one rests on, and none of the attributes a standing departure is found by. */
+function DepartureCard({
+  row,
+  outcomes,
+  prior = null,
+}: {
+  readonly row: Criterion;
+  readonly outcomes: number;
+  readonly prior?: PriorDeparture | null;
+}) {
+  const { ctx, model } = useDrift();
   const detail = String(row.detail || '').trim();
-  const head = `departure-head:${model.key}:${row.key}`;
+  const head = `${prior ? 'prior-departure-head' : 'departure-head'}:${model.key}:${row.key}`;
+  /* An earlier departure is named "Earlier departure" to a screen reader too: its name starts at the label. */
+  const label = `prior-departure-label:${model.key}:${row.key}`;
+  const laterAt = nextNumber(model.raw?.['read_at']);
+  /* Earlier departures never expire, so a reading from another day carries its date. */
+  const now = ctx.shell.clock.now() / 1000;
   const title = departureTitle(
     [...new Set(row.citedIds)]
       .map((id) => model.byId.get(id))
@@ -235,16 +261,20 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
   return (
     <article
       className="flex items-start gap-3 rounded-[10px] bg-[var(--raise)] px-[18px] py-4 max-[480px]:gap-2 max-[480px]:px-3"
-      aria-labelledby={head}
-      data-next-departure={row.key}
-      data-next-result-state={resultState(row)}
-      {...(row.key === 'goal' ? { 'data-next-result-goal': '' } : {})}
+      aria-labelledby={prior ? `${label} ${head}` : head}
+      {...(prior
+        ? { 'data-next-prior-departure': row.key }
+        : {
+            'data-next-departure': row.key,
+            'data-next-result-state': resultState(row),
+            ...(row.key === 'goal' ? { 'data-next-result-goal': '' } : {}),
+          })}
     >
       <span className="next-cockpit-result-glyph" aria-hidden="true" />
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex flex-col gap-0.5">
-          <p className={LABEL_CLAY} data-next-departure-label>
-            {`Departure · ${constraintName(row.key, outcomes)}`}
+          <p className={LABEL_CLAY} data-next-departure-label {...(prior ? { id: label } : {})}>
+            {`${prior ? PRIOR_DEPARTURE_LABEL : 'Departure'} · ${constraintName(row.key, outcomes)}`}
           </p>
           <h4
             id={head}
@@ -256,7 +286,7 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
         </div>
         <div className="flex max-w-[45rem] flex-col gap-1" data-next-departure-what>
           <p className={LABEL}>What</p>
-          <CitedEntries row={row} />
+          <CitedEntries row={row} findingKey={prior ? `${PRIOR_FINDING}${row.key}` : row.key} />
         </div>
         <div className="flex max-w-[45rem] flex-col gap-0.5" data-next-departure-why>
           <p className={LABEL}>Why Compass reads this as drift</p>
@@ -269,7 +299,18 @@ function DepartureCard({ row, outcomes }: { readonly row: Criterion; readonly ou
             <CitedText text={row.coverage} />
           </p>
         ) : null}
-        <DepartureSummaryLine row={row.key} />
+        {prior ? (
+          <p className={QUIET} data-next-prior-departure-source>
+            {priorDepartureLine(
+              datedClock(prior.readAt, now),
+              laterAt ? datedClock(laterAt, now) : 'later',
+              resultWhere(prior.later.restsOnEntry, model.numbers) || 'an earlier entry',
+              row.key,
+            )}
+          </p>
+        ) : (
+          <DepartureSummaryLine row={row.key} />
+        )}
         <Qualifiers row={row} />
       </div>
     </article>
@@ -755,6 +796,7 @@ export function ReadingResult({
   /* What the agent claimed, after the intent it is independent of. */
   const claimed = refused ? [] : claimsDrawn(shape);
   const quiet = goal.length + lines.length + claimed.length > 0;
+  const priors = refused ? [] : model.priors;
   /* A current result keeps the disclosure and accounting without a second run control: the card header holds
      the one, in every state. A direction question owns the run path while it stands.
      [DEC-27](../../../docs/design-reading-a-session.md#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result) */
@@ -762,6 +804,13 @@ export function ReadingResult({
   /* The verdict sentence above the level says the answer once; a heading here says it only where that
      sentence is not drawn, over a reading marked inaccurate. */
   const marked = annotation['not_accurate'] === true;
+  const priorGroup = priors.length ? (
+    <div className="flex flex-col gap-3.5" data-next-prior-departures>
+      {priors.map((prior) => (
+        <DepartureCard key={prior.key} row={prior.row} outcomes={outcomes} prior={prior} />
+      ))}
+    </div>
+  ) : null;
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
       {question}
@@ -800,9 +849,12 @@ export function ReadingResult({
             {steerOff}
           </p>
         ) : null}
+        {/* Earlier departures the standing reading answers only with the agent's word: after the ones that stand,
+            before the quiet rows, one of which is that later answer. */}
+        {marked ? null : priorGroup}
         {quiet ? (
           <div
-            className={`flex flex-col gap-3 ${departures.length ? 'border-t border-[var(--rule)] pt-3' : ''}`}
+            className={`flex flex-col gap-3 ${departures.length || (priors.length && !marked) ? 'border-t border-[var(--rule)] pt-3' : ''}`}
             data-next-result-quiet
           >
             {goal.map((row) => (
@@ -824,6 +876,8 @@ export function ReadingResult({
           question owns the primary press and Steer back is the secondary beside it (owner, 2026-10-20). */}
         {slotted ? <SteerSection buttons={slotted.button} box={slotted.box} /> : null}
       </div>
+      {/* The reader's mark sets aside the reading it was about, not what an earlier reading found. */}
+      {marked ? priorGroup : null}
       {foot ? <div className="next-cockpit-result-press">{foot}</div> : null}
       <div
         className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-2.5"
@@ -874,6 +928,19 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
     'level' in estimate &&
     LEVEL_SCALE.includes(estimate.level);
   const early = earlyLine(answer, shape, raw, entries);
+  const priorTimes = new Set(model.priors.map((prior) => prior.readAt));
+  const [priorAt] = priorTimes;
+  /* Both lines at once say which is which, "One departure … no longer holds" and "Another departure … is still
+     listed", so neither reads as every departure of that reading. */
+  const both = Boolean(cleared) && model.priors.length > 0;
+  const now = ctx.shell.clock.now() / 1000;
+  const listed = model.priors.length
+    ? priorListedLine(
+        model.priors.length,
+        priorTimes.size === 1 && priorAt ? datedClock(priorAt, now) : '',
+        both,
+      )
+    : '';
   return (
     <>
       <p
@@ -906,7 +973,15 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
           className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
           data-next-drift-cleared
         >
-          {clearedLine(cleared.count, clock(cleared.readAt), cleared.corrections)}
+          {clearedLine(cleared.count, clock(cleared.readAt), cleared.corrections, both)}
+        </p>
+      ) : null}
+      {listed ? (
+        <p
+          className="mx-4 my-0 max-w-[var(--measure)] text-value leading-[1.45] text-foreground"
+          data-next-drift-prior-listed
+        >
+          {listed}
         </p>
       ) : null}
     </>
