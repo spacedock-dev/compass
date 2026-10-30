@@ -4510,7 +4510,9 @@ def _shows_it_done(entry: Mapping[str, Any], window_start: float) -> bool:
     """A published citation that keeps a `consistent` beside a recorded write: a check, a CI
     command or a CI check that passed, a pull request created or a skill used, each as
     `check_supports` admits it. A tier-3 command, `git commit` included, never does: its exit
-    status says it ran, not what it checked (DEC-29 item 2, narrowed beside a write)."""
+    status says it ran, not what it checked. Item 2 of
+    [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+    is narrowed beside a write."""
     if entry.get("subject") == COMMAND_SUBJECT:
         return False
     return (
