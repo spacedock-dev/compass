@@ -1879,14 +1879,56 @@ def codex_child_rollouts(
     if not session or root.get("subagent"):
         return []
     return [
-        path
-        for path in runtime_io.glob_stores(
-            config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"
-        )
-        if path != rollout_path
-        and (meta := transcripts.codex_meta(config, state, path)).get("subagent")
-        and meta.get("session_id") == session
+        path for path in _codex_child_index(config, state).get(session, ()) if path != rollout_path
     ]
+
+
+def _codex_store_stamp(config: RuntimeConfig) -> tuple[tuple[str, int], ...]:
+    """The mtime of every directory a rollout can sit in (`<root>/<year>/<month>/<day>`).
+
+    A rollout is created once and appended to after, and creating one moves its day folder's mtime
+    and nothing else's, so this is cheap to restate (a few hundred stats at 9,000 rollouts, against
+    the glob's 0.7 s) and changes exactly when a child could have appeared or gone. A rollout's
+    own head is written at creation, so a head never changes behind an unmoved stamp.
+    """
+    stamp: list[tuple[str, int]] = []
+
+    def walk(directory: str, depth: int) -> None:
+        try:
+            stamp.append((directory, os.stat(directory).st_mtime_ns))
+            if depth == 3:
+                return
+            with os.scandir(directory) as entries:
+                children = sorted(entry.path for entry in entries if entry.is_dir())
+        except OSError:
+            return
+        for child in children:
+            walk(child, depth + 1)
+
+    for root in config.store_roots.get("codex.sessions", ()):
+        walk(root, 0)
+    return tuple(stamp)
+
+
+def _codex_child_index(config: RuntimeConfig, state: RuntimeState) -> dict[str, list[str]]:
+    """Every subagent rollout in the store, by the root session id its head names.
+
+    One glob and one head read per rollout when the store's directories change, and none otherwise,
+    where `codex_child_rollouts` used to glob the whole store for every session on every collect.
+    """
+    stamp = _codex_store_stamp(config)
+    with state.cache_lock:
+        held = state.codex_child_index
+    if held is not None and held[0] == stamp:
+        return held[1]
+    index: dict[str, list[str]] = {}
+    for path in runtime_io.glob_stores(config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"):
+        meta = transcripts.codex_meta(config, state, path)
+        if meta.get("subagent") and (owner := meta.get("session_id")):
+            index.setdefault(owner, []).append(path)
+    with state.cache_lock:
+        state.codex_child_index = (stamp, index)
+    return index
 
 
 # The harnesses whose whole transcript `resolve_transcript` finds, and the one

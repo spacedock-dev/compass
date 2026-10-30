@@ -112,6 +112,12 @@ class RuntimeState:
     claude_subagent_cache: dict[str, tuple[tuple[float, ...], list[str]]] = field(
         default_factory=dict
     )
+    # (rollout path, the bounds a read depends on) -> (stamps of the root and every child, expiry,
+    # the read). See `project_context.CODEX_CHECK_CACHE_SEC`; `bounded_put` at its own small limit.
+    codex_check_cache: dict[Any, Any] = field(default_factory=dict)
+    # (the store directories' mtimes, every child rollout by its root's session id), so a collect
+    # and a press list no store per session. See `observer.codex_child_rollouts`.
+    codex_child_index: tuple[tuple[Any, ...], dict[str, list[str]]] | None = None
     delegated_work_cache: dict[
         str, tuple[tuple[tuple[str, int, int], ...], list[dict[str, Any]], bool, float]
     ] = field(default_factory=dict)
