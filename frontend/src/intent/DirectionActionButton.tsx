@@ -14,7 +14,7 @@ export function DirectionActionButton({
   const message = ctx.held.actionFeedback.get(feedbackKey);
   return (
     <div
-      className={`flex min-w-0 flex-col gap-1 ${fit ? 'shrink-0' : 'flex-1'}`}
+      className={`flex min-w-0 flex-col gap-1 ${fit ? 'max-w-full shrink-0' : 'flex-1'}`}
       data-next-direction-control={feedbackKey}
     >
       <ActionButton

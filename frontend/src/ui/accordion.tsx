@@ -9,7 +9,7 @@ import { cn } from '../lib/utils';
 import { DisclosureChevron } from './disclosureChevron';
 
 export const disclosureTrigger =
-  'min-h-[44px] min-w-[44px] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2';
+  'min-h-[44px] min-w-[44px] max-w-full text-start focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2';
 export const disclosureMotion =
   'overflow-clip [overflow-clip-margin:6px] opacity-100 transition-[height,opacity] duration-[var(--disclose-dur)] ease-[var(--disclose-ease)] data-[starting-style]:h-0 data-[starting-style]:opacity-0 data-[ending-style]:h-0 data-[ending-style]:opacity-0 motion-reduce:transition-none motion-reduce:h-auto motion-reduce:data-[starting-style]:h-auto motion-reduce:data-[ending-style]:h-auto motion-reduce:data-[starting-style]:opacity-100 motion-reduce:data-[ending-style]:opacity-100';
 

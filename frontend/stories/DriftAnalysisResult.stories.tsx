@@ -271,11 +271,12 @@ export const MarkedInaccurate: Story = {
     await expect(within(notice).getByRole('status')).toHaveTextContent(RESULT_MARKED);
     await expect(within(notice).getByRole('button', { name: RESULT_UNMARK })).toBeVisible();
     await expect(within(notice).getByRole('button', { name: 'Analyze again' })).toBeVisible();
-    // The verdicts stay readable and are set aside: dimmed, and under the one message.
+    // The verdicts stay readable and are set aside: drawn grey, and under the one message. Grey rather than
+    // faded, because a faded clay label fell to 2.8:1 and the accessibility audit holds every text to 4.5:1.
     const disowned = drift.querySelector<HTMLElement>('[data-next-disowned]');
     await expect(disowned).not.toBeNull();
     await expect(disowned).toHaveTextContent('Departs from your intent');
-    await expect(Number(getComputedStyle(disowned as HTMLElement).opacity)).toBeLessThan(0.8);
+    await expect(getComputedStyle(disowned as HTMLElement).filter).toBe('grayscale(1)');
     // The old wording is gone.
     await expect(drift.textContent).not.toContain('Not accurate?');
     await expect(drift.textContent).not.toContain('Drift level hidden because you marked');

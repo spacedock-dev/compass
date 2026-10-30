@@ -8,7 +8,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '../lib/utils';
 
 export const fieldBase =
-  'box-border min-h-[44px] min-w-0 max-w-full border border-input rounded-control text-body [font-family:var(--sans)] font-normal [text-align:start] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-[2px] disabled:cursor-not-allowed aria-invalid:border-destructive';
+  'box-border min-h-[44px] min-w-0 max-w-full border border-input rounded-control text-body [font-family:var(--sans)] font-normal [text-align:start] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-[2px] placeholder:text-[color:var(--ink3)] disabled:cursor-not-allowed aria-invalid:border-destructive';
 
 export function Input({ className, type, ...props }: ComponentProps<'input'>) {
   return (

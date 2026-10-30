@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2247903,
+    "bytes": 2248359,
     "file": "react.html",
-    "sha256": "e96669423e818f155ef4d72f4d6dcd44d6745dca44ddffef625d1579d0c3e9ed"
+    "sha256": "57579c4e25c8a194503eb6e3a117e02d65d568d97ad686a954934f6d1b60946a"
   },
   "format": 1,
   "frontend": "react",
@@ -563,7 +563,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "8fffbadb1db54f77dc3f540ab62eced1ea66a6642c17ce88f64564689781355a"
+        "sha256": "82b2ad38778bf906484755e9eb8ce115fa7d87bb46153319921db7ff745ba462"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -619,7 +619,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "c2de39838c94eae465b53eba4ef9d67330418da199acece3318b62ead45d122a"
+        "sha256": "c4297271e8eb0cf4a76973942ce927ed0d6e77aa06ef8efdd501c6cfe7853430"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -775,7 +775,7 @@
       },
       {
         "file": "frontend/src/intent/DirectionActionButton.tsx",
-        "sha256": "5a292db360033dd602199525a486a012d84f99d5f16aaa62fcc7f038477224e2"
+        "sha256": "c5b1c95ca8bc5729b8e83318027934c09839c98c2f444a4f97655173411c8a32"
       },
       {
         "file": "frontend/src/intent/DirectionQuestion.tsx",
@@ -1183,7 +1183,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "144bc35cc9692765ce0eb9b31b844d9d20bfc5f1930e5cfe4b38be04663deadc"
+        "sha256": "a03bcf2355b6f78d08916de838d116472be9f49e0d6f178b0626e859b5c19c60"
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
@@ -1635,7 +1635,7 @@
       },
       {
         "file": "frontend/src/ui/accordion.tsx",
-        "sha256": "bcaa2cf517bed44059a1a633b1cb50eb65fe787e319508fcc3a3c2ed38b537b5"
+        "sha256": "a592d2dbc083680d918466484532fb9bfe1af2f5dd471aeab2b8eae8fa071bd0"
       },
       {
         "file": "frontend/src/ui/alert.tsx",
@@ -1671,7 +1671,7 @@
       },
       {
         "file": "frontend/src/ui/input.tsx",
-        "sha256": "a6940c0bb93bfc90498d4b896d7618186bad4a0aa496811b0417646e6a1be6cb"
+        "sha256": "5058c2a555ea30a2fc5ccb58f8da78204c9bb167fc8d83665fbd35e8b04bda4c"
       },
       {
         "file": "frontend/src/ui/label.tsx",

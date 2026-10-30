@@ -121,7 +121,12 @@ own context only when there are at least two, so the config never runs fewer and
 stops with an error. `pnpm test:coverage` runs the same suite under coverage and fails below the thresholds
 in `vitest.config.mts`. The rule set and what it deliberately
 does not cover are in the [migration contract](docs/design-frontend-migration.md#lint-and-format). Vite and its React plugin own the build and hot
-refresh. Shared controls use vendored shadcn components backed by Base UI; routing and state remain
+refresh. Every story is also held to a contrast floor: after its `play` function, each visible text in the
+state it ends in must measure 4.5:1 (3:1 for large text and glyphs) in computed style, through
+`frontend/stories/a11y.audit.ts`, so a new state needs no list entry. Text over an image or gradient is
+counted as unmeasured, not passed. `Accessibility.stories.tsx` holds the fit proofs at 375, 320, 188 and 160 CSS
+px and at 640 (1280 at 200% zoom lays out at 640), and the Tab order. A reading set aside is drawn grey, not
+faded, because a faded colour falls under the floor. Shared controls use vendored shadcn components backed by Base UI; routing and state remain
 owned by the page. Node and pnpm are build tools: the shipped
 Python dashboard still requires neither.
 
