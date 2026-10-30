@@ -1377,8 +1377,8 @@ so that run measures a corrected producer. It adds one guard and pins one that w
 adds a word rule of its own, and neither changes the prompt, what a reading sends or the header's bytes.
 Guard (i) does reuse one existing rule that reads the line's words, as the next paragraphs say.
 
-The approval, as relayed from the owner: a "not reached" answer on a line stands only when it "cites work
-actually in progress (a recorded entry showing the work is underway after the line's window)".
+The owner approved it on 2026-10-30, in these words of the question they answered: a "not reached"
+answer "must cite work actually in progress".
 
 A `not reached` line needs its work shown. `reading._unfinished_shown`, which `resolve` applies after
 `_while_running`, lets `not reached at this stop` stand on an outcome line only when the record shows that
