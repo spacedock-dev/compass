@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { activityRow } from './activity.test.helper';
-import { checkScan, incompletePass, unreadWork } from './workList';
+import {
+  checkScan,
+  INCOMPLETE_PASS_MARK,
+  incompletePass,
+  MARK_LEGEND,
+  unreadWork,
+} from './workList';
 
 describe('how much work a scan says was not read', () => {
   it('reads the unread subagents and calls from the scan', () => {
@@ -87,5 +93,19 @@ describe('the mark on a passing check when work was not read', () => {
     const none = activityRow(3, {});
     expect(incompletePass(failed, { unread_calls: 4 })).toBe(failed);
     expect(incompletePass(none, { unread_calls: 4 })).toBe(none);
+  });
+});
+
+describe('the legend for the unread-work mark', () => {
+  it('explains the icon in the mark legend', () => {
+    expect(MARK_LEGEND).toContain(INCOMPLETE_PASS_MARK);
+    expect(INCOMPLETE_PASS_MARK.words).toContain('may not cover');
+  });
+
+  it('names the words in the mark accessible name', () => {
+    const passed = activityRow(1, { result: 'passed', resultSource: 'flag' });
+    const row = incompletePass(passed, { unread_calls: 4 });
+    const marks = 'check' in row.head && row.head.check ? row.head.check.marks : [];
+    expect(marks[1]?.words).toContain('may not cover every call');
   });
 });

@@ -134,8 +134,8 @@ export const LISTED_BY_READER_MARK: ActivityMark = {
    not a pass of the subagents or calls that were not. */
 export const INCOMPLETE_PASS_MARK: ActivityMark = {
   icon: 'incomplete',
-  short: '',
-  words: '',
+  short: 'May not cover all work',
+  words: 'Passed, but some subagent work or calls were not read, so the pass may not cover them',
 };
 export const LAST_TURN_MARK = { short: 'Last turn', words: 'from the last turn' };
 export const MARK_LEGEND = [
@@ -145,6 +145,7 @@ export const MARK_LEGEND = [
   STALE_MARK,
   EARLIER_FAILED_MARK,
   LISTED_BY_READER_MARK,
+  INCOMPLETE_PASS_MARK,
 ];
 
 /* A tier 2 CI read or a tier 3 command, drawn with the words the server composed for it: a CI read says
