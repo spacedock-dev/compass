@@ -120,6 +120,9 @@ class RuntimeState:
     # (the store directories' mtimes, every child rollout by its root's session id), so a collect
     # and a press list no store per session. See `observer.codex_child_rollouts`.
     codex_child_index: tuple[tuple[Any, ...], dict[str, list[str]]] | None = None
+    # What each rollout's head said when the index last read it: the root session id a child names,
+    # or "" for a root. A head is written once, so a rebuild reads only the heads it has not read.
+    codex_child_owners: dict[str, str] = field(default_factory=dict)
     delegated_work_cache: dict[
         str, tuple[tuple[tuple[str, int, int], ...], list[dict[str, Any]], bool, float]
     ] = field(default_factory=dict)

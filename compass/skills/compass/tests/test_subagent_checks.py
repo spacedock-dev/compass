@@ -603,6 +603,32 @@ class APassTheBoundCannotVouchForIsNotCurrent(SubagentChecksTestCase):
         self.assertEqual(levels.NOT_ENOUGH, analysis.level)
         self.assertNotIn("pass-then-write", analysis.reasons)
 
+    def unread_child_then_parent_pass(self, *, returned: bool) -> dict[str, Any]:
+        """A subagent whose last write is a `sed` call, unread under a budget the parent spends,
+        and a parent pass after that write; the parent records the subagent's result or not."""
+        vars(self).pop("save_all", None)
+        sub = self.delegate()
+        sub.call("Bash", {"command": "sed -i s/a/b/ src/retry.py"})
+        if returned:
+            self.returns(sub)
+        self.session.bash("pytest", "5 passed", is_error=False)
+        self.settle()
+        self.config = dataclasses.replace(self.config, turn_scan_max_bytes=self.path.stat().st_size)
+        events, scan = self.read()
+        self.assertEqual(1, scan["subagent_transcripts_unread"])
+        return next(e for e in events if e["subject"] == "check")
+
+    def test_an_unread_child_the_parent_does_not_name_withholds_a_later_pass(self) -> None:
+        # Its last write is inside the part of the parent read, and it may still be running or may
+        # hold a failure no row lists: a pass after that write no longer reads complete
+        # (DRC-5033 item 1). Before, only a pass before its last write was withheld.
+        check = self.unread_child_then_parent_pass(returned=False)
+        self.assertEqual("passed", check["result"])
+        self.assertIs(True, check["read_incomplete"])
+
+    def test_an_unread_child_the_parent_names_still_withholds_every_pass(self) -> None:
+        self.assertIs(True, self.unread_child_then_parent_pass(returned=True)["read_incomplete"])
+
     def test_a_parent_pass_with_an_unread_child_does_not_meet_the_floor(self) -> None:
         self.older_pass_with_the_parents_write_cut()
         events, scan = self.read()

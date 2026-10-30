@@ -1928,6 +1928,9 @@ def _codex_child_index(config: RuntimeConfig, state: RuntimeState) -> dict[str, 
     if held is not None and held[0] == stamp:
         return held[1]
     index: dict[str, list[str]] = {}
+    with state.cache_lock:
+        known = dict(state.codex_child_owners)
+    owners: dict[str, str] = {}
     now = time.time()
     # A rollout whose head is not there yet is created empty and written without moving its day
     # folder's mtime, so an index built over it would miss the child until another folder moved.
@@ -1936,13 +1939,21 @@ def _codex_child_index(config: RuntimeConfig, state: RuntimeState) -> dict[str, 
     # file's creation behind the stamp this one recorded.
     keep = all(mtime / 1e9 < now - CODEX_FOLDER_SETTLE_SEC for _directory, mtime in stamp)
     for path in runtime_io.glob_stores(config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"):
-        meta = transcripts.codex_meta(config, state, path)
-        if not meta and _mtime(path) > now - CODEX_EMPTY_HEAD_SETTLE_SEC:
-            keep = False
-        if meta.get("subagent") and (owner := meta.get("session_id")):
+        if path in known:
+            owner = owners[path] = known[path]
+        else:
+            # A head past the first-line cap is read for its fixed-format opening alone.
+            meta = transcripts.codex_meta(config, state, path) or transcripts.codex_child_head(path)
+            if not meta and _mtime(path) > now - CODEX_EMPTY_HEAD_SETTLE_SEC:
+                keep = False
+            owner = str(meta.get("session_id") or "") if meta.get("subagent") else ""
+            if meta:
+                owners[path] = owner
+        if owner:
             index.setdefault(owner, []).append(path)
-    if keep:
-        with state.cache_lock:
+    with state.cache_lock:
+        state.codex_child_owners = owners
+        if keep:
             state.codex_child_index = (stamp, index)
     return index
 
