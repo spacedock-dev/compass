@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2241431,
+    "bytes": 2244795,
     "file": "react.html",
-    "sha256": "8b323b2c1c035f2c3d6783ed271f320273be8cc8518b2e99f5140bec59b88e5c"
+    "sha256": "48f218e6ff6b56fa0ef3e24965ed1f9cd55d50ad715831570ef7b89f1541cd9a"
   },
   "format": 1,
   "frontend": "react",
@@ -575,7 +575,7 @@
       },
       {
         "file": "frontend/src/drift/DriftProvider.tsx",
-        "sha256": "baa3d9dc33b8f8586519fcc047b01f35a8fc9848857fe20b55ff558376ee5066"
+        "sha256": "fd25707fbc458852978e8e11390ad97e24cf6c1612537bdf64855b3c0a96e4e3"
       },
       {
         "file": "frontend/src/drift/DriftStamp.tsx",
@@ -619,7 +619,7 @@
       },
       {
         "file": "frontend/src/drift/ReadingResult.tsx",
-        "sha256": "fbdc2c665bf06ac9176653f482420fffd32060a11b9db4d7304ce8c28fa79b35"
+        "sha256": "c2de39838c94eae465b53eba4ef9d67330418da199acece3318b62ead45d122a"
       },
       {
         "file": "frontend/src/drift/ShowMore.tsx",
@@ -703,7 +703,7 @@
       },
       {
         "file": "frontend/src/drift/model.ts",
-        "sha256": "19bbf32248af0fa10c6638eeda59701ee6e33d9e11f00332af1c0929ad25829d"
+        "sha256": "051671b36273a1b2b0bc98c004921ca664e77c28baf0e73bf0d338599d4f2d3d"
       },
       {
         "file": "frontend/src/drift/monitor.ts",
@@ -722,6 +722,10 @@
         "sha256": "eb02fe08f783c92c60eb001501c92d763995746334f1e52f675e3bf53e0b2973"
       },
       {
+        "file": "frontend/src/drift/prior.ts",
+        "sha256": "71c7987d441f22c691c7f593b4738a51a47ecb3d77827abfe85865898e6f71f8"
+      },
+      {
         "file": "frontend/src/drift/result.ts",
         "sha256": "146bf36524af59e2675e8abc76543da809962dc3119d5631dad0f9d7bdd5199b"
       },
@@ -731,7 +735,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "e1a9413acdf4da70bf0eba6dfd389f8ef62e8d034f579857c5dae819f8f2b1b9"
+        "sha256": "01e4a9d10e808de74beff8cd80eba9fd9dad8ad89902bcc472dafe1cccff04bd"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -739,7 +743,7 @@
       },
       {
         "file": "frontend/src/drift/state.ts",
-        "sha256": "d270f81201bcbf33c8587f27fb390d516d97ba16056545d3fa290b8e9df35da0"
+        "sha256": "56b2d102dbbb3b133e73ee52dca455464754feec0cde132e39dec9994c5ef020"
       },
       {
         "file": "frontend/src/drift/steerActions.ts",
@@ -823,7 +827,7 @@
       },
       {
         "file": "frontend/src/intent/annotation.ts",
-        "sha256": "c4e624766be00fbcf3699bcd8f4b7d80bbdc592ac73c48da8eb9915cb2eda1be"
+        "sha256": "760eca87ba07d86a973cd7b43819727b5aa67a245415c2e73e038da9a369570a"
       },
       {
         "file": "frontend/src/intent/api.ts",
