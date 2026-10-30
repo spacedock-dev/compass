@@ -372,11 +372,12 @@ class AnOutcomeLineRestsOnWhatTheAgentSaidTest(unittest.TestCase):
             detail_cap_chars=200,
         )["line_1"]
 
-    def test_a_departure_citing_an_agent_message_stands(self) -> None:
+    def test_a_line_departure_citing_only_an_agent_message_gives_way(self) -> None:
+        # Narrowed on 2026-10-30: a line's departure must cite recorded work. The Goal keeps one.
         row = self.resolve("departure", (1,), [_agent("a1", 1_700_000_000.0, SAID)])
-        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
         self.assertEqual(("a1",), row["cites"])
-        self.assertEqual(reading.WHY_STANDS, row["why"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
 
     def test_a_consistent_resting_only_on_the_agent_stands(self) -> None:
         row = self.resolve("consistent", (1,), [_agent("a1", 1_700_000_000.0, SAID)])

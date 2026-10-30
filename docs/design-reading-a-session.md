@@ -356,9 +356,12 @@ Seven rules:
    evidence, because a stated change of direction is what that evidence is good for, and a
    `consistent` resting only on it must say so in its evidence line.
 
-Rule 7 is amended below, last by
+Rule 7 is amended below by
 [the amendment of 2026-10-03](#amended-2026-10-03-owner-the-agents-own-words-are-evidence), which
-lets an outcome line rest on one of the agent's own messages. Rules 1 and 6 gain a constraint about
+lets an outcome line rest on one of the agent's own messages, and last by
+[the amendment of 2026-10-30](#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record),
+under which a line's departure needs recorded work and, beside a recorded write, its `consistent` a
+cited write or passing check. Rules 1 and 6 gain a constraint about
 what the agent claims, with a fourth result of its own, by
 [the amendment of 2026-10-04](#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint).
 
@@ -475,6 +478,9 @@ Rule 7's outcome-line half here is replaced by
 [the amendment of 2026-10-03](#amended-2026-10-03-owner-the-agents-own-words-are-evidence).
 
 ### Amended 2026-10-03 (owner): the agent's own words are evidence
+
+Narrowed for outcome lines and the Goal's `consistent` by
+[the amendment of 2026-10-30](#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record).
 
 The owner, 2026-10-03: "allow whatever the agent says or does to be used as evidence for claims
 and drift." The reason given: "it is obviously evidence, and you cant have a drift tool that does
@@ -1458,6 +1464,102 @@ lines marked abstain moved to abstained, and five lines marked judge became over
 fail a run. The other three models changed nothing. The pass ran outside the scorer's prompt pin, so it is
 a construction check and not a measurement. `reading.py` is one of the parser-stamped files, so the
 tenth packet is re-frozen in any case. The guards are held by `test_reading_unfinished_and_cleared.py`.
+
+### Amended 2026-10-30 (owner): a verdict on words alone gives way to the record
+
+The tenth Claude Code qualification run failed on five readings, and the owner ruled on the
+correction before the one funded retry. The ruling, recorded on DRC-4666: "approve C1, C2 and C6,
+plus C5b and the scorer fix, then run the retry." The four guards it names were derived from the
+tenth run's own readings. The replay below is in-sample: it shows the guards clear the failures they
+were built from, and says nothing about the answers a fresh run will draw.
+
+Each guard is deterministic and runs in `reading.resolve` after every earlier rule, over the
+entries the record holds. Each one only moves an answer toward not verifiable. None reads the
+line's words, so none is a keyword rule. None changes the prompt, what a reading sends or the
+header's bytes. The prompts of all ten frozen tenth cases are byte-identical on this tree, which
+is what lets the retry's marks transfer unchanged.
+
+This narrows [the 2026-10-03 ruling](#amended-2026-10-03-owner-the-agents-own-words-are-evidence)
+that let an outcome line rest on one of the agent's messages, "a departure or a `consistent` on
+one stands". It also closes the residual risk the
+[2026-10-30 amendment above](#amended-2026-10-30-a-not-reached-line-needs-its-work-shown-and-a-recorded-write-outlives-an-explanation)
+named, that "a line whose words name no folder ... stays the model's judgment":
+
+- **C1, a line's departure needs recorded work.** An outcome line's departure that rests only on
+  messages, the agent's or the reader's, reads not verifiable. It has to rest on something the
+  record holds: a failed check or command, a failed CI check, or a write the record settled
+  (`recorded-write`). What it rests on is what it publishes, so a write cited beside the message
+  does not count, because a written path carries no departure (item 8). The Goal keeps a departure
+  on the agent's message, because a stated change of direction is what words are good for there.
+  Measured: case `8b8c1a02` line_1, marked to abstain because approval is unknown, departed on
+  messages in repeats 2 and 3.
+- **C2, a consistent beside a write needs a write or a passing check.** Where the reading's window
+  holds a recorded write, a `consistent` on the Goal or a line reads not verifiable unless the reply
+  cited a write or a check that passed. A created pull request, a used skill or a passing CI check
+  the record holds also carries one, as the
+  [2026-10-23 ruling](#amended-2026-10-23-owner-pr-and-skill-facts) lets it. The agent's word
+  cannot clear the line. Nor can a command whose exit status says nothing about what it checks,
+  such as a `git commit` that exited 0. The write counts whether or not a grant sent it, as the
+  record-settles guard reads it. Measured: case `19f966db` line_1 read `consistent` on a `git commit`
+  and the agent's closing message in repeat 2, beside the edit the marks depart on.
+- **C6, the Goal is consistent only beside consistent lines.** A Goal's `consistent` reads not
+  verifiable when any outcome line asked in the same reading is not `consistent`. The lines are the
+  reader's own account of what the Goal means. It copies no line's verdict onto the Goal and raises
+  nothing, so the clauses stay independent judgments. Measured: case `d92bebe6`'s Goal read
+  `consistent` on a pass that exercised half of it in repeat 3, while its line restating the Goal
+  was `unverifiable`.
+- **C5b, "not shown" past a run with no result.** A claims `unsupported` reads not verifiable when a
+  check or command that can fail ran in the window, at or before the latest claim it cites, and
+  Compass recorded no result for it. This applies the existing claims ruling: a record Compass could
+  not read cannot say a claim is not shown, which would be configuration read as absence. Measured:
+  case `6182bf4a`'s claims read `not shown` on the agent's "committed" and "pushed" messages in
+  repeat 2, just after a `git add` and a `git commit` with no exit status recorded.
+
+No token is new, so the page needs no new sentence and the bundle is not rebuilt. C1 and C2 store
+`no-work-shown` and keep their citations, as the not-reached guard does. Its sentence, "each entry
+describes or asks for the work rather than showing it", holds for a message and for a command that
+only ran. C6 stores `check-does-not-show-it` and empties the citations, like every withdrawal the page
+reads under that token: what the Goal cited does not show the Goal while a line is not shown. C5b
+stores `claim-record-unread`, whose sentence says not all of the session's checks were read. A run
+whose result Compass never recorded is one of those. The guards run in every reading, whichever
+producer made it, because `resolve` does not know the producer. A Codex reading of a Codex session
+carries no agent messages, so a line there already needs work and C1 changes nothing, while C2 and
+C6 apply there as anywhere.
+
+What this costs a reader. A line can no longer depart on what the agent admits alone: "the agent says
+PR #284 is still behind" reads Can't tell on a line, and still departs on the Goal. In a session that
+wrote files, which is most of them, a line reads `consistent` only on a cited write or passing check.
+"Consistent with what the agent said at #n; not a check" is now possible only where the window holds
+no recorded write. A departure on a Goal resting on an agent message still reads Medium. A line's
+departure no longer can, because none rests on messages alone. The page lists
+[an earlier departure](#amended-2026-10-30-owner-an-earlier-departure-stays-listed) only beside a
+row the later reading rests `consistent` on the agent's messages. In a window holding a write, that
+row now reads Can't tell, so the page no longer lists the earlier departure there, though the store
+keeps it. Listing it beside such a Can't tell row too would be a page change, and is left as a
+follow-up.
+
+The replay. `scripts/tests/test_tenth_replay.py` sends each of the tenth's thirty recorded resolved
+answers through the real `score_case` with a fake model and no process, on this tree. The scorer
+keeps resolved criteria, not raw replies, and each guard only demotes, so this reproduces every
+judged outcome. Recorded, result 10 graded 68 correct, 2 false reassurances, 2 false alarms, 8 missed
+departures and 16 over-abstentions, with five failing readings. Replayed with the guards, it grades 72
+correct, no false reassurance, no false alarm, 9 missed departures and 15 over-abstentions, with no
+failing reading. The test also asserts that every prompt equals the one the tenth packet froze. It
+reads the private packet and run material and skips where they are absent, so CI never runs it. It
+holds the parser stamp to the packet's own, since `reading.py` is stamped and the retry re-freezes.
+Every earlier run has produced at least one failure class not seen before, so a passing replay is
+not a prediction.
+
+The scorer fix rides with it. A repeated run's per-repeat summaries now count the recorded cases
+whose stop a transcript or a committed prior packet vouched for, as the single-pass summary always
+did (`score_abstention._stop_sets`). Result 10 read 0 for both in every repeat. It stays as
+committed, with the gap disclosed in [the abstention README](abstention/README.md). The fix changes
+counts only, never a verdict.
+
+Not changed. The freeze still does not apply the copy store's `copied_corrections`, so a correction
+Compass built and the reader pasted reaches the model as the reader's words. That is a follow-up:
+fixing it now would move case `19f966db`'s material after its outputs were seen. The guards are held
+by `test_reading_words_give_way.py`, each with a control that stands.
 
 ### Repeated calls
 

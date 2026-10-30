@@ -583,16 +583,20 @@ reached at this stop when a call is still running (a Claude Code session only: t
 its transcript, and no other harness has one to read), or when a check or write that bears on the line is
 recorded after them (a line that names a path or claims a check's result is borne on only by a check
 that covers it or a write to that path); a departure on a failed check or a write, or one with nothing
-running or recorded after it, stands. An idle session with no recorded finish reads the same way, but
-no call counts as running there: an unanswered call is an interruption. A line may depart, or read consistent, on one of the
-agent's messages, never beside a check that failed after your words, and the level never reads
-"None or low" on the agent's word alone. A departure resting on an agent message stops counting
-once that message leaves the transcript tail the board reads. A press that carries the agent's
+running or recorded after it, is not stored as not reached. An idle session with no recorded finish reads the same way, but
+no call counts as running there: an unanswered call is an interruption. A line may read consistent on one of the
+agent's messages, never beside a check that failed after your words or a file write the record holds:
+there the goal and each line need a cited write or a passing check, and a command that only ran is
+neither. A line departs only on recorded work, a failed check or a write the record settles, and on
+messages alone reads "Can't tell"; the goal may still depart on what the agent said. The goal reads
+consistent only when every line asked beside it does, and the level never reads "None or low" on
+the agent's word alone. A goal departure resting on an agent message stops counting once that
+message leaves the transcript tail the board reads. A press that carries the agent's
 messages also asks whether any of them claims a state of the work (running, merged, passing and
 the like) that the record contradicts, or, for a pass, a fix or a file written, that the record
 does not show; the reading is asked to keep "not shown" for those, so a claim nothing Compass
 records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (with its own reason: which kind of check the claim names and what the record holds of it, or, for a claim naming none, that the record read is the board's recent tail, and never where some of the session's checks, passes
-or file writes went unread), "is shown at #m" or "Can't tell", and is not
+or file writes went unread, or where a check or command ran before the claim with no result recorded), "is shown at #m" or "Can't tell", and is not
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A

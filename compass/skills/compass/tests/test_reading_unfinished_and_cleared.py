@@ -267,24 +267,38 @@ class AClearingOnTheAgentsWordDoesNotOutliveADepartingWrite(base.AClaudeCodeRead
         self.assertEqual(reading.WHY_RECORDED_WRITE, row["why"])
         self.assertEqual(("write-1",), row["cites"])
 
-    # Controls: the agent's own words still carry a line nothing recorded breaks.
+    # Since 2026-10-30 the explanation clears no line in a window that holds a recorded write,
+    # whether or not the line's words name a folder: a consistent there needs a cited write or a
+    # passing check. A line with no folder in its words was this amendment's named residual risk.
 
-    def test_the_explanation_stands_where_no_recorded_write_breaks_the_line(self) -> None:
+    def test_the_explanation_does_not_clear_a_line_a_write_does_not_break_either(self) -> None:
         row = self._line(
             self._two_turns("frontend/src/stories/Proof.stories.tsx"),
             "No file under frontend/e2e is edited",
             self.EXPLAINED,
         )
-        self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
-        self.assertEqual(reading.WHY_STANDS, row["why"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
         self.assertEqual(("m-explain",), row["cites"])
 
-    def test_a_line_with_no_folder_in_its_words_is_left_to_the_reading(self) -> None:
+    def test_a_line_with_no_folder_in_its_words_is_not_cleared_by_the_explanation(self) -> None:
         row = self._line(
             self._two_turns("frontend/e2e/fixtures/state.json"),
             "Leave the existing fixtures alone",
             self.EXPLAINED,
         )
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+
+    # Controls: the explanation carries a line where nothing was written, and a pass carries one.
+
+    def test_the_explanation_stands_where_the_window_holds_no_write(self) -> None:
+        facts = [
+            base.WORDS_FACT,
+            self.PASTED,
+            said(120.0, fact_id="m-explain", words=self.EXPLAINED),
+        ]
+        row = self._line(facts, "Leave the existing fixtures alone", self.EXPLAINED)
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
         self.assertEqual(("m-explain",), row["cites"])
 
