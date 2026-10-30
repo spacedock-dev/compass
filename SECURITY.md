@@ -426,11 +426,14 @@ attributes nothing to a process.
 A live capture would add that: a process and socket trace of one real journey on a running build,
 once each for the default run, monitor only, no model, a declined press and a launch-granted run,
 with the clipboard read back and the session transcript diffed before and after. It would show
-whether the connections a run opens match the tables above. It has not run. It needs an observer
-restricted to the dashboard's own process tree that loses no events (one-second sampling missed all
-twenty short connections in a control run, and packet capture and DTrace were refused by the
-machine), and a funded allowance for real Claude Code turns. It will run when both exist, by hand
-and not in CI, and its result replaces this paragraph.
+whether the connections a run opens match the tables above. One-second sampling missed all twenty
+short connections in a control run, and the machine refused packet capture and DTrace. The recorder
+now exists: [the owned-process observer](docs/design-owned-process-observer.md) runs inside the
+dashboard's own process tree and needs no privilege. In its control run it recorded every launch and
+every connection that independently happened, and none was lost. It sees no further than the
+JavaScript layer of a Node or Bun program, and it records only the launch of a native program such as
+Codex. The capture itself has not run yet. It still needs a funded allowance for real Claude Code
+turns. It will run by hand and not in CI, and its result replaces this paragraph.
 
 ## Project reads (Spacedock stage strips)
 
