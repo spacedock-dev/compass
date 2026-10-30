@@ -2987,6 +2987,11 @@ class _ShellLexer:
                 self._braced()
             elif arithmetic and ((char == "$" and after == "(") or char == "`"):
                 self._substitution()
+            elif not arithmetic and char in "$<>" and after == "(":
+                # DRC-4754: an unquoted level nests as a quoted one does. Counted by the
+                # parenthesis alone it never reached the cap, and each body was then read again
+                # from depth 0.
+                self._substitution()
             # Arithmetic executes nested commands between single quote
             # characters before rejecting the resulting expression.
             elif (not arithmetic or char != "'") and self._skip_quoted(char):
@@ -4953,11 +4958,13 @@ class _ShellCall:
             for i in self.meaningful
             for target, kind in _removed_targets(self.words[i][0])
         ]
-        # `> build/output` alone truncates the file: no words, but a write.
+        # `> build/output` alone truncates the file: no words, but a write. So does a `cd` that
+        # carries one (`cd sub > out`): the directory shortcut that keeps a `cd` out of
+        # `meaningful` is for the move, never for the file its redirection opens.
         self.substituted += [
             i
             for i, part in enumerate(self.parts)
-            if not part.words and _writes_a_file(part.redirects)
+            if (not part.words or part.words[0] == "cd") and _writes_a_file(part.redirects)
         ]
 
     def _declared_body_refuses(
