@@ -162,6 +162,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "reading_eligibility",
         "annotation_reading_refused",
         "annotation_not_accurate",
+        "annotation_prior_departures",
         "copied_prompts",
         "delivery_outcome",
         "delivery_why",

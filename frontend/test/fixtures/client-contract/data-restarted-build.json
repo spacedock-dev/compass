@@ -171,6 +171,7 @@
           "annotation_line_6_source_id": "",
           "annotation_lines_why": "No expected outcome typed.",
           "annotation_not_accurate": false,
+          "annotation_prior_departures": [],
           "annotation_reading_count": 0,
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
@@ -320,6 +321,7 @@
           "annotation_line_6_source_id": "",
           "annotation_lines_why": "No expected outcome typed.",
           "annotation_not_accurate": false,
+          "annotation_prior_departures": [],
           "annotation_reading_count": 0,
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
@@ -469,6 +471,7 @@
           "annotation_line_6_source_id": "",
           "annotation_lines_why": "No expected outcome typed.",
           "annotation_not_accurate": false,
+          "annotation_prior_departures": [],
           "annotation_reading_count": 0,
           "annotation_reading_refused": false,
           "annotation_reading_withheld": "",
@@ -622,7 +625,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23001",
+      "Content-Length": "23106",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000500.1"

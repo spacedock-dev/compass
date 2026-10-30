@@ -780,6 +780,10 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # The reader's Not accurate mark on that reading (DRC-4695): a bool,
         # never sent, never counted and never in session history.
         "annotation_not_accurate": False,
+        # Departures earlier readings found that the readings since no longer find, each
+        # `{key, read_at, revision_read, criterion}`. `[]` is every row with none: a list to
+        # render, never a count. Model prose, so never in session history.
+        "annotation_prior_departures": [],
         # The messages in this session recognised as a correction the reader
         # copied from Compass, each `{"fact_id", "at"}` (DRC-4678). `[]` is
         # every row with none, which is also every row nothing was copied for:

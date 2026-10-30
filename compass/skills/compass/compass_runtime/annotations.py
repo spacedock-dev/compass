@@ -531,6 +531,25 @@ class Settlement(TypedDict):
     revision: int
 
 
+class PriorDeparture(TypedDict):
+    """A departure an earlier reading found on one line that the reading after it did not.
+
+    Beside the reading and never inside it, so `reading.ASSESSMENT_KEYS` is unchanged and an older
+    build reading the file keeps the reading and drops this. `read_at` and `revision_read` are
+    the earlier reading's; the page names it by that time. Kept, dropped and bounded by the
+    amendment of
+    [2026-10-30](docs/design-reading-a-session.md#amended-2026-10-30-owner-an-earlier-departure-stays-listed).
+    """
+
+    key: str
+    read_at: float
+    revision_read: int
+    criterion: reading.Criterion
+
+
+PRIOR_DEPARTURE_KEYS = ("key", "read_at", "revision_read", "criterion")
+
+
 class Annotation(TypedDict):
     """One session's words, newest revision last.
 
@@ -579,6 +598,10 @@ class Annotation(TypedDict):
     # the token and nothing else, so no reason, text or time rides with it. A
     # new reading clears it, because it was about the one it replaces.
     not_accurate: NotRequired[bool]
+    # Departures earlier readings found that the readings after them no longer find, one per Goal
+    # or outcome line, goal first. Model prose that outlives the reading that wrote it, so it goes
+    # with the reading's own forget path and with the words it was about (`_prior_departures`).
+    prior_departures: NotRequired[tuple[PriorDeparture, ...]]
     # A discard record, and the only entry shape with no revisions at all
     # (DRC-4565). `discarded` is when the act happened; `discarded_revision` is
     # the last revision number that went, kept so the next save mints n+1
@@ -1091,6 +1114,109 @@ def _criteria(
     return ordered
 
 
+_PRIOR_ORDER = (
+    reading.CONSTRAINT_GOAL,
+    *(reading.outcome_line(k) for k in range(1, reading.MAX_OUTCOME_LINES + 1)),
+)
+
+
+def _words_at(revision: Revision | None, key: str) -> str | None:
+    """The reader's words a Goal or line key names in this revision, or None for a line it lacks."""
+    if revision is None:
+        return None
+    if key == reading.CONSTRAINT_GOAL:
+        return revision["goal"]
+    index = _PRIOR_ORDER.index(key) - 1
+    return revision["lines"][index]["text"] if index < len(revision["lines"]) else None
+
+
+def _prior_departures(
+    items: Iterable[PriorDeparture], revision: Revision | None
+) -> tuple[PriorDeparture, ...]:
+    """The newest departure per line whose words this revision still holds, goal first.
+
+    Compared by text rather than by revision number, so a direction appended with Keep, which
+    mints a revision with the same line, keeps it, and an edit to that line drops it.
+    """
+    newest: dict[str, PriorDeparture] = {}
+    for item in items:
+        words = _words_at(revision, item["key"])
+        if words is None or words.strip() != item["criterion"]["clause"].strip():
+            continue
+        held = newest.get(item["key"])
+        if held is None or item["read_at"] > held["read_at"]:
+            newest[item["key"]] = item
+    return tuple(newest[key] for key in _PRIOR_ORDER if key in newest)
+
+
+def _prior_departure(value: Any, cap: int, goal_cap: int | None) -> PriorDeparture | None:
+    """One untrusted stored earlier departure, or nothing.
+
+    Through the reading's own `_criterion`, so the redaction, the caps and the closed `why` set
+    are the ones a reading has. Dropped item by item rather than whole: each stands alone, and a
+    bad one hides nothing the others say.
+    """
+    if not isinstance(value, dict) or set(value) != set(PRIOR_DEPARTURE_KEYS):
+        return None
+    key, revision = value["key"], value["revision_read"]
+    read_at = value["read_at"]
+    if (
+        key not in _PRIOR_ORDER
+        or isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or revision < 1
+        or isinstance(read_at, bool)
+        or not isinstance(read_at, (int, float))
+        or not math.isfinite(read_at)
+        or read_at <= 0
+    ):
+        return None
+    criterion = _criterion(
+        value["criterion"], cap, goal_cap if key == reading.CONSTRAINT_GOAL else None
+    )
+    if criterion is None or criterion.get("result") != reading.RESULT_DEPARTURE:
+        return None
+    return {
+        "key": key,
+        "read_at": float(read_at),
+        "revision_read": revision,
+        "criterion": criterion,
+    }
+
+
+def _departs(rows: Mapping[str, reading.Criterion], key: str) -> bool:
+    row = rows.get(key)
+    return row is not None and row.get("result") == reading.RESULT_DEPARTURE
+
+
+def _departures_cleared(
+    existing: Annotation, assessment: reading.Assessment, revision: Revision
+) -> tuple[PriorDeparture, ...]:
+    """What a new reading leaves earlier: carried ones it does not depart on, plus the replaced
+    reading's departures it no longer finds. Not the claims row, which carries no clause, and
+    nothing from a reading the reader marked Not accurate."""
+    rows = assessment["criteria"]
+    kept = [
+        item for item in existing.get("prior_departures", ()) if not _departs(rows, item["key"])
+    ]
+    replaced = existing.get("assessment")
+    read_at = replaced.get("read_at") if replaced else None
+    if replaced and read_at and not existing.get("not_accurate"):
+        kept.extend(
+            {
+                "key": key,
+                "read_at": float(read_at),
+                "revision_read": replaced["revision_read"],
+                "criterion": row,
+            }
+            for key, row in replaced["criteria"].items()
+            if key in _PRIOR_ORDER
+            and _departs(replaced["criteria"], key)
+            and not _departs(rows, key)
+        )
+    return _prior_departures(kept, revision)
+
+
 def _settlement(value: Any) -> Settlement | None:
     """One untrusted settlement, or nothing.
 
@@ -1194,7 +1320,20 @@ def _entry(
     # other value a local process writes here reads back as no mark.
     if value.get("not_accurate") is True and ("assessment" in entry or entry.get("refused")):
         entry["not_accurate"] = True
+    if "assessment" in entry or entry.get("refused"):
+        _read_priors(entry, value.get("prior_departures"), text_cap, goal_cap)
     return _counters(entry, value)
+
+
+def _read_priors(entry: Annotation, stored: Any, cap: int, goal_cap: int | None) -> None:
+    """Stored earlier departures onto the entry: beside a reading only, as the Not accurate mark
+    is, and only where the words each was about still stand."""
+    if not isinstance(stored, list):
+        return
+    parsed = (_prior_departure(item, cap, goal_cap) for item in stored)
+    priors = _prior_departures((p for p in parsed if p is not None), entry["revisions"][-1])
+    if priors:
+        entry["prior_departures"] = priors
 
 
 def _drop_unbound_request_ages(revisions: list[Revision], harness: str, sid: str) -> None:
@@ -1835,6 +1974,14 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
         # The reader's mark on that reading, a bool and nothing more: never
         # sent, never counted, and not in `history.OBSERVATION_FIELDS`.
         "not_accurate": bool(entry and entry.get("not_accurate") and entry.get("assessment")),
+        # Earlier departures the readings since no longer find, beside a reading only. Model
+        # prose, so named in `history.PROMPT_DERIVED_CARRIERS` and never in session history; the
+        # page lists only those the standing reading answers with the agent's word alone.
+        "prior_departures": (
+            [dict(item) for item in entry.get("prior_departures", ())]
+            if entry and entry.get("assessment")
+            else []
+        ),
     }
 
 
@@ -1870,7 +2017,8 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     silently discards the reader's reading, and nothing about the row would
     look wrong afterwards.
     """
-    # The mark was about the reading a new one replaces, so it stays behind.
+    # The mark was about the reading a new one replaces, so it stays behind. Earlier departures
+    # are the new reading's to decide (`_departures_cleared`), so they do too.
     fresh = "assessment" in updated
     for name in (
         "settled",
@@ -1880,11 +2028,19 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
         "withheld_at",
         "jobs",
         "not_accurate",
+        "prior_departures",
     ):
-        if name == "not_accurate" and fresh:
+        if name in {"not_accurate", "prior_departures"} and fresh:
             continue
         if name not in updated and name in existing:
             updated[name] = existing[name]
+    # Words the reader changed are not what an earlier departure was about.
+    priors = _prior_departures(
+        updated.pop("prior_departures", ()),
+        updated["revisions"][-1] if updated["revisions"] else None,
+    )
+    if priors:
+        updated["prior_departures"] = priors
     return updated
 
 
@@ -1965,6 +2121,20 @@ def _recorded_job(updated: Annotation, existing: Annotation, job_id: str) -> Non
         updated["jobs"] = [*existing.get("jobs", ()), job_id][-RECORDED_JOBS_CAP:]
 
 
+def _with_reading(
+    updated: Annotation, existing: Annotation, assessment: reading.Assessment
+) -> None:
+    """Put a new reading on the entry, with what it leaves earlier.
+
+    From the reading being replaced, under the caller's lock: the store holds one reading, so
+    this is the only moment its departures can be kept (owner, 2026-10-30).
+    """
+    updated["assessment"] = assessment
+    priors = _departures_cleared(existing, assessment, existing["revisions"][-1])
+    if priors:
+        updated["prior_departures"] = priors
+
+
 def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     config: RuntimeConfig,
     state: RuntimeState,
@@ -2014,7 +2184,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         }
         _recorded_job(updated, existing, job_id)
         if assessment is not None:
-            updated["assessment"] = assessment
+            _with_reading(updated, existing, assessment)
         written = time.time()
         if withheld:
             updated["withheld"] = withheld

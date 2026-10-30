@@ -224,6 +224,43 @@ way in and out, a Delete summary control and a place in `--forget`. Every field 
 and admitted; "no field admitted by implication" stands. Readings stay in the annotation store as
 the 2026-09-10 amendment above says.
 
+### Amended 2026-10-30 (owner): an earlier departure stays listed
+
+The owner, 2026-10-30, ruled that a re-reading keeps an earlier departure visible beside the later
+reading. A walk found the case: a reading departed on an outcome line for an edit the intent did not
+allow, the reader pasted the correction, the agent explained the edit and committed it, and the next
+reading answered the line "Consistent with what the agent said at #17; not a check". The edit was
+still in the diff and the departure was gone, because the store holds one reading per session and a
+new one replaces it. [DEC-17's 2026-10-03 amendment](#amended-2026-10-03-owner-the-agents-own-words-are-evidence)
+lets that line rest on the agent's message, and this does not reverse it. It keeps what the earlier
+reading found visible next to it.
+
+One field is admitted, `prior_departures`, in the annotation entry beside the reading and not inside
+it. It holds, per Goal or outcome line, the newest departure a reading found that the reading
+replacing it no longer finds, with that reading's time and the revision it read. At most one per
+line, seven per session. Each is a stored criterion, parsed by the same validator, under the same
+clause and detail bounds, redacted before it is bounded on the way in and again on the way out. The
+claims question is not kept, and nor is anything from a reading the reader marked Not accurate or
+one with no time to name it by.
+
+An entry stays while each later reading leaves that line without a departure and the line's words
+are unchanged. It goes when a later reading departs there again, when the reader changes or removes
+the line's words, and with the annotation itself: Clear, Discard everything, or eviction at the
+session count. Like the reading it sits beside, it has no fourteen-day expiry and `--forget` does
+not reach it. It is published as `annotation_prior_departures` and is not admitted to session
+history. It never counts toward the drift level, Steer back or the unasked lane.
+
+The page lists an entry only where the later reading's row rests on the agent's messages alone, the
+same derivation that writes "Consistent with what the agent said at #n". A line a check or a written
+file now answers is not listed, and the store keeps it until the rules above drop it. Two accepted
+costs: once the agent's message leaves the transcript tail the listing goes with it, as the
+2026-10-03 amendment's decay already says; and a build without this field drops it on its next save
+while leaving the reading intact. Whether the departing edit is still in the working tree is not
+read, because the git probe publishes no pathnames.
+
+Adding the two-turn case to the packets the withheld-reassurance check reads is separate work, for
+when qualification resumes.
+
 ## DEC-16: Compass does not write into a session
 
 A departure is raised to the reader and nowhere else. Compass does not write into an agent, and
@@ -2676,8 +2713,11 @@ the third had one false reassurance. The reader had asked the agent to run `node
 tests/game.test.js` once more, unpiped, and report the counts. The outcome line said the check "is
 run once, unpiped, and its counts are reported", and the reading called it `consistent`, citing
 the passing run. The key says abstain. A record can show that a check ran and what it returned. It
-cannot show what the agent then told the reader, and the agent's own account carries no outcome
-verdict under [rule 7](#amended-2026-09-10-rule-7-asks-whether-an-entry-shows-work-not-who-typed-it).
+cannot show what the agent then told the reader, and at the time the agent's own account carried
+no outcome verdict under [rule 7](#amended-2026-09-10-rule-7-asks-whether-an-entry-shows-work-not-who-typed-it).
+Since [2026-10-03](#amended-2026-10-03-owner-the-agents-own-words-are-evidence) one of the agent's
+messages can carry one, so the rule below withdraws such a `consistent` only where no message the
+agent sent at or after the check it cites is among what it rests on.
 The producer instruction from #450 already told the model that a passing suite cannot prove a run
 count or piping it did not exercise, and that test counts are not the agent's report to the person.
 The model gave the same verdict anyway.
@@ -2699,8 +2739,9 @@ and "describe blocks pass" all abstain. That over-abstains on purpose: the rulin
 telling the agent's account apart from a tool's would mean parsing the line's grammar.
 
 The rule only ever moves a verdict toward abstaining. A departure on such a line stands, the Goal
-is never touched, and a line that already rests only on the agent's account keeps rule 7's
-`no-work-shown`. It runs in `reading._evidence_rules`, which every reading goes through, the
+is never touched, and a line resting only on the agent's tooling (a decision, a task, a stage, a
+dispatch) keeps rule 7's `no-work-shown`, while one resting on a message the agent wrote stands
+under the 2026-10-03 amendment. It runs in `reading._evidence_rules`, which every reading goes through, the
 unasked lane included. The drift level that `levels.analysis_level` derives from a stored reading
 runs the same resolver over each line's text, so a `consistent` stored before this rule existed
 does not count as shown there either.

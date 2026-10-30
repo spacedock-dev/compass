@@ -46,6 +46,7 @@
           "line_6_source_id": "",
           "lines_why": "",
           "not_accurate": false,
+          "prior_departures": [],
           "reading_count": 0,
           "reading_refused": false,
           "reading_withheld": "",
@@ -63,7 +64,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "1245",
+      "Content-Length": "1267",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

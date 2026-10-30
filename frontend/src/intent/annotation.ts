@@ -51,6 +51,7 @@ export const ANNOTATION_FIELDS: readonly string[] = [
   'reading_withheld_at',
   'reading_refused',
   'not_accurate',
+  'prior_departures',
   'discarded_at',
   'discarded_why',
 ];
