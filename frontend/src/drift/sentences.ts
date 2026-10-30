@@ -408,6 +408,19 @@ export const clearedLine = (count: number, at: string, corrections = 0): string 
   const who = corrections === 1 ? 'your correction' : 'your corrections';
   return `${subject} ${who} named, from the ${at} reading, ${verb}.`;
 };
+/* An earlier departure the next reading answered with the agent's own message, and nothing that shows the work,
+   is not said to be gone: the card lists it, and the verdict says so in place of `clearedLine`. With no single
+   time to name, the readings are named together. */
+export const priorListedLine = (count: number, at: string): string => {
+  const subject = count === 1 ? 'The departure' : `The ${String(count)} departures`;
+  const verb = count === 1 ? 'is' : 'are';
+  const from = at ? `the ${at} reading` : 'earlier readings';
+  const after = at ? 'it' : 'them';
+  return `${subject} from ${from} ${verb} still listed below: the reading after ${after} rests on what the agent said.`;
+};
+export const PRIOR_DEPARTURE_LABEL = 'Earlier departure';
+export const priorDepartureLine = (earlier: string, later: string, where: string): string =>
+  `From the ${earlier} reading. The ${later} reading rests this line on what the agent said at ${where}, which is not a check.`;
 export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";

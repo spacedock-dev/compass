@@ -189,6 +189,7 @@ export function DriftProvider({
             cites: row.citedIds,
           })),
           model.entries.filter(readingCopied).map((entry) => Number(entry.at) || 0),
+          model.priors.map((prior) => prior.key),
         )
       : null;
   const value: DriftValue = {

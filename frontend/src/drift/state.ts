@@ -228,6 +228,7 @@ export function createDriftState(shell: Shell) {
       readAt: number,
       departures: readonly DepartureMark[],
       pastedAt: readonly number[] = [],
+      listed: readonly string[] = [],
     ): ClearedDeparture | null {
       const seen = readings.get(key);
       if (seen && seen.readAt === readAt) {
@@ -249,7 +250,10 @@ export function createDriftState(shell: Shell) {
       if (!now?.before) return null;
       const since = now.before.readAt;
       const corrections = pastedAt.filter((at) => at > since && at <= readAt).length;
-      const gone = now.before.departures.filter(
+      /* A departure the card still lists, because the reading after it rests that line on the agent's word
+         alone, is not watched to have ended: the verdict says it is listed instead. */
+      const watched = now.before.departures.filter((earlier) => !listed.includes(earlier.key));
+      const gone = watched.filter(
         (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
       ).length;
       /* With a correction between, every departure it named that no longer stands is named, standing ones
@@ -262,7 +266,7 @@ export function createDriftState(shell: Shell) {
       const count =
         corrections > 0
           ? gone
-          : Math.max(replaced, Math.min(gone, now.before.departures.length - departures.length));
+          : Math.max(replaced, Math.min(gone, watched.length - departures.length));
       return count > 0 ? { readAt: since, count, corrections } : null;
     },
 
