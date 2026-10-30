@@ -23,13 +23,13 @@ record.
 The question is narrower: what does one Compass server, and the programs it starts, launch and
 connect to. The recorder therefore runs inside that process tree and needs no privilege.
 
-- **The server.** `scripts/owned_observer.py exec -- server.py ...` installs a Python audit hook
+- In the server, `scripts/owned_observer.py exec -- server.py ...` installs a Python audit hook
   (`sys.addaudithook`) and then runs `server.py` as `__main__` in the same interpreter. The hook
   writes one JSON line for each program launch (`subprocess.Popen`, `os.posix_spawn`, `os.exec`,
   `os.spawn`, `os.system`, `os.fork`), socket connect, unconnected `sendto`, name lookup, and
   `http.client` or `urllib` request. A small wrapper on `subprocess.Popen` adds each child's pid
   and its exit, so a launch has a duration.
-- **Every Node or Bun descendant.** The server's environment carries
+- For every Node or Bun descendant, the server's environment carries
   `NODE_OPTIONS=--require=…/owned_observer_preload.js` and `BUN_OPTIONS=--preload=…`. Both
   variables are inherited, so each Node or Bun program in the tree loads the preload before its own
   code and hands it on to its children. The preload wraps `net.Socket.prototype.connect` (every
@@ -74,33 +74,33 @@ control at a count of 12, with each runtime it finds on PATH.
 
 The control taught the expectations two things about the runtimes:
 
-- **Bun's `fetch` is native.** It never reaches `net.Socket`, so a Bun `fetch` is one `request`
+- Bun's `fetch` is native. It never reaches `net.Socket`, so a Bun `fetch` is one `request`
   line and no `connect` line, and the control counts it as its own connection. Bun's `http` does
   reach `net.Socket`, as Node's does.
-- **A request is not a connection.** The control's listener closes after each answer. A real
+- A request is not a connection. The control's listener closes after each answer. A real
   vendor keeps connections alive, so in a journey trace several requests can share one connection.
   The report counts requests and connects separately and does not assume the two match.
 
 ## What it cannot see
 
-- **Native programs.** Codex 0.165.0 is a native executable. So are `git`, `gh`, `glab`, `tmux`,
+- Codex 0.165.0 is a native executable. So are `git`, `gh`, `glab`, `tmux`,
   `osascript` and `spacedock`. The trace records each one's launch, arguments, pid and duration from
   the server side, and nothing it does inside. The report lists them under `opaque_launches`. Both
   vendor CLIs are signed with the hardened runtime, so library interposition is not an option, and
   it was not tried.
-- **Native code inside a Node or Bun program.** A connection made by native code rather than
+- Inside a Node or Bun program, a connection made by native code rather than
   through the JavaScript API is invisible: an addon, Bun's own DNS lookup for `fetch`, or anything
   the runtime does before the preload loads. The same goes for a `node:dgram` UDP socket, which is
   not wrapped. For a Bun `fetch`, the trace shows the destination host and port and not the resolved
   address.
-- **A child that drops the variables.** A program that clears `NODE_OPTIONS` or `BUN_OPTIONS` for
+- A program that clears `NODE_OPTIONS` or `BUN_OPTIONS` for
   its own children takes them out of view. On the server side each launch records `hooked`, which
   says whether the child's environment still carries the trace. A Python child is never hooked,
   because only `exec` installs the audit hook.
-- **Anything outside the tree.** This is by design. A harness's own hooks posting to Compass run in
-  the harness's tree, not the server's. The trace sees the server accept their connections and not
-  the hook processes that made them.
-- **Words.** An argument longer than 64 characters, or one that holds a newline, is recorded as
+- Nothing outside the tree is seen, by design. A harness's own hooks posting to Compass run in
+  the harness's tree, not the server's. The trace records only what the tree starts and connects
+  to, so it shows neither those processes nor the server accepting their connections.
+- No words are kept. An argument longer than 64 characters, or one that holds a newline, is recorded as
   `<N chars>`. A reading call's system prompt is an argument and its session text goes in on stdin,
   so neither reaches the trace. Socket paths are shortened the same way. Hosts, ports and short
   flags such as the model id are kept, because the report needs them.
@@ -143,7 +143,7 @@ host. Every row name it uses is read from SECURITY.md, and a test fails when one
 report lists anything it cannot attribute under "Not in the table". A loopback or configured reach
 connection stays there for a person to read, because the host alone does not say which row it
 belongs to. Events from inside a model CLI's own tree are attributed to the reading row, or the Live
-monitor row in `monitor-only`. These are the connections the tests above could never see. A **departure** is
+monitor row in `monitor-only`. These are the connections the tests above could never see. A departure is
 something the run's own switches forbid: any model launch in `no-model` or `declined`, a model
 launch without a Haiku id in `monitor-only`, and any Unix-domain socket connection, which is the path
 a hand-off would take. The runner exits 1 when there is one.
