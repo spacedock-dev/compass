@@ -30,6 +30,7 @@ import abstention_ledger as ledger
 import analyze_campaign as campaign
 import drift_replay as replay
 import mark_abstention as marker
+import claude_route_verification as route
 committed = {'first': 'f' * 32, 'calls': 68, 'head': 'a' * 64}
 decoy = os.path.join(canonical, '.compass', 'drc-4666-spend.json')
 before = open(decoy, 'rb').read() if os.path.exists(decoy) else None
@@ -45,6 +46,9 @@ print(json.dumps({
     'replay': campaign.REPLAY_PATH,
     'replay_ledger': replay.LEDGER_PATH,
     'store_home': marker.STORE_HOME,
+    'route_state': str(route.STATE_PATH),
+    'route_private': str(route.PRIVATE_DIR),
+    'route_activation': str(route.ACTIVATION_PATH),
     'native_calls': native,
     'read_error': read_error,
     'begins_with_committed': ledger.begins_with(ledger.LEDGER_PATH, committed),
@@ -111,7 +115,16 @@ class StudyLedgersArePinnedToTheirHomeTest(unittest.TestCase):
             HOME=str(self.canonical / "elsewhere"),
             COMPASS_HOME=str(self.canonical / ".compass"),
         )
-        for key in ("native", "shared", "replay", "replay_ledger"):
+        # The route ledger and its activation receipt belong to the same study.
+        for key in (
+            "native",
+            "shared",
+            "replay",
+            "replay_ledger",
+            "route_state",
+            "route_private",
+            "route_activation",
+        ):
             with self.subTest(key=key):
                 self.assertTrue(moved[key].startswith(str(self.canonical / ".cargento")), moved)
 

@@ -10,6 +10,7 @@ production validators; none rebuilds the receipt chain.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import shutil
 import sys
@@ -31,6 +32,12 @@ else:
     import test_qualification_conditional_priority as predecessors
 
 # The ninth run's thirty exposures: seven semantic failures among them, as result 9 recorded.
+# Each marker and reviewer receipt names the approved AGY model and effort it used.
+RECEIPTS = {
+    "marking": {"model": "gemini-3.8-flash-medium", "effort": "medium"},
+    "kind_review": {"model": "gemini-3.8-flash-high", "effort": "high"},
+    "handoff_review": {"model": "gemini-3.8-flash-high", "effort": "high"},
+}
 NINTH_STATUSES = ("usable",) * 23 + ("semantic-failed",) * 7
 
 
@@ -170,6 +177,7 @@ class QualificationTenth(unittest.TestCase):
             "verdict": "GO",
             "prepared_by": "synthetic-operator",
             "reviewed_by": "independent-synthetic-reviewer",
+            "receipts": copy.deepcopy(RECEIPTS),
             "parent": campaigns.tenth_parent_binding(self.previous),
             "successor": {
                 "manifest_digest": self.binding,
@@ -223,7 +231,72 @@ class QualificationTenth(unittest.TestCase):
         )
 
     def measurement(self, current: Any, batch: int) -> dict[str, Any]:
-        return dict(predecessors.QualificationConditionalPriority.measurement(current, batch))
+        proof = dict(predecessors.QualificationConditionalPriority.measurement(current, batch))
+        proof["review"] = {"model": "gemini-3.8-flash-high", "effort": "high"}
+        return proof
+
+    def test_the_scorer_admits_the_tenth_at_99_and_no_more(self) -> None:
+        # The scorer's own admission path, with fakes for the corpus digests only: the
+        # source, scorer and marks evidence is the real one, and nothing calls a model.
+        import argparse  # noqa: PLC0415
+
+        import mark_abstention  # noqa: PLC0415
+        import score_abstention  # noqa: PLC0415
+        from compass_runtime import observer  # noqa: PLC0415
+
+        marks = "2" * 64
+        evidence = {
+            "source": campaigns.runtime_source_digest(Path(observer.__file__).parent),
+            "scorer": hashlib.sha256(Path(score_abstention.__file__).read_bytes()).hexdigest(),
+            "marks": marks,
+        }
+        binding = {k: f"synthetic-{k}" for k in score_abstention.BINDING_KEYS}
+        binding["producer"] = "claude"
+        model_key = ledger.digest({k: binding.get(k) for k in score_abstention.BINDING_KEYS})
+        self.manifest["evidence"]["qualification"] = evidence
+        self.next_path.write_text(json.dumps(self.manifest))
+        manifest_digest = ledger.digest(
+            {k: v for k, v in self.manifest.items() if k not in ("phase", "activation_anchor")}
+        )
+        allowance = self.grant["tenth_continuation_allowance"]
+        allowance.update(campaign_binding=manifest_digest, model_binding=model_key)
+        self.write_grant()
+        self.handoff["successor"].update(
+            manifest_digest=manifest_digest,
+            grant_digest=ledger.digest(self.grant),
+            evidence=evidence,
+            model_binding=model_key,
+        )
+        self.write_handoff()
+        current = self.activate()
+        args = argparse.Namespace(
+            score=True, probe_argv=False, producer="claude", max_calls=99, resume=None
+        )
+        with mock.patch.object(ledger, "home_moved", return_value=False):
+            self.assertEqual("", score_abstention._argument_refusal(args))
+            args.max_calls = 100
+            self.assertIn("between 1 and 99", score_abstention._argument_refusal(args))
+        with (
+            mock.patch.object(score_abstention, "marks_digest", return_value=marks),
+            mock.patch.object(
+                score_abstention, "_inputs_digest", return_value=self.key["inputs_digest"]
+            ),
+            mock.patch.object(
+                mark_abstention,
+                "cases_digest",
+                return_value=self.key["cases_digest"],
+            ),
+        ):
+            native = score_abstention._scoring_ledger(
+                str(self.native_path), mock.Mock(cases={"cases": []}), binding, 99
+            )
+        assert native is not None
+        self.assertIsInstance(native.campaign, campaigns.TenthCampaign)
+        self.assertEqual(6, getattr(native.campaign, "epoch_id", None))
+        self.assertEqual(99, native.cap)
+        case = current.manifest["slots"]["qualification"][0].split(":")[0]
+        native.charge(case, request_binding="a" * 64)
+        self.assertEqual(69, native.used())
 
     def test_append_preserves_the_ninth_measurement_and_native_68_prefix(self) -> None:
         current = self.activate()
@@ -358,7 +431,8 @@ class QualificationTenth(unittest.TestCase):
         with self.assertRaises(ledger.LedgerError):
             ledger.continuation()
 
-    def test_an_eleventh_grant_without_its_own_allowance_admits_no_charge(self) -> None:
+    def stopped_tenth_and_bare_eleventh(self, next_key: dict[str, str]) -> Any:
+        """The tenth charges once and stops; result 10 and a grant 11 with no allowance follow."""
         current = self.activate()
         native = self.native(current)
         charge = native.charge("0000000000000001", request_binding="a" * 64)
@@ -378,11 +452,42 @@ class QualificationTenth(unittest.TestCase):
             "v": 1,
             "phase": "sealed",
             "previous": {k: result[k] for k in ("ledger_chain", "marks_digest", "inputs_digest")},
-            "next": {"cases_digest": "5" * 64, "marks_digest": "6" * 64, "inputs_digest": "8" * 64},
+            "next": next_key,
         }
         self.grant_paths[10].write_text(json.dumps(eleventh))
+        return native
+
+    def test_a_bare_eleventh_grant_cannot_charge_through_the_tenths_ledger(self) -> None:
+        # Review of 2026-10-30: grant 11 named the tenth's own key and carried no allowance,
+        # and a ledger built under grant 10 matched the inherited tenth allowance (cap 99)
+        # and charged with no campaign reservation at all.
+        native = self.stopped_tenth_and_bare_eleventh(dict(self.key))
         self.assertEqual(11, (ledger.continuation() or {}).get("generation"))
-        retry = ledger.Ledger(str(self.native_path), cap=130, producer="claude", **eleventh["next"])
+        self.assertEqual(ledger.MAX_CALLS, native.cap)
+        self.assertNotEqual("", native.check())
+        with self.assertRaises(ledger.LedgerError):
+            native.charge("0000000000000002", request_binding="a" * 64)
+        # Second guard, held apart from the cap: no inherited allowance charges for a bare grant.
+        with (
+            mock.patch.object(ledger.Ledger, "cap", new_callable=mock.PropertyMock) as cap,
+            self.assertRaisesRegex(ledger.LedgerError, "carries no allowance"),
+        ):
+            cap.return_value = 99
+            native.charge("0000000000000002", request_binding="a" * 64)
+        self.assertEqual(69, native.used())
+
+    def test_an_eleventh_grant_without_its_own_allowance_admits_no_charge(self) -> None:
+        key = {"cases_digest": "5" * 64, "marks_digest": "6" * 64, "inputs_digest": "8" * 64}
+        self.stopped_tenth_and_bare_eleventh(key)
+        self.assertEqual(11, (ledger.continuation() or {}).get("generation"))
+        retry = ledger.Ledger(
+            str(self.native_path),
+            cap=130,
+            producer="claude",
+            marks_digest=key["marks_digest"],
+            inputs_digest=key["inputs_digest"],
+            cases_digest=key["cases_digest"],
+        )
         self.assertEqual(ledger.MAX_CALLS, retry.cap)
         with self.assertRaises(ledger.SpendCapError):
             retry.charge("0000000000000001")
@@ -435,6 +540,42 @@ class QualificationTenth(unittest.TestCase):
         self.write_handoff()
         with self.assertRaises(ledger.LedgerError):
             self.current()
+
+    def test_every_receipt_names_an_approved_model_and_its_effort(self) -> None:
+        # AGENTS.md: each review or marking receipt is bound to its selected model and effort.
+        for name, bad in (
+            ("missing", None),
+            ("claude", {"model": "claude-sonnet-5-5", "effort": "high"}),
+            ("low", {"model": "gemini-3.8-flash-low", "effort": "low"}),
+            ("mismatch", {"model": "gemini-3.8-flash-medium", "effort": "high"}),
+            ("extra", {"model": "gemini-3.8-flash-high", "effort": "high", "temp": 0}),
+        ):
+            for receipt in RECEIPTS:
+                with self.subTest(receipt=receipt, case=name):
+                    body = copy.deepcopy(self.handoff)
+                    if bad is None:
+                        del body["receipts"][receipt]
+                    else:
+                        body["receipts"][receipt] = bad
+                    self.handoff_path.write_text(json.dumps(body))
+                    with self.assertRaises(ledger.LedgerError):
+                        self.current()
+        self.write_handoff()
+        current = self.activate()
+        native = self.native(current)
+        charge = native.charge("0000000000000001", request_binding="a" * 64)
+        native.settle(charge, "ok")
+        native.finish_exposure(charge, "usable")
+        proof = self.measurement(current, 0)
+        for bad in (None, {"model": "gemini-3.8-flash-medium", "effort": "high"}):
+            with self.subTest(batch_review=bad), self.assertRaises(ledger.LedgerError):
+                altered = {k: v for k, v in proof.items() if k != "review"}
+                if bad is not None:
+                    altered["review"] = bad
+                current.review_batch("qualification", 0, altered)
+        current.review_batch("qualification", 0, proof)
+        written = json.loads((current.receipts / "qualification-0-BATCH.json").read_bytes())
+        self.assertEqual({"model": "gemini-3.8-flash-high", "effort": "high"}, written["review"])
 
     def test_the_handoff_binds_the_carry_and_both_ceilings(self) -> None:
         for field, bad in (

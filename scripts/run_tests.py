@@ -78,8 +78,9 @@ JOIN_SECONDS = 30.0
 MODULE_COST: dict[str, float] = {
     "test_analyze_campaign": 450.0,
     "test_qualification_conditional_priority": 212.0,
-    # Not measured on Windows: 140 s on a local macOS run (2026-10-30), scaled like its parent.
+    # Not measured on Windows: 140 s and 172 s on a loaded local macOS run (2026-10-30), scaled.
     "test_qualification_tenth": 300.0,
+    "test_qualification_retry": 350.0,
     "test_closure_qualification": 150.0,
     "test_qualification_semantic_measurement": 137.0,
     "test_release_transition": 130.0,

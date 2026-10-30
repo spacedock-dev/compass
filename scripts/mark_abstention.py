@@ -1477,6 +1477,118 @@ def _history_floor(observations: Any) -> float | None:
     return min(stamps) if stamps else None
 
 
+# A stop a committed packet vouched for, re-frozen at that same stop (orchestrator decision,
+# 2026-10-30; the owner may overrule). The history store rolled past two of the ninth packet's
+# stops after they were vouched, and their transcripts' nearest Stop records are about 100 s
+# away against `_same`'s tolerance. The packet that vouched them is anchored by its sealed
+# grant's case digest and its result's ledger chain, and the transcript must still hold the
+# same bytes up to the capture, by that packet's own prefix digest.
+LIFECYCLE_PRIOR_PACKET = "prior-packet"
+_PRIOR_LIFECYCLES = ("history", "transcript", LIFECYCLE_PRIOR_PACKET)
+_PRIOR_PACKET_MAX_BYTES = 8 * 1024 * 1024
+
+
+def committed_packet(digest: str) -> int:
+    """The generation whose sealed grant names this case set, with a chained result, or 0.
+
+    Committed means two things in git: grant k's `next.cases_digest` is this digest, and
+    result k's ledger chain is still the spend ledger's prefix.
+    """
+    try:
+        for k in range(1, abstention_ledger.generation() + 1):
+            grant = abstention_ledger.continuation(generation=k)
+            if not grant or grant["phase"] != "sealed" or grant["next"]["cases_digest"] != digest:
+                continue
+            chain = abstention_ledger.committed_chain(abstention_ledger.result_path(k))
+            if chain and abstention_ledger.begins_with(abstention_ledger.LEDGER_PATH, chain):
+                return k
+    except abstention_ledger.LedgerError:
+        return 0
+    return 0
+
+
+def _prior_body(path: str) -> dict[str, Any] | None:
+    """A bounded regular packet file, never through a symlink, or None."""
+    if not path or os.path.islink(path):
+        return None
+    try:
+        with open(path, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            raw = handle.read(_PRIOR_PACKET_MAX_BYTES + 1)
+        body = json.loads(raw) if len(raw) <= _PRIOR_PACKET_MAX_BYTES else None
+    except (OSError, ValueError, RecursionError):
+        return None
+    return body if isinstance(body, dict) and isinstance(body.get("cases"), list) else None
+
+
+def prior_vouch_refusal(case: dict[str, Any], transcript: str) -> str:  # noqa: PLR0911 - one token per refusal
+    """Empty when a committed packet vouches this case's stop, else the refusal's token."""
+    reference = case.get("prior_vouch")
+    if (
+        not isinstance(reference, dict)
+        or set(reference) != {"generation", "packet"}
+        or type(reference["generation"]) is not int
+        or not isinstance(reference["packet"], str)
+    ):
+        return "prior-packet-absent"
+    body = _prior_body(reference["packet"])
+    if body is None:
+        return "prior-packet-absent"
+    if (
+        committed_packet(cases_digest(body)) != reference["generation"]
+        or not reference["generation"]
+    ):
+        return "prior-packet-uncommitted"
+    prior = next(
+        (c for c in body["cases"] if isinstance(c, dict) and c.get("id") == case.get("id")), None
+    )
+    if prior is None:
+        return "prior-case-absent"
+    if (
+        prior.get("origin") != "recorded"
+        or prior.get("unconfirmed") != []
+        or prior.get("lifecycle_from") not in _PRIOR_LIFECYCLES
+        or any(prior.get(k) != case.get(k) for k in ("harness", "sid", "captured_at"))
+        or prior.get("row_snapshot") != case.get("row_snapshot")
+    ):
+        return "prior-case-differs"
+    size = prior.get("transcript_bytes")
+    digest = (prior.get("production_reading") or {}).get("prefix_digest")
+    if type(size) is not int or size <= 0 or size != case.get("transcript_bytes"):
+        return "prior-source-differs"
+    try:
+        with open(transcript, "rb") as handle:
+            prefix = handle.read(size)
+    except OSError:
+        return "prior-source-differs"
+    if len(prefix) != size or hashlib.sha256(prefix).hexdigest() != digest:
+        return "prior-source-differs"
+    return ""
+
+
+def _prior_reference(path: str) -> dict[str, Any] | None:
+    """What a re-frozen case records of the packet that vouched it: its generation and path."""
+    body = _prior_body(path)
+    generation = committed_packet(cases_digest(body)) if body is not None else 0
+    return {"generation": generation, "packet": path} if generation else None
+
+
+def _vouch_from_prior(
+    case: dict[str, Any], transcript: str, prior_packet: str, unconfirmed: list[str]
+) -> None:
+    """Only a stop no store or Stop record vouches, and only from a committed packet."""
+    reference = _prior_reference(prior_packet)
+    if reference is None:
+        return
+    case["prior_vouch"] = reference
+    if prior_vouch_refusal(case, transcript):
+        del case["prior_vouch"]
+        return
+    case["lifecycle_from"] = LIFECYCLE_PRIOR_PACKET
+    unconfirmed.remove("lifecycle-unconfirmed")
+
+
 def _transcript_stop(transcript: str, sid: str, stop: float) -> bool:
     """Whether the transcript records this session's turn ending at `stop`.
 
@@ -1803,7 +1915,9 @@ def provenance(  # noqa: C901, PLR0912 - export exception precedes unchanged can
             break
     sid = str(case.get("sid") or "")
     transcript = index.get(sid[:8]) if case.get("harness") == "claude" else None
-    if not _lifecycle_recorded(snapshot, float(captured), observations, ends, transcript or ""):
+    if not _lifecycle_recorded(
+        snapshot, float(captured), observations, ends, transcript or ""
+    ) and ("prior_vouch" not in case or prior_vouch_refusal(case, transcript or "")):
         reasons.append("lifecycle-unconfirmed")
     if case.get("harness") == "claude":
         if not transcript:
@@ -1851,7 +1965,16 @@ def make_vouch(
             return None
         sid = str(case.get("sid") or "")
         transcript = index.get(sid[:8]) if case.get("harness") == "claude" else None
-        return _lifecycle_recorded(snapshot, float(captured), observations, ends, transcript or "")
+        recorded = _lifecycle_recorded(
+            snapshot, float(captured), observations, ends, transcript or ""
+        )
+        if (
+            recorded is None
+            and "prior_vouch" in case
+            and not prior_vouch_refusal(dict(case), transcript or "")
+        ):
+            return LIFECYCLE_PRIOR_PACKET
+        return recorded
 
     vouch.lifecycle = lifecycle  # type: ignore[attr-defined]
     return vouch
@@ -1895,7 +2018,7 @@ def machine_vouch(
     )
 
 
-def freeze_case(  # noqa: C901 - retain legacy provenance order with opt-in source capture
+def freeze_case(  # noqa: C901, PLR0912 - legacy provenance order, opt-in source and prior vouch
     config: Any,
     entry: dict[str, Any],
     facts: list[dict[str, Any]],
@@ -1904,6 +2027,7 @@ def freeze_case(  # noqa: C901 - retain legacy provenance order with opt-in sour
     ends: Any = (),
     production_reading: bool = False,
     reviewed_exports: ReviewedExports | None = None,
+    prior_packet: str = "",
 ) -> dict[str, Any]:
     """One recorded case, frozen as the session stood at `captured_at`.
 
@@ -2003,6 +2127,8 @@ def freeze_case(  # noqa: C901 - retain legacy provenance order with opt-in sour
     case["producer_facts"] = kept
     if production_reading:
         case["production_reading"] = _production_capture(config, case, transcript)
+    if lifecycle_from is None and prior_packet and harness == "claude" and transcript:
+        _vouch_from_prior(case, transcript, prior_packet, unconfirmed)
     case["unconfirmed"] = unconfirmed
     if unconfirmed:
         case["origin"] = ORIGIN_SYNTHETIC
@@ -2034,6 +2160,7 @@ def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation 
     store_home: str = "",
     production_reading: bool = False,
     reviewed_exports: ReviewedExports | None = None,
+    prior_packet: str = "",
 ) -> int:
     """Write a format 5 packet from a spec of recorded moments. Spends nothing.
 
@@ -2092,6 +2219,7 @@ def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation 
                     ends=ends,
                     production_reading=production_reading,
                     reviewed_exports=reviewed_exports,
+                    prior_packet=prior_packet,
                 )
             )
         except FreezeError as error:
@@ -2567,6 +2695,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
         "--reviewed-exports", metavar="MANIFEST", help="explicit finite reviewed export manifest"
     )
     parser.add_argument(
+        "--prior-packet",
+        metavar="CASES",
+        default="",
+        help="a committed packet's cases file, to vouch a stop both stores have rolled past",
+    )
+    parser.add_argument(
         "--reviewed-exports-sha256", metavar="SHA256", help="independently pinned manifest digest"
     )
     args = parser.parse_args(argv)
@@ -2581,6 +2715,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
         print(
             "Reviewed exports require --freeze and --production-reading; old cases stay unchanged."
         )
+        return 2
+    if args.prior_packet and not args.freeze:
+        print("--prior-packet requires --freeze; it vouches stops while a packet is frozen.")
         return 2
     if args.production_reading and not args.freeze:
         print("--production-reading requires --freeze; existing packets are never upgraded.")
@@ -2604,6 +2741,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
             store_home=args.store_home,
             production_reading=args.production_reading,
             reviewed_exports=reviewed_exports,
+            prior_packet=os.path.abspath(args.prior_packet) if args.prior_packet else "",
         )
     if args.build and args.reset:
         print("--build and --reset together are ambiguous. Run them one at a time.")

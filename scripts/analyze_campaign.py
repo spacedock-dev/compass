@@ -55,6 +55,8 @@ CONDITIONAL_PRIORITY_HANDOFF_PATH = str(
 )
 TENTH_MANIFEST_PATH = str(Path(MANIFEST_PATH).with_name("closure-campaign-tenth.json"))
 TENTH_HANDOFF_PATH = str(Path(MANIFEST_PATH).with_name("closure-tenth-handoff.json"))
+RETRY_MANIFEST_PATH = str(Path(MANIFEST_PATH).with_name("closure-campaign-retry.json"))
+RETRY_HANDOFF_PATH = str(Path(MANIFEST_PATH).with_name("closure-retry-handoff.json"))
 CLAUSE_ZERO_RESEAL_PATH = str(Path(MANIFEST_PATH).with_name("closure-clause-zero-reseal.json"))
 LEDGER_PATH = authority.study_path("analyze-closure-spend.json")
 REPLAY_PATH = authority.study_path("drift-replay", "spend.json")
@@ -88,6 +90,8 @@ _SUCCESSORS = {
     8: ("clause_isolation_allowance", authority.CLAUSE_ISOLATION_CAP),
     9: ("conditional_priority_allowance", authority.CONDITIONAL_PRIORITY_CAP),
     10: ("tenth_continuation_allowance", authority.TENTH_CAP),
+    # The retry's own ceiling is P + 31; ancestors bound the chain by its largest value.
+    11: ("retry_continuation_allowance", authority.RETRY_MAX_CAP),
 }
 
 
@@ -107,6 +111,12 @@ def _native_ceiling(generation: int) -> int:
 
 def active_campaign() -> Campaign | None:  # noqa: PLR0911 - fixed finite generation surfaces refuse independently
     """An existing fixed manifest or account receipt cannot be bypassed by removing one."""
+    if (
+        os.path.lexists(str(RETRY_MANIFEST_PATH))
+        or os.path.lexists(str(RETRY_HANDOFF_PATH))
+        or (LEDGER_PATH and os.path.lexists(str(LEDGER_PATH + ".epochs/7")))
+    ):
+        return RetryCampaign()
     if (
         os.path.lexists(str(TENTH_MANIFEST_PATH))
         or os.path.lexists(str(TENTH_HANDOFF_PATH))
@@ -2114,6 +2124,47 @@ class ConditionalPriorityCampaign(SuccessorCampaign):
             return authority.digest(state)
 
 
+# The ninth's shared total, 249, plus the tenth's thirty renewed; the carried one was in it.
+TENTH_SHARED_TOTAL = 279
+
+
+# AGENTS.md, "Models for qualification review and marking": the approved AGY variants, each
+# with the effort its name selects. From the tenth on, every marking and review receipt names
+# one of these, and anything else is refused.
+REVIEW_MODELS = {"gemini-3.8-flash-medium": "medium", "gemini-3.8-flash-high": "high"}
+HANDOFF_RECEIPTS = ("marking", "kind_review", "handoff_review")
+
+
+def review_receipt_valid(value: Any) -> bool:
+    """Whether a receipt names exactly one approved model and the effort that model is."""
+    return (
+        isinstance(value, dict)
+        and set(value) == {"model", "effort"}
+        and isinstance(value["model"], str)
+        and REVIEW_MODELS.get(value["model"]) == value["effort"]
+    )
+
+
+def _reviewed_handoff(handoff: Any) -> bool:
+    """A GO handoff with a distinct preparer and reviewer and bound receipts, in a fixed shape."""
+    return (
+        isinstance(handoff, dict)
+        and set(handoff)
+        == {"v", "verdict", "prepared_by", "reviewed_by", "receipts", "parent", "successor"}
+        and isinstance(handoff["receipts"], dict)
+        and set(handoff["receipts"]) == set(HANDOFF_RECEIPTS)
+        and all(review_receipt_valid(handoff["receipts"][k]) for k in HANDOFF_RECEIPTS)
+        and type(handoff["v"]) is int
+        and handoff["v"] == 1
+        and handoff["verdict"] == "GO"
+        and all(
+            isinstance(handoff[k], str) and handoff[k].strip()
+            for k in ("prepared_by", "reviewed_by")
+        )
+        and handoff["prepared_by"] != handoff["reviewed_by"]
+    )
+
+
 def tenth_parent_binding(previous: ConditionalPriorityCampaign) -> dict[str, Any]:
     """Bind the completed ninth measurement, every earlier epoch and the native 68."""
     state = previous._state()  # noqa: SLF001 - independently validated completed predecessor
@@ -2172,6 +2223,17 @@ class TenthCampaign(ConditionalPriorityCampaign):
 
     epoch_id = 6
 
+    def _validate_acceptance(
+        self, lane: str, proof: Any, calls: list[dict[str, Any]], *, batch: int | None = None
+    ) -> None:
+        if batch is not None:
+            if not isinstance(proof, dict) or not review_receipt_valid(proof.get("review")):
+                raise authority.LedgerError(
+                    "the batch review names no approved reviewer model and effort"
+                )
+            proof = {k: v for k, v in proof.items() if k != "review"}
+        super()._validate_acceptance(lane, proof, calls, batch=batch)
+
     def __init__(self) -> None:
         self.parent = ConditionalPriorityCampaign()
         self.path = self.parent.path
@@ -2179,19 +2241,7 @@ class TenthCampaign(ConditionalPriorityCampaign):
         self.epoch_dir = Path(self.path + ".epochs") / "6"
         self.receipts = self.epoch_dir / "reservations"
         self.handoff = _read(TENTH_HANDOFF_PATH, "tenth handoff")
-        if (
-            not isinstance(self.handoff, dict)
-            or set(self.handoff)
-            != {"v", "verdict", "prepared_by", "reviewed_by", "parent", "successor"}
-            or type(self.handoff["v"]) is not int
-            or self.handoff["v"] != 1
-            or self.handoff["verdict"] != "GO"
-            or any(
-                not isinstance(self.handoff[k], str) or not self.handoff[k].strip()
-                for k in ("prepared_by", "reviewed_by")
-            )
-            or self.handoff["prepared_by"] == self.handoff["reviewed_by"]
-        ):
+        if not _reviewed_handoff(self.handoff):
             raise authority.LedgerError("the tenth needs an independent bound handoff")
         self.handoff_digest = authority.digest(self.handoff)
         self._parent_state()
@@ -2214,12 +2264,18 @@ class TenthCampaign(ConditionalPriorityCampaign):
         previous = previous_campaign._state()  # noqa: SLF001 - validate every receipt of the measured epoch
         root = previous_campaign._parent_state()  # noqa: SLF001 - append only to the original canonical ledger
         native = authority.read(QUALIFICATION_PATH)["calls"]
-        grant = authority.continuation()
+        # Selected by number: once the retry is active the tenth is an ancestor, and its own
+        # charges end where grant 11's previous chain ends.
+        active = authority.continuation()
+        generation = _successor_generation(active)
+        end = active["previous"]["ledger_chain"]["calls"] if active and generation > 10 else None
+        grant = authority.continuation(generation=10)
         calls = previous["calls"]
         slots = self.parent.manifest["slots"]["qualification"]
         prior = authority.TENTH_PREVIOUS_CALLS
         if (
             not grant
+            or generation < 10
             or grant["generation"] != 10
             or grant["phase"] != "sealed"
             or not grant.get("tenth_continuation_allowance")
@@ -2234,11 +2290,13 @@ class TenthCampaign(ConditionalPriorityCampaign):
                 f"qualification:{n}"
                 for n in range(len(self.parent.manifest["batches"]["qualification"]))
             }
-            or not prior <= len(native) <= authority.TENTH_CAP
+            or not prior <= len(native) <= _native_ceiling(generation)
             or any(c["status"] == "charged" for c in native[:prior])
             or not authority.begins_with(QUALIFICATION_PATH, grant["previous"]["ledger_chain"])
             or not authority.follows(
-                native, grant, (grant["next"]["marks_digest"], grant["next"]["inputs_digest"])
+                native if end is None else native[:end],
+                grant,
+                (grant["next"]["marks_digest"], grant["next"]["inputs_digest"]),
             )
             or self.manifest["historical"] != self.parent.manifest["historical"]
             or any(
@@ -2262,8 +2320,7 @@ class TenthCampaign(ConditionalPriorityCampaign):
             "additional_calls": authority.CLOSURE_CALLS,
             "carried_calls": authority.TENTH_CARRIED_CALLS,
             "renewed_calls": authority.TENTH_RENEWED_CALLS,
-            # The ninth's shared total, 249, plus the thirty renewed; the carried one was in it.
-            "shared_total": 279,
+            "shared_total": TENTH_SHARED_TOTAL,
             "native_total": authority.TENTH_CAP,
         }
         if (
@@ -2295,6 +2352,182 @@ class TenthCampaign(ConditionalPriorityCampaign):
                 "genesis_nonce": uuid.uuid4().hex,
             }
             epoch = {"id": 6, "handoff_digest": self.handoff_digest, "state": state}
+            self.epoch_dir.mkdir(mode=0o700)
+            self._transition(epoch)
+            root["epochs"].append(epoch)
+            authority._write(self.path, root)  # noqa: SLF001 - append under the existing canonical lock
+            return authority.digest(state)
+
+
+def retry_parent_binding(previous: TenthCampaign) -> dict[str, Any]:
+    """Bind the failed tenth epoch as charged, every earlier epoch and the native prefix."""
+    state = previous._state()  # noqa: SLF001 - independently validated failed predecessor
+    root = previous._parent_state()  # noqa: SLF001 - every ancestor and receipt is preserved
+    grant = authority.continuation(generation=11)
+    if not grant or not grant.get("retry_continuation_allowance"):
+        raise authority.LedgerError("the retry needs its own bound eleventh grant")
+    end = grant["previous"]["ledger_chain"]["calls"]
+    native = authority.read(QUALIFICATION_PATH)["calls"][:end]
+    return _retry_parent_binding(previous, state, root, native)
+
+
+def _retry_parent_binding(
+    previous: TenthCampaign,
+    state: dict[str, Any],
+    root: dict[str, Any],
+    native: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Pure assembly from this admission's freshly validated snapshots; never cached."""
+    batches = len(previous.manifest["batches"]["qualification"])
+    reviews = [
+        previous.receipts / f"qualification-{n}-BATCH.json"
+        for n in range(batches)
+        if f"qualification:{n}" in state.get("accepted_batches", {})
+    ]
+    return {
+        "manifest_digest": previous.binding,
+        "activation_anchor": previous.manifest["activation_anchor"],
+        "handoff_digest": previous.handoff_digest,
+        "state_digest": authority.digest(state),
+        "original_digest": authority.digest({k: v for k, v in root.items() if k != "epochs"}),
+        "ancestor_epochs_digest": authority.digest(root["epochs"][:5]),
+        "calls": len(state["calls"]),
+        "calls_digest": authority.digest(state["calls"]),
+        "stop": state.get("stop"),
+        "batch_reviews_digest": authority.digest(
+            [_read(str(path), "tenth batch review") for path in reviews]
+        ),
+        "failed_result_digest": authority.digest(
+            _read(authority.result_path(10), "failed tenth result")
+        ),
+        "native_calls": len(native),
+        "native_calls_digest": authority.digest(native),
+        "native_chain": {
+            "first": native[0]["id"],
+            "calls": len(native),
+            "head": authority.chain(native),
+        },
+    }
+
+
+class RetryCampaign(TenthCampaign):
+    """Fixed seventh epoch: the one corrected retry after a failed tenth, 31 calls at most.
+
+    It keeps the tenth's measurement rule. Its ceilings follow from what the tenth spent:
+    with P native calls when result 10 was recorded, P + 31 native and 279 + (P - 68) shared.
+    """
+
+    epoch_id = 7
+
+    def __init__(self) -> None:
+        self.parent = TenthCampaign()
+        self.path = self.parent.path
+        self.manifest, self.binding = self._current_manifest()
+        self.epoch_dir = Path(self.path + ".epochs") / "7"
+        self.receipts = self.epoch_dir / "reservations"
+        self.handoff = _read(RETRY_HANDOFF_PATH, "retry handoff")
+        if not _reviewed_handoff(self.handoff):
+            raise authority.LedgerError("the retry needs an independent bound handoff")
+        self.handoff_digest = authority.digest(self.handoff)
+        self._parent_state()
+
+    def _current_manifest(self) -> tuple[dict[str, Any], str]:
+        body, key = _manifest(RETRY_MANIFEST_PATH)
+        if body["order"] != ["qualification", "replay", "live"]:
+            raise authority.LedgerError(
+                "the retry admits only qualification; later lanes stay held"
+            )
+        return body, key
+
+    def _parent_state(self) -> dict[str, Any]:
+        if (
+            self._current_manifest() != (self.manifest, self.binding)
+            or authority.digest(_read(RETRY_HANDOFF_PATH, "retry handoff")) != self.handoff_digest
+        ):
+            raise authority.LedgerError("the retry manifest or handoff changed")
+        previous_campaign = cast("TenthCampaign", self.parent)
+        previous = previous_campaign._state()  # noqa: SLF001 - validate every receipt of the failed epoch
+        root = previous_campaign._parent_state()  # noqa: SLF001 - append only to the original canonical ledger
+        native = authority.read(QUALIFICATION_PATH)["calls"]
+        grant = authority.continuation()
+        allowance = (grant or {}).get("retry_continuation_allowance") or {}
+        prior = allowance.get("previous_calls")
+        calls = previous["calls"]
+        if (
+            not grant
+            or grant["generation"] != 11
+            or grant["phase"] != "sealed"
+            or not allowance
+            or type(prior) is not int
+            or len(calls) != prior - authority.TENTH_PREVIOUS_CALLS
+            or any(c["status"] == "charged" for c in calls)
+            or previous.get("accepted")
+            or not prior <= len(native) <= prior + authority.CLOSURE_CALLS
+            or any(c["status"] == "charged" for c in native[:prior])
+            or not authority.begins_with(QUALIFICATION_PATH, grant["previous"]["ledger_chain"])
+            or not authority.follows(
+                native, grant, (grant["next"]["marks_digest"], grant["next"]["inputs_digest"])
+            )
+            or self.manifest["historical"] != self.parent.manifest["historical"]
+            or any(
+                n.get("campaign_charge") != c["id"]
+                or c["slot"] != f"{n['case']}:r{n.get('repeat')}"
+                or n.get("retry") is not c["retry"]
+                # A transport failure is unusable in the campaign and failed natively.
+                or (c["status"] == "unusable") != (n["status"] in ("failed", "unavailable"))
+                for n, c in zip(native[authority.TENTH_PREVIOUS_CALLS : prior], calls, strict=True)
+            )
+        ):
+            raise authority.LedgerError(
+                "the retry lost the failed tenth epoch or the native prefix it charged"
+            )
+        renewed = prior - authority.TENTH_PREVIOUS_CALLS
+        expected = {
+            "manifest_digest": self.binding,
+            "grant_digest": authority.digest(
+                _read(authority.CONTINUATION_PATHS[10], "eleventh grant")
+            ),
+            "evidence": self.manifest["evidence"]["qualification"],
+            "cases_digest": grant["next"]["cases_digest"],
+            "inputs_digest": grant["next"]["inputs_digest"],
+            "model_binding": allowance["model_binding"],
+            "additional_calls": authority.CLOSURE_CALLS,
+            "carried_calls": authority.TENTH_CAP - prior,
+            "renewed_calls": renewed,
+            # The tenth's shared ceiling held its carried attempts; only the renewed ones are new.
+            "shared_total": TENTH_SHARED_TOTAL + renewed,
+            "native_total": prior + authority.CLOSURE_CALLS,
+        }
+        if (
+            self.handoff["parent"]
+            != _retry_parent_binding(previous_campaign, previous, root, native[:prior])
+            or self.handoff["successor"] != expected
+            or allowance["campaign_binding"] != self.binding
+        ):
+            raise authority.LedgerError("the reviewed retry ancestry or allowance changed")
+        return root
+
+    def initialize_successor(self) -> str:
+        """Append exactly epoch seven once, preserving every earlier epoch and charge."""
+        with authority.locked(self.path):
+            root = self._parent_state()
+            grant = authority.continuation() or {}
+            prior = grant["retry_continuation_allowance"]["previous_calls"]
+            if (
+                self.manifest["phase"] != "prepared"
+                or self.manifest.get("activation_anchor")
+                or len(root.get("epochs", [])) != 6
+                or os.path.lexists(str(self.epoch_dir))
+                or len(authority.read(QUALIFICATION_PATH)["calls"]) != prior
+            ):
+                raise authority.LedgerError("the retry cannot be initialized again")
+            state = {
+                "v": 1,
+                "manifest_digest": self.binding,
+                "calls": [],
+                "genesis_nonce": uuid.uuid4().hex,
+            }
+            epoch = {"id": 7, "handoff_digest": self.handoff_digest, "state": state}
             self.epoch_dir.mkdir(mode=0o700)
             self._transition(epoch)
             root["epochs"].append(epoch)

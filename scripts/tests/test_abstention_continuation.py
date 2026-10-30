@@ -120,6 +120,33 @@ class _OneFailedResult(unittest.TestCase):
         )
 
 
+class ACommittedPacketIsNamedByItsGrantAndChainedByItsResult(_OneFailedResult):
+    """`committed_packet`: the prior-packet vouch's anchor (orchestrator, 2026-10-30)."""
+
+    def test_only_a_sealed_grants_case_set_with_a_chained_result_is_committed(self) -> None:
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        self.grant("marking")
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        self.grant("sealed")
+        # Sealed, but packet 1 has no committed result yet.
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        fresh = self.fresh()
+        fresh.settle(fresh.charge("2" * 16), "ok")
+        chained: dict[str, Any] = {
+            "verdict": "failed",
+            "producer": "claude",
+            "ledger_chain": abstention_ledger.chain_of(str(self.ledger_path)),
+            "marks_digest": self.new_marks,
+            "inputs_digest": self.new_inputs,
+        }
+        self.new_summary_path.write_text(json.dumps(chained))
+        self.assertEqual(1, mark_abstention.committed_packet(self.new_cases))
+        self.assertEqual(0, mark_abstention.committed_packet("f" * 64))
+        unchained = {**chained, "ledger_chain": {**chained["ledger_chain"], "head": "0" * 64}}
+        self.new_summary_path.write_text(json.dumps(unchained))
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+
+
 class AFailedQualificationKeepsItsLedger(_OneFailedResult):
     def test_a_second_packet_needs_a_sealed_grant_before_any_call(self) -> None:
         fresh = self.fresh()

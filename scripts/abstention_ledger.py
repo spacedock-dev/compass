@@ -161,6 +161,10 @@ TENTH_PREVIOUS_CALLS = 68
 TENTH_CARRIED_CALLS = 1
 TENTH_RENEWED_CALLS = 30
 TENTH_CAP = TENTH_PREVIOUS_CALLS + CLOSURE_CALLS
+# The retry (owner, 2026-10-30): at most 31 more calls after a failed tenth, the tenth's unused
+# attempts carried and its spent ones renewed. With P native calls when result 10 is recorded
+# (69 to 99), the retry's ceiling is P + 31, so never more than 99 + 31 = 130.
+RETRY_MAX_CAP = TENTH_CAP + CLOSURE_CALLS
 STATUSES = ("charged", "ok", "failed", "unavailable")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _CASE = re.compile(r"^[0-9a-f]{16}$")
@@ -314,6 +318,7 @@ def continuation(*, generation: int | None = None) -> dict[str, Any] | None:  # 
         clause_isolation = _clause_isolation_allowance(grant, k)
         conditional_priority = _conditional_priority_allowance(grant, k)
         tenth = _tenth_allowance(grant, k)
+        retry = _retry_allowance(grant, k)
         authorized = list((active or {}).get("authorized_allowances", []))
         if (
             allowance
@@ -323,6 +328,7 @@ def continuation(*, generation: int | None = None) -> dict[str, Any] | None:  # 
             or clause_isolation
             or conditional_priority
             or tenth
+            or retry
         ):
             authorized.append(
                 {
@@ -333,8 +339,11 @@ def continuation(*, generation: int | None = None) -> dict[str, Any] | None:  # 
                     or clause_continuation
                     or clause_isolation
                     or conditional_priority
-                    or tenth,
-                    "cap": TENTH_CAP
+                    or tenth
+                    or retry,
+                    "cap": retry["previous_calls"] + CLOSURE_CALLS
+                    if retry
+                    else TENTH_CAP
                     if tenth
                     else CONDITIONAL_PRIORITY_CAP
                     if conditional_priority
@@ -577,6 +586,7 @@ ALLOWANCE_KEYS = (
     "clause_isolation_allowance",
     "conditional_priority_allowance",
     "tenth_continuation_allowance",
+    "retry_continuation_allowance",
 )
 
 
@@ -625,10 +635,58 @@ def _tenth_allowance(grant: dict[str, Any], generation: int) -> dict[str, Any] |
     return value
 
 
+def _retry_allowance(grant: dict[str, Any], generation: int) -> dict[str, Any] | None:
+    """Grant 11's own allowance: 31 more calls after a failed tenth, and no more."""
+    value = grant.get("retry_continuation_allowance")
+    if value is None:
+        return None
+    previous = grant["previous"]["ledger_chain"]["calls"]
+    if (
+        generation != 11
+        or any(
+            grant.get(key) is not None
+            for key in ALLOWANCE_KEYS
+            if key != "retry_continuation_allowance"
+        )
+        or not isinstance(value, dict)
+        or set(value)
+        != {
+            "additional_calls",
+            "previous_calls",
+            "carried_calls",
+            "renewed_calls",
+            "repeats",
+            "retry_calls",
+            "model_binding",
+            "campaign_binding",
+        }
+        # The tenth spent at least one call and at most its 31.
+        or not TENTH_PREVIOUS_CALLS < previous <= TENTH_CAP
+        or any(
+            type(value.get(k)) is not int or value[k] != expected
+            for k, expected in (
+                ("additional_calls", CLOSURE_CALLS),
+                ("previous_calls", previous),
+                ("carried_calls", TENTH_CAP - previous),
+                ("renewed_calls", previous - TENTH_PREVIOUS_CALLS),
+                ("repeats", 3),
+                ("retry_calls", 1),
+            )
+        )
+        or any(
+            not isinstance(value.get(k), str) or not _DIGEST.fullmatch(value[k])
+            for k in ("model_binding", "campaign_binding")
+        )
+    ):
+        raise LedgerError("the retry allowance is not a bound eleventh grant")
+    return value
+
+
 def closure_allowance(grant: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """Only the validated active grant chooses a legacy or successor allowance."""
     return (
-        (grant or {}).get("tenth_continuation_allowance")
+        (grant or {}).get("retry_continuation_allowance")
+        or (grant or {}).get("tenth_continuation_allowance")
         or (grant or {}).get("conditional_priority_allowance")
         or (grant or {}).get("clause_isolation_allowance")
         or (grant or {}).get("clause_continuation_allowance")
@@ -642,6 +700,9 @@ def allowance_cap(grant: Mapping[str, Any] | None) -> int:
     """The sealed generation's ceiling, without transferring an older allowance."""
     if not grant or grant.get("phase") != "sealed" or not closure_allowance(grant):
         return MAX_CALLS
+    retry = grant.get("retry_continuation_allowance")
+    if retry:
+        return int(retry["previous_calls"]) + CLOSURE_CALLS
     return next(
         (
             cap
@@ -750,6 +811,7 @@ def _grant(path: str, failed_path: str) -> dict[str, Any] | None:
                 and grant.get("clause_isolation_allowance") is None
                 and grant.get("conditional_priority_allowance") is None
                 and grant.get("tenth_continuation_allowance") is None
+                and grant.get("retry_continuation_allowance") is None
             )
             or (
                 path == CONTINUATION_PATHS[5]
@@ -806,6 +868,20 @@ def _grant(path: str, failed_path: str) -> dict[str, Any] | None:
                 and summary["counts"]["attempts"] == 30
                 and type(summary["counts"].get("unusable_attempts")) is int
                 and summary["counts"]["unusable_attempts"] == 0
+            )
+            or (
+                # Only a recorded failure of the tenth opens the retry: every attempt it
+                # charged is in its count, stopped or measured to the end.
+                path == CONTINUATION_PATHS[10]
+                and grant.get("retry_continuation_allowance") is not None
+                and summary.get("verdict") == "failed"
+                and type(summary.get("stopped")) is bool
+                and isinstance(summary.get("counts"), dict)
+                and type(summary["counts"].get("attempts")) is int
+                and summary["counts"]["attempts"]
+                == previous["ledger_chain"]["calls"] - TENTH_PREVIOUS_CALLS
+                and type(summary["counts"].get("unusable_attempts")) is int
+                and 0 <= summary["counts"]["unusable_attempts"] <= summary["counts"]["attempts"]
             )
         )
         or summary.get("producer") != "claude"
@@ -932,7 +1008,7 @@ class Ledger:
         if path is None:
             raise LedgerError("the account's canonical home is unavailable")
         self.path = path
-        self.requested_cap = min(cap, TENTH_CAP)
+        self.requested_cap = min(cap, RETRY_MAX_CAP)
         self.model_binding = model_binding
         self.campaign = campaign
         self.marks_digest = marks_digest
@@ -942,12 +1018,20 @@ class Ledger:
 
     @property
     def cap(self) -> int:
-        """Each key keeps its own generation's cap; only the bound tenth key admits 99."""
+        """Each key keeps its own generation's cap, and the active key only its grant's own.
+
+        An older key's cap is reported for its own result and cannot charge (`_refuse_other`).
+        The active key is admitted only by the active grant's own allowance: a grant that
+        carries none, naming the key of the grant before it, once inherited that grant's cap
+        and charged with no campaign reservation (review of 2026-10-30).
+        """
         try:
             grant = continuation()
         except LedgerError:
             return min(self.requested_cap, MAX_CALLS)
         if grant and grant["phase"] == "sealed":
+            if self._is_active_key(grant) and not closure_allowance(grant):
+                return min(self.requested_cap, MAX_CALLS)
             for admitted in reversed(grant["authorized_allowances"]):
                 if (
                     self.model_binding == admitted["allowance"]["model_binding"]
@@ -956,14 +1040,8 @@ class Ledger:
                     and self.cases_digest == admitted["next"].get("cases_digest")
                     and self.producer == "claude"
                     and (
-                        admitted["cap"]
-                        not in (
-                            LOGIN_RESUME_CAP,
-                            CLAUSE_CONTINUATION_CAP,
-                            CLAUSE_ISOLATION_CAP,
-                            CONDITIONAL_PRIORITY_CAP,
-                            TENTH_CAP,
-                        )
+                        # Only the fourth and fifth grants predate campaign-bound charging.
+                        admitted["cap"] in (CLOSURE_CAP, SUCCESSOR_CAP)
                         or (
                             self.campaign is not None
                             and self.campaign.binding == admitted["allowance"]["campaign_binding"]
@@ -972,6 +1050,13 @@ class Ledger:
                 ):
                     return min(self.requested_cap, int(admitted["cap"]))
         return min(self.requested_cap, MAX_CALLS)
+
+    def _is_active_key(self, grant: Mapping[str, Any]) -> bool:
+        return (self.marks_digest, self.inputs_digest, self.cases_digest) == (
+            grant["next"].get("marks_digest"),
+            grant["next"].get("inputs_digest"),
+            grant["next"].get("cases_digest"),
+        )
 
     def _refuse_other(self, body: Mapping[str, Any]) -> None:
         grant = continuation()
@@ -1033,6 +1118,9 @@ class Ledger:
                 raise SpendCapError
             grant = continuation()
             allowance = closure_allowance(grant)
+            if grant is not None and grant["authorized_allowances"] and not allowance:
+                # Once any grant has carried an allowance, every later one must carry its own.
+                raise LedgerError("the active grant carries no allowance of its own")
             extra: dict[str, Any] = {}
             if allowance:
                 if (

@@ -131,7 +131,9 @@ counts and interpretation. Earlier stopped runs and the operational acceptance a
 
 The [tenth continuation amendment](../../SECURITY.md#tenth-qualification-continuation-2026-10-30)
 admits one more epoch, six, under the same measurement rule. It carries the held retry and
-renews thirty attempts, for ceilings of 99 native and 279 shared. Replay and live stay held.
+renews thirty attempts, for ceilings of 99 native and 279 shared. If it fails, one retry epoch,
+seven, may follow with at most 31 more calls (at most 130 native and 310 shared). Replay and
+live stay held.
 The [preparation record](../abstention/README.md#tenth-qualification-preparation-2026-10-30)
 says what is planned; nothing is frozen or spent yet. The spend ledgers this README names stay
 under `~/.cargento`, where they were written; the cases, marks and outputs still follow

@@ -1340,6 +1340,7 @@ def summarize(
     rubric_records: Sequence[Mapping[str, Any]] = (),
     binding: Mapping[str, str] | None = None,
     transcript_stops: Collection[str] = (),
+    prior_packet_stops: Collection[str] = (),
 ) -> dict[str, Any]:
     """The committable half. Ids, marks, outcomes, counts, coverage, digest, when.
 
@@ -1405,6 +1406,13 @@ def summarize(
                 1
                 for r in rubric_records
                 if r["origin"] == ORIGIN_RECORDED and r["id"] in transcript_stops
+            ),
+            # Recorded cases whose stop only a committed packet vouches for now, both stores
+            # having rolled past it (orchestrator decision, 2026-10-30).
+            "recorded_on_prior_packet": sum(
+                1
+                for r in rubric_records
+                if r["origin"] == ORIGIN_RECORDED and r["id"] in prior_packet_stops
             ),
         },
         "dec17": dec17,
@@ -1588,6 +1596,11 @@ def render(summary: Mapping[str, Any]) -> list[str]:
         lines.append(
             f"  recorded on a turn stop its transcript vouched for, the history store having "
             f"rolled past it: {counts['recorded_on_transcript_stop']}"
+        )
+    if counts.get("recorded_on_prior_packet"):
+        lines.append(
+            "  recorded on a stop a committed packet vouched for, both stores having rolled "
+            f"past it: {counts['recorded_on_prior_packet']}"
         )
     if counts.get("output_not_asked"):
         lines.append(
@@ -2474,6 +2487,11 @@ def score(  # noqa: C901, PLR0913 - legacy route plus isolated closure admission
             case_id
             for case_id, case in cases.items()
             if case.get("stop_vouched_by") == "transcript"
+        },
+        prior_packet_stops={
+            case_id
+            for case_id, case in cases.items()
+            if case.get("stop_vouched_by") == mark_abstention.LIFECYCLE_PRIOR_PACKET
         },
     )
     if replay:

@@ -599,34 +599,63 @@ What the software now admits, and nothing more:
 - **Grant 10** (`claude-continuation-10.json`) carries a `tenth_continuation_allowance`: 68
   previous calls, one carried (the ninth's unused retry), thirty renewed, 31 additional,
   three repeats and one retry, with its model and campaign bindings. It binds result 9,
-  which must read `failed`, `stopped: false`, 30 attempts and none unusable. The chain's
-  bound is eleven names, so the retry's grant 11 needs no second bound change; a grant 11
-  carries no allowance until its own validator lands, and admits no charge without one.
+  which must read `failed`, `stopped: false`, 30 attempts and none unusable.
 - **Epoch six** (`TenthCampaign` in `scripts/analyze_campaign.py`) reads its manifest from
   `docs/drift-replay/closure-campaign-tenth.json` and its handoff from
   `docs/drift-replay/closure-tenth-handoff.json`. The handoff binds epoch five's thirty
   measured calls, its four batch reviews, result 9, the four earlier epochs and the native
-  68-call prefix. The ceilings are 99 native and 279 shared. The ninth's measurement rule
-  holds: all thirty are measured, and a semantic failure waits for its batch review.
-- **The ninth is an ancestor.** Its campaign class selects grant 9 by number, so it still
-  validates every receipt once grant 10 is active, and its own key keeps its 69-call cap.
+  68-call prefix. The ceilings are 99 native and 279 shared, and the scorer admits
+  `--max-calls 99` and refuses 100. The ninth's measurement rule holds: all thirty are
+  measured, and a semantic failure waits for its batch review.
+- **Grant 11, the retry** (`claude-continuation-11.json`), carries a
+  `retry_continuation_allowance`, and only after result 10 reads `failed` with an attempt
+  count equal to what the tenth charged. With P native charges at result 10 (69 to 99): P
+  previous calls, 99 - P carried, P - 68 renewed, 31 additional. **Epoch seven**
+  (`RetryCampaign`, `closure-campaign-retry.json`, `closure-retry-handoff.json`) has
+  ceilings of P + 31 native, at most 130, and 279 + (P - 68) shared, at most 310. If the
+  tenth measures thirty and leaves its retry unused, P is 98: 129 native and 309 shared.
+- **Each earlier generation is an ancestor.** The ninth and tenth classes select their own
+  grant by number, so each still validates every receipt once a later grant is active. An
+  older key keeps reporting its own cap and cannot charge. A grant that carries no allowance
+  after one that did admits no charge, even through a ledger built under the grant before it.
+- **Receipts name their model.** A tenth or retry handoff carries `receipts` for `marking`,
+  `kind_review` and `handoff_review`, and every batch review carries `review`, each
+  `{"model", "effort"}`: `gemini-3.8-flash-medium` with `medium`, or `gemini-3.8-flash-high`
+  with `high` (AGENTS.md, "Models for qualification review and marking"). Anything else is
+  refused.
+- **A committed packet can vouch its own stop.** `mark_abstention.py --freeze --prior-packet
+  <cases file>` re-freezes a case whose stop both history stores have rolled past, at the
+  same recorded stop. The prior packet must be the one a sealed grant names by its case
+  digest, with a committed result whose chain begins the spend ledger. The prior case must be
+  recorded with nothing unconfirmed, at the same session, lifecycle and capture, and the
+  transcript must hold the same bytes up to the capture by the prior packet's prefix digest.
+  Anything else leaves the case synthetic. The case records `lifecycle_from: prior-packet`
+  and a `prior_vouch` reference, the scorer rechecks both, and a result counts them as
+  `recorded_on_prior_packet`. This is an orchestrator decision of 2026-10-30, which the owner
+  may overrule. Measured read-only on 2026-10-30: the ninth packet's `a3c76f89` and
+  `a3458822` have no observation in either store and their nearest Stop records are 100.15 s
+  and 91.43 s from the stop (contract review), and both transcripts still match their prefix
+  digests.
 
 Planned order:
 
 1. The producer guards land before the freeze, so the run measures the corrected reader.
 2. A fresh packet home re-freezes every carried case on merged main, because the parser
-   stamp has moved. The steer-then-explain two-turn case takes a slot only if an independent
-   kind review, which sees no results, assigns it that slot's kind. Result 10 will then say
-   which retired case was not re-measured.
+   stamp has moved, with `--prior-packet` pointing at the ninth packet's cases file. The
+   steer-then-explain two-turn case takes a slot only if an independent kind review, which
+   sees no results, assigns it that slot's kind. Result 10 will then say which retired case
+   was not re-measured.
 3. Blind marks, kind review and the handoff review run before any output, on AGY Gemini
    (`gemini-3.8-flash-medium` or `-high`) under the
    [dated security amendment](../../SECURITY.md#tenth-qualification-continuation-2026-10-30).
    Unchanged expectations may transfer. Changed ones and the new case's questions are marked
    fresh.
-4. Grant 10 is committed in `marking`, then `sealed`, beside the manifest, the handoff and
-   epoch six's zero-charge activation. Batches stay one, nine, ten and ten, each reviewed
-   before the next.
-5. The run happens from a pinned checkout. Its result is recorded in its own section here.
+4. Grant 10 is committed in `marking`, then `sealed` with its allowance. The allowance's
+   campaign binding covers the manifest, which carries the marks digest, so it is added at
+   sealing, and the handoff is computed after that. The manifest, the handoff and epoch six's zero-charge activation
+   follow. Batches stay one, nine, ten and ten, each reviewed before the next.
+5. The run happens from a pinned checkout with `--max-calls 99`. Its result is recorded in its
+   own section here.
 
 ### Fourth qualification outcome, 2026-10-06
 
