@@ -17,9 +17,15 @@ export interface PriorDeparture {
   readonly readAt: number;
   /** The earlier departure, parsed by the same rules a reading's own row is. */
   readonly row: Criterion;
+  /** Every id it cites, held or not: what a press of its citation asks the record for. */
+  readonly cites: readonly string[];
   /** The standing reading's row for the same line, which rests on the agent's message. */
   readonly later: Criterion;
 }
+
+/* The finding key a press on an earlier departure's card carries, kept apart from the standing reading's own key
+   for the same line, which resolves against the standing row and its citations. */
+export const PRIOR_FINDING = 'prior:';
 
 export function priorDepartures(
   stored: unknown,
@@ -43,7 +49,10 @@ export function priorDepartures(
        a card has to reach at least one number. */
     if (row.result !== DEPARTURE) continue;
     const held = newest.get(key);
-    if (!held || readAt > held.readAt) newest.set(key, { key, readAt, row, later });
+    const cites = Array.isArray(raw['cites'])
+      ? [...new Set(raw['cites'].map(String).filter(Boolean))]
+      : [];
+    if (!held || readAt > held.readAt) newest.set(key, { key, readAt, row, cites, later });
   }
   /* In the reading's own order: the goal, then each line. */
   return shape.criteria.flatMap((row) => {

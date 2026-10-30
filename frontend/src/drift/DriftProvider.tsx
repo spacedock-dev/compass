@@ -16,6 +16,7 @@ import { useDisplayed, useShell } from '../shell/context';
 import { DriftContext, type DriftValue, type Jump, type JumpMissing } from './context';
 import { buildModel, type DriftModel } from './model';
 import { overlaid } from './overlay';
+import { PRIOR_FINDING } from './prior';
 import { readingCopied } from './shape';
 import { driftCtxFor, useDriftVersion, type DriftCtx } from './state';
 import { clearFlipLines } from './flip';
@@ -115,9 +116,17 @@ export function DriftProvider({
   // The latest press: a read that ends after another press began says nothing about the one now standing.
   const latestPress = useRef<Jump | null>(null);
   const readAt = model.raw?.['read_at'];
+  /* An earlier departure's card presses under its own key, so its citations, its "Cited for" and its way back
+     are its own and never the standing row's for the same line. */
+  const priorOf = (findingKey: string) =>
+    findingKey.startsWith(PRIOR_FINDING)
+      ? (model.priors.find((prior) => `${PRIOR_FINDING}${prior.key}` === findingKey) ?? null)
+      : null;
   const pressed =
     chosen?.session === key && chosen.readAt === readAt
-      ? (model.shape?.criteria.find((row) => row.key === chosen.key) ?? null)
+      ? chosen.key.startsWith(PRIOR_FINDING)
+        ? (priorOf(chosen.key)?.row ?? null)
+        : (model.shape?.criteria.find((row) => row.key === chosen.key) ?? null)
       : null;
   /* A selection stands while its cited rows are held, and while the pages its press asked for are still being
      read, when none may be held yet. */
@@ -146,7 +155,7 @@ export function DriftProvider({
     setSettled(null);
     setMissing(null);
     ctx.shell.controls.disclosures.set(fullActivityKey(project, session), true);
-    const cited = citesOf(model.raw, findingKey);
+    const cited = priorOf(findingKey)?.cites.slice() ?? citesOf(model.raw, findingKey);
     const identity = model.identity;
     const scope = { projectKey: model.projectKey, session: model.session, cited };
     const settle = () => {

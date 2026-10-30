@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { annotationOf } from '../intent/annotation';
 import { clock } from '../observed';
 import { priorDepartures } from './prior';
-import { priorDepartureLine, priorListedLine } from './sentences';
+import { clearedLine, priorDepartureLine, priorListedLine } from './sentences';
 import { readingShape } from './shape';
 
 /* An earlier departure the store kept beside the reading that replaced it (`annotation_prior_departures`) is
@@ -41,7 +41,19 @@ const PASSED = {
   work: true,
   at: 720,
 };
-const ENTRIES = [WRITE, SAID, PASSED];
+/* What the agent said it did, which is what a departure on this line can cite once the write itself is not the
+   producer's to cite: a recorded write departs only under a folder rule, and this line is not one. */
+const REPORTED = {
+  id: 'm0',
+  type: 'agent_message',
+  by: 'agent',
+  source: 'transcript',
+  subject: '',
+  result: '',
+  at: 530,
+  summary: 'I also restyled the queue table in src/styles/queue.css.',
+};
+const ENTRIES = [WRITE, REPORTED, SAID, PASSED];
 const UNSETTLED = { result: 'not verifiable from available evidence', cites: [], detail: '' };
 const DETAIL = 'A stylesheet was written, which this line rules out.';
 
@@ -99,6 +111,24 @@ describe('an earlier departure beside the reading after it', () => {
     expect(prior?.row.clause).toBe(LINE);
     expect(prior?.later.restsOn).toBe('message');
     expect(prior?.later.restsOnEntry?.id).toBe('m1');
+  });
+
+  it('is listed where it cites what the agent said, the shape the producer writes', () => {
+    const said = stored({}, { cites: ['m0'], detail: 'A stylesheet was edited.', why: '' });
+    const [prior] = priorDepartures([said], ON_MESSAGE, ENTRIES as never);
+    expect(prior?.row.result).toBe('departure');
+    expect(prior?.row.citedIds).toEqual(['m0']);
+    expect(prior?.cites).toEqual(['m0']);
+    expect(prior?.later.restsOnEntry?.id).toBe('m1');
+  });
+
+  it('keeps every id it cites, held or not, for the press that reads older pages', () => {
+    const [prior] = priorDepartures(
+      [stored({}, { cites: ['m0', 'w9', 'm0'] })],
+      ON_MESSAGE,
+      ENTRIES as never,
+    );
+    expect(prior?.cites).toEqual(['m0', 'w9']);
   });
 
   it('is not listed where a check answers the line', () => {
@@ -166,6 +196,32 @@ describe('what the page says about it', () => {
     expect(priorDepartureLine(clock(1000), clock(1200), '#17')).toBe(
       `From the ${clock(1000)} reading. The ${clock(1200)} reading rests this line on what the agent said at #17, which is not a check.`,
     );
+    expect(priorDepartureLine(clock(1000), clock(1200), '#17', 'goal')).toBe(
+      `From the ${clock(1000)} reading. The ${clock(1200)} reading rests the goal on what the agent said at #17, which is not a check.`,
+    );
+  });
+
+  it('counts both lines apart when one departure is listed and another no longer holds', () => {
+    expect(clearedLine(1, clock(1000), 0, true)).toBe(
+      `One departure from the ${clock(1000)} reading no longer holds.`,
+    );
+    expect(clearedLine(2, clock(1000), 0, true)).toBe(
+      `2 departures from the ${clock(1000)} reading no longer hold.`,
+    );
+    expect(clearedLine(1, clock(1000), 1, true)).toBe(
+      `One departure your correction named, from the ${clock(1000)} reading, no longer holds.`,
+    );
+    expect(priorListedLine(1, clock(1000), true)).toBe(
+      `Another departure from the ${clock(1000)} reading is still listed below: the reading after it rests on what the agent said.`,
+    );
+    expect(priorListedLine(2, clock(1000), true)).toBe(
+      `2 other departures from the ${clock(1000)} reading are still listed below: the reading after it rests on what the agent said.`,
+    );
+    // Alone, each keeps the wording the owner signed off.
+    expect(clearedLine(1, clock(1000))).toBe(
+      `The departure from the ${clock(1000)} reading no longer holds.`,
+    );
+    expect(priorListedLine(1, clock(1000))).toMatch(/^The departure from /);
   });
 
   it('says the departure is still listed, in place of saying it no longer holds', () => {
