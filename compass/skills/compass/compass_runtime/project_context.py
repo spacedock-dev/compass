@@ -21,7 +21,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Final, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, NamedTuple, TypeVar, cast
 
 from . import (
     ci_read,
@@ -108,6 +108,8 @@ FINAL_WORDS_MAX_CHARS = 16_384
 FINAL_WORDS_UUIDS_MAX = 100_000
 WORKFLOW_DISCOVERY_TIMEOUT_SEC = 2.0
 WORKFLOW_DISCOVERY_CACHE_SEC = 30.0
+CODEX_CHECK_CACHE_SEC = runtime_state.CODEX_CHECK_CACHE_SEC
+CODEX_CHECK_CACHE_ENTRIES = runtime_state.CODEX_CHECK_CACHE_ENTRIES
 WORKFLOW_DISCOVERY_MAX_BYTES = 64 * 1024
 WORKFLOW_DISCOVERY_MAX_DIRS = 64
 WORKFLOW_DISCOVERY_SOURCE = "spacedock status --discover"
@@ -5384,6 +5386,45 @@ _CODEX_EDGES = _Edges(
 )
 
 
+class _Listing(NamedTuple):
+    """What `_ToolReportTally.listing` chose: the rows a page lists, and every check, file and
+    launch's first time, which fixes its position whether or not the listing keeps it."""
+
+    listed: list[dict[str, Any]]
+    counted: dict[str, float]
+
+
+def _assemble_entries(
+    harness: str, sid: str, index: Any, listing: _Listing
+) -> list[dict[str, Any]]:
+    """The published rows of a listing. Apart from `listing` so that a cached read, which holds no
+    tally, still takes the page's current message index."""
+    positions = (
+        entry_numbers.tool_positions(index, listing.counted.items()) if index is not None else {}
+    )
+    return [
+        {
+            **{k: v for k, v in row.items() if k not in {"rank", "_key", "_first_at"}},
+            "harness": harness,
+            "sid": sid,
+            # The check's own identity, directory included, hashed as the source does. The page
+            # matches a failed run to a later pass by it; the command line alone would let a
+            # pass of `pytest -q` in one directory hide a failure of it in another.
+            **(
+                {"check_id": _semantic_id("check", row["_key"].removeprefix("check:"))}
+                if row["_key"].startswith("check:")
+                else {}
+            ),
+            **(
+                {"ordinal": position[0], "ordinal_sub": position[1]}
+                if (position := positions.get(row["_key"])) is not None
+                else {}
+            ),
+        }
+        for row in listing.listed
+    ]
+
+
 class _ToolReportTally:
     """The full scan of one transcript's calls, and the entries chosen from it."""
 
@@ -6214,6 +6255,10 @@ class _ToolReportTally:
     def entries(
         self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
     ) -> list[dict[str, Any]]:
+        return _assemble_entries(self.edges.harness, sid, index, self.listing(cap))
+
+    def listing(self, cap: int = TOOL_REPORT_MAX_ENTRIES) -> _Listing:
+        """The listed rows and the fixed positions, once per tally: it adds to `scan`."""
         histories = self._histories()
         candidates = self._ranked(histories)
         last_pass_at = self._last_pass_at()
@@ -6270,30 +6315,7 @@ class _ToolReportTally:
         }
         for identity, runs in self.runs.items():
             counted.setdefault(f"check:{identity}", min(run["at"] for run in runs))
-        positions = (
-            entry_numbers.tool_positions(index, counted.items()) if index is not None else {}
-        )
-        return [
-            {
-                **{k: v for k, v in row.items() if k not in {"rank", "_key", "_first_at"}},
-                "harness": self.edges.harness,
-                "sid": sid,
-                # The check's own identity, directory included, hashed as the source does. The page
-                # matches a failed run to a later pass by it; the command line alone would let a
-                # pass of `pytest -q` in one directory hide a failure of it in another.
-                **(
-                    {"check_id": _semantic_id("check", row["_key"].removeprefix("check:"))}
-                    if row["_key"].startswith("check:")
-                    else {}
-                ),
-                **(
-                    {"ordinal": position[0], "ordinal_sub": position[1]}
-                    if (position := positions.get(row["_key"])) is not None
-                    else {}
-                ),
-            }
-            for row in listed
-        ]
+        return _Listing(listed, counted)
 
     def _write_entry(self, path: str, write: dict[str, Any]) -> dict[str, Any]:
         who = self.edges.who
@@ -6781,6 +6803,7 @@ def press_checks(
             goal_texts=goal_texts,
             remotes=state.ci_remotes,
             child_paths=observer.codex_child_rollouts(config, state, transcript_path),
+            cache=state.codex_check_cache,
         )
     return claude_check_press(
         config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes
@@ -8171,6 +8194,54 @@ def _codex_tally(
     return tally
 
 
+_CachedT = TypeVar("_CachedT")
+
+
+class _CodexReport(NamedTuple):
+    """A Codex check read as a cache holds it: no tally, so no records, only what a page takes."""
+
+    listing: _Listing
+    scan: dict[str, Any]
+    write_ats: tuple[float, ...]
+
+
+def _codex_stamp(rollout_path: str, child_paths: Sequence[str] | None) -> tuple[Any, ...]:
+    stamps: list[tuple[str, int, int]] = []
+    for path in [rollout_path, *(child_paths or ())]:
+        try:
+            result = os.stat(path)
+            stamps.append((path, result.st_size, result.st_mtime_ns))
+        except OSError:
+            stamps.append((path, -1, -1))
+    return (child_paths is None, *stamps)
+
+
+def _codex_cached(
+    cache: runtime_state.ExpiringCache | None,
+    key: tuple[Any, ...],
+    rollout_path: str,
+    child_paths: Sequence[str] | None,
+    read: Callable[[], _CachedT],
+) -> _CachedT:
+    """`read`'s result, held while the root's and every child's size and mtime stand and for
+    `CODEX_CHECK_CACHE_SEC`. The key is the rollout and each bound the read depends on; the stamp
+    carries the children, so one gained, lost or appended to is a different read.
+
+    Without a cache, a caller that holds no state, it reads every time.
+    """
+    if cache is None:
+        return read()
+    key = (rollout_path, *key)
+    stamp = _codex_stamp(rollout_path, child_paths)
+    now = time.monotonic()
+    hit, held = cache.get(key, stamp, now)
+    if hit:
+        return cast("_CachedT", held)
+    value = read()
+    cache.put(key, stamp, value, now)
+    return value
+
+
 def codex_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     config: RuntimeConfig,
     rollout_path: str,
@@ -8183,6 +8254,7 @@ def codex_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     remotes: git_status.StampCache | None = None,
     listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
     child_paths: Sequence[str] | None = None,
+    cache: runtime_state.ExpiringCache | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """`claude_tool_reports` for a Codex session's rollout and its children's, codex-cli 0.149 and
     later.
@@ -8193,26 +8265,48 @@ def codex_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     Published into the observed record only:
     [amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)
     """
-    tally = _codex_tally(
-        config,
-        rollout_path,
-        max_bytes=max_bytes,
-        goal_texts=goal_texts,
-        remotes=remotes,
-        child_paths=child_paths,
-    )
-    if tally is None:
-        return [], {"commands_unreadable": True}
-    entries = tally.entries(
-        sid, index_provider() if index_provider is not None else None, cap=listed_cap
-    )
-    if not isinstance(window_start, _WindowNotRequested):
-        tally.scan["window_start"] = window_start
-        tally.scan["window_written_paths"] = sum(
-            write["at"] > 0 and (window_start is None or write["at"] >= window_start)
-            for write in tally.writes.values()
+
+    def read() -> _CodexReport | None:
+        tally = _codex_tally(
+            config,
+            rollout_path,
+            max_bytes=max_bytes,
+            goal_texts=goal_texts,
+            remotes=remotes,
+            child_paths=child_paths,
         )
-    return entries, tally.scan
+        if tally is None:
+            return None
+        listing = tally.listing(listed_cap)
+        return _CodexReport(listing, tally.scan, tuple(w["at"] for w in tally.writes.values()))
+
+    report = _codex_cached(
+        cache,
+        (
+            "reports",
+            config.turn_scan_max_bytes,
+            config.git_probe_enabled,
+            max_bytes,
+            tuple(goal_texts),
+            remotes is None,
+            listed_cap,
+        ),
+        rollout_path,
+        child_paths,
+        read,
+    )
+    if report is None:
+        return [], {"commands_unreadable": True}
+    entries = _assemble_entries(
+        "codex", sid, index_provider() if index_provider is not None else None, report.listing
+    )
+    scan = dict(report.scan)
+    if not isinstance(window_start, _WindowNotRequested):
+        scan["window_start"] = window_start
+        scan["window_written_paths"] = sum(
+            at > 0 and (window_start is None or at >= window_start) for at in report.write_ats
+        )
+    return entries, scan
 
 
 def codex_check_press(
@@ -8223,21 +8317,39 @@ def codex_check_press(
     goal_texts: Iterable[str] = (),
     remotes: git_status.StampCache | None = None,
     child_paths: Sequence[str] | None = None,
+    cache: runtime_state.ExpiringCache | None = None,
 ) -> PressChecks:
     """`claude_check_press` for a Codex rollout: the same scan and bounds as `codex_tool_reports`.
 
     Nothing is synthesized into a tail: Codex's own exit code is a field, never words Compass
     writes into what the command printed.
     """
-    tally = _codex_tally(
-        config,
+
+    def read() -> PressChecks:
+        tally = _codex_tally(
+            config,
+            rollout_path,
+            max_bytes=max_bytes,
+            goal_texts=goal_texts,
+            remotes=remotes,
+            child_paths=child_paths,
+        )
+        return PressChecks({}, frozenset()) if tally is None else _press(tally)
+
+    return _codex_cached(
+        cache,
+        (
+            "press",
+            config.turn_scan_max_bytes,
+            config.git_probe_enabled,
+            max_bytes,
+            tuple(goal_texts),
+            remotes is None,
+        ),
         rollout_path,
-        max_bytes=max_bytes,
-        goal_texts=goal_texts,
-        remotes=remotes,
-        child_paths=child_paths,
+        child_paths,
+        read,
     )
-    return PressChecks({}, frozenset()) if tally is None else _press(tally)
 
 
 def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> float | None:
@@ -9520,6 +9632,7 @@ def _session_work_evidence(  # noqa: PLR0913 - each is one keyword its caller na
     listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
     *,
     child_paths: Sequence[str] | None = None,
+    codex_cache: runtime_state.ExpiringCache | None = None,
 ) -> dict[str, int]:
     """Pi's demonstrated results and Claude Code's and Codex's checks, appended for `collect`.
     `child_paths` are a Codex session's child rollouts (`observer.codex_child_rollouts`).
@@ -9533,7 +9646,7 @@ def _session_work_evidence(  # noqa: PLR0913 - each is one keyword its caller na
     events.extend(rows)
     readers: dict[str, Callable[..., tuple[list[dict[str, Any]], dict[str, Any]]]] = {
         "claude": claude_tool_reports,
-        "codex": functools.partial(codex_tool_reports, child_paths=child_paths),
+        "codex": functools.partial(codex_tool_reports, child_paths=child_paths, cache=codex_cache),
     }
     reader = readers.get(harness)
     if reader is not None:
@@ -12245,6 +12358,7 @@ def collect(  # noqa: PLR0913, PLR0915 - the press's window rides beside the foc
                 if harness == "codex"
                 else None
             ),
+            codex_cache=state.codex_check_cache,
         )
         backfill_rows, signature = _incremental_history_events(
             config, state, history_project, transcript_path, harness, sid, now=now

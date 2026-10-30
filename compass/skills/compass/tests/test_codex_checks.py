@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ from unittest import mock
 
 from compass_runtime import (
     ci_read,
+    entry_numbers,
     git_status,
     observer,
     project_context,
@@ -30,6 +32,7 @@ from compass_runtime import (
     reading_route,
     semantic_history,
 )
+from compass_runtime import io as runtime_io
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
@@ -1092,6 +1095,270 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         state = build_runtime_state(self.config, started=self.NOW)
         press = project_context.press_checks(self.config, state, "codex", SID)
         self.assertTrue(any("1 failed" in tail for tail in press.tails.values()), press.tails)
+
+
+class TheCheckReadIsKeptWhileNothingItReadsMoves(CodexChecksTestCase):
+    """A second collect over unchanged rollouts reads none of them; a changed size or mtime of the
+    root or of any child, or the cache's age, makes the read again."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.store = Path(self.config.store_roots["codex.sessions"][0]) / "2026" / "10" / "30"
+        self.path = self.store / f"rollout-2026-10-30T03-00-00-{SID}.jsonl"
+        self.rollout.command("pytest -q", "1 passed in 0.1s")
+        self.rollout.subagent()
+        self.rollout.save(self.path)
+        self.child_path = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        child = Rollout(self.cwd, thread=CHILD, parent=SID, start_ms=self.rollout.ms)
+        child.command("pytest -q", "E   assert 1 == 2\n1 failed in 0.2s", exit_code=1)
+        child.save(self.child_path)
+        self.state = build_runtime_state(self.config, started=START.timestamp())
+        self.clock = [1000.0]
+        patcher = mock.patch.object(time, "monotonic", lambda: self.clock[0])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def reports(self, **kwargs: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return project_context.codex_tool_reports(
+            self.config,
+            str(self.path),
+            SHORT,
+            goal_texts=self.goal_texts,
+            child_paths=observer.codex_child_rollouts(self.config, self.state, str(self.path)),
+            cache=self.state.codex_check_cache,
+            **kwargs,
+        )
+
+    def counted(self, call: Any) -> int:
+        with mock.patch.object(
+            runtime_io,
+            "scan_reverse_lines",
+            wraps=runtime_io.scan_reverse_lines,
+        ) as scans:
+            call()
+        return scans.call_count
+
+    def test_a_second_read_of_unchanged_rollouts_reads_none_of_them(self) -> None:
+        first = self.counted(self.reports)
+        again = self.counted(self.reports)
+        self.assertEqual(2, first)  # the root and its one child
+        self.assertEqual(0, again)
+
+    def test_the_kept_read_is_the_read(self) -> None:
+        fresh = project_context.codex_tool_reports(
+            self.config,
+            str(self.path),
+            SHORT,
+            goal_texts=self.goal_texts,
+            child_paths=[str(self.child_path)],
+        )
+        self.reports()
+        self.assertEqual(fresh, self.reports())
+
+    def test_a_cache_hit_does_not_carry_one_callers_window_to_the_next(self) -> None:
+        self.reports()
+        _rows, windowed = self.reports(window_start=0.0)
+        _rows, plain = self.reports()
+        self.assertIn("window_start", windowed)
+        self.assertNotIn("window_start", plain)
+
+    def test_a_cache_hit_takes_the_pages_current_message_index(self) -> None:
+        self.reports()
+        with mock.patch.object(entry_numbers, "tool_positions", return_value={}) as positions:
+            self.reports(index_provider=lambda: "the index")
+        self.assertEqual("the index", positions.call_args.args[0])
+
+    def test_an_appended_root_is_read_again(self) -> None:
+        self.reports()
+        self.rollout.command("pytest -q tests/test_two.py", "2 passed")
+        self.rollout.save(self.path)
+        self.assertEqual(2, self.counted(self.reports))
+
+    def test_a_child_whose_size_changed_is_read_again(self) -> None:
+        self.reports()
+        with self.child_path.open("a", encoding="utf-8") as handle:
+            handle.write("\n")
+        self.assertEqual(2, self.counted(self.reports))
+
+    def test_a_child_whose_mtime_alone_changed_is_read_again(self) -> None:
+        self.reports()
+        stat = self.child_path.stat()
+        os.utime(self.child_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+        self.assertEqual(2, self.counted(self.reports))
+
+    def test_a_child_gained_is_read_again(self) -> None:
+        self.reports()
+        extra = "019a2b3c-0000-7000-8000-0000000000fd"
+        child = Rollout(self.cwd, thread=extra, parent=SID, start_ms=self.rollout.ms)
+        child.command("ruff check", "ok")
+        child.save(self.store / f"rollout-2026-10-30T03-00-00-{extra}.jsonl")
+        self.assertEqual(3, self.counted(self.reports))
+
+    def test_a_read_older_than_the_window_is_made_again(self) -> None:
+        self.reports()
+        self.clock[0] += project_context.CODEX_CHECK_CACHE_SEC + 1
+        self.assertEqual(2, self.counted(self.reports))
+
+    def test_a_different_bound_is_a_different_read(self) -> None:
+        self.reports()
+        self.assertEqual(2, self.counted(lambda: self.reports(listed_cap=1)))
+
+    def test_the_cache_is_bounded(self) -> None:
+        for index in range(project_context.CODEX_CHECK_CACHE_ENTRIES + 10):
+            project_context.codex_tool_reports(
+                self.config,
+                str(self.path),
+                SHORT,
+                goal_texts=(f"goal {index}",),
+                cache=self.state.codex_check_cache,
+            )
+        self.assertEqual(
+            project_context.CODEX_CHECK_CACHE_ENTRIES, len(self.state.codex_check_cache)
+        )
+
+    def test_an_expired_read_is_swept_by_the_next_put_and_not_held(self) -> None:
+        cache = self.state.codex_check_cache
+        self.reports()
+        self.assertEqual(1, len(cache))
+        self.clock[0] += project_context.CODEX_CHECK_CACHE_SEC + 1
+        project_context.codex_tool_reports(
+            self.config, str(self.path), SHORT, goal_texts=("another",), cache=cache
+        )
+        # The expired read of the first goal went, and the new one is the only entry.
+        self.assertEqual(1, len(cache))
+
+    def test_concurrent_reads_leave_the_cache_whole_and_bounded(self) -> None:
+        cache = self.state.codex_check_cache
+        errors: list[BaseException] = []
+
+        def work(worker: int) -> None:
+            try:
+                for index in range(300):
+                    stamp = (worker, index)
+                    cache.put((worker, index), stamp, index, self.clock[0])
+                    cache.get((worker, index), stamp, self.clock[0])
+            except BaseException as error:  # noqa: BLE001 - the test reports whatever it was
+                errors.append(error)
+
+        threads = [threading.Thread(target=work, args=(n,)) for n in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual([], errors)
+        self.assertLessEqual(len(cache), project_context.CODEX_CHECK_CACHE_ENTRIES)
+
+    def test_no_cache_reads_every_time(self) -> None:
+        def bare() -> Any:
+            return project_context.codex_tool_reports(self.config, str(self.path), SHORT)
+
+        self.assertEqual(1, self.counted(bare))
+        self.assertEqual(1, self.counted(bare))
+
+    def test_the_press_is_kept_the_same_way(self) -> None:
+        def press() -> Any:
+            return project_context.codex_check_press(
+                self.config,
+                str(self.path),
+                child_paths=[str(self.child_path)],
+                cache=self.state.codex_check_cache,
+            )
+
+        self.assertEqual(2, self.counted(press))
+        self.assertEqual(0, self.counted(press))
+
+
+class ChildDiscoveryListsNoStoreWhileTheStoreStandsStill(CodexChecksTestCase):
+    """`observer.codex_child_rollouts` globs the store when a day folder is made or gains a file,
+    not for every session on every collect."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.store = Path(self.config.store_roots["codex.sessions"][0]) / "2026" / "10" / "30"
+        self.path = self.store / f"rollout-2026-10-30T03-00-00-{SID}.jsonl"
+        self.rollout.save(self.path)
+        self.state = build_runtime_state(self.config, started=START.timestamp())
+
+    def child(self, thread: str, folder: str = "30") -> Path:
+        child = Rollout(self.cwd, thread=thread, parent=SID, start_ms=self.rollout.ms)
+        path = self.store.parent / folder / f"rollout-2026-10-30T03-00-00-{thread}.jsonl"
+        child.save(path)
+        return path
+
+    def settle(self) -> None:
+        """Age every store folder past the index's settling window, as a store at rest is."""
+        past = time.time() - 3600
+        top = Path(self.config.store_roots["codex.sessions"][0])
+        for directory in [top, *top.rglob("*")]:
+            if directory.is_dir():
+                os.utime(directory, (past, past))
+
+    def found(self) -> list[str]:
+        return observer.codex_child_rollouts(self.config, self.state, str(self.path))
+
+    def globs(self) -> int:
+        with mock.patch.object(runtime_io, "glob_stores", wraps=runtime_io.glob_stores) as globbed:
+            self.found()
+        return globbed.call_count
+
+    def test_an_unchanged_store_is_listed_once(self) -> None:
+        kept = self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(kept)], self.found())
+        self.assertEqual(0, self.globs())
+        self.assertEqual([str(kept)], self.found())
+
+    def test_a_child_added_to_a_known_day_is_found(self) -> None:
+        self.settle()
+        self.found()
+        grand = self.child(GRANDCHILD)
+        self.assertEqual([str(grand)], self.found())
+
+    def test_a_child_added_in_a_new_day_folder_is_found(self) -> None:
+        self.settle()
+        self.found()
+        grand = self.child(GRANDCHILD, folder="31")
+        self.assertEqual([str(grand)], self.found())
+
+    def test_a_child_removed_is_gone(self) -> None:
+        gone = self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(gone)], self.found())
+        gone.unlink()
+        self.assertEqual([], self.found())
+
+    def test_a_child_created_empty_is_found_once_its_head_is_written(self) -> None:
+        created = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        created.write_text("")
+        self.settle()
+        self.assertEqual([], self.found())
+        # The head is written into a file that already exists, which moves no folder's mtime.
+        self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(created)], self.found())
+
+    def test_a_child_created_empty_is_found_when_the_head_lands_after_the_folder_settled(
+        self,
+    ) -> None:
+        created = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        created.write_text("")
+        self.assertEqual([], self.found())
+        self.settle()
+        self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(created)], self.found())
+
+    def test_an_index_built_inside_a_timestamp_tick_is_not_kept(self) -> None:
+        self.child(CHILD)
+        self.found()
+        self.assertGreater(self.globs(), 0)
+
+    def test_another_roots_child_is_not_ours(self) -> None:
+        other = "019a2b3c-0000-7000-8000-0000000000aa"
+        child = Rollout(self.cwd, thread=CHILD, parent=other, start_ms=self.rollout.ms)
+        child.rows[0]["payload"]["session_id"] = other
+        child.save(self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl")
+        self.assertEqual([], self.found())
 
 
 class ARolloutWithNoExitStatusIsNotRead(CodexChecksTestCase):
