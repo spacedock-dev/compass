@@ -465,6 +465,52 @@ export const CodexShowsAFailedCheck: Story = {
   },
 };
 
+/* A Codex subagent's failing test is a check on the session's page, read from the child's own rollout and
+   labelled as the subagent's by its source, as a Claude Code subagent's is. The record's line says its
+   subagents' commands are read, where it used to say they were not.
+   ([the amendment](../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)) */
+const CODEX_SUBAGENT_FAILED = {
+  ...fact(
+    'c2',
+    500,
+    {
+      subject: 'check',
+      result: 'failed',
+      result_source: 'flag',
+      summary: 'pytest -q',
+      evidence: { source: 'Codex subagent command and its exit status', confidence: 'exact' },
+    },
+    'codex',
+  ),
+  worker_kind: 'subagent',
+};
+export const CodexShowsASubagentsFailedCheck: Story = {
+  ...scenario({ harness: 'codex', facts: [personSaid('codex'), CODEX_SUBAGENT_FAILED] }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await drawn(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    const row = await waitFor(
+      () => {
+        const node = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c2"]');
+        if (!node) throw new Error('no row for the subagent check');
+        return node;
+      },
+      { timeout: 8000 },
+    );
+    await waitFor(() => expect(row).toBeVisible(), { timeout: 8000 });
+    await expect(row).toHaveTextContent('pytest -q');
+    await expect(within(row).getByLabelText('Failed, as the tool reported')).toBeInTheDocument();
+    await expect(row).toHaveTextContent('Codex subagent command and its exit status');
+    const about = await canvas.findByRole('button', { name: /About this record/ });
+    if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
+    await waitFor(() =>
+      expect(canvasElement).toHaveTextContent('its subagents’ included and labelled as theirs'),
+    );
+    await expect(canvasElement).not.toHaveTextContent('reads no subagent’s commands');
+  },
+};
+
 /* Antigravity: the sentence in place of a level, and neither a meter nor a switch. Analyze is still offered,
    because a reading needs the saved words and the messages, not work results. The meter and its scale are
    decorative and hidden from assistive tech, so their absence is read from their words. */
