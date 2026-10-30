@@ -160,7 +160,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
         <div className="next-session-drift-check">
           <ReadingControl board={board} primary={false} refusalOf={refusal} />
         </div>
-        <div className="flex flex-col opacity-45" aria-busy="true" inert data-next-result-dimmed>
+        <div className="flex flex-col grayscale" aria-busy="true" inert data-next-result-dimmed>
           {answer}
           {result}
         </div>

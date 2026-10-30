@@ -145,7 +145,7 @@ export interface Scenario {
   readonly session?: Record<string, unknown>;
   /** A session with no saved words: the first prompt is drafted into the goal box and nothing is stored. */
   readonly unsaved?: boolean;
-  readonly initialView?: 'attention' | 'sessions';
+  readonly initialView?: 'attention' | 'sessions' | 'projects';
   /** A clipboard that takes every write, so Copy's answer is the page's and not the browser's permission. */
   readonly clipboard?: boolean;
   readonly payload?: Record<string, unknown>;
@@ -240,7 +240,9 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         ? '#n=attention'
         : scenario.initialView === 'sessions'
           ? '#n=sessions'
-          : `#n=session:demo:${harness}:s1`,
+          : scenario.initialView === 'projects'
+            ? '#n=projects'
+            : `#n=session:demo:${harness}:s1`,
     );
     const env = createFakeEnvironment({ clock });
     let generation = 1000;

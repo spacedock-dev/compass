@@ -894,7 +894,7 @@ export function SessionsFilters({
             </Button>
           ))}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto min-w-0 max-w-full">
           <Disclosure
             variant="popover"
             disclosureKey={disclosureKey({
