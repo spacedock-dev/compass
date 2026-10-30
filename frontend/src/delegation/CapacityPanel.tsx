@@ -97,8 +97,8 @@ export function CapacityPanel({
 }: {
   readonly payload: Row;
   readonly model: Pick<Observed, 'windows' | 'capacityEmptyText' | 'capacityEmptyNoteText'>;
-  /** The usage disclosure and switch, drawn after the windows. */
-  readonly usage?: ReactNode;
+  /** The usage disclosure and switch, drawn after the windows. Told whether any window is drawn above it. */
+  readonly usage?: (windows: boolean) => ReactNode;
 }) {
   const windows = new Map(model.windows.map((window) => [window.key, window]));
   const rows = capacityRows(payload);
@@ -126,7 +126,7 @@ export function CapacityPanel({
           <p className="next-rail-reason">{model.capacityEmptyNoteText}</p>
         </>
       )}
-      {usage}
+      {usage?.(rows.length > 0)}
     </Card>
   );
 }

@@ -20,7 +20,7 @@ export const STEERING_SLOTS: ProjectSlots = {
       project={project}
       projectKey={projectKey}
       focus={focus}
-      usage={<RailUsage />}
+      usage={(windows) => <RailUsage windows={windows} />}
       observer={<ObserverControls projectKey={projectKey} focus={focus} />}
     />
   ),

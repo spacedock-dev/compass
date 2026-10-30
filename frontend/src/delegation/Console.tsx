@@ -31,7 +31,7 @@ export interface ProjectConsoleProps {
   /** The observer-model controls, drawn only when the capability is read as on. The capacity step supplies them. */
   readonly observer?: ReactNode;
   /** The usage disclosure and switch inside the capacity panel. The capacity step supplies them. */
-  readonly usage?: ReactNode;
+  readonly usage?: (windows: boolean) => ReactNode;
 }
 
 type Reading = boolean | null | 'per-session';

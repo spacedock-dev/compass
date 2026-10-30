@@ -22,8 +22,9 @@ function useAnswer() {
   };
 }
 
-/* On until turned off: an unanswered origin reads as on, as `transport/runtime` sends it. */
-export function UsageSwitch() {
+/* `windows` is whether quota windows are drawn above the switch; with none, there is no cached read to describe.
+   On until turned off: an unanswered origin reads as on, as `transport/runtime` sends it. */
+export function UsageSwitch({ windows }: { readonly windows: boolean }) {
   const offered = useUsageOffered();
   const consent = useConsent('usage');
   const answer = useAnswer();
@@ -36,7 +37,9 @@ export function UsageSwitch() {
       <span>
         {on
           ? 'Quota is read with the Claude Code and Cursor logins on this machine. No session content is sent.'
-          : 'Quota reading is off. Windows above are the last cached read and will lapse.'}
+          : windows
+            ? 'Quota reading is off. Windows above are the last cached read and will lapse.'
+            : 'Quota reading is off. No window has been read.'}
       </span>
       <Button
         ref={buttonRef}
@@ -52,6 +55,6 @@ export function UsageSwitch() {
 }
 
 /** What the Console rail draws under its windows. */
-export function RailUsage() {
-  return <UsageSwitch />;
+export function RailUsage({ windows }: { readonly windows: boolean }) {
+  return <UsageSwitch windows={windows} />;
 }
