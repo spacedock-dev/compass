@@ -4021,6 +4021,9 @@ class _Result(NamedTuple):
     at: float | None
     # The record's own `toolUseResult`, read for `gitOperation.pr` and nothing else.
     meta: dict[str, Any] | None = None
+    # The harness's own structured exit code, where it records one (Codex's `CommandExecution`).
+    # Claude Code records none: its exit code is only ever the `Exit code N` line of the text.
+    exit_code: int | None = None
 
 
 def _tool_result_blocks(
@@ -4263,7 +4266,13 @@ def _redacted(text: str) -> str:
 
 
 def _summary_for(
-    call: _ShellCall, index: int, words: list[str], attributable: bool, *, tail: str
+    call: _ShellCall,
+    index: int,
+    words: list[str],
+    attributable: bool,
+    *,
+    tail: str,
+    trailers: bool = True,
 ) -> str:
     """The last-line result for one check, where the whole window is not already its own."""
     if attributable or not call.last_line_may_speak(index):
@@ -4273,16 +4282,19 @@ def _summary_for(
     runner = _summary_runner(words)
     if any(_summary_runner(call.words[c][0]) == runner for c in call.checks if c < index):
         return ""
-    return _last_line_summary(words, _redacted(tail))
+    return _last_line_summary(words, _redacted(tail), trailers=trailers)
 
 
-def _last_line_summary(words: list[str], text: str) -> str:
+def _last_line_summary(words: list[str], text: str, *, trailers: bool = True) -> str:
     """ "passed" or "failed" when the last non-empty line of the output is a summary the check's
     own runner prints, and "" otherwise. Only that line is read: an earlier line may belong to any
     command in the call (measured: reading the whole window flipped 12 of 139 runs to false
-    failures)."""
+    failures). `trailers` strips Claude Code's own trailer lines first; on another harness's
+    output those words are the program's."""
     runner = _summary_runner(words)
-    lines = [line for line in _without_trailer(text).split("\n") if line.strip()]
+    lines = [
+        line for line in (_without_trailer(text) if trailers else text).split("\n") if line.strip()
+    ]
     if not runner or not lines:
         return ""
     lines = [_ANSI_RE.sub("", line).rstrip() for line in lines[-6:]]
@@ -4452,13 +4464,25 @@ def _gh_error_line(text: str) -> bool:
     )
 
 
-def _ci_outcome(ci: str, outcome: str, source: str, text: str) -> tuple[str, str]:
-    """What a CI read's flag result stands for once its exit code is read."""
+def _ci_outcome(
+    ci: str, outcome: str, source: str, text: str, exit_code: int | None = None
+) -> tuple[str, str]:
+    """What a CI read's flag result stands for once its exit code is read.
+
+    `exit_code` is the harness's structured code where it records one (Codex). Without it the code
+    is read from Claude Code's `Exit code N` line; Codex's output carries no such line, so reading
+    only the text would leave every Codex CI read with no result.
+    """
     if ci == "pr_checks" and outcome == "failed":
         # Only exit 1 is a failing check. 8 is pending, 2 a cancelled run and 4 a missing login,
         # and exit 1 also reports a pull request with no CI or a request that failed.
-        exited = _EXIT_CODE_RE.match(text)
-        if not exited or exited[1].lstrip("0") != "1" or _gh_error_line(text):
+        if exit_code is not None:
+            exited_one = exit_code == 1
+        else:
+            exited = _EXIT_CODE_RE.match(text)
+            # Compared as text: a code of thousands of digits is no integer Python will parse.
+            exited_one = exited is not None and exited[1].lstrip("0") == "1"
+        if not exited_one or _gh_error_line(text):
             return "not-recorded", ""
     elif ci == "run_view" and outcome == "passed":
         # Exit 0 also means a run still in progress, so only its failure counts.
@@ -4490,7 +4514,9 @@ def _is_pytest(words: list[str]) -> bool:
     return bool(_PYTHON_RE.match(os.path.basename(words[0]))) and words[1:3] == ["-m", "pytest"]
 
 
-def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]) -> None:
+def _chain_passes(
+    call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]], *, trailers: bool = True
+) -> None:
     """Pass the checks `&&` joins ahead of a later check that is shown to have run.
 
     `&&` runs what follows only once what precedes it exits 0, so a check whose output's last line
@@ -4514,7 +4540,7 @@ def _chain_passes(call: _ShellCall, text: str, added: Mapping[int, dict[str, Any
         or call.unestablished(last)
         or not call.last_line_may_speak(last)
         or any(_summary_runner(call.words[index][0]) == runner for index in call.checks[:-1])
-        or not _last_line_summary(words, _redacted(text))
+        or not _last_line_summary(words, _redacted(text), trailers=trailers)
     ):
         return
     joiners = call.joiners()
@@ -4619,7 +4645,7 @@ def _check_groups(call: _ShellCall) -> list[list[int]] | None:
 
 
 def _ordered_summaries(  # noqa: C901 - each early return is one way the lines can be ambiguous
-    call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]]
+    call: _ShellCall, text: str, added: Mapping[int, dict[str, Any]], *, trailers: bool = True
 ) -> None:
     """Results for `;`-separated checks, each from its own summary line, in order (owner,
     2026-10-28).
@@ -4648,7 +4674,7 @@ def _ordered_summaries(  # noqa: C901 - each early return is one way the lines c
     involved = {_summary_runner(call.words[index][0]) for index in call.checks} - {""}
     lines = [
         _ANSI_RE.sub("", line).rstrip()
-        for line in _without_trailer(_redacted(text)).split("\n")
+        for line in (_without_trailer(_redacted(text)) if trailers else _redacted(text)).split("\n")
         if line.strip()
     ]
     trailing = _TRAILING_LINES.get(runners[-1])
@@ -5262,13 +5288,19 @@ class _CiBinding:
         transcript_path: str,
         goal_texts: Iterable[str] = (),
         remotes: git_status.StampCache | None = None,
+        *,
+        claude_records: bool = True,
     ) -> None:
         self._config = config
         self._transcript_path = transcript_path
         self._shared = remotes
         self.goal_texts = tuple(text for text in goal_texts if text)
         self._remotes: dict[str, tuple[str, str]] = {}
-        self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = None
+        # `ci_read.scan_records` reads Claude Code's `pr-link` rows and `gitOperation` results. A
+        # Codex rollout writes neither, so a Codex poll binds through the goal's own link alone.
+        self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = (
+            None if claude_records else ((), ())
+        )
 
     def _remote(self, cwd: str) -> tuple[str, str]:
         if cwd not in self._remotes:
@@ -5317,6 +5349,38 @@ class _CiBinding:
         return ci_read.poll_bound(poll, remote, self.goal_texts, (*links, *created), pushes)
 
 
+class _Edges(NamedTuple):
+    """What the shared tally reads differently on each harness whose record lists its commands.
+
+    The tally is harness-shaped only here. Claude Code's trailer lines, its PreToolUse rewrite, its
+    structured `gitOperation` record and its background-launch pairing are Claude Code's own and
+    are never read on another harness's record, where the same words are the program's.
+    """
+
+    harness: str
+    # The name a source line gives the harness and its shell tool.
+    who: str
+    shell: str
+    # The tool names whose `file_path` a write is read from.
+    write_tools: frozenset[str]
+    # Whether Claude Code's trailer lines end a shell result.
+    trailers: bool
+    # Whether a result's `gitOperation` record is read (a created pull request, a push).
+    git_operation: bool
+    # Whether a background launch is recorded and paired with its completion.
+    launches: bool
+
+
+_CLAUDE_EDGES = _Edges("claude", "Claude", "Bash call", _WRITE_TOOLS, True, True, True)
+# Codex's patch tool, as the Codex adapter names a `FileChange` it yields.
+CODEX_PATCH_TOOL = "apply_patch"
+# A Codex call whose effect on files Compass does not read: it ages every earlier pass.
+CODEX_UNREAD_TOOL = "codex unread call"
+_CODEX_EDGES = _Edges(
+    "codex", "Codex", "command", frozenset({CODEX_PATCH_TOOL}), False, False, False
+)
+
+
 class _ToolReportTally:
     """The full scan of one transcript's calls, and the entries chosen from it."""
 
@@ -5326,8 +5390,10 @@ class _ToolReportTally:
         session_dir: str,
         declared: project_scripts.Declarations | None = None,
         ci_binding: _CiBinding | None = None,
+        edges: _Edges = _CLAUDE_EDGES,
     ) -> None:
         self.results = results
+        self.edges = edges
         # Without one nothing a CI poll names can be bound, so no poll counts.
         self.ci_binding = ci_binding
         # The project's own check scripts, as the commit the session began on held them.
@@ -5408,8 +5474,10 @@ class _ToolReportTally:
         worker = SUBAGENT_WORKER if worker else ""
         self._last_added_runs.clear()
         changes_before = (len(self.write_calls), len(self.changing_seqs))
-        if name in _WRITE_TOOLS:
+        if name in self.edges.write_tools:
             self._add_write(at, cwd, call_id, name, tool_input, worker)
+        elif name == CODEX_UNREAD_TOOL and self.edges is _CODEX_EDGES:
+            self._add_unread(at, call_id)
         elif name == "Bash":
             self._add_shell(at, cwd, call_id, tool_input, worker, stream)
             self._add_pull_request(at, call_id, worker)
@@ -5422,13 +5490,31 @@ class _ToolReportTally:
         if changes_before != (len(self.write_calls), len(self.changing_seqs)):
             self._entry_cache.clear()
 
+    def _add_unread(self, at: float, call_id: str) -> None:
+        """A call whose effect on files is not read: it ages every earlier pass, publishing nothing.
+
+        The ruling's Pi rule, applied to Codex: guessing that an unknown tool only reads is what
+        would produce a false `consistent`.
+        [amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)
+        """
+        self.scan["unread_calls"] = self.scan.get("unread_calls", 0) + 1
+        self.write_calls.append((at, call_id))
+        self.shell_seq += 1
+        self.changing_seqs.append(self.shell_seq)
+        self.scan["last_changing_command_at"] = at
+
     def _add_pull_request(self, at: float, call_id: str, worker: str) -> None:
         """A pull request Claude Code says a ran Bash call created.
 
         Read from the result's structured `gitOperation.pr` alone, never the command or its output.
         """
         found = self.results.get(call_id)
-        if found is None or found.block.get("is_error") is True or found.meta is None:
+        if (
+            not self.edges.git_operation
+            or found is None
+            or found.block.get("is_error") is True
+            or found.meta is None
+        ):
             return
         operation = found.meta.get("gitOperation")
         pr = operation.get("pr") if isinstance(operation, dict) else None
@@ -5508,6 +5594,15 @@ class _ToolReportTally:
             # Not established as written (review, 2026-09-24): an attempt.
             self.scan["write_attempts"] += 1
             return
+        removed = tool_input.get("removed")
+        if name == CODEX_PATCH_TOOL and removed in ("deleted", "moved"):
+            # A patch that took a file away changed the work tree: it ages every earlier pass, and
+            # is kept for the press's removals alone, never published as written.
+            self.write_calls.append((at, call_id))
+            path = _written_path(tool_input.get("file_path"), cwd, self.session_dir)
+            if path is not None:
+                self.removed[path] = {"at": at, "record_id": call_id, "kind": removed}
+            return
         # A written file ages every earlier pass wherever it is. Only the path is
         # read: never `content`, `old_string`, `new_string` or `edits`.
         self._record_write(
@@ -5559,18 +5654,21 @@ class _ToolReportTally:
             at,
             cwd,
             tool_input,
-            moved=bool(_MOVED_TO_BACKGROUND_RE.match(launch_text)),
+            moved=self.edges.launches and bool(_MOVED_TO_BACKGROUND_RE.match(launch_text)),
             declared=self.declared,
         )
         launched = not (
             launch_result is not None
             and launch_result.get("is_error") is True
-            and not _EXITED_RE.match(launch_text)
+            and not self._exited(launch_found, launch_text)
         )
         if launched and not launch_call.unbalanced and (count := launch_call.launches()):
             self.scan["background"] += count
-            self._add_launch(at, call_id, "Bash", count, worker, stream)
-        if result is not None and result.get("is_error") is True and not _EXITED_RE.match(text):
+            if self.edges.launches:
+                # Paired with its completion from Claude Code's own notifications, which no other
+                # harness writes: elsewhere a launch is counted and never listed as unpaired work.
+                self._add_launch(at, call_id, "Bash", count, worker, stream)
+        if result is not None and result.get("is_error") is True and not self._exited(found, text):
             # V3: the call never ran, so it is no run and supersedes nothing.
             self.scan["not_run"] += 1
             return
@@ -5581,7 +5679,7 @@ class _ToolReportTally:
                 at,
                 cwd,
                 tool_input,
-                moved=bool(_MOVED_TO_BACKGROUND_RE.match(text)),
+                moved=self.edges.launches and bool(_MOVED_TO_BACKGROUND_RE.match(text)),
                 declared=self.declared,
             )
         )
@@ -5610,6 +5708,12 @@ class _ToolReportTally:
         result_at = found.at if found is not None else None
         self._add_runs(call, call_id, result, text, result_at, worker)
         self._add_commands(call, call_id, result, text, result_at, worker)
+
+    @staticmethod
+    def _exited(found: _Result | None, text: str) -> bool:
+        """Whether an error-flagged result is a command that ran and exited nonzero, rather than a
+        call that never ran: a structured exit code says so, and on Claude Code its text does."""
+        return (found is not None and found.exit_code is not None) or bool(_EXITED_RE.match(text))
 
     def _record_removals(
         self,
@@ -5659,7 +5763,7 @@ class _ToolReportTally:
     ) -> None:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
-        text = _without_trailer(text) if result is not None else text
+        text = _without_trailer(text) if result is not None and self.edges.trailers else text
         tail = _redacted(text)[-TOOL_REPORT_TAIL_CHARS:]
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
         # V8: output speaks for a check only when it is the call's one check,
@@ -5688,7 +5792,14 @@ class _ToolReportTally:
                         rtk=rtk,
                         attributable=attributable,
                         flag_result=flag_result,
-                        summary=_summary_for(call, index, words, attributable, tail=text),
+                        summary=_summary_for(
+                            call,
+                            index,
+                            words,
+                            attributable,
+                            tail=text,
+                            trailers=self.edges.trailers,
+                        ),
                         flag_failed=flag is True,
                     )
                     reason = _withheld_reason(
@@ -5762,8 +5873,8 @@ class _ToolReportTally:
             self._last_added_runs.append((identity, self.runs[identity][-1]))
             added[index] = self.runs[identity][-1]
         if result is not None:
-            _chain_passes(call, text, added)
-            _ordered_summaries(call, text, added)
+            _chain_passes(call, text, added, trailers=self.edges.trailers)
+            _ordered_summaries(call, text, added, trailers=self.edges.trailers)
 
     @staticmethod
     def _outcome(
@@ -5821,7 +5932,12 @@ class _ToolReportTally:
         flag = result.get("is_error") if result is not None else None
         all_and = all(joiner == "&&" for joiner in call.joiners()[:-1])
         found = self.results.get(call_id)
-        if found is not None and isinstance(found.meta, dict) and found.meta.get("gitOperation"):
+        if (
+            self.edges.git_operation
+            and found is not None
+            and isinstance(found.meta, dict)
+            and found.meta.get("gitOperation")
+        ):
             # Claude Code's own structured record of the git operation (a pull request, a push)
             # is the fact: its command line carries free text the record deliberately never does.
             return
@@ -5857,7 +5973,9 @@ class _ToolReportTally:
                 )
                 if flag_result:
                     outcome, source = flag_result, "flag"
-                outcome, source = _ci_outcome(ci, outcome, source, text)
+                outcome, source = _ci_outcome(
+                    ci, outcome, source, text, found.exit_code if found is not None else None
+                )
             if not tail and result is not None:
                 tail = _scrubbed_tail(text, call.masked_values)
             identity = _check_identity(
@@ -5909,12 +6027,8 @@ class _ToolReportTally:
     def _command_entry(self, history: list[dict[str, Any]]) -> dict[str, Any]:
         index = self._latest(history)
         latest = history[index]
-        who = "Claude subagent" if latest["worker"] else "Claude"
         ci = latest["subject"] == CI_SUBJECT
-        if latest["recorded"]:
-            source = f"{who} Bash call and paired result"
-        else:
-            source = f"{who} Bash call, no result recorded yet"
+        source = self._run_source(latest)
         entry: dict[str, Any] = {
             "kind": "command_run",
             "subject": latest["subject"],
@@ -5953,6 +6067,20 @@ class _ToolReportTally:
             entry["worker_kind"] = latest["worker"]
         return entry
 
+    def _run_source(self, latest: dict[str, Any]) -> str:
+        """Where a run's entry came from, in the harness's own words. The page renders no word for
+        `worker_kind`, so the source line names the subagent (owner, 2026-09-28)."""
+        edges = self.edges
+        who = f"{edges.who} subagent" if latest["worker"] else edges.who
+        if latest["background"]:
+            return f"{who} {edges.shell} run in the background, no result recorded"
+        if not latest["recorded"]:
+            return f"{who} {edges.shell}, no result recorded yet"
+        # Codex writes a command's record only once it has ended, with its exit status in it.
+        return f"{who} {edges.shell} and " + (
+            "paired result" if edges is _CLAUDE_EDGES else "its exit status"
+        )
+
     @staticmethod
     def _latest(history: list[dict[str, Any]]) -> int:
         """The index of the run whose evidence is newest: its result's time, or
@@ -5965,15 +6093,7 @@ class _ToolReportTally:
     def _check_entry(self, history: list[dict[str, Any]]) -> dict[str, Any]:
         index = self._latest(history)
         latest = history[index]
-        # The page renders no word for `worker_kind`, so the source line names
-        # the subagent (owner, 2026-09-28).
-        who = "Claude subagent" if latest["worker"] else "Claude"
-        if latest["background"]:
-            source = f"{who} Bash call run in the background, no result recorded"
-        elif latest["recorded"]:
-            source = f"{who} Bash call and paired result"
-        else:
-            source = f"{who} Bash call, no result recorded yet"
+        source = self._run_source(latest)
         entry: dict[str, Any] = {
             "kind": "check_run",
             "subject": "check",
@@ -6115,7 +6235,7 @@ class _ToolReportTally:
         return [
             {
                 **{k: v for k, v in row.items() if k not in {"rank", "_key", "_first_at"}},
-                "harness": "claude",
+                "harness": self.edges.harness,
                 "sid": sid,
                 # The check's own identity, directory included, hashed as the source does. The page
                 # matches a failed run to a later pass by it; the command line alone would let a
@@ -6134,15 +6254,15 @@ class _ToolReportTally:
             for row in listed
         ]
 
-    @staticmethod
-    def _write_entry(path: str, write: dict[str, Any]) -> dict[str, Any]:
+    def _write_entry(self, path: str, write: dict[str, Any]) -> dict[str, Any]:
+        who = self.edges.who
         return {
             "kind": "path_written",
             "subject": "write",
             "at": write["at"],
             "record_id": write["record_id"],
             "title": records.safe_text(path, TOOL_REPORT_PATH_CHARS),
-            "source": f"Claude {'subagent ' if write['worker'] else ''}{write['tool']} call",
+            "source": f"{who} {'subagent ' if write['worker'] else ''}{write['tool']} call",
             "rank": _WRITE_RANK,
             "_key": f"write:{path}",
             "_first_at": write["first_at"],
@@ -6576,23 +6696,23 @@ def press_checks(
     goal_texts: Iterable[str] = (),
     scan_bytes: int | None = None,
 ) -> PressChecks:
-    """`claude_check_press` for one session, found as `collect` finds it; empty elsewhere.
+    """`claude_check_press` or `codex_check_press` for one session, found as `collect` finds it;
+    empty elsewhere.
 
     `goal_texts` are the session's own, as `goal_texts_of` reads them from its row, so a CI poll
     is bound here exactly as the published fact bound it. With none, a poll naming a pull request
     is unbound and its output is withheld.
     """
+    press = {"claude": claude_check_press, "codex": codex_check_press}.get(harness)
     transcript_path = (
-        observer.resolve_transcript(config, state, harness, sid) if harness == "claude" else None
+        observer.resolve_transcript(config, state, harness, sid) if press is not None else None
     )
-    if not transcript_path:
+    if press is None or not transcript_path:
         return PressChecks({}, frozenset())
     if scan_bytes:
         # The bound the press's own listing read under, so the tails belong to the checks it lists.
         config = dataclasses.replace(config, turn_scan_max_bytes=scan_bytes)
-    return claude_check_press(
-        config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes
-    )
+    return press(config, transcript_path, goal_texts=goal_texts, remotes=state.ci_remotes)
 
 
 # A subagent's own transcript sits under its parent's session directory, flat
@@ -7026,9 +7146,11 @@ def _written_declaring_files(
     *,
     also: frozenset[str] = frozenset(),
     listed: frozenset[tuple[str, ...]] = frozenset(),
+    calls: Iterable[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
 ) -> frozenset[str]:
     """The declaring-file names, the reader's listing and each name in `also` that the session
-    wrote, in any folder.
+    wrote, in any folder. `calls` is another harness's own call stream, in the tally's shape
+    (`codex_calls`), read in place of the Claude Code records.
 
     By file name alone, so a write anywhere withdraws that kind: a session that wrote a
     `package.json` is not trusted to have left another one alone. A write tool names its file. A
@@ -7048,11 +7170,15 @@ def _written_declaring_files(
         )
     )
     found: set[str] = set()
-    streams = [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
+    streams: list[Iterable[tuple[float, str, str, str, dict[str, Any], str]]] = (
+        [calls]
+        if calls is not None
+        else [_claude_tool_uses(parent), *(_claude_tool_uses(c, sidechain=True) for c in children)]
+    )
     for stream in streams:
         for _at, _cwd, _call_id, name, tool_input, _worker in stream:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
-            if name in _WRITE_TOOLS and isinstance(path, str):
+            if name in (*_WRITE_TOOLS, CODEX_PATCH_TOOL) and isinstance(path, str):
                 if os.path.basename(path) in watched:
                     found.add(os.path.basename(path))
                 continue
@@ -7073,6 +7199,7 @@ def _declared_scripts(
     children: Sequence[list[dict[str, Any]]],
     *,
     prior_writes: frozenset[str] = frozenset(),
+    calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
 ) -> project_scripts.Declarations | None:
     """What counts as a check beyond the closed list for the session, or None where nothing can.
 
@@ -7101,7 +7228,10 @@ def _declared_scripts(
         if (words := _listed_words(entry))
     )
     scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
-    written = _written_declaring_files(parent, children, also=scripts, listed=listed) | prior_writes
+    written = (
+        _written_declaring_files(parent, children, also=scripts, listed=listed, calls=calls)
+        | prior_writes
+    )
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
     if loaded is None and not listed:
@@ -7371,14 +7501,328 @@ class _WindowNotRequested:
 _WINDOW_NOT_REQUESTED = _WindowNotRequested()
 
 
-def _last_person_at(parent: list[dict[str, Any]]) -> float | None:
+# The first codex-cli whose rollout records a command's exit status as a field: every 0.149+
+# rollout that ran a command carries a `CommandExecution` item and none before it does (1,086
+# rollouts, `docs/captures/codex/tool-calls-0.149-0.164-macos.jsonl`).
+CODEX_FIRST_STRUCTURED = (0, 149)
+# How Codex runs a command: `[<shell>, -c | -lc, <script>]` on all 70,012 recorded items, the shell
+# always `/bin/bash`. Any other shape is a call whose effect is not read.
+_CODEX_SHELLS = frozenset({"bash", "sh", "zsh"})
+_CODEX_SHELL_FLAGS = frozenset({"-c", "-lc"})
+# The calls that ran a shell before 0.149 wrote a command item, by their names.
+_CODEX_SHELL_CALLS = frozenset(
+    {"shell", "shell_command", "exec_command", "exec", "local_shell_call"}
+)
+# Delegation: a child thread writes its commands into its own rollout, which this read never opens.
+_CODEX_SPAWN_CALLS = frozenset({"spawn_agent"})
+_CODEX_SUBAGENT_ITEMS = frozenset({"SubAgentActivity", "CollabAgentToolCall"})
+# A command's output may reach about 1 MiB. Redaction runs over the window read, and only the last
+# lines are ever read as a result, so the window is the output's end (p99 measured 65 KB).
+CODEX_OUTPUT_READ_CHARS = 64 * 1024
+
+
+def _codex_version(text: object) -> tuple[int, int] | None:
+    found = re.match(r"(\d+)\.(\d+)", text) if isinstance(text, str) else None
+    return (int(found[1]), int(found[2])) if found else None
+
+
+def _codex_ms(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value) / 1000
+
+
+def _codex_cwd(raw: object) -> str:
+    """The folder a command ran in, from Codex's `file://` URI, or "" where it is not plainly one.
+
+    All 70,012 recorded items carry `file://` with an empty host and no percent-encoding. Anything
+    else is not decoded and the folder is unknown, as for a `cd` Compass cannot follow: a host,
+    another scheme, an encoding, a query or a relative form would otherwise publish a path that is
+    not where the command ran.
+    """
+    if not isinstance(raw, str) or not raw.startswith("file:///"):
+        return ""
+    path = raw[len("file://") :]
+    if any(mark in path for mark in "%?#\0"):
+        return ""
+    return path if os.path.isabs(path) else ""
+
+
+class _CodexRead(NamedTuple):
+    calls: list[tuple[float, str, str, str, dict[str, Any], str]]
+    results: dict[str, _Result]
+    # Child threads the read names, by their own ids where an item carries one.
+    subagents: int
+    shell_calls: bool
+    command_items: bool
+
+
+def _codex_command(
+    item: dict[str, Any], item_id: str, at: float, ended: float | None, found: _CodexRead
+) -> None:
+    """One `CommandExecution`: its script, folder, exit code and the end of its output.
+
+    The script is read as Claude Code's `Bash` command is, through the same parser and lists. A
+    nonzero exit is a failure and a negative one, a process Codex killed or timed out, records no
+    result: an unknown status is never success (item 1 of the ruling `codex_tool_reports` cites).
+    """
+    command = item.get("command")
+    if not (
+        isinstance(command, list)
+        and len(command) == 3  # the measured shape: shell, flag, script
+        and all(isinstance(word, str) for word in command)
+        and os.path.basename(command[0]) in _CODEX_SHELLS
+        and command[1] in _CODEX_SHELL_FLAGS
+    ):
+        found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
+        return
+    found.calls.append(
+        (at, _codex_cwd(item.get("cwd")), item_id, "Bash", {"command": command[2]}, "")
+    )
+    output = item.get("aggregated_output")
+    block: dict[str, Any] = {
+        "content": output[-CODEX_OUTPUT_READ_CHARS:] if isinstance(output, str) else ""
+    }
+    code = item.get("exit_code")
+    exit_code = code if isinstance(code, int) and not isinstance(code, bool) else None
+    if exit_code is not None and exit_code >= 0:
+        block["is_error"] = exit_code != 0
+    found.results[item_id] = _Result(block, ended if ended is not None else at, None, exit_code)
+
+
+def _codex_patch(item: dict[str, Any], item_id: str, at: float, found: _CodexRead) -> None:
+    """One `FileChange`: each changed path and its kind, never the patch's `content` or diff.
+
+    A deleted path and the old path of a move are removals, which age a pass and are never shown
+    as written; the new path of a move is a write.
+    """
+    changes = item.get("changes")
+    found.results[item_id] = _Result({"is_error": item.get("status") != "completed"}, at)
+    for path, change in changes.items() if isinstance(changes, dict) else ():
+        kind = change.get("type") if isinstance(change, dict) else None
+        moved_to = change.get("move_path") if isinstance(change, dict) else None
+        if kind == "delete":
+            found.calls.append(
+                (at, "", item_id, CODEX_PATCH_TOOL, {"file_path": path, "removed": "deleted"}, "")
+            )
+        elif kind == "update" and isinstance(moved_to, str) and moved_to:
+            found.calls.append(
+                (at, "", item_id, CODEX_PATCH_TOOL, {"file_path": path, "removed": "moved"}, "")
+            )
+            found.calls.append((at, "", item_id, CODEX_PATCH_TOOL, {"file_path": moved_to}, ""))
+        elif kind in ("add", "update"):
+            found.calls.append((at, "", item_id, CODEX_PATCH_TOOL, {"file_path": path}, ""))
+        else:
+            found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
+
+
+def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:
+    """A Codex rollout's calls in the tally's `(at, cwd, call id, tool, input, worker)` shape.
+
+    Read from `event_msg` rows of type `item_completed`: a command and a patch as the tally reads
+    Claude Code's `Bash` and write calls, and a tool whose effect on files is not read as a call
+    that ages every earlier pass (the `js` tool whatever its hint says, since it can write through
+    Node, and any connector call not marked `readOnlyHint: true`). Codex writes an item only when
+    the call ends, so the call's time is its `started_at_ms`.
+    """
+    found = _CodexRead([], {}, 0, shell_calls=False, command_items=False)
+    threads: set[str] = set()
+    spawned = 0
+    for record in rollout:
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        kind = payload.get("type")
+        if record.get("type") == "response_item" and kind in (
+            "function_call",
+            "custom_tool_call",
+            "local_shell_call",
+        ):
+            name = "local_shell_call" if kind == "local_shell_call" else payload.get("name")
+            spawned += name in _CODEX_SPAWN_CALLS
+            found = found._replace(shell_calls=found.shell_calls or name in _CODEX_SHELL_CALLS)
+            continue
+        item = payload.get("item")
+        if (
+            record.get("type") != "event_msg"
+            or kind != "item_completed"
+            or not isinstance(item, dict)
+        ):
+            continue
+        item_type, item_id = item.get("type"), item.get("id")
+        if item_type in _CODEX_SUBAGENT_ITEMS:
+            thread = item.get("agent_thread_id")
+            threads.add(thread if isinstance(thread, str) and thread else "")
+            continue
+        started = _codex_ms(payload.get("started_at_ms"))
+        ended = _codex_ms(payload.get("completed_at_ms"))
+        at = started or ended or _record_timestamp(record)
+        if not isinstance(item_id, str) or not item_id or at is None:
+            continue
+        if item_type == "CommandExecution":
+            found = found._replace(command_items=True)
+            _codex_command(item, item_id, at, ended, found)
+        elif item_type == "FileChange":
+            _codex_patch(item, item_id, at, found)
+        elif item_type == "McpToolCall" and (
+            item.get("tool") == "js" or item.get("readOnlyHint") is not True
+        ):
+            found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
+    found.calls.sort(key=lambda call: call[0])
+    named = len(threads - {""}) or (1 if threads else 0)
+    return found._replace(subagents=max(named, 1 if spawned else 0))
+
+
+class _CodexScan(NamedTuple):
+    rollout: list[dict[str, Any]]
+    read: runtime_io.TranscriptRead
+    session_dir: str
+    unreadable: bool
+    found: _CodexRead
+
+
+def _codex_scan(
+    config: RuntimeConfig, rollout_path: str, max_bytes: int | None = None
+) -> _CodexScan:
+    """The rollout's newest records under the check scan's byte budget, and its own head."""
+    read = runtime_io.scan_reverse_lines(config, rollout_path, _scan_budget(config, max_bytes))
+    rollout = _scan_records(read)
+    head = runtime_io.read_first_json(config, rollout_path)
+    meta = head.get("payload") if head.get("type") == "session_meta" else None
+    meta = meta if isinstance(meta, dict) else {}
+    version = _codex_version(meta.get("cli_version"))
+    cwd = meta.get("cwd")
+    found = codex_calls(rollout)
+    # A rollout with no structured exit status is not read at all: zero commands counted on a
+    # record whose commands are unreadable is the schema, not the session. Where the head names no
+    # version, shell calls with no command item say the same.
+    unreadable = (version is not None and version < CODEX_FIRST_STRUCTURED) or (
+        version is None and found.shell_calls and not found.command_items
+    )
+    return _CodexScan(
+        rollout,
+        read,
+        cwd if isinstance(cwd, str) and os.path.isabs(cwd) else "",
+        unreadable,
+        found,
+    )
+
+
+def _codex_tally(
+    config: RuntimeConfig,
+    rollout_path: str,
+    *,
+    max_bytes: int | None = None,
+    goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
+) -> _ToolReportTally | None:
+    """The tally of a Codex rollout's own calls, or None where its commands cannot be read.
+
+    The root rollout only. A child thread's commands are in its own rollout, which is not read, so
+    when the root names one every pass reads as incomplete, as an unread Claude Code subagent's
+    does: a child's write after a pass could otherwise leave the pass current.
+    """
+    shared = _PRESS_TALLIES.get()
+    goal_texts = tuple(goal_texts)
+    key = ("codex", rollout_path, config.turn_scan_max_bytes, max_bytes, goal_texts, id(remotes))
+    if shared is not None and key in shared:
+        return shared[key]
+    scan = _codex_scan(config, rollout_path, max_bytes)
+    if scan.unreadable:
+        return None
+    found = scan.found
+    tally = _ToolReportTally(
+        found.results,
+        scan.session_dir,
+        _declared_scripts(
+            config, rollout_path, scan.session_dir, scan.rollout, [], calls=found.calls
+        ),
+        _CiBinding(config, rollout_path, goal_texts, remotes, claude_records=False),
+        _CODEX_EDGES,
+    )
+    horizon = None if scan.read.complete else _oldest_at(scan.rollout) or _mtime(rollout_path)
+    tally.reads_from = horizon
+    tally.scan["last_user_at"] = _last_person_at(scan.rollout, "codex")
+    tally.named_unread = found.subagents > 0
+    tally.parent_failed = scan.read.failed
+    for call in found.calls:
+        tally.add(*call)
+    tally.scan.update(
+        background_unpaired=0,
+        subagent_transcripts=0,
+        subagent_transcripts_unread=found.subagents,
+        unread_calls=tally.scan.get("unread_calls", 0),
+    )
+    if horizon is not None:
+        tally.scan["reads_from"] = horizon
+    if shared is not None:
+        shared[key] = tally
+    return tally
+
+
+def codex_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
+    config: RuntimeConfig,
+    rollout_path: str,
+    sid: str,
+    *,
+    max_bytes: int | None = None,
+    window_start: float | _WindowNotRequested | None = _WINDOW_NOT_REQUESTED,
+    index_provider: Callable[[], Any] | None = None,
+    goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
+    listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """`claude_tool_reports` for a Codex session's root rollout, codex-cli 0.149 and later.
+
+    Reads each finished command's script, exit code, folder and output end, and each applied
+    patch's paths and kinds, never its content. A rollout with no structured exit status publishes
+    no entry and only `commands_unreadable`, never a count. Published into the observed record only:
+    [amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)
+    """
+    tally = _codex_tally(
+        config, rollout_path, max_bytes=max_bytes, goal_texts=goal_texts, remotes=remotes
+    )
+    if tally is None:
+        return [], {"commands_unreadable": True}
+    entries = tally.entries(
+        sid, index_provider() if index_provider is not None else None, cap=listed_cap
+    )
+    if not isinstance(window_start, _WindowNotRequested):
+        tally.scan["window_start"] = window_start
+        tally.scan["window_written_paths"] = sum(
+            write["at"] > 0 and (window_start is None or write["at"] >= window_start)
+            for write in tally.writes.values()
+        )
+    return entries, tally.scan
+
+
+def codex_check_press(
+    config: RuntimeConfig,
+    rollout_path: str,
+    *,
+    max_bytes: int | None = None,
+    goal_texts: Iterable[str] = (),
+    remotes: git_status.StampCache | None = None,
+) -> PressChecks:
+    """`claude_check_press` for a Codex rollout: the same scan and bounds as `codex_tool_reports`.
+
+    Nothing is synthesized into a tail: Codex's own exit code is a field, never words Compass
+    writes into what the command printed.
+    """
+    tally = _codex_tally(
+        config, rollout_path, max_bytes=max_bytes, goal_texts=goal_texts, remotes=remotes
+    )
+    return PressChecks({}, frozenset()) if tally is None else _press(tally)
+
+
+def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> float | None:
     """Parent-only human boundary, excluding tool results and injected messages."""
     times = []
     for record in parent:
         message = observer.parse_message_record(record)
         if message is not None and message.get("role") == "user":
             text = str(message.get("text") or "")
-            if text and not records.injected_prompt(text, "claude"):
+            if text and not records.injected_prompt(text, harness):
                 at = _record_timestamp(record)
                 if at is not None:
                     times.append(at)
@@ -8650,7 +9094,7 @@ def _session_work_evidence(
     remotes: git_status.StampCache | None = None,
     listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
 ) -> dict[str, int]:
-    """Pi's demonstrated results and Claude Code's checks, appended for `collect`.
+    """Pi's demonstrated results and Claude Code's and Codex's checks, appended for `collect`.
 
     Not for the history source: `_semantic_history_source_events` calls
     `_work_evidence` alone, which is what keeps the checks out of the store.
@@ -8659,8 +9103,9 @@ def _session_work_evidence(
     identity = {"harness": harness, "sid": sid}
     rows, support = _work_evidence(config, transcript_path, harness, sid)
     events.extend(rows)
-    if harness == "claude":
-        report_rows, scan = claude_tool_reports(
+    reader = {"claude": claude_tool_reports, "codex": codex_tool_reports}.get(harness)
+    if reader is not None:
+        report_rows, scan = reader(
             config,
             transcript_path,
             sid,

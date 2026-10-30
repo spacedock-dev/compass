@@ -107,10 +107,14 @@ class Route(TypedDict):
     ci_read: str
 
 
-# The harness whose observed record lists checks (`project_context.
-# claude_tool_reports`). A route for any other harness has no tool output to
-# send, so it names none.
-TOOL_OUTPUT_HARNESSES = ("claude",)
+# The harnesses whose observed record lists checks (`project_context.
+# claude_tool_reports`, `project_context.codex_tool_reports`). A route for any
+# other harness has no tool output to send, so it names none.
+TOOL_OUTPUT_HARNESSES = ("claude", "codex")
+# The harnesses an unasked check may send a failed result of. Claude Code alone: Claude Code
+# checking a Codex session would send that session's failures to another vendor, a send nobody has
+# walked yet, so the lane keeps to the harness it was ruled on (owner, 2026-10-30).
+UNASKED_FAILURE_HARNESSES = ("claude",)
 # How much of a check's output a reading carries: the ledger cap the record
 # already reads it under, item 5 of the ruling `reading.build_ledger` cites.
 TOOL_OUTPUT_TAIL_CHARS = 180
@@ -792,6 +796,7 @@ def unasked_sends_failures(route: Route) -> bool:
     return (
         route["provider"] == CLAUDE
         and route["harness"] in TOOL_OUTPUT_HARNESSES
+        and route["harness"] in UNASKED_FAILURE_HARNESSES
         and bool(route["destination"])
     )
 

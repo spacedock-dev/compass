@@ -795,7 +795,8 @@ class AClaudeCodeReaderIsToldWhatTheChecksSendBeforeThePress(unittest.TestCase):
         self.assertIn("which Compass cannot name", route["disclosure"])
 
     def test_a_harness_without_checks_carries_no_tool_output_sentence(self) -> None:
-        for harness in ("codex", "pi"):
+        # Codex left this list on 2026-10-30, when its record began to list checks.
+        for harness in ("pi",):
             with self.subTest(harness=harness):
                 route = reading_route.resolve(
                     harness, binary_resolver=_resolver({"codex"}), environ={}, root=Path("/x")
@@ -889,11 +890,13 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
         # The 2026-10-27 command tiers amendment adds one clause to that item for every other
         # command (7 words from its own vendor, 10 from another), so the item may run to 57.
         # The 2026-10-27 CI read adds one 31-word item, `GitHub: ...`, to every route.
+        # The 2026-10-30 Codex amendment gives a Codex session's routes the tool output item,
+        # 54 words from its own vendor and 57 from another.
         budgets = {
-            "codex": (5, 92),
+            "codex": (6, 146),
             "claude": (8, 203),
             "claude-by-codex": (7, 185),
-            "codex-by-claude": (6, 131),
+            "codex-by-claude": (7, 188),
         }
         for name, (harness, installed) in self.ROUTES.items():
             route = _named(harness, installed)

@@ -184,7 +184,7 @@ OBSERVATION_FIELDS: Final[tuple[str, ...]] = (
 # test. Keeping it in step with what the board publishes is part of adding a
 # published field, which is why the names are here rather than inferred.
 #
-# `tool_report` is tool-derived rather than prompt-derived: a Claude Code
+# `tool_report` is tool-derived rather than prompt-derived: a Claude Code or Codex
 # session's check lines and written paths. It is named here because item 6 of
 # the ruling `reading.build_ledger` cites holds it to the same rule.
 PROMPT_DERIVED_CARRIERS: Final[tuple[str, ...]] = (

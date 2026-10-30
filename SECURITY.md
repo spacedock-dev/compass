@@ -373,11 +373,12 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 ### The launch grant for tool output
 
-Tool output is included by default in a reader-pressed Claude Code reading when Compass can name
-its destination: a check's command, result, last 180 characters of output, written paths, the
+Tool output is included by default in a reader-pressed reading of a Claude Code or Codex session
+when Compass can name its destination: a check's command, result, last 180 characters of output, written paths, the
 repository and number of a pull request it created, and the names of skills it used, and, for each
 other command, its masked line and exit status (and its tail, when the session's own vendor reads it).
-[Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds.
+[Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns the content bounds,
+and [Tool output in a Codex reading](#tool-output-in-a-codex-reading) what a Codex record adds.
 `--allow-tool-output` and `COMPASS_ALLOW_TOOL_OUTPUT=1` are accepted and do nothing for one release;
 they will be removed in a later release. They write no grant and need no forwarding on respawn.
 `test_lifecycle.EveryOptOutReachesTheWindowsChildTest.test_compatibility_flags_and_environment_change_nothing`
@@ -2172,6 +2173,37 @@ do not apply to it. It leaves the machine under the destination rule above. The 
 the check's own segment. Any other command on the same line is a separate command fact, which
 [Tool output in a Claude Code reading](#tool-output-in-a-claude-code-reading) owns.
 
+### Tool output in a Codex reading
+
+The same ruling, applied to Codex
+([the amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)).
+`project_context.codex_tool_reports` reads a Codex session's rollout, codex-cli 0.149 and later, into
+the observed record: each finished command's script (the third word of its `bash -c` or `bash -lc`
+command), its exit code, the folder it ran in and the last 180 characters of its output, and each
+applied patch's paths and kind (added, changed, deleted, moved), never the patch's content or diff.
+The output is read from its last 64 KiB, the window redaction runs over before the tail is cut.
+
+A non-zero exit code is a failure, and a negative one, a process Codex killed, records no result. A
+command is the check, command or CI read the Claude Code entry above defines, under the same closed
+lists, masking, listing cap and redaction. Claude Code's trailer lines are not stripped and no hook
+rewrite, structured `gitOperation` record or pull request link is read, since Codex writes none of
+them. The folder is read only from a `file://` URI with an empty host and no encoding; any other
+form leaves it unknown, and a file a command writes there is counted and not named. A command still
+running has no entry, because Codex writes one only when the command ends.
+
+What is not read is said rather than guessed. A rollout written before 0.149 records no exit status,
+and its commands are not read or counted. A subagent's commands are in its own rollout, which is not
+read, so a pass in a session that delegated is marked incomplete and supports no `consistent`, and a
+subagent's failure is not listed. The `js` tool, any connector call not marked read-only and a
+command in any other shape age every earlier pass, since each may have changed files.
+
+Where it may go follows the vendor rule above: a Codex reading of a Codex session may be sent every
+command's masked line and redacted tail; a Claude Code reading of one is sent each command's line
+and status, and tails for checks and CI reads only. The class lives in the observed record only, as
+the `tool_report` fact type, out of the semantic history store and every session row field, and the
+history's prompt-derived carriers already name it. The unasked lane receives none of it, and the
+live estimate and the Live monitor do not read it.
+
 ### Analyze drift, Cancel and copied corrections
 
 Ruled 2026-09-24 by [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy). The background job, Cancel and the copied-correction route are built; each other part arrives
@@ -3926,11 +3958,19 @@ The operator-cockpit prototype also reads dispatch evidence:
   `toolUseResult.gitOperation.pr` (`number`, `url`, `action`), never the command or its output. Both
   go through closed shapes and publish nothing that does not match them. [Tool output in a Claude
   Code reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
+- `project_context.codex_tool_reports` reads a Codex session's root rollout, codex-cli 0.149 and
+  later: of each finished `CommandExecution` item its `command` (the script it ran), `exit_code`,
+  `cwd` and the end of its `aggregated_output`, and of each `FileChange` the paths it names and each
+  change's kind, never the patch's content or diff. Of a connector call it reads the tool's name and
+  its `readOnlyHint`, never its arguments or result. [Tool output in a Codex
+  reading](#tool-output-in-a-codex-reading) states its bounds.
 
-These are evidence reads, not command execution. In total, eight expressions in `compass_runtime`
+These are evidence reads, not command execution. In total, nine expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
 DEC-23's named read for the checks a Claude Code session ran is the eighth, and
-[its entry](#tool-output-in-a-claude-code-reading) states its bounds.
+[its entry](#tool-output-in-a-claude-code-reading) states its bounds. The ninth is the same
+ruling's read of a Codex session's commands, which is neither an `input` nor an `arguments` read
+and is counted by its own fields.
 The prototype has no additional switch that disables just these dispatch reads.
 
 A shape match is a different kind of read from those. It happens in the hook, inside
