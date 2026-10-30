@@ -90,6 +90,49 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
     return first_line_meta(config, state, path, parse)
 
 
+# A child rollout's head opens with fixed-format fields before any free text: the root's id, its
+# own, and the thread that spawned it (589 of 589 local child heads, and none of 498 roots, carry
+# `parent_thread_id` there; the largest field, `base_instructions`, comes later in 1,077 of 1,087).
+# Only that opening is read here, for a head too long to parse whole, so text a field holds can
+# never be read as one of these.
+_CODEX_UUID = rb'"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"'
+_CODEX_PLAIN = rb'"[^"\\]*"'
+_CODEX_CHILD_HEAD_RE = re.compile(
+    rb'\A\{\s*"timestamp"\s*:\s*' + _CODEX_PLAIN + rb'\s*,\s*(?:"ordinal"\s*:\s*\d+\s*,\s*)?'
+    rb'"type"\s*:\s*"session_meta"\s*,\s*"payload"\s*:\s*\{\s*'
+    rb'(?:"creator_user_id"\s*:\s*'
+    + _CODEX_PLAIN
+    + rb'\s*,\s*"creator_account_id"\s*:\s*'
+    + _CODEX_PLAIN
+    + rb"\s*,\s*)?"
+    rb'"session_id"\s*:\s*' + _CODEX_UUID + rb'\s*,\s*"id"\s*:\s*' + _CODEX_UUID + rb"\s*,\s*"
+    rb'(?:"forked_from_id"\s*:\s*"[0-9a-f-]{36}"\s*,\s*)?'
+    rb'"parent_thread_id"\s*:\s*' + _CODEX_UUID
+)
+CODEX_HEAD_PREFIX_BYTES = 4096
+
+
+def codex_child_head(path: str) -> dict[str, Any]:
+    """A child rollout's root, thread and parent from the opening of its head alone, or {}.
+
+    For a head `codex_meta` cannot parse, such as one past the first-line cap: a child whose head is
+    too long would otherwise be neither found nor counted.
+    """
+    try:
+        opening = runtime_io.read_prefix_bytes(path, max_bytes=CODEX_HEAD_PREFIX_BYTES)
+    except OSError:
+        return {}
+    found = _CODEX_CHILD_HEAD_RE.match(opening)
+    if found is None:
+        return {}
+    return {
+        "session_id": found[1].decode(),
+        "thread_id": found[2].decode(),
+        "parent_session_id": found[3].decode(),
+        "subagent": True,
+    }
+
+
 def gemini_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
     """Gemini chat recording line 1: sessionId, kind (main|subagent),
     directories (cwd list)."""

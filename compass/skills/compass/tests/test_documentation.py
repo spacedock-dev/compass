@@ -1742,6 +1742,57 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
     )
     RUNTIME = SERVER_PATH.parent / "compass_runtime"
 
+    # The counted reads below. Each family is counted by one pattern over the spellings the
+    # runtime uses or a review planted: `get`, `pop` or `setdefault`, with or without a default, a
+    # subscript, either quote, spaces inside the brackets, on any receiver. A `match` mapping
+    # pattern, `operator.itemgetter`, `dict.get(x, ...)`, a raw or triple-quoted key and a key held
+    # in a variable are not counted, and no runtime code reads a field that way.
+    @staticmethod
+    def reads(fields: str) -> str:
+        return rf"""(?:\.(?:get|pop|setdefault)\(\s*|\[\s*)(["'])(?:{fields})\1\s*[,)\]]"""
+
+    INPUT_READS = reads("input|arguments")
+    CODEX_READS = reads("aggregated_output|changes|stdout|stderr|formatted_output|command")
+    OUTPUT_READS = reads("output")
+
+    def counted(self, pattern: str) -> dict[str, int]:
+        return {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+
+    def test_each_count_catches_every_spelling_of_a_read(self) -> None:
+        # The 2026-10-30 security lens planted reads the counts let through: a default, spaced
+        # arguments, `.pop`, and a `command` read on a receiver not named `item`.
+        for pattern, reads in (
+            (
+                self.INPUT_READS,
+                (
+                    'x.get("input", {})',
+                    "x.get( 'arguments' )",
+                    'x.pop("input")',
+                    "x[ 'input' ]",
+                    'x.setdefault("arguments", {})',
+                ),
+            ),
+            (
+                self.CODEX_READS,
+                (
+                    'x.get("stdout", "")',
+                    'x.pop("stderr")',
+                    'x.get( "formatted_output" )',
+                    'it.get("command")',
+                    'it["command"]',
+                    "x.get('aggregated_output', None)",
+                ),
+            ),
+            (self.OUTPUT_READS, ('x.get("output", "")', 'x.pop("output")', 'x[ "output" ]')),
+        ):
+            for read in reads:
+                with self.subTest(read=read):
+                    self.assertEqual(1, len(re.findall(pattern, f"value = {read}\n")))
+
     def test_the_section_exists_under_a_heading_other_documents_can_anchor(self) -> None:
         self.assertIn(
             "## Irreversible actions (hook-side destructive-shape matching)", self.SECURITY
@@ -1763,15 +1814,10 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # Subscripts too: a `block["input"]` read is a read, and the narrower
         # pattern once let two of them through uncounted (review, 2026-09-24).
         # Either quote, since a single-quoted read is the same read.
-        pattern = r'\.get\(["\'](?:input|arguments)["\']\)|\[["\'](?:input|arguments)["\']\]'
-        found = {
-            path.name: len(re.findall(pattern, text))
-            for path in sorted(self.RUNTIME.rglob("*.py"))
-            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
-        }
+        # `pop`, `setdefault`, a default and spaced arguments too (`INPUT_READS`).
         self.assertEqual(
             {"claude_data.py": 1, "codex.py": 1, "project_context.py": 6, "transcripts.py": 2},
-            found,
+            self.counted(self.INPUT_READS),
         )
         self.assertIn("eleven expressions in `compass_runtime` reach an input payload", self.FLAT)
         for named in (
@@ -1798,17 +1844,19 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # spelling of the read and either quote: a read of any of them would pass uncounted
         # otherwise. The fourth match is Claude Code's hook attachment `stdout`, which the
         # rewritten-command read names.
-        fields = "aggregated_output|changes|stdout|stderr|formatted_output"
-        pattern = (
-            r'item\.get\(["\']command["\']\)|item\[["\']command["\']\]'
-            rf'|\.get\(["\'](?:{fields})["\']\)|\[["\'](?:{fields})["\']\]'
+        # A `command` key is counted on any receiver, not only one named `item` (DRC-5033 item
+        # 9): the other fifteen read a Claude Code, Pi or hook record's command (`claude_data`,
+        # `session_source`, eight in `project_context`) or Spacedock's own boot envelope (five in
+        # `spacedock`, one of them a docstring and one a write).
+        self.assertEqual(
+            {
+                "claude_data.py": 1,
+                "project_context.py": 12,
+                "session_source.py": 1,
+                "spacedock.py": 5,
+            },
+            self.counted(self.CODEX_READS),
         )
-        found = {
-            path.name: len(re.findall(pattern, text))
-            for path in sorted(self.RUNTIME.rglob("*.py"))
-            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
-        }
-        self.assertEqual({"project_context.py": 4}, found)
         # A patch's `content` and `unified_diff` are file content, which DEC-23 item 5 never reads.
         for path in sorted(self.RUNTIME.rglob("*.py")):
             with self.subTest(module=path.name):
@@ -1821,17 +1869,13 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
                 self.assertIn(phrase, self.FLAT)
 
     def test_a_call_output_is_read_only_where_it_is_named(self) -> None:
-        # A Codex function call's `output` is read in one place, for Codex's own "Process running"
-        # line (`project_context._codex_output`). The other `output` keys are not tool output: a
+        # A Codex function call's `output` is read in one place (`project_context._codex_output`),
+        # for Codex's own "Process running" line and whether a spawn answered with a JSON object,
+        # through one read of the key. The other `output` keys are not tool output: a
         # request body's (`http_api`), a usage count (`collectors/pi`, `transcripts`), a stored
         # revision (`reading`), a reading's annotation (`annotations`) and a boot result Spacedock
         # writes (`spacedock`). Each is counted, so a new reader of a call's output fails here.
-        pattern = r'\.get\(["\']output["\']\)|\[["\']output["\']\]'
-        found = {
-            path.name: len(re.findall(pattern, text))
-            for path in sorted(self.RUNTIME.rglob("*.py"))
-            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
-        }
+        found = self.counted(self.OUTPUT_READS)
         self.assertEqual(
             {
                 "annotations.py": 1,

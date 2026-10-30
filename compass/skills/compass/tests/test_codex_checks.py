@@ -31,6 +31,7 @@ from compass_runtime import (
     reading,
     reading_route,
     semantic_history,
+    transcripts,
 )
 from compass_runtime import io as runtime_io
 from compass_runtime.config import build_runtime_config
@@ -769,6 +770,115 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
         self.rollout.command("pytest -q", "3 passed in 0.1s")
         self.assertIs(True, self.only_check()["read_incomplete"])
 
+    def spawn_answered(self, output: str) -> dict[str, Any]:
+        spawn = self.rollout.function_call("spawn_agent", {"message": "a"})
+        self.rollout.output(spawn, output)
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        return self.only_check()
+
+    def test_a_spawn_that_failed_leaves_no_child_to_wait_for(self) -> None:
+        # The four error forms all 27 local text spawn outputs take, and no child follows one
+        # (the 2026-10-30 arbiter's E6).
+        for output in (
+            "collab spawn failed: agent thread limit reached",
+            (
+                "Full-history forked agents inherit the parent agent type; omit agent_type, or"
+                " spawn without a full-history fork."
+            ),
+            "agent path `/root/worker` already exists",
+            "Provide either message or items, but not both",
+        ):
+            with self.subTest(output=output):
+                self.setUp()
+                self.assertIs(False, self.spawn_answered(output)["read_incomplete"])
+                self.assertEqual(0, self.read()[1]["subagent_transcripts_unread"])
+
+    def test_any_other_answer_still_waits_for_its_child(self) -> None:
+        # Failure is decided by the known error forms alone, so an answer this does not know,
+        # text included, keeps the spawn counted: a pass is never made complete by a guess.
+        for output in (
+            json.dumps({"task_name": "worker"}),
+            "Spawned agent worker.",
+            "collab spawn failed: agent thread limit reached\nbut retried",
+            json.dumps({"error": "collab spawn failed"}),
+        ):
+            with self.subTest(output=output):
+                self.setUp()
+                self.assertIs(True, self.spawn_answered(output)["read_incomplete"])
+
+    def test_a_deeply_nested_answer_is_read_without_failing_the_read(self) -> None:
+        # 200,000 opening brackets raised RecursionError out of `json.loads` and failed every
+        # collect of the project (the 2026-10-30 security lens's S1).
+        self.assertIs(True, self.spawn_answered("[" * 200_000)["read_incomplete"])
+        self.rollout.save(self.path)
+        project_context.codex_check_press(self.config, str(self.path))
+
+    def test_a_grandchild_never_stands_in_for_a_missing_child(self) -> None:
+        # The root spawns two children and names neither; the first is unread under the budget and
+        # its own child is found, and the second has no rollout. Counted against every rollout
+        # found, the two spawns met two files; counted per parent, the root's second is missing
+        # (the 2026-10-30 arbiter's E5).
+        self.rollout.function_call("spawn_agent", {"message": "a"})
+        self.rollout.function_call("spawn_agent", {"message": "b"})
+        first = self.child()
+        first.function_call("spawn_agent", {"message": "g"})
+        for i in range(80):
+            first.command(f"ls dir{i}", "x" * 400)
+        self.keep(first)
+        grandchild = self.child(thread=GRANDCHILD, parent=CHILD)
+        grandchild.command("ls", "x")
+        self.keep(grandchild)
+        self.rollout.ms = max(first.ms, grandchild.ms) + 60_000
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        entries, scan = self.read(max_bytes=8 * 1024)
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        self.assertIs(True, check["read_incomplete"])
+        self.assertEqual(2, scan["subagent_transcripts_unread"])
+
+    def unread_child_then_pass(self, *, ended: str | None) -> dict[str, Any]:
+        """A child that left `sed` running at its last write, unread under a budget the root
+        spends, and a root pass after that write."""
+        self.rollout.subagent()
+        child = self.child()
+        child.command("sed -i s/a/b/ src/retry.py", "")
+        self.keep(child)
+        self.rollout.ms = child.ms + 10_000
+        if ended is not None:
+            self.rollout.item({"type": "SubAgentActivity", "agent_thread_id": CHILD, "kind": ended})
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.rollout.save(self.path)
+        entries, scan = self.read(max_bytes=self.path.stat().st_size)
+        self.assertEqual(1, scan["subagent_transcripts_unread"])
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        return check
+
+    def test_an_unread_child_keeps_a_later_pass_incomplete(self) -> None:
+        # Its last write bounds what it wrote, not what a command it left running still does, and
+        # it may hold a failure no row lists: a pass after that write is incomplete, recorded end or
+        # not, as an unread Claude Code subagent the parent names is (DRC-5033 item 1).
+        for ended in (None, "interacted", "completed", "interrupted"):
+            with self.subTest(ended=ended):
+                self.setUp()
+                check = self.unread_child_then_pass(ended=ended)
+                self.assertEqual("passed", check["result"])
+                self.assertIs(True, check["read_incomplete"])
+
+    def test_an_unnamed_child_older_than_the_part_read_leaves_a_pass_complete(self) -> None:
+        # The spawn and the child's every write are before where a clipped root read begins, and
+        # nothing in the part read names it: it moves the horizon, which every pass read is after.
+        self.rollout.function_call("spawn_agent", {"message": "a"})
+        child = self.child()
+        child.command("sed -i s/a/b/ src/retry.py", "")
+        self.keep(child)
+        self.rollout.ms = child.ms + 10_000
+        for i in range(60):
+            self.rollout.command(f"ls -la dir{i}", "x" * 400)
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        entries, scan = self.read(max_bytes=16 * 1024)
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        self.assertEqual(1, scan["subagent_transcripts_unread"])
+        self.assertIs(False, check["read_incomplete"])
+
     def test_a_child_on_a_version_with_no_exit_status_is_unread(self) -> None:
         self.rollout.subagent()
         child = self.child(version="0.148.0")
@@ -863,7 +973,7 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
 
     def test_a_root_id_shaped_as_a_childs_keeps_the_roots_result(self) -> None:
         # A root item id written as `<child>/item_001` meets the child's prefixed `item_001`: the
-        # first read is kept and the child's is an unread call (the arbiter's S2, B).
+        # first read is kept and the child's is read under an id of its own (the arbiter's S2, B).
         self.rollout.subagent()
         self.rollout.command(
             "pytest -q",
@@ -876,12 +986,37 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
         self.keep(child)
         entries, scan = self.read()
         self.assertEqual("failed", self.check("pytest -q")["result"])
-        self.assertEqual(1, scan["unread_calls"])
+        self.assertEqual(0, scan["unread_calls"])
         press = project_context.codex_check_press(
             self.config, str(self.path), child_paths=[str(path) for path in self.children]
         )
         self.assertIn("1 failed", press.tails[f"{CHILD}/item_001"])
         self.assertNotIn("READONLYOUTPUTMARKER", json.dumps([press.tails, entries]))
+
+    def test_a_childs_failure_under_a_taken_id_stays_a_failure(self) -> None:
+        # The child's item is read under an id of its own, never dropped as an unread call: a
+        # failure must not become silence (the 2026-10-30 arbiter's E4, for a child).
+        self.rollout.subagent()
+        self.rollout.command("pytest -q", "3 passed in 0.1s", item_id=f"{CHILD}/item_001")
+        child = self.child()
+        child.command("ruff check .", "F401 unused\nFound 1 error.", exit_code=1)
+        self.keep(child)
+        scan = self.read()[1]
+        self.assertEqual("passed", self.check("pytest -q")["result"])
+        self.assertEqual("failed", self.check("ruff check .")["result"])
+        self.assertEqual("subagent", self.check("ruff check .")["worker_kind"])
+        self.assertEqual(0, scan["unread_calls"])
+        press = project_context.codex_check_press(
+            self.config, str(self.path), child_paths=[str(path) for path in self.children]
+        )
+        self.assertIn("3 passed", press.tails[f"{CHILD}/item_001"])
+        self.assertTrue(
+            any(
+                "Found 1 error" in tail
+                for key, tail in press.tails.items()
+                if key != f"{CHILD}/item_001"
+            )
+        )
 
     def test_the_press_carries_a_childs_tail(self) -> None:
         self.rollout.subagent()
@@ -941,6 +1076,23 @@ class ACommandStillRunningAgesAPass(CodexChecksTestCase):
         self.assertIs(False, self.only_check()["changed_after"])
         self.assertEqual(0, self.read()[1]["unread_calls"])
 
+    def test_a_check_left_running_is_aged_by_its_own_header_the_known_cost(self) -> None:
+        # Ruled, not fixed (DRC-5033 item 8): nothing links a header to the item that lands later
+        # (1 of 285 local yield sessions has an item with the same script spanning its header, none
+        # a check), and matching by time cannot tell the check from a command beside it. The error
+        # is toward "possibly changed", never toward a pass.
+        started = self.rollout.ms + 5000
+        self.rollout.yielded("pytest -q", session=9)
+        self.rollout.item_at(
+            Rollout.command_item("pytest -q", "3 passed in 40s", "file://" + self.rollout.cwd),
+            started,
+            self.rollout.ms + 40_000,
+        )
+        check = self.only_check()
+        self.assertEqual("passed", check["result"])
+        self.assertIs(True, check["changed_after"])
+        self.assertEqual(1, self.read()[1]["unread_calls"])
+
     def test_twenty_thousand_printed_lines_are_read_in_linear_time(self) -> None:
         # Measured on the reviewed tip: 20,000 printed lines beside 8,000 commands took 16 s to read.
         call = self.rollout.function_call("exec_command", {"cmd": "cat build.log"})
@@ -994,6 +1146,67 @@ class InputInsideAnExecScriptAgesAPass(CodexChecksTestCase):
         )
         self.assertIs(True, self.only_check()["changed_after"])
 
+    def raw(self, script: str) -> None:
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        call_id = self.rollout.exec_script(script)
+        self.rollout.output(call_id, [{"type": "input_text", "text": "done"}], custom=True)
+
+    def test_a_tool_reached_under_another_name_ages_it(self) -> None:
+        # The tool is called without its name before the parenthesis, so where its input went is
+        # not read: an alias, a subscript, a destructured name, and a tool picked by a computed key
+        # (the 2026-10-30 arbiter's E3).
+        for script in (
+            'const w = tools.write_stdin;\nawait w({session_id:3, chars:"rm -rf src\\n"});',
+            'await tools["write_stdin"]({session_id:3, chars:"rm -rf src\\n"});',
+            "await tools['write_stdin']({session_id:3, chars:''});",
+            'const {write_stdin: w} = tools;\nawait w({session_id:3, chars:"y\\n"});',
+            'await tools["write_" + "stdin"]({session_id:3, chars:"y\\n"});',
+            'const name = pick();\nawait tools[name]({session_id:3, chars:"y\\n"});',
+        ):
+            with self.subTest(script=script):
+                self.setUp()
+                self.raw(script)
+                self.assertIs(True, self.only_check()["changed_after"])
+
+    def test_a_key_that_may_be_chars_after_the_empty_one_ages_it(self) -> None:
+        # In an object literal a later key wins, so an empty `chars` followed by a key that may
+        # name `chars` is input: a computed key, an escaped name, or any key this does not read.
+        for argument in (
+            '{session_id:3, chars:"", ["ch"+"ars"]:"rm -rf src\\n"}',
+            '{session_id:3, chars:"", ch\\u0061rs:"rm -rf src\\n"}',
+            '{session_id:3, chars:"", "ch\\u0061rs":"rm -rf src\\n"}',
+            '{session_id:3, chars:"", [key]:"y\\n"}',
+            '{session_id:3, chars:"", yield_time_ms: wait()}',
+        ):
+            with self.subTest(argument=argument):
+                self.setUp()
+                self.raw(f"await tools.write_stdin({argument});")
+                self.assertIs(True, self.only_check()["changed_after"])
+
+    def test_a_named_tool_beside_write_stdin_is_still_read_as_a_poll(self) -> None:
+        self.raw(
+            'const r = await tools.exec_command({cmd:"npm run dev", yield_time_ms:1000});\n'
+            'await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 500});\n'
+        )
+        self.assertIs(False, self.only_check()["changed_after"])
+
+    def test_a_subscript_that_names_another_tool_or_an_index_is_not_input(self) -> None:
+        # None of the 40 local scripts that subscript `tools` mentions `stdin`, and 3 of them
+        # declare a local array named `tools` (the 2026-10-30 evidence lens's E3).
+        for script in (
+            "const tools = [1, 2];\nconst first = tools[0];\n",
+            'const r = await tools["exec_command"]({cmd: "ls"});\n',
+            "const r = await tools?.['list_dir']({path: '.'});\n",
+        ):
+            with self.subTest(script=script):
+                self.setUp()
+                self.raw(script)
+                self.assertIs(False, self.only_check()["changed_after"])
+
+    def test_a_poll_with_a_numeric_separator_is_a_poll(self) -> None:
+        self.raw('await tools.write_stdin({session_id: 3, chars: "", yield_time_ms: 30_000});\n')
+        self.assertIs(False, self.only_check()["changed_after"])
+
 
 class ADuplicatedItemIdIsRefused(CodexChecksTestCase):
     """A second item under an id already read never replaces the first's result: a read-only
@@ -1011,12 +1224,30 @@ class ADuplicatedItemIdIsRefused(CodexChecksTestCase):
         self.assertNotIn("PRIVATEVALUEMARKER", json.dumps([press.tails, self.read()]))
         self.assertEqual("failed", self.only_check()["result"])
 
-    def test_the_refused_item_ages_every_earlier_pass(self) -> None:
+    def test_a_later_failure_under_a_passes_id_is_a_failure(self) -> None:
+        # The second item is read under an id of its own, so a failure is never silenced into an
+        # unread call, nor read as the first run's stale pass (the 2026-10-30 arbiter's E4).
+        self.rollout.command("pytest -q", "3 passed in 0.1s", item_id="dup")
+        self.rollout.command(
+            "pytest -q", "E   assert 1 == 2\n1 failed in 0.2s", exit_code=1, item_id="dup"
+        )
+        check = self.only_check()
+        self.assertEqual("failed", check["result"])
+        scan = self.read()[1]
+        self.assertEqual(1, scan["failed"])
+        self.assertEqual(0, scan["unread_calls"])
+        press = project_context.codex_check_press(self.config, str(self.path))
+        self.assertEqual([True], ["1 failed" in tail for tail in press.tails.values()])
+        self.assertNotIn("dup", press.tails)
+
+    def test_the_second_item_ages_an_earlier_pass_only_if_it_changes_files(self) -> None:
+        self.rollout.command("pytest -q", "3 passed in 0.1s", item_id="dup")
+        self.rollout.command("sed -i s/a/b/ src/x.py", "", item_id="dup")
+        self.assertIs(True, self.only_check()["changed_after"])
+        self.setUp()
         self.rollout.command("pytest -q", "3 passed in 0.1s", item_id="dup")
         self.rollout.command("ls -la", "total 0", item_id="dup")
-        check = self.only_check()
-        self.assertIs(True, check["changed_after"])
-        self.assertEqual(1, self.read()[1]["unread_calls"])
+        self.assertIs(False, self.only_check()["changed_after"])
 
 
 class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
@@ -1053,6 +1284,59 @@ class ASubagentsCheckReachesThePageFromTheStore(CodexChecksTestCase):
         state = build_runtime_state(self.config, started=self.NOW)
         found = observer.codex_child_rollouts(self.config, state, str(self.path))
         self.assertEqual(sorted([str(child), str(grandchild)]), sorted(found))
+
+    def long_head_child(self) -> Path:
+        """A child whose head is past the first-line cap, in the key order current Codex writes:
+        the root's id, its own and its parent's first, then free text such as instructions."""
+        head = (
+            '{"timestamp":"2026-10-30T03:00:00.000Z","ordinal":0,"type":"session_meta",'
+            f'"payload":{{"session_id":"{SID}","id":"{CHILD}","parent_thread_id":"{SID}",'
+            f'"timestamp":"2026-10-30T03:00:00Z","cwd":"{self.cwd}","cli_version":"0.164.0",'
+            '"thread_source":"subagent","base_instructions":{"text":"'
+            + "x" * (self.config.first_line_json_cap_bytes + 1)
+            + '"}}}'
+        )
+        child = Rollout(self.cwd, thread=CHILD, parent=SID, start_ms=self.rollout.ms)
+        child.command("pytest -q", "E   assert 1 == 2\n1 failed in 0.2s", exit_code=1)
+        path = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        child.save(path)
+        rows = path.read_text(encoding="utf-8").splitlines()
+        path.write_text("\n".join([head, *rows[1:]]) + "\n", encoding="utf-8")
+        return path
+
+    def test_a_child_whose_head_is_past_the_cap_is_found_and_read(self) -> None:
+        # A head too long to parse is read for its fixed-format opening alone: without it the child
+        # was neither found nor counted (the 2026-10-30 security lens's N1).
+        self.rollout.save(self.path)
+        child = self.long_head_child()
+        state = build_runtime_state(self.config, started=self.NOW)
+        found = observer.codex_child_rollouts(self.config, state, str(self.path))
+        self.assertEqual([str(child)], found)
+        entries, scan = project_context.codex_tool_reports(
+            self.config, str(self.path), SHORT, child_paths=found
+        )
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        self.assertEqual(("failed", "subagent"), (check["result"], check["worker_kind"]))
+        self.assertEqual(1, scan["subagent_transcripts"])
+
+    def test_text_in_a_long_head_never_names_a_root(self) -> None:
+        # Only the opening fields are read: a root's id written later in the head, inside text,
+        # is never taken for the child's root.
+        self.rollout.save(self.path)
+        head = (
+            '{"timestamp":"2026-10-30T03:00:00.000Z","ordinal":0,"type":"session_meta",'
+            '"payload":{"cwd":"/x","note":"\\"session_id\\":\\"'
+            + SID
+            + '\\"","session_id":"'
+            + SID
+            + f'","id":"{CHILD}","parent_thread_id":"{SID}","base_instructions":"'
+            + "x" * (self.config.first_line_json_cap_bytes + 1)
+            + '"}}'
+        )
+        path = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        path.write_text(head + "\n", encoding="utf-8")
+        state = build_runtime_state(self.config, started=self.NOW)
+        self.assertEqual([], observer.codex_child_rollouts(self.config, state, str(self.path)))
 
     def test_a_child_rollout_is_no_root_of_its_own(self) -> None:
         self.rollout.save(self.path)
@@ -1352,6 +1636,20 @@ class ChildDiscoveryListsNoStoreWhileTheStoreStandsStill(CodexChecksTestCase):
         self.child(CHILD)
         self.found()
         self.assertGreater(self.globs(), 0)
+
+    def test_a_store_that_moved_reads_only_the_heads_it_has_not_read(self) -> None:
+        # A rollout's head is written once, at creation, so the index keeps what each one said
+        # and a rebuild reads the new rollout's head alone. Past the shared metadata cache, a
+        # rebuild re-read every head: 0.7 to 0.8 s at 9,000 rollouts (the 2026-10-30 page lens's F3).
+        kept = self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(kept)], self.found())
+        grand = self.child(GRANDCHILD)
+        self.settle()
+        with mock.patch.object(transcripts, "codex_meta", wraps=transcripts.codex_meta) as read:
+            index = observer._codex_child_index(self.config, self.state)
+        self.assertEqual([str(grand)], [call.args[2] for call in read.call_args_list])
+        self.assertEqual(sorted([str(kept), str(grand)]), sorted(index[SID]))
 
     def test_another_roots_child_is_not_ours(self) -> None:
         other = "019a2b3c-0000-7000-8000-0000000000aa"
