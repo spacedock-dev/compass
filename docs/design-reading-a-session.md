@@ -3715,11 +3715,15 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   ends at the newest record read across the root and every child, since a child can outlast its
   root's last record). A script only polls where every mention of `write_stdin` is a direct call
   given an object literal of plain keys (a name, or a quoted name with no escape) and plain values,
-  with exactly one `chars`, a literal empty string, and no subscript on `tools` picks a tool. An
-  alias, a subscript or a destructured name hides where the call went, and in a literal the later
-  key wins, so a computed, escaped or unread key after an empty `chars` may be the input (DRC-5033
-  item 2). That reading moved 42 of 6,750 local scripts that call it to input: 40 that pick a tool
-  by subscript, a poll whose value is a conditional, and one malformed literal. Each ages every
+  with exactly one `chars`, a literal empty string, and no subscript on `tools` with a key that
+  is not a literal picks a tool. An alias, a subscript or a destructured name hides where the call
+  went, and in a literal the later key wins, so a computed, escaped or unread key after an empty
+  `chars` may be the input (DRC-5033 item 2). A literal key naming another tool, or a number
+  indexing a local array called `tools`, picks nothing that sends input. That reading moved two of
+  the 6,750 local scripts that call `write_stdin` to input, a poll whose value is a conditional and
+  one malformed literal, and 38 that never name it but subscript `tools` with a computed key, which
+  could. None of those 38 mentions `stdin`. An alias of `tools` itself followed by a computed name
+  is not seen; no local script holds one. Each ages every
   earlier pass and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool
   only reads is what would produce a false `consistent`.
 - A second call item under an id already read is read under an id of its own, its id and its
@@ -3753,9 +3757,14 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
 - Spawns are compared per parent: each rollout read, with the children whose heads name it in
   `parent_thread_id`. Compared with every rollout found, a grandchild found while its own parent
   went unread stood in for a sibling of that parent with no rollout (DRC-5033 item 4). A spawn
-  whose output is not a JSON object failed: 588 local spawn outputs are objects and all 27 that are
-  text are errors ("collab spawn failed: ..."), so a failed spawn no longer holds every pass
-  incomplete for the rest of the session (item 5). Only that shape of the output is read.
+  failed only where its whole output, trimmed, is one of the four error forms all 27 local text
+  outputs take: "collab spawn failed: ..." (19), "Full-history forked agents inherit the parent
+  agent type..." (5), "agent path `...` already exists" (2) and "Provide either message or items,
+  but not both" (1). The other 588 are JSON objects. So a failed spawn no longer holds every pass
+  incomplete for the rest of the session (item 5), and an answer of any other shape keeps the spawn
+  counted. The match is anchored and linear and parses nothing: the first build parsed the output
+  as JSON to tell an object, and 200,000 opening brackets raised `RecursionError` out of every
+  collect. Reading anything that is not an object as a failure, as it also did, failed open.
 - A child's head is read through the first-line cap, 200 KB. One longer than that is read for its
   first 4,096 bytes alone, and only where they open with the fields Codex writes before any free
   text: the root's id, the child's and its parent's (589 of 589 local child heads, none of 498

@@ -770,20 +770,48 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
         self.rollout.command("pytest -q", "3 passed in 0.1s")
         self.assertIs(True, self.only_check()["read_incomplete"])
 
-    def test_a_spawn_that_failed_leaves_no_child_to_wait_for(self) -> None:
-        # Every one of 27 local spawn outputs that is text and not a JSON object is an error
-        # ("collab spawn failed: ..."), and no child follows it (the 2026-10-30 arbiter's E6).
+    def spawn_answered(self, output: str) -> dict[str, Any]:
         spawn = self.rollout.function_call("spawn_agent", {"message": "a"})
-        self.rollout.output(spawn, "collab spawn failed: agent limit reached")
+        self.rollout.output(spawn, output)
         self.rollout.command("pytest -q", "3 passed in 0.1s")
-        self.assertIs(False, self.only_check()["read_incomplete"])
-        self.assertEqual(0, self.read()[1]["subagent_transcripts_unread"])
+        return self.only_check()
 
-    def test_a_spawn_that_answered_with_an_object_still_waits_for_its_child(self) -> None:
-        spawn = self.rollout.function_call("spawn_agent", {"message": "a"})
-        self.rollout.output(spawn, json.dumps({"task_name": "worker"}))
-        self.rollout.command("pytest -q", "3 passed in 0.1s")
-        self.assertIs(True, self.only_check()["read_incomplete"])
+    def test_a_spawn_that_failed_leaves_no_child_to_wait_for(self) -> None:
+        # The four error forms all 27 local text spawn outputs take, and no child follows one
+        # (the 2026-10-30 arbiter's E6).
+        for output in (
+            "collab spawn failed: agent thread limit reached",
+            (
+                "Full-history forked agents inherit the parent agent type; omit agent_type, or"
+                " spawn without a full-history fork."
+            ),
+            "agent path `/root/worker` already exists",
+            "Provide either message or items, but not both",
+        ):
+            with self.subTest(output=output):
+                self.setUp()
+                self.assertIs(False, self.spawn_answered(output)["read_incomplete"])
+                self.assertEqual(0, self.read()[1]["subagent_transcripts_unread"])
+
+    def test_any_other_answer_still_waits_for_its_child(self) -> None:
+        # Failure is decided by the known error forms alone, so an answer this does not know,
+        # text included, keeps the spawn counted: a pass is never made complete by a guess.
+        for output in (
+            json.dumps({"task_name": "worker"}),
+            "Spawned agent worker.",
+            "collab spawn failed: agent thread limit reached\nbut retried",
+            json.dumps({"error": "collab spawn failed"}),
+        ):
+            with self.subTest(output=output):
+                self.setUp()
+                self.assertIs(True, self.spawn_answered(output)["read_incomplete"])
+
+    def test_a_deeply_nested_answer_is_read_without_failing_the_read(self) -> None:
+        # 200,000 opening brackets raised RecursionError out of `json.loads` and failed every
+        # collect of the project (the 2026-10-30 security lens's S1).
+        self.assertIs(True, self.spawn_answered("[" * 200_000)["read_incomplete"])
+        self.rollout.save(self.path)
+        project_context.codex_check_press(self.config, str(self.path))
 
     def test_a_grandchild_never_stands_in_for_a_missing_child(self) -> None:
         # The root spawns two children and names neither; the first is unread under the budget and
@@ -1160,6 +1188,23 @@ class InputInsideAnExecScriptAgesAPass(CodexChecksTestCase):
             'const r = await tools.exec_command({cmd:"npm run dev", yield_time_ms:1000});\n'
             'await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 500});\n'
         )
+        self.assertIs(False, self.only_check()["changed_after"])
+
+    def test_a_subscript_that_names_another_tool_or_an_index_is_not_input(self) -> None:
+        # None of the 40 local scripts that subscript `tools` mentions `stdin`, and 3 of them
+        # declare a local array named `tools` (the 2026-10-30 evidence lens's E3).
+        for script in (
+            "const tools = [1, 2];\nconst first = tools[0];\n",
+            'const r = await tools["exec_command"]({cmd: "ls"});\n',
+            "const r = await tools?.['list_dir']({path: '.'});\n",
+        ):
+            with self.subTest(script=script):
+                self.setUp()
+                self.raw(script)
+                self.assertIs(False, self.only_check()["changed_after"])
+
+    def test_a_poll_with_a_numeric_separator_is_a_poll(self) -> None:
+        self.raw('await tools.write_stdin({session_id: 3, chars: "", yield_time_ms: 30_000});\n')
         self.assertIs(False, self.only_check()["changed_after"])
 
 

@@ -7627,6 +7627,16 @@ _CODEX_SUBAGENT_CALLS = frozenset(
 # an empty `chars` is a poll for output and changes nothing.
 _CODEX_STDIN_CALL = "write_stdin"
 _CODEX_SUBAGENT_ITEMS = frozenset({"SubAgentActivity", "CollabAgentToolCall"})
+# A `spawn_agent` that failed, by the whole of its output: the four forms all 27 local text outputs
+# take (19, 5, 2 and 1). A JSON object answers the other 588. Any other answer, text included, keeps
+# the spawn counted, so a form this does not know can only hold a pass incomplete, never complete.
+# A match is anchored and linear, and nothing is parsed.
+_CODEX_SPAWN_FAILED_RE = re.compile(
+    r"collab spawn failed: [^\n]*"
+    r"|Full-history forked agents inherit the parent agent type[^\n]*"
+    r"|agent path `[^`\n]*` already exists"
+    r"|Provide either message or items, but not both"
+)
 # A command's output may reach about 1 MiB. Redaction runs over the window read, and only the last
 # lines are ever read as a result, so the window is the output's end (p99 measured 65 KB).
 CODEX_OUTPUT_READ_CHARS = 64 * 1024
@@ -7838,16 +7848,21 @@ _CODEX_YIELDING_CALLS = frozenset({"exec_command", _CODEX_STDIN_CALL})
 # whose one argument is an object literal of plain keys and plain values, with exactly one `chars`,
 # a literal empty string. Anything else is input: an alias, a subscript or a destructured name
 # (where the call went is not read), a computed, escaped or unread key (in a literal the later key
-# wins), and a tool picked by a subscript on `tools` (40 local scripts). This reading moved 42 of
-# 6,750 local scripts to input: those 40, a poll with a conditional value and one malformed literal.
+# wins), and a tool picked from `tools` by a subscript whose key is not a literal (a string literal
+# naming another tool, or an index into a local array of that name, picks nothing that sends input).
+# Against the first reading, this moved two of the 6,750 local scripts that call `write_stdin` to
+# input (a poll with a conditional value, a malformed literal) and 38 that never name it, each with
+# a computed key on `tools`, which could name it; none of them mentions `stdin`.
 _CODEX_SCRIPT_TOOL_RE = re.compile(r"\bwrite_stdin\b")
-_CODEX_SCRIPT_PICK_RE = re.compile(r"\btools\s*(?:\?\.\s*)?\[")
+_CODEX_SCRIPT_PICK_RE = re.compile(
+    r"""\btools\s*(?:\?\.\s*)?\[\s*(?:(["'`])[^"'`\\\n$]*\1\s*\]|\d[\d_]*\s*\])?"""
+)
 _CODEX_SCRIPT_CALL_RE = re.compile(r"\s*\(")
 _JS_NAME = r"[A-Za-z_$][\w$]*"
 _CODEX_SCRIPT_KEY_RE = re.compile(rf"""\s*(?:({_JS_NAME})|"({_JS_NAME})"|'({_JS_NAME})')\s*(:)?""")
 _CODEX_SCRIPT_VALUE_RE = re.compile(
     rf"""\s*(?:(""|''|``)|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`[^`\\$]*`"""
-    rf"""|-?\d+(?:\.\d+)?|{_JS_NAME}(?:\s*\.\s*{_JS_NAME})*)"""
+    rf"""|-?\d[\d_]*(?:\.[\d_]+)?|{_JS_NAME}(?:\s*\.\s*{_JS_NAME})*)"""
 )
 _CODEX_SCRIPT_MARK_RE = re.compile(r"\s*([{},)])")
 
@@ -7879,7 +7894,8 @@ def _codex_script_polls(script: str, pos: int) -> bool:
 
 def _codex_script_sends_input(script: str) -> bool:
     """Whether an `exec` script may send `write_stdin` anything but an empty poll."""
-    if _CODEX_SCRIPT_PICK_RE.search(script):
+    # A literal key that names `write_stdin` is a mention of it, which the loop below reads.
+    if any(pick[0].rstrip()[-1] != "]" for pick in _CODEX_SCRIPT_PICK_RE.finditer(script)):
         return True
     for tool in _CODEX_SCRIPT_TOOL_RE.finditer(script):
         call = _CODEX_SCRIPT_CALL_RE.match(script, tool.end())
@@ -7905,16 +7921,14 @@ def _codex_output(
     if call_id in scripts:
         scripts[call_id] = at
     output = payload.get("output")
-    if names.get(call_id) == "spawn_agent" and call_id not in found.spawn_failures:
-        # A spawn answers with a JSON object (588 local outputs); all 27 that answered with text
-        # are errors ("collab spawn failed: ..."), and no child follows one.
-        try:
-            answer = json.loads(output) if isinstance(output, str) else {}
-        except ValueError:
-            answer = None
-        if not isinstance(answer, dict):
-            found.spawn_failures.add(call_id)
-            found.spawns -= 1
+    if (
+        names.get(call_id) == "spawn_agent"
+        and call_id not in found.spawn_failures
+        and isinstance(output, str)
+        and _CODEX_SPAWN_FAILED_RE.fullmatch(output.strip())
+    ):
+        found.spawn_failures.add(call_id)
+        found.spawns -= 1
     if names.get(call_id) not in _CODEX_YIELDING_CALLS or not isinstance(output, str):
         return
     header, mark, _printed = output.partition(_CODEX_OUTPUT_MARK)

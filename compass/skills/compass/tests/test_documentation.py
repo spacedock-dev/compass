@@ -1742,9 +1742,11 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
     )
     RUNTIME = SERVER_PATH.parent / "compass_runtime"
 
-    # The counted reads below. Each family is counted by one pattern, so a read spelled any way
-    # Python reads a key is counted: `get`, `pop` or `setdefault`, with or without a default, a
-    # subscript, either quote, spaces inside the brackets, on any receiver.
+    # The counted reads below. Each family is counted by one pattern over the spellings the
+    # runtime uses or a review planted: `get`, `pop` or `setdefault`, with or without a default, a
+    # subscript, either quote, spaces inside the brackets, on any receiver. A `match` mapping
+    # pattern, `operator.itemgetter`, `dict.get(x, ...)`, a raw or triple-quoted key and a key held
+    # in a variable are not counted, and no runtime code reads a field that way.
     @staticmethod
     def reads(fields: str) -> str:
         return rf"""(?:\.(?:get|pop|setdefault)\(\s*|\[\s*)(["'])(?:{fields})\1\s*[,)\]]"""

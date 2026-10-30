@@ -2225,7 +2225,8 @@ silence. A pass is marked incomplete and supports no `consistent` when a child c
 child's last write back, and whatever the pass's time when a read names the child or its last write
 falls inside the part of the root read, since it may hold a failure no row lists or a command it
 left running. It is incomplete too when a child a call names, or a spawn that did not fail, has no
-rollout to read. Spawns are compared with the children whose heads name their spawner, so one
+rollout to read. A spawn failed only where its whole output is one of the error forms Codex writes
+for one; any other answer, text included, counts as a spawn. Spawns are compared with the children whose heads name their spawner, so one
 rollout's child never stands in for another's. A child read only in part moves that line to the
 oldest record read.
 
@@ -2235,8 +2236,10 @@ command in any other shape and input written into a running command, from a top-
 or from one inside an `exec` script, age every earlier pass, since each may have changed files; a
 script that never returned is dated as ending at the newest record read in the root or any child.
 A script's `write_stdin` is read as a poll only where every mention of it is a direct call given an
-object literal of plain keys and values with one `chars`, an empty string; an alias, a subscript, a
-tool picked by a subscript on `tools`, and a computed or escaped key are read as input. A second
+object literal of plain keys and values with one `chars`, an empty string; an alias of
+`write_stdin`, a subscript or destructured name that reaches it, a tool picked from `tools` by a
+subscript whose key is not a literal, and a computed or escaped key are read as input. An alias of
+`tools` itself, followed by a computed name, is not seen, and no local script holds one. A second
 item under an id already read is read under an id of its own, never in place of the first. A
 command left running inside an `exec` script is seen only once its entry
 is written, since what the script prints is not Codex's own words.
@@ -4010,8 +4013,13 @@ The operator-cockpit prototype also reads dispatch evidence:
   `readOnlyHint`, never its arguments or result. Of an `exec_command` or `write_stdin` call's
   `output` it reads only the header Codex writes before the `Output:` line, once, for Codex's own
   line saying a command is still running; what the command printed after that line is never
-  matched. Of a `spawn_agent` call's `output` it reads only whether it is a JSON object, which a
-  spawn that failed is not. Nothing else of either output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
+  matched. Of a `spawn_agent` call's `output` it reads only whether the whole of it, trimmed, is
+  one of the four error forms Codex writes for a spawn that failed ("collab spawn failed: ...",
+  "Full-history forked agents inherit the parent agent type...", "agent path `...` already exists",
+  "Provide either message or items, but not both"), by an anchored match over the output as it was
+  recorded, with nothing parsed. Any other answer keeps the spawn counted. Nothing else of either
+  output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states the
+  bounds of the rest.
 
 These are evidence reads, not command execution. In total, eleven expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
