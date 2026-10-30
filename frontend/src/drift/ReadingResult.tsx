@@ -817,7 +817,7 @@ export function ReadingResult({
       {/* A marked reading's verdicts stay readable and are set aside: dimmed, never hidden, under the one
           message the level's slot holds. An unmarked reading's wrapper adds no box. */}
       <div
-        className={marked ? 'flex flex-col gap-1 opacity-60' : 'contents'}
+        className={marked ? 'flex flex-col gap-1 grayscale' : 'contents'}
         {...(marked ? { 'data-next-disowned': '' } : {})}
       >
         {answer && marked ? (
