@@ -3919,14 +3919,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # tail's.
             reached = (context.get("sources") or {}).get("message_reach")
             facts = _facts_of(context)
-            return runtime_reading.produce(
+            read_ci: list[dict[str, Any] | None] = []
+
+            def ci() -> dict[str, Any] | None:
+                read_ci.append(_read_ci(application, row, entry, transcript, facts, hooks))
+                return read_ci[-1]
+
+            outcome = runtime_reading.produce(
                 application.config,
                 row,
                 entry["revisions"],
                 facts,
                 # Handed over unread: `produce` runs it only once it has decided to read, so a press
                 # it withholds launches no `gh` or `glab`.
-                ci=lambda: _read_ci(application, row, entry, transcript, facts, hooks),
+                ci=ci,
                 settled_through=settled["through"] if (settled := entry.get("settled")) else None,
                 open_call_lookup=(
                     (
@@ -4019,6 +4025,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     row, entry, route, hooks, limits.analyze_scan_megabytes * 1024 * 1024
                 ),
             )
+            assessment = outcome[0]
+            if assessment is not None:
+                # With the CI checks the press read, as `produce` read them.
+                harness, sid = str(row.get("harness")), str(row.get("sid"))
+                read = list(facts)
+                for record in read_ci:
+                    read.extend(ci_read.facts(record, harness, sid))
+                hooks.on_a_check = runtime_reading.lines_on_a_check(assessment, read)
+            return outcome
 
     def _session_facts(self, row: dict[str, Any]) -> list[Any]:
         """The observed record for one session, without refreshing anything."""

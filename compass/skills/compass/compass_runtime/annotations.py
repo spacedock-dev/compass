@@ -44,7 +44,15 @@ from compass_runtime import ci_read, reading, records
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, Sequence
+    from collections.abc import (
+        Callable,
+        Collection,
+        Iterable,
+        Iterator,
+        Mapping,
+        MutableMapping,
+        Sequence,
+    )
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -1120,14 +1128,14 @@ _PRIOR_ORDER = (
 )
 
 
-def _words_at(revision: Revision | None, key: str) -> str | None:
-    """The reader's words a Goal or line key names in this revision, or None for a line it lacks."""
+def _words_by_key(revision: Revision | None) -> dict[str, str]:
+    """The reader's words in this revision under each Goal and line key, stripped."""
     if revision is None:
-        return None
-    if key == reading.CONSTRAINT_GOAL:
-        return revision["goal"]
-    index = _PRIOR_ORDER.index(key) - 1
-    return revision["lines"][index]["text"] if index < len(revision["lines"]) else None
+        return {}
+    words = {reading.CONSTRAINT_GOAL: revision["goal"].strip()}
+    for key, line in zip(_PRIOR_ORDER[1:], revision["lines"], strict=False):
+        words[key] = line["text"].strip()
+    return words
 
 
 def _prior_departures(
@@ -1136,17 +1144,42 @@ def _prior_departures(
     """The newest departure per line whose words this revision still holds, goal first.
 
     Compared by text rather than by revision number, so a direction appended with Keep, which
-    mints a revision with the same line, keeps it, and an edit to that line drops it.
+    mints a revision with the same line, keeps it, and an edit to that line drops it. Matched to
+    a line by its words rather than its number, so removing or adding an earlier line moves the
+    item with the words it was about: the same place when it still holds them, otherwise the
+    first line holding them that no newer item has taken.
     """
-    newest: dict[str, PriorDeparture] = {}
+    words = _words_by_key(revision)
+    newest: dict[tuple[str, str], PriorDeparture] = {}
     for item in items:
-        words = _words_at(revision, item["key"])
-        if words is None or words.strip() != item["criterion"]["clause"].strip():
-            continue
-        held = newest.get(item["key"])
+        clause = item["criterion"]["clause"].strip()
+        held = newest.get((item["key"], clause))
         if held is None or item["read_at"] > held["read_at"]:
-            newest[item["key"]] = item
-    return tuple(newest[key] for key in _PRIOR_ORDER if key in newest)
+            newest[item["key"], clause] = item
+    ordered = sorted(newest.values(), key=lambda item: -item["read_at"])
+    placed: dict[str, PriorDeparture] = {}
+    moved: list[PriorDeparture] = []
+    for item in ordered:
+        if (
+            item["key"] not in placed
+            and words.get(item["key"]) == item["criterion"]["clause"].strip()
+        ):
+            placed[item["key"]] = item
+        elif item["key"] != reading.CONSTRAINT_GOAL:
+            moved.append(item)
+    for item in moved:
+        clause = item["criterion"]["clause"].strip()
+        line = next(
+            (
+                key
+                for key in _PRIOR_ORDER[1:]
+                if key not in placed and key in words and words[key] == clause
+            ),
+            None,
+        )
+        if line is not None:
+            placed[line] = {**item, "key": line}
+    return tuple(placed[key] for key in _PRIOR_ORDER if key in placed)
 
 
 def _prior_departure(value: Any, cap: int, goal_cap: int | None) -> PriorDeparture | None:
@@ -1190,15 +1223,16 @@ def _departs(rows: Mapping[str, reading.Criterion], key: str) -> bool:
 
 
 def _departures_cleared(
-    existing: Annotation, assessment: reading.Assessment, revision: Revision
+    existing: Annotation,
+    assessment: reading.Assessment,
+    revision: Revision,
+    on_a_check: Collection[str] = frozenset(),
 ) -> tuple[PriorDeparture, ...]:
     """What a new reading leaves earlier: carried ones it does not depart on, plus the replaced
-    reading's departures it no longer finds. Not the claims row, which carries no clause, and
-    nothing from a reading the reader marked Not accurate."""
-    rows = assessment["criteria"]
-    kept = [
-        item for item in existing.get("prior_departures", ()) if not _departs(rows, item["key"])
-    ]
+    reading's departures it no longer finds. Not the claims row, which carries no clause, nothing
+    from a reading the reader marked Not accurate, and nothing on a line the new reading answers
+    on a check that passed, which clears it for good (owner, 2026-10-30)."""
+    kept = list(existing.get("prior_departures", ()))
     replaced = existing.get("assessment")
     read_at = replaced.get("read_at") if replaced else None
     if replaced and read_at and not existing.get("not_accurate"):
@@ -1210,11 +1244,16 @@ def _departures_cleared(
                 "criterion": row,
             }
             for key, row in replaced["criteria"].items()
-            if key in _PRIOR_ORDER
-            and _departs(replaced["criteria"], key)
-            and not _departs(rows, key)
+            if key in _PRIOR_ORDER and _departs(replaced["criteria"], key)
         )
-    return _prior_departures(kept, revision)
+    # Placed on this revision's lines first, so a line the reader moved is checked against the
+    # row the new reading gives it there, not the row of the number it used to have.
+    rows = assessment["criteria"]
+    return tuple(
+        item
+        for item in _prior_departures(kept, revision)
+        if not _departs(rows, item["key"]) and item["key"] not in on_a_check
+    )
 
 
 def _settlement(value: Any) -> Settlement | None:
@@ -2053,6 +2092,7 @@ def record_reading(
     assessment: reading.Assessment,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    on_a_check: Collection[str] = frozenset(),
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2060,6 +2100,10 @@ def record_reading(
     reader's capacity was spent either way and the control shows what they
     have spent. Any previously withheld reason is cleared: a reading arrived,
     so the sentence saying why one did not is no longer true.
+
+    `on_a_check` names the lines this reading answers on a check that passed
+    (`reading.lines_on_a_check`), which the store cannot tell from the fact ids
+    it keeps; an earlier departure on one of them goes for good.
     """
     return _record(
         config,
@@ -2071,6 +2115,7 @@ def record_reading(
         spent=True,
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
+        on_a_check=on_a_check,
     )
 
 
@@ -2122,7 +2167,10 @@ def _recorded_job(updated: Annotation, existing: Annotation, job_id: str) -> Non
 
 
 def _with_reading(
-    updated: Annotation, existing: Annotation, assessment: reading.Assessment
+    updated: Annotation,
+    existing: Annotation,
+    assessment: reading.Assessment,
+    on_a_check: Collection[str],
 ) -> None:
     """Put a new reading on the entry, with what it leaves earlier.
 
@@ -2130,7 +2178,7 @@ def _with_reading(
     this is the only moment its departures can be kept (owner, 2026-10-30).
     """
     updated["assessment"] = assessment
-    priors = _departures_cleared(existing, assessment, existing["revisions"][-1])
+    priors = _departures_cleared(existing, assessment, existing["revisions"][-1], on_a_check)
     if priors:
         updated["prior_departures"] = priors
 
@@ -2146,6 +2194,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     spent: bool,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    on_a_check: Collection[str] = frozenset(),
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
@@ -2184,7 +2233,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         }
         _recorded_job(updated, existing, job_id)
         if assessment is not None:
-            _with_reading(updated, existing, assessment)
+            _with_reading(updated, existing, assessment, on_a_check)
         written = time.time()
         if withheld:
             updated["withheld"] = withheld

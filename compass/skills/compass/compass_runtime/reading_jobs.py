@@ -112,6 +112,10 @@ class Hooks:
         # Whether the reader's capacity went: set at the reservation, so an
         # exception after it still records a spent attempt.
         self.spent = False
+        # The lines the reading answers on a check that passed, set by the press that holds the
+        # facts (`reading.lines_on_a_check`): the store keeps fact ids only, and drops an earlier
+        # departure on such a line for good.
+        self.on_a_check: frozenset[str] = frozenset()
 
     def before_reserve(self) -> str:
         """Leave the marker a restart would find, before anything is spent.
@@ -288,7 +292,7 @@ def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], 
         if reading.seal_job(job) and outcome is not None:
             outcome = _cancelled(job, outcome, spent=hooks.spent)
         if outcome is not None:
-            durable = _record(application, job, outcome)
+            durable = _record(application, job, outcome, on_a_check=hooks.on_a_check)
     finally:
         # A spend the store would not take keeps its marker: it is then the
         # only record that the attempt was charged, and the next start counts
@@ -369,7 +373,13 @@ def _cancelled(job: reading.Job, outcome: Outcome, *, spent: bool) -> Outcome:
     return None, reading.WITHHELD_CANCELLED_UNSENT, False
 
 
-def _record(application: Application, job: reading.Job, outcome: Outcome) -> bool:
+def _record(
+    application: Application,
+    job: reading.Job,
+    outcome: Outcome,
+    *,
+    on_a_check: frozenset[str] = frozenset(),
+) -> bool:
     """Write the outcome under the job's id. True when the store holds it."""
     assessment, why, spent = outcome
     config, state = application.config, application.state
@@ -383,6 +393,7 @@ def _record(application: Application, job: reading.Job, outcome: Outcome) -> boo
                 assessment=assessment,
                 diagnostic_sink=application.diagnostic_sink,
                 job_id=job.id,
+                on_a_check=on_a_check,
             )
         else:
             answer = annotation_store.record_withheld(

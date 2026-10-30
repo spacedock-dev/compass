@@ -216,6 +216,88 @@ class TheReReadingKeepsTheEarlierDepartureTest(_Store):
         self.assertEqual([("line_2", 100.0)], self.keys())
 
 
+class APassingCheckClearsItForGoodTest(_Store):
+    """Owner, 2026-10-30: a departure a later reading answered with a passing check is cleared for
+    good, and a still-later reading resting the line on the agent's message does not list it again."""
+
+    ON_A_CHECK = _row(reading.RESULT_CONSISTENT, ("c1",), LINE_2)
+
+    def read_on_a_check(self, read_at: float) -> str:
+        revision = self.entry()["revisions"][-1]["n"]
+        return annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=_assessment(read_at, revision=revision, line_2=self.ON_A_CHECK),  # type: ignore[arg-type]
+            on_a_check=frozenset({"line_2"}),
+        )
+
+    def test_a_check_between_leaves_nothing_for_the_agents_word_to_list(self) -> None:
+        self.read(100.0, line_2=DEPARTED)
+        self.read_on_a_check(200.0)
+        self.read(300.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual([], self.priors())
+
+    def test_a_check_after_drops_the_one_already_kept(self) -> None:
+        self.steered()
+        self.assertEqual([("line_2", 100.0)], self.keys())
+        self.read_on_a_check(300.0)
+        self.read(400.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual([], self.priors())
+
+    def test_a_check_on_another_line_leaves_this_one(self) -> None:
+        self.steered()
+        revision = self.entry()["revisions"][-1]["n"]
+        annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=_assessment(300.0, revision=revision, line_2=ON_THE_AGENTS_WORD),  # type: ignore[arg-type]
+            on_a_check=frozenset({"line_1"}),
+        )
+        self.assertEqual([("line_2", 100.0)], self.keys())
+
+
+class WhichLinesRestOnACheckTest(unittest.TestCase):
+    """What the job hands the store: the lines a reading answers consistent on a check that passed."""
+
+    WORDS_AT = 50.0
+
+    def fact(self, fact_id: str, **fields: Any) -> dict[str, Any]:
+        return {"fact_id": fact_id, "at": 120.0, **fields}
+
+    def test_a_passing_check_and_nothing_else(self) -> None:
+        facts = [
+            self.fact(
+                "c1", type="tool_report", subject="check", result="passed", summary="pytest -q"
+            ),
+            self.fact(
+                "c2", type="tool_report", subject="check", result="failed", summary="pytest -q"
+            ),
+            self.fact("m6", type=reading.AGENT_MESSAGE_TYPE, summary="I kept it."),
+        ]
+        stored = _assessment(
+            200.0,
+            goal=_row(reading.RESULT_CONSISTENT, ("m6",), GOAL),
+            line_1=_row(reading.RESULT_CONSISTENT, ("c2",), LINE_1),
+            line_2=_row(reading.RESULT_CONSISTENT, ("m6", "c1"), LINE_2),
+            claims=_row(reading.RESULT_CONSISTENT, ("c1",), ""),
+        )
+        stored["window_start"] = self.WORDS_AT
+        self.assertEqual(
+            frozenset({"line_2"}),
+            reading.lines_on_a_check(stored, facts),  # type: ignore[arg-type]
+        )
+
+    def test_a_departure_citing_a_passing_check_is_not_one(self) -> None:
+        facts = [self.fact("c1", type="tool_report", subject="check", result="passed")]
+        stored = _assessment(200.0, line_2=_row(reading.RESULT_DEPARTURE, ("c1",), LINE_2))
+        stored["window_start"] = self.WORDS_AT
+        self.assertEqual(frozenset(), reading.lines_on_a_check(stored, facts))  # type: ignore[arg-type]
+
+
 class ItGoesWhenTheWordsItWasAboutGoTest(_Store):
     def test_editing_the_line_drops_it(self) -> None:
         self.steered()
@@ -257,6 +339,55 @@ class ItGoesWhenTheWordsItWasAboutGoTest(_Store):
         self.assertIsNone(annotation_store.find(annotation_store.load(config), "claude", "s1"))
         stored = Path(annotation_store.store_path(config)).read_text("utf-8")
         self.assertNotIn(FIELD, stored)
+
+
+class ItFollowsItsWordsWhenOtherLinesMoveTest(_Store):
+    """Matched to the line by its words, not its number: removing or adding an earlier line
+    moves the line the departure was about, and its words are unchanged."""
+
+    def read_rows(self, read_at: float, **rows: Any) -> str:
+        """A reading of exactly these rows, keyed against the newest revision."""
+        stored = _assessment(read_at, revision=self.entry()["revisions"][-1]["n"])
+        stored["criteria"] = {"goal": _row(reading.RESULT_UNVERIFIABLE, (), GOAL), **rows}
+        return annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=stored,  # type: ignore[arg-type]
+        )
+
+    def test_removing_an_earlier_line_keeps_it_on_the_moved_line(self) -> None:
+        self.steered()
+        self.save(lines=[LINE_2], now=300.0)
+        self.assertEqual([("line_1", 100.0)], self.keys())
+        self.assertEqual(LINE_2, self.priors()[0]["criterion"]["clause"])
+
+    def test_adding_an_earlier_line_keeps_it_on_the_moved_line(self) -> None:
+        self.steered()
+        self.save(lines=["The queue page loads first", LINE_1, LINE_2], now=300.0)
+        self.assertEqual([("line_3", 100.0)], self.keys())
+
+    def test_a_reading_after_the_move_keeps_the_departure_it_clears(self) -> None:
+        # The departure stands on line 2, the reader removes line 1, and the next reading rests
+        # the same words, now line 1, on the agent's message.
+        self.read(100.0, line_2=DEPARTED)
+        self.save(lines=[LINE_2], now=150.0)
+        self.read_rows(200.0, line_1=ON_THE_AGENTS_WORD)
+        self.assertEqual([("line_1", 100.0)], self.keys())
+
+    def test_a_reading_that_departs_again_on_the_moved_line_drops_it(self) -> None:
+        self.steered()
+        self.save(lines=[LINE_2], now=300.0)
+        self.read_rows(400.0, line_1=DEPARTED)
+        self.assertEqual([], self.priors(), "the standing departure card already says it")
+
+    def test_two_lines_with_the_same_words_keep_their_own_places(self) -> None:
+        self.save(lines=[LINE_2, LINE_2], now=50.0)
+        self.read_rows(100.0, line_1={**DEPARTED, "detail": "first"}, line_2=DEPARTED)
+        self.read_rows(200.0, line_1=ON_THE_AGENTS_WORD, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual([("line_1", 100.0), ("line_2", 100.0)], self.keys())
+        self.assertEqual("first", self.priors()[0]["criterion"]["detail"])
 
 
 class EverySavePathCarriesItTest(_Store):

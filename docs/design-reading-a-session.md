@@ -244,15 +244,21 @@ claims question is not kept, and nor is anything from a reading the reader marke
 one with no time to name it by.
 
 An entry stays while each later reading leaves that line without a departure and the line's words
-are unchanged. It goes when a later reading departs there again, when the reader changes or removes
-the line's words, and with the annotation itself: Clear, Discard everything, or eviction at the
-session count. Like the reading it sits beside, it has no fourteen-day expiry and `--forget` does
+are unchanged. It follows the words rather than the line's number, so removing or adding another
+line moves it with them. It goes when a later reading departs there again, when a later reading
+answers the line on a check that passed, which the owner ruled on 2026-10-30 clears the departure
+for good, when the reader changes or removes the line's words, and with the annotation itself:
+Clear, Discard everything, or eviction at the session count. The store keeps only the ids a reading
+cites, so the press that holds the facts names the lines a passing check answered
+(`reading.lines_on_a_check`) and hands them to the store with the reading. Like the reading it sits beside, it has no fourteen-day expiry and `--forget` does
 not reach it. It is published as `annotation_prior_departures` and is not admitted to session
 history. It never counts toward the drift level, Steer back or the unasked lane.
 
 The page lists an entry only where the later reading's row rests on the agent's messages alone, the
 same derivation that writes "Consistent with what the agent said at #n". A line a check or a written
-file now answers is not listed, and the store keeps it until the rules above drop it. Two accepted
+file now answers is not listed. A passing check drops it, as above; the store keeps one a written
+file answers until the rules above drop it. An entry stays undimmed when the reader marks the later
+reading Not accurate, because the mark is about that reading and not the earlier one. Two accepted
 costs: once the agent's message leaves the transcript tail the listing goes with it, as the
 2026-10-03 amendment's decay already says; and a build without this field drops it on its next save
 while leaving the reading intact. Whether the departing edit is still in the working tree is not

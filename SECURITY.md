@@ -126,8 +126,8 @@ The posture rests on two invariants:
    so the page can list it beside the later reading. Each carries the same scrubbed `detail` and
    the clause it was about, so model prose now outlives the reading that wrote it. Each is parsed
    by the reading's own validator, redacted on the way in and again on the way out, and goes when
-   a later reading departs on that line again, when the line's words change, and with the
-   annotation itself. It is published as `annotation_prior_departures` and never enters session
+   a later reading departs on that line again or answers it on a check that passed, when the
+   line's words change, and with the annotation itself. It is published as `annotation_prior_departures` and never enters session
    history ([the ruling](docs/design-reading-a-session.md#amended-2026-10-30-owner-an-earlier-departure-stays-listed)).
 
    Delegated owner acceptance, 2026-10-05: a local rewrite of `detail` is scrubbed and

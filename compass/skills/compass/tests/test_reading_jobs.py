@@ -166,6 +166,28 @@ class ReadingJobTest(unittest.TestCase):
         published = [phase for kind, phase, *_ in self.events if kind == "publish"]
         self.assertEqual(["preparing", "waiting", "checking", None], published)
 
+    def test_the_lines_a_check_answered_reach_the_store(self) -> None:
+        # The store holds fact ids only, so the press says which lines rest on a passing check, and
+        # the store drops an earlier departure there for good (owner, 2026-10-30).
+        stored: dict[str, Any] = {}
+
+        def compose(hooks: reading_jobs.Hooks) -> Any:
+            hooks.on_a_check = frozenset({"line_2"})
+            return {"read_at": 1.0}, "", True
+
+        def record(*_args: Any, **kwargs: Any) -> str:
+            stored.update(kwargs)
+            return annotation_store.OUTCOME_STORED
+
+        with mock.patch.object(annotation_store, "record_reading", record):
+            job = reading.start_job(
+                self.config, KEY, provider="claude", label="Claude Code", now=1_700_000_100.0
+            )
+            assert job is not None
+            thread = reading_jobs.launch(self.application, job, compose)
+            thread.join(timeout=10)
+        self.assertEqual(frozenset({"line_2"}), stored.get("on_a_check"))
+
     def test_the_store_is_written_before_the_job_leaves_and_one_revision_follows(self) -> None:
         self._run(lambda _hooks: (None, reading.WITHHELD_LEDGER_EMPTY, False))
         tail = self.events[-3:]
@@ -862,10 +884,10 @@ class CancelAnAnalysisTest(unittest.TestCase):
         at_record, go = threading.Event(), threading.Event()
         record = reading_jobs._record
 
-        def held(*args: Any) -> bool:
+        def held(*args: Any, **kwargs: Any) -> bool:
             at_record.set()
             go.wait(10)
-            return record(*args)
+            return record(*args, **kwargs)
 
         with mock.patch.object(reading_jobs, "_record", held):
             job, thread = self._start()
@@ -961,10 +983,10 @@ class CancelAnAnalysisTest(unittest.TestCase):
         record = reading_jobs._record
         left: list[str] = []
 
-        def held(*args: Any) -> bool:
+        def held(*args: Any, **kwargs: Any) -> bool:
             at_record.set()
             go.wait(10)
-            return record(*args)
+            return record(*args, **kwargs)
 
         with mock.patch.object(reading_jobs, "_record", held):
             job, thread = self._start()
@@ -1107,10 +1129,10 @@ class CancelAnAnalysisTest(unittest.TestCase):
             self.assertTrue(reading_jobs.cancel(self.application, KEY, holder["job"].id))
             return reserve(*args, **kwargs)
 
-        def held(*args: Any) -> bool:
+        def held(*args: Any, **kwargs: Any) -> bool:
             at_record.set()
             go.wait(10)
-            return record(*args)
+            return record(*args, **kwargs)
 
         with (
             mock.patch.object(reading_policy, "reserve", late),
@@ -1265,7 +1287,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
         """What a dashboard that died just before the outcome's write leaves: its marker."""
         left: list[str] = []
 
-        def record(_application: Any, job: reading.Job, _outcome: Any) -> bool:
+        def record(_application: Any, job: reading.Job, _outcome: Any, **_kwargs: Any) -> bool:
             left.append((self.home / reading_jobs.MARKER_DIR / f"{job.id}.json").read_text())
             return True
 
