@@ -27,6 +27,12 @@ if str(SKILL) not in sys.path:
 
 from compass_runtime import annotations as annotation_store  # noqa: E402
 
+# Results measured to the end under the owner's no-early-stop rule: `stopped` is false.
+COMPLETE_MEASUREMENTS = (
+    "claude-results-continuation-9.json",
+    "claude-results-continuation-10.json",
+)
+
 
 def _load(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -178,8 +184,27 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
             "cf455ffcd8eb9d8cf2361078dc5e5197847f5fcc47ef435c75ea3a1576619a95",
             hashlib.sha256(original).hexdigest(),
         )
-        self.assertEqual(10, self.record["scored_runs"])
-        self.assertEqual("claude-results-continuation-9.json", self.runs[-1]["result"])
+        self.assertGreaterEqual(self.record["scored_runs"], 10)
+        self.assertEqual("claude-results-continuation-9.json", self.runs[9]["result"])
+
+    def test_tenth_measurement_preserves_all_ten_prior_inventory_entries(self) -> None:
+        original = json.dumps(self.runs[:10], sort_keys=True, separators=(",", ":")).encode()
+        self.assertEqual(
+            "bda3769cd0ea1ff45f1aa124b6f612383c172f98439b1c7fc0c9cb6a30d0f9f6",
+            hashlib.sha256(original).hexdigest(),
+        )
+        self.assertEqual(11, self.record["scored_runs"])
+        self.assertEqual("claude-results-continuation-10.json", self.runs[-1]["result"])
+
+    def test_tenth_records_the_retired_case_and_its_measured_replacement(self) -> None:
+        statement = self.record["statement"]
+        self.assertIn("a3c76f898154b2fa", statement)
+        self.assertIn("not re-measured", statement)
+        self.assertIn("19f966db1f403710", statement)
+        result = _load(ABSTENTION / "claude-results-continuation-10.json")
+        for repetition in result["repetitions"]:
+            self.assertNotIn("a3c76f898154b2fa", repetition["summary"]["cases"])
+            self.assertIn("19f966db1f403710", repetition["summary"]["cases"])
 
     def test_complete_failed_measurement_is_not_an_early_stop_or_passing_qualification(
         self,
@@ -310,6 +335,48 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
             failed_exposures += len(part["dec17"]["failed"])
         self.assertEqual(7, failed_exposures)
 
+    def _assert_complete_failed_tenth(self, committed: dict[str, Any]) -> None:
+        self.assertEqual(2, committed["v"])
+        self.assertEqual("closure-three-repeats", committed["protocol"])
+        self.assertEqual("failed", committed["verdict"])
+        self.assertIs(False, committed["stopped"])
+        self.assertEqual({"charged": 98, "cap": 99}, committed["spend"])
+        self.assertEqual(
+            {
+                "unique_cases": 10,
+                "registered_exposures": 30,
+                "attempts": 30,
+                "unusable_attempts": 0,
+            },
+            committed["counts"],
+        )
+        self.assertEqual([1, 2, 3], [row["repeat"] for row in committed["repetitions"]])
+        failed_exposures = 0
+        first_cases = set(committed["repetitions"][0]["summary"]["cases"])
+        self.assertEqual(10, len(first_cases))
+        for repetition in committed["repetitions"]:
+            part = repetition["summary"]
+            self.assertEqual(first_cases, set(part["cases"]))
+            self.assertEqual(10, part["counts"]["reached_model"])
+            self.assertEqual(0, part["counts"]["withheld"])
+            self.assertEqual(32, sum(len(case["marks"]) for case in part["cases"].values()))
+            self.assertEqual(
+                {"kinds": 5, "role": "scored", "missing": [], "not_produced": []},
+                part["coverage"]["claude"],
+            )
+            counts = part["rubric"]["counts"]
+            self.assertEqual(32, sum(counts.values()))
+            self.assertTrue(
+                all(count == 0 for key, count in counts.items() if key.startswith("unscored:"))
+            )
+            failed_exposures += len(part["dec17"]["failed"])
+        # The first repeat had no semantic failure; the aggregate still fails on the later two.
+        self.assertEqual(
+            ["passed", "failed", "failed"],
+            [r["summary"]["verdict"] for r in committed["repetitions"]],
+        )
+        self.assertEqual(4, failed_exposures)
+
     def test_login_repair_records_usable_answers_but_failed_qualification(self) -> None:
         by_result = {run["result"]: run for run in self.runs}
         name = "claude-results-continuation-6.json"
@@ -352,6 +419,8 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
             committed = _load(ABSTENTION / run["result"])
             if run["result"] == "claude-results-continuation-9.json":
                 self._assert_complete_failed_measurement(committed)
+            if run["result"] == "claude-results-continuation-10.json":
+                self._assert_complete_failed_tenth(committed)
             spend = committed["spend"]
             self.assertLessEqual(spend["charged"], spend["cap"])
             if committed.get("v") != 2:
@@ -369,7 +438,7 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
                         )
                     )
                 elif committed["verdict"] == "failed":
-                    if run["result"] != "claude-results-continuation-9.json":
+                    if run["result"] not in COMPLETE_MEASUREMENTS:
                         self.assertTrue(committed["stopped"])
                     self.assertTrue(
                         any(
