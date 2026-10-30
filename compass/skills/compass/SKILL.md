@@ -396,7 +396,7 @@ returns focus to the number. A finding that cites nothing resolvable says so and
 On a harness without fixed numbers, a check that re-runs or a file written again moves the entries
 after it. Each entry shows who wrote it, its own type and the source that published it, and the
 list states the limit under it: demonstrated work results are read on Pi, and on
-Claude Code, and on Codex from codex-cli 0.149 (the session's own record, not its subagents'), the
+Claude Code, and on Codex from codex-cli 0.149 (its subagents' read from their own rollouts), the
 record also lists the checks a session ran and the files it wrote, each result as
 the tool reported it and counted from the whole transcript read (a project's own test, lint or build script counts as a check
 when its body is a known runner, read from the commit the session began on, so a script the session edited counts for nothing;
