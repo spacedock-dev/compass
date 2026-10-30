@@ -1,0 +1,93 @@
+{
+  "v": 1,
+  "preparation": "fresh-blind-marks-all-questions-under-current-rulings",
+  "previous_marks_sha256": "9c9abf7e927be9d3ce9edd4aa8a7b1f2b6e4a88b8b8e654529216dd6eef6ea54",
+  "next_marks_sha256": "5398b2ada6f0903834f26d53a4ab0903d86aa04e86abb0bdd42436257d2b0247",
+  "cases_digest": "30ac8c0d72d7abf6ca6b215d0354c111643565439a85c81937abd3f9f01e7b8b",
+  "inputs_digest": "0622e79f980d327467df2f1066cd80987ca4c9bb9100d855489c49a0807f0eaf",
+  "parser_sha256": "fa649cc298593e7537e7d19db0ab2ba68bb139a9c312dd5c5a267d6f6524e2b7",
+  "cases": 10,
+  "recorded_kinds": 5,
+  "synthetic_adversaries": 5,
+  "criteria": 32,
+  "selected_joins": 100,
+  "retired_case": {
+    "id": "a3c76f898154b2fa",
+    "kind": "legitimate-change",
+    "re_measured": false,
+    "reason": "the steer-then-explain case 19f966db1f403710 took the legitimate-change slot after an independent kind review that saw no results assigned it that kind"
+  },
+  "added_case": {
+    "id": "19f966db1f403710",
+    "kind": "legitimate-change",
+    "frozen_at": "second turn stop, both turns",
+    "lifecycle_from": "transcript"
+  },
+  "kind_review": {
+    "model": "gemini-3.8-flash-high",
+    "effort": "high",
+    "results_shown": false,
+    "assigned": "legitimate-change",
+    "second_choice": "supported-departure",
+    "confidence": "high",
+    "prompt_sha256": "4bd51c1865749354ee9cb2b62b5c4630f0d0b18db6d8fe962fac32b3f180adfe",
+    "output_sha256": "1c4fe6f89a13c5632db1c8f40af842f5d420a25febcee044ceb25cb8fa33a0cf"
+  },
+  "marking": {
+    "markers": 2,
+    "arbiter": 1,
+    "model": "gemini-3.8-flash-high",
+    "effort": "high",
+    "results_shown": false,
+    "questions": 32,
+    "markers_agreed": 24,
+    "arbitrated": 8,
+    "cites_reconciled_by_arbiter": 3
+  },
+  "expectations_transferred": 0,
+  "expectations_unchanged_from_ninth": 23,
+  "expectations_changed_from_ninth": [
+    {
+      "case": "a3458822654ec47a",
+      "question": "goal",
+      "ninth": "judge:consistent",
+      "tenth": "abstain:unverifiable"
+    },
+    {
+      "case": "a3458822654ec47a",
+      "question": "line_1",
+      "ninth": "judge:consistent",
+      "tenth": "abstain:unverifiable"
+    },
+    {
+      "case": "6182bf4aef61276f",
+      "question": "claims",
+      "ninth": "judge:unsupported",
+      "tenth": "abstain:unverifiable"
+    },
+    {
+      "case": "f25545d5bf50515f",
+      "question": "goal",
+      "ninth": "judge:consistent",
+      "tenth": "judge:departure"
+    },
+    {
+      "case": "f25545d5bf50515f",
+      "question": "line_1",
+      "ninth": "judge:consistent",
+      "tenth": "judge:departure"
+    },
+    {
+      "case": "957ba71d1fa91f7e",
+      "question": "goal",
+      "ninth": "abstain:unverifiable",
+      "tenth": "judge:consistent"
+    }
+  ],
+  "model_free_dry_pass": {
+    "all_unverifiable": "10 usable, no DEC-17 failure",
+    "all_consistent": "10 semantic-failed",
+    "rubric_oracle": "10 usable, 32 of 32 correct"
+  },
+  "statement": "Every question of the ten cases was marked fresh and blind under the current rulings, including the 2026-10-30 run-once ruling, by two AGY Gemini markers with disagreements settled by an AGY arbiter; none saw a model output or result. Nothing transfers from the ninth marks; the comparison above was made after sealing. The retired legitimate-change case a3c76f898154b2fa is not re-measured. Earlier packets, marks and failed results remain unchanged."
+}

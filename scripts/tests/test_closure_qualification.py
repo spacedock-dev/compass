@@ -405,6 +405,10 @@ class RepeatedQualification(GrantFourAllowance):
             ("CLAUSE_ISOLATION_HANDOFF_PATH", self.root / "clause-isolation-handoff.json"),
             ("CONDITIONAL_PRIORITY_MANIFEST_PATH", self.root / "conditional-priority.json"),
             ("CONDITIONAL_PRIORITY_HANDOFF_PATH", self.root / "conditional-priority-handoff.json"),
+            ("TENTH_MANIFEST_PATH", self.root / "tenth.json"),
+            ("TENTH_HANDOFF_PATH", self.root / "tenth-handoff.json"),
+            ("RETRY_MANIFEST_PATH", self.root / "retry.json"),
+            ("RETRY_HANDOFF_PATH", self.root / "retry-handoff.json"),
         ):
             patch = mock.patch.object(analyze_campaign, key, str(value))
             patch.start()

@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "phase": "sealed",
+  "previous": {
+    "ledger_chain": {
+      "first": "92c26ee2b2b24750a1e2870aec5beb43",
+      "calls": 68,
+      "head": "8f8378a36c08474a0422d2743c76766f232d1c84a643b984627a5ac526e9c6a8"
+    },
+    "marks_digest": "9c9abf7e927be9d3ce9edd4aa8a7b1f2b6e4a88b8b8e654529216dd6eef6ea54",
+    "inputs_digest": "a911216dde128241880a6d74aa4183c5382017141a00945e8984e8e925b53d52"
+  },
+  "next": {
+    "cases_digest": "30ac8c0d72d7abf6ca6b215d0354c111643565439a85c81937abd3f9f01e7b8b",
+    "marks_digest": "5398b2ada6f0903834f26d53a4ab0903d86aa04e86abb0bdd42436257d2b0247",
+    "inputs_digest": "0622e79f980d327467df2f1066cd80987ca4c9bb9100d855489c49a0807f0eaf"
+  },
+  "tenth_continuation_allowance": {
+    "previous_calls": 68,
+    "additional_calls": 31,
+    "carried_calls": 1,
+    "renewed_calls": 30,
+    "repeats": 3,
+    "retry_calls": 1,
+    "model_binding": "c3da12cedf0bd0647942b251de47b1a53d2061b8df5855c1fe2e6e159273d62b",
+    "campaign_binding": "67e1c9a3fa5f81e051e39708fd98920e8c3acec174f8c8fcb1fd390b9b007080"
+  }
+}
