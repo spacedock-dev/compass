@@ -527,13 +527,14 @@ def _base_parts(
     head = _to_head(provider, VENDORS[provider] if where is None else where)
     # On Claude Code the agent's own messages go, and the lines with them, whether or not
     # tool output may (owner ruling, 2026-10-03). On Pi a work result is sent with no
-    # grant, so the lines may go with it. Elsewhere they are never sent.
+    # grant, and on Codex its checks are, so the lines may go with them. Elsewhere they are
+    # never sent.
     messages = "your messages"
     outcome = ""
     if harness in AGENT_MESSAGE_HARNESSES:
         messages = "your messages and the agent's messages"
         outcome = ", and your expected outcome lines"
-    elif harness in OUTCOME_HARNESSES and harness not in TOOL_OUTPUT_HARNESSES:
+    elif harness in OUTCOME_HARNESSES:
         outcome = ", and your expected outcome lines when a work result is among them"
     cli_adds = _CLI_ADDS.get(provider, "")
     # The newest final reply goes whole (owner amendment, 2026-10-05), and it is the only

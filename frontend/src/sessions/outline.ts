@@ -83,14 +83,16 @@ export function coverageNotes(
   if (coverage) {
     const replies = coverage.agentReplies === 'not_read';
     const work = coverage.checksAndFiles === 'not_admitted';
+    /* "Not outlined", not "not read": a Codex session's checks and files are read for a reading, and only the
+       outline leaves them out. */
     if (replies && work)
       notes.push(
-        'Only your messages are read for this harness: the outline has no agent replies, checks or files.',
+        'Only your messages are outlined for this harness: the outline has no agent replies, checks or files.',
       );
     else if (replies)
       notes.push('The outline has no agent replies: they are not read for this harness.');
     else if (work)
-      notes.push('The outline has no checks or files: they are not read for this harness.');
+      notes.push('The outline has no checks or files: they are not outlined for this harness.');
     const reasons = new Set(coverage.unread.map((region) => region.reason));
     if (coverage.startOffset > 0 || reasons.has('before_window'))
       notes.push(
