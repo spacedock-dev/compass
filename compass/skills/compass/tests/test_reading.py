@@ -2413,8 +2413,11 @@ class ACheckReachesAModelOnlyAfterYouAllowToolOutput(AClaudeCodeReadingProducer)
                 )
                 self.assertRegex(
                     instructions,
-                    r"Counts prove no untested toggle, scorekeeping.*run count or piping",
+                    r"Counts prove no untested toggle, scorekeeping or reload persistence",
                 )
+                # Owner, 2026-10-30: a line on how a check ran is judged from its run facts.
+                self.assertIn(reading.RUN_FACTS_RULE, instructions)
+                self.assertNotIn("run count or piping", instructions)
                 self.assertEqual(6, values.count('<outcome_line n="'))
 
     def test_a_reader_is_not_charged_when_the_budget_cannot_fit_the_trusted_instructions(
@@ -2854,8 +2857,10 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             for index in range(40)
         )
         ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
+        # 2,586 since 2026-10-30: the trusted header grew by the run-facts sentence's 86 bytes, and
+        # the budget keeps the same room for entries it had at 2,500.
         _prompt, selection = reading.build_prompt(
-            ledger, goal="add retry", lines=["tests pass"], max_bytes=2500
+            ledger, goal="add retry", lines=["tests pass"], max_bytes=2586
         )
         chosen = [row["id"] for row in selection.entries]
         self.assertIn("pass", chosen)
@@ -2884,7 +2889,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             [{**WORDS_FACT, "at": 1.0}, refailed, *writes], "claude", "s1", tool_output={}
         )
         _prompt, kept = reading.build_prompt(
-            crowded, goal="add retry", lines=["tests pass"], max_bytes=2500
+            crowded, goal="add retry", lines=["tests pass"], max_bytes=2586
         )
         self.assertIn("refailed", [row["id"] for row in kept.entries])
         self.assertTrue(selection.unread_checks)
@@ -3489,9 +3494,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                                     self.assertIn("no copied Goal/line verdict", header)
         self.assertEqual(168, len(measured))
         self.assertEqual(56, len(finals))
-        # Re-pinned on 2026-10-22 with the final-scope header above, for the same reason.
+        # Re-pinned on 2026-10-22 with the final-scope header above, for the same reason, and on
+        # 2026-10-30 for the run-facts sentence (owner, "Judge from recorded facts", DEC-29).
         self.assertEqual(
-            "9037b0379a9d5457c1148d1b5c10f60f1b4ce86796e64a00a0942d2ddfc443ef",
+            "98c8d513e2f14c1d993067b1e0735e0e9dee4a396afad82eb810a340bae89436",
             hashlib.sha256(
                 original_product_name(
                     json.dumps(finals, ensure_ascii=False, separators=(",", ":"))
@@ -3541,9 +3547,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
             self.goal, self.lines, tool_note=True, claims=True, scope=reading.SCOPE_FINAL
         )
         # Re-pinned on 2026-10-22: the header now offers `goal_unclear` and says to decide it before
-        # the entries, in every scope (docs/design-reading-a-session.md, DEC-26 amendment).
+        # the entries, in every scope (docs/design-reading-a-session.md, DEC-26 amendment). Re-pinned
+        # on 2026-10-30 for the run-facts sentence (owner, "Judge from recorded facts", DEC-29).
         self.assertEqual(
-            "5890eaebae6eaaead3999d1d5d8c20716e0cb612caea46103cef2b14a42d8c8c",
+            "84f3db72d22cbaa0ac039f861f1ba037bfccedbc9129b164e37dbd1408aaa70a",
             hashlib.sha256(original_product_name(header).encode()).hexdigest(),
         )
 

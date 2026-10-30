@@ -3742,6 +3742,9 @@ CHECK_NOT_RECORDED_REASONS = {
     "ci_poll_unbound": "a CI poll of a pull request or repository this session is not bound to",
 }
 CI_POLL_UNBOUND = "ci_poll_unbound"
+# The most runs of one check a published entry lists, newest kept. A reading that finds this many
+# inside its window says "at least", because older ones may be cut.
+MAX_PUBLISHED_RUNS = 16
 
 
 def _withheld_reason(
@@ -5915,6 +5918,9 @@ class _ToolReportTally:
                     "result": outcome,
                     "result_source": source,
                     "result_reason": reason,
+                    # Whether the call piped any output, the fact a line about how the check
+                    # ran is judged from (owner, 2026-10-30).
+                    "piped": any(part.joiner == "|" for part in call.parts),
                     "recorded": result is not None,
                     # When the result arrived (DRC-4702): it decides the window
                     # and which run is latest, never a change comparison.
@@ -6218,6 +6224,13 @@ class _ToolReportTally:
             entry["worker_kind"] = latest["worker"]
         if latest.get("listed"):
             entry["listed_by_reader"] = True
+        # Every run's time and whether its call piped, oldest first and newest kept: a line about
+        # how the check ran is judged from these, not from the latest run alone (owner, 2026-10-30,
+        # [DEC-29](docs/design-reading-a-session.md#amended-2026-10-30-owner-a-line-about-how-a-check-ran-is-judged-from-the-records-facts-about-that-run)).  # noqa: E501
+        runs = sorted(history, key=lambda run: (run.get("at") or 0.0, run.get("seq", 0)))[
+            -MAX_PUBLISHED_RUNS:
+        ]
+        entry["runs"] = [{"at": run["at"], "piped": run.get("piped") is True} for run in runs]
         return entry
 
     def _histories(self) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -10984,6 +10997,7 @@ def _semantic_fact_from_event(
         "result",
         "result_source",
         "result_reason",
+        "runs",
         "earlier_failed",
         "before_last_change",
         "changed_after",

@@ -93,7 +93,8 @@ class MatchedScopeControls(unittest.TestCase):
             )
             for n in range(80)
         )
-        for budget in (2300, 3000, 4096, 8192, 16384):
+        # 2,386 since 2026-10-30: the trusted header grew by the run-facts sentence's 86 bytes.
+        for budget in (2386, 3000, 4096, 8192, 16384):
             with self.subTest(budget=budget):
                 a, sa = self.legacy.module.build_prompt(
                     ledger,

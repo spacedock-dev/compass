@@ -1412,12 +1412,21 @@ guard (i):
   alone at a finished turn. Both now read `not verifiable`. Repeat 2's `departure` is untouched and still
   fails.
 - Case `a3c76f89` line_3 (marked abstain, `consistent` in all three repeats on a passing check and a
-  later message) is changed by neither guard. The run-once question it asks needs an owner ruling, and
-  its mark may not change after the output was seen.
+  later message) is changed by neither guard. The owner has since ruled that such a line is judged from
+  the record's facts about the run
+  ([DEC-29's 2026-10-30 amendment](#amended-2026-10-30-owner-a-line-about-how-a-check-ran-is-judged-from-the-records-facts-about-that-run)).
+  That ruling changes what the line asks, not this run's answer. Its mark is for the marker to revisit
+  under the ruling, never against an output already seen.
 - Synthetic case `957ba71d`'s claims `consistent` in repeat 2 is changed by neither guard, because the
   claims question is outside both.
 
-With both guards in place, every ninth repeat would still have failed, on `a3c76f89` line_3 at least.
+With both guards in place, every ninth repeat would still have failed, on `a3c76f89` line_3 at least,
+against the marks the ninth run was scored with.
+
+Rule 7 meets the run-facts ruling here. A line about how a check ran rests on the record's facts about that
+run: the run count inside the window, whether its call piped, and the output the tier allows. A recorded
+fact that contradicts the line is a departure, as any contradiction is. The facts and the header sentence
+belong to DEC-29, which owns what a command's run may show.
 
 A model-free dry pass. The ten frozen ninth cases were sent through `produce` with fake models that
 answer every question `unverifiable`, `consistent`, `not reached` or `departure`, once with guard (i) on
@@ -8373,6 +8382,49 @@ had set aside. None produced a false pass. Each is closed below.
 7. **The notice content version does not move.** The command content class widened with this ruling and DEC-31,
    and the notice's `CONTENT_VERSION` is not bumped for it. DEC-31 item 3 has the first press run with no hold,
    and a bump would show the legacy "allow it again" change to a reader who has nothing to allow.
+
+### Amended 2026-10-30 (owner): a line about how a check ran is judged from the record's facts about that run
+
+The owner ruled on 2026-10-30 in the burndown session, choosing "Judge from recorded facts". An outcome line that
+says how a check must run, such as "node --test tests/game.test.js is run once, unpiped, and its counts are
+reported", is judged from what the record states about that run, not abstained on. This ruling owns the run
+facts. [DEC-17's 2026-10-30 amendment](#amended-2026-10-30-a-not-reached-line-needs-its-work-shown-and-a-recorded-write-outlives-an-explanation)
+records what it does to the shape contract. It supersedes the last paragraph of
+[the 2026-10-07 clarification](#clarified-2026-10-07-known-applicability-and-an-actual-claim), which kept such a
+line on its original expectation because a check published only its latest run.
+
+The facts are the ones the record already holds. Each run of a check now keeps its time and whether its call piped
+any output, and the published check lists them as `runs`, oldest first. Only the newest 16 are kept, because a
+fact goes to the page and the history store and needs a bound. Before this, a check collapsed every run into its
+latest one, so the record could not say how many times it ran. The reading's row for the check says how many of
+those runs fall inside the window and how many of them piped, in Compass's words: "ran once in the window read,
+not piped", or "ran 2 times in the window read, 1 piped". Where 16 runs are listed and all of them are inside
+the window, the row says "at least", because older runs were cut. The output the check printed already reaches
+the reading under the tier and the grant DEC-23 sets. Nothing new is sent beyond those words.
+
+The trusted header no longer tells the model that counts prove no run count or piping. It says instead: "A line
+on how a check ran rests on its row's run facts and output; a fact contradicting it is departure." That
+sentence is the whole of the rule. No code reads the line for "once" or "unpiped", so the 2026-09-30 rejection of
+keyword relevance stands, and whether a line is about how a check ran stays the model's judgement. The sentence
+is 86 bytes. It moved no selected menu row on the ten frozen ninth-run cases. The header digests pinned in
+`test_reading.py` were re-pinned for it.
+
+What it does not do:
+
+- A check recorded before this build, and another harness's check, carry no `runs`. The row then says nothing
+  about runs rather than guessing one unpiped run.
+- "Piped" means the call held a pipe anywhere, which is the same test the attribution rules use to withhold a
+  piped check's result. It does not say which command the pipe fed.
+- Whether the agent reported the counts is still read from the agent's messages, by
+  [the 2026-10-01 rule](#amended-2026-10-01-a-line-about-what-the-agent-tells-you-cannot-be-shown).
+
+What it means for the ninth run's measured failure. Case `a3c76f89` line_3 was marked abstain under the old
+ruling and answered `consistent` in all three repeats. Its own transcript, read with this build, holds two runs
+of `node --test tests/game.test.js`, both unpiped, and the frozen case's window covers both. The row therefore
+reads "ran 2 times in the window read, none piped", which contradicts "run once". The record never showed
+piping, so the contradicting fact is the run count, not the pipe. The mark is the marker's to revisit under this
+ruling, after it and before any output; nothing here changes a mark. The facts are held by
+`test_check_run_facts.py`.
 
 ## DEC-30: Compass may read a pull request's CI state when the reader presses Analyze
 
