@@ -2202,14 +2202,27 @@ lists, masking, listing cap and redaction. Claude Code's trailer lines are not s
 rewrite, structured `gitOperation` record or pull request link is read, since Codex writes none of
 them. The folder is read only from a `file://` URI with an empty host and no encoding; any other
 form leaves it unknown, and a file a command writes there is counted and not named. A command still
-running has no entry, because Codex writes one only when the command ends.
+running has no entry, because Codex writes one only when the command ends. One that Codex reported
+still running, by its own line in an `exec_command` or `write_stdin` output, and whose entry the
+read does not hold, ages every pass that began before the newest record read, since it may still
+be changing files.
+
+A subagent's commands are in its own rollout. Every rollout the Codex store holds for the session,
+found by the session id its head names, a subagent's own subagents included, is read through the
+same reader and within the same byte budget as the root, newest first, so reading the children
+never reads more bytes than the root alone could. Its checks and files are listed as the
+subagent's, labelled by their source. A pass is marked incomplete and supports no `consistent` when
+a child could not be read: the budget was spent before it, its version records no exit status, or
+a child a call names, or a spawn, has no rollout to read. A child read only in part moves that line
+to the oldest record read.
 
 What is not read is said rather than guessed. A rollout written before 0.149 records no exit status,
-and its commands are not read or counted. A subagent's commands are in its own rollout, which is not
-read, so a pass is marked incomplete when the part read names a subagent (a spawn, or a call that
-waits on, messages, interrupts or closes one) and supports no `consistent`, and a subagent's failure
-is not listed. The `js` tool, any connector call not marked read-only, a command in any other shape
-and input written into a running command age every earlier pass, since each may have changed files.
+and its commands are not read or counted. The `js` tool, any connector call not marked read-only, a
+command in any other shape and input written into a running command, from a top-level `write_stdin`
+or from one inside an `exec` script, age every earlier pass, since each may have changed files. A
+second item under an id already read is refused rather than read in place of the first, and ages
+every earlier pass too. A command left running inside an `exec` script is seen only once its entry
+is written, since what the script prints is not Codex's own words.
 
 Where it may go follows the vendor rule above: a Codex reading of a Codex session may be sent every
 command's masked line and redacted tail; a Claude Code reading of one is sent each command's line
@@ -3972,20 +3985,25 @@ The operator-cockpit prototype also reads dispatch evidence:
   `toolUseResult.gitOperation.pr` (`number`, `url`, `action`), never the command or its output. Both
   go through closed shapes and publish nothing that does not match them. [Tool output in a Claude
   Code reading](#tool-output-in-a-claude-code-reading) states its bounds and where the result may go.
-- `project_context.codex_tool_reports` reads a Codex session's root rollout, codex-cli 0.149 and
-  later: of each finished `CommandExecution` item its `command` (the script it ran), `exit_code`,
-  `cwd` and the end of its `aggregated_output`, and of each `FileChange` the paths it names and each
-  change's kind, never the patch's content or diff. Of a connector call it reads the tool's name and
-  its `readOnlyHint`, never its arguments or result. [Tool output in a Codex
-  reading](#tool-output-in-a-codex-reading) states its bounds.
+- `project_context.codex_tool_reports` reads a Codex session's rollout and each of its subagents'
+  rollouts, codex-cli 0.149 and later: of each finished `CommandExecution` item its `command` (the
+  script it ran), `exit_code`, `cwd` and the end of its `aggregated_output`, never its `stdout`,
+  `stderr` or `formatted_output`, and of each `FileChange` the paths it names and each change's
+  kind, never the patch's content or diff. Of a connector call it reads the tool's name and its
+  `readOnlyHint`, never its arguments or result. Of an `exec_command` or `write_stdin` call's
+  `output` it matches only Codex's own line saying a command is still running, and keeps nothing
+  else of it. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states its bounds.
 
-These are evidence reads, not command execution. In total, ten expressions in `compass_runtime`
+These are evidence reads, not command execution. In total, eleven expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
 DEC-23's named read for the checks a Claude Code session ran is the eighth, and
 [its entry](#tool-output-in-a-claude-code-reading) states its bounds. The ninth is the same
 ruling's read of a Codex session's commands, which is neither an `input` nor an `arguments` read
-and is counted by its own fields. The tenth is that read's one look at a `write_stdin` call's
-`arguments`, parsed only to ask whether its `chars` is empty; nothing of them is kept.
+and is counted by its own fields, every output field a command item carries among them. The tenth
+is that read's one look at a `write_stdin` call's `arguments`, parsed only to ask whether its
+`chars` is empty; nothing of them is kept. The eleventh is its look at an `exec` script's `input`,
+read only to ask whether a `write_stdin` call in it sends anything but an empty `chars`; nothing of
+the script is kept. Every read of a call's `output` is counted the same way.
 The prototype has no additional switch that disables just these dispatch reads.
 
 A shape match is a different kind of read from those. It happens in the hook, inside

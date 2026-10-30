@@ -3666,6 +3666,11 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   or `zsh` by basename), `-c` or `-lc`, and the script, which is then read exactly as a Claude
   Code `Bash` command is. A call's time is `started_at_ms` and its result's `completed_at_ms`.
   Codex writes the item only once the command ends, so a command still running has no entry.
+  One Codex reported still running, by its own "Process running with session ID" line in an
+  `exec_command` or `write_stdin` output, is matched to a command item that was running at that
+  line (one item per session id, the earliest-ending first, within a second). One with no such
+  item is a change whose end is not recorded, so it is dated as ending no earlier than the newest
+  record read and ages every pass that began before then, by the rule below.
   A change (a command that may change files, a patch, a tool whose effect is not read) is dated by
   its `completed_at_ms` and a check by its `started_at_ms`, so a change still running when a pass
   began ages it. Dating both by their starts read a pass as current while a `sed -i` begun a
@@ -3687,17 +3692,30 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
   `unified_diff` are file content and are never read (item 5).
 - Some tools' effect on files is not read: the `js` tool, whatever its `readOnlyHint` says, since it
   runs Node with filesystem reach and every recorded call of it says `true`; any connector call
-  whose `readOnlyHint` is not `true`; a command in any other shape; and a `write_stdin` call that
+  whose `readOnlyHint` is not `true`; a command in any other shape; a `write_stdin` call that
   sends input to a running command, or whose arguments do not parse (an empty one only polls for
-  output). Each ages every earlier pass
+  output); an `exec` script with a `write_stdin(...)` in it whose object literal's `chars` is
+  anything but a literal empty string, dated from the script's start to its return, since where in
+  the script the input went is not recorded; and a second call item under an id already read,
+  which is refused rather than read in place of the first, so a read-only command's output can
+  never travel as a check's tail (no local rollout repeats a call item's id). Each ages every
+  earlier pass
   and publishes nothing, the rule this ruling gave Pi: guessing that an unknown tool only reads is
   what would produce a false `consistent`.
-- The root rollout alone is read. A child thread writes its commands into its own
-  rollout, about 44% of all recorded commands, so a pass is marked incomplete when the part read
-  names a subagent (a `SubAgentActivity` or `CollabAgentToolCall` item, or a `spawn_agent`,
-  `wait_agent`, `send_message`, `followup_task`, `interrupt_agent` or `close_agent` call) and never
-  supports a `consistent`. A child spawned before a clipped read, with no later call naming it, is
-  not seen. A child's failure is not listed. Reading the children is a later build.
+- A child thread writes its commands into its own rollout, about 44% of all recorded commands.
+  Every rollout the Codex store holds whose head names the root's id as its `session_id` is read
+  as the root is: 589 of 589 local child rollouts name it, 15 of them a child's child and 132 in
+  another day's folder than their root, so a child spawned before a clipped read is found too.
+  They are read within the root's own byte budget, newest first, so the bytes a collect reads do
+  not grow with the number of children. A child's calls are labelled subagent work, as a Claude
+  Code subagent's are, and its ids are prefixed with its thread so none collides with another
+  rollout's. A pass is marked incomplete, and never supports a `consistent`, when a child could
+  not be read (the budget was spent, its version records no exit status, the read failed), from
+  that child's last write back; when a child a read names (a `SubAgentActivity` or
+  `CollabAgentToolCall` item) or a `spawn_agent` call has no rollout, whatever its time; and when a
+  caller did not look for the children and the part read names a subagent (those items, or a
+  `spawn_agent`, `wait_agent`, `send_message`, `followup_task`, `interrupt_agent` or `close_agent`
+  call).
 - A rollout written before 0.149 records no exit status. Its commands are
   not read or counted, and the scan publishes `commands_unreadable` and no count, so the page never
   says no check ran. Where the head names no version, shell calls with no command item say the same.
@@ -3717,7 +3735,11 @@ session's carries, under the same closed lists, masking, 12-entry listing, 120-c
 
 What was rejected: reading Codex's own `parsed_cmd`, a second parser that would have to agree with
 this one; parsing the `Exit code:` text of 0.77 to 0.91 rollouts, which covers a few old versions
-and none since; and reading the child rollouts now, which needs their lineage inside the reader.
+and none since. Giving each child rollout a budget of its own, which would multiply the bytes a
+collect reads by the number of children. Linking a yield to its command item by id, which never
+works: the session id Codex prints is not the item's `process_id` (568 of 569 local yields).
+Reading a yield out of what an `exec` script printed, which is the script's words rather than
+Codex's, so a command left running inside a script and never written as an item is still not seen.
 
 ## DEC-24: your intent is a drafted goal and a checklist, and a correction is yours to copy
 

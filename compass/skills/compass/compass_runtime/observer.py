@@ -1864,6 +1864,31 @@ def _resolve_codex_transcript(
     return max(children, key=_mtime) if children else None
 
 
+def codex_child_rollouts(
+    config: RuntimeConfig, state: RuntimeState, rollout_path: str
+) -> list[str]:
+    """Every child thread's rollout a Codex root session holds, a child's own children included.
+
+    A child's head names the root's id as its `session_id` (589 of 589 local child rollouts, 15 of
+    them a child's child, 132 in another day's folder than their root's), so this finds a child
+    spawned anywhere in the session, before the part of the root a bounded read reaches too. A
+    child rollout has none of its own: its descendants belong to the root's row.
+    """
+    root = transcripts.codex_meta(config, state, rollout_path)
+    session = root.get("session_id")
+    if not session or root.get("subagent"):
+        return []
+    return [
+        path
+        for path in runtime_io.glob_stores(
+            config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"
+        )
+        if path != rollout_path
+        and (meta := transcripts.codex_meta(config, state, path)).get("subagent")
+        and meta.get("session_id") == session
+    ]
+
+
 # The harnesses whose whole transcript `resolve_transcript` finds, and the one
 # whose directions alone `resolve_directions` finds. Every other harness has no
 # record reader, which a press says in its own sentence rather than calling the

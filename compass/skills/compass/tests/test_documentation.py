@@ -1762,17 +1762,18 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # `input` in the other, and the section names both.
         # Subscripts too: a `block["input"]` read is a read, and the narrower
         # pattern once let two of them through uncounted (review, 2026-09-24).
-        pattern = r'\.get\("(?:input|arguments)"\)|\["(?:input|arguments)"\]'
+        # Either quote, since a single-quoted read is the same read.
+        pattern = r'\.get\(["\'](?:input|arguments)["\']\)|\[["\'](?:input|arguments)["\']\]'
         found = {
             path.name: len(re.findall(pattern, text))
             for path in sorted(self.RUNTIME.rglob("*.py"))
             if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
         }
         self.assertEqual(
-            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 5, "transcripts.py": 2},
+            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 6, "transcripts.py": 2},
             found,
         )
-        self.assertIn("ten expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn("eleven expressions in `compass_runtime` reach an input payload", self.FLAT)
         for named in (
             "`claude_data.input_summary`",
             "`transcripts.codex_plan`",
@@ -1792,14 +1793,22 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # The pattern above counts `input` and `arguments` reads, and a Codex command is neither:
         # its script is `item["command"]`, its output `aggregated_output` and a patch's paths the
         # keys of `changes`. So the ninth read is counted by its own fields, in one module, and a
-        # second reader of any of them fails here until SECURITY.md names it.
-        pattern = r'item\.get\("command"\)|\.get\("(?:aggregated_output|changes)"\)'
+        # second reader of any of them fails here until SECURITY.md names it. Every output field a
+        # command item carries is counted, `stdout`, `stderr` and `formatted_output` too, in either
+        # spelling of the read and either quote: a read of any of them would pass uncounted
+        # otherwise. The fourth match is Claude Code's hook attachment `stdout`, which the
+        # rewritten-command read names.
+        fields = "aggregated_output|changes|stdout|stderr|formatted_output"
+        pattern = (
+            r'item\.get\(["\']command["\']\)|item\[["\']command["\']\]'
+            rf'|\.get\(["\'](?:{fields})["\']\)|\[["\'](?:{fields})["\']\]'
+        )
         found = {
             path.name: len(re.findall(pattern, text))
             for path in sorted(self.RUNTIME.rglob("*.py"))
             if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
         }
-        self.assertEqual({"project_context.py": 3}, found)
+        self.assertEqual({"project_context.py": 4}, found)
         # A patch's `content` and `unified_diff` are file content, which DEC-23 item 5 never reads.
         for path in sorted(self.RUNTIME.rglob("*.py")):
             with self.subTest(module=path.name):
@@ -1810,6 +1819,32 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.FLAT)
+
+    def test_a_call_output_is_read_only_where_it_is_named(self) -> None:
+        # A Codex function call's `output` is read in one place, for Codex's own "Process running"
+        # line (`project_context._codex_output`). The other `output` keys are not tool output: a
+        # request body's (`http_api`), a usage count (`collectors/pi`, `transcripts`), a stored
+        # revision (`reading`), a reading's annotation (`annotations`) and a boot result Spacedock
+        # writes (`spacedock`). Each is counted, so a new reader of a call's output fails here.
+        pattern = r'\.get\(["\']output["\']\)|\[["\']output["\']\]'
+        found = {
+            path.name: len(re.findall(pattern, text))
+            for path in sorted(self.RUNTIME.rglob("*.py"))
+            if (text := path.read_text(encoding="utf-8")) and re.search(pattern, text)
+        }
+        self.assertEqual(
+            {
+                "annotations.py": 1,
+                "http_api.py": 2,
+                "pi.py": 1,
+                "project_context.py": 1,
+                "reading.py": 1,
+                "spacedock.py": 2,
+                "transcripts.py": 2,
+            },
+            found,
+        )
+        self.assertIn("Codex's own line saying a command is still running", self.FLAT)
 
     def test_the_pull_request_and_skill_reads_are_named_and_counted(self) -> None:
         # Neither read matches the `input` / `arguments` pattern above: the skill's name is read from
