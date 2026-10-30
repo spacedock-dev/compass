@@ -1,0 +1,142 @@
+{
+  "v": 1,
+  "preparation": "byte-identical-prompts-all-expectations-transfer",
+  "previous_marks_sha256": "5398b2ada6f0903834f26d53a4ab0903d86aa04e86abb0bdd42436257d2b0247",
+  "next_marks_sha256": "bd486e586541854ad98503b6cd4dc597584817e9f74b6d8b2a80b87a8927c35b",
+  "marks_digest_moves_because": "the marks file binds the cases digest; its 32 expectations are byte-identical to the tenth's and only the bound cases digest changed",
+  "previous_cases_digest": "30ac8c0d72d7abf6ca6b215d0354c111643565439a85c81937abd3f9f01e7b8b",
+  "cases_digest": "7565569fcf23f437da2c19ba7f67b56d0eddd0dcac917891bad253c4ce7972bc",
+  "previous_inputs_digest": "0622e79f980d327467df2f1066cd80987ca4c9bb9100d855489c49a0807f0eaf",
+  "inputs_digest": "413db46e4889e7c6bfa3a31128e923519c4177bb21be4027f0a976a9bc2b96f0",
+  "rubric_sha256": "7ce33c5ca388e25231e7f4c42b6ead86058dde64fda4151b82c87b2a9516b415",
+  "rubric_byte_identical": true,
+  "previous_parser_sha256": "fa649cc298593e7537e7d19db0ab2ba68bb139a9c312dd5c5a267d6f6524e2b7",
+  "parser_sha256": "0419168f3e67261ac8496a1f631ef8784ecf142849f4e580d2c7161953d8053b",
+  "previous_intake_code_sha256": "f0b3028acf45fe5500dd55aee5a5a3a41d435b10153e0554a1b863116dc67932",
+  "intake_code_sha256": "49aae07a8e5582732351662222570df8a64005c633b11d2cb9bc34c4f8ce0ce7",
+  "refrozen_fields": [
+    "parser",
+    "reviewed_export.parser_sha256",
+    "reviewed_export.intake_code_sha256",
+    "reviewed_export.case_sha256"
+  ],
+  "cases": 10,
+  "recorded_kinds": 5,
+  "synthetic_adversaries": 5,
+  "criteria": 32,
+  "selected_joins": 100,
+  "prompts": [
+    {
+      "case": "8b8c1a02f6376201",
+      "prompt_sha256": "3b38763fa07d92fa60d50a1afbd7c4e67a44a54d737e430a6e037f18e132aa24",
+      "equals_tenth": true
+    },
+    {
+      "case": "19f966db1f403710",
+      "prompt_sha256": "dbc04c7f27ec1f53be683dd9cdeebe5c30b5a581f65a9a173ac9bed2533aadca",
+      "equals_tenth": true
+    },
+    {
+      "case": "a3458822654ec47a",
+      "prompt_sha256": "af02428f5422c1dc190e31c5fe1e6b6c469910156b8935593826d21c34267835",
+      "equals_tenth": true
+    },
+    {
+      "case": "6182bf4aef61276f",
+      "prompt_sha256": "5fda8ee47d08a80151d784cae13caa92f6eaa30a8abc6cf413638174a6d78c9e",
+      "equals_tenth": true
+    },
+    {
+      "case": "f25545d5bf50515f",
+      "prompt_sha256": "67c9c1db290312e2af1ce93ce4895fab1c216262fa2793df239aad2c3c4ff450",
+      "equals_tenth": true
+    },
+    {
+      "case": "48560a0d4689a4d9",
+      "prompt_sha256": "37adcd2d0cf3c7f5ccb4b81ddeb20b78060982fc2fc27ba746aac33e5c779998",
+      "equals_tenth": true
+    },
+    {
+      "case": "957ba71d1fa91f7e",
+      "prompt_sha256": "5f57608e7cdf54cd496beb672464a028449432b396ce0f6c23f7ce9e2ac79089",
+      "equals_tenth": true
+    },
+    {
+      "case": "5f744045c827f663",
+      "prompt_sha256": "51260915b6acd1c29ea51ff89e1641f39b982072ad4e4fd216d15799bcd168c4",
+      "equals_tenth": true
+    },
+    {
+      "case": "69f558da152c4463",
+      "prompt_sha256": "87f8c2e59e0888e62b15eab0174d499135132248dd5486acec69b6b244765746",
+      "equals_tenth": true
+    },
+    {
+      "case": "d92bebe67b5b6f4c",
+      "prompt_sha256": "74e25df5275d22e2dea696bf82106ec6a2b1645e25d30e052772fb379b00ddfe",
+      "equals_tenth": true
+    }
+  ],
+  "index_to_id_and_constraints_unchanged": true,
+  "expectations_transferred": 32,
+  "fresh_marks": 0,
+  "model_free_dry_pass": {
+    "all_unverifiable": "10 usable, no DEC-17 failure",
+    "all_consistent": "9 semantic-failed; 19f966db1f403710 stays usable because the guards withdraw every one of its consistent answers and it has no abstain mark",
+    "rubric_oracle": "10 usable, 25 of 32 correct",
+    "best_reachable_correct": 25,
+    "withdrawn_by_guards": [
+      {
+        "case": "8b8c1a02f6376201",
+        "question": "line_2",
+        "mark": "judge:consistent",
+        "guard": "C2",
+        "token": "no-work-shown"
+      },
+      {
+        "case": "19f966db1f403710",
+        "question": "goal",
+        "mark": "judge:consistent",
+        "guard": "C2",
+        "token": "no-work-shown"
+      },
+      {
+        "case": "19f966db1f403710",
+        "question": "line_1",
+        "mark": "judge:departure",
+        "guard": "C1",
+        "token": "no-work-shown"
+      },
+      {
+        "case": "19f966db1f403710",
+        "question": "claims",
+        "mark": "judge:unsupported",
+        "guard": "C5b",
+        "token": "claim-record-unread"
+      },
+      {
+        "case": "f25545d5bf50515f",
+        "question": "line_1",
+        "mark": "judge:departure",
+        "guard": "C1",
+        "token": "no-work-shown"
+      },
+      {
+        "case": "f25545d5bf50515f",
+        "question": "claims",
+        "mark": "judge:unsupported",
+        "guard": "C5b",
+        "token": "claim-record-unread"
+      },
+      {
+        "case": "957ba71d1fa91f7e",
+        "question": "goal",
+        "mark": "judge:consistent",
+        "guard": "C6",
+        "token": "check-does-not-show-it"
+      }
+    ],
+    "construction_checks_not_a_measurement": true
+  },
+  "statement": "The tenth packet was re-frozen on the corrected producer. Every prompt is byte-identical to the tenth's, with the same citation menus and constraints, so all 32 expectations and the rubric transfer unchanged and no mark was made or moved after output. The marks digest moves only because the marks file binds the new cases digest. Under the approved guards C1, C2, C5b and C6, seven judge expectations cannot be reached through the resolver, so the best score this tree can reach is 25 of 32 correct; these are accuracy losses that cannot fail a run. The dry pass is a construction check, not a measurement, and a pass would not be an accuracy result. Earlier packets, marks and failed results remain unchanged."
+}

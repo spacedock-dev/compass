@@ -2483,16 +2483,7 @@ def score(  # noqa: C901, PLR0913 - legacy route plus isolated closure admission
         now=now,
         rubric_records=rubric_records,
         binding=binding,
-        transcript_stops={
-            case_id
-            for case_id, case in cases.items()
-            if case.get("stop_vouched_by") == "transcript"
-        },
-        prior_packet_stops={
-            case_id
-            for case_id, case in cases.items()
-            if case.get("stop_vouched_by") == mark_abstention.LIFECYCLE_PRIOR_PACKET
-        },
+        **_stop_sets(cases),
     )
     if replay:
         summary["inputs_digest"] = _inputs_digest(corpus)
@@ -2522,10 +2513,35 @@ def _repeat_classification(
     return "usable"
 
 
+def _stop_sets(cases: Mapping[str, Mapping[str, Any]]) -> dict[str, frozenset[str]]:
+    """The recorded cases whose stop a transcript, or a committed prior packet, vouched for.
+
+    Read from `stop_vouched_by`, which `_vouched` sets at score time. One home for both the single
+    pass and each repeat, so a repeated run cannot report none of either again (result 10 did).
+    """
+    return {
+        "transcript_stops": frozenset(
+            case_id
+            for case_id, case in cases.items()
+            if case.get("stop_vouched_by") == "transcript"
+        ),
+        "prior_packet_stops": frozenset(
+            case_id
+            for case_id, case in cases.items()
+            if case.get("stop_vouched_by") == mark_abstention.LIFECYCLE_PRIOR_PACKET
+        ),
+    }
+
+
 def _repetition_summaries(
-    corpus: Corpus, attempts: list[dict[str, Any]], now: float, binding: Mapping[str, str] | None
+    corpus: Corpus,
+    attempts: list[dict[str, Any]],
+    now: float,
+    binding: Mapping[str, str] | None,
+    cases: Mapping[str, Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], str]:
     marks = mark_abstention._marks(dict(corpus.marks))  # noqa: SLF001 - native mark reader
+    stops = _stop_sets(cases)
     repetitions: list[dict[str, Any]] = []
     for repeat in (1, 2, 3):
         latest = {a["id"]: a for a in attempts if a["repeat"] == repeat}
@@ -2536,6 +2552,7 @@ def _repetition_summaries(
             now=now,
             rubric_records=[a["rubric"] for a in latest.values()],
             binding=binding,
+            **stops,
         )
         if (
             len(latest) != 10 or any(a["classification"] != "usable" for a in latest.values())
@@ -2740,7 +2757,7 @@ def _score_repeated(  # noqa: C901, PLR0912, PLR0913, PLR0915 - explicit charge/
                 break
         if stopped:
             break
-    repetitions, verdict = _repetition_summaries(corpus, attempts, now, binding)
+    repetitions, verdict = _repetition_summaries(corpus, attempts, now, binding, cases)
     summary: dict[str, Any] = {
         **{k: str((binding or {})[k]) for k in BINDING_KEYS if k in (binding or {})},
         "v": 2,

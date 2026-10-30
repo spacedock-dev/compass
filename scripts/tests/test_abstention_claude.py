@@ -461,8 +461,10 @@ class WhatAConsistentRestsOnTest(_Packet):
     """Test 8: a Goal consistent on the agent's own account is never tool-reported."""
 
     def test_the_basis_token_tells_a_check_from_the_agents_account(self) -> None:
+        # Every line consistent: the Goal reads consistent only beside consistent lines
+        # (DEC-17, amended 2026-10-30).
         reply = _reply(
-            goal=("consistent", (1,)), line_1=("consistent", (2,)), line_2=("unverifiable", ())
+            goal=("consistent", (1,)), line_1=("consistent", (2,)), line_2=("consistent", (2,))
         )
         self.score(_Model((reply, "ok")))
         committed = self.committed()
@@ -470,8 +472,16 @@ class WhatAConsistentRestsOnTest(_Packet):
         self.assertEqual("judged:consistent", case["outcomes"]["goal"])
         self.assertEqual("account", case["basis"]["goal"])
         self.assertEqual("tool", case["basis"]["line_1"])
-        self.assertEqual("", case["basis"]["line_2"])
         self.assertEqual(1, committed["counts"]["goal_consistent_on_account"])
+
+    def test_an_unjudged_line_has_no_basis(self) -> None:
+        reply = _reply(
+            goal=("unverifiable", ()), line_1=("consistent", (2,)), line_2=("unverifiable", ())
+        )
+        self.score(_Model((reply, "ok")))
+        case = self.committed()["cases"][self.cases[0]["id"]]
+        self.assertEqual("tool", case["basis"]["line_1"])
+        self.assertEqual("", case["basis"]["line_2"])
 
 
 class ARubricFalseReassuranceFailsTest(_Packet):
@@ -2836,7 +2846,7 @@ class Q7EveryCaseIsMarkedBeforeAnyCallTest(_Packet):
 
 
 class Q8AWriteAloneIsTheAgentsAccountTest(_Packet):
-    def test_a_goal_consistent_citing_only_a_written_file_is_account(self) -> None:
+    def test_a_goal_consistent_on_the_agent_and_a_written_file_abstains(self) -> None:
         write = _fact(
             "w1",
             sid=CLAUDE_SID,
@@ -2851,15 +2861,22 @@ class Q8AWriteAloneIsTheAgentsAccountTest(_Packet):
         self.cases[0]["producer_facts"] = [
             _fact("a1", sid=CLAUDE_SID, harness="claude", at=80.0),
             write,
+            _check("k1", at=95.0),
         ]
         self.cases[0]["tool_output"] = {"tails": {}, "changed_after": []}
-        # Citing the agent's own words and the write: before the fix the write
-        # alone made this `tool`.
-        reply = _reply(goal=("consistent", (1, 2)))
+        # Citing the agent's own words and the write. Item 8 drops the write, so the Goal rests
+        # on the agent's account alone in a window holding a write, and abstains (DEC-17,
+        # amended 2026-10-30). The lines rest on a pass, so the Goal-beside-lines guard is not
+        # why. The direct test below still covers the account basis.
+        reply = _reply(
+            goal=("consistent", (1, 2)),
+            line_1=("consistent", (3,)),
+            line_2=("consistent", (3,)),
+        )
         self.score(_Model((reply, "ok")))
         case = self.committed()["cases"][self.cases[0]["id"]]
-        self.assertEqual("judged:consistent", case["outcomes"]["goal"])
-        self.assertEqual("account", case["basis"]["goal"])
+        self.assertEqual("abstained", case["outcomes"]["goal"])
+        self.assertEqual("judged:consistent", case["outcomes"]["line_1"])
 
     def test_basis_calls_a_cited_write_account_and_only_a_recorded_check_tool(self) -> None:
         # Direct, because the producer's own item 8 drops a write from what a

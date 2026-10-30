@@ -3282,6 +3282,37 @@ Session ids, project paths, account identifiers, credentials and the ledger file
 never sent. Titles, summaries, command lines and output tails can name the project's own files.
 Redaction is the one a reading applies, and it does not remove those names.
 
+##### Corrected retry qualification, 2026-10-31
+
+The tenth measured all thirty registered readings and failed without stopping. It charged 30
+native attempts, so P is 98, and it used none of its one availability retry. The one funded retry
+therefore carries one attempt and renews thirty: 31 attempts at most, thirty registered readings
+and one availability retry. The cumulative ceilings become 129 native and 309 shared attempts,
+with 98 native and 70 shared charges retained. Replay's 190 and live's 18 attempts remain held.
+After the retry the study stops, whatever its result.
+
+The retry measures the corrected reader. Four deterministic guards in the reading's resolver only
+move an answer toward not verifiable. They change no prompt byte, send nothing more and add no
+call. The tenth's ten cases were re-frozen on that tree in a fresh packet home, because the
+parser and intake stamps moved. Every prompt is byte-identical to the tenth's, so the 32 blind
+marks transfer unchanged and no case screen was sent to a marker again. The packet stays on the
+operator's machine, as every packet does.
+
+The eleventh grant binds result 10's ledger chain, marks and inputs. Its fixed manifest binds
+the actual request digests, and its handoff binds epoch six's thirty charges, its four batch
+reviews, result 10, the five earlier epochs and the native 98-call prefix. An independent AGY
+review (`gemini-3.8-flash-high`, effort `high`) returned GO on that handoff. It was shown the
+grant, result 10's header, the handoff, the manifest with its request digests summarized, and
+the preparer's recomputation. Those are digests, counts and case ids, never case text. Epoch
+seven was initialized once, with zero charges.
+
+The model binding was checked as before: the scorer copies the installed Claude Code binary to a
+private location, verifies its bytes and signature, and runs only `claude --version` on the copy.
+That call reaches no model. Each of the four batches is reviewed before the next, under the
+measurement rule above. A false reassurance or a judged should-abstain answer still fails the
+run, and an unusable attempt is the only one that may use the retry. Merged software and passing
+current-head CI come before any spending.
+
 #### Prospective qualification source cuts, 2026-10-05
 
 The opt-in typed-Claude qualification freezer may make an owned transient copy of the raw

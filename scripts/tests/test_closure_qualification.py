@@ -430,7 +430,7 @@ class RepeatedQualification(GrantFourAllowance):
         self.output = self.result_paths[3]
         self.local = self.root / "private-repeated.json"
 
-    def run_score(self, model: Any, *, review: bool = True) -> int:
+    def run_score(self, model: Any, *, review: bool = True, vouch: Any = None) -> int:
 
         kwargs = {
             "config": self.config,
@@ -442,7 +442,7 @@ class RepeatedQualification(GrantFourAllowance):
             "tool_destination": "Anthropic",
             "ledger_path": str(self.ledger_path),
             "max_calls": 59,
-            "vouch": lambda _case: [],
+            "vouch": vouch or (lambda _case: []),
         }
         resume = None
         with mock.patch("builtins.print"):
@@ -631,6 +631,30 @@ class RepeatedQualification(GrantFourAllowance):
         local = json.loads(self.local.read_text())
         self.assertEqual(1, len(local["attempts"]))
         self.assertEqual("usable", local["attempts"][0]["classification"])
+
+    def test_each_repeat_counts_the_stops_a_transcript_or_a_prior_packet_vouched(self) -> None:
+        # The tenth run's vouching: two recorded cases on a transcript stop, one on a committed
+        # packet's. Result 10 reported none in any repeat, because the repeats never passed them on.
+        import mark_abstention  # noqa: PLC0415 - isolated test fixture modules
+
+        recorded = [c["id"] for c in self.corpus.cases["cases"] if c["origin"] == "recorded"]
+        stops = dict.fromkeys(recorded, "history")
+        stops.update({recorded[0]: "transcript", recorded[1]: "transcript"})
+        stops[recorded[2]] = mark_abstention.LIFECYCLE_PRIOR_PACKET
+
+        def vouch(_case: Any) -> list[str]:
+            return []
+
+        vouch.lifecycle = lambda case: stops[case["id"]]  # type: ignore[attr-defined]
+        model = self.model_class((self.safe_reply, "ok"))
+        self.assertEqual(0, self.run_score(model, vouch=vouch))
+        summary = json.loads(self.output.read_text())
+        self.assertEqual(3, len(summary["repetitions"]))
+        for repetition in summary["repetitions"]:
+            with self.subTest(repeat=repetition["repeat"]):
+                counts = repetition["summary"]["counts"]
+                self.assertEqual(2, counts["recorded_on_transcript_stop"])
+                self.assertEqual(1, counts["recorded_on_prior_packet"])
 
     def test_repeated_summary_can_be_reported_without_collapsing_cases(self) -> None:
         model = self.model_class((self.safe_reply, "ok"))
