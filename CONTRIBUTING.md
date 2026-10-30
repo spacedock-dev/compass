@@ -368,8 +368,10 @@ programs it starts launch and connect to, from inside that process tree and with
 --mode MODE` starts this checkout's server under the recorder in `scripts/owned_observer.py` and
 reports against SECURITY.md's launch and send tables, and `control` proves on your machine that the
 recorder loses no short launch or connection. The server it starts makes the same model calls any
-run would, so opening a finished session there starts a summary. [The owned-process
-observer](docs/design-owned-process-observer.md) owns what it sees, what it cannot, and the five runs.
+run would, so opening a finished session there starts a summary, but each run has a Claude call
+budget and the recorder refuses the launch past it. [The owned-process
+observer](docs/design-owned-process-observer.md) owns what it sees, what it cannot, and the runs
+with their budgets.
 
 `scripts/derive_prompt_shapes.py` re-derives the counts written into the harness-injected-prompt
 comment block in `compass_runtime/records.py`: which markup tag leads a harness's own machinery,

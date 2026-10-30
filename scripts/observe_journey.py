@@ -2,23 +2,27 @@
 """Trace an Intent and drift journey on a running build, and prove the trace loses nothing.
 
     observe_journey.py control [--out DIR] [--count N]
-    observe_journey.py run --mode MODE [--out DIR] [--port P] [--home DIR] [--seconds S] [-- FLAGS]
-    observe_journey.py report TRACE --mode MODE
+    observe_journey.py run --mode MODE [--out DIR] [--port P] [--home DIR] [--seconds S]
+        [--transcript FILE] [--clipboard] [-- FLAGS]
+    observe_journey.py report TRACE --mode MODE [--reach-host HOST]
 
 `control` runs a synthetic workload under the observer: a known number of short program
-launches, sub-second TCP connections to a local listener, name lookups and HTTP requests, from
-Python and from every Node or Bun runtime on PATH. It counts what happened independently (each
-launched program appends a line to a marker file, the listener counts what it accepted) and
-exits non-zero unless the trace holds exactly the expected events.
+launches, sub-second TCP connections to a local listener, name lookups and HTTP requests, one
+after another and then all at once, from Python and from every Node or Bun runtime on PATH. It
+counts what happened independently (each launched program appends a line to a marker file, the
+listener counts what it accepted) and exits non-zero unless the trace holds exactly the expected
+events and at least every accepted connection.
 
 `run` starts a Compass server from this checkout under the observer, on a spare loopback port
-with a scratch `COMPASS_HOME`, and records until Ctrl-C, `--seconds` or the server's own exit.
-It then stops the server's process group, writes `report.json` and `report.md` beside the trace,
-and diffs the trace against the tables in SECURITY.md's "What launches and what sends". `report`
-redoes that for a trace already recorded.
+with a scratch `COMPASS_HOME`, and records until Ctrl-C, `--seconds`, the server's own exit, or the
+first model launch past the run's Claude call budget, which the hook refuses before it starts. It
+then stops the server's process group and writes `report.json` and `report.md` (owner-readable,
+with arguments and paths) and `report-shapes.md` (no argument, path or user name) beside the
+trace, attributed to the tables in SECURITY.md's "What launches and what sends". `report` redoes
+that for a trace already recorded.
 
 `owned_observer.py` is the recorder. docs/design-owned-process-observer.md owns what it can and
-cannot see, and how to drive each of the five journey runs. Nothing here is shipped.
+cannot see, and how to drive each journey run. Nothing here is shipped.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import hashlib
 import http.server
 import json
 import os
+import secrets
 import shutil
 import signal
 import socket
@@ -39,6 +44,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,7 +52,7 @@ from typing import TYPE_CHECKING, Any
 import owned_observer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "compass" / "skills" / "compass" / "server.py"
@@ -65,7 +71,7 @@ _PY_APPEND = "import sys; open(sys.argv[1], 'a').write(sys.argv[2] + '\\n')"
 # An ES module with named imports of the builtins, the form a bundled CLI uses: Node binds
 # those when first imported, so this is the case the preload has to reach, not `require`.
 _JS_WORKLOAD = r"""
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { lookup } from 'node:dns';
 import { get } from 'node:http';
 import { connect } from 'node:net';
@@ -96,6 +102,13 @@ const execFileOnce = (tag) =>
   new Promise((resolve, reject) =>
     execFile('/bin/sh', append(tag), (error) => (error ? reject(error) : resolve())),
   );
+const spawnOnce = (tag) =>
+  new Promise((resolve, reject) => {
+    const child = spawn('/bin/sh', append(tag));
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+const many = (make) => Promise.all(Array.from({ length: Number(count) }, make));
 
 for (let i = 0; i < Number(count); i += 1) {
   await connectOnce();
@@ -105,6 +118,9 @@ for (let i = 0; i < Number(count); i += 1) {
   spawnSync('/bin/sh', append(`${runtime}-spawnSync`));
   await execFileOnce(`${runtime}-execFile`);
 }
+// The same calls at once: every connect and every spawn in flight together.
+await many(() => connectOnce());
+await many(() => spawnOnce(`${runtime}-spawn`));
 """
 
 
@@ -153,12 +169,13 @@ def expected_events(count: int, runtimes: Sequence[str]) -> collections.Counter[
     expected: collections.Counter[Key] = collections.Counter(
         {
             ("python", "start", "process"): 1,
-            ("python", "launch", "subprocess.Popen"): n + len(runtimes),
-            ("python", "spawned", "subprocess.Popen"): n + len(runtimes),
-            ("python", "exit", "subprocess.Popen"): n + len(runtimes),
+            # Sequential and threaded Popen launches, and one per runtime child.
+            ("python", "launch", "subprocess.Popen"): 2 * n + len(runtimes),
+            ("python", "spawned", "subprocess.Popen"): 2 * n + len(runtimes),
+            ("python", "exit", "subprocess.Popen"): 2 * n + len(runtimes),
             ("python", "launch", "os.posix_spawn"): n,
-            # One raw connect each, and the one each urlopen makes underneath.
-            ("python", "connect", "socket.connect"): 2 * n,
+            # Raw connects, threaded ones, and the one each urlopen makes underneath.
+            ("python", "connect", "socket.connect"): 3 * n,
             ("python", "resolve", "socket.getaddrinfo"): 2 * n,
             ("python", "request", "urllib.Request"): n,
             ("python", "request", "http.client.connect"): n,
@@ -174,9 +191,11 @@ def expected_events(count: int, runtimes: Sequence[str]) -> collections.Counter[
                 (runtime, "resolve", "dns.lookup"): n,
                 (runtime, "launch", "child_process.spawnSync"): n,
                 (runtime, "launch", "child_process.execFile"): n,
+                (runtime, "launch", "child_process.spawn"): n,
                 # Node connects net, http and fetch through one socket method. Bun's fetch is
-                # native and never reaches it (measured on Bun 1.4.4); its http does.
-                (runtime, "connect", "socket.connect"): 3 * n if runtime == "node" else 2 * n,
+                # native and never reaches it (measured on Bun 1.4.4); its http does. The last
+                # n are the concurrent connects.
+                (runtime, "connect", "socket.connect"): 4 * n if runtime == "node" else 3 * n,
             }
         )
     return expected
@@ -220,6 +239,17 @@ def _workload(port: int, marker: str, count: int, js_path: str, runtimes: Sequen
     for _ in range(count):
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
             response.read()
+
+    def connect_and_launch() -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.connect(("127.0.0.1", port))
+        subprocess.run([sys.executable, "-c", _PY_APPEND, marker, "python-popen"], check=True)  # noqa: S603
+
+    threads = [threading.Thread(target=connect_and_launch) for _ in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
     for runtime in runtimes:
         binary = shutil.which(runtime) or runtime
         subprocess.run([binary, js_path, str(port), marker, str(count)], check=True)  # noqa: S603
@@ -241,11 +271,16 @@ class ControlResult:
 
     @property
     def lost(self) -> bool:
-        """True when any count disagrees."""
+        """True when a count disagrees, or a connection was accepted that the trace never saw.
+
+        A connect line is an attempt, written before the call runs, so a refused or reset
+        connect is still a line. The trace may therefore hold more connects than the listener
+        accepted, and only fewer means an event was lost.
+        """
         return (
             self.expected != self.observed
             or self.launches_ran != self.launches_observed
-            or self.accepted != self.connections_observed
+            or self.connections_observed < self.accepted
         )
 
 
@@ -297,6 +332,7 @@ def control_run(
     for runtime in chosen:
         launch_tags[(runtime, "child_process.spawnSync")] = f"{runtime}-spawnSync"
         launch_tags[(runtime, "child_process.execFile")] = f"{runtime}-execFile"
+        launch_tags[(runtime, "child_process.spawn")] = f"{runtime}-spawn"
     launches_observed: collections.Counter[str] = collections.Counter()
     for event in events:
         tag = launch_tags.get((event["src"], event["op"]))
@@ -339,7 +375,10 @@ def table_rows(security: Path = SECURITY) -> list[str]:
 
 
 ROW_QUOTA = "Vendor quota poll, with the credential read before it"
+ROW_REACH = "Reach nudge"
 ROW_PRESS = "A press for a reading, an unasked check"
+ROW_FIND_GOAL = "A press on Find goal"
+ROW_SUMMARY = "A session summary, on open of a finished session or on a press"
 ROW_MONITOR = (
     "A Live monitor check, about once a minute "
     "while you view a Claude Code session with the switch on"
@@ -347,154 +386,242 @@ ROW_MONITOR = (
 ROW_CI = "A press for a reading that reads a pull request's CI checks"
 ROW_GIT = "The git probe, and the committed-file read of a project's check scripts"
 ROW_SPACEDOCK = "The Spacedock workflow discovery"
+ROW_FOCUS = "The focus command"
 ROW_NOTIFY = "A native notification"
 ROW_TERMINAL = "The optional read-only terminal"
+ROW_PS = "The process-group check around a supervised child"
 ROW_DAEMON = "The daemon"
 ROW_WRITE = "A write into a session, its transcript store or its working directory"
 # Each row a trace event can be attributed to. A test holds every name to SECURITY.md.
 ROWS_USED = (
-    ROW_QUOTA, ROW_PRESS, ROW_MONITOR, ROW_CI, ROW_GIT,
-    ROW_SPACEDOCK, ROW_NOTIFY, ROW_TERMINAL, ROW_DAEMON, ROW_WRITE,
+    ROW_QUOTA, ROW_REACH, ROW_PRESS, ROW_FIND_GOAL, ROW_SUMMARY, ROW_MONITOR, ROW_CI, ROW_GIT,
+    ROW_SPACEDOCK, ROW_FOCUS, ROW_NOTIFY, ROW_TERMINAL, ROW_PS, ROW_DAEMON, ROW_WRITE,
 )  # fmt: skip
 
 QUOTA_HOSTS = frozenset({"api.anthropic.com", "api2.cursor.sh"})
-MODEL_PROGRAMS = frozenset({"claude", "codex"})
+MODEL_PROGRAMS = owned_observer.MODEL_PROGRAMS
+# Programs Compass starts for itself, by row. `security` is the keychain read before the quota
+# poll; `ps` reads process groups while a supervised child is reaped. The focus command and the
+# read-only terminal both run `tmux` and are told apart by its subcommand.
+PROGRAM_ROWS = {
+    "git": ROW_GIT,
+    "gh": ROW_CI,
+    "glab": ROW_CI,
+    "spacedock": ROW_SPACEDOCK,
+    "osascript": ROW_NOTIFY,
+    "ps": ROW_PS,
+    "security": ROW_QUOTA,
+}
+CALLER_ROWS = {
+    "reading": ROW_PRESS,
+    "find-goal": ROW_FIND_GOAL,
+    "summary": ROW_SUMMARY,
+    "monitor": ROW_MONITOR,
+}
+digest = owned_observer.digest
+
+
+def _runtime() -> None:
+    runtime = str(SERVER.parent)
+    if runtime not in sys.path:
+        sys.path.insert(0, runtime)
+
+
+def prompts() -> dict[str, str]:
+    """The system prompts of this checkout's Claude callers, by caller."""
+    _runtime()
+    from compass_runtime import live_monitor, observer, session_summary  # noqa: PLC0415
+
+    return {
+        "reading": observer.CLAUDE_READING_SYSTEM_PROMPT,
+        "summary": session_summary.SYSTEM_PROMPT,
+        "monitor": live_monitor.MONITOR_SYSTEM_PROMPT,
+    }
 
 
 @dataclasses.dataclass(frozen=True)
 class Mode:
-    """One of the issue's five runs: the flags it starts with and what must not appear in it."""
+    """One journey run: its flags, what must not appear in it, and its Claude call budget."""
 
     flags: tuple[str, ...]
-    model_launches: str  # "any", "monitor" (Haiku only) or "none"
+    model_launches: str  # "any", "monitor" (the Live monitor's checks only) or "none"
+    budget: int
+    summaries_off: bool
+    seconds: float | None
     steps: str
 
 
-# Opening a finished session starts its summary with no prior question (SECURITY.md, opening
-# section), so every run that must start no model opens a session only after the refusal holds.
+# A summary is one call per 16 KiB window of the session plus a closing call
+# (`session_summary.py`), and each run starts from a fresh store, so a finished session opened
+# with summaries on is summarized again. Every budget below assumes the default run's session fits
+# one window; the hook refuses the call past the budget, so a longer session is refused, not paid.
 MODES: dict[str, Mode] = {
+    "no-model": Mode(
+        ("--no-observer-model",),
+        "none",
+        0,
+        False,
+        None,
+        "Rehearse every step here first. Open a finished Claude Code session, press Analyze, "
+        "Find goal and the Live monitor switch; all are refused.",
+    ),
+    "paused": Mode(
+        (),
+        "none",
+        0,
+        False,
+        None,
+        "Press Pause model calls before opening any session. Then open a finished Claude Code "
+        "session and press Analyze, Find goal and the Live monitor switch; all are refused.",
+    ),
     "default": Mode(
         (),
         "any",
-        "Open a finished Claude Code session (its summary runs), press Analyze once, "
-        "copy the correction.",
+        3,
+        False,
+        None,
+        "Open a finished Claude Code session short enough for one summary window, with a pull "
+        "request so gh runs (summary: 2 calls). Press Analyze once (1 call). Copy the correction.",
     ),
     "monitor-only": Mode(
         (),
         "monitor",
-        "Open a live Claude Code session (a live one gets no summary), switch on the Live "
-        "monitor, keep the tab visible about three minutes, press nothing else.",
-    ),
-    "no-model": Mode(
-        ("--no-observer-model",),
-        "none",
-        "Open a finished Claude Code session and press Analyze; the summary and the press "
-        "are both refused.",
-    ),
-    "declined": Mode(
-        (),
-        "none",
-        "Before opening any session press Pause model calls, then open a finished Claude "
-        "Code session and press Analyze; both are refused.",
+        3,
+        True,
+        150.0,
+        "Summaries off. Open a session that is live now, switch on the Live monitor, keep the "
+        "tab visible and press nothing else. The run ends after 150 seconds.",
     ),
     # `--allow-tool-output` is accepted and does nothing for one release (SECURITY.md, "The launch
-    # grant for tool output"), so this run must match the default one.
+    # grant for tool output"), so its reading call must match the default run's.
     "launch-granted": Mode(
-        ("--allow-tool-output",), "any", "As the default run, started with the launch grant."
+        ("--allow-tool-output",),
+        "any",
+        1,
+        True,
+        None,
+        "Summaries off. Open a finished Claude Code session and press Analyze once.",
     ),
 }
+# Flags that would take the server out of the runner's process group, so the runner could
+# neither stop it nor see that its trace was still growing.
+REFUSED_FLAGS = frozenset({"--daemon"})
 
 
-def _is_monitor(event: Event) -> bool:
-    return any("haiku" in str(arg).lower() for arg in event.get("argv", ()))
+def _after(argv: Sequence[str], flag: str) -> str:
+    for index, arg in enumerate(argv[:-1]):
+        if arg == flag:
+            return str(argv[index + 1])
+    prefix = f"{flag}="
+    return next((str(arg)[len(prefix) :] for arg in argv if str(arg).startswith(prefix)), "")
 
 
-def _descendants(events: Sequence[Event], roots: set[int]) -> set[int]:
-    """Pids started under `roots`, as far as the preloads' start events can see."""
-    found = set(roots)
-    changed = True
-    while changed:
-        changed = False
-        for event in events:
-            if event["kind"] == "start" and event["ppid"] in found and event["pid"] not in found:
-                found.add(event["pid"])
-                changed = True
-    return found
+def _caller(event: Event, digests: dict[str, str], route: str) -> str:
+    """Which Claude caller made a model launch, from its own arguments and the press before it.
+
+    The system prompt's digest names a reading, a summary or a Live monitor check. Analyze, an
+    unasked check and Find goal share the reading envelope, so the POST answered last before the
+    launch tells Find goal from the rest.
+    """
+    argv = [str(arg) for arg in event.get("argv", ())]
+    found = _after(argv, "--system-prompt")
+    caller = next((name for key, name in digests.items() if f"sha256:{key}" in found), "")
+    if not caller:
+        caller = "monitor" if "haiku" in _after(argv, "--model").lower() else "reading"
+    if caller == "reading" and route == "/api/goal/find":
+        return "find-goal"
+    return caller
+
+
+def _launch_row(
+    event: Event, mode: Mode, digests: dict[str, str], route: str
+) -> tuple[str | None, str | None, str]:
+    """(row, departure, caller) for a Python-side launch."""
+    program = str(event.get("program", ""))
+    if program in MODEL_PROGRAMS:
+        caller = _caller(event, digests, route)
+        row = CALLER_ROWS[caller]
+        if mode.model_launches == "none" or (
+            mode.model_launches == "monitor" and caller != "monitor"
+        ):
+            return row, f"{program} ({caller}) started in a run that allows no such call", caller
+        return row, None, caller
+    if program == "tmux":
+        argv = event.get("argv", ())
+        return (ROW_TERMINAL if "attach-session" in argv else ROW_FOCUS), None, ""
+    return PROGRAM_ROWS.get(program), None, ""
 
 
 def _endpoint(event: Event) -> str:
     if event.get("family") == "unix":
-        return f"unix:{event.get('path', '')}"
+        return "unix socket"
     return f"{event.get('host', '')}:{event.get('port', '')}"
 
 
-def _attribute(event: Event, mode: Mode, model_tree: set[int]) -> tuple[str | None, str | None]:  # noqa: C901, PLR0911 - one answer per row
-    """(row, departure) for one event: which table row covers it, and what the mode forbids."""
+def _attribute(  # noqa: PLR0911 - one answer per kind of line
+    event: Event, tree_row: dict[int, str], reach_host: str | None
+) -> tuple[str | None, str | None]:
+    """(row, departure) for an event that is not a Python-side launch."""
     kind, src = event["kind"], event["src"]
     if src != "python":
-        if event["pid"] not in model_tree:
+        if event["pid"] not in tree_row:
             return None, None
-        if kind in {"start", "exit"}:
-            return "", None
-        return (ROW_MONITOR if mode.model_launches == "monitor" else ROW_PRESS), None
-    if kind == "launch":
-        program = event.get("program", "")
-        if program in MODEL_PROGRAMS:
-            monitor = _is_monitor(event)
-            row = ROW_MONITOR if monitor else ROW_PRESS
-            if mode.model_launches == "none" or (mode.model_launches == "monitor" and not monitor):
-                return (
-                    row,
-                    f"{program} started in a run that allows {mode.model_launches} model launches",
-                )
-            return row, None
-        rows = {"git": ROW_GIT, "gh": ROW_CI, "glab": ROW_CI, "spacedock": ROW_SPACEDOCK}
-        rows |= {"osascript": ROW_NOTIFY, "tmux": ROW_TERMINAL}
-        return rows.get(program), None
+        return ("" if kind in {"start", "exit"} else tree_row[event["pid"]]), None
+    if kind == "refused":
+        why = f"{event.get('program')} refused: past this run's budget of {event.get('budget')}"
+        return ROW_PRESS, why
     if kind == "fork":
         return ROW_DAEMON, None
     if kind in {"connect", "request", "resolve", "send"}:
         if event.get("family") == "unix":
             return ROW_WRITE, "a Unix-domain socket connection, the path a hand-off would take"
         host = str(event.get("host", ""))
-        # Anything else, loopback and a configured reach endpoint included, is left for a person
-        # to read: the host alone cannot say which row a connection belongs to.
-        return (ROW_QUOTA if host in QUOTA_HOSTS else None), None
-    if kind in {"start", "spawned", "exit"}:
+        if host in QUOTA_HOSTS:
+            return ROW_QUOTA, None
+        # A loopback connection, or any host but the configured reach endpoint, is left for a
+        # person to read: the host alone cannot say which row it belongs to.
+        return (ROW_REACH if reach_host and host == reach_host else None), None
+    if kind in {"start", "spawned", "exit", "serve"}:
         return "", None
     return None, None
 
 
-def report(events: Sequence[Event], mode_name: str) -> dict[str, Any]:
+def _shape(event: Event) -> str:
+    label = event.get("program") if event["kind"] in {"launch", "refused"} else _endpoint(event)
+    return f"{event['src']} {event['kind']} {event['op']} {label}"
+
+
+def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of line
+    events: Sequence[Event], mode_name: str, *, reach_host: str | None = None
+) -> dict[str, Any]:
     """Launches, connections and timings of one run, attributed to the audit table's rows."""
     mode = MODES[mode_name]
-    server = next((e["pid"] for e in events if e["src"] == "python" and e["kind"] == "start"), None)
-    spawned = {e["child"]: e for e in events if e["kind"] == "spawned"}
+    rows = set(table_rows())
+    digests = {digest(text): name for name, text in prompts().items()}
     exits = {e["child"]: e for e in events if e["kind"] == "exit" and "child" in e}
     seen_inside = {e["pid"] for e in events if e["kind"] == "start" and e["src"] != "python"}
-    model_pids = {pid for pid, e in spawned.items() if e.get("program") in MODEL_PROGRAMS}
-    model_tree = _descendants(events, model_pids)
-    rows = set(table_rows())
-    by_row: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
-    departures: list[dict[str, Any]] = []
-    unlisted: list[Event] = []
+    decided: dict[int, tuple[str | None, str | None]] = {}
+    callers: dict[int, str] = {}
     launches: list[dict[str, Any]] = []
     # A Popen's launch and its `spawned` line are written by one thread, in that order, so the
     # thread pairs them even when two threads start the same program at once.
     pending: dict[object, dict[str, Any]] = {}
-    for event in events:
-        row, departure = _attribute(event, mode, model_tree)
-        if event["kind"] == "launch":
-            launch = {
-                "t": event["t"],
-                "src": event["src"],
-                "pid": event["pid"],
-                "program": event.get("program"),
-            }
-            launch["argv"] = event.get("argv", [])
+    tree_row: dict[int, str] = {}
+    route = ""
+    for index, event in enumerate(events):
+        if event["kind"] == "serve":
+            route = str(event.get("route", ""))
+        elif event["kind"] == "launch" and event["src"] == "python":
+            row, departure, caller = _launch_row(event, mode, digests, route)
+            decided[index] = (row, departure)
+            callers[index] = caller
+            launch = {"t": event["t"], "src": "python", "program": event.get("program")}
+            launch |= {"caller": caller, "row": row, "argv": event.get("argv", [])}
             launches.append(launch)
             if event["op"] == "subprocess.Popen":
                 pending[(event["pid"], event.get("tid"))] = launch
+        elif event["kind"] == "launch":
+            launches.append({"t": event["t"], "src": event["src"], "program": event.get("program")})
         elif event["kind"] == "spawned":
             paired = pending.pop((event["pid"], event.get("tid")), None)
             if paired is not None:
@@ -502,6 +629,20 @@ def report(events: Sequence[Event], mode_name: str) -> dict[str, Any]:
                 paired["child"] = child
                 paired["seconds"] = round(end["t"] - event["t"], 3) if end else None
                 paired["seen_inside"] = child in seen_inside
+                if paired["program"] in MODEL_PROGRAMS and paired["row"]:
+                    tree_row[child] = paired["row"]
+        elif event["kind"] == "start" and event["ppid"] in tree_row:
+            tree_row[event["pid"]] = tree_row[event["ppid"]]
+    by_row: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
+    departures: list[dict[str, Any]] = []
+    unlisted: list[Event] = []
+    for index, event in enumerate(events):
+        if index in decided:
+            row, departure = decided[index]
+        elif event["kind"] == "launch":
+            row, departure = (tree_row.get(event["pid"]), None)
+        else:
+            row, departure = _attribute(event, tree_row, reach_host)
         if departure:
             departures.append({"row": row, "why": departure, "event": event})
         if row == "":
@@ -510,20 +651,26 @@ def report(events: Sequence[Event], mode_name: str) -> dict[str, Any]:
             unlisted.append(event)
             continue
         label = event.get("program") if event["kind"] == "launch" else _endpoint(event)
+        if callers.get(index):
+            label = f"{label} ({callers[index]})"
         by_row[row][f"{event['src']} {event['kind']} {label}"] += 1
     connections_seen = collections.Counter(
         f"{e['src']} {_endpoint(e)}" for e in events if e["kind"] in {"connect", "request"}
     )
+    model_launches = [
+        x for x in launches if x["src"] == "python" and x["program"] in MODEL_PROGRAMS
+    ]
     return {
         "mode": mode_name,
         "flags": list(mode.flags),
-        "server_pid": server,
+        "budget": mode.budget,
+        "model_launches": len(model_launches),
         "events": len(events),
         "seconds": round(events[-1]["t"] - events[0]["t"], 3) if events else 0,
         "launches": launches,
         "opaque_launches": sorted(
             {
-                launch["program"]
+                str(launch["program"])
                 for launch in launches
                 if launch.get("child") and not launch.get("seen_inside")
             }
@@ -533,26 +680,45 @@ def report(events: Sequence[Event], mode_name: str) -> dict[str, Any]:
         "rows_without_events": sorted(rows - set(by_row)),
         "departures": departures,
         "unlisted": unlisted,
-        "model_tree": sorted(model_tree),
+        "unlisted_shapes": dict(sorted(collections.Counter(map(_shape, unlisted)).items())),
     }
 
 
+def _after_the_run(result: dict[str, Any], *, paths: bool) -> list[str]:
+    if "transcripts" not in result:
+        return []
+    lines = ["", "## After the run", ""]
+    for item in result["transcripts"]:
+        name = f"`{item['path']}`" if paths else "A session transcript"
+        lines.append(
+            f"- {name}: earlier bytes preserved {item['prefix_preserved']}, "
+            f"{item['appended_lines']} lines appended"
+        )
+    alive = result.get("alive_after_stop", [])
+    lines.append(f"- Children still running after the stop: {len(alive) if not paths else alive}")
+    if "clipboard_changed" in result:
+        changed = result["clipboard_changed"]
+        size = f", {result['clipboard_bytes']} bytes" if changed else ""
+        lines.append(f"- Clipboard changed during the run: {changed}{size}")
+    return lines
+
+
 def render(result: dict[str, Any]) -> str:
-    """The report as Markdown, for attaching beside the trace."""
+    """The full report as Markdown, for the operator: it carries arguments and paths."""
     lines = [f"# Journey trace: {result['mode']}", ""]
     lines.append(f"Flags: `{' '.join(result['flags']) or '(none)'}`. Events: {result['events']}.")
+    lines.append(f"Model launches: {result['model_launches']} of a budget of {result['budget']}.")
     lines.append(f"Span: {result['seconds']} s. Departures: {len(result['departures'])}.")
     lines.append(f"Unlisted: {len(result['unlisted'])}.")
+    lines += ["", "## Launches", ""]
     lines += [
-        "",
-        "## Launches",
-        "",
-        "| t | from | program | seconds | seen inside |",
-        "|---|---|---|---|---|",
+        "| t | from | program | caller | seconds | seen inside |",
+        "|---|---|---|---|---|---|",
     ]
     lines += [
         f"| {launch['t']:.3f} | {launch['src']} | {launch['program']} | "
-        f"{launch.get('seconds', '')} | {launch.get('seen_inside', '')} |"
+        f"{launch.get('caller', '')} | {launch.get('seconds', '')} | "
+        f"{launch.get('seen_inside', '')} |"
         for launch in result["launches"]
     ]
     lines += ["", "## Connections and requests", "", "| from and endpoint | count |", "|---|---|"]
@@ -566,21 +732,29 @@ def render(result: dict[str, Any]) -> str:
     lines += [f"- {item['row']}: {item['why']}" for item in result["departures"]] or ["None."]
     lines += ["", "## Not in the table", ""]
     lines += [f"- `{json.dumps(event)}`" for event in result["unlisted"]] or ["None."]
-    if "transcripts" in result:
-        lines += ["", "## After the run", ""]
-        lines += [
-            f"- `{item['path']}`: earlier bytes preserved {item['prefix_preserved']}, "
-            f"{item['appended_lines']} lines appended"
-            for item in result["transcripts"]
-        ]
+    return "\n".join([*lines, *_after_the_run(result, paths=True)]) + "\n"
+
+
+def render_shapes(result: dict[str, Any]) -> str:
+    """The report as shapes only, for an issue or SECURITY.md: no argument, path or user name."""
+    lines = [f"# Journey trace shapes: {result['mode']}", ""]
+    lines.append(f"Flags: `{' '.join(result['flags']) or '(none)'}`. Events: {result['events']}.")
+    lines.append(f"Model launches: {result['model_launches']} of a budget of {result['budget']}.")
+    lines.append(f"Departures: {len(result['departures'])}. Unlisted: {len(result['unlisted'])}.")
+    lines += ["", "## By table row", ""]
+    for row, counter in result["by_row"].items():
         lines.append(
-            f"- Children still running after the stop: {result['alive_after_stop'] or 'none'}"
+            f"- {row}: " + ", ".join(f"{name} x{count}" for name, count in counter.items())
         )
-        if "clipboard_bytes" in result:
-            lines.append(
-                f"- Clipboard read back: {result['clipboard_bytes']} bytes, in clipboard.txt"
-            )
-    return "\n".join(lines) + "\n"
+    lines += ["", "## Seen only from outside", ""]
+    lines.append(", ".join(result["opaque_launches"]) or "None.")
+    lines += ["", "## Departures", ""]
+    lines += [f"- {item['row']}: {item['why']}" for item in result["departures"]] or ["None."]
+    lines += ["", "## Not in the table", ""]
+    lines += [f"- {shape} x{count}" for shape, count in result["unlisted_shapes"].items()] or [
+        "None."
+    ]
+    return "\n".join([*lines, *_after_the_run(result, paths=False)]) + "\n"
 
 
 # --- the journey run ---------------------------------------------------------------------------
@@ -595,17 +769,77 @@ def spare_port() -> int:
 
 def journey_command(port: int, mode: str, extra: Sequence[str]) -> list[str]:
     """The observed server's argv: the observer's `exec`, then server.py and the run's flags."""
+    refused = sorted({arg.split("=", 1)[0] for arg in extra} & REFUSED_FLAGS)
+    if refused:
+        message = f"refused: {', '.join(refused)} would take the server out of the run's reach"
+        raise ValueError(message)
     flags = [*MODES[mode].flags, *extra]
     return [sys.executable, str(OBSERVER), "exec", "--", str(SERVER), "--port", str(port), *flags]
 
 
-def journey_environment(trace: Path, compass_home: Path, home: str | None) -> dict[str, str]:
+def journey_environment(
+    trace: Path, compass_home: Path, home: str | None, *, budget: int | None = None
+) -> dict[str, str]:
     """The observed server's environment: the trace on, a scratch store, the chosen HOME."""
     env = owned_observer.observed_environment(os.environ, str(trace))
     env["COMPASS_HOME"] = str(compass_home)
+    if budget is not None:
+        env[owned_observer.ENV_BUDGET] = str(budget)
     if home:
         env["HOME"] = home
     return env
+
+
+def _summary_config(compass_home: Path, home: str | None) -> tuple[Any, Any]:
+    _runtime()
+    from compass_runtime import config as runtime_config  # noqa: PLC0415
+    from compass_runtime import reading_policy  # noqa: PLC0415
+
+    environ = dict(os.environ)
+    environ |= {"COMPASS_HOME": str(compass_home), "HOME": home or os.path.expanduser("~")}
+    config = runtime_config.build_runtime_config(
+        environ=environ, platform_name=sys.platform, os_name=os.name, launcher_path=SERVER
+    )
+    return config, reading_policy
+
+
+def summaries_off(compass_home: Path, home: str | None) -> bool:
+    """Whether the store at `compass_home` holds Turn off summaries."""
+    config, policy = _summary_config(compass_home, home)
+    return bool(policy.summary_status(config, now=time.time()).get("off"))
+
+
+def seed_summaries_off(compass_home: Path, home: str | None) -> bool:
+    """Store Turn off summaries in a run's fresh store before its server starts; read it back."""
+    compass_home.mkdir(parents=True, exist_ok=True)
+    config, policy = _summary_config(compass_home, home)
+    policy.set_summary_consent(config, False, now=time.time())
+    return summaries_off(compass_home, home)
+
+
+def clipboard_begin(copy: Callable[[str], object]) -> str:
+    """Put a sentinel on the clipboard, so what was there before the run is never read back."""
+    sentinel = f"compass-observer-{secrets.token_hex(8)}"
+    copy(sentinel)
+    return sentinel
+
+
+def clipboard_end(paste: Callable[[], str], sentinel: str, out: Path) -> dict[str, Any]:
+    """Keep the clipboard, owner-readable only, when the run changed it; nothing otherwise."""
+    text = paste()
+    if text == sentinel:
+        return {"clipboard_changed": False}
+    _write_private(out / "clipboard.txt", text)
+    return {"clipboard_changed": True, "clipboard_bytes": len(text.encode())}
+
+
+def _pbcopy(text: str) -> None:
+    subprocess.run(["/usr/bin/pbcopy"], input=text, text=True, check=True)
+
+
+def _pbpaste() -> str:
+    result = subprocess.run(["/usr/bin/pbpaste"], capture_output=True, text=True, check=True)
+    return result.stdout
 
 
 def snapshot(path: Path) -> bytes:
@@ -640,38 +874,84 @@ def _alive(pid: int) -> bool:
     return True
 
 
+def _reach_host(flags: Sequence[str]) -> str | None:
+    url = _after(flags, "--reach-url") or os.environ.get("COMPASS_REACH_URL", "")
+    return urllib.parse.urlsplit(url).hostname if url else None
+
+
+def _refused(trace: Path, offset: int) -> tuple[bool, int]:
+    """Whether a `refused` line was written after `offset`, and the new offset."""
+    if not trace.exists():
+        return False, offset
+    with trace.open("rb") as handle:
+        handle.seek(offset)
+        chunk = handle.read()
+    complete = chunk[: chunk.rfind(b"\n") + 1]
+    return b'"kind": "refused"' in complete, offset + len(complete)
+
+
+def _wait(process: subprocess.Popen[bytes], trace: Path, seconds: float | None) -> str:
+    """Wait for the server's exit, the deadline, Ctrl-C, or the first refused model launch."""
+    deadline = None if seconds is None else time.monotonic() + seconds
+    offset = 0
+    try:
+        while process.poll() is None:
+            refused, offset = _refused(trace, offset)
+            if refused:
+                return "budget"
+            if deadline is not None and time.monotonic() >= deadline:
+                return "deadline"
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        return "interrupted"
+    return "exited"
+
+
+def _stop(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
 def run_journey(args: argparse.Namespace) -> int:
     """Start the observed server, wait, stop it, and write the report."""
+    mode = MODES[args.mode]
     out = Path(args.out or tempfile.mkdtemp(prefix=f"journey-{args.mode}-")).resolve()
     out.mkdir(parents=True, exist_ok=True)
     trace = out / "trace.jsonl"
     trace.unlink(missing_ok=True)
     port = args.port or spare_port()
     command = journey_command(port, args.mode, args.flags)
-    env = journey_environment(trace, out / "compass-home", args.home)
+    compass_home = out / "compass-home"
+    if mode.summaries_off and not seed_summaries_off(compass_home, args.home):
+        print("refused: Turn off summaries could not be stored before the run", file=sys.stderr)
+        return 2
+    env = journey_environment(trace, compass_home, args.home, budget=mode.budget)
     transcripts = {
         Path(path).expanduser(): snapshot(Path(path).expanduser()) for path in args.transcript
     }
-    print(f"mode {args.mode}: {MODES[args.mode].steps}")
+    sentinel = clipboard_begin(_pbcopy) if args.clipboard else ""
+    print(f"mode {args.mode}: {mode.steps}")
+    print(f"Claude call budget: {mode.budget}. Summaries off: {mode.summaries_off}.")
     print(f"open http://127.0.0.1:{port}/ ; trace {trace}", flush=True)
     process = subprocess.Popen(command, env=env, start_new_session=True)  # noqa: S603
     try:
-        process.wait(timeout=args.seconds)
-    except subprocess.TimeoutExpired:
-        pass
-    except KeyboardInterrupt:
-        print("stopping")
+        ended = _wait(process, trace, args.seconds or mode.seconds)
     finally:
-        if process.poll() is None:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+        _stop(process)
+    if ended == "budget":
+        print("stopped: a model launch past the budget was refused")
+    names = [flag.split("=", 1)[0] for flag in [*mode.flags, *args.flags] if flag.startswith("-")]
     extra: dict[str, Any] = {
+        "flags": names,
+        "ended": ended,
         "transcripts": [transcript_change(path, before) for path, before in transcripts.items()],
         # Children Compass started in their own session outlive the group signal. Listed, not
         # killed: a pid read from the trace may already belong to another program.
@@ -682,21 +962,26 @@ def run_journey(args: argparse.Namespace) -> int:
         ),
     }
     if args.clipboard:
-        pbpaste = shutil.which("pbpaste")
-        text = ""
-        if pbpaste:
-            text = subprocess.run([pbpaste], capture_output=True, text=True, check=False).stdout  # noqa: S603
-        (out / "clipboard.txt").write_text(text)
-        extra["clipboard_bytes"] = len(text.encode())
-    return write_report(trace, args.mode, extra)
+        extra |= clipboard_end(_pbpaste, sentinel, out)
+    return write_report(trace, args.mode, extra, reach_host=_reach_host(args.flags))
 
 
-def write_report(trace: Path, mode: str, extra: dict[str, Any] | None = None) -> int:
-    """Write report.json and report.md beside the trace. Non-zero when the run departed."""
-    result = report(read_trace(trace), mode) | (extra or {})
-    (trace.parent / "report.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
-    (trace.parent / "report.md").write_text(render(result))
-    print(render(result))
+def _write_private(path: Path, text: str) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(text)
+
+
+def write_report(
+    trace: Path, mode: str, extra: dict[str, Any] | None = None, *, reach_host: str | None = None
+) -> int:
+    """Write the full report and its shapes beside the trace. Non-zero when the run departed."""
+    result = report(read_trace(trace), mode, reach_host=reach_host) | (extra or {})
+    # The full report carries arguments and paths, so it is owner-readable like the trace.
+    _write_private(trace.parent / "report.json", json.dumps(result, indent=2, default=str) + "\n")
+    _write_private(trace.parent / "report.md", render(result))
+    (trace.parent / "report-shapes.md").write_text(render_shapes(result))
+    print(render_shapes(result))
     return 1 if result["departures"] else 0
 
 
@@ -719,11 +1004,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--home", default=None, help="HOME for the server (default: yours)")
     run.add_argument("--seconds", type=float, default=None)
     run.add_argument("--transcript", action="append", default=[], help="a session file to check")
-    run.add_argument("--clipboard", action="store_true", help="save the clipboard after the run")
+    run.add_argument(
+        "--clipboard", action="store_true", help="save what the run copied, if anything"
+    )
     run.add_argument("flags", nargs="*", help="extra server flags, after --")
     again = commands.add_parser("report", help="report a recorded trace")
     again.add_argument("trace", type=Path)
     again.add_argument("--mode", choices=sorted(MODES), required=True)
+    again.add_argument("--reach-host", default=None)
     args = parser.parse_args(arguments)
     if args.command == "control":
         out = args.out or Path(tempfile.mkdtemp(prefix="observer-control-"))
@@ -733,8 +1021,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("LOST EVENTS" if result.lost else "no event lost")
         return 1 if result.lost else 0
     if args.command == "run":
+        try:
+            journey_command(0, args.mode, args.flags)
+        except ValueError as refusal:
+            parser.error(str(refusal))
         return run_journey(args)
-    return write_report(args.trace, args.mode)
+    return write_report(args.trace, args.mode, reach_host=args.reach_host)
 
 
 if __name__ == "__main__":

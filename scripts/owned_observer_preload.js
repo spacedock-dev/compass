@@ -7,18 +7,19 @@
 // inherits. It does nothing unless COMPASS_OBSERVE_LOG names a file, and it never throws into
 // the program it watches: every hook calls the original whatever the logging did.
 //
-// What it records and why is owned by docs/design-owned-process-observer.md. Arguments longer
-// than 64 characters or holding a newline are recorded as their length only, because a model
-// call's system prompt is an argument and its words do not belong in a trace.
+// What it records and why is owned by docs/design-owned-process-observer.md. An argument is kept
+// only when it is a flag name, a value after a flag in VALUE_FLAGS, or one of WORDS; every other
+// value is recorded as its length. The lists equal `owned_observer.py`'s, which a test holds.
 (() => {
   const LOG = process.env.COMPASS_OBSERVE_LOG;
-  if (!LOG || globalThis.__compassOwnedObserver) {
+  const path = require('node:path');
+  if (!LOG || !path.isAbsolute(LOG) || globalThis.__compassOwnedObserver) {
     return;
   }
   globalThis.__compassOwnedObserver = true;
 
   const fs = require('node:fs');
-  const path = require('node:path');
+  const crypto = require('node:crypto');
   let fd;
   try {
     fd = fs.openSync(LOG, 'a');
@@ -27,6 +28,10 @@
   }
   const runtime = process.versions.bun ? 'bun' : 'node';
   const MAX_ARG = 64;
+  const VALUE_FLAGS = new Set(["--config", "--effort", "--model", "--output-format", "--permission-mode", "--permission-prompts", "--sandbox", "--tools"]);
+  const DIGEST_FLAGS = new Set(["--system-prompt"]);
+  const WORDS = new Set(["-", "HEAD", "api", "attach-session", "cat-file", "checks", "ci", "config", "display-message", "exec", "find-generic-password", "list-clients", "ls-tree", "merge-base", "mr", "pr", "remote.origin.url", "rev-list", "rev-parse", "run", "status", "switch-client", "view"]);
+  const FLAG = /^--?[A-Za-z0-9][A-Za-z0-9-]{0,39}$/;
 
   function emit(kind, op, fields) {
     try {
@@ -46,8 +51,42 @@
   }
 
   function redact(value) {
-    const text = String(value);
-    return text.length > MAX_ARG || text.includes('\n') ? `<${text.length} chars>` : text;
+    return `<${String(value).length} chars>`;
+  }
+
+  function kept(flag, value) {
+    if (DIGEST_FLAGS.has(flag)) {
+      const digest = crypto.createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 12);
+      return `<${value.length} chars sha256:${digest}>`;
+    }
+    if (VALUE_FLAGS.has(flag) && value.length <= MAX_ARG && !value.includes('\n')) {
+      return value;
+    }
+    return redact(value);
+  }
+
+  function redactArgv(list) {
+    if (!Array.isArray(list) || list.length === 0) {
+      return [];
+    }
+    const texts = list.map(String);
+    const out = [path.basename(texts[0])];
+    let previous = '';
+    for (const text of texts.slice(1)) {
+      const name = text.split('=', 1)[0];
+      if (previous) {
+        out.push(kept(previous, text));
+        previous = '';
+      } else if (text.includes('=') && FLAG.test(name)) {
+        out.push(`${name}=${kept(name, text.slice(name.length + 1))}`);
+      } else if (FLAG.test(text)) {
+        out.push(text);
+        previous = VALUE_FLAGS.has(text) || DIGEST_FLAGS.has(text) ? text : '';
+      } else {
+        out.push(WORDS.has(text) ? text : redact(text));
+      }
+    }
+    return out;
   }
 
   function program(file) {
@@ -98,9 +137,10 @@
   for (const name of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'fork']) {
     wrap(childProcess, name, launches, (args) => {
       const argv = Array.isArray(args[1]) ? args[1] : [];
+      const first = name === 'fork' ? process.execPath : args[0];
       emit('launch', `child_process.${name}`, {
-        program: name === 'fork' ? program(process.execPath) : program(args[0]),
-        argv: [name === 'fork' ? redact(args[0]) : redact(args[0]), ...argv.map(redact)],
+        program: program(first),
+        argv: redactArgv([first, ...(name === 'fork' ? [args[0]] : []), ...argv]),
       });
     });
   }
@@ -114,7 +154,7 @@
       wrap(Bun, name, launches, (args) => {
         const first = args[0];
         const argv = Array.isArray(first) ? first : first?.cmd || [];
-        emit('launch', `Bun.${name}`, { program: program(argv[0]), argv: argv.map(redact) });
+        emit('launch', `Bun.${name}`, { program: program(argv[0]), argv: redactArgv(argv) });
       });
     }
   }

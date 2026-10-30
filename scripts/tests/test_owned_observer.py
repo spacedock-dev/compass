@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -138,33 +139,39 @@ class TheControlRunLosesNothingTest(unittest.TestCase):
         result = observe_journey.control_run(out, count=12, runtimes=runtimes)
         self.assertEqual(result.observed, result.expected)
         self.assertEqual(result.launches_observed, result.launches_ran)
-        self.assertEqual(result.connections_observed, result.accepted)
+        # Events are attempts, so the trace may hold more connects than were accepted, never fewer.
+        self.assertGreaterEqual(result.connections_observed, result.accepted)
         self.assertFalse(result.lost)
         return result
 
     def test_the_server_side_loses_no_event(self) -> None:
         result = self._control(())
-        # 12 Popen and 12 posix_spawn programs ran; 24 connections reached the listener.
-        self.assertEqual(sum(result.launches_ran.values()), 24)
-        self.assertEqual(result.accepted, 24)
+        # 12 Popen, 12 posix_spawn and 12 threaded Popen programs ran; 12 raw, 12 urlopen and 12
+        # threaded connections reached the listener.
+        self.assertEqual(sum(result.launches_ran.values()), 36)
+        self.assertEqual(result.accepted, 36)
 
     @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
     def test_a_node_child_loses_no_event(self) -> None:
         result = self._control(("node",))
         self.assertEqual(result.launches_ran["node-spawnSync"], 12)
-        self.assertEqual(result.accepted, 24 + 36)
+        self.assertEqual(result.launches_ran["node-spawn"], 12)
+        self.assertEqual(result.accepted, 36 + 48)
 
     @unittest.skipUnless(shutil.which("bun"), "bun is not on PATH")
     def test_a_bun_child_loses_no_event(self) -> None:
         result = self._control(("bun",))
         self.assertEqual(result.launches_ran["bun-execFile"], 12)
-        self.assertEqual(result.accepted, 24 + 36)
+        self.assertEqual(result.launches_ran["bun-spawn"], 12)
+        self.assertEqual(result.accepted, 36 + 48)
 
     def test_a_lost_event_is_reported_as_lost(self) -> None:
         expected = observe_journey.expected_events(3, ("node",))
-        self.assertEqual(expected[("node", "connect", "socket.connect")], 9)
+        self.assertEqual(expected[("node", "connect", "socket.connect")], 12)
         result = observe_journey.ControlResult((), {"a": 1}, {"a": 1}, {}, {}, 4, 3, 0.0, "")
         self.assertTrue(result.lost)
+        attempts = observe_journey.ControlResult((), {"a": 1}, {"a": 1}, {}, {}, 3, 4, 0.0, "")
+        self.assertFalse(attempts.lost)
 
 
 class TheTraceKeepsNoWordsTest(unittest.TestCase):
@@ -187,9 +194,7 @@ class TheTraceKeepsNoWordsTest(unittest.TestCase):
         )
         launch = next(e for e in observe_journey.read_trace(trace) if e["kind"] == "launch")
         self.assertEqual(launch["program"], "echo")
-        self.assertEqual(
-            launch["argv"], ["/bin/echo", "--model", f"<{len(words)} chars>", "<3 chars>"]
-        )
+        self.assertEqual(launch["argv"], ["echo", "--model", f"<{len(words)} chars>", "<3 chars>"])
         self.assertTrue(launch["hooked"])
         self.assertNotIn("reader typed", trace.read_text())
 
@@ -242,7 +247,7 @@ class TheReportDiffsAgainstTheAuditTableTest(unittest.TestCase):
         self.assertEqual(result["opaque_launches"], [])
 
     def test_a_model_launch_under_no_model_is_a_departure(self) -> None:
-        for mode in ("no-model", "declined"):
+        for mode in ("no-model", "paused"):
             with self.subTest(mode=mode):
                 result = observe_journey.report(self._trace(), mode)
                 self.assertEqual(
@@ -303,6 +308,290 @@ class TheReportDiffsAgainstTheAuditTableTest(unittest.TestCase):
         self.assertEqual(env["COMPASS_HOME"], "/x/home")
         self.assertIn(f"--require={owned_observer.PRELOAD}", env["NODE_OPTIONS"])
         self.assertIn(f"--preload={owned_observer.PRELOAD}", env["BUN_OPTIONS"])
+
+
+def _exec(
+    tmp: Path, body: str, env: dict[str, str], *, check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    target = tmp / "target.py"
+    target.write_text(textwrap.dedent(body))
+    return subprocess.run(
+        [sys.executable, str(observe_journey.OBSERVER), "exec", "--", str(target)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=check,
+        cwd=tmp,
+        timeout=120,
+    )
+
+
+class TheTraceKeepsOnlyFlagNamesTest(unittest.TestCase):
+    """A value is kept only after a flag on the allowlist, or as a word of Compass's own commands."""
+
+    def test_a_short_secret_is_recorded_as_its_length(self) -> None:
+        prompt = "x" * 300
+        digest = observe_journey.digest(prompt)
+        argv = [
+            "/Users/someone/.local/bin/claude",
+            "--print",
+            "--model",
+            "claude-haiku-5-5",
+            "--token",
+            "abc123",
+            "--password=hunter2",
+            "--effort=low",
+            "--system-prompt",
+            prompt,
+            "rev-parse",
+            "/Users/someone/project",
+            "short",
+        ]
+        self.assertEqual(
+            owned_observer.redact_argv(argv),
+            [
+                "claude",
+                "--print",
+                "--model",
+                "claude-haiku-5-5",
+                "--token",
+                "<6 chars>",
+                "--password=<7 chars>",
+                "--effort=low",
+                "--system-prompt",
+                f"<300 chars sha256:{digest}>",
+                "rev-parse",
+                "<22 chars>",
+                "<5 chars>",
+            ],
+        )
+
+    def test_the_preload_keeps_the_same_allowlists(self) -> None:
+        source = owned_observer.PRELOAD.read_text()
+        for name, expected in (
+            ("VALUE_FLAGS", owned_observer.VALUE_FLAGS),
+            ("WORDS", owned_observer.WORDS),
+        ):
+            match = re.search(rf"const {name} = new Set\((\[.*?\])\);", source, re.DOTALL)
+            assert match is not None, name
+            self.assertEqual(set(json.loads(match.group(1))), set(expected), name)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_a_node_launch_keeps_flag_names_only(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        trace = tmp / "trace.jsonl"
+        env = owned_observer.observed_environment(_clean_environment(), str(trace))
+        script = (
+            "require('child_process').spawnSync('/bin/echo', "
+            "['--api-key', 'sekret123', '--model', 'm', 'rev-parse'])"
+        )
+        subprocess.run([shutil.which("node") or "node", "-e", script], env=env, check=True)
+        launch = next(e for e in observe_journey.read_trace(trace) if e["kind"] == "launch")
+        self.assertEqual(
+            launch["argv"], ["echo", "--api-key", "<9 chars>", "--model", "m", "rev-parse"]
+        )
+        self.assertNotIn("sekret", trace.read_text())
+
+
+class ExecCarriesTheTraceToItsChildrenTest(unittest.TestCase):
+    """`exec` alone puts the preload on the environment, and `hooked` says whether it reached."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_exec_alone_reaches_a_node_child_and_hooked_tells_the_truth(self) -> None:
+        trace = self.tmp / "trace.jsonl"
+        node = shutil.which("node")
+        body = f"""
+            import subprocess
+            subprocess.run([{node!r}, "-e", "1"], check=True)
+            subprocess.run([{node!r}, "-e", "1"], check=True, env={{"PATH": "/usr/bin:/bin"}})
+            """
+        _exec(self.tmp, body, _clean_environment() | {owned_observer.ENV_LOG: str(trace)})
+        events = observe_journey.read_trace(trace)
+        launches = [e for e in events if e["kind"] == "launch"]
+        self.assertEqual([e["hooked"] for e in launches], [True, False])
+        self.assertEqual(len([e for e in events if e["src"] == "node" and e["kind"] == "start"]), 1)
+
+    def test_a_relative_log_is_refused(self) -> None:
+        result = _exec(
+            self.tmp,
+            "open('ran', 'w').write('ran')\n",
+            _clean_environment() | {owned_observer.ENV_LOG: "trace.jsonl"},
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("absolute", result.stderr)
+        self.assertEqual(sorted(path.name for path in self.tmp.iterdir()), ["target.py"])
+
+    def test_the_environment_carries_an_absolute_log_once(self) -> None:
+        env = owned_observer.observed_environment({}, "trace.jsonl")
+        self.assertTrue(os.path.isabs(env[owned_observer.ENV_LOG]))
+        again = owned_observer.observed_environment(env, env[owned_observer.ENV_LOG])
+        self.assertEqual(again["NODE_OPTIONS"].count("--require="), 1)
+        self.assertEqual(again["BUN_OPTIONS"].count("--preload="), 1)
+
+
+class TheModelCallBudgetHoldsTest(unittest.TestCase):
+    """A launch of `claude` or `codex` past the run's budget is refused before it starts."""
+
+    def test_the_launch_past_the_budget_never_runs(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        fake = tmp / "claude"
+        marker = tmp / "ran"
+        fake.write_text(f"#!/bin/sh\necho ran >> {marker}\n")
+        fake.chmod(0o755)
+        trace = tmp / "trace.jsonl"
+        body = f"""
+            import subprocess
+            for _ in range(3):
+                try:
+                    subprocess.run([{str(fake)!r}, "--print"], check=True)
+                except PermissionError:
+                    print("refused")
+            """
+        env = _clean_environment() | {
+            owned_observer.ENV_LOG: str(trace),
+            owned_observer.ENV_BUDGET: "1",
+        }
+        result = _exec(tmp, body, env)
+        self.assertEqual(result.stdout.split(), ["refused", "refused"])
+        self.assertEqual(marker.read_text().split(), ["ran"])
+        events = observe_journey.read_trace(trace)
+        self.assertEqual(len([e for e in events if e["kind"] == "refused"]), 2)
+        self.assertEqual(len([e for e in events if e["kind"] == "launch"]), 1)
+        departures = observe_journey.report(events, "launch-granted")["departures"]
+        self.assertEqual(len(departures), 2)
+
+    def test_every_run_names_its_budget_and_they_total_seven(self) -> None:
+        budgets = {name: mode.budget for name, mode in observe_journey.MODES.items()}
+        self.assertEqual(
+            budgets,
+            {"no-model": 0, "paused": 0, "default": 3, "monitor-only": 3, "launch-granted": 1},
+        )
+        env = observe_journey.journey_environment(
+            Path("/x/trace.jsonl"), Path("/x/home"), None, budget=3
+        )
+        self.assertEqual(env[owned_observer.ENV_BUDGET], "3")
+
+    def test_a_run_that_would_fork_the_server_away_is_refused(self) -> None:
+        for flags in (["--daemon"], ["--no-reach", "--daemon"]):
+            with self.subTest(flags=flags), self.assertRaises(ValueError):
+                observe_journey.journey_command(4599, "no-model", flags)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(observe_journey.__file__)),
+                "run",
+                "--mode",
+                "no-model",
+                "--",
+                "--daemon",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--daemon", result.stderr)
+
+    def test_summaries_can_be_switched_off_before_the_server_starts(self) -> None:
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        self.assertFalse(observe_journey.summaries_off(home / "compass", str(home)))
+        self.assertTrue(observe_journey.seed_summaries_off(home / "compass", str(home)))
+        self.assertTrue(observe_journey.summaries_off(home / "compass", str(home)))
+
+
+class TheClipboardIsKeptOnlyWhenTheRunChangedItTest(unittest.TestCase):
+    """A sentinel goes on the clipboard first, so what was there before is never saved."""
+
+    def setUp(self) -> None:
+        self.out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.out, ignore_errors=True)
+        self.copied: list[str] = []
+
+    def test_an_unchanged_clipboard_writes_nothing(self) -> None:
+        sentinel = observe_journey.clipboard_begin(self.copied.append)
+        self.assertEqual(self.copied, [sentinel])
+        result = observe_journey.clipboard_end(lambda: sentinel, sentinel, self.out)
+        self.assertEqual(result, {"clipboard_changed": False})
+        self.assertFalse((self.out / "clipboard.txt").exists())
+
+    def test_a_copied_correction_is_saved_private(self) -> None:
+        sentinel = observe_journey.clipboard_begin(self.copied.append)
+        result = observe_journey.clipboard_end(lambda: "the correction", sentinel, self.out)
+        self.assertEqual(result, {"clipboard_changed": True, "clipboard_bytes": 14})
+        saved = self.out / "clipboard.txt"
+        self.assertEqual(saved.read_text(), "the correction")
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+
+
+def _model(prompt: str, **fields: object) -> dict[str, object]:
+    argv = ["claude", "--print", "--model", "claude-sonnet-5", "--system-prompt"]
+    argv.append(f"<{len(prompt)} chars sha256:{observe_journey.digest(prompt)}>")
+    return _event("launch", "subprocess.Popen", program="claude", argv=argv) | fields
+
+
+class TheReportNamesEachRowTest(unittest.TestCase):
+    """Each model launch is placed by its own arguments; every helper program has its row."""
+
+    def test_launches_land_on_their_own_rows(self) -> None:
+        prompts = observe_journey.prompts()
+        trace = [
+            _event("start", "process"),
+            _event("serve", "http", method="POST", route="/api/summary"),
+            _model(prompts["summary"]),
+            _event("serve", "http", method="POST", route="/api/goal/find"),
+            _model(prompts["reading"]),
+            _event("serve", "http", method="POST", route="/api/reading"),
+            _model(prompts["reading"]),
+            _event("launch", "subprocess.Popen", program="ps", argv=["ps", "-axo", "<11 chars>"]),
+            _event("launch", "subprocess.Popen", program="tmux", argv=["tmux", "list-clients"]),
+            _event("launch", "subprocess.Popen", program="security", argv=["security"]),
+            _event("connect", "socket.connect", family="inet", host="hooks.example.com", port=443),
+        ]
+        result = observe_journey.report(trace, "default", reach_host="hooks.example.com")
+        rows = result["by_row"]
+        self.assertEqual(result["unlisted"], [])
+        self.assertEqual(sum(rows[observe_journey.ROW_SUMMARY].values()), 1)
+        self.assertEqual(sum(rows[observe_journey.ROW_FIND_GOAL].values()), 1)
+        self.assertEqual(sum(rows[observe_journey.ROW_PRESS].values()), 1)
+        self.assertIn(observe_journey.ROW_PS, rows)
+        self.assertIn(observe_journey.ROW_FOCUS, rows)
+        self.assertIn(observe_journey.ROW_QUOTA, rows)
+        self.assertIn(observe_journey.ROW_REACH, rows)
+
+    def test_the_press_row_names_pause_as_a_switch(self) -> None:
+        security = (ROOT / "SECURITY.md").read_text()
+        row = next(
+            line
+            for line in security.splitlines()
+            if line.startswith(f"| {observe_journey.ROW_PRESS} |")
+        )
+        self.assertIn("Pause model calls", row.split("|")[3])
+
+    def test_the_shapes_report_carries_no_argument_path_or_name(self) -> None:
+        trace = [
+            _event("start", "process"),
+            _event("launch", "subprocess.Popen", program="git", argv=["git", "-C", "<20 chars>"]),
+            _event("connect", "socket.connect", family="unix", path="/Users/someone/sock"),
+            _event("connect", "socket.connect", family="inet", host="example.com", port=443),
+        ]
+        result = observe_journey.report(trace, "default") | {
+            "transcripts": [
+                {"path": "/Users/someone/s.jsonl", "prefix_preserved": True, "appended_lines": 2}
+            ],
+            "alive_after_stop": [],
+        }
+        shapes = observe_journey.render_shapes(result)
+        for leak in ("someone", "-C", "<20 chars>", "argv", "s.jsonl"):
+            self.assertNotIn(leak, shapes)
+        self.assertIn("example.com:443", shapes)
 
 
 if __name__ == "__main__":
