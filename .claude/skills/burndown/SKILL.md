@@ -109,8 +109,8 @@ as a **repair**, done after approval and never under `--plan`.
    is not yet a candidate, everything else is open. The team's state names change over time, and
    more than one state can carry a type (`Done` and `Ready for Release` are both `completed`). The
    one exception is `Blocked`, which is a `started` state and can only be matched by name. When a
-   step below moves an issue, it names a type; pick the team's state of that type, and `Todo` for
-   "ready to start" since `Backlog` shares its `unstarted` type.
+   step below moves an issue, it names a type; pick the team's state of that type. "Ready to start"
+   is `Todo`, the team's `unstarted` state; `Backlog` is a separate `backlog` type and is not ready.
 3. For every `completed` issue closed by a merge or a ruling, look for a step 6 receipt comment.
    Many issues closed before receipts were kept have none, so a missing receipt is not by itself an
    interrupted reconcile. List those whose milestone or project text still describes them as open
@@ -289,7 +289,13 @@ change.
 
 **A decision issue** has no build. Make the question answerable, recommend one answer, and stop for
 the ruling, for that issue and its dependents only. It closes when the ruling is written into the
-documents its acceptance criteria name, and that docs change is its layer.
+documents its acceptance criteria name, and that docs change is its layer. When the owner delegates
+a ruling ("choose what is best for the reader"), record their words with the ruling.
+
+**A research issue** (its scope is to find something out, and it names no change) has no layer
+either. Dispatch the research at the build stage's setting, verify its main claim yourself, and
+close the issue on a findings comment; its receipt says there was no pull request. File what the
+findings call for as new issues rather than building it under the research issue.
 
 ## 4. Build a layer
 
@@ -310,7 +316,10 @@ port; after the review, dispatch a build-stage subagent into the same worktree f
    advance `COMPATIBILITY.md`'s `docs-synced-through` marker in a layer.
 3. **REQUIRED SUB-SKILL:** the orchestrator invokes `visual-review-and-fix` in
    `Mode 2: after development`. What this layer introduced goes to item 5; what predates it is filed
-   with the base comparison that proves so.
+   with the base comparison that proves so. Two walks cost more than a page: the board opens a session
+   page only for sessions observed in the last 24 hours, and some states appear only after an Analyze
+   press, which is a model call. When a walk needs a paid call or a fresh harness session, ask the
+   owner first; otherwise name the story or press test that stands in for it in the pull request.
 4. Review the layer at the depth its tier sets, before it is submitted. Reviewing an open pull
    request costs a second CI cycle. Self-verify is the orchestrator's own read of the diff and the
    checks; the other tiers are reviewer subagents at the review stage's model. Freeze the stack while
@@ -467,9 +476,12 @@ changed plan needs approval as the Invocation section sets out.
 
 **Discoveries.** A defect this milestone's work created, or a gap a review deferred, is filed in
 this milestone with a `blocks` edge to the Verification issue (not to an owner-gated one; with none,
-no edge), and burned in this run. A small fix may ride the next open layer instead. A pre-existing
-defect is filed in the project with no milestone and labelled `discovered-by-agent`, and the report
-names it.
+no edge), and burned in this run while the run is inside its estimate. A small fix may ride the
+next open layer instead. Group a review's minor deferred items into one issue rather than one each.
+When burning the discoveries would take the run past its estimate, stop and ask, with the
+discoveries grouped and sized, before starting them: reviews of new work keep finding more, so
+"burn every discovery" has no natural end. A pre-existing defect is filed in the project with no
+milestone and labelled `discovered-by-agent`, and the report names it.
 
 **The Verification issues run last,** once every other milestone issue is finished, on a live board
 built from `origin/main`. Each closes on its verdict comment, since a clean walk has no pull request.
@@ -497,6 +509,10 @@ to every one.
   orchestrator walks it, and a fresh build-stage subagent takes steps 4.5 and 4.6.
 - Dispatch subagents from the repository root, at their stage's model and effort, and confirm each
   produced work before calling it running.
+- Shut a subagent down as soon as its result is handled; finished ones pile up in the operator's
+  view. Prefer unnamed background agents for one-shot work, since they end on their own. Resume a
+  builder for its correction round rather than starting a fresh one: it keeps its context, which
+  costs fewer tokens than re-reading the change.
 - A loopback-port failure under concurrent suites is contention, not a regression: rerun that module
   alone before believing it.
 
@@ -504,7 +520,7 @@ to every one.
 
 - Never edit a version field. The Release workflow owns them.
 - Never report an issue closed before its change is on `origin/main`, except a Verification issue,
-  which closes on its verdict.
+  which closes on its verdict, and a research issue, which closes on its findings.
 - Never merge a stack layer on its own with `gh pr merge`; land stacks with `gh stack merge --squash`.
 - Never resolve the built bundle textually; rebuild it from the sources.
 - Never trust one page of Linear issues, or a state name instead of a state type. The exceptions are
