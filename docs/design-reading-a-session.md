@@ -236,8 +236,8 @@ baseline conflict for the person to settle, not agent drift for the board to dec
 [DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
 amends this section in four places, and Compass still writes nothing into a session. It composes a
 correction without a model, from your goal, your outcome lines with their state and the cited entry
-numbers and times, for you to edit and copy (item 7). Sending it into the session stays refused;
-DEC-25, the follow-on that would decide that, is not ruled (DRC-4698). Before an analysis, an
+numbers and times, for you to edit and copy (item 7). Sending it into the session stays refused,
+as [DEC-25](#dec-25-a-correction-stays-yours-to-copy) ruled on 2026-10-30. Before an analysis, an
 unsettled later direction is still detected and not judged: "Keep my intent and analyze" settles
 every one of them, as "The baseline still applies" does, and "Add it to my intent" puts the
 direction's raw text into a new outcome line for review (items 4 and 8). A later message that
@@ -2774,7 +2774,7 @@ item 5's fields and the closed lists.
    backtick, and a heredoc operator or redirection with no word after it, is a syntax error in every
    shell. The call is not listed, it is counted in `not_run`, and nothing from its text is published.
    It still counts as a change, because bash runs the complete lines before it, so an earlier pass
-   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions, and any other
+   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions (quoted or not: `$(…)`, `<(…)`, `>(…)`, `$((…))`, `${…}`; a backtick run and a plain `( … )` subshell are not counted), and any other
    fault in the parser are read the same way. A shell wrapper whose command string is unbalanced is
    different: the inner shell fails and the rest of the call runs, so only that wrapper segment is
    unread, and it is a change. A trailing lone backslash is not unbalanced: measured, bash runs the
@@ -2887,7 +2887,9 @@ and item 3's measured note that a written path comes only from a file-write tool
    counts outside. `-L`, `-P`, `-e`, `-@` and `--` are options to `cd`, not directories. A group's
    or a wrapper's own redirect (`(cd sub && pytest) > out`) is read from the directory the group
    started in, where the outer shell opens it. A redirect into `/dev/null`, `/dev/stdout`,
-   `/dev/stderr`, `/dev/tty` or `/dev/fd/N`, by any operator, writes no file. The redirect does
+   `/dev/stderr`, `/dev/tty` or `/dev/fd/N`, by any operator, writes no file. A file redirect on
+   a `cd` or on an empty command (`cd sub > out`, `> out`) opens or truncates its file all the
+   same, so it ages an earlier pass; `cd sub 2>&1` and `cd sub > /dev/null` age nothing. The redirect does
    not age its own check's pass. It ages an earlier check in the same call, setting both
    `before_last_change` and `changed_after`, and any pass from an earlier call, and it does not
    set `last_changing_command_at`, because it is now a recorded write. Measured (counts only): 90
@@ -3716,8 +3718,8 @@ the later-direction floor (item 9).
    characters, and offered from an analysis and, with no analysis, from the recorded facts (a
    failed check). A later direction alone ceased to offer one under the
    [owner amendment](#amended-2026-10-04-owner-correction-triggers-and-wording). Copy only, and the panel uses Copy-only wording where the
-   design had a Send hint. Sending it into the session is DEC-25, a follow-on that is not ruled
-   (DRC-4698). Since
+   design had a Send hint. Sending it into the session is refused by
+   [DEC-25](#dec-25-a-correction-stays-yours-to-copy), ruled 2026-10-30. Since
    [2026-10-04](#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint) it also
    quotes one agent message's published title, for a claim the record contradicts or does not show.
    Amended 2026-10-14 (owner): each entry the page numbers reads "(entry #n in Compass's activity
@@ -5829,6 +5831,22 @@ types one.
   Codex sessions do. Before, every one of them drafted the command as the goal; now none does,
   and the other 1,051 Claude Code sessions draft as before.
 
+
+## DEC-25: a correction stays yours to copy
+
+Ruled 2026-10-30. The owner delegated the call in these words: "I want you to choose the direction
+that gives Compass users the best ability to receive useful information from Compass, that is the
+most important direction". Under that direction Compass does not send a correction into a running
+session. The reader copies it, as [DEC-24](#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
+item 7 describes.
+
+Sending a correction delivers words to the agent. It adds nothing to what the reader learns from
+Compass, and it would open an input path into a terminal that [SECURITY.md](../SECURITY.md) forbids:
+nothing is typed into a terminal, and `send-keys` contradicts that.
+
+[DEC-16](#dec-16-compass-does-not-write-into-a-session) stays closed. Its three reopening conditions
+stand unchanged: a measured, session-bound transport; acceptance by the receiving session shown
+working; and evidence that pasting by hand is not enough.
 
 ## DEC-26: four drift levels, and a live estimate after every turn
 

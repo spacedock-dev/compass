@@ -15,6 +15,10 @@ import ntpath
 import os
 import re
 import shlex
+import shutil
+import subprocess
+import tempfile
+import time
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
@@ -618,6 +622,52 @@ class EveryUnterminatedConstructIsACallThatDidNotRun(CheckLineTestCase):
                 self.assertEqual(runs, len(checks))
                 self.assertEqual(1 - runs, scan["not_run"])
 
+    def test_unquoted_substitutions_honour_the_same_bound(self) -> None:
+        # DRC-4754: 100 and 400 unquoted levels were once accepted, because only a quoted or
+        # braced level was counted. Every shape below is refused at 33 and read at 32.
+        shapes = {
+            "command": ("$(echo ", ")"),
+            "process-in": ("<(echo ", ")"),
+            "process-out": (">(echo ", ")"),
+            "mixed": None,
+            "arithmetic": ("$(( 1 + ", " ))"),
+        }
+        for name, shape in shapes.items():
+            for levels, runs in ((32, 1), (33, 0), (100, 0)):
+                with self.subTest(shape=name, levels=levels):
+                    self.fresh()
+                    if shape is None:
+                        kinds = [("$(echo ", ")"), ('"$(echo ', ')"'), ("<(echo ", ")")]
+                        picked = [kinds[i % 3] for i in range(levels)]
+                        command = (
+                            "".join(o for o, _c in picked)
+                            + "x"
+                            + "".join(c for _o, c in reversed(picked))
+                        )
+                    else:
+                        command = shape[0] * levels + "x" + shape[1] * levels
+                    self.session.bash("pytest -q " + command, "")
+                    _text, checks, scan = self.published()
+                    self.assertEqual(runs, len(checks))
+                    self.assertEqual(1 - runs, scan["not_run"])
+
+    def test_a_refused_deep_unquoted_call_still_ages_the_pass_and_is_bounded(self) -> None:
+        deep = "pytest -q " + "$(echo " * 400 + HALF_A + ")" * 400
+        self.session.bash("pytest", "5 passed", is_error=False)
+        started = time.perf_counter()
+        self.session.bash(deep, "", is_error=False)
+        text, checks, scan = self.published()
+        self.assertLess(time.perf_counter() - started, 2.0)
+        self.assertEqual(1, scan["not_run"])
+        self.assertIs(True, checks[0]["changed_after"])
+        self.assertNotIn(HALF_A, text)
+
+    def test_unquoted_substitutions_below_the_bound_keep_their_evidence(self) -> None:
+        self.session.bash("pytest -q $(echo $(echo $(echo x)))", "5 passed", is_error=False)
+        _text, checks, scan = self.published()
+        self.assertEqual(1, len(checks))
+        self.assertEqual(0, scan["not_run"])
+
     def test_a_parser_fault_fails_closed_at_the_call(self) -> None:
         # The call memo would answer these two texts from an earlier test and never reach the
         # patched parser.
@@ -784,6 +834,79 @@ class TheVerifiersThreeFindings(CheckLineTestCase):
                 text, checks, _scan = self.published()
                 self.assertEqual(1, len(checks))
                 self.assertNotIn(HALF_A, text)
+
+
+class ACdOrAnEmptyCommandWithAFileRedirectWritesAFile(CheckLineTestCase):
+    """A `cd` or an empty command that carries a file redirect creates or truncates that file, so
+    an earlier pass is no longer current. The exclusion `_writes_a_file` applies to every other
+    segment runs before the directory shortcut."""
+
+    def test_the_shell_really_writes_the_file(self) -> None:
+        # The native control: each of these truly creates the file, so ageing is the honest read.
+        shell = shutil.which("bash") or shutil.which("sh")
+        if shell is None:
+            self.skipTest("no POSIX shell")
+        for command in ("cd . > made", "cd . >> made", "> made", "cd . &> made"):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as scratch:
+                subprocess.run([shell, "-c", command], cwd=scratch, check=True)
+                self.assertTrue(os.path.exists(os.path.join(scratch, "made")))
+
+    def test_a_later_cd_or_redirect_only_write_ages_the_pass(self) -> None:
+        for later in (
+            "cd sub > out.txt",
+            "cd sub >> log",
+            "cd sub &> out",
+            "cd . 2> err.log",
+            "command cd sub > out.txt",
+            "builtin cd sub >| out",
+            "cd sub 1> out.txt",
+            "(cd sub) > out.txt",
+            "{ cd sub; } > out.txt",
+            "> out.txt",
+            ">> out.txt",
+            "bash -c 'cd sub > out.txt'",
+            "bash -c '> out.txt'",
+        ):
+            with self.subTest(later=later):
+                self.fresh()
+                self.session.bash("pytest -q", "5 passed", is_error=False)
+                self.session.bash(later, "", is_error=False)
+                self.assertIs(True, self.only_check()["changed_after"])
+                press = project_context.claude_check_press(self.config, str(self.path))
+                self.assertEqual(1, len(press.changed_after))
+
+    def test_a_cd_after_the_check_in_the_same_call_ages_it(self) -> None:
+        self.fresh()
+        self.session.bash("pytest -q; cd sub > out.txt", "5 passed", is_error=False)
+        self.assertIs(True, self.only_check()["changed_after"])
+
+    def test_a_cd_without_a_write_ages_nothing(self) -> None:
+        for later in (
+            "cd sub",
+            "cd sub 2>&1",
+            "cd sub >&2",
+            "cd sub >&-",
+            "cd sub > /dev/null",
+            "cd sub 2> /dev/null",
+            "cd sub &> /dev/null",
+            "cd sub > /dev/stderr",
+            "cd sub 3>&1",
+            "> /dev/null",
+            "2>&1",
+        ):
+            with self.subTest(later=later):
+                self.fresh()
+                self.session.bash("pytest -q", "5 passed", is_error=False)
+                self.session.bash(later, "", is_error=False)
+                self.assertIs(False, self.only_check()["changed_after"])
+
+    def test_directory_placement_survives_a_redirect_on_the_cd(self) -> None:
+        self.fresh()
+        self.session.bash("cd sub > out.txt && pytest -q", "5 passed", is_error=False)
+        self.assertEqual(1, len(self.published()[1]))
+        self.fresh()
+        self.session.bash("cd sub 2>&1 && pytest -q", "5 passed", is_error=False)
+        self.assertIs(False, self.only_check()["changed_after"])
 
 
 class ACdInsideASubshellDoesNotCarryPastIt(CheckLineTestCase):
