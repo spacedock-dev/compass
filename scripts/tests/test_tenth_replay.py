@@ -143,14 +143,21 @@ class TheTenthRunsAnswersUnderTheCorrectedProducer(unittest.TestCase):
         grades: Counter[str] = Counter()
         failing: list[tuple[str, int]] = []
         cases = {case["id"]: case for case in packet["cases"]}
-        # The guards live in `reading.py`, one of the parser-stamped files, so this tree's stamp is
-        # not the one the tenth froze under and every case would be refused before its prompt. The
-        # retry re-freezes; here the stamp is held to the packet's own, and the prompt check above
-        # is what shows the cases still read the same.
+        # The guards live in `reading.py`, one of the parser-stamped files, and the scorer fix in
+        # `score_abstention.py`, which the reviewed-export receipts bind as intake code. So this
+        # tree's stamps are not the ones the tenth froze under, and every case would be refused
+        # before its prompt. The retry re-freezes; here both stamps are held to the packet's own,
+        # and the prompt check above is what shows the cases still read the same.
         (stamp,) = {case["parser"] for case in packet["cases"]}
+        (intake,) = {
+            case["reviewed_export"]["intake_code_sha256"]
+            for case in packet["cases"]
+            if "reviewed_export" in case
+        }
         with (
             mock.patch("subprocess.Popen", side_effect=AssertionError("no process")),
             mock.patch.object(mark, "parser_digest", return_value=stamp),
+            mock.patch.object(mark, "intake_code_digest", return_value=intake),
         ):
             for case_id, repeat in sorted(answers, key=lambda key: (key[1], key[0])):
                 case = cases[case_id]
