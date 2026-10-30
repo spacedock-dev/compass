@@ -20,6 +20,7 @@ import {
 } from './generate.test.helper';
 import { loadLegacyIntent } from './legacy.test.helper';
 import { maskRevisionWords } from '../../test/revisionWordDeviation';
+import { withoutLaterFields } from '../../test/legacy_goldens';
 
 /* The annotation reader and the sentences built from it, run next to the legacy functions over generated
    rows. The legacy source is the oracle; a difference is a bug here. */
@@ -51,7 +52,7 @@ describe('the annotation reader agrees with the legacy page over generated rows'
       const mine = annotationOf(session);
       const theirs = legacy.call('nextCockpitAnnotation', session);
       const found = [
-        agree('annotationOf', mine, theirs),
+        agree('annotationOf', withoutLaterFields(mine), theirs),
         ...[mine, retained, null].map((row, index) =>
           agree(
             `lines#${String(index)}`,
