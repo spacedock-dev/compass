@@ -888,7 +888,9 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
         self.assertEqual(criterion["cites"], ("a1",))
         self.assertEqual(criterion["why"], reading.WHY_STANDS)
 
-    def test_a_departure_on_what_the_session_said_stands_on_a_line(self) -> None:
+    def test_a_departure_on_what_the_session_said_gives_way_on_a_line(self) -> None:
+        # Narrowed on 2026-10-30: a line's departure must cite recorded work, so the agent's
+        # word alone no longer carries one there. Its consistent still stands (above).
         criterion = reading.resolve(
             reply(
                 output_token="departure",  # noqa: S106 - a verdict token, not a credential
@@ -900,7 +902,8 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
         )["line_1"]
-        self.assertEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
+        self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
+        self.assertEqual(criterion["why"], reading.WHY_NO_WORK_SHOWN)
         self.assertEqual(criterion["cites"], ("a1",))
 
     def test_a_reader_is_not_told_the_deliverable_arrived_because_she_asked_for_it(self) -> None:
@@ -2633,8 +2636,11 @@ class ALineAboutWhatTheAgentTellsYouIsReadAgainstItsMessages(AClaudeCodeReadingP
         goal: str = "",
         on: str = "line_1",
         cites: tuple[int, ...] = (2,),
+        also: dict[str, Any] | None = None,
     ) -> Any:
-        answer = json.dumps({on: {"result": token, "cites": list(cites), "detail": "the suite"}})
+        answer = json.dumps(
+            {**(also or {}), on: {"result": token, "cites": list(cites), "detail": "the suite"}}
+        )
         facts = [WORDS_FACT, check_fact(result=check, summary="node --test tests/game.test.js")]
         assessment, why, _spent = reading.produce(
             cast("Any", self.config),
@@ -2667,9 +2673,11 @@ class ALineAboutWhatTheAgentTellsYouIsReadAgainstItsMessages(AClaudeCodeReadingP
         self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
         self.assertEqual(("check-1",), row["cites"])
 
-    def test_a_departure_resting_only_on_the_agents_message_stands(self) -> None:
+    def test_a_departure_resting_only_on_the_agents_message_gives_way(self) -> None:
+        # DEC-17, 2026-10-30: a line's departure must cite recorded work.
         row = self._read(self.FAILED_LINE, "departure", cites=(3,))
-        self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
         self.assertEqual(("m1",), row["cites"])
 
     def test_a_line_resting_only_on_the_agents_account_stands_and_cites_it(self) -> None:
@@ -2693,6 +2701,8 @@ class ALineAboutWhatTheAgentTellsYouIsReadAgainstItsMessages(AClaudeCodeReadingP
             "consistent",
             goal="fix the retry and report the test counts",
             on=reading.CONSTRAINT_GOAL,
+            # The Goal reads consistent only beside consistent lines (DEC-17, 2026-10-30).
+            also={"line_1": {"result": "consistent", "cites": [2]}},
         )
         self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
         self.assertEqual(("check-1",), row["cites"])
@@ -3655,7 +3665,10 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
             detail_cap_chars=200,
         )
         self.assertEqual(reading.RESULT_DEPARTURE, result["goal"]["result"])
-        self.assertEqual(reading.RESULT_DEPARTURE, result["line_1"]["result"])
+        # A line's departure on the agent's message alone gives way (DEC-17, 2026-10-30); the
+        # Goal's stands.
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, result["line_1"]["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, result["line_1"]["why"])
         self.assertEqual(reading.RESULT_CONSISTENT, result["line_2"]["result"])
 
     def test_a_known_fulfilled_promise_is_not_forced_to_departure(self) -> None:
@@ -3874,9 +3887,15 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
                 row = self.resolved(selection, scope, open_call_at=120.0)
                 self.assertEqual(reading.RESULT_DEPARTURE, row["result"])
 
+    # A line's departure on the agent's message alone now gives way after this guard
+    # (DEC-17, 2026-10-30), which would read the same whether or not this guard excused it. The
+    # two tests below hold that later guard off, so they still read this one.
     def test_a_later_write_to_somewhere_the_line_does_not_name_does_not_excuse_it(self) -> None:
         for line in ("The tests pass", "src/probe.py is fixed"):
-            with self.subTest(line=line):
+            with (
+                self.subTest(line=line),
+                mock.patch.object(reading, "_departure_on_words", lambda row, *_a: row),
+            ):
                 selection = self.line_selected(line, self.write_fact("docs/notes.md", 120.0))
                 self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
 
@@ -3885,7 +3904,8 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
             fact_id="c9", result="passed", at=110.0, summary="ruff check src/other.py"
         )
         selection = self.line_selected("The tests pass", lint)
-        self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
+        with mock.patch.object(reading, "_departure_on_words", lambda row, *_a: row):
+            self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
 
     def test_a_later_check_that_covers_the_line_excuses_it(self) -> None:
         tests = check_fact(fact_id="c9", result="passed", at=110.0, summary="pytest -q")

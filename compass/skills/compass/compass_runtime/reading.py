@@ -3963,6 +3963,7 @@ def _claims_rule(
     dropped: bool,
     checks_unread: bool = False,
     carried: Sequence[LedgerEntry] = (),
+    window_start: float = 0.0,
 ) -> str:
     """Which rule a claims verdict fails, as its `why` token, or `WHY_STANDS`.
 
@@ -3988,13 +3989,33 @@ def _claims_rule(
         # went unread for want of a grant, a destination or room cannot say it:
         # that would be configuration read as absence (review, PR C). Room
         # includes the listing's cap leaving out a pass or a write inside the
-        # window (2026-10-04).
-        return WHY_CLAIM_RECORD_UNREAD if not why and checks_unread else why
+        # window (2026-10-04). So does a run before the claim whose result
+        # Compass never recorded (owner, 2026-10-30).
+        unread = checks_unread or (not why and _ran_unrecorded_before(said, carried, window_start))
+        return WHY_CLAIM_RECORD_UNREAD if not why and unread else why
     if not said:
         return WHY_CLAIM_UNCITED
     if not record:
         return WHY_CHECK_DOES_NOT_SHOW_IT if dropped else WHY_CLAIM_UNCITED
     return _claims_compared(result, said, record, carried)
+
+
+def _ran_unrecorded_before(
+    said: Sequence[LedgerEntry], carried: Sequence[LedgerEntry], window_start: float
+) -> bool:
+    """Whether a check or command that can fail ran inside the window at or before the latest
+    claim, and Compass recorded no result for it, so the record cannot say what it did not show
+    ([DEC-17](docs/design-reading-a-session.md#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record))."""
+    claimed = max((_number(entry.get("at")) or 0.0 for entry in said), default=0.0)
+    return any(
+        entry.get("type") == TOOL_REPORT_TYPE
+        and entry.get("subject") in (CHECK_SUBJECT, COMMAND_SUBJECT)
+        and not cannot_fail(entry)
+        and entry.get("result") not in (RESULT_PASSED, RESULT_FAILED)
+        and not _before_window(entry, window_start)
+        and (_number(entry.get("at")) or 0.0) <= claimed
+        for entry in carried
+    )
 
 
 def _claims_compared(
@@ -4261,7 +4282,12 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     dropped = len(supporting) < len(cited)
     if name == CONSTRAINT_CLAIMS:
         why = _claims_rule(
-            result, supporting, dropped=dropped, checks_unread=checks_unread, carried=carried
+            result,
+            supporting,
+            dropped=dropped,
+            checks_unread=checks_unread,
+            carried=carried,
+            window_start=window_start,
         )
     else:
         why = (
@@ -4445,6 +4471,106 @@ def _unfinished_shown(
     ):
         return criterion
     return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
+
+
+def _is_record(entry: Mapping[str, Any]) -> bool:
+    """Whether an entry is something the record holds rather than words: a tool report, a CI check
+    or another harness's work."""
+    return str(entry.get("type") or "") in (TOOL_REPORT_TYPE, CI_CHECK_TYPE) or demonstrates_work(
+        entry
+    )
+
+
+def _departure_on_words(
+    criterion: Criterion, name: str, known: Mapping[str, LedgerEntry]
+) -> Criterion:
+    """An outcome line's departure resting only on messages, read as not verifiable.
+
+    This guard, `_consistent_on_words`, `_goal_beside_lines` and `_ran_unrecorded_before` were
+    derived from the tenth Claude Code qualification run's readings and approved by the owner on
+    2026-10-30. Each reads only what the record holds and never raises a verdict:
+    [DEC-17](docs/design-reading-a-session.md#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record).
+
+    What a departure rests on is what it publishes: item 8 has already dropped a write or a pass
+    that cannot carry one. A departure the code settled from a recorded write stands, since a
+    write is its evidence. The Goal is left, because a stated change of direction is what words
+    are good for there (rule 7).
+    """
+    if (
+        not is_outcome_line(name)
+        or criterion.get("result") != RESULT_DEPARTURE
+        or criterion.get("why") == WHY_RECORDED_WRITE
+        or any(_is_record(known[key]) for key in criterion["cites"] if key in known)
+    ):
+        return criterion
+    return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
+
+
+def _shows_it_done(entry: Mapping[str, Any], window_start: float) -> bool:
+    """A published citation that keeps a `consistent` beside a recorded write: a check, a CI
+    command or a CI check that passed, a pull request created or a skill used, each as
+    `check_supports` admits it. A tier-3 command, `git commit` included, never does: its exit
+    status says it ran, not what it checked. Item 2 of
+    [DEC-29](docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)
+    is narrowed beside a write."""
+    if entry.get("subject") == COMMAND_SUBJECT:
+        return False
+    return (
+        str(entry.get("type") or "") == CI_CHECK_TYPE
+        or entry.get("subject") in (CHECK_SUBJECT, CI_SUBJECT, PR_SUBJECT, SKILL_SUBJECT)
+    ) and check_supports(entry, RESULT_CONSISTENT, window_start)
+
+
+def _consistent_on_words(
+    criterion: Criterion,
+    name: str,
+    known: Mapping[str, LedgerEntry],
+    *,
+    wrote: bool,
+    window_start: float,
+) -> Criterion:
+    """A `consistent` on the Goal or a line that rests only on the agent's message or a tier-3
+    command, in a window holding a recorded write, read as not verifiable: the write outlives the
+    agent's word and a command that only ran. The claims question keeps its own rules.
+
+    Judged on the published citations, as `_departure_on_words` is. A write never survives item 8
+    under a `consistent`, because it carries no result, so citing one keeps nothing.
+    """
+    if (
+        not wrote
+        or name == CONSTRAINT_CLAIMS
+        or criterion.get("result") != RESULT_CONSISTENT
+        or any(
+            _shows_it_done(known[key], window_start) for key in criterion["cites"] if key in known
+        )
+    ):
+        return criterion
+    return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
+
+
+def _goal_beside_lines(out: dict[str, Criterion], *, lines_asked: bool) -> None:
+    """The Goal's `consistent`, withdrawn when an outcome line asked beside it is not consistent.
+
+    The lines are the reader's own account of what the Goal means, so a Goal cannot be shown
+    while one of them is not. Its citations are emptied like any withdrawal the page reads as
+    `check-does-not-show-it`. Lines the prompt never posed do not count, including those it had
+    no room to pose (`checks-not-read`): `lines_asked` is the selection's `asked_output`.
+    """
+    goal = out.get(CONSTRAINT_GOAL)
+    if not lines_asked or goal is None or goal.get("result") != RESULT_CONSISTENT:
+        return
+    if any(
+        row.get("result") != RESULT_CONSISTENT
+        for key, row in out.items()
+        if is_outcome_line(key) and row.get("why") != WHY_NOT_ASKED
+    ):
+        out[CONSTRAINT_GOAL] = {
+            **goal,
+            "result": RESULT_UNVERIFIABLE,
+            "cites": (),
+            "detail": "",
+            "why": WHY_CHECK_DOES_NOT_SHOW_IT,
+        }
 
 
 def _without_settled_words(
@@ -5895,6 +6021,25 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                 line_text=clauses[name],
             ),
         )
+    # Last, over what the record settled: a covering pass it put ahead of the agent's message is
+    # a citation the write guard reads, so the record's checks are looked up beside the menu's.
+    known = {
+        **{str(entry["id"]): entry for entry in (recorded.checks if recorded else ())},
+        **by_id,
+    }
+    wrote = any(
+        entry.get("subject") == WRITE_SUBJECT and not _before_window(entry, window_start)
+        for entry in held
+    )
+    for name, criterion in out.items():
+        out[name] = _consistent_on_words(
+            _departure_on_words(criterion, name, known),
+            name,
+            known,
+            wrote=wrote,
+            window_start=window_start,
+        )
+    _goal_beside_lines(out, lines_asked=selection.asked_output is True)
     return out
 
 

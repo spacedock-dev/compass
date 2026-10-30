@@ -663,8 +663,19 @@ class TwoTurnsOfOneSessionTest(unittest.TestCase):
 
     def test_the_earlier_departure_is_published_beside_the_re_reading(self) -> None:
         # A recorded write carries a departure only under a folder rule, and that rule would
-        # settle the second reading the same way, so the first departure rests on what the agent
-        # reported doing: the edit, as the agent said it, which a departure may cite.
+        # settle the second reading the same way. A line's departure on the agent's message alone
+        # gives way (DEC-17, 2026-10-30), so the first rests on a stylesheet check that failed
+        # beside what the agent reported doing.
+        failed = self.fact(
+            "c1",
+            62.0,
+            type="tool_report",
+            subject="check",
+            result="failed",
+            result_source="flag",
+            summary="npx stylelint src/styles/queue.css",
+            branch={"harness": "claude", "sid": "s1", "record_id": "call-2"},
+        )
         write = self.fact(
             "w1",
             60.0,
@@ -683,8 +694,8 @@ class TwoTurnsOfOneSessionTest(unittest.TestCase):
             agent_words="I also restyled the queue table in src/styles/queue.css.",
         )
         first = self.produce(
-            [write, reported],
-            {"result": "departure", "cites": ["m1"], "detail": "A stylesheet was edited."},
+            [write, failed, reported],
+            {"result": "departure", "cites": ["c1", "m1"], "detail": "A stylesheet was edited."},
             now=100.0,
         )
         self.assertEqual(reading.RESULT_DEPARTURE, first["criteria"]["line_2"]["result"])
@@ -709,12 +720,14 @@ class TwoTurnsOfOneSessionTest(unittest.TestCase):
             agent_words="The stylesheet edit was needed for the queue page, so I kept it.",
         )
         second = self.produce(
-            [write, reported, pasted, explained],
+            [write, failed, reported, pasted, explained],
             {"result": "consistent", "cites": ["m6"], "detail": ""},
             now=120.0,
         )
-        self.assertEqual(reading.RESULT_CONSISTENT, second["criteria"]["line_2"]["result"])
-        self.assertEqual(("m6",), tuple(second["criteria"]["line_2"]["cites"]))
+        # The explanation does not clear the line beside the failure and the write the record
+        # holds: the re-reading cannot tell, and the departure is kept in the store, not listed on
+        # the page (the page lists one only beside a row the later reading reads consistent).
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, second["criteria"]["line_2"]["result"])
         with mock.patch("time.time", return_value=self.START + 121.0):
             annotation_store.record_reading(
                 self.config, self.state, "claude", "s1", assessment=second
@@ -728,7 +741,7 @@ class TwoTurnsOfOneSessionTest(unittest.TestCase):
         self.assertEqual("line_2", prior["key"])
         self.assertEqual(self.START + 100.0, prior["read_at"])
         self.assertEqual(LINE_2, prior["criterion"]["clause"])
-        self.assertEqual(("m1",), tuple(prior["criterion"]["cites"]))
+        self.assertEqual(("c1", "m1"), tuple(prior["criterion"]["cites"]))
         self.assertEqual(reading.RESULT_DEPARTURE, prior["criterion"]["result"])
         self.assertEqual("A stylesheet was edited.", prior["criterion"]["detail"])
         # The standing reading is the second one, and it departs nowhere.

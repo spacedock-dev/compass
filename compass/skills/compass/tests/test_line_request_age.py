@@ -323,10 +323,14 @@ class EarlierWorkCannotAnswerALaterLine(unittest.TestCase):
         )["line_1"]
 
     def test_only_later_actions_can_raise_a_sourced_line_departure(self) -> None:
+        # A failed check carries the departure: a line's departure on a message alone gives way
+        # whenever it was said (DEC-17, 2026-10-30), which would hide the request floor tested here.
         for at in (110.0, REQUEST_AT):
             with self.subTest(at=at):
-                self.assertEqual(reading.RESULT_UNVERIFIABLE, self._resolve(at)["result"])
-        self.assertEqual(reading.RESULT_DEPARTURE, self._resolve(130.0)["result"])
+                self.assertEqual(
+                    reading.RESULT_UNVERIFIABLE, self._resolve(at, result_at=at)["result"]
+                )
+        self.assertEqual(reading.RESULT_DEPARTURE, self._resolve(130.0, result_at=130.0)["result"])
 
     def test_delayed_result_is_not_proof_the_action_followed_the_request(self) -> None:
         self.assertEqual(
@@ -335,7 +339,10 @@ class EarlierWorkCannotAnswerALaterLine(unittest.TestCase):
         self.assertEqual(reading.RESULT_DEPARTURE, self._resolve(130.0, result_at=140.0)["result"])
 
     def test_typed_request_age_remains_unknown_even_when_annotated_later(self) -> None:
-        self.assertEqual(reading.RESULT_DEPARTURE, self._resolve(110.0, requested=False)["result"])
+        self.assertEqual(
+            reading.RESULT_DEPARTURE,
+            self._resolve(110.0, requested=False, result_at=110.0)["result"],
+        )
 
 
 class TheCurrentPageReceivesOnlyVerifiedRequestAges(unittest.TestCase):
@@ -403,15 +410,21 @@ class AProducedReadingUsesItsVerifiedLineRequest(unittest.TestCase):
     def test_an_earlier_agent_action_is_not_published_as_the_later_lines_departure(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             config, _state = make_runtime(state_home=home, state_dir=Path(home))
+            # A failed check, which carries a line's departure on its own; a message no longer
+            # does (DEC-17, 2026-10-30), and the request floor is what this test reads.
             fact = {
                 "fact_id": "agent-1",
-                "type": "agent_message",
-                "summary": "I wrote CSV",
-                reading.AGENT_WORDS_FIELD: "I wrote CSV",
+                "type": "tool_report",
+                "subject": "check",
+                "result": "failed",
+                "result_source": "flag",
+                "summary": "python3 -m pytest tests/test_export.py",
                 "at": 110.0,
                 "source_session": PARENT,
-                "evidence": {"source": "transcript", "confidence": "exact"},
+                "branch": {**PARENT, "record_id": "call-1"},
+                "evidence": {"source": "Claude Bash call and paired result", "confidence": "exact"},
             }
+            granted = reading.ToolOutput(destination="Anthropic", label="Claude Code")
             answer = json.dumps(
                 {
                     "goal": {"result": "unverifiable", "cites": []},
@@ -444,6 +457,7 @@ class AProducedReadingUsesItsVerifiedLineRequest(unittest.TestCase):
                         stamp_text="synthetic stop",
                         model=model,
                         goal_source_lookup=lookup,
+                        tool_output=granted,
                         read_lines=True,
                         read_agent_words=True,
                     )
