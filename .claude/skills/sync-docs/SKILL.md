@@ -39,6 +39,7 @@ diff-and-reconcile pass, not a rewrite.
 | File | Owns | Rule |
 |------|------|------|
 | `README.md` | The front door: what Compass is, prerequisites, per-harness install, the skill inventory table, a short "how it works", links out. | Keep short. No command suites and no reference tables — link to the owner. **Validator-asserted:** the literals `/compass:compass` and `codex plugin add compass@compass-marketplace` must appear verbatim; rewording either fails the required `validate` check. |
+| `docs/how-it-works.md` | The user-facing walkthrough: what runs where, what can leave the machine and how to stop it, the dashboard's tabs and a session's page, and a worked drift check, with Mermaid diagrams. | Plain and visual. SECURITY.md stays the authority on outbound traffic and MANUAL.md on options; this page summarises and links to them. The README's "How it works" section is a short summary that links here. User-facing: no tracker keys. **String-asserted:** `TheLiveMonitorIsSaidToCallAModelTest` requires its Live monitor sentences (`Live monitor · Haiku`, about once a minute, the accuracy check not yet run). |
 | `MANUAL.md` | The standalone `server.py` CLI reference: all options and aliases, defaults, interactions, environment, files, exit status and examples. | Reconcile against `cli.build_parser`, runtime configuration and lifecycle behavior when the CLI changes. `CommandManualOptionsTest` checks the option-row inventory, not the semantics. Link to HOW_TO_USE for configuration tasks and SECURITY for exposure/consent contracts. The installed skill retains its own portable reference because the manual is not shipped. |
 | `HOW_TO_USE.md` | What the reader configures by hand, one task per section: registering the stdio MCP server per harness, the hooks and status line the plugin cannot install, and resolving the installed plugin path every one of those snippets needs. | Task-oriented, and **every command and snippet must have been run before it is written down**: nothing in CI checks a command block, so an unrun one ships wrong. It may name repository paths and real config paths, which is exactly why it exists, since the shipped skill body is forbidden both. It owns no contract and no install steps. **Frozen path** once it is in `ROOT_DOCS`, and any heading `COMPATIBILITY.md` cites is frozen with it. |
 | `AGENTS.md` | **Canonical** repository contract and the source of truth for process: architecture tree, doc map, commit conventions, PR workflow, the pre-PR command list, the quality gate, versioning/releases, portability rules. | Every process command list is defined here once; other docs link. `CLAUDE.md` imports it, so edits propagate. Never rename or move it — Codex and Claude both load it by name. |
@@ -119,7 +120,7 @@ the rule survives the tool going missing.
 In scope, and the exact set check (e) greps:
 
 ```
-README.md  MANUAL.md  HOW_TO_USE.md  CONTRIBUTING.md  COMPATIBILITY.md  SECURITY.md  docs/promise-map.md  docs/design-*.md  docs/plans/*.md
+README.md  MANUAL.md  HOW_TO_USE.md  CONTRIBUTING.md  COMPATIBILITY.md  SECURITY.md  docs/how-it-works.md  docs/promise-map.md  docs/design-*.md  docs/plans/*.md
 ```
 
 Out of scope, deliberately: `AGENTS.md` and `CLAUDE.md` (agent contracts loaded verbatim as
@@ -439,7 +440,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    #    The per-file loop keeps the filename in the output; piping every doc through one sed
    #    would report a line number with nothing to open.
    if for f in $(git ls-files -- README.md MANUAL.md HOW_TO_USE.md CONTRIBUTING.md COMPATIBILITY.md \
-        SECURITY.md docs/promise-map.md 'docs/design-*.md' 'docs/plans/*.md'); do
+        SECURITY.md docs/how-it-works.md docs/promise-map.md 'docs/design-*.md' 'docs/plans/*.md'); do
         sed 's/`[^`]*`//g' "$f" | grep -n '—\|–\|[“”‘’]' | sed "s|^|$f:|"
       done | grep .; then
      echo "TONE DRIFT: reapply Voice and tone to the files listed above"
