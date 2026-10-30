@@ -465,6 +465,88 @@ export const CodexShowsAFailedCheck: Story = {
   },
 };
 
+/* A Codex subagent's failing test is a check on the session's page, read from the child's own rollout and
+   labelled as the subagent's by its source, as a Claude Code subagent's is. The record's line says its
+   subagents' commands are included only where the scan read every one of them, and says how many were not read
+   where any was.
+   ([the amendment](../../docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)) */
+const codexSubagentsRead = (read: number, unread: number): Record<string, unknown> => ({
+  tool_reports: [
+    {
+      harness: 'codex',
+      sid: 's1',
+      subagent_transcripts: read,
+      subagent_transcripts_unread: unread,
+    },
+  ],
+});
+const CODEX_SUBAGENT_FAILED = {
+  ...fact(
+    'c2',
+    500,
+    {
+      subject: 'check',
+      result: 'failed',
+      result_source: 'flag',
+      summary: 'pytest -q',
+      evidence: { source: 'Codex subagent command and its exit status', confidence: 'exact' },
+    },
+    'codex',
+  ),
+  worker_kind: 'subagent',
+};
+export const CodexShowsASubagentsFailedCheck: Story = {
+  ...scenario({
+    harness: 'codex',
+    facts: [personSaid('codex'), CODEX_SUBAGENT_FAILED],
+    work: codexSubagentsRead(1, 0),
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await drawn(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    const row = await waitFor(
+      () => {
+        const node = canvasElement.querySelector<HTMLElement>('[data-next-entry-id="c2"]');
+        if (!node) throw new Error('no row for the subagent check');
+        return node;
+      },
+      { timeout: 8000 },
+    );
+    await waitFor(() => expect(row).toBeVisible(), { timeout: 8000 });
+    await expect(row).toHaveTextContent('pytest -q');
+    await expect(within(row).getByLabelText('Failed, as the tool reported')).toBeInTheDocument();
+    await expect(row).toHaveTextContent('Codex subagent command and its exit status');
+    const about = await canvas.findByRole('button', { name: /About this record/ });
+    if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
+    await waitFor(() =>
+      expect(canvasElement).toHaveTextContent('its subagents’ included and labelled as theirs'),
+    );
+    await expect(canvasElement).not.toHaveTextContent('reads no subagent’s commands');
+  },
+};
+
+export const CodexSaysHowManySubagentsWereNotRead: Story = {
+  ...scenario({
+    harness: 'codex',
+    facts: [personSaid('codex'), CODEX_SUBAGENT_FAILED],
+    work: codexSubagentsRead(1, 1),
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await drawn(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: 'Full activity' }));
+    const about = await canvas.findByRole('button', { name: /About this record/ });
+    if (about.getAttribute('aria-expanded') !== 'true') await userEvent.click(about);
+    await waitFor(() =>
+      expect(canvasElement).toHaveTextContent(
+        'and they are listed here, except those of 1 subagent that was not read.',
+      ),
+    );
+    await expect(canvasElement).not.toHaveTextContent('its subagents’ included');
+  },
+};
+
 /* Antigravity: the sentence in place of a level, and neither a meter nor a switch. Analyze is still offered,
    because a reading needs the saved words and the messages, not work results. The meter and its scale are
    decorative and hidden from assistive tech, so their absence is read from their words. */
