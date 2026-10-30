@@ -587,6 +587,47 @@ opening stays intact, as does the owner's separate 2026-10-02 operational accept
 There is no passing qualification or qualification acceptance, and the guarded
 Claude-only browser reading cannot be armed.
 
+### Tenth qualification preparation, 2026-10-30
+
+Planned, with no packet, marks or results yet. The owner funded one tenth continuation of
+31 calls on 2026-10-30: thirty registered Sonnet 5.5/high readings and one availability
+retry. If it fails, one corrected retry run of at most 31 more calls follows, and then the
+study stops. Every earlier failure and charge stays as it is.
+
+What the software now admits, and nothing more:
+
+- **Grant 10** (`claude-continuation-10.json`) carries a `tenth_continuation_allowance`: 68
+  previous calls, one carried (the ninth's unused retry), thirty renewed, 31 additional,
+  three repeats and one retry, with its model and campaign bindings. It binds result 9,
+  which must read `failed`, `stopped: false`, 30 attempts and none unusable. The chain's
+  bound is eleven names, so the retry's grant 11 needs no second bound change; a grant 11
+  carries no allowance until its own validator lands, and admits no charge without one.
+- **Epoch six** (`TenthCampaign` in `scripts/analyze_campaign.py`) reads its manifest from
+  `docs/drift-replay/closure-campaign-tenth.json` and its handoff from
+  `docs/drift-replay/closure-tenth-handoff.json`. The handoff binds epoch five's thirty
+  measured calls, its four batch reviews, result 9, the four earlier epochs and the native
+  68-call prefix. The ceilings are 99 native and 279 shared. The ninth's measurement rule
+  holds: all thirty are measured, and a semantic failure waits for its batch review.
+- **The ninth is an ancestor.** Its campaign class selects grant 9 by number, so it still
+  validates every receipt once grant 10 is active, and its own key keeps its 69-call cap.
+
+Planned order:
+
+1. The producer guards land before the freeze, so the run measures the corrected reader.
+2. A fresh packet home re-freezes every carried case on merged main, because the parser
+   stamp has moved. The steer-then-explain two-turn case takes a slot only if an independent
+   kind review, which sees no results, assigns it that slot's kind. Result 10 will then say
+   which retired case was not re-measured.
+3. Blind marks, kind review and the handoff review run before any output, on AGY Gemini
+   (`gemini-3.8-flash-medium` or `-high`) under the
+   [dated security amendment](../../SECURITY.md#tenth-qualification-continuation-2026-10-30).
+   Unchanged expectations may transfer. Changed ones and the new case's questions are marked
+   fresh.
+4. Grant 10 is committed in `marking`, then `sealed`, beside the manifest, the handoff and
+   epoch six's zero-charge activation. Batches stay one, nine, ten and ten, each reviewed
+   before the next.
+5. The run happens from a pinned checkout. Its result is recorded in its own section here.
+
 ### Fourth qualification outcome, 2026-10-06
 
 The [native fourth result](claude-results-continuation-4.json) failed after two attempts on the
@@ -659,7 +700,9 @@ the final prompt. Historical failures and packets remain unchanged.
 ### The spend ledger
 
 Every model call is charged, before it runs, to one ledger at a fixed path,
-`~/.compass/drc-4666-spend.json`. It is shared by every producer and every packet directory, and
+`~/.cargento/drc-4666-spend.json`. That is the study's own home, where every ledger and packet of
+this check was written, and it stays there after the rename
+([study home ruling](../../SECURITY.md#tenth-qualification-continuation-2026-10-30)). It is shared by every producer and every packet directory, and
 it never follows `COMPASS_HOME`, so a fresh packet directory does not start the count again. Its
 `~`, like every other path this check trusts (the installed CLI, `~/.claude/projects`, the
 dashboard's stores), is the account's home from the password database, never `HOME`, and
@@ -704,7 +747,7 @@ Grant k, for k of 2 or more, at `docs/abstention/claude-continuation-<k>.json` b
 the same way: the second binds `claude-results-continuation.json`, the third
 `claude-results-continuation-2.json`. It is honoured only while every earlier grant is sealed and
 each grant's `next` key is the following grant's `previous`. A grant file whose predecessor is
-missing is refused, and so is one numbered past nine, the fixed bound on the chain, or any
+missing is refused, and so is one numbered past eleven, the fixed bound on the chain, or any
 `claude-continuation*.json` the pattern never writes (`-0`, `-1`, `-02`). Each earlier
 packet's charges must then carry that packet's own key, in ledger order, and a call is charged only
 under the last grant's sealed key.
@@ -803,9 +846,15 @@ the packet as it will be scored.
 
 A case id is `sha256("<harness>|<sid>")[:16]`. Whoever holds the cases file can resolve it; nobody
 else can, which is the point. The outcome per constraint is one of `withheld:<reason>`, `unparsed`,
-`abstained`, `judged:consistent`, `judged:departure`, `judged:unsupported` or
-`judged:not-reached`. `withheld` means the producer refused before
+`abstained`, `abstained:goal-unclear`, `judged:consistent`, `judged:departure`,
+`judged:unsupported` or `judged:not-reached`. `withheld` means the producer refused before
 the model ran, so the case says nothing about the model, and it is counted for neither side.
+`abstained:goal-unclear` is the Goal row's "goal too vague to analyze against" (the
+[2026-10-22 amendment](../design-reading-a-session.md#amended-2026-10-22-a-goal-alone-is-read-or-refused)).
+It is an abstention, never a judgement. It reads the words, not the work, and the page draws no
+departure, level or claim from it, so on an abstain mark it is correct and on a judge mark it is
+held, as `abstained` is. The rubric grades it as the abstention the page renders. Before
+2026-10-30 the scorer let it fall through to `judged:departure`; no committed result holds one.
 
 The verdict is `failed` when a case marked should-abstain judged or the rubric records a false
 reassurance (a mark of `abstain` on that line is not enough on its own), `blocked` when a rubric

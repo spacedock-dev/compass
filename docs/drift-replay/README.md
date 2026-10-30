@@ -129,6 +129,14 @@ measurement rather than success. All wrong answers remain scored. Native charges
 [outcome record](../abstention/README.md#ninth-qualification-outcome-2026-10-07) owns the
 counts and interpretation. Earlier stopped runs and the operational acceptance are unchanged.
 
+The [tenth continuation amendment](../../SECURITY.md#tenth-qualification-continuation-2026-10-30)
+admits one more epoch, six, under the same measurement rule. It carries the held retry and
+renews thirty attempts, for ceilings of 99 native and 279 shared. Replay and live stay held.
+The [preparation record](../abstention/README.md#tenth-qualification-preparation-2026-10-30)
+says what is planned; nothing is frozen or spent yet. The spend ledgers this README names stay
+under `~/.cargento`, where they were written; the cases, marks and outputs still follow
+`COMPASS_HOME`.
+
 Technical guards and the finite cap remain. An independently reviewed batch is measured,
 not qualified. Only a full passing result and
 qualification acceptance may arm the separately guarded Claude-only browser reading. Its

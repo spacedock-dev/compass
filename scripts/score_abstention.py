@@ -220,6 +220,11 @@ OUTCOME_JUDGED_DEPARTURE = "judged:departure"
 # never counted as a departure, which it is not.
 OUTCOME_JUDGED_UNSUPPORTED = "judged:unsupported"
 OUTCOME_JUDGED_NOT_REACHED = "judged:not-reached"
+# The Goal's refusal (2026-10-22 amendment): an abstention, never `judged:*`. It reads
+# the words, not the work, and the page draws no departure, level or claim from it, so
+# DEC-17 grades what the page renders, as it already grades a missing result.
+OUTCOME_ABSTAINED_GOAL_UNCLEAR = "abstained:goal-unclear"
+ABSTAINED_OUTCOMES = (OUTCOME_ABSTAINED, OUTCOME_ABSTAINED_GOAL_UNCLEAR)
 WITHHELD_PREFIX = "withheld:"
 # Our own withheld reason, not the producer's: the board no longer lists the
 # session the case was drawn from.
@@ -310,6 +315,9 @@ _NOT_REACHED = RESULT_BY_TOKEN["not_reached"]
 # Spelt here for the rubric's reason above; `reading.RESULT_UNSUPPORTED`, held
 # equal by `RubricTokensMirrorTheProducerTest`.
 _UNSUPPORTED = "not shown by the record"
+# `reading.RESULT_GOAL_UNCLEAR`, spelt here for the same reason and held equal by
+# the same test. No rubric token names it: a mark is judge or abstain, never this.
+_GOAL_UNCLEAR = "goal too vague to analyze against"
 CLAIMS_RESULT_BY_TOKEN = {
     **{key: result for key, result in RESULT_BY_TOKEN.items() if key != "not_reached"},
     "unsupported": _UNSUPPORTED,
@@ -781,13 +789,14 @@ def outcome(criterion: Mapping[str, Any] | None, withheld: str) -> str:
     result = (criterion or {}).get("result")
     if not result:
         return OUTCOME_UNPARSED
-    if result == _UNVERIFIABLE:
-        return OUTCOME_ABSTAINED
-    if result == _CONSISTENT:
-        return OUTCOME_JUDGED_CONSISTENT
-    if result in (_UNSUPPORTED, _NOT_REACHED):
-        return OUTCOME_JUDGED_UNSUPPORTED if result == _UNSUPPORTED else OUTCOME_JUDGED_NOT_REACHED
-    return OUTCOME_JUDGED_DEPARTURE
+    # Anything not named here is a departure: the producer's closed set leaves nothing else.
+    return {
+        _UNVERIFIABLE: OUTCOME_ABSTAINED,
+        _GOAL_UNCLEAR: OUTCOME_ABSTAINED_GOAL_UNCLEAR,
+        _CONSISTENT: OUTCOME_JUDGED_CONSISTENT,
+        _UNSUPPORTED: OUTCOME_JUDGED_UNSUPPORTED,
+        _NOT_REACHED: OUTCOME_JUDGED_NOT_REACHED,
+    }.get(str(result), OUTCOME_JUDGED_DEPARTURE)
 
 
 def rubric_outcome(expected_token: str, got: str | None, *, criterion: str = "") -> str:
@@ -808,7 +817,8 @@ def rubric_outcome(expected_token: str, got: str | None, *, criterion: str = "")
     expected = tokens.get(expected_token.strip().casefold())
     if expected is None:
         return RUBRIC_UNSCORED
-    result = got or _UNVERIFIABLE
+    # A refused goal renders as an abstention too, so it grades as one.
+    result = _UNVERIFIABLE if got in (None, "", _GOAL_UNCLEAR) else got
     if result == expected:
         return RUBRIC_CORRECT
     if result == _CONSISTENT:
@@ -1248,7 +1258,7 @@ def _dec17(records: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
             mark, got = record["marks"].get(name), record["outcomes"][name]
             if mark == MARK_ABSTAIN and got.startswith("judged:"):
                 failed.append(record["id"])
-            elif mark == MARK_JUDGE and got in (OUTCOME_ABSTAINED, OUTCOME_UNPARSED):
+            elif mark == MARK_JUDGE and got in (*ABSTAINED_OUTCOMES, OUTCOME_UNPARSED):
                 held.append(record["id"])
     return {"failed": sorted(set(failed)), "held": sorted(set(held))}
 
@@ -1481,10 +1491,10 @@ def _pair_phrase(name: str, mark: str, got: str, *, asks_output: bool) -> str:
     if mark == MARK_ABSTAIN:
         return (
             "abstained as marked"
-            if got == OUTCOME_ABSTAINED
+            if got in ABSTAINED_OUTCOMES
             else "a case marked should-abstain judged"
         )
-    if got == OUTCOME_ABSTAINED:
+    if got in ABSTAINED_OUTCOMES:
         return "abstained on a judge mark: recorded, not a failure"
     return "judged as marked"
 

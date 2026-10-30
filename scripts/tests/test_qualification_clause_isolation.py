@@ -262,7 +262,7 @@ class QualificationClauseIsolation(unittest.TestCase):
             current.reserve("qualification", "0000000000000001:r1", "a" * 64)
 
     def test_eighth_allowance_cannot_move_to_an_arbitrary_generation(self) -> None:
-        self.assertEqual(9, ledger.MAX_GRANTS)
+        self.assertEqual(11, ledger.MAX_GRANTS)
         with self.assertRaises(ledger.LedgerError):
             ledger._clause_isolation_allowance(self.grant, 9)
         for field in (

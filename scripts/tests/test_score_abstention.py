@@ -163,6 +163,68 @@ class EveryPairLandsInExactlyOneOutcomeTest(unittest.TestCase):
         )
 
 
+class AGoalTooVagueToReadIsAnAbstentionNotADeparture(unittest.TestCase):
+    """`goal_unclear` judges the words, never the work, and the page draws nothing from it.
+
+    The 2026-10-22 amendment publishes every other row as not asked and draws no
+    departure, level, claim or Steer back from a refused goal. The scorer once let
+    the sentence fall through to `judged:departure`, so one refusal on an
+    abstain-marked Goal failed DEC-17 and on a judge-marked Goal counted as an alarm.
+    """
+
+    UNCLEAR: ClassVar[dict[str, Any]] = {"result": "goal too vague to analyze against"}
+
+    def record(self, mark: str) -> dict[str, Any]:
+        return {
+            "id": "2" * 16,
+            "constraints": ["goal"],
+            "marks": {"goal": mark},
+            "outcomes": {"goal": score_abstention.outcome(self.UNCLEAR, "")},
+            "asks_output": False,
+        }
+
+    def test_the_refusal_has_its_own_outcome(self) -> None:
+        got = score_abstention.outcome(self.UNCLEAR, "")
+        self.assertEqual("abstained:goal-unclear", got)
+        self.assertFalse(got.startswith("judged:"))
+
+    def test_on_an_abstain_mark_it_is_not_a_dec17_failure(self) -> None:
+        dec17 = score_abstention._dec17([self.record(score_abstention.MARK_ABSTAIN)])
+        self.assertEqual({"failed": [], "held": []}, dec17)
+
+    def test_on_a_judge_mark_it_is_held_like_any_abstention(self) -> None:
+        dec17 = score_abstention._dec17([self.record(score_abstention.MARK_JUDGE)])
+        self.assertEqual({"failed": [], "held": ["2" * 16]}, dec17)
+
+    def test_the_rubric_grades_it_as_the_abstention_the_page_renders(self) -> None:
+        sentence = self.UNCLEAR["result"]
+        self.assertEqual(
+            score_abstention.RUBRIC_CORRECT,
+            score_abstention.rubric_outcome("unverifiable", sentence, criterion="goal"),
+        )
+        self.assertEqual(
+            score_abstention.RUBRIC_MISSED_DEPARTURE,
+            score_abstention.rubric_outcome("departure", sentence, criterion="goal"),
+        )
+        self.assertEqual(
+            score_abstention.RUBRIC_OVER_ABSTENTION,
+            score_abstention.rubric_outcome("consistent", sentence, criterion="goal"),
+        )
+
+    def test_a_repeat_with_a_refused_goal_is_usable_not_semantic_failed(self) -> None:
+        record = {**self.record(score_abstention.MARK_ABSTAIN), "withheld": ""}
+        judged = {"judgement": {"goal": score_abstention.RUBRIC_CORRECT}}
+        self.assertEqual(
+            "usable",
+            score_abstention._repeat_classification(record, judged, "c" * 32),
+        )
+
+    def test_the_case_line_says_it_abstained_as_marked(self) -> None:
+        line = score_abstention.case_line(self.record(score_abstention.MARK_ABSTAIN))
+        self.assertIn("abstained:goal-unclear", line)
+        self.assertNotIn("should-abstain case judged", line)
+
+
 class RubricScoresTwoColumnsNotOne(unittest.TestCase):
     """Extraction and judgement are two fields. DEC-15 asks for them apart."""
 
@@ -967,6 +1029,14 @@ class RubricTokensMirrorTheProducerTest(unittest.TestCase):
         from compass_runtime import reading  # noqa: PLC0415
 
         self.assertEqual(reading.RESULT_BY_TOKEN, score_abstention.RESULT_BY_TOKEN)
+
+    def test_the_goal_refusal_sentence_matches_the_producer(self) -> None:
+        sys.path.insert(0, str(SKILL))
+        from compass_runtime import reading  # noqa: PLC0415
+
+        self.assertEqual(
+            reading.RESULT_GOAL_UNCLEAR, getattr(score_abstention, "_GOAL_UNCLEAR", None)
+        )
 
     def test_claims_tokens_match_the_native_closed_set(self) -> None:
         sys.path.insert(0, str(SKILL))
