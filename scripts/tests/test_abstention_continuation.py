@@ -120,6 +120,33 @@ class _OneFailedResult(unittest.TestCase):
         )
 
 
+class ACommittedPacketIsNamedByItsGrantAndChainedByItsResult(_OneFailedResult):
+    """`committed_packet`: the prior-packet vouch's anchor (orchestrator, 2026-10-30)."""
+
+    def test_only_a_sealed_grants_case_set_with_a_chained_result_is_committed(self) -> None:
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        self.grant("marking")
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        self.grant("sealed")
+        # Sealed, but packet 1 has no committed result yet.
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+        fresh = self.fresh()
+        fresh.settle(fresh.charge("2" * 16), "ok")
+        chained: dict[str, Any] = {
+            "verdict": "failed",
+            "producer": "claude",
+            "ledger_chain": abstention_ledger.chain_of(str(self.ledger_path)),
+            "marks_digest": self.new_marks,
+            "inputs_digest": self.new_inputs,
+        }
+        self.new_summary_path.write_text(json.dumps(chained))
+        self.assertEqual(1, mark_abstention.committed_packet(self.new_cases))
+        self.assertEqual(0, mark_abstention.committed_packet("f" * 64))
+        unchained = {**chained, "ledger_chain": {**chained["ledger_chain"], "head": "0" * 64}}
+        self.new_summary_path.write_text(json.dumps(unchained))
+        self.assertEqual(0, mark_abstention.committed_packet(self.new_cases))
+
+
 class AFailedQualificationKeepsItsLedger(_OneFailedResult):
     def test_a_second_packet_needs_a_sealed_grant_before_any_call(self) -> None:
         fresh = self.fresh()
@@ -637,6 +664,24 @@ class AThirdFailedContinuationChainsAFourthPacket(_TwoFailedResults):
         with self.assertRaises(abstention_ledger.LedgerError):
             abstention_ledger.continuation()
 
+    def test_the_chain_names_eleven_grants_and_refuses_a_twelfth(self) -> None:
+        # The tenth continuation and its one funded retry (owner, 2026-10-30): eleven
+        # names, each the pattern's own, and the twelfth a stray however well formed.
+        self.assertEqual(11, abstention_ledger.MAX_GRANTS)
+        self.grant_3()
+        eleventh = self.root / "claude-continuation-11.json"
+        eleventh.write_text(self.grant_3_path.read_text())
+        # A name inside the bound is read, so an eleventh after a third is a gap, not a stray.
+        with self.assertRaisesRegex(abstention_ledger.LedgerError, "has no grant 4 before it"):
+            abstention_ledger.continuation()
+        eleventh.unlink()
+        twelfth = self.root / "claude-continuation-12.json"
+        twelfth.write_text(self.grant_3_path.read_text())
+        with self.assertRaisesRegex(abstention_ledger.LedgerError, "claude-continuation-12"):
+            abstention_ledger.continuation()
+        with self.assertRaises(abstention_ledger.LedgerError):
+            abstention_ledger.continuation(generation=12)
+
     def test_a_grant_under_a_name_the_pattern_never_writes_is_refused(self) -> None:
         # Silently ignored, a misnamed third grant would leave the second active and
         # select an earlier generation's packet without anyone noticing.
@@ -742,7 +787,8 @@ class TheGenerationsAreNamedOnePattern(unittest.TestCase):
     def test_grant_and_result_names_follow_the_generation(self) -> None:
         grants = [Path(p).name for p in abstention_ledger.CONTINUATION_PATHS]
         results = [Path(p).name for p in abstention_ledger.CONTINUATION_SUMMARY_PATHS]
-        self.assertEqual(9, abstention_ledger.MAX_GRANTS)
+        self.assertEqual(11, abstention_ledger.MAX_GRANTS)
+        self.assertEqual("claude-continuation-11.json", grants[-1])
         self.assertEqual([abstention_ledger.MAX_GRANTS] * 2, [len(grants), len(results)])
         self.assertEqual(
             ["claude-continuation.json", "claude-continuation-2.json",

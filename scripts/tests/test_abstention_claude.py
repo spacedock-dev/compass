@@ -749,7 +749,7 @@ class Q2OneLedgerThatFailsClosedTest(_Ledgered):
         importlib.reload(abstention_ledger)
         _LEDGER_PATCH.stop()
         _LEDGER_PATCH.start()
-        self.assertEqual(abstention_ledger.canonical_store_path("drc-4666-spend.json"), path)
+        self.assertEqual(abstention_ledger.study_path("drc-4666-spend.json"), path)
         self.assertNotIn("fresh", path)
 
     def test_the_cap_is_the_owners_ceiling_and_cannot_be_raised(self) -> None:
@@ -3062,7 +3062,7 @@ try:
             except ledger.LedgerError:
                 result['default_charge_refused'] = True
         else:
-            result['canonical_roots'] = ledger.LEDGER_PATH == os.path.join(canonical, '.compass', 'drc-4666-spend.json') and marker.CLAUDE_PROJECTS_ROOT == os.path.join(canonical, '.claude', 'projects') and marker.STORE_HOME == os.path.join(canonical, '.compass') and score.CLAUDE_VERSIONS_ROOTS == (os.path.join(canonical, '.local', 'share', 'claude', 'versions'),)
+            result['canonical_roots'] = ledger.LEDGER_PATH == os.path.join(canonical, '.cargento', 'drc-4666-spend.json') and marker.CLAUDE_PROJECTS_ROOT == os.path.join(canonical, '.claude', 'projects') and marker.STORE_HOME == os.path.join(canonical, '.compass') and score.CLAUDE_VERSIONS_ROOTS == (os.path.join(canonical, '.local', 'share', 'claude', 'versions'),)
             args = argparse.Namespace(score=True, probe_argv=False, producer='claude', max_calls=1, resume=False)
             result['refusal'] = score._argument_refusal(args)
             result['home_moved'] = ledger.home_moved()

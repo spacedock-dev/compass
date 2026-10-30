@@ -28,10 +28,10 @@ class RouteSidecarGuards(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.owner = self.root
-        self.context_dir = self.root / ".compass" / "claude-route-verification"
+        self.context_dir = self.root / ".cargento" / "claude-route-verification"
         self.context_dir.mkdir(mode=0o700, parents=True)
         self.context_dir.parent.chmod(0o700)
-        self.state = self.root / ".compass" / "analyze-closure-route-spend.json"
+        self.state = self.root / ".cargento" / "analyze-closure-route-spend.json"
         self.profile = self.root / "profile.json"
         self.handoff = self.root / "handoff.json"
         for name, path in (
@@ -40,7 +40,7 @@ class RouteSidecarGuards(unittest.TestCase):
             ("STATE_PATH", self.state),
             ("PRIVATE_DIR", self.context_dir),
             ("OWNER_HOME", self.owner),
-            ("ACTIVATION_PATH", self.root / ".compass" / "claude-route-live00.ACTIVATED.json"),
+            ("ACTIVATION_PATH", self.root / ".cargento" / "claude-route-live00.ACTIVATED.json"),
         ):
             patch = mock.patch.object(self.route, name, path, create=True)
             patch.start()

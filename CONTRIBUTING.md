@@ -363,6 +363,16 @@ and how long the hook itself took. It never records a prompt, a tool argument, a
 path. A research tool that captured those would be a worse leak than the thing it is researching,
 because it writes to disk and accumulates.
 
+`scripts/observe_journey.py` is outside the gate as well. It records what one Compass server and the
+programs it starts launch and connect to, from inside that process tree and with no privilege: `run
+--mode MODE` starts this checkout's server under the recorder in `scripts/owned_observer.py` and
+reports against SECURITY.md's launch and send tables, and `control` proves on your machine that the
+recorder loses no short launch or connection. The server it starts makes the same model calls any
+run would, so opening a finished session there starts a summary, but each run has a Claude call
+budget and the recorder refuses the launch past it. [The owned-process
+observer](docs/design-owned-process-observer.md) owns what it sees, what it cannot, and the runs
+with their budgets.
+
 `scripts/derive_prompt_shapes.py` re-derives the counts written into the harness-injected-prompt
 comment block in `compass_runtime/records.py`: which markup tag leads a harness's own machinery,
 how often, and which of those a turn scanner already refuses. Point it at your own store with
@@ -386,7 +396,7 @@ producer over those cases and reports, per case and per constraint, where each l
 `--freeze` and a live `--score` need the dashboard running; `--report` and marking read local files
 only. Scoring needs `--producer claude` and spends Anthropic capacity (Codex may report but not
 score): one call per case whose ledger holds anything citable, charged to the one spend ledger at
-`~/.compass/drc-4666-spend.json`, which stops at 28 calls across every run. Run `--report` first, which spends nothing, and `--score` on purpose. Neither
+`~/.cargento/drc-4666-spend.json` (the study's own home, which the rename left in place). Its ceiling is the sealed grant's: 28 under no allowance, 99 under the tenth and at most 130 under its retry, and `--max-calls` defaults to 28, so a run under the tenth passes `--max-calls 99` (anything above the grant's ceiling is refused). Run `--report` first, which spends nothing, and `--score` on purpose. Neither
 runs in CI, and neither may: the marks are a person's, and the run costs the operator's own quota.
 What each file may hold and where the committed half lands is in `SECURITY.md` under The abstention
 check, and the committed half's own README is `docs/abstention/README.md`.

@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import abstention_ledger as ledger
 import analyze_campaign as campaigns
-import store_paths
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -32,19 +31,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = ROOT / "docs/drift-replay/closure-claude-route-conditional-priority.json"
 HANDOFF_PATH = ROOT / "docs/drift-replay/closure-claude-route-conditional-priority-handoff.json"
 OWNER_HOME = Path(ledger.canonical_home() or "/unavailable").resolve()
-STATE_PATH = Path(
-    ledger.canonical_store_path("analyze-closure-route-conditional-priority-spend.json")
-    or "/unavailable"
+# The route's account, context and activation live in the study's own fixed home beside its
+# other ledgers (`abstention_ledger.STUDY_HOME`), never in the moved default store.
+STATE_PATH = (
+    OWNER_HOME / ledger.STUDY_HOME / "analyze-closure-route-conditional-priority-spend.json"
 )
-PRIVATE_DIR = (
-    Path(store_paths.default_home(str(OWNER_HOME)))
-    / "claude-route-conditional-priority-verification"
-)
+PRIVATE_DIR = OWNER_HOME / ledger.STUDY_HOME / "claude-route-conditional-priority-verification"
 # Independent of both mutable account/receipt history and the startup context.
 # A prepared-profile rollback cannot erase this one-time activation evidence.
-ACTIVATION_PATH = (
-    Path(store_paths.default_home(str(OWNER_HOME))) / "claude-route-live00.ACTIVATED.json"
-)
+ACTIVATION_PATH = OWNER_HOME / ledger.STUDY_HOME / "claude-route-live00.ACTIVATED.json"
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _TRANSPORT_KEYS = {"provider", "destination", "model", "effort", "binary_sha256", "argv_digest"}
 
@@ -319,7 +314,7 @@ class RouteVerification:
 
     def _validate(self) -> dict[str, Any]:
         _canonical(OWNER_HOME)
-        account_home = Path(store_paths.default_home(str(OWNER_HOME)))
+        account_home = OWNER_HOME / ledger.STUDY_HOME
         _require(
             self.path.parent == account_home
             and account_home / "claude-route-live00.ACTIVATED.json" == ACTIVATION_PATH,
