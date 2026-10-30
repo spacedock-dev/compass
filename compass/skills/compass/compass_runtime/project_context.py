@@ -108,12 +108,8 @@ FINAL_WORDS_MAX_CHARS = 16_384
 FINAL_WORDS_UUIDS_MAX = 100_000
 WORKFLOW_DISCOVERY_TIMEOUT_SEC = 2.0
 WORKFLOW_DISCOVERY_CACHE_SEC = 30.0
-# A Codex session's check read is kept while the rollout and every child's stat are unchanged, and
-# at most this long: the read also depends on the work tree (a declared script), the reader's
-# listed commands and the folder's remote, none of which a rollout stat can see. 64 entries because
-# a held read keeps up to a listing's worth of 64 KiB output tails, and only analysis sessions read.
-CODEX_CHECK_CACHE_SEC = 30.0
-CODEX_CHECK_CACHE_ENTRIES = 64
+CODEX_CHECK_CACHE_SEC = runtime_state.CODEX_CHECK_CACHE_SEC
+CODEX_CHECK_CACHE_ENTRIES = runtime_state.CODEX_CHECK_CACHE_ENTRIES
 WORKFLOW_DISCOVERY_MAX_BYTES = 64 * 1024
 WORKFLOW_DISCOVERY_MAX_DIRS = 64
 WORKFLOW_DISCOVERY_SOURCE = "spacedock status --discover"
@@ -8221,7 +8217,7 @@ def _codex_stamp(rollout_path: str, child_paths: Sequence[str] | None) -> tuple[
 
 
 def _codex_cached(
-    cache: dict[Any, Any] | None,
+    cache: runtime_state.ExpiringCache | None,
     key: tuple[Any, ...],
     rollout_path: str,
     child_paths: Sequence[str] | None,
@@ -8238,13 +8234,11 @@ def _codex_cached(
     key = (rollout_path, *key)
     stamp = _codex_stamp(rollout_path, child_paths)
     now = time.monotonic()
-    hit = cache.get(key)
-    if hit is not None and hit[0] == stamp and now < hit[1]:
-        return cast("_CachedT", hit[2])
+    hit, held = cache.get(key, stamp, now)
+    if hit:
+        return cast("_CachedT", held)
     value = read()
-    runtime_state.bounded_put(
-        cache, key, (stamp, now + CODEX_CHECK_CACHE_SEC, value), limit=CODEX_CHECK_CACHE_ENTRIES
-    )
+    cache.put(key, stamp, value, now)
     return value
 
 
@@ -8260,7 +8254,7 @@ def codex_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
     remotes: git_status.StampCache | None = None,
     listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
     child_paths: Sequence[str] | None = None,
-    cache: dict[Any, Any] | None = None,
+    cache: runtime_state.ExpiringCache | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """`claude_tool_reports` for a Codex session's rollout and its children's, codex-cli 0.149 and
     later.
@@ -8323,7 +8317,7 @@ def codex_check_press(
     goal_texts: Iterable[str] = (),
     remotes: git_status.StampCache | None = None,
     child_paths: Sequence[str] | None = None,
-    cache: dict[Any, Any] | None = None,
+    cache: runtime_state.ExpiringCache | None = None,
 ) -> PressChecks:
     """`claude_check_press` for a Codex rollout: the same scan and bounds as `codex_tool_reports`.
 
@@ -9638,7 +9632,7 @@ def _session_work_evidence(  # noqa: PLR0913 - each is one keyword its caller na
     listed_cap: int = TOOL_REPORT_MAX_ENTRIES,
     *,
     child_paths: Sequence[str] | None = None,
-    codex_cache: dict[Any, Any] | None = None,
+    codex_cache: runtime_state.ExpiringCache | None = None,
 ) -> dict[str, int]:
     """Pi's demonstrated results and Claude Code's and Codex's checks, appended for `collect`.
     `child_paths` are a Codex session's child rollouts (`observer.codex_child_rollouts`).

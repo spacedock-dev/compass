@@ -2009,7 +2009,7 @@ read as a field, and no Edit or Write result body is read. At most 12 entries ar
 rest are counted. The published entry carries the check segment, the result, where the result
 came from and, as `result_at`, when it arrived, and never the output itself. The output tail is read again at the press
 (`project_context.claude_check_press`), keyed by the call, and carried into that one prompt, and held in memory for the local search of the text a harness verdict quotes
-([below](#local-history-the-session-history-store)), which sends, stores and publishes nothing:
+([below](#local-history-the-session-history-store)), which sends, stores and publishes nothing. A Codex press's read, tails included, is also kept in memory for at most 30 seconds, so that a second read of unchanged rollouts reads none of them; it is dropped on the next Codex check read once older than that, and is never written anywhere:
 Compass never writes it onto the fact, a row, the page or history. A departure's explanation is
 model prose, and the model may quote a line of the tail in it; that explanation is stored with the
 reading and shown on the page with credential-shape redaction and, since 2026-10-27, the values the

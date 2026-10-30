@@ -1883,6 +1883,12 @@ def codex_child_rollouts(
     ]
 
 
+# How long a day folder must have stood still, and an empty rollout, before the child index is
+# kept over it. A rollout empty for longer is a crashed one, and not retried on every collect.
+CODEX_FOLDER_SETTLE_SEC = 2.0
+CODEX_EMPTY_HEAD_SETTLE_SEC = 60.0
+
+
 def _codex_store_stamp(config: RuntimeConfig) -> tuple[tuple[str, int], ...]:
     """The mtime of every directory a rollout can sit in (`<root>/<year>/<month>/<day>`).
 
@@ -1922,12 +1928,22 @@ def _codex_child_index(config: RuntimeConfig, state: RuntimeState) -> dict[str, 
     if held is not None and held[0] == stamp:
         return held[1]
     index: dict[str, list[str]] = {}
+    now = time.time()
+    # A rollout whose head is not there yet is created empty and written without moving its day
+    # folder's mtime, so an index built over it would miss the child until another folder moved.
+    # Such an index is returned and not kept; and one built while a folder is still within a
+    # timestamp tick of now is not kept either, since a coarse-mtime filesystem can hide the next
+    # file's creation behind the stamp this one recorded.
+    keep = all(mtime / 1e9 < now - CODEX_FOLDER_SETTLE_SEC for _directory, mtime in stamp)
     for path in runtime_io.glob_stores(config, "codex.sessions", "*", "*", "*", "rollout-*.jsonl"):
         meta = transcripts.codex_meta(config, state, path)
+        if not meta and _mtime(path) > now - CODEX_EMPTY_HEAD_SETTLE_SEC:
+            keep = False
         if meta.get("subagent") and (owner := meta.get("session_id")):
             index.setdefault(owner, []).append(path)
-    with state.cache_lock:
-        state.codex_child_index = (stamp, index)
+    if keep:
+        with state.cache_lock:
+            state.codex_child_index = (stamp, index)
     return index
 
 

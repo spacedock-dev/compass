@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1215,6 +1216,38 @@ class TheCheckReadIsKeptWhileNothingItReadsMoves(CodexChecksTestCase):
             project_context.CODEX_CHECK_CACHE_ENTRIES, len(self.state.codex_check_cache)
         )
 
+    def test_an_expired_read_is_swept_by_the_next_put_and_not_held(self) -> None:
+        cache = self.state.codex_check_cache
+        self.reports()
+        self.assertEqual(1, len(cache))
+        self.clock[0] += project_context.CODEX_CHECK_CACHE_SEC + 1
+        project_context.codex_tool_reports(
+            self.config, str(self.path), SHORT, goal_texts=("another",), cache=cache
+        )
+        # The expired read of the first goal went, and the new one is the only entry.
+        self.assertEqual(1, len(cache))
+
+    def test_concurrent_reads_leave_the_cache_whole_and_bounded(self) -> None:
+        cache = self.state.codex_check_cache
+        errors: list[BaseException] = []
+
+        def work(worker: int) -> None:
+            try:
+                for index in range(300):
+                    stamp = (worker, index)
+                    cache.put((worker, index), stamp, index, self.clock[0])
+                    cache.get((worker, index), stamp, self.clock[0])
+            except BaseException as error:  # noqa: BLE001 - the test reports whatever it was
+                errors.append(error)
+
+        threads = [threading.Thread(target=work, args=(n,)) for n in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual([], errors)
+        self.assertLessEqual(len(cache), project_context.CODEX_CHECK_CACHE_ENTRIES)
+
     def test_no_cache_reads_every_time(self) -> None:
         def bare() -> Any:
             return project_context.codex_tool_reports(self.config, str(self.path), SHORT)
@@ -1252,6 +1285,14 @@ class ChildDiscoveryListsNoStoreWhileTheStoreStandsStill(CodexChecksTestCase):
         child.save(path)
         return path
 
+    def settle(self) -> None:
+        """Age every store folder past the index's settling window, as a store at rest is."""
+        past = time.time() - 3600
+        top = Path(self.config.store_roots["codex.sessions"][0])
+        for directory in [top, *top.rglob("*")]:
+            if directory.is_dir():
+                os.utime(directory, (past, past))
+
     def found(self) -> list[str]:
         return observer.codex_child_rollouts(self.config, self.state, str(self.path))
 
@@ -1262,25 +1303,55 @@ class ChildDiscoveryListsNoStoreWhileTheStoreStandsStill(CodexChecksTestCase):
 
     def test_an_unchanged_store_is_listed_once(self) -> None:
         kept = self.child(CHILD)
+        self.settle()
         self.assertEqual([str(kept)], self.found())
         self.assertEqual(0, self.globs())
         self.assertEqual([str(kept)], self.found())
 
     def test_a_child_added_to_a_known_day_is_found(self) -> None:
+        self.settle()
         self.found()
         grand = self.child(GRANDCHILD)
         self.assertEqual([str(grand)], self.found())
 
     def test_a_child_added_in_a_new_day_folder_is_found(self) -> None:
+        self.settle()
         self.found()
         grand = self.child(GRANDCHILD, folder="31")
         self.assertEqual([str(grand)], self.found())
 
     def test_a_child_removed_is_gone(self) -> None:
         gone = self.child(CHILD)
+        self.settle()
         self.assertEqual([str(gone)], self.found())
         gone.unlink()
         self.assertEqual([], self.found())
+
+    def test_a_child_created_empty_is_found_once_its_head_is_written(self) -> None:
+        created = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        created.write_text("")
+        self.settle()
+        self.assertEqual([], self.found())
+        # The head is written into a file that already exists, which moves no folder's mtime.
+        self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(created)], self.found())
+
+    def test_a_child_created_empty_is_found_when_the_head_lands_after_the_folder_settled(
+        self,
+    ) -> None:
+        created = self.store / f"rollout-2026-10-30T03-00-00-{CHILD}.jsonl"
+        created.write_text("")
+        self.assertEqual([], self.found())
+        self.settle()
+        self.child(CHILD)
+        self.settle()
+        self.assertEqual([str(created)], self.found())
+
+    def test_an_index_built_inside_a_timestamp_tick_is_not_kept(self) -> None:
+        self.child(CHILD)
+        self.found()
+        self.assertGreater(self.globs(), 0)
 
     def test_another_roots_child_is_not_ours(self) -> None:
         other = "019a2b3c-0000-7000-8000-0000000000aa"
