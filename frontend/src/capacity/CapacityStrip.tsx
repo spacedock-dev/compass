@@ -352,7 +352,7 @@ export function CapacityStrip() {
           spread={projectSpread(payload, selected.harness)}
         />
       </section>
-      <UsageSwitch />
+      <UsageSwitch windows />
     </>
   );
 }

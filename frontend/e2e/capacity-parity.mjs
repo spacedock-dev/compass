@@ -385,7 +385,7 @@ const consentOf = (page) =>
 const ON_LINE =
   /^Quota is read with the Claude Code and Cursor logins on this machine\. No session content is sent\.\s*Turn off$/;
 const OFF_LINE =
-  /^Quota reading is off\. Windows above are the last cached read and will lapse\.\s*Turn on$/;
+  /^Quota reading is off\. (?:Windows above are the last cached read and will lapse|No window has been read)\.\s*Turn on$/;
 const withoutUsage = (view) => dataRequests(view).filter((r) => !/[?&]usage=1(&|$)/.test(r.path));
 const dataRequests = (view) => view.log.requests.filter((r) => r.path.startsWith('/api/data'));
 const usageRequests = (view) => dataRequests(view).filter((r) => /[?&]usage=/.test(r.path));

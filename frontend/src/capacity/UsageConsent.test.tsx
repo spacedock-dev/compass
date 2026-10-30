@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { mountPanels, type MountOptions } from '../steering/testing';
 import { CapacityStrip } from './CapacityStrip';
 import { heldFor } from './held';
+import { CapacityPanel } from '../delegation/CapacityPanel';
+import { observe } from '../observed';
 import { RailUsage } from './UsageConsent';
 
 /* Usage fetching is on until the reader turns it off, and what the reader chose is what the next request
@@ -26,7 +28,15 @@ const board = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const mount = (options: MountOptions = {}, strip = true) =>
-  mountPanels(strip ? <CapacityStrip /> : <RailUsage />, { data: board(), ...options });
+  mountPanels(strip ? <CapacityStrip /> : <RailUsage windows />, { data: board(), ...options });
+/* The Console rail: the switch sits under the capacity panel and is told whether that panel drew a window. */
+const rail = (payload: ReturnType<typeof board>) => (
+  <CapacityPanel
+    payload={payload}
+    model={observe(payload)}
+    usage={(windows) => <RailUsage windows={windows} />}
+  />
+);
 const dataUrls = (page: ReturnType<typeof mount>): string[] =>
   page.state.requests.filter((r) => r.path === '/api/data').map((r) => r.url);
 const withUsage = (page: ReturnType<typeof mount>): string[] =>
@@ -83,6 +93,24 @@ describe('the quota fetch is on until it is turned off', () => {
 
   it('declined with windows published keeps the last-cached-read sentence', async () => {
     const page = mount({ storage: { [CONSENT]: 'declined' } });
+    await page.settle();
+    expect(line()?.textContent).toContain(
+      'Quota reading is off. Windows above are the last cached read and will lapse.',
+    );
+  });
+
+  it('the Console rail, declined with no window published, does not describe a cached read', async () => {
+    const empty = board({ usage: [] });
+    const page = mountPanels(rail(empty), { data: empty, storage: { [CONSENT]: 'declined' } });
+    await page.settle();
+    expect(line()?.textContent).toContain('Quota reading is off. No window has been read.');
+    expect(line()?.textContent).not.toContain('last cached read');
+    expect(line()?.querySelector('button')?.textContent).toBe('Turn on');
+  });
+
+  it('the Console rail, declined with windows published, keeps the last-cached-read sentence', async () => {
+    const full = board();
+    const page = mountPanels(rail(full), { data: full, storage: { [CONSENT]: 'declined' } });
     await page.settle();
     expect(line()?.textContent).toContain(
       'Quota reading is off. Windows above are the last cached read and will lapse.',

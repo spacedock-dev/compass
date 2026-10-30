@@ -135,7 +135,11 @@ describe('the capacity panel', () => {
   it('says no window was published, never zero', () => {
     const payload = { generated: 5000 };
     render(
-      <CapacityPanel payload={payload} model={observe(payload)} usage={<p>consent slot</p>} />,
+      <CapacityPanel
+        payload={payload}
+        model={observe(payload)}
+        usage={() => <p>consent slot</p>}
+      />,
     );
     expect(screen.getByText('No quota windows published.')).toBeInTheDocument();
     expect(screen.getByText('consent slot')).toBeInTheDocument();

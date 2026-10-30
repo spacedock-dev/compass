@@ -24,7 +24,7 @@ function useAnswer() {
 
 /* `windows` is whether quota windows are drawn above the switch; with none, there is no cached read to describe.
    On until turned off: an unanswered origin reads as on, as `transport/runtime` sends it. */
-export function UsageSwitch({ windows = true }: { windows?: boolean } = {}) {
+export function UsageSwitch({ windows }: { readonly windows: boolean }) {
   const offered = useUsageOffered();
   const consent = useConsent('usage');
   const answer = useAnswer();
@@ -55,6 +55,6 @@ export function UsageSwitch({ windows = true }: { windows?: boolean } = {}) {
 }
 
 /** What the Console rail draws under its windows. */
-export function RailUsage() {
-  return <UsageSwitch />;
+export function RailUsage({ windows }: { readonly windows: boolean }) {
+  return <UsageSwitch windows={windows} />;
 }

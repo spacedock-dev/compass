@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within } from 'storybook/test';
 import { useEffect, useState } from 'react';
 import { CapacityStrip } from '../src/capacity/CapacityStrip';
+import { CapacityPanel } from '../src/delegation/CapacityPanel';
+import { observe } from '../src/observed';
 import { RailUsage } from '../src/capacity/UsageConsent';
 import { createShell } from '../src/shell/createShell';
 import { ShellContext } from '../src/shell/context';
@@ -18,12 +20,15 @@ const CLAUDE_WINDOW = [
 function QuotaExample({
   declined = false,
   strip = false,
+  rail = false,
   usage = [],
 }: {
   readonly declined?: boolean;
   readonly strip?: boolean;
+  readonly rail?: boolean;
   readonly usage?: readonly unknown[];
 }) {
+  const railPayload = { generated: 1, harnesses: [{ key: 'claude', label: 'Claude Code' }], usage };
   const [shell] = useState(() => {
     requests.length = 0;
     let generated = 1;
@@ -59,7 +64,17 @@ function QuotaExample({
   }, [shell]);
   return (
     <ShellContext.Provider value={shell}>
-      {strip ? <CapacityStrip /> : <RailUsage />}
+      {strip ? (
+        <CapacityStrip />
+      ) : rail ? (
+        <CapacityPanel
+          payload={railPayload}
+          model={observe(railPayload)}
+          usage={(windows) => <RailUsage windows={windows} />}
+        />
+      ) : (
+        <RailUsage windows />
+      )}
     </ShellContext.Provider>
   );
 }
@@ -122,5 +137,29 @@ export const TurnedOffWithWindowsShown: Story = {
       ),
     ).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Turn on' })).toBeVisible();
+  },
+};
+
+export const ConsoleRailTurnedOffWithNoWindowRead: Story = {
+  args: { declined: true, rail: true, usage: [] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText('Quota reading is off. No window has been read.'),
+    ).toBeVisible();
+    await expect(canvas.queryByText(/last cached read/)).toBeNull();
+    await expect(canvas.getByRole('button', { name: 'Turn on' })).toBeVisible();
+  },
+};
+
+export const ConsoleRailTurnedOffWithWindowsShown: Story = {
+  args: { declined: true, rail: true, usage: CLAUDE_WINDOW },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(
+        'Quota reading is off. Windows above are the last cached read and will lapse.',
+      ),
+    ).toBeVisible();
   },
 };

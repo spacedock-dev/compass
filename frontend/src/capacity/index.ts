@@ -2,7 +2,7 @@
 
    Wiring, which this step leaves to the shell:
    - the Sessions view draws `<CapacityStrip />` after its groups, as the legacy page does;
-   - the Console tab passes `usage={<RailUsage />}` and `observer={<ObserverControls projectKey focus />}` to
+   - the Console tab passes `usage={(windows) => <RailUsage windows={windows} />}` and `observer={<ObserverControls projectKey focus />}` to
      `ProjectConsole`, which places each where the legacy Console did.
    The quota parameter rides every poll until the reader turns it off (`UsageSwitch`), and a model request
    starts only on the press of "Summarize this session". */
