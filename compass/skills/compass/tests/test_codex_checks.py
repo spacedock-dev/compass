@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -823,6 +824,62 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
         self.assertIs(True, check["read_incomplete"])
         self.assertEqual(1, scan["subagent_transcripts_unread"])
 
+    def test_a_childs_unreturned_script_ages_a_later_root_pass(self) -> None:
+        # The script sent input and never returned, so its end is the newest record read in the
+        # root or any child, never the newest in the child alone (the 2026-10-30 arbiter's E1).
+        self.rollout.subagent()
+        child = self.child()
+        child.exec_script('const r = await tools.write_stdin({session_id:3,chars:"y\\n"});\n')
+        self.keep(child)
+        self.rollout.ms = child.ms + 30000
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        self.assertIs(True, self.only_check()["changed_after"])
+
+    def test_a_second_rollout_of_a_thread_already_read_is_unread(self) -> None:
+        # Two files whose names end in one thread id, in different day folders: the newer is read,
+        # and the older is counted unread rather than merged over it (the arbiter's S2, A2).
+        self.rollout.subagent()
+        newer = self.child()
+        newer.command("pytest -q", "E   assert 1 == 2\n1 failed in 0.2s", exit_code=1)
+        self.keep(newer)
+        older = self.child(start_ms=self.rollout.ms - 86_400_000)
+        older.command("cat notes.txt", "READONLYOUTPUTMARKER")
+        path = self.path.parent.parent / "29" / f"rollout-2026-10-29T03-00-00-{CHILD}.jsonl"
+        older.save(path)
+        self.children.append(path)
+        entries, scan = self.read()
+        (check,) = [row for row in entries if row["subject"] == "check"]
+        self.assertEqual(("pytest -q", "failed"), (check["title"], check["result"]))
+        self.assertEqual(
+            (1, 1), (scan["subagent_transcripts"], scan["subagent_transcripts_unread"])
+        )
+        press = project_context.codex_check_press(
+            self.config, str(self.path), child_paths=[str(path) for path in self.children]
+        )
+        self.assertNotIn("READONLYOUTPUTMARKER", json.dumps([press.tails, entries]))
+
+    def test_a_root_id_shaped_as_a_childs_keeps_the_roots_result(self) -> None:
+        # A root item id written as `<child>/item_001` meets the child's prefixed `item_001`: the
+        # first read is kept and the child's is an unread call (the arbiter's S2, B).
+        self.rollout.subagent()
+        self.rollout.command(
+            "pytest -q",
+            "E   assert 1 == 2\n1 failed in 0.2s",
+            exit_code=1,
+            item_id=f"{CHILD}/item_001",
+        )
+        child = self.child()
+        child.command("cat notes.txt", "READONLYOUTPUTMARKER")
+        self.keep(child)
+        entries, scan = self.read()
+        self.assertEqual("failed", self.check("pytest -q")["result"])
+        self.assertEqual(1, scan["unread_calls"])
+        press = project_context.codex_check_press(
+            self.config, str(self.path), child_paths=[str(path) for path in self.children]
+        )
+        self.assertIn("1 failed", press.tails[f"{CHILD}/item_001"])
+        self.assertNotIn("READONLYOUTPUTMARKER", json.dumps([press.tails, entries]))
+
     def test_the_press_carries_a_childs_tail(self) -> None:
         self.rollout.subagent()
         child = self.child()
@@ -836,10 +893,15 @@ class ASubagentsWorkIsReadFromItsOwnRollout(CodexChecksTestCase):
 
 
 class ACommandStillRunningAgesAPass(CodexChecksTestCase):
-    """Codex writes a command's item only once it ends. One it reported still running, whose item
-    the read does not hold, may change files until an end that is not recorded, so it ages every
-    pass that began before the newest time the read holds (a change ages a pass when it ends at or
-    after the pass began)."""
+    """Codex writes a command's item only once it ends. Its own header saying a command is still
+    running, with no item for it, is a change dated at that session's latest such header, as a
+    Claude Code background launch is dated at its launch: it ages a pass that began at or before
+    then, and none after. A printed copy of the line in a command's output adds nothing."""
+
+    PRINTED = (
+        "Chunk ID: 1a2b3c\nWall time: 0.1 seconds\nProcess exited with code 0\n"
+        "Original token count: 5\nOutput:\n"
+    )
 
     def test_a_pass_followed_by_a_command_left_running_is_changed_after(self) -> None:
         self.rollout.command("pytest -q", "3 passed in 0.1s")
@@ -848,29 +910,44 @@ class ACommandStillRunningAgesAPass(CodexChecksTestCase):
         self.assertIs(True, check["changed_after"])
         self.assertIs(True, check["before_last_change"])
 
-    def test_a_running_command_ages_a_pass_that_began_while_it_ran(self) -> None:
-        self.rollout.yielded("npm run build -- --watch")
+    def test_a_pass_after_the_last_header_is_not_aged_by_it(self) -> None:
+        self.rollout.yielded("npm run dev")
         self.rollout.command("pytest -q", "3 passed in 0.1s")
-        self.assertIs(True, self.only_check()["changed_after"])
-
-    def test_a_yielded_command_whose_item_was_written_is_read_from_its_item(self) -> None:
-        # The yielded command is the check itself, and its item ends after the yield.
-        started = self.rollout.ms + 1000
-        self.rollout.yielded("pytest -q")
-        self.rollout.item_at(
-            Rollout.command_item("pytest -q", "3 passed in 0.1s", "file://" + str(self.cwd)),
-            started,
-            self.rollout.ms + 20000,
-        )
         check = self.only_check()
         self.assertIs(False, check["changed_after"])
-        self.assertEqual(0, self.read()[1]["unread_calls"])
+        self.assertEqual(1, self.read()[1]["unread_calls"])
 
-    def test_a_poll_that_reports_it_still_running_is_a_yield_too(self) -> None:
+    def test_a_poll_that_reports_it_still_running_moves_the_one_call_later(self) -> None:
+        self.rollout.yielded("npm run dev", session=3)
         self.rollout.command("pytest -q", "3 passed in 0.1s")
         poll = self.rollout.function_call("write_stdin", {"session_id": 3, "chars": ""})
-        self.rollout.output(poll, "Wall time: 5.0 seconds\nProcess running with session ID 3\n")
+        self.rollout.output(
+            poll,
+            "Chunk ID: 4d5e6f\nWall time: 5.0 seconds\nProcess running with session ID 3\n"
+            "Original token count: 0\nOutput:\n",
+        )
         self.assertIs(True, self.only_check()["changed_after"])
+        self.assertEqual(1, self.read()[1]["unread_calls"])
+
+    def test_a_printed_copy_of_the_line_adds_nothing(self) -> None:
+        self.rollout.command("pytest -q", "3 passed in 0.1s")
+        call = self.rollout.function_call("exec_command", {"cmd": "cat build.log"})
+        self.rollout.output(call, self.PRINTED + "Process running with session ID 7\n")
+        found = project_context.codex_calls(self.rollout.rows)
+        self.assertEqual([], [call for call in found.calls if call[2].startswith("running:")])
+        self.assertIs(False, self.only_check()["changed_after"])
+        self.assertEqual(0, self.read()[1]["unread_calls"])
+
+    def test_twenty_thousand_printed_lines_are_read_in_linear_time(self) -> None:
+        # Measured on the reviewed tip: 20,000 printed lines beside 8,000 commands took 16 s to read.
+        call = self.rollout.function_call("exec_command", {"cmd": "cat build.log"})
+        self.rollout.output(call, self.PRINTED + "Process running with session ID 7\n" * 20000)
+        for i in range(2000):
+            self.rollout.command(f"ls dir{i}", "x")
+        began = time.perf_counter()
+        found = project_context.codex_calls(self.rollout.rows)
+        self.assertLess(time.perf_counter() - began, 1.0)
+        self.assertEqual([], [call for call in found.calls if call[2].startswith("running:")])
 
 
 class InputInsideAnExecScriptAgesAPass(CodexChecksTestCase):

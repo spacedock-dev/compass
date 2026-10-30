@@ -7648,12 +7648,13 @@ class _CodexRead:
     delegated: bool = False
     shell_calls: bool = False
     command_items: bool = False
-    # The newest time any record read holds: the earliest a command still running can have ended.
+    # The newest time any record read holds: the earliest an unreturned script can have ended.
     newest: float | None = None
-    # (start, end) of each command item, which a yield is matched against (`_codex_running`).
-    spans: list[tuple[float, float]] = dataclasses.field(default_factory=list)
-    # (time, session id, call id) of each "Process running" line Codex wrote.
-    yields: list[tuple[float, str, str]] = dataclasses.field(default_factory=list)
+    # `exec` scripts that sent input and never returned, by call id: `_codex_tally` dates each at
+    # the newest record across the root and every child read, since a child can outlast its root.
+    unreturned: list[str] = dataclasses.field(default_factory=list)
+    # The latest "Process running" header Codex wrote for each session id: (time, call id).
+    yields: dict[str, tuple[float, str]] = dataclasses.field(default_factory=dict)
     # The ids of the call items read, so a second item under one is refused (`_codex_item`).
     item_ids: set[str] = dataclasses.field(default_factory=set)
 
@@ -7780,7 +7781,6 @@ def _codex_item(
         found.ends[item_id] = ended
     if item_type == "CommandExecution":
         found.command_items = True
-        found.spans.append((at, ended if ended is not None else at))
         _codex_command(item, item_id, at, ended, found)
     elif item_type == "FileChange":
         _codex_patch(item, item_id, at, found)
@@ -7788,10 +7788,11 @@ def _codex_item(
         found.calls.append((at, "", item_id, CODEX_UNREAD_TOOL, {}, ""))
 
 
-# Codex's own line for a command it left running, in an `exec_command` or `write_stdin` output:
-# 569 local outputs carry it (257 and 312). The session id is the one the model polls by, never a
-# command item's `process_id` (568 of 569 differ), so a yield is matched to its item by time.
+# Codex's own line for a command it left running, in the header of an `exec_command` or
+# `write_stdin` output: 569 local outputs carry it (257 and 312), every one before the header's
+# "Output:" line. What follows that line is the command's own printing, which can copy it.
 _CODEX_RUNNING_RE = re.compile(r"^Process running with session ID (\d+)\s*$", re.MULTILINE)
+_CODEX_OUTPUT_MARK = "\nOutput:\n"
 _CODEX_YIELDING_CALLS = frozenset({"exec_command", _CODEX_STDIN_CALL})
 # A `write_stdin` an `exec` script makes, and the object literal it is given. 6,710 of 58,345
 # local scripts make one. A `chars` that is a literal empty string only polls; any other argument
@@ -7825,7 +7826,8 @@ def _codex_output(
     found: _CodexRead,
 ) -> None:
     """A call's output: when an `exec` script that sent input returned, and Codex's own line for a
-    command it left running. Nothing else of the output is read or kept."""
+    command it left running, read once and only from the header before "Output:". Nothing else of
+    the output is read or kept."""
     call_id = payload.get("call_id")
     at = _record_timestamp(record)
     if not isinstance(call_id, str) or at is None:
@@ -7833,40 +7835,26 @@ def _codex_output(
     if call_id in scripts:
         scripts[call_id] = at
     output = payload.get("output")
-    if names.get(call_id) in _CODEX_YIELDING_CALLS and isinstance(output, str):
-        found.yields.extend((at, session, call_id) for session in _CODEX_RUNNING_RE.findall(output))
+    if names.get(call_id) not in _CODEX_YIELDING_CALLS or not isinstance(output, str):
+        return
+    header, mark, _printed = output.partition(_CODEX_OUTPUT_MARK)
+    running = _CODEX_RUNNING_RE.search(header) if mark else None
+    if running and at >= found.yields.get(running[1], (at, ""))[0]:
+        found.yields[running[1]] = (at, call_id)
 
 
 def _codex_running(found: _CodexRead) -> None:
-    """A command Codex reported still running whose item the read does not hold.
-
-    Each yield is matched to a command item that was running at it, one item per session id, the
-    earliest-ending first; a second yield of the same session is matched by the same item. One
-    with no item is a command whose end is not recorded: a call whose effect is not read, dated
-    at the yield and ending no earlier than the newest record read, so it ages every pass that
-    began before then: a change ending at or after a check's start ages it.
+    """Each session Codex reported a command still running in, as one call whose effect is not
+    read, dated and ended at that session's latest header: Claude Code's background launch, dated
+    where the record last says it ran. It ages a pass that began at or before then and none after.
+    No item is matched to it: a command whose item was written began at or before the header and
+    ended at or after it, so the item already ages every pass the header would.
     [amendment](docs/design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)
     """
-    if not found.yields:
-        return
-    owner: dict[int, str] = {}
-    for at, session, call_id in sorted(found.yields):
-        if any(
-            owner.get(index) == session and start <= at <= end + 1
-            for index, (start, end) in enumerate(found.spans)
-        ):
-            continue
-        free = [
-            (end, index)
-            for index, (start, end) in enumerate(found.spans)
-            if index not in owner and start <= at <= end + 1
-        ]
-        if free:
-            owner[min(free)[1]] = session
-            continue
+    for session, (at, call_id) in found.yields.items():
         running = f"running:{call_id}:{session}"
         found.calls.append((at, "", running, CODEX_UNREAD_TOOL, {}, ""))
-        found.ends[running] = max(at, found.newest or at)
+        found.ends[running] = at
 
 
 def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:  # noqa: C901 - one branch per row kind
@@ -7876,10 +7864,10 @@ def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:  # noqa: C901 - on
     Claude Code's `Bash` and write calls, and a tool whose effect on files is not read as a call
     that ages every earlier pass (the `js` tool whatever its hint says, since it can write through
     Node, and any connector call not marked `readOnlyHint: true`), as is a `write_stdin` that sent
-    input, top-level or inside an `exec` script, and a command Codex reported still running whose
-    item is not written (`_codex_running`). Codex writes an item only when the call ends, so the
-    call's time is its `started_at_ms` and its `completed_at_ms` is kept as `ends`, the time a
-    change is dated by.
+    input, top-level or inside an `exec` script, and a session Codex reported a command still
+    running in (`_codex_running`). Codex writes an item only when the call ends, so the call's time
+    is its `started_at_ms` and its `completed_at_ms` is kept as `ends`, the time a change is dated
+    by. A script that never returned has no end here; `_codex_tally` gives it one.
     """
     found = _CodexRead()
     names: dict[str, str] = {}
@@ -7928,8 +7916,8 @@ def codex_calls(rollout: list[dict[str, Any]]) -> _CodexRead:  # noqa: C901 - on
             continue
         if isinstance(item_id, str) and item_id:
             _codex_item(record, payload, item, item_id, found)
-    for call_id, returned in scripts.items():
-        found.ends[call_id] = returned if returned is not None else found.newest or 0.0
+    found.unreturned = [call_id for call_id, returned in scripts.items() if returned is None]
+    found.ends.update({call_id: at for call_id, at in scripts.items() if at is not None})
     _codex_running(found)
     found.calls.sort(key=lambda call: call[0])
     return found
@@ -8008,6 +7996,44 @@ class _CodexChildren(NamedTuple):
     horizon: float | None
     # Children a read names, or spawned, that no rollout was found for.
     missing: int = 0
+    # The newest record any child read holds, and its scripts that never returned, by prefixed id.
+    newest: float | None = None
+    unreturned: tuple[str, ...] = ()
+
+
+def _codex_child_calls(
+    child: _CodexRead, prefix: str, worker: str, taken: set[str], found: _CodexChildren
+) -> list[str]:
+    """One child's calls, results and ends under its prefix, and its unreturned scripts' ids.
+
+    An id already taken, by the root or an earlier child, is refused: the first is kept, and each
+    call under the later one is a call whose effect is not read, so neither a forged root id nor a
+    second rollout can put its result in place of another's.
+    """
+    ids = {call[2] for call in child.calls} | child.results.keys() | child.ends.keys()
+    refused = {key for key in ids if prefix + key in taken}
+    unreturned = []
+    for at, cwd, call_id, tool, tool_input, _worker in child.calls:
+        if call_id not in refused:
+            found.calls.append((at, cwd, prefix + call_id, tool, tool_input, worker))
+            continue
+        kept = f"refused:{len(found.calls)}:{prefix}{call_id}"
+        while kept in taken:
+            kept += "+"
+        taken.add(kept)
+        found.calls.append((at, cwd, kept, CODEX_UNREAD_TOOL, {}, worker))
+        if call_id in child.ends:
+            found.ends[kept] = child.ends[call_id]
+        if call_id in child.unreturned:
+            unreturned.append(kept)
+    accepted = ids - refused
+    found.results.update(
+        {prefix + key: child.results[key] for key in accepted & child.results.keys()}
+    )
+    found.ends.update({prefix + key: child.ends[key] for key in accepted & child.ends.keys()})
+    taken.update(prefix + key for key in accepted)
+    unreturned.extend(prefix + key for key in child.unreturned if key in accepted)
+    return unreturned
 
 
 def _codex_children(
@@ -8021,37 +8047,43 @@ def _codex_children(
 
     The bytes come from the root's own budget, newest child first, so reading the children never
     reads more than the root alone could; this is the Claude Code subagent read
-    (`_live_check_scan`) on Codex's files. A child not read in it, one that failed, and one whose
-    version records no exit status are unread, and a pass before its last write is incomplete; a
-    clipped one moves that line to the oldest record read. Every call id is prefixed with the
-    child's thread, so no child's id can collide with the root's or another child's, and each call
-    carries its child as its worker, which labels it subagent work.
+    (`_live_check_scan`) on Codex's files. A child not read in it, one that failed, one whose
+    version records no exit status, and a second rollout of a thread already read are unread, and
+    a pass before its last write is incomplete; a clipped one moves that line to the oldest record
+    read. Every call id is prefixed with the child's thread, an id already taken is refused
+    (`_codex_child_calls`), and each call carries its child as its worker, which labels it subagent
+    work.
     """
     paths = sorted(child_paths, key=lambda path: (-(_mtime(path) or 0), path))
     found = _CodexChildren([], {}, {}, 0, 0, horizon)
     named = {thread for thread in root.threads if thread}
     anonymous = "" in root.threads or root.delegated
     spawns = root.spawns
+    taken = {call[2] for call in root.calls} | root.results.keys() | root.ends.keys()
+    threads_read: set[str] = set()
+    newest: float | None = None
+    unreturned: list[str] = []
     for index, path in enumerate(paths):
         mtime = _mtime(path)
-        scan = _codex_scan(config, path, budget, follow_links=False) if budget.remaining else None
+        thread = _codex_thread_of(path)
+        scan = (
+            _codex_scan(config, path, budget, follow_links=False)
+            if budget.remaining and thread not in threads_read
+            else None
+        )
         if scan is None or scan.unreadable or scan.read.failed or not scan.rollout:
             found = found._replace(unread=found.unread + 1, horizon=_later(found.horizon, mtime))
             continue
         if not scan.read.complete:
             found = found._replace(horizon=_later(found.horizon, _oldest_at(scan.rollout) or mtime))
         child = scan.found
+        threads_read.add(thread)
         named |= {thread for thread in child.threads if thread}
         anonymous = anonymous or "" in child.threads or child.delegated
         spawns += child.spawns
-        prefix = f"{_codex_thread_of(path)}/"
+        newest = _later(newest, child.newest)
         worker = f"{SUBAGENT_WORKER}:{index}"
-        found.calls.extend(
-            (at, cwd, prefix + call_id, tool, tool_input, worker)
-            for at, cwd, call_id, tool, tool_input, _worker in child.calls
-        )
-        found.results.update({prefix + key: value for key, value in child.results.items()})
-        found.ends.update({prefix + key: value for key, value in child.ends.items()})
+        unreturned += _codex_child_calls(child, f"{thread}/", worker, taken, found)
         found = found._replace(read=found.read + 1)
     # A child a read names that the store does not hold, and spawns beyond the children found, are
     # unread too, and the pass is incomplete whatever its time: nothing dates them.
@@ -8059,7 +8091,12 @@ def _codex_children(
     missing += max(0, spawns - len(paths) - missing)
     if not missing and anonymous and not paths:
         missing = 1
-    return found._replace(unread=found.unread + missing, missing=missing)
+    return found._replace(
+        unread=found.unread + missing,
+        missing=missing,
+        newest=newest,
+        unreturned=tuple(unreturned),
+    )
 
 
 def _codex_tally(
@@ -8110,6 +8147,12 @@ def _codex_tally(
     )
     tally.reads_from = children.horizon
     tally.change_ends = {**scan.found.ends, **children.ends}
+    # A script that sent input and never returned may still be writing at the newest record read
+    # anywhere in the session: a child's can outlast the root's last record, and the root's a
+    # child's.
+    newest = _later(scan.found.newest, children.newest) or 0.0
+    for call_id in (*scan.found.unreturned, *children.unreturned):
+        tally.change_ends[call_id] = newest
     tally.scan["last_user_at"] = _last_person_at(scan.rollout, "codex")
     tally.named_unread = children.missing > 0
     tally.parent_failed = scan.read.failed
