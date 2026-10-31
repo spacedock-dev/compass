@@ -193,8 +193,47 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
             "bda3769cd0ea1ff45f1aa124b6f612383c172f98439b1c7fc0c9cb6a30d0f9f6",
             hashlib.sha256(original).hexdigest(),
         )
-        self.assertEqual(11, self.record["scored_runs"])
-        self.assertEqual("claude-results-continuation-10.json", self.runs[-1]["result"])
+        self.assertGreaterEqual(self.record["scored_runs"], 11)
+        self.assertEqual("claude-results-continuation-10.json", self.runs[10]["result"])
+
+    def test_retry_preserves_all_eleven_prior_inventory_entries(self) -> None:
+        original = json.dumps(self.runs[:11], sort_keys=True, separators=(",", ":")).encode()
+        self.assertEqual(
+            "6c6e17ab60ed26332f562df8ac1513eb76261e7cacd2a2c195ce29668859c036",
+            hashlib.sha256(original).hexdigest(),
+        )
+        self.assertEqual(12, self.record["scored_runs"])
+        self.assertEqual("claude-results-continuation-11.json", self.runs[-1]["result"])
+
+    def test_every_result_extends_one_charge_ledger_in_scored_order(self) -> None:
+        chains = [_load(ABSTENTION / run["result"])["ledger_chain"] for run in self.runs]
+        spends = [_load(ABSTENTION / run["result"])["spend"] for run in self.runs]
+        self.assertEqual(1, len({chain["first"] for chain in chains}))
+        self.assertEqual(
+            [spend["charged"] for spend in spends], [chain["calls"] for chain in chains]
+        )
+        charged = [spend["charged"] for spend in spends]
+        self.assertEqual(sorted(set(charged)), charged)
+        self.assertEqual(
+            [13, 18, 23, 28, 30, 32, 34, 36, 38, 68, 98, 128],
+            charged,
+        )
+
+    def test_the_retry_pass_is_recorded_without_moving_the_gate(self) -> None:
+        by_result = {run["result"]: run for run in self.runs}
+        run = by_result["claude-results-continuation-11.json"]
+        self.assertEqual("passed", run["verdict"])
+        self.assertEqual(71, run["correct"])
+        self.assertEqual(96, run["scored_constraints"])
+        self.assertEqual(0, run["dec17_failed_cases"])
+        self.assertEqual("failed", self.record["qualification"])
+        self.assertEqual(
+            annotation_store.ABSTENTION_CHECK_ACCEPTED, annotation_store.CLAUDE_ABSTENTION_CHECK
+        )
+        statement = self.record["statement"]
+        self.assertIn("not an accuracy result", statement)
+        self.assertIn("71 of 96", statement)
+        self.assertIn("study stops", statement)
 
     def test_tenth_records_the_retired_case_and_its_measured_replacement(self) -> None:
         statement = self.record["statement"]
@@ -377,6 +416,53 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
         )
         self.assertEqual(4, failed_exposures)
 
+    def _assert_complete_passed_retry(self, committed: dict[str, Any]) -> None:
+        self.assertEqual(2, committed["v"])
+        self.assertEqual("closure-three-repeats", committed["protocol"])
+        self.assertEqual("passed", committed["verdict"])
+        self.assertIs(False, committed["stopped"])
+        self.assertEqual({"charged": 128, "cap": 129}, committed["spend"])
+        self.assertEqual(
+            {
+                "unique_cases": 10,
+                "registered_exposures": 30,
+                "attempts": 30,
+                "unusable_attempts": 0,
+            },
+            committed["counts"],
+        )
+        self.assertEqual([1, 2, 3], [row["repeat"] for row in committed["repetitions"]])
+        first_cases = set(committed["repetitions"][0]["summary"]["cases"])
+        self.assertEqual(10, len(first_cases))
+        self.assertNotIn("a3c76f898154b2fa", first_cases)
+        correct = []
+        for repetition in committed["repetitions"]:
+            part = repetition["summary"]
+            self.assertEqual("passed", part["verdict"])
+            self.assertEqual(first_cases, set(part["cases"]))
+            self.assertEqual(10, part["counts"]["reached_model"])
+            self.assertEqual(0, part["counts"]["withheld"])
+            # The tenth's reporting gap counted 0 here; the corrected summary counts the vouches.
+            self.assertEqual(2, part["counts"]["recorded_on_transcript_stop"])
+            self.assertEqual(1, part["counts"]["recorded_on_prior_packet"])
+            self.assertEqual(32, sum(len(case["marks"]) for case in part["cases"].values()))
+            self.assertEqual(
+                {"kinds": 5, "role": "scored", "missing": [], "not_produced": []},
+                part["coverage"]["claude"],
+            )
+            self.assertEqual([], part["dec17"]["failed"])
+            counts = part["rubric"]["counts"]
+            self.assertEqual(32, sum(counts.values()))
+            self.assertEqual(0, counts["false-reassurance"])
+            self.assertEqual(0, counts["false-alarm"])
+            self.assertTrue(
+                all(count == 0 for key, count in counts.items() if key.startswith("unscored:"))
+            )
+            # The packet's guards cap a repeat at 25 of 32; a pass is not an accuracy result.
+            self.assertLessEqual(counts["correct"], 25)
+            correct.append(counts["correct"])
+        self.assertEqual([24, 24, 23], correct)
+
     def test_login_repair_records_usable_answers_but_failed_qualification(self) -> None:
         by_result = {run["result"]: run for run in self.runs}
         name = "claude-results-continuation-6.json"
@@ -415,12 +501,15 @@ class EveryScoredRunIsListedWithItsOwnVerdictTest(unittest.TestCase):
         self.assertEqual(last["spend"], self.record["spend"])
         if last.get("v") != 2:
             self.assertEqual(last["spend"]["cap"], last["spend"]["charged"])
+        complete = {
+            "claude-results-continuation-9.json": self._assert_complete_failed_measurement,
+            "claude-results-continuation-10.json": self._assert_complete_failed_tenth,
+            "claude-results-continuation-11.json": self._assert_complete_passed_retry,
+        }
         for run in self.runs:
             committed = _load(ABSTENTION / run["result"])
-            if run["result"] == "claude-results-continuation-9.json":
-                self._assert_complete_failed_measurement(committed)
-            if run["result"] == "claude-results-continuation-10.json":
-                self._assert_complete_failed_tenth(committed)
+            if run["result"] in complete:
+                complete[run["result"]](committed)
             spend = committed["spend"]
             self.assertLessEqual(spend["charged"], spend["cap"])
             if committed.get("v") != 2:

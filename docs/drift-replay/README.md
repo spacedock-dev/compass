@@ -139,6 +139,12 @@ thirty registered readings in epoch six and failed, with five semantic failures 
 attempt. Native charges are 98 of 99 and shared charges are 70. Its unused availability retry
 carries to the one funded retry epoch, seven, whose ceilings would be 129 native and 309 shared.
 The [outcome record](../abstention/README.md#tenth-qualification-outcome-2026-10-30) owns the
+counts and interpretation.
+The [retry Claude result](../abstention/claude-results-continuation-11.json) completed all thirty
+registered readings in epoch seven and passed, with no semantic failure and no unusable attempt.
+It is not an accuracy result and does not qualify the producer on its own. Native charges are 128
+of 129 and shared charges are 100; the availability retry was not used, and the study stops. The
+[retry outcome record](../abstention/README.md#retry-qualification-outcome-2026-10-31) owns the
 counts and interpretation. The spend ledgers this README names stay under `~/.cargento`, where
 they were written; the cases, marks and outputs still follow `COMPASS_HOME`.
 

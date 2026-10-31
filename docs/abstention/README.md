@@ -761,7 +761,8 @@ the owner's separate 2026-10-02 operational acceptance.
 
 ### Retry qualification packet, 2026-10-31
 
-The one corrected retry is prepared and sealed, with no Claude or Codex model call; no result yet. The
+The one corrected retry is prepared and sealed, with no Claude or Codex model call, and its run passed (see the
+[outcome](#retry-qualification-outcome-2026-10-31)). The
 [eleventh grant](claude-continuation-11.json) is sealed, the
 [fixed manifest](../drift-replay/closure-campaign-retry.json) is sealed with its activation anchor, the
 [handoff](../drift-replay/closure-retry-handoff.json) passed its independent review, and epoch seven holds
@@ -817,6 +818,54 @@ stops at the first slot, and refuses 130. The model binding is unchanged: Claude
 running `claude --version` on a private copy of the installed binary, at Sonnet 5.5/high. Grant 11 carries
 one call and renews thirty, for ceilings of 129 native and 309 shared. The run happens from a pinned
 checkout whose runtime, scorer and parser files match the manifest's evidence, and then the study stops.
+
+### Retry qualification outcome, 2026-10-31
+
+The [retry result](claude-results-continuation-11.json) completed all thirty registered Sonnet 5.5/high
+readings on Claude Code 2.1.314, ten cases read three times, with all five recorded kinds represented in
+each repeat. All thirty readings were usable and none failed the semantic check. No attempt was unusable
+and no availability retry ran. Its verdict is `passed`, with `stopped: false`, and each of the three
+repeats passed on its own.
+
+**This is not an accuracy result.** Across 96 scored questions, 71 were correct, with no false
+reassurance, no false alarm, ten missed departures and 15 over-abstentions. No question was unscored.
+Every wrong answer was an abstention. The best this tree can reach is 25 of 32 per repeat, 75 in all,
+and no repeat reached it:
+
+| Repeat | Correct | False reassurance | False alarm | Missed departure | Over-abstention | Semantic failures |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 24 | 0 | 0 | 3 | 5 | 0 |
+| 2 | 24 | 0 | 0 | 3 | 5 | 0 |
+| 3 | 23 | 0 | 0 | 4 | 5 | 0 |
+
+Twenty-one of the 25 wrong answers are the seven guard-withdrawn questions the
+[packet record](#retry-qualification-packet-2026-10-31) lists, abstained in every repeat. The other four
+are Goals the reader left unverified where a departure was marked: `f25545d5bf50515f` in all three
+repeats and `8b8c1a02f6376201` in the third. These observations establish errors on this frozen packet,
+not their cause. No expectation was changed after output.
+
+The pass shows that the corrected reader made no DEC-17 failure on this packet: it never judged a
+should-abstain mark and never reassured falsely, three times over. It does not show that the reader is
+accurate, and it does not move the gate. `annotations.CLAUDE_ABSTENTION_CHECK` stays `accepted`, and
+[claude-acceptance.json](claude-acceptance.json) lists the run with its own `passed` verdict while its
+`qualification` field stays `failed`. Arming the guarded Claude-only browser reading needs this passing
+result and a separate qualification acceptance, which is not given here.
+
+The result's `recorded_on_transcript_stop` and `recorded_on_prior_packet` counts read 2 and 1 in every
+repeat: `8b8c1a02f6376201` and `19f966db1f403710` are vouched by their transcript stops and
+`a3458822654ec47a` by the ninth packet. The tenth result's reporting gap, which counted 0 for both, does
+not recur.
+
+Each batch (one, nine, ten and ten) was reviewed before the next by an independent AGY reviewer,
+`gemini-3.8-flash-high` at effort `high`, shown the batch's charge receipts, statuses and counts, the
+reader's parsed answers and rubric grades, and the frozen case material they cite. All four returned GO
+with no finding, and each receipt names that model and effort. A review records measurement, never a
+pass.
+
+Thirty of the retry's 31 attempts are spent. The native ledger holds 128 charges under its 129-call
+ceiling, and the shared account 100, with thirty in epoch seven. The availability retry was not used.
+No replay or live attempt ran. The study stops here. Every earlier packet, key, result and charge stays
+intact, as does the owner's separate 2026-10-02 operational acceptance.
 
 ### Fourth qualification outcome, 2026-10-06
 
