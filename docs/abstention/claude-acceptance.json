@@ -158,13 +158,27 @@
         "charged": 98
       },
       "verdict": "failed"
+    },
+    {
+      "cases": 10,
+      "correct": 71,
+      "dec17_failed_cases": 0,
+      "inputs_digest": "413db46e4889e7c6bfa3a31128e923519c4177bb21be4027f0a976a9bc2b96f0",
+      "marks_digest": "bd486e586541854ad98503b6cd4dc597584817e9f74b6d8b2a80b87a8927c35b",
+      "result": "claude-results-continuation-11.json",
+      "scored_constraints": 96,
+      "spend": {
+        "cap": 129,
+        "charged": 128
+      },
+      "verdict": "passed"
     }
   ],
-  "scored_runs": 11,
+  "scored_runs": 12,
   "spend": {
-    "cap": 99,
-    "charged": 98
+    "cap": 129,
+    "charged": 128
   },
-  "statement": "Operational Claude reading was accepted by the owner on 2026-10-02; accuracy qualification remains failed. All earlier failed results and charges are preserved, including the blocked fifth continuation that established no accuracy. The eighth continuation stopped after two parsed readings when an approval-qualified outcome was judged despite unknown scope. No full-packet or repeatability pass is established. The ninth continuation completed all thirty registered readings without an early semantic stop, retaining seven failed assessments and a failed aggregate. The unused availability retry remains held; completion does not qualify the producer. The tenth continuation also completed all thirty registered readings on the corrected reader and failed, with five failed assessments. The ninth's legitimate-change case a3c76f898154b2fa was retired by the independent kind review and was not re-measured; the steer-then-explain case 19f966db1f403710 was measured in its place. Its unused availability retry carries to the one funded retry run.",
+  "statement": "Operational Claude reading was accepted by the owner on 2026-10-02; accuracy qualification remains failed. All earlier failed results and charges are preserved, including the blocked fifth continuation that established no accuracy. The eighth continuation stopped after two parsed readings when an approval-qualified outcome was judged despite unknown scope. Until the retry below, no full-packet or repeatability pass was established. The ninth continuation completed all thirty registered readings without an early semantic stop, retaining seven failed assessments and a failed aggregate. The unused availability retry remains held; completion does not qualify the producer. The tenth continuation also completed all thirty registered readings on the corrected reader and failed, with five failed assessments. The ninth's legitimate-change case a3c76f898154b2fa was retired by the independent kind review and was not re-measured; the steer-then-explain case 19f966db1f403710 was measured in its place. Its unused availability retry carries to the one funded retry run. The one corrected retry run completed all thirty registered readings and passed: no failed assessment and no false reassurance in any of its three repeats. That is not an accuracy result. It scored 71 of 96 questions correct, below the 75 the reader's guards allow, and every wrong answer was an abstention. This record's qualification field and the runtime gate are unchanged by it; qualification acceptance is a separate owner decision. Its availability retry was not used, and the study stops.",
   "v": 1
 }
