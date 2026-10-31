@@ -2545,6 +2545,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
     ROOT = SERVER_PATH.parents[3]
     PAGES = (
         "README.md",
+        "docs/how-it-works.md",
         "HOW_TO_USE.md",
         "MANUAL.md",
         "SECURITY.md",
@@ -2575,7 +2576,12 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
                 )
 
     def test_the_pages_say_it_calls_haiku_and_the_accuracy_check_has_not_run(self) -> None:
-        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+        # The README's "How it works" section moved to docs/how-it-works.md, which now says it.
+        for relative in (
+            "docs/how-it-works.md",
+            "docs/promise-map.md",
+            "compass/skills/compass/SKILL.md",
+        ):
             text = self._text(relative)
             with self.subTest(page=relative):
                 self.assertIn("Live monitor · Haiku", text)

@@ -118,6 +118,7 @@ class TheDriftCardControlsTheDocsDescribeAreTheOnesTheCardDrawsTest(unittest.Tes
 
     DOCS: ClassVar[dict[str, str]] = {
         "README.md": (ROOT / "README.md").read_text(encoding="utf-8"),
+        "docs/how-it-works.md": (ROOT / "docs/how-it-works.md").read_text(encoding="utf-8"),
         "docs/promise-map.md": (ROOT / "docs/promise-map.md").read_text(encoding="utf-8"),
         "SKILL.md": SKILL,
     }
@@ -144,7 +145,10 @@ class TheDriftCardControlsTheDocsDescribeAreTheOnesTheCardDrawsTest(unittest.Tes
     def test_each_document_names_both_header_controls(self) -> None:
         sentences = (SRC / "drift/sentences.ts").read_text(encoding="utf-8")
         self.assertIn("RERUN_STALE = 'Check again'", sentences)
+        # The README's "How it works" section moved to docs/how-it-works.md, which names them now.
         for name, text in self.DOCS.items():
+            if name == "README.md":
+                continue
             flat = self._flat(text)
             with self.subTest(document=name):
                 self.assertIn("Check again", flat)
