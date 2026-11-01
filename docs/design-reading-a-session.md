@@ -1658,22 +1658,36 @@ disagree about it. The whole line is `(please|also|then|finally|and)* PHRASE res
 `tell me|us`, `let me|us know`, `report back` with an optional `to me|us`, or
 `report|explain|summarise|describe|mention` followed by `to` or `for` and `me|us`. "show",
 "give", "list" and "confirm" are out on purpose: they name a deliverable, and the last two are
-not in the tells-the-person pattern at all. `rest` holds:
+not in the tells-the-person pattern at all. What follows the phrase must be a request about what
+the agent did, found or changed, so `rest` is empty or:
 
-- no second clause or instruction: a semicolon, a newline, a sentence break followed by more text,
-  ", and" or "then". This is not `_CLAIM_CLAUSE_BREAK` or the folder rules' break, which split on
-  every comma and "and" and would read a request's own "and why" as a second clause;
-- no `and` or `or` except before a wh-word or a determiner, so "which files changed and why" is in
-  and "which files changed and fix the flaky test" is out;
-- no destination word: README, docs, changelog, PR, pull request, description, commit, comment,
+- opens with "with", "about", "on" or "of", a wh-word (what, which, why, how, where, who), or
+  "when",
+  "once", "if" or "whether" followed by you, I or we. "Tell me which files changed" and "Let me know
+  when you're done" are in. "Tell me when the deploy is green" and "Let me know if anything breaks"
+  are out, because their subject is the deploy or the world and not the agent's account, and a
+  message cannot show or break them. "Let me know the migration ran" states a fact and is out for
+  the same reason. Moving them out moves them toward Can't tell;
+- holds no ordering or later action: will, would, shall, should, going to, about to, before, after,
+  until. "Report back to me after pushing to main" and "Tell me what you will delete" are out;
+- holds no second clause or instruction: a semicolon, a newline, a sentence break followed by more
+  text, ", and" or "then". This is not `_CLAIM_CLAUSE_BREAK` or the folder rules' break, which split
+  on every comma and "and" and would read a request's own "and why" as a second clause;
+- joins with "and" or "or" only a short wh-clause or a short determiner phrase with no past-tense
+  verb, so "which files changed and why" and "what changed and the reasons" are in, and "what
+  changed
+  and all files are removed", "what you did and the deploy succeeded" and "which files changed and
+  fix the flaky test" are out;
+- names no destination: README, docs, changelog, PR, pull request, description, commit, comment,
   issue, ticket, wiki, Slack, email, release notes. "Tell the user in the README how to install"
   asks for a file, not a report;
-- no path;
-- no check-result claim, so "Tell me whether the tests pass" still needs a pass.
+- names no path;
+- makes no check-result claim, so "Tell me whether the tests pass" still needs a pass.
 
 The gates. Each exemption holds only where the message can carry it.
 
-- C2, for a `consistent`: a message of the agent's that the row cites was sent at or after the latest
+- C2, for a `consistent`: a message of the agent's that the row cites was sent at or after the
+  latest
   recorded write in the window, counting writes no grant sent. A report sent before the last write
   does not describe it, so that row still reads `no-work-shown`.
 - C1, for a departure: the reading carried every agent message in the window whole, none as an
@@ -1712,23 +1726,31 @@ change. Three findings, from probes on the tree at the time.
    for runs in different or unplaced directories, which are not the same check. It appears in none
    of the tenth and retry cases.
 2. The opposite order was a hole. A run with no result before the claim and a pass after it
-   collapses to the pass, which is after the claim, and C5b read nothing at or before it. "Not shown"
-   then stood, in the confident direction. The publisher now keeps `earlier_unrecorded_at` on the
-   fact, the call time of the newest earlier run of the same identity with no recorded result, as
-   `earlier_failed` is kept, for Claude Code, Codex and Pi. C5b also withdraws when that time is
-   at or before the claim and the fact's own evidence is after it. A pass before the claim, with the
-   lost run before that, still stands.
+   collapses to the pass, which is after the claim, and C5b read nothing at or before it. "Not
+   shown"
+   then stood, in the confident direction. The publisher now keeps `earlier_unrecorded_ats` on the
+   fact: the call time of every earlier run of the same identity with no recorded result, oldest
+   first, the newest 16, as `earlier_failed` is kept, for Claude Code, Codex and Pi. Every time is
+   kept and not only the newest, because a lost run at 1, the claim at 5, another lost run at 8 and
+   a
+   pass at 10 must still withdraw: the first lost run is part of what the claim was made against.
+   C5b
+   also withdraws when any of those times is inside the window and at or before the claim, and the
+   fact's own evidence is after it. A pass before the claim, with the lost runs before that, still
+   stands, and so does a claim made before every lost run.
 3. The covering match was too loose, in the false-reassurance direction. `covering_checks` put
    any recorded pass whose kind the line claims ahead of the agent's message, so an unrelated
    `pytest -q` pass settled "The frontend tests pass" beside a write, which is the case C2 exists
-   to withdraw. A line that names no path is now covered only when its check noun is unqualified, or
-   qualified only by "the", "all", "every", "each", "existing", "our", "my", "no", "zero" or a numeral,
-   with a closed list of lead-in words ("make sure", "ensure", "confirm", "must" and the like) allowed
-   before those.
-   A language, an area, "e2e", "unit", "new" or a project name before the noun means the pass does
-   not cover it, the model's own citations decide, and C2 applies. `covers_line` is not changed:
-   `_bears_on` reads it for the running-turn guard, and narrowing it there would let more mid-flight
-   departures stand.
+   to withdraw. A line that names no path is now covered only when every clause naming its check
+   noun leaves it unqualified. Before the noun that means nothing, or "the", "all", "every", "each",
+   "existing", "our", "my", "no", "zero" or a numeral, with a closed list of lead-in words ("make
+   sure", "ensure", "confirm", "must" and the like) allowed before those. After it, a phrase such as
+   "for the parser", "in the frontend" or "of the crate" is a qualifier too. A language, an area,
+   "e2e", "unit", "new" or a project name means the pass does not cover the line, the model's own
+   citations decide, and C2 applies. A line that also names a kind of check the passing command is
+   not ("Lint and tests pass" beside only a pytest pass) is not covered either. `covers_line` is not
+   changed: `_bears_on` reads it for the running-turn guard, and narrowing it there would let more
+   mid-flight departures stand.
 
 Every change moves toward Can't tell. No token is new, and the page needs no change. Like the
 amendment above, it was made after the recorded 2026-10-31 pass, which measured the earlier reader.
