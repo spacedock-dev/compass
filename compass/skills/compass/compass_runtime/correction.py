@@ -502,10 +502,13 @@ class _Rows:
             # rule 7 lets it. A consistent below keeps the tool's report alone. A departure
             # the record settled stands on the write it cites, which no check carries.
             recorded = why == reading.WHY_RECORDED_WRITE
+            ran = why == reading.WHY_RECORDED_COMMAND
             standing = [
                 f
                 for f in timed
-                if reading.check_supports(f, result, self.window, recorded_write=recorded)
+                if reading.check_supports(
+                    f, result, self.window, recorded_write=recorded, recorded_command=ran
+                )
                 and (not line or reading.bears_on_output(f))
             ]
             return (_DEPARTED, _headline(standing)) if standing else (_NOT_SHOWN, None)

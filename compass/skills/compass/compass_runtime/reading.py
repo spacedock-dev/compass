@@ -326,6 +326,10 @@ WHY_CLAIM_RECORD_UNREAD = "claim-record-unread"
 # departure unless the row says the code, not the model, settled it.
 # [DEC-17](docs/design-reading-a-session.md#amended-2026-10-21-the-record-settles-a-line)
 WHY_RECORDED_WRITE = "recorded-write"
+# The same for a "don't push" line the model departed on while citing a push that exited 0: item 8
+# drops a passing command from a departure, so the row needs its own token to keep it.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)  # noqa: E501
+WHY_RECORDED_COMMAND = "recorded-command"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
@@ -345,6 +349,7 @@ WHY_TOKENS = (
     WHY_CLAIM_UNCITED,
     WHY_CLAIM_RECORD_UNREAD,
     WHY_RECORDED_WRITE,
+    WHY_RECORDED_COMMAND,
 )
 
 # Rule 7 turns on who wrote an evidence entry, so the answer is a closed
@@ -3826,6 +3831,7 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
     window_start: float,
     *,
     recorded_write: bool = False,
+    recorded_command: bool = False,
 ) -> bool:
     """Whether one cited entry may carry this verdict, per the ruling's item 8.
 
@@ -3841,7 +3847,8 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
 
     `recorded_write` is true only for a row stored with `WHY_RECORDED_WRITE`: the
     code found the write inside or outside a folder the line names, so the write
-    itself carries that one departure, and no other verdict.
+    itself carries that one departure, and no other verdict. `recorded_command` is the same for a
+    row stored with `WHY_RECORDED_COMMAND`: a command that exited 0 carries that departure.
     """
     if str(entry.get("type") or "") == CI_CHECK_TYPE:
         # Only a check the code marked as counting, and only for the one verdict its own result
@@ -3886,7 +3893,12 @@ def check_supports(  # noqa: PLR0911 - one return per kind of entry
     if at <= 0 or at < window_start:
         return False
     if result == RESULT_DEPARTURE:
-        return entry.get("result") == RESULT_FAILED
+        return entry.get("result") == RESULT_FAILED or (
+            recorded_command
+            and is_report
+            and entry.get("subject") == COMMAND_SUBJECT
+            and entry.get("result") == RESULT_PASSED
+        )
     if result == RESULT_CONSISTENT:
         return (
             entry.get("result") == RESULT_PASSED
@@ -4375,6 +4387,7 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     checks_unread: bool = False,
     carried: Sequence[LedgerEntry] = (),
     recorded_write: bool = False,
+    recorded_command: bool = False,
 ) -> tuple[list[LedgerEntry], str]:
     """The entries a verdict rests on, and which rule it fails, as its `why` token.
 
@@ -4398,7 +4411,13 @@ def _evidence_rules(  # noqa: PLR0913 - one keyword per fact a rule reads
     supporting = [
         entry
         for entry in cited
-        if check_supports(entry, result, window_start, recorded_write=recorded_write)
+        if check_supports(
+            entry,
+            result,
+            window_start,
+            recorded_write=recorded_write,
+            recorded_command=recorded_command,
+        )
     ]
     dropped = len(supporting) < len(cited)
     if name == CONSTRAINT_CLAIMS:
@@ -4629,7 +4648,7 @@ def _departure_on_words(
     if (
         not is_outcome_line(name)
         or criterion.get("result") != RESULT_DEPARTURE
-        or criterion.get("why") == WHY_RECORDED_WRITE
+        or criterion.get("why") in (WHY_RECORDED_WRITE, WHY_RECORDED_COMMAND)
         or any(_is_record(known[key]) for key in criterion["cites"] if key in known)
         or (words_whole and newest_agent_id in criterion["cites"] and asks_for_a_report(line_text))
     ):
@@ -4750,6 +4769,8 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     requested_at: float | None = None,
     uncitable: frozenset[str] = frozenset(),
     recorded_write: bool = False,
+    recorded_command: bool = False,
+    settle_command: bool = False,
     masked_values: Collection[str] = (),
     scrub_partial: bool = False,
 ) -> Criterion:
@@ -4762,6 +4783,11 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     Each demotion is one-way: a criterion only ever moves toward
     `not verifiable from available evidence`, never away from it, and never
     from nothing toward it.
+
+    `recorded_command` re-reads a stored `WHY_RECORDED_COMMAND` row. `settle_command` is a fresh
+    press: an outcome line's `departure` that cites a push the line forbids and that exited 0 is
+    kept, on the matched pushes and the messages it cited, because item 8 would drop the pass
+    ([DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)).
     """
     result = _scoped_result(name, str(row.get("token") or ""), scope)
     # Which rule took the verdict away, if one did. Set beside each demotion
@@ -4795,6 +4821,12 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     ):
         result = RESULT_UNVERIFIABLE
         why = WHY_UNCITED
+    cited, pushes = _kept_for_a_forbidden_push(
+        clause if line_text is None else line_text,
+        cited,
+        asked=settle_command and result == RESULT_DEPARTURE and is_outcome_line(name),
+    )
+    recorded_command = recorded_command or bool(pushes)
     if result and result != RESULT_UNVERIFIABLE:
         cited, rests_on_nothing = _evidence_rules(
             result,
@@ -4808,10 +4840,16 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
             checks_unread=checks_unread,
             carried=tuple(by_index.values()),
             recorded_write=recorded_write,
+            recorded_command=recorded_command,
         )
         if rests_on_nothing:
             result, why = RESULT_UNVERIFIABLE, rests_on_nothing
-    raw_detail = str(row.get("detail") or "")
+    why, raw_detail = _recorded_command_row(
+        [push for push in pushes if any(push["id"] == kept["id"] for kept in cited)],
+        standing=result == RESULT_DEPARTURE and why == WHY_STANDS,
+        why=why,
+        detail=row.get("detail"),
+    )
     # Rule 4's backstop, on the untruncated prose, and only ever a demotion. It
     # never CREATES a result: a reply carrying no usable token keeps rule 2's
     # absence, and a verdict word in its prose must not turn that into a
@@ -5035,6 +5073,182 @@ def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
         elif limits and not negated and not outside:
             rules.append((RULE_ONLY, folders))
     return tuple(rules)
+
+
+# A line that forbids a push, read whole. The folder rules' clause break splits at a comma and at
+# "and", which would hand "Don't push to main" alone to the grammar in front of "unless CI is
+# green", so this splits only at a sentence end, a semicolon or a newline, and the grammar must
+# match everything between. A condition anywhere in the line, not only after the object, leaves it
+# Can't tell, so a later sentence that opens with a qualifier voids the ban too.
+# [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)  # noqa: E501
+_QUALIFIES_THE_BAN = re.compile(
+    r"^\s*(?:unless|except|exception|however|only|until|when|if|though|although|apart|other\s+than"
+    r"|without|before|after|provided|aside|besides|but|ask\s+me|check\s+with\s+me)\b",
+    re.IGNORECASE,
+)
+_WHOLE_SENTENCE_BREAK = re.compile(r";|\n|(?<=[.!?])\s+")
+_PUSH_NEGATOR = (
+    r"(?:do\s+not|don['\u2019]t|never|must\s+not|mustn['\u2019]t|should\s+not|shouldn['\u2019]t)"
+)
+_FORBIDS_A_PUSH = re.compile(
+    rf"^\s*(?:(?:and|but|also|please)\s+)*{_PUSH_NEGATOR}\s+(?P<force>force[- ]?)?push(?:es|ing)?"
+    r"(?:\s+(?:directly|straight))?"
+    r"(?:\s+(?:to|into|onto)\s+(?:the\s+)?[`'\"]?(?P<ref>[A-Za-z0-9][\w./-]*?)[`'\"]?(?:\s+branch)?)?"
+    r"(?:\s+(?:directly|straight))?\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+# The only flags a push may carry. Any other refuses, which is what keeps a dry run, a deletion,
+# `--all`, `--mirror`, `--tags`, `--prune` and every flag added since out of the match.
+_PUSH_VALUED_FLAGS = frozenset({"-o", "--push-option", "--repo", "--receive-pack", "--exec"})
+_PUSH_PLAIN_FLAGS = frozenset(
+    {"-u", "--set-upstream", "-q", "--quiet", "-v", "--verbose", "--no-verify", "--atomic",
+     "--follow-tags", "--no-follow-tags", "--progress", "--no-progress", "--porcelain"}
+)  # fmt: skip
+_PUSH_FORCE_FLAGS = frozenset({"-f", "--force", "--force-with-lease", "--force-if-includes"})
+_SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&"})
+
+
+@dataclass(frozen=True)
+class ForbiddenPush:
+    """A line's ban on pushing: the branch it names (None for any), and whether it says force."""
+
+    ref: str | None
+    force: bool
+
+
+@dataclass(frozen=True)
+class PushRun:
+    """What a `git push` command pushes. `destinations` leaves out a refspec whose destination is
+    not named (`HEAD`), so only a line that names no branch can be broken by one."""
+
+    remote: str | None
+    destinations: frozenset[str]
+    force: bool
+
+
+def forbidden_pushes(text: str) -> tuple[ForbiddenPush, ...]:
+    """The pushes a line forbids: each whole sentence that matches the push grammar.
+
+    A condition anywhere in the line, a later sentence or the part after a semicolon that opens
+    with a qualifier ("Unless CI passes", "Exception: hotfixes", "Ask me first"), voids the whole
+    ban, since the line then does not forbid the push outright.
+    """
+    sentences = _WHOLE_SENTENCE_BREAK.split(text)
+    if any(_QUALIFIES_THE_BAN.match(sentence) for sentence in sentences):
+        return ()
+    bans = []
+    for sentence in sentences:
+        found = _FORBIDS_A_PUSH.match(sentence)
+        if found:
+            bans.append(ForbiddenPush(found["ref"], found["force"] is not None))
+    return tuple(bans)
+
+
+def push_run(command: str) -> PushRun | None:
+    """The push a command is, or None for anything else.
+
+    It must start with exactly `git push` once `rtk`, `env` and the other known wrappers are off:
+    `git -C x push` and `git -c k=v push` are not matched. A dry run, a deletion (a flag or a
+    `:dst` refspec), `--all`, `--mirror`, `--tags`, `--prune` and any flag not listed refuse, so
+    the line stays Can't tell. A segment with a shell operator in it is not one command.
+    """
+    words = _unwrapped(records.launched_words(command.split()))
+    if " ".join(words[:2]) != "git push" or _SHELL_OPERATORS.intersection(words):
+        return None
+    positional: list[str] = []
+    force = False
+    args, at = words[2:], 0
+    while at < len(args):
+        arg = args[at]
+        flag = arg.split("=", 1)[0]
+        if arg in _PUSH_VALUED_FLAGS:
+            at += 2
+            continue
+        if arg in _PUSH_FORCE_FLAGS or flag == "--force-with-lease":
+            force = True
+        elif arg.startswith("-"):
+            if arg not in _PUSH_PLAIN_FLAGS and flag not in _PUSH_VALUED_FLAGS:
+                return None
+        else:
+            positional.append(arg)
+        at += 1
+    destinations: set[str] = set()
+    for refspec in positional[1:]:
+        force = force or refspec.startswith("+")
+        source, colon, target = refspec.removeprefix("+").partition(":")
+        if colon and not source:
+            return None
+        destination = (target if colon else source).removeprefix("refs/heads/")
+        if destination and destination != "HEAD":
+            destinations.add(destination)
+    return PushRun(positional[0] if positional else None, frozenset(destinations), force)
+
+
+def _push_breaks_ban(ban: ForbiddenPush, run: PushRun) -> bool:
+    if ban.force and not run.force:
+        return False
+    if ban.ref is None:
+        return True
+    ref = ban.ref
+    if run.remote and ref.startswith(f"{run.remote}/"):
+        ref = ref.removeprefix(f"{run.remote}/")
+    return ref in run.destinations
+
+
+def _recorded_command_row(
+    pushes: Sequence[LedgerEntry], *, standing: bool, why: str, detail: object
+) -> tuple[str, str]:
+    """The `why` and explanation of a row, which the code writes itself once a push settled it."""
+    if pushes and standing:
+        return WHY_RECORDED_COMMAND, _ran_the_push_sentence(pushes)
+    return why, str(detail or "")
+
+
+def _kept_for_a_forbidden_push(
+    text: str, cited: list[LedgerEntry], *, asked: bool
+) -> tuple[list[LedgerEntry], list[LedgerEntry]]:
+    """What a departure cites once the code has matched a push, and the pushes matched.
+
+    The matched pushes come first, at most `MAX_RECORDED_CITES`, then the messages the model
+    cited: a command that matched nothing is not carried beside the one that did. With no match
+    the citations are returned as they were.
+    """
+    pushes = _forbidden_pushes_run(text, cited) if asked else []
+    if not pushes:
+        return cited, []
+    messages = [entry for entry in cited if entry["type"] == AGENT_MESSAGE_TYPE]
+    return [*pushes[:MAX_RECORDED_CITES], *messages], pushes
+
+
+def _forbidden_pushes_run(text: str, cited: Sequence[LedgerEntry]) -> list[LedgerEntry]:
+    """The cited commands that are a push this line forbids and that exited 0, oldest first.
+
+    `cited` has passed rule 3, so each is inside the window and after the line was asked for. A
+    push that cannot fail is skipped here, as `check_supports` would drop it, so it never sets the
+    token. A failed push keeps the departure item 8 already gives it, so it is not read here.
+    """
+    bans = forbidden_pushes(text)
+    if not bans:
+        return []
+    matched = []
+    for entry in cited:
+        if (
+            str(entry.get("type") or "") != TOOL_REPORT_TYPE
+            or entry.get("subject") != COMMAND_SUBJECT
+            or entry.get("result") != RESULT_PASSED
+            or cannot_fail(entry)
+        ):
+            continue
+        run = push_run(_check_text(entry))
+        if run is not None and any(_push_breaks_ban(ban, run) for ban in bans):
+            matched.append(entry)
+    return sorted(matched, key=lambda entry: evidence_at(entry) or 0.0)
+
+
+def _ran_the_push_sentence(pushes: Sequence[LedgerEntry]) -> str:
+    first = _check_text(pushes[0])
+    more = f" and {len(pushes) - 1} more" if len(pushes) > 1 else ""
+    return f"`{first}`{more} ran and exited 0 after this line, which rules it out."
 
 
 def _within(path: str, folders: Sequence[str]) -> bool:
@@ -6239,6 +6453,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                 scope=scope,
                 requested_at=(line_requests or {}).get(name) if is_outcome_line(name) else None,
                 uncitable=uncitable,
+                settle_command=True,
                 masked_values=masked_values,
                 scrub_partial=scrub_partial,
             ),

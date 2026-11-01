@@ -136,6 +136,11 @@ export const CLAIM_RECORD_UNREAD =
 export const RECORDED_WRITE = 'recorded-write';
 export const RECORDED_WRITE_UNHELD =
   'Compass settled this from a file write it recorded, and this page does not hold that entry, so it reads as not verifiable.';
+/* The same for a "don't push" line departed on a passing push the code matched (`reading.WHY_RECORDED_COMMAND`):
+   the command is the evidence, and a page that does not hold that entry gives this as the reason it withdrew it. */
+export const RECORDED_COMMAND = 'recorded-command';
+export const RECORDED_COMMAND_UNHELD =
+  'Compass settled this from a push it recorded, and this page does not hold that entry, so it reads as not verifiable.';
 export const CLAIM_UNCITED =
   "The analysis did not cite the agent's message and, for a contradiction or a match, the entry it compared it with, so it reads as not verifiable.";
 
@@ -160,6 +165,7 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   'claim-uncited': CLAIM_UNCITED,
   'claim-record-unread': CLAIM_RECORD_UNREAD,
   [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
+  [RECORDED_COMMAND]: RECORDED_COMMAND_UNHELD,
 };
 
 /* The harness's own "goal met" verdict, and Compass's test of it (`reading.GOAL_VERDICT_*`). The verdict is

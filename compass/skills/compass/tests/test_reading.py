@@ -839,7 +839,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                 self.assertIn(expected, reading.WHY_TOKENS)
                 seen.add(expected)
         self.assertEqual(4, len(seen))
-        self.assertEqual(18, len(reading.WHY_TOKENS))
+        self.assertEqual(19, len(reading.WHY_TOKENS))
         self.assertIn(reading.WHY_STANDS, reading.WHY_TOKENS)
 
 

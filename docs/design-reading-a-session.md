@@ -408,7 +408,9 @@ nothing). The owner narrowed it on 2026-11-01: a line asking only for
 [the agent's own report](#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
 is judged on the agent's message, and
 [a re-run, an unrecorded run and the covering match](#amended-2026-11-01-owner-a-re-run-an-unrecorded-run-and-the-covering-match)
-are read more strictly. Rules 1 and 6 gain a constraint about
+are read more strictly, and
+[a forbidden push that ran](#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)
+is a departure on the command alone. Rules 1 and 6 gain a constraint about
 what the agent claims, with a fourth result of its own, by
 [the amendment of 2026-10-04](#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint).
 
@@ -1599,7 +1601,9 @@ well as the message, so it often reads Can't tell (narrowed by
 [the amendment of 2026-11-01](#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
 for a line that asks only for the agent's own report). A "don't do X" line whose X then ran and succeeded
 cannot depart on the record either, because item 8 drops the passing run from a departure and C1
-then finds only words. A created pull request or a used skill still keeps a `consistent` beside a
+then finds only words (narrowed by
+[the amendment of 2026-11-01](#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)
+for a push). A created pull request or a used skill still keeps a `consistent` beside a
 write without saying anything about the line's content; that residual is kept under the
 2026-10-23 ruling and is the owner's to confirm. The frozen `19f966db` window holds no pull request,
 skill or CI fact, so the measured case cannot recur through either. A departure on a Goal resting on an agent message still reads Medium. A line's
@@ -1756,6 +1760,81 @@ change. Three findings, from probes on the tree at the time.
 
 Every change moves toward Can't tell. No token is new, and the page needs no change. Like the
 amendment above, it was made after the recorded 2026-10-31 pass, which measured the earlier reader.
+
+### Amended 2026-11-01 (owner): a forbidden push that ran carries its departure
+
+A line that says "Do not push to main" could not depart on the record. A probe reproduced it with
+`git push origin main` recorded as exited 0 and the model departing on it and on the agent's message
+that said so. Item 8 drops a passing command from a departure, because only a failed command shows a
+departure, and C1 then found the message alone and read Can't tell. The reader had written the line,
+the record held the push, and the card said nothing.
+
+The owner ruled, on 2026-11-01: "Candidate C. A closed push table, cited by the model and confirmed
+by the code." Rejected: keeping any successful command the model cites, because "Do not push to main"
+would then depart on `git push origin feature-branch` and on `npm install`; keeping a command that
+shares a word with the line, because `feature/main-banner` shares two; and letting the code settle the
+line from the record whatever the model answered, because a reader who later says "go ahead, push to
+main" would then see the agent's correct `consistent` overridden by a departure.
+
+The rule is narrow on purpose. It applies to an outcome line and never to the Goal or the claims row.
+It applies only when the model's own answer for the line is `departure` and one of the entries it
+cited, before item 8 strips it, is a matching command. It never raises a `consistent` or a Can't tell
+reply.
+
+The line has to be a push ban and nothing else. The code reads whole sentences, split at a sentence
+end, a semicolon or a newline, and each must match a negator, then an optional "force", then "push",
+then an optional "directly" or "straight", an optional "to", "into" or "onto" with a branch, and
+nothing more. The negators are "do not", "don't", "never", "must not", "mustn't", "should not" and
+"shouldn't". "Don't push to main until CI passes", "unless", "without", "before", "when", "if" and
+"again" all leave something after the object, so the match fails and the line stays Can't tell. So
+does a condition anywhere else in the line: if a later sentence, or the part after a semicolon,
+opens with a qualifier ("unless", "except", "exception", "however", "only", "until", "when", "if",
+"though", "although", "apart", "other than", "without", "before", "after", "provided", "aside",
+"besides", "but", "ask me" or "check with me"), the whole ban is void. "Don't push to main. Unless
+CI passes." and "Don't push to main. Ask me first." stay Can't tell, while "Fix the retry; do not
+push to main." and "Don't push to main. Then open a PR." match. This
+is not the clause break the folder rules use, which splits at a comma and at "and" and would hand
+"Don't push to main" alone to the grammar in front of "unless CI is green", so the push rule has its
+own sentence splitter.
+
+The command has to start with exactly `git push` once the known wrappers (`rtk`, `env`, `time` and
+the rest of the list `check_family` reads) are off. `git -C x push` and `git -c k=v push` do not
+match. A flag outside a short closed list refuses the match, which is what keeps a dry run, a
+deletion, `--all`, `--mirror`, `--tags`, `--prune` and every flag git adds later out of it. A
+deletion by refspec, `:main`, refuses too. The first word after the flags is the remote and each
+later one is a refspec, whose destination is the part after the colon, without `refs/heads/`. A line
+that names a branch needs that branch among the destinations, and `origin/main` in the line also
+matches remote `origin` with `main`. A destination of `HEAD` or no refspec at all is not a named
+branch, so only a line that names none ("Don't push") is broken by it. A line that says "force"
+needs a force in the command: `-f`, `--force`, `--force-with-lease`, `--force-if-includes` or a `+`
+refspec.
+
+The push has to have succeeded as item 8 counts success for a command: a tool report with a recorded
+exit status of 0, a command that can fail (so `|| true` and `; exit 0` are out), inside the window,
+and after the line was requested. A failed push keeps the departure it already had, and a push with
+no recorded status stays Can't tell.
+
+The row is published as a departure with a new `why` token, `recorded-command`, beside
+`recorded-write`. It cites the matched commands, oldest first and at most `MAX_RECORDED_CITES`, then
+the agent messages the model cited, and its detail is the code's own sentence, for example
+"`git push origin main` ran and exited 0 after this line, which rules it out." The command text is
+already scrubbed by the press. C1 skips the token as it skips `recorded-write`. The token is what lets
+the stored row survive being read again: `check_supports` admits a passing command for a departure
+only when the row carries it, and so do the page's rule 7, the model-free level and the correction,
+each with its own copy of that test. The page words it with a sentence of its own for a page that
+does not hold the command. No other command carries a departure this way. `git commit`, a backticked
+literal such as "Do not run `X`" and every other forbidden action would each need their own ruling
+and their own controls, as the closed runner lists did.
+
+Residual cost. A reader who authorises the push in words after writing the line ("ok, push to main
+now") still sees a departure, because the rule confirms the push happened and does not read the later
+message. That is the ruling's trade, and the departure stands as it did before C1.
+
+A prototype of the matcher agreed with all 25 of the analysis's controls before it was built, and
+the tests hold the owner's fifteen plus a table over the grammar and the command shapes. Like the
+amendments above, this one was made after the recorded 2026-10-31 pass, which measured the earlier
+reader. That pass could not have exercised this rule in any case, because the scorer keeps only the
+citations a row publishes and this rule reads the ones the model gave.
 
 ### Repeated calls
 

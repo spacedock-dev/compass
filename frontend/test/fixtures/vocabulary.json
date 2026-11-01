@@ -317,7 +317,8 @@
     "failed-check-on-record",
     "claim-uncited",
     "claim-record-unread",
-    "recorded-write"
+    "recorded-write",
+    "recorded-command"
   ],
   "workEvidenceByHarness": {
     "claude": [

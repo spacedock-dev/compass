@@ -961,8 +961,9 @@ tail, from `cantTellReason` and `claimHeading`, new functions the recording has 
 page's `Claim to check at #n · age` is the one trigger answer that departs: `correction.differential.test.ts`
 asks the recorded side with the claim taken out of the offer, and every other trigger is still held to it.
 The page also lets a written path carry a departure stored as `recorded-write`, which `checkSupports` takes
-as a flag; the recorded checks and every recorded answer for a row stored without it are unchanged. Golden
-files are unchanged.
+as a flag, and a passing command carry one stored as `recorded-command`, a second flag of the same kind; the
+recorded checks and every recorded answer for a row stored without either are unchanged. Golden files are
+unchanged.
 
 Deviations, each recorded rather than hidden. The card, the numbered list and the departures hold the last
 board they drew while the reader is in the correction box (untouched or edited), composing, or holding a

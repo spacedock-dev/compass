@@ -8,6 +8,7 @@ import {
   CONSISTENT,
   DEPARTURE,
   RESULT_NOTHING_SHOWS_REASON,
+  UNCITED,
   UNSUPPORTED,
   UNVERIFIABLE,
 } from './sentences';
@@ -73,6 +74,72 @@ describe('a line the producer settled from a recorded write', () => {
     const row = read(stored({ why: 'recorded-write' }), []);
     expect(row.result).toBe(UNVERIFIABLE);
     expect(row.why).not.toBe('');
+  });
+});
+
+describe('a line the producer settled from a push that ran', () => {
+  const PUSH = {
+    id: 'k1',
+    type: 'tool_report',
+    source: 'Claude Bash call and paired result',
+    subject: 'command',
+    result: 'passed',
+    work: true,
+    at: 520,
+    summary: 'git push origin main (exited 0; Compass does not know what it checks)',
+  };
+  const PUSH_LINE = 'Do not push to main';
+  const ran = (extra: Record<string, unknown> = {}) => ({
+    result: DEPARTURE,
+    cites: ['k1'],
+    detail: '`git push origin main` ran and exited 0 after this line, which rules it out.',
+    clause: PUSH_LINE,
+    why: 'recorded-command',
+    ...extra,
+  });
+  const readPush = (raw: unknown, entries: readonly unknown[] = [PUSH], window = 100) =>
+    criterion(
+      'line_1',
+      'Expected outcome',
+      PUSH_LINE,
+      raw as never,
+      entries as never,
+      '',
+      false,
+      window,
+      'last-turn',
+    );
+
+  it('departs on the passing command it cites', () => {
+    const row = readPush(ran());
+    expect(row.result).toBe(DEPARTURE);
+    expect(row.citedIds).toEqual(['k1']);
+    expect(row.detail).toContain('git push origin main');
+  });
+
+  it('is withdrawn when a model cited the same passing command with no token', () => {
+    const row = readPush(ran({ why: '' }));
+    expect(row.result).toBe(UNVERIFIABLE);
+    expect(row.why).toBe(CHECK_DOES_NOT_SHOW_IT);
+  });
+
+  it('does not stand on a command that cannot fail', () => {
+    expect(readPush(ran(), [{ ...PUSH, cannotFail: true }]).result).toBe(UNVERIFIABLE);
+  });
+
+  it('does not stand on a passing check or a command with no recorded result', () => {
+    expect(readPush(ran(), [{ ...PUSH, subject: 'check' }]).result).toBe(UNVERIFIABLE);
+    expect(readPush(ran(), [{ ...PUSH, result: '' }]).result).toBe(UNVERIFIABLE);
+  });
+
+  it('does not stand on a push from before the words were saved', () => {
+    expect(readPush(ran(), [{ ...PUSH, at: 40 }]).result).toBe(UNVERIFIABLE);
+  });
+
+  it('says why it was withdrawn where the page does not hold the command', () => {
+    const row = readPush(ran(), []);
+    expect(row.result).toBe(UNVERIFIABLE);
+    expect(row.why).toBe(UNCITED);
   });
 });
 

@@ -35,6 +35,7 @@ import {
   NOT_REACHED,
   OWN_WORDS_ONLY,
   RESULTS,
+  RECORDED_COMMAND,
   RECORDED_WRITE,
   STORED_WHY,
   UNCITED,
@@ -206,7 +207,8 @@ function subjectlessPiCheck(entry: WorkEntry): boolean {
    change and with no changing command after it for a consistent. A written path shows a write and no
    result, so it carries neither, and a subjectless Pi result an older build stored carries none. The one
    exception is a row the producer stored as `recorded-write`: the code, not the model, found that write
-   inside or outside a folder the line names, so it carries that departure and no other verdict. */
+   inside or outside a folder the line names, so it carries that departure and no other verdict. A row stored
+   as `recorded-command` is the same for a command that exited 0: the code matched a push the line forbids. */
 /* The subjects whose fact carries a recorded exit status: a check, a tier 2 CI read and a tier 3 command
    ([DEC-29](../../../docs/design-reading-a-session.md#dec-29-a-commands-result-is-evidence-by-tier-and-a-command-that-cannot-fail-never-passes)).
    A command whose status a later `|| true` forces carries nothing, and the producer says so with `cannotFail`. */
@@ -217,6 +219,7 @@ export function checkSupports(
   result: string,
   windowStart: number | null,
   recordedWrite = false,
+  recordedCommand = false,
 ): boolean {
   if (String(entry.type || '') === 'ci_check') {
     /* A GitHub check the press read: only one the producer marked as counting, and only for the verdict its
@@ -260,7 +263,12 @@ export function checkSupports(
   }
   const at = evidenceAt(entry);
   if (at === null || at <= 0 || (windowStart !== null && at < windowStart)) return false;
-  if (result === DEPARTURE) return entry.result === 'failed';
+  if (result === DEPARTURE) {
+    return (
+      entry.result === 'failed' ||
+      (recordedCommand && report && entry.subject === 'command' && entry.result === 'passed')
+    );
+  }
   if (result === CONSISTENT) {
     return (
       entry.result === 'passed' &&
@@ -419,7 +427,13 @@ export function criterion(
           checkSupports({ ...entry, readIncomplete: false }, result, windowStart),
       );
     const supporting = cited.filter((entry) =>
-      checkSupports(entry, result, windowStart, stored === RECORDED_WRITE),
+      checkSupports(
+        entry,
+        result,
+        windowStart,
+        stored === RECORDED_WRITE,
+        stored === RECORDED_COMMAND,
+      ),
     );
     droppedCheck = supporting.length < cited.length;
     cited = supporting;
