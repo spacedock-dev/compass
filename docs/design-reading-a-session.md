@@ -1786,7 +1786,13 @@ end, a semicolon or a newline, and each must match a negator, then an optional "
 then an optional "directly" or "straight", an optional "to", "into" or "onto" with a branch, and
 nothing more. The negators are "do not", "don't", "never", "must not", "mustn't", "should not" and
 "shouldn't". "Don't push to main until CI passes", "unless", "without", "before", "when", "if" and
-"again" all leave something after the object, so the match fails and the line stays Can't tell. This
+"again" all leave something after the object, so the match fails and the line stays Can't tell. So
+does a condition anywhere else in the line: if a later sentence, or the part after a semicolon,
+opens with a qualifier ("unless", "except", "exception", "however", "only", "until", "when", "if",
+"though", "although", "apart", "other than", "without", "before", "after", "provided", "aside",
+"besides", "but", "ask me" or "check with me"), the whole ban is void. "Don't push to main. Unless
+CI passes." and "Don't push to main. Ask me first." stay Can't tell, while "Fix the retry; do not
+push to main." and "Don't push to main. Then open a PR." match. This
 is not the clause break the folder rules use, which splits at a comma and at "and" and would hand
 "Don't push to main" alone to the grammar in front of "unless CI is green", so the push rule has its
 own sentence splitter.
