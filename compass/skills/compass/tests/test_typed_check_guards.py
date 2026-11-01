@@ -361,7 +361,13 @@ class ASteeringVariableRefusesOnlyTheRunnersItCanReach(TypedCheckGuardCase):
 
     def test_an_argument_assignment_steers_only_make(self) -> None:
         self.assert_ordinary("make test MAKEFLAGS=-n", "make MAKEFLAGS=-n test")
-        self.assert_check("echo MAKEFLAGS=-n; pytest", "pytest MAKEFLAGS=-n", "make test FOO=1")
+        self.assert_check(
+            "echo MAKEFLAGS=-n; pytest",
+            "pytest MAKEFLAGS=-n",
+            "make test FOO=1",
+            "npm test npm_config_x=1",
+            "pnpm test MAKEFLAGS=-n",
+        )
 
     def test_the_owner_environment_variables_still_refuse_before_any_check(self) -> None:
         self.assert_ordinary(
@@ -432,3 +438,153 @@ class ARunThatFoundNoTestsToRunIsNotAPass(TypedCheckGuardCase):
         self.assertEqual(
             "passed", self.result("jest --passWithNoTests", "Tests: 3 passed, 3 total")
         )
+
+
+class APackageManagerScriptShellSetEarlierMakesItsLaterChecksOrdinary(TypedCheckGuardCase):
+    """A script shell that exits zero lets any script pass, so what runs after one is set is not
+    evidence, in this call or an earlier one."""
+
+    def after(self, setups: tuple[str, ...], *commands: str) -> list[dict[str, object]]:
+        self.session = Transcript(self.cwd)
+        for call in (*setups, *commands):
+            self.session.bash(call, "ok", is_error=False)
+        # The setup calls are ordinary commands, so everything left is one of `commands`.
+        return self.checks()
+
+    def assert_ordinary_after(self, setup: str, *commands: str) -> None:
+        for command in commands:
+            with self.subTest(setup=setup, command=command):
+                self.assertEqual([], self.after((setup,), command))
+
+    def assert_check_after(self, setup: str, *commands: str) -> None:
+        for command in commands:
+            with self.subTest(setup=setup, command=command):
+                self.assertEqual(1, len(self.after((setup,), command)))
+
+    def after_a_file(self, name: str, content: str, *commands: str) -> list[dict[str, object]]:
+        self.session = Transcript(self.cwd)
+        self.session.write(self.file(name), content)
+        for command in commands:
+            self.session.bash(command, "ok", is_error=False)
+        return self.checks()
+
+    def test_npm_config_set_script_shell_leaves_a_later_npm_test_ordinary(self) -> None:
+        self.assert_ordinary_after(
+            "npm config set script-shell /usr/bin/true", "npm test", "npm run test"
+        )
+
+    def test_pnpm_config_set_script_shell_leaves_a_later_pnpm_test_ordinary(self) -> None:
+        self.assert_ordinary_after(
+            "pnpm config set script-shell /usr/bin/true", "pnpm test", "pnpm run test"
+        )
+
+    def test_yarn_config_set_script_shell_leaves_a_later_yarn_test_ordinary(self) -> None:
+        self.assert_ordinary_after("yarn config set script-shell /usr/bin/true", "yarn test")
+        self.assert_ordinary_after("yarn config set scriptShell /usr/bin/true", "yarn test")
+
+    def test_npm_config_set_also_reaches_the_managers_that_read_the_same_config(self) -> None:
+        self.assert_ordinary_after(
+            "npm config set script-shell /usr/bin/true", "pnpm test", "yarn test"
+        )
+
+    def test_the_short_spellings_of_config_set_latch_too(self) -> None:
+        self.assert_ordinary_after("npm c set script-shell /usr/bin/true", "npm test")
+        self.assert_ordinary_after("npm set script-shell=/usr/bin/true", "npm test")
+        self.assert_ordinary_after("npm config set --location=project script_shell x", "npm test")
+
+    def test_yarn_set_version_and_a_yarn_path_latch_yarn(self) -> None:
+        self.assert_ordinary_after("yarn set version 4.0.0", "yarn test")
+        self.assert_ordinary_after("yarn policies set-version 1.22.0", "yarn test")
+        self.assert_ordinary_after("yarn config set yarnPath ./fake.cjs", "yarn test")
+
+    def test_a_manager_config_file_written_by_a_tool_latches_every_manager_that_reads_it(
+        self,
+    ) -> None:
+        for command in ("npm test", "pnpm test", "yarn test"):
+            with self.subTest(file=".npmrc", command=command):
+                self.assertEqual(
+                    [], self.after_a_file(".npmrc", "script-shell=/usr/bin/true\n", command)
+                )
+        for name, content, command in (
+            (".yarnrc.yml", "yarnPath: ./fake.cjs\n", "yarn test"),
+            (".yarnrc", 'yarn-path "./fake.js"\n', "yarn test"),
+            ("pnpm-workspace.yaml", "packages: []\nscriptShell: /usr/bin/true\n", "pnpm test"),
+        ):
+            with self.subTest(file=name, command=command):
+                self.assertEqual([], self.after_a_file(name, content, command))
+
+    def test_a_config_file_written_by_a_shell_command_latches_without_reading_the_content(
+        self,
+    ) -> None:
+        self.assert_ordinary_after("echo 'script-shell=/bin/true' >> .npmrc", "npm test")
+        self.assert_ordinary_after("cat other.rc > .npmrc", "pnpm test")
+        self.assert_ordinary_after("cp x.yaml pnpm-workspace.yaml", "pnpm test")
+
+    def test_a_file_edit_is_read_for_the_setting_it_writes(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.edit(self.file(".npmrc"), "registry=a", "script-shell=/bin/true")
+        self.session.bash("npm test", "ok", is_error=False)
+        self.assertEqual([], self.checks())
+
+    def test_a_manager_is_latched_only_for_the_files_it_reads(self) -> None:
+        self.assertEqual(
+            1, len(self.after_a_file(".yarnrc.yml", "yarnPath: ./fake.cjs\n", "npm test"))
+        )
+        self.assertEqual(
+            1,
+            len(self.after_a_file("pnpm-workspace.yaml", "scriptShell: /bin/true\n", "yarn test")),
+        )
+
+    def test_the_latch_holds_in_the_same_call_and_retracts_an_earlier_pass(self) -> None:
+        self.assertEqual(
+            [], self.after((), "npm config set script-shell /usr/bin/true && npm test")
+        )
+        self.assertEqual([], self.after((), "npm test", "npm config set script-shell /bin/true"))
+
+    def test_only_the_steered_managers_checks_become_ordinary(self) -> None:
+        self.assert_check_after(
+            "npm config set script-shell /usr/bin/true",
+            "pytest",
+            "cargo test",
+            "make test",
+            "bun test",
+            "pnpm exec vitest run",
+        )
+
+    def test_a_setting_that_does_not_change_what_npm_test_runs_does_not_latch(self) -> None:
+        self.assert_check_after("npm config set ignore-scripts true", "npm test", "npm run test")
+        self.assert_check_after("npm config set registry https://example.test", "npm test")
+        self.assert_check_after("npm config get script-shell", "npm test")
+        self.assert_check_after("yarn config set registry https://example.test", "yarn test")
+        self.assert_check_after("npm config list", "pnpm test")
+        self.assert_check_after("cat .npmrc", "npm test")
+        self.assert_check_after("grep script-shell .npmrc", "npm test")
+        self.assert_check_after("echo script-shell", "npm test")
+
+    def test_a_config_file_written_without_a_script_setting_does_not_latch(self) -> None:
+        self.assertEqual(
+            1, len(self.after_a_file(".npmrc", "registry=https://example.test/\n", "npm test"))
+        )
+
+    def test_the_latch_holds_in_a_session_that_names_no_folder(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.cwd = ""
+        self.session.bash("npm config set script-shell /usr/bin/true", "ok", is_error=False)
+        self.session.bash("npm test", "ok", is_error=False)
+        self.assertEqual([], self.checks())
+
+    def test_a_latched_call_is_published_as_an_ordinary_command(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.bash("npm config set script-shell /usr/bin/true", "ok", is_error=False)
+        self.session.bash("npm test", "5 passed", is_error=False)
+        events = [event for event in self.read()[0] if event["title"] == "npm test"]
+        self.assertEqual(["command"], [event["subject"] for event in events])
+        self.assertEqual("passed", events[0]["result"])
+
+    def test_a_script_shell_flag_on_the_call_makes_it_ordinary(self) -> None:
+        self.assert_ordinary(
+            "npm test --script-shell=/usr/bin/true",
+            "npm test --script-shell /usr/bin/true",
+            "npm run test --if-present",
+        )
+        self.assert_check("npm test --silent", "npm test --ignore-scripts", "npm run test --silent")

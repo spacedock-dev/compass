@@ -553,6 +553,30 @@ class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):
         self.ran("pnpm lint")
         self.assertNotIn("pnpm lint", self.titles())
 
+    def test_a_script_shell_set_by_config_in_an_earlier_call_withdraws_the_package_scripts(
+        self,
+    ) -> None:
+        self.commit(
+            {
+                "package.json": package(lint="eslint ."),
+                "Makefile": ".PHONY: lint\nlint:\n\tnpm run lint\n",
+                "justfile": "check:\n    mypy .\n",
+            }
+        )
+        self.ran("npm config set script-shell /bin/true")
+        self.ran("npm run lint")
+        self.ran("make lint")
+        self.ran("just check")
+        self.assertEqual(["just check"], self.titles())
+
+    def test_a_setting_that_does_not_change_the_script_shell_leaves_the_scripts_declared(
+        self,
+    ) -> None:
+        self.commit({"package.json": package(lint="eslint .")})
+        self.ran("npm config set registry https://example.test")
+        self.ran("npm run lint")
+        self.assertEqual(["npm run lint"], self.titles())
+
     def test_a_file_changed_by_a_shell_command_differs_from_the_commit_and_declares_nothing(
         self,
     ) -> None:

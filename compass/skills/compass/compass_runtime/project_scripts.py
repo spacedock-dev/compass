@@ -64,6 +64,20 @@ DECLARING_FILES: Final = (
 # `.npmrc`, `yarnPath` in a `.yarnrc.yml`) without touching the `package.json` it reads. A write of
 # one, in any folder, withdraws the package declarations like a write of `package.json` does.
 STEERING_FILES: Final = (".npmrc", ".yarnrc", ".yarnrc.yml")
+# The package managers that read each file a script shell or a yarn binary can be set in. A manager
+# that never reads a file is not steered by a write of it (measured, 2026-11-01: npm and yarn 1 take
+# `script-shell` from an `.npmrc`, pnpm 12 only from its own config and `pnpm-workspace.yaml`, yarn
+# from `.yarnrc`, `.yarnrc.yml` and `yarnPath`). The npm file is listed for pnpm as well, since an
+# earlier pnpm read it.
+SCRIPT_SETTING_FILES: Final = {
+    ".npmrc": ("npm", "pnpm", "yarn"),
+    ".yarnrc": ("yarn",),
+    ".yarnrc.yml": ("yarn",),
+    "pnpm-workspace.yaml": ("pnpm",),
+}
+# A recorded write that changes which shell or binary a package manager runs scripts with, in the
+# same set as the listing writes so a paged read carries it (`Declarations.listing_writes`).
+SCRIPT_SHELL_PREFIX: Final = "script-shell:"
 MAX_FILE_BYTES: Final = 256 * 1024
 MAX_SCRIPTS: Final = 500
 MAX_LINES: Final = 5000
@@ -130,6 +144,15 @@ class Declarations:
     listing_writes: frozenset[str] = frozenset()
     # The Makefile the load trusted, so a cached load notices a file make would now read first.
     make_file: str | None = None
+
+    @property
+    def steered_managers(self) -> frozenset[str]:
+        """The package managers the session changed the script shell of, in any call."""
+        return frozenset(
+            name.removeprefix(SCRIPT_SHELL_PREFIX)
+            for name in self.listing_writes
+            if name.startswith(SCRIPT_SHELL_PREFIX)
+        )
 
     def at_listed_root(self, directory: str) -> bool:
         if not directory or not self.listed_root:

@@ -555,6 +555,33 @@ class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
         self.assertEqual(frozenset({reader_checks.FILENAME}), second.snapshot.cursor.listing_writes)
 
 
+class APackageManagerScriptShellSetInTheSessionWithdrawsItsListedChecks(ReaderChecksTestCase):
+    VERIFY = "npm run verify"
+
+    def test_a_listed_package_command_is_refused_after_the_script_shell_is_set(self) -> None:
+        self.list_checks({str(self.cwd): [self.VERIFY, BAZEL]})
+        self.session.bash("npm config set script-shell /usr/bin/true")
+        self.session.bash(self.VERIFY, "ok")
+        self.session.bash(BAZEL, "ok")
+        self.assertEqual([BAZEL], self.titles())
+
+    def test_the_latch_survives_a_page_boundary(self) -> None:
+        self.session.bash("ls", "a")
+        self.session.save(self.path)
+        first = session_source.read(self.config, str(self.path), "claude", "root")
+        assert first.snapshot is not None
+        self.session.bash("npm test", "5 passed")
+        self.session.save(self.path)
+        subjects = {}
+        for label, latch in (("plain", frozenset()), ("latched", frozenset({"script-shell:npm"}))):
+            cursor = dataclasses.replace(first.snapshot.cursor, listing_writes=latch)
+            page = session_source.read(self.config, str(self.path), "claude", "root", after=cursor)
+            assert page.snapshot is not None
+            subjects[label] = [e.title for e in page.entries]
+            self.assertEqual(latch, page.snapshot.cursor.listing_writes)
+        self.assertEqual({"plain": ["npm test"], "latched": []}, subjects)
+
+
 class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTestCase):
     NAMES = frozenset({"check.sh", "compass-project-checks.json"})
     LISTED = frozenset({("./check.sh",)})

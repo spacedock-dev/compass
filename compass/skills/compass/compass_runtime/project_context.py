@@ -3487,8 +3487,12 @@ _RUN_NOTHING_FLAGS: dict[str, frozenset[str]] = {
     "eslint": frozenset({"--print-config", "--init"}),
     # A package manager forwards to a script whose body is unread, so only the long flags that
     # name a run-nothing mode in more than one runner count.
+    # `--script-shell` swaps the shell npm runs the script with, and `--if-present` exits zero when
+    # the script is missing (measured on npm 11, 2026-11-01); `--ignore-scripts` skips only the
+    # hooks around a script that is named, so it is not here.
     "package": frozenset(
-        {"--collect-only", "--listTests", "--list-tests", "--dry-run", "--no-run"}
+        {"--collect-only", "--listTests", "--list-tests", "--dry-run", "--no-run",
+         "--script-shell", "--if-present"}
     ),
 }  # fmt: skip
 # Closed-list runners with no flag of their own beyond `--help` and `--version`, so a runner added
@@ -3539,6 +3543,13 @@ def _cluster_names(word: str, letters: str, value_letters: str) -> bool:
             if letter in letters:
                 return True
     return False
+
+
+def _manager_steered(declared: project_scripts.Declarations | None, words: list[str]) -> bool:
+    """Whether the session changed the script shell of the package manager `words` start with."""
+    if declared is None or not words:
+        return False
+    return os.path.basename(_runner_words(words)[0]) in declared.steered_managers
 
 
 def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
@@ -3666,10 +3677,6 @@ def _steering_family(name: str, value: str) -> str | None:
     return None
 
 
-# Words whose assignments last past their own segment, where an inline `NAME=v cmd` does not.
-_PERSISTING_PREFIX = frozenset({"export", "declare", "typeset", "readonly", "local"})
-
-
 def _assigned_family(word: str) -> str | None:
     assigned = _SHELL_ASSIGNMENT_RE.match(word)
     return _steering_family(assigned.group(1), word.split("=", 1)[1]) if assigned else None
@@ -3681,7 +3688,7 @@ def _family_assignments(raw: tuple[str, ...]) -> tuple[frozenset[str], bool]:
     An assignment before the program (`MAKEFLAGS=-n make test`, `env JUST_ROOT=x just test`) steers
     its own segment only; an assignment-only segment or an `export` steers every later one. A word
     after the program is an assignment only to `make`, whose command line takes them."""
-    persisting = in_env = skip = False
+    in_env = skip = False
     program_at = len(raw)
     for index, word in enumerate(raw):
         if skip:
@@ -3692,8 +3699,8 @@ def _family_assignments(raw: tuple[str, ...]) -> tuple[frozenset[str], bool]:
             in_env = True
         elif in_env and word in ("-u", "--unset"):
             skip = True
-        elif word in _PERSISTING_PREFIX:
-            persisting = True
+        elif word in _ASSIGNING_PREFIX:
+            continue
         elif not (word.startswith("-") or os.path.basename(word) in records.LAUNCH_WRAPPERS):
             program_at = index
             break
@@ -3701,7 +3708,7 @@ def _family_assignments(raw: tuple[str, ...]) -> tuple[frozenset[str], bool]:
     if raw[program_at : program_at + 1] and os.path.basename(raw[program_at]) == "make":
         scanned = raw
     found = {family for word in scanned if (family := _assigned_family(word))}
-    return frozenset(found), persisting or (program_at == len(raw) and not in_env)
+    return frozenset(found), program_at == len(raw) and not in_env
 
 
 def _segment_steering(parts: list[_Part]) -> list[frozenset[str]]:
@@ -3785,6 +3792,7 @@ def _script_line_is_check(
             or _always_zero(words)
             or _defeated_by_arguments(words)
             or _steers_a_script(part.raw, words, steering[index])
+            or _manager_steered(declared, words)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
             return False
@@ -3863,6 +3871,7 @@ def _declared_check(
         or not words
         or not declared.at(directory)
         or _steers_a_script(raw, words, steering)
+        or _manager_steered(declared, words)
     ):
         return False
     invoked = _script_invocation(words)
@@ -3986,6 +3995,7 @@ def _listed_check(
         declared is None
         or not declared.listed
         or _steers_a_script(raw, words, steering)
+        or _manager_steered(declared, words)
         or tuple(words) not in declared.listed
     ):
         return False
@@ -5228,6 +5238,7 @@ class _ShellCall:
             if _is_check(self.words[i][0])
             and i < steered_from
             and not _family_reaches(self.steering[i], self.words[i][0])
+            and not _manager_steered(declared, self.words[i][0])
             and not _defeated_by_arguments(self.words[i][0])
             and not self._declared_body_refuses(
                 declared, i, self.directories[i] if self.placed[i] else ""
@@ -7572,6 +7583,73 @@ def _shell_names(
     return found
 
 
+# A setting that changes which shell or binary a package manager runs a script with. Neither
+# `ignore-scripts` (it skips the hooks around a named script, which `npm test` and `pnpm test` still
+# run, measured 2026-11-01) nor a registry or an auth token is one.
+_SCRIPT_SETTING_RE = re.compile(r"script[-_]?shell|yarn[-_]?path", re.IGNORECASE)
+_SHARED_NPM_CONFIG = ("npm", "pnpm", "yarn")
+_WRITTEN_TEXT_KEYS = ("content", "new_string", "old_string", "new_source")
+
+
+def _script_shell_tokens(managers: Iterable[str]) -> set[str]:
+    return {project_scripts.SCRIPT_SHELL_PREFIX + manager for manager in managers}
+
+
+def _config_command_managers(words: list[str]) -> tuple[str, ...]:
+    """The managers a `config set` of a script setting, or a `yarn set version`, steers."""
+    if not words or os.path.basename(words[0]) not in _SHARED_NPM_CONFIG:
+        return ()
+    program = os.path.basename(words[0])
+    args = [word for word in words[1:] if not word.startswith("-")]
+    if program == "yarn" and (
+        args[:2] in (["set", "version"], ["policies", "set-version"])
+        or (args[:2] == ["config", "set"] and any(map(_SCRIPT_SETTING_RE.search, args[2:])))
+    ):
+        return ("yarn",)
+    if program == "yarn":
+        return ()
+    # npm and pnpm write the user-level file the other managers read too.
+    if args[:2] in (["config", "edit"], ["c", "edit"]):
+        return _SHARED_NPM_CONFIG
+    keys = args[2:] if args[:2] in (["config", "set"], ["c", "set"]) else []
+    if program == "npm" and args[:1] == ["set"]:
+        keys = args[1:]
+    return _SHARED_NPM_CONFIG if any(map(_SCRIPT_SETTING_RE.search, keys)) else ()
+
+
+def _shell_script_shell_managers(command: str) -> set[str]:
+    """The managers whose script shell a shell command sets: by `config set`, or by writing a
+    config file they read, whatever it holds, since the text may come from another file."""
+    names = frozenset(project_scripts.SCRIPT_SETTING_FILES)
+    found = {
+        manager
+        for name in _shell_names(command, names)
+        for manager in project_scripts.SCRIPT_SETTING_FILES[name]
+    }
+    try:
+        parts = _call_parts_once(command)
+    except Exception:  # noqa: BLE001 - a command that will not parse is failed closed
+        return {*found, *_SHARED_NPM_CONFIG} if _SCRIPT_SETTING_RE.search(command) else found
+    for part in parts:
+        found.update(_config_command_managers(part.words))
+    return found
+
+
+def _tool_script_shell_managers(path: str, tool_input: dict[str, Any]) -> tuple[str, ...]:
+    """The managers a file tool's write of a config file steers: by the setting the text it
+    carries names, or by the file alone where the tool carries no text (a Codex patch)."""
+    managers = project_scripts.SCRIPT_SETTING_FILES.get(os.path.basename(path), ())
+    texts = [tool_input[key] for key in _WRITTEN_TEXT_KEYS if key in tool_input]
+    edits = tool_input.get("edits")
+    for edit in edits if isinstance(edits, list) else ():
+        texts += [edit[key] for key in _WRITTEN_TEXT_KEYS if isinstance(edit, dict) and key in edit]
+    if not texts and not isinstance(edits, list):
+        return managers
+    return (
+        managers if any(isinstance(t, str) and _SCRIPT_SETTING_RE.search(t) for t in texts) else ()
+    )
+
+
 def _written_declaring_files(
     parent: list[dict[str, Any]],
     children: Sequence[list[dict[str, Any]]],
@@ -7611,6 +7689,7 @@ def _written_declaring_files(
         for _at, _cwd, _call_id, name, tool_input, _worker in stream:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if name in (*_WRITE_TOOLS, CODEX_PATCH_TOOL) and isinstance(path, str):
+                found |= _script_shell_tokens(_tool_script_shell_managers(path, tool_input))
                 if os.path.basename(path) in watched:
                     found.add(os.path.basename(path))
                 continue
@@ -7619,8 +7698,22 @@ def _written_declaring_files(
                 # Fails closed like the listing: a command that names a package-manager config
                 # file may have written it, and which script a runner starts follows from it.
                 found.update(n for n in project_scripts.STEERING_FILES if n in command)
+                found |= _script_shell_tokens(_shell_script_shell_managers(command))
                 found |= _shell_names(command, also | {reader_checks.FILENAME}, listed)
     return frozenset(found)
+
+
+def _steered_writes(written: frozenset[str]) -> frozenset[str]:
+    return frozenset(w for w in written if w.startswith(project_scripts.SCRIPT_SHELL_PREFIX))
+
+
+def _only_steered(steered: frozenset[str]) -> project_scripts.Declarations | None:
+    """Declarations that hold no script, only the managers a session changed the shell of."""
+    if not steered:
+        return None
+    return dataclasses.replace(
+        project_scripts.Declarations("", "", {}, {}, {}), listing_writes=steered
+    )
 
 
 def _declared_scripts(
@@ -7645,7 +7738,10 @@ def _declared_scripts(
     comparison covers them.
     """
     if not began_in:
-        return None
+        steered = _steered_writes(
+            _written_declaring_files(parent, children, calls=calls) | prior_writes
+        )
+        return _only_steered(steered)
     loaded: project_scripts.Declarations | None = None
     # `--no-git` means no git command runs in any repository, and this reader runs git reads of
     # its own (`git_status.read_committed`).
@@ -7666,7 +7762,8 @@ def _declared_scripts(
     )
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
-    if loaded is None and not listed:
+    steered = _steered_writes(written)
+    if loaded is None and not listed and not steered:
         return None
     if loaded is None:
         loaded = project_scripts.Declarations("", "", {}, {}, {})
@@ -7676,9 +7773,11 @@ def _declared_scripts(
             loaded,
             listed=listed,
             listed_root=os.path.realpath(root) if root else "",
-            listing_writes=written & (scripts | {reader_checks.FILENAME}),
+            listing_writes=written & (scripts | {reader_checks.FILENAME}) | steered,
             memo={},
         )
+    elif steered:
+        loaded = dataclasses.replace(loaded, listing_writes=steered, memo={})
     return loaded.without(written, withdraw_listing=wrote_listing)
 
 
