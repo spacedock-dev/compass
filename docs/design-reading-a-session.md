@@ -264,9 +264,13 @@ costs: once the agent's message leaves the transcript tail the listing goes with
 while leaving the reading intact. Whether the departing edit is still in the working tree is not
 read, because the git probe publishes no pathnames.
 
-An entry is never newer than the reading beside it. A reading older than the standing one, stored late
-because its press finished after a newer one's, leaves the standing reading in place and is counted as a
-press; nothing already stored is replaced or dropped, including a note that the latest press produced no reading. Readings are ordered by the intent revision they read and then by time, so a reading of a newer revision replaces the standing one even when a clock stepped back gave it an older time. Readings of the same revision and time replace one another, and a standing reading with no time gives way to a new one.
+An entry is never newer than the reading beside it. A reading ordered before the standing one,
+stored late because its press finished after a newer one's, leaves the standing reading in place and
+is counted as a press; nothing already stored is replaced or dropped, including a note that the
+latest press produced no reading. Readings are ordered by the intent revision they read and then by
+time, so a reading of a newer revision replaces the standing one even when a clock stepped back gave
+it an older time. Within one revision, a later or equal reading replaces the standing one, and a
+standing reading with no time gives way.
 
 Adding the two-turn case to the packets the withheld-reassurance check reads is separate work, for
 when qualification resumes.
