@@ -1148,9 +1148,9 @@ class LedgerEntry(TypedDict):
     result: NotRequired[str]
     stale: NotRequired[bool]
     earlier_failed: NotRequired[bool]
-    # When the newest earlier run of this command with no recorded result was called, on a run
-    # that has one: what `_ran_unrecorded_before` reads for a claim made between the two.
-    earlier_unrecorded_at: NotRequired[float]
+    # When each earlier run of this command with no recorded result was called, oldest first, on a
+    # run that has one: what `_ran_unrecorded_before` reads for a claim made after any of them.
+    earlier_unrecorded_ats: NotRequired[list[float]]
     changed_after: NotRequired[bool]
     read_incomplete: NotRequired[bool]
     # When a check's result arrived, where one did (DRC-4702).
@@ -2266,6 +2266,14 @@ def _add_agent_words(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
             row["agent_excerpt"] = f"first {len(words):,} of {total:,} characters"
 
 
+def _unrecorded_times(value: Any) -> list[float]:
+    """The lost-run times a fact carries, read defensively: positive numbers only, the newest 16."""
+    if not isinstance(value, list):
+        return []
+    times = [t for t in (_number(item) for item in value) if t is not None and t > 0]
+    return sorted(times)[-MAX_UNRECORDED_TIMES:]
+
+
 def _add_report_fields(
     row: LedgerEntry,
     fact: Mapping[str, Any],
@@ -2281,9 +2289,9 @@ def _add_report_fields(
     row["result"] = str(fact.get("result") or "")
     row["stale"] = fact.get("before_last_change") is True
     row["earlier_failed"] = fact.get("earlier_failed") is True
-    unrecorded = _number(fact.get("earlier_unrecorded_at"))
-    if unrecorded is not None and unrecorded > 0:
-        row["earlier_unrecorded_at"] = unrecorded
+    unrecorded = _unrecorded_times(fact.get("earlier_unrecorded_ats"))
+    if unrecorded:
+        row["earlier_unrecorded_ats"] = unrecorded
     branch = fact.get("branch")
     record_id = branch.get("record_id") if isinstance(branch, dict) else None
     tail = tool_output.get(record_id) if isinstance(record_id, str) else None
@@ -2311,9 +2319,9 @@ def _add_check_fields(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
     row["result"] = str(fact.get("result") or "")
     row["stale"] = fact.get("before_last_change") is True
     row["earlier_failed"] = fact.get("earlier_failed") is True
-    unrecorded = _number(fact.get("earlier_unrecorded_at"))
-    if unrecorded is not None and unrecorded > 0:
-        row["earlier_unrecorded_at"] = unrecorded
+    unrecorded = _unrecorded_times(fact.get("earlier_unrecorded_ats"))
+    if unrecorded:
+        row["earlier_unrecorded_ats"] = unrecorded
     row["changed_after"] = fact.get("changed_after") is True
     row["read_incomplete"] = fact.get("read_incomplete") is True
     result_at = _number(fact.get("result_at"))
@@ -3642,6 +3650,8 @@ def parse_reply(
 # thousand indices produced a megabyte of duplicated ids, and the page draws
 # one row per citation.
 MAX_CITES = 12
+# The lost-run times a fact keeps; the publisher bounds them the same way.
+MAX_UNRECORDED_TIMES = 16
 
 
 def _indices(value: Any) -> tuple[int, ...]:
@@ -4048,12 +4058,14 @@ def _ran_unrecorded_before(
                 entry.get("result") not in (RESULT_PASSED, RESULT_FAILED)
                 and (_number(entry.get("at")) or 0.0) <= claimed
             )
-            # The fact is the newest run of its command, so a pass after the claim hides a run
-            # with no result before it: the record at the claim held that run and nothing more.
+            # The fact is the newest run of its command, so a pass after the claim hides runs with
+            # no result before it: the record at the claim held those runs and nothing more.
             or (
-                (_number(entry.get("earlier_unrecorded_at")) or 0.0) >= window_start
-                and 0.0 < (_number(entry.get("earlier_unrecorded_at")) or 0.0) <= claimed
-                and (evidence_at(entry) or 0.0) > claimed
+                (evidence_at(entry) or 0.0) > claimed
+                and any(
+                    window_start <= lost <= claimed
+                    for lost in entry.get("earlier_unrecorded_ats", ())
+                )
             )
         )
         for entry in carried
@@ -4280,9 +4292,23 @@ _REPORT_DESTINATION = re.compile(
     r"|comments?|issues?|tickets?|files?\s+named|wiki|slack|email|release\s+notes?)\b",
     re.IGNORECASE,
 )
-_REPORT_AND_OR = re.compile(
-    r"\b(?:and|or)\s+(?!(?:why|how|what|which|whether|where|when|who|if"
-    r"|the|its|their|each|every|all|any)\b)\w",
+# What a report request goes on to ask about: what, why or how, or "with" or "about" something, or
+# a clause about what you did or found. "Tell me when the deploy is green" asks about the deploy
+# and "Let me know the migration ran" states a fact, so neither opens like this.
+_REPORT_OPENER = re.compile(
+    r"^(?:(?:with|about|on|of)\b|(?:what|which|why|how|where|who)\b"
+    r"|(?:when|once|if|whether)\s+(?:you|i|we)\b)",
+    re.IGNORECASE,
+)
+# A later or ordered action is an instruction, not a report on what has happened.
+_REPORT_ORDERING = re.compile(
+    r"\b(?:will|would|shall|should|going\s+to|about\s+to|before|after|until)\b", re.IGNORECASE
+)
+# What an "and" or "or" may join on: a short wh-clause or a short determiner phrase with no verb in
+# the past tense, so "and why" and "and the reasons" join, "and all files are removed" does not.
+_REPORT_JOINED = re.compile(
+    r"^(?:(?:why|how|what|which|whether|where|who)\b(?:\s+\w+){0,4}"
+    r"|(?:the|its|their|each|every|all|any)\s+\w+(?:\s+(?!\w*ed\b)\w+)?)$",
     re.IGNORECASE,
 )
 # Not `_CLAIM_CLAUSE_BREAK`, which splits on every comma and "and" and would read a request's own
@@ -4295,20 +4321,28 @@ def asks_for_a_report(line: str) -> bool:
 
     A strict subset of `_TELLS_THE_PERSON`, which over-matches on purpose because it was built to
     withdraw a pass and would exempt far too much here. "show", "give", "list" and "confirm" are
-    out: they name a deliverable. Whatever follows the request must be one clause, name no
-    destination, path or check result, and join nothing but a wh-word or a determiner. The ruling:
+    out: they name a deliverable. What follows must be one clause that opens with a wh-word, "with",
+    "about", "on", "of" or "when you ...", name no destination, path, check result or later action,
+    and join only a short wh-clause or determiner phrase. The ruling:
     [DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
     """
     match = _REPORT_REQUEST.match(line)
     if match is None:
         return False
     rest = match["rest"].strip().rstrip(".!")
-    return not (
+    if (
         _REPORT_SECOND_CLAUSE.search(rest)
-        or _REPORT_AND_OR.search(rest)
         or _REPORT_DESTINATION.search(rest)
+        or _REPORT_ORDERING.search(rest)
         or _path_tokens(line, files=True)
         or any(_claims_result(line, kind) for kind in _LINE_KINDS)
+    ):
+        return False
+    if not rest:
+        return True
+    head, *tails = re.split(r"\b(?:and|or)\s+", rest, flags=re.IGNORECASE)
+    return _REPORT_OPENER.match(head.strip()) is not None and all(
+        _REPORT_JOINED.match(tail.strip()) for tail in tails
     )
 
 
@@ -5895,27 +5929,40 @@ def _unqualified_before(words: list[str]) -> bool:
     return not rest or rest[-1].lower() in _LEAD_IN
 
 
+# A phrase after the noun that says which tests: "tests for the parser", "tests in the frontend".
+_POSTMODIFIER = re.compile(
+    r"\b(?:for|in|of|on|under|inside|within|from|covering)\s+(?:the\s+|our\s+|my\s+)?\w",
+    re.IGNORECASE,
+)
+
+
 def _names_the_check_unqualified(text: str, command: str) -> bool:
     """Whether the line's result clause names a kind of check this command is, with no qualifier.
 
     A pass of `pytest -q` is about the tests, not about "the frontend tests" or "the e2e tests":
-    a language, an area, "unit", "new" or a project name before the noun says which tests, and a
-    pass of another set does not show them (owner, 2026-11-01). Only `covering_checks` asks,
-    because `covers_line` also serves the running-turn guard (`_bears_on`), where narrowing it
-    would let more mid-flight departures stand.
+    a language, an area, "unit", "new" or a project name before the noun, or a phrase such as "for
+    the parser" after it, says which tests, and a pass of another set does not show them (owner,
+    2026-11-01). Every clause that names the noun must be unqualified, so a second clause cannot
+    hide a qualified one, and a line that also names a kind of check this command is not cannot be
+    covered by it. Only `covering_checks` asks, because `covers_line` also serves the running-turn
+    guard (`_bears_on`), where narrowing it would let more mid-flight departures stand.
     """
-    for kind in _check_kinds(command):
-        noun = _LINE_KINDS[kind]
+    kinds = _check_kinds(command)
+    if any(kind not in kinds and noun.search(text) for kind, noun in _LINE_KINDS.items()):
+        return False
+    named = False
+    for kind in kinds:
         for clause in _CLAIM_CLAUSE_BREAK.split(text):
-            found = noun.search(clause)
-            if (
-                found
-                and _RESULT_CLAIM.search(clause)
-                and not _NOT_A_RESULT.search(clause)
-                and _unqualified_before(re.findall(r"[\w'-]+", clause[: found.start()]))
+            found = _LINE_KINDS[kind].search(clause)
+            if not found:
+                continue
+            if _POSTMODIFIER.search(clause[found.end() :]) or not _unqualified_before(
+                re.findall(r"[\w'-]+", clause[: found.start()])
             ):
-                return True
-    return False
+                return False
+            if _RESULT_CLAIM.search(clause) and not _NOT_A_RESULT.search(clause):
+                named = True
+    return named
 
 
 def covering_checks(

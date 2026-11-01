@@ -4,7 +4,7 @@
   the agent's message even beside a write, under two gates
   ([the amendment](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)).
 - "Not shown" is withdrawn by a run with no recorded result that came before a pass of the same
-  command only when that pass came after the claim (`earlier_unrecorded_at`), and the publisher's
+  command only when that pass came after the claim (`earlier_unrecorded_ats`), and the publisher's
   one-fact-per-command collapse is pinned through the real publisher.
 - A recorded pass covers an outcome line only when the check noun it claims is unqualified, so an
   unrelated `pytest -q` pass no longer settles "The frontend tests pass".
@@ -68,6 +68,21 @@ class ALineAboutTheAgentsReportIsRecognisedByAStrictGrammar(unittest.TestCase):
         "Report back with the list of endpoints you touched",
         "Explain to me why the migration was needed",
         "Summarise for me what changed",
+        "Tell me what you changed and why it was needed",
+        "Please also tell me what changed.",
+        "Report back to me with what you found",
+        "Describe for me how it works",
+        "Tell me what changed and the reasons",
+    )
+    EMPTY = ("Tell me", "Tell me.", "Report back", "Let me know.")
+    NOT_A_REPORT = (
+        "Tell me when the deploy is green",
+        "Let me know if anything breaks",
+        "Tell me what changed and all files are removed",
+        "Tell me what you did and the deploy succeeded",
+        "Report back to me after pushing to main",
+        "Tell me what you will delete",
+        "Let me know the migration ran",
     )
     OUT = (
         "Tell the user in the README how to install",
@@ -89,13 +104,22 @@ class ALineAboutTheAgentsReportIsRecognisedByAStrictGrammar(unittest.TestCase):
         "Explain why the test failed",
     )
 
-    def test_a_request_for_the_agents_report_is_in_the_class(self) -> None:
-        for line in self.IN:
+    def test_every_ruling_example_is_in_the_class(self) -> None:
+        for line in (*self.IN, *self.EMPTY):
             with self.subTest(line=line):
                 self.assertTrue(reading.asks_for_a_report(line))
 
-    def test_anything_else_is_out_of_it(self) -> None:
+    def test_every_ruling_out_of_class_line_is_out(self) -> None:
         for line in self.OUT:
+            with self.subTest(line=line):
+                self.assertFalse(reading.asks_for_a_report(line))
+
+    def test_a_request_that_asks_about_the_world_or_orders_an_action_is_not_a_report_request(
+        self,
+    ) -> None:
+        # The subject of these is the deploy, the migration or a later action, not what the
+        # agent tells you, so no message of the agent's can show or break them.
+        for line in self.NOT_A_REPORT:
             with self.subTest(line=line):
                 self.assertFalse(reading.asks_for_a_report(line))
 
@@ -190,6 +214,20 @@ class ARequestForTheAgentsReportBesideAWriteRestsOnItsMessage(unittest.TestCase)
         row = read(self.facts(), {"line_1": ("unverifiable", ())})["line_1"]
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
 
+    def test_a_not_a_report_line_beside_a_write_keeps_its_withdrawal(self) -> None:
+        for line in ALineAboutTheAgentsReportIsRecognisedByAStrictGrammar.NOT_A_REPORT:
+            with self.subTest(line=line, side="consistent"):
+                facts = self.facts(words="Working on it.")
+                row = read(facts, {"line_1": ("consistent", ("m1",))}, lines=(line,))["line_1"]
+                self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+            with self.subTest(line=line, side="departure"):
+                row = read(
+                    self.facts(words="Done."), {"line_1": ("departure", ("m1",))}, lines=(line,)
+                )["line_1"]
+                self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+
     def test_a_line_outside_the_class_keeps_the_departure_guard(self) -> None:
         row = read(
             self.facts(words="Done."),
@@ -271,6 +309,36 @@ class ARecordedPassCoversOnlyTheCheckTheLineNames(unittest.TestCase):
                 self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
                 self.assertEqual(("m1",), row["cites"])
 
+    def test_a_postmodified_noun_is_not_covered(self) -> None:
+        for line in (
+            "Tests for the parser pass",
+            "The tests in the frontend pass",
+            "tests pass for the frontend",
+            "The tests pass in the Rust crate",
+        ):
+            with self.subTest(line=line):
+                row = self.beside_a_write(line)
+                self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+                self.assertEqual(("m1",), row["cites"])
+
+    def test_a_second_clause_naming_a_qualified_check_is_not_covered(self) -> None:
+        for line in (
+            "The tests pass and the frontend tests pass",
+            "Both the frontend and backend tests pass",
+        ):
+            with self.subTest(line=line):
+                row = self.beside_a_write(line)
+                self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                self.assertEqual(("m1",), row["cites"])
+
+    def test_a_line_naming_another_kind_of_check_is_not_covered(self) -> None:
+        # Only a pytest pass is recorded, and the line also claims lint.
+        row = self.beside_a_write("Lint and tests pass")
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+        self.assertEqual(("m1",), row["cites"])
+
     def test_codex_reads_the_same_way(self) -> None:
         facts = [
             {**base.WORDS_FACT, "source_session": {"harness": "codex", "sid": "s1"}},
@@ -336,7 +404,7 @@ class ARunWithNoResultIsSettledByAReRunOfTheSameCommand(ClaudeChecksTestCase):
     of the same command reaches the reader as one passing fact, and "not shown" is not withdrawn
     for it; a re-run in another directory or none is another identity and still withdraws. The
     shape the issue first filed, two facts sharing a text, is not one the publisher produces.
-    A run with no result before the claim and a pass after it is `earlier_unrecorded_at`'s case."""
+    A run with no result before the claim and a pass after it is `earlier_unrecorded_ats`'s case."""
 
     def at(self, seconds: float) -> float:
         return START.timestamp() + seconds
@@ -375,6 +443,18 @@ class ARunWithNoResultIsSettledByAReRunOfTheSameCommand(ClaudeChecksTestCase):
         self.assertEqual(reading.RESULT_UNSUPPORTED, row["result"])
         self.assertEqual(reading.WHY_STANDS, row["why"])
 
+    def test_a_lost_run_before_the_claim_is_not_hidden_by_a_later_lost_run_and_a_pass(self) -> None:
+        # Lost at 10, the claim at 12, lost again at 15, passed at 20: the newest lost run alone
+        # is after the claim, but the first one was part of the record the claim was made against.
+        row = self.claims([("run", "pytest"), ("run", "pytest"), ("pass", "pytest")], self.at(12))
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_CLAIM_RECORD_UNREAD, row["why"])
+
+    def test_a_lost_run_after_the_claim_alone_does_not_withdraw(self) -> None:
+        row = self.claims([("run", "pytest"), ("pass", "pytest")], self.at(7))
+        self.assertEqual(reading.RESULT_UNSUPPORTED, row["result"])
+        self.assertEqual(reading.WHY_STANDS, row["why"])
+
     def test_a_pass_after_the_claim_does_not_settle_a_run_that_came_before_it(self) -> None:
         row = self.claims([("run", "pytest"), ("pass", "pytest")], self.at(12))
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
@@ -409,18 +489,36 @@ class AClaudeCodePassKeepsWhenAnEarlierRunHadNoResult(ClaudeChecksTestCase):
         self.session.bash("pytest", "5 passed")
         check = self.only_check()
         self.assertEqual("passed", check["result"])
-        self.assertEqual(START.timestamp() + 10, check["earlier_unrecorded_at"])
+        self.assertEqual([START.timestamp() + 10], check["earlier_unrecorded_ats"])
+
+    def test_the_publisher_keeps_every_lost_run_time(self) -> None:
+        for _ in range(3):
+            self.session.call("Bash", {"command": "pytest"})
+        self.session.bash("pytest", "5 passed")
+        lost = self.only_check()["earlier_unrecorded_ats"]
+        self.assertEqual(
+            [START.timestamp() + 10, START.timestamp() + 15, START.timestamp() + 20], lost
+        )
+
+    def test_the_newest_sixteen_lost_run_times_are_kept_oldest_first(self) -> None:
+        for _ in range(20):
+            self.session.call("Bash", {"command": "pytest"})
+        self.session.bash("pytest", "5 passed")
+        lost = self.only_check()["earlier_unrecorded_ats"]
+        self.assertEqual(16, len(lost))
+        self.assertEqual(sorted(lost), lost)
+        self.assertEqual(START.timestamp() + 10 + 5 * 4, lost[0])
 
     def test_a_pass_with_no_lost_run_before_it_carries_none(self) -> None:
         self.session.bash("pytest", "5 passed")
-        self.assertNotIn("earlier_unrecorded_at", self.only_check())
+        self.assertNotIn("earlier_unrecorded_ats", self.only_check())
 
     def test_a_latest_run_with_no_result_carries_none(self) -> None:
         self.session.bash("pytest", "5 passed")
         self.session.call("Bash", {"command": "pytest"})
         check = self.only_check()
         self.assertEqual("not-recorded", check["result"])
-        self.assertNotIn("earlier_unrecorded_at", check)
+        self.assertNotIn("earlier_unrecorded_ats", check)
 
 
 class ACodexPassKeepsWhenAnEarlierRunHadNoResult(CodexChecksTestCase):
@@ -429,12 +527,20 @@ class ACodexPassKeepsWhenAnEarlierRunHadNoResult(CodexChecksTestCase):
         self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=0)
         check = self.only_check()
         self.assertEqual("passed", check["result"])
-        self.assertIsInstance(check["earlier_unrecorded_at"], float)
-        self.assertLess(check["earlier_unrecorded_at"], check["at"])
+        (lost,) = check["earlier_unrecorded_ats"]
+        self.assertLess(lost, check["at"])
+
+    def test_the_publisher_keeps_every_lost_run_time(self) -> None:
+        for _ in range(2):
+            self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=-9)
+        self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=0)
+        check = self.only_check()
+        self.assertEqual(2, len(check["earlier_unrecorded_ats"]))
+        self.assertEqual(sorted(check["earlier_unrecorded_ats"]), check["earlier_unrecorded_ats"])
 
     def test_a_pass_with_no_lost_run_before_it_carries_none(self) -> None:
         self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=0)
-        self.assertNotIn("earlier_unrecorded_at", self.only_check())
+        self.assertNotIn("earlier_unrecorded_ats", self.only_check())
 
 
 class APiPassKeepsWhenAnEarlierRunHadNoResult(PiRecord):
@@ -443,11 +549,19 @@ class APiPassKeepsWhenAnEarlierRunHadNoResult(PiRecord):
         self.bash("pytest -q", is_error=False, text="4 passed in 1s")
         got = self.one()
         self.assertEqual("passed", got["result"])
-        self.assertIsInstance(got["earlier_unrecorded_at"], float)
+        self.assertEqual(1, len(got["earlier_unrecorded_ats"]))
+
+    def test_the_publisher_keeps_every_lost_run_time(self) -> None:
+        self.bash("pytest -q &", is_error=False, text="5 passed in 0.1s")
+        self.bash("pytest -q &", is_error=False, text="5 passed in 0.1s")
+        self.bash("pytest -q", is_error=False, text="4 passed in 1s")
+        got = self.one()
+        self.assertEqual(2, len(got["earlier_unrecorded_ats"]))
+        self.assertEqual(sorted(got["earlier_unrecorded_ats"]), got["earlier_unrecorded_ats"])
 
     def test_a_pass_with_no_lost_run_before_it_carries_none(self) -> None:
         self.bash("pytest -q", is_error=False, text="4 passed in 1s")
-        self.assertNotIn("earlier_unrecorded_at", self.one())
+        self.assertNotIn("earlier_unrecorded_ats", self.one())
 
 
 if __name__ == "__main__":

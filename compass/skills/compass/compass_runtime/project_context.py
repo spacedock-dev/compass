@@ -1658,27 +1658,32 @@ def _pi_changes(block: dict[str, Any]) -> bool:
     return isinstance(command, str) and _ShellCall(0.0, "", {"command": command}).changes()
 
 
-def _earlier_unrecorded_at(history: list[dict[str, Any]], index: int) -> float | None:
-    """When the newest earlier run of this command that has no recorded result was called, for a
-    published run that does have one.
+# How many lost-run times a published fact keeps: the newest, since the claim a reading is asked
+# about is recent, and bounded so a long session cannot grow a fact without limit.
+MAX_UNRECORDED_TIMES = 16
 
-    The publisher keeps one fact per command and it is the newest run, so a pass after a lost run
-    would otherwise hide the lost run. A claim made between the two is then read against a record
-    that did not yet show the later pass (owner, 2026-11-01,
-    [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)).
+
+def _earlier_unrecorded_ats(history: list[dict[str, Any]], index: int) -> list[float]:
+    """When each earlier run of this command that has no recorded result was called, oldest first,
+    for a published run that does have one.
+
+    The publisher keeps one fact per command and it is the newest run, so a pass after lost runs
+    would otherwise hide them. A claim made between two of them is read against the earlier ones,
+    so every time is kept and not only the newest (owner, 2026-11-01,
+    [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-re-run-an-unrecorded-run-and-the-covering-match)).
     A run that cannot fail never counts, as `reading._ran_unrecorded_before` never counts one.
     """
     if history[index]["result"] not in ("passed", "failed"):
-        return None
-    times = [
+        return []
+    times = sorted(
         run["at"]
         for i, run in enumerate(history)
         if i != index
         and run["result"] not in ("passed", "failed")
         and not run.get("cannot_fail")
         and isinstance(run.get("at"), (int, float))
-    ]
-    return max(times, default=None)
+    )
+    return times[-MAX_UNRECORDED_TIMES:]
 
 
 def _latest_pi_checks(
@@ -1704,9 +1709,9 @@ def _latest_pi_checks(
         run["earlier_failed"] = any(
             other["result"] == "failed" for i, (other, _c, _s) in enumerate(history) if i != order
         )
-        unrecorded = _earlier_unrecorded_at([entry for entry, _c, _s in history], order)
-        if unrecorded is not None:
-            run["earlier_unrecorded_at"] = unrecorded
+        unrecorded = _earlier_unrecorded_ats([entry for entry, _c, _s in history], order)
+        if unrecorded:
+            run["earlier_unrecorded_ats"] = unrecorded
         run["changed_after"] = in_call or edited_later
         run["before_last_change"] = run["result"] == "passed" and (
             any(i >= index for i in call.fixers) or edited_later
@@ -6521,9 +6526,9 @@ class _ToolReportTally:
         # Always published, so a reader can tell a command that can fail from an older fact that
         # never said: only the latter is read by its text.
         entry["cannot_fail"] = bool(latest["cannot_fail"])
-        unrecorded = _earlier_unrecorded_at(history, index)
-        if unrecorded is not None:
-            entry["earlier_unrecorded_at"] = unrecorded
+        unrecorded = _earlier_unrecorded_ats(history, index)
+        if unrecorded:
+            entry["earlier_unrecorded_ats"] = unrecorded
         if latest.get("title_n"):
             entry[ID_TITLE_FIELD] = f"{latest['title']}\x1e{latest['title_n']}"
         if latest["result_source"]:
@@ -6589,9 +6594,9 @@ class _ToolReportTally:
             "source": source,
             "rank": _RESULT_ORDER[latest["result"]],
         }
-        unrecorded = _earlier_unrecorded_at(history, index)
-        if unrecorded is not None:
-            entry["earlier_unrecorded_at"] = unrecorded
+        unrecorded = _earlier_unrecorded_ats(history, index)
+        if unrecorded:
+            entry["earlier_unrecorded_ats"] = unrecorded
         if latest["result"] == "not-recorded" and entry["earlier_failed"]:
             # Its only recorded result is a failure: ranked with the failures,
             # or twelve writes would push the failure out of the listing.
@@ -11511,7 +11516,7 @@ def _semantic_fact_from_event(
         "result_reason",
         "runs",
         "earlier_failed",
-        "earlier_unrecorded_at",
+        "earlier_unrecorded_ats",
         "before_last_change",
         "changed_after",
         "read_incomplete",
