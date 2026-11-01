@@ -4064,7 +4064,7 @@ def _ran_unrecorded_before(
                 (evidence_at(entry) or 0.0) > claimed
                 and any(
                     window_start <= lost <= claimed
-                    for lost in entry.get("earlier_unrecorded_ats", ())
+                    for lost in _unrecorded_times(entry.get("earlier_unrecorded_ats"))
                 )
             )
         )
@@ -4304,11 +4304,12 @@ _REPORT_OPENER = re.compile(
 _REPORT_ORDERING = re.compile(
     r"\b(?:will|would|shall|should|going\s+to|about\s+to|before|after|until)\b", re.IGNORECASE
 )
-# What an "and" or "or" may join on: a short wh-clause or a short determiner phrase with no verb in
-# the past tense, so "and why" and "and the reasons" join, "and all files are removed" does not.
+# What an "and" or "or" may join on: a short wh-clause, or a determiner and exactly one word. A
+# longer determiner phrase is a clause ("and the deploy works"), so "and why" and "and the reasons"
+# join and "and all files are removed" does not. Past tense alone cannot tell them apart.
 _REPORT_JOINED = re.compile(
     r"^(?:(?:why|how|what|which|whether|where|who)\b(?:\s+\w+){0,4}"
-    r"|(?:the|its|their|each|every|all|any)\s+\w+(?:\s+(?!\w*ed\b)\w+)?)$",
+    r"|(?:the|its|their|each|every|all|any)\s+\w+)$",
     re.IGNORECASE,
 )
 # Not `_CLAIM_CLAUSE_BREAK`, which splits on every comma and "and" and would read a request's own
@@ -5948,11 +5949,16 @@ def _names_the_check_unqualified(text: str, command: str) -> bool:
     guard (`_bears_on`), where narrowing it would let more mid-flight departures stand.
     """
     kinds = _check_kinds(command)
-    if any(kind not in kinds and noun.search(text) for kind, noun in _LINE_KINDS.items()):
+    judged = _clauses_judging_a_result(text)
+    if any(
+        kind not in kinds and noun.search(clause)
+        for clause in judged
+        for kind, noun in _LINE_KINDS.items()
+    ):
         return False
     named = False
-    for kind in kinds:
-        for clause in _CLAIM_CLAUSE_BREAK.split(text):
+    for clause in judged:
+        for kind in kinds:
             found = _LINE_KINDS[kind].search(clause)
             if not found:
                 continue
@@ -5960,9 +5966,30 @@ def _names_the_check_unqualified(text: str, command: str) -> bool:
                 re.findall(r"[\w'-]+", clause[: found.start()])
             ):
                 return False
-            if _RESULT_CLAIM.search(clause) and not _NOT_A_RESULT.search(clause):
-                named = True
+            named = named or _claims_a_result(clause)
     return named
+
+
+def _claims_a_result(clause: str) -> bool:
+    return bool(_RESULT_CLAIM.search(clause) and not _NOT_A_RESULT.search(clause))
+
+
+def _clauses_judging_a_result(text: str) -> list[str]:
+    """The clauses of a line that say how a check came out, with a bare kind of check ahead of
+    one ("Lint" in "Lint and tests pass") sharing its result. Anything else in the line, such as
+    "the lint config is left alone", claims no result and neither qualifies nor blocks a cover."""
+    judged: list[str] = []
+    shared = False
+    for clause in reversed(_CLAIM_CLAUSE_BREAK.split(text)):
+        bare = re.sub(r"^\s*(?:(?:the|all|our|my)\s+)?", "", clause).strip()
+        if _claims_a_result(clause):
+            judged.append(clause)
+            shared = True
+        elif shared and any(noun.fullmatch(bare) for noun in _LINE_KINDS.values()):
+            judged.append(clause)
+        else:
+            shared = False
+    return judged[::-1]
 
 
 def covering_checks(

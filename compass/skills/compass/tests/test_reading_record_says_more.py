@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from typing import Any
+from typing import Any, cast
 
 from compass_runtime import project_context, reading
 
@@ -83,6 +83,10 @@ class ALineAboutTheAgentsReportIsRecognisedByAStrictGrammar(unittest.TestCase):
         "Report back to me after pushing to main",
         "Tell me what you will delete",
         "Let me know the migration ran",
+        "Tell me what you did and the deploy works",
+        "Tell me what you did and the deploy fails",
+        "Tell me what you did and the deploy ran",
+        "Tell me what you did and the build broke",
     )
     OUT = (
         "Tell the user in the README how to install",
@@ -332,6 +336,20 @@ class ARecordedPassCoversOnlyTheCheckTheLineNames(unittest.TestCase):
                 self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
                 self.assertEqual(("m1",), row["cites"])
 
+    def test_a_second_clause_that_claims_no_result_does_not_block_the_cover(self) -> None:
+        # Each names a check kind or a qualified noun, and none of them says how it came out.
+        for line in (
+            "The tests pass and the build config is unchanged",
+            "All tests pass and the lint config is left alone",
+            "The tests pass, and I added new tests for the parser",
+            "The tests pass and the e2e tests are not changed",
+            "The tests pass and nothing in the test suite was skipped",
+        ):
+            with self.subTest(line=line):
+                row = self.beside_a_write(line)
+                self.assertEqual(reading.RESULT_CONSISTENT, row["result"])
+                self.assertIn("c1", row["cites"])
+
     def test_a_line_naming_another_kind_of_check_is_not_covered(self) -> None:
         # Only a pytest pass is recorded, and the line also claims lint.
         row = self.beside_a_write("Lint and tests pass")
@@ -481,6 +499,24 @@ class ARunWithNoResultIsSettledByAReRunOfTheSameCommand(ClaudeChecksTestCase):
         row = self.claims([("pass", "pytest")], self.at(60))
         self.assertEqual(reading.RESULT_UNSUPPORTED, row["result"])
         self.assertEqual(reading.WHY_STANDS, row["why"])
+
+
+class TheLostRunTimesAreReadAsDefensivelyAsTheyAreBounded(unittest.TestCase):
+    def test_the_reader_and_the_publisher_keep_the_same_number(self) -> None:
+        self.assertEqual(project_context.MAX_UNRECORDED_TIMES, reading.MAX_UNRECORDED_TIMES)
+
+    def test_a_malformed_list_on_a_fact_is_read_as_no_lost_runs(self) -> None:
+        passed = {
+            "type": reading.TOOL_REPORT_TYPE,
+            "subject": reading.CHECK_SUBJECT,
+            "result": "passed",
+            "at": 10.0,
+        }
+        for bad in ("x", ["x", None, -3, True], 7.0, {"a": 1}):
+            with self.subTest(bad=bad):
+                entry = cast("Any", {**passed, "earlier_unrecorded_ats": bad})
+                said_at = cast("Any", {"at": 5.0})
+                self.assertFalse(reading._ran_unrecorded_before([said_at], [entry], 0.0))
 
 
 class AClaudeCodePassKeepsWhenAnEarlierRunHadNoResult(ClaudeChecksTestCase):
