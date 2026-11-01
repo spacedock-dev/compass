@@ -558,6 +558,7 @@ class _LineTally:
             scope=self.scope,
             requested_at=requested_at,
             recorded_write=why == reading.WHY_RECORDED_WRITE,
+            recorded_command=why == reading.WHY_RECORDED_COMMAND,
         )
         if name == reading.CONSTRAINT_CLAIMS:
             # Its own two flags, never `departed`: a claim is not the intent.

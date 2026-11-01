@@ -13,6 +13,7 @@ import {
   RESULT_NOTHING_SHOWS_REASON,
   RESULT_UNMARK,
   TELLS_THE_PERSON,
+  UNCITED,
   UNKNOWN_KEY,
 } from '../src/drift/sentences';
 import { neverDone, noCheckMark } from './drift.checks';
@@ -134,7 +135,7 @@ async function citesResolvably(root: HTMLElement, constraint: string, clause: st
       `Show ${number} in Full activity for ${clause ? `${constraint}: ${clause}` : constraint}`,
     );
     await expect(chip.previousSibling?.textContent).toMatch(
-      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|(At (\d\d:\d\d|a time not recorded) (the agent changed .+\.|a check (failed|ran)(: .+\.|\.)|the agent said (“.+”|something)\.|you said “.+”\.|[a-z ]+ was recorded\.))|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|File write: .+)$/,
+      /^(failed check|passed check|File write|Agent message|Your message|Recorded entry|Agent said: “.+”|(At (\d\d:\d\d|a time not recorded) (the agent changed .+\.|a check (failed|ran)(: .+\.|\.)|the agent said (“.+”|something)\.|you said “.+”\.|[a-z ]+ was recorded\.))|\[\d+(\.\d+)?\]|You said: “.+”|(Failed|Passed|Recorded) check: .+|Command that exited 0: .+|File write: .+)$/,
     );
     const row = document.querySelector<HTMLElement>(
       `[data-next-entry-id="${CSS.escape(chip.dataset['nextCite'] ?? '')}"]`,
@@ -161,7 +162,7 @@ async function departureCard(
      own sentence, which the label above it already names. */
   const heading = within(node).getByRole('heading', { level: 4 });
   await expect(heading.textContent).toMatch(
-    /^(It changed .+ against .+|(A check failed|A check ran)( at \d\d:\d\d)? against .+|(What the agent said|Your own words|Something in the record)( at \d\d:\d\d)? depart(s)? from .+)$/,
+    /^(It changed .+ against .+|(A check failed|A check ran|A command ran|A command exited non-zero)( at \d\d:\d\d)? against .+|(What the agent said|Your own words|Something in the record)( at \d\d:\d\d)? depart(s)? from .+)$/,
   );
   await expect(heading.textContent).not.toBe(clause);
   await expect(node).toHaveAccessibleName(heading.textContent ?? '');
@@ -646,6 +647,76 @@ export const AModelsDepartureOnAWriteAloneIsStillWithdrawn: Story = {
     const row = quietRow(shown, 'line_1');
     await expect(row).toHaveAttribute('data-next-result-state', 'cant-tell');
     await reasonInView(row, CHECK_DOES_NOT_SHOW_IT);
+  },
+};
+
+/* A push the record holds as exited 0, under a line that forbids it, settles the line the way a write does:
+   item 8 drops a passing command from a departure, so the producer stores the row with its own token and the
+   page lets that one command carry it. */
+const PUSH_LINE = 'Do not push to main';
+const PUSH = fact('k1', 520, {
+  subject: 'command',
+  result: 'passed',
+  result_source: 'passed flag',
+  summary: 'git push origin main',
+});
+const PUSH_DETAIL = '`git push origin main` ran and exited 0 after this line, which rules it out.';
+const pushReading = (why: string) => ({
+  annotation_line_1: PUSH_LINE,
+  ...stored(
+    reading({
+      goal: GOAL_CONSISTENT,
+      line_1: { result: 'departure', cites: ['k1'], detail: PUSH_DETAIL, clause: PUSH_LINE, why },
+    }),
+  ),
+});
+
+export const APushThatRanSettlesALineThatForbidsIt: Story = {
+  ...scenario({ session: pushReading('recorded-command'), facts: [PERSON, PASSED, PUSH] }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(await verdictOf(drift)).toHaveTextContent('1 departure');
+    const cards = departures(shown);
+    await expect(cards.map((node) => node.dataset['nextDeparture'])).toEqual(['line_1']);
+    await departureCard(
+      cards[0] as HTMLElement,
+      'Expected outcome',
+      PUSH_LINE,
+      PUSH_DETAIL,
+      'Expected outcome line 1',
+    );
+    await expect(chips(cards[0] as HTMLElement)).toHaveLength(1);
+    await expect(citedLines(cards[0] as HTMLElement)[0]).toHaveTextContent(/git push origin main/);
+    await neverDone(shown);
+  },
+};
+
+/* The same push cited with no token is a model's departure on a passing command, which item 8 withdraws: the
+   token is what lets a push stand and nothing else. */
+export const AModelsDepartureOnAPassingPushAloneIsStillWithdrawn: Story = {
+  ...scenario({ session: pushReading(''), facts: [PERSON, PASSED, PUSH] }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(departures(shown)).toHaveLength(0);
+    const row = quietRow(shown, 'line_1');
+    await expect(row).toHaveAttribute('data-next-result-state', 'cant-tell');
+    await reasonInView(row, CHECK_DOES_NOT_SHOW_IT);
+  },
+};
+
+/* A page that does not hold the push the row cites cannot show it, so it withdraws the departure and says
+   there is nothing to read it against rather than drawing a card it cannot back. */
+export const APushTheBoardDoesNotHoldIsWithdrawnWithItsReason: Story = {
+  ...scenario({ session: pushReading('recorded-command'), facts: [PERSON, PASSED] }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    const shown = await result(drift);
+    await expect(departures(shown)).toHaveLength(0);
+    const row = quietRow(shown, 'line_1');
+    await expect(row).toHaveAttribute('data-next-result-state', 'cant-tell');
+    await reasonInView(row, UNCITED);
   },
 };
 
