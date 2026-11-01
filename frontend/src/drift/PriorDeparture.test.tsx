@@ -283,3 +283,40 @@ describe('an earlier departure the agent’s word answered', () => {
     );
   });
 });
+
+describe('an earlier departure the later reading cannot tell about', () => {
+  const SENTENCE = (later: number) =>
+    `From the ${clock(1000)} reading. The ${clock(later)} reading can't tell about this line, so it shows neither that this departure ended nor that it stands.`;
+
+  it('stays listed, and is never said to no longer hold', async () => {
+    const page = mountDrift({ facts: FACTS, session: {} });
+    await page.settle();
+    await page.poll(board(1000, DEPARTED, 1, 1100));
+    await page.settle();
+    await page.poll(board(1200, UNSETTLED, 2, 1210, PRIOR));
+    await page.settle();
+    const card = document.querySelector<HTMLElement>('[data-next-prior-departure="line_2"]');
+    expect(card?.querySelector('[data-next-departure-label]')?.textContent).toBe(
+      'Earlier departure · Expected outcome 2',
+    );
+    expect(textOf('[data-next-prior-departure-source]')).toBe(SENTENCE(1200));
+    expect(document.querySelector(CLEARED)).toBeNull();
+    expect(textOf(LISTED)).toBe(
+      `The departure from the ${clock(1000)} reading is still listed below: the reading after it shows neither that it ended nor that it stands.`,
+    );
+    expect(
+      document
+        .querySelector('[data-next-result-row="line_2"]')
+        ?.getAttribute('data-next-result-state'),
+    ).toBe('cant-tell');
+  });
+
+  it('is listed from the store on a reading this tab never saw depart', async () => {
+    const page = mountDrift({ facts: FACTS, session: {} });
+    await page.settle();
+    await page.poll(board(1200, UNSETTLED, 2, 1210, PRIOR));
+    await page.settle();
+    expect(textOf('[data-next-prior-departure-source]')).toBe(SENTENCE(1200));
+    expect(document.querySelector(CLEARED)).toBeNull();
+  });
+});

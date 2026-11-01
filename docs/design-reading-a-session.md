@@ -254,8 +254,9 @@ cites, so the press that holds the facts names the lines a passing check answere
 not reach it. It is published as `annotation_prior_departures` and is not admitted to session
 history. It never counts toward the drift level, Steer back or the unasked lane.
 
-The page lists an entry only where the later reading's row rests on the agent's messages alone, the
-same derivation that writes "Consistent with what the agent said at #n". A line a check or a written
+The page lists an entry where the later reading's row rests on the agent's messages alone, the
+same derivation that writes "Consistent with what the agent said at #n", and, since 2026-11-01,
+[beside a row that cannot tell](#amended-2026-11-01-owner-an-earlier-departure-stays-listed-beside-cant-tell). A line a check or a written
 file now answers is not listed. A passing check drops it, as above; the store keeps one a written
 file answers until the rules above drop it. An entry stays undimmed when the reader marks the later
 reading Not accurate, because the mark is about that reading and not the earlier one. Two accepted
@@ -274,6 +275,39 @@ standing reading with no time gives way.
 
 Adding the two-turn case to the packets the withheld-reassurance check reads is separate work, for
 when qualification resumes.
+
+### Amended 2026-11-01 (owner): an earlier departure stays listed beside Can't tell
+
+The ruling above listed an earlier departure only beside a row resting `consistent` on the agent's
+messages. A later reading that reads Can't tell on the same line kept the departure in the store and
+hid it from the page, and a tab that had watched the earlier reading then said "The departure from
+the 10:00 reading no longer holds." beside a row that only says it cannot tell. That is a confident
+answer drawn from an absence, and it reads as though the steer worked.
+
+Owner ruling, 2026-11-01: list it, with the neutral sentence (Candidate A). An earlier departure
+stays listed beside a later row that reads Can't tell or Not reached, unless the later reading
+answers that line on the record: by departing there again, or by a `consistent` resting on a check
+or tool outcome. The clause, held-citation and newest-per-line rules are unchanged, and a
+`consistent` resting on anything other than the messages alone or a check or tool outcome stays
+unlisted, as before. The page keys this on how it draws the later row, never on which guard produced
+it, so a change to the guards that make Can't tell moves which rows need the sentence and not the rule.
+
+The card says neither half. Its provenance line reads "From the 10:00 reading. The 10:05 reading
+can't tell about this line, so it shows neither that this departure ended nor that it stands.", with
+"about the goal" on the goal card and "had not reached this line" beside Not reached. The sentence
+above the list reads "The departure from the 10:00 reading is still listed below: the reading after
+it shows neither that it ended nor that it stands." and, in the plural, "the reading after them shows
+neither that they ended nor that they stand." When every listed departure sits beside a message
+`consistent`, the earlier wording is kept as it was; a mix reads the neutral one. A listed line is
+left out of the tab's "no longer holds" count by the mechanism the first listing already used.
+
+Rejected. Listing it only beside the Can't tell that the C1 and C2 guards made from the agent's word:
+every other kind of Can't tell would keep hiding the departure and the tab would keep calling it
+gone, and the page would depend on a guard's token. Not listing it: the confident "no longer holds"
+beside a Can't tell would stay, and a reload would show no sign that an earlier reading found a
+departure. Still open, because the page cannot list what it does not hold: a departure whose cited
+entries the page no longer holds, and one the store lacks, still read "no longer holds" in a tab that
+watched them depart.
 
 ## DEC-16: Compass does not write into a session
 
@@ -1559,11 +1593,11 @@ write without saying anything about the line's content; that residual is kept un
 2026-10-23 ruling and is the owner's to confirm. The frozen `19f966db` window holds no pull request,
 skill or CI fact, so the measured case cannot recur through either. A departure on a Goal resting on an agent message still reads Medium. A line's
 departure no longer can, because none rests on messages alone. The page lists
-[an earlier departure](#amended-2026-10-30-owner-an-earlier-departure-stays-listed) only beside a
+[an earlier departure](#amended-2026-10-30-owner-an-earlier-departure-stays-listed) beside a
 row the later reading rests `consistent` on the agent's messages. In a window holding a write, that
-row now reads Can't tell, so the page no longer lists the earlier departure there, though the store
-keeps it. Listing it beside such a Can't tell row too would be a page change, and is left as a
-follow-up.
+row now reads Can't tell. The page lists the earlier departure there too, with the sentence that says
+the reading shows neither that it ended nor that it stands, under
+[the 2026-11-01 amendment](#amended-2026-11-01-owner-an-earlier-departure-stays-listed-beside-cant-tell).
 
 The replay. `scripts/tests/test_tenth_replay.py` sends each of the tenth's thirty recorded resolved
 answers through the real `score_case` with a fake model and no process, on this tree. Every guard

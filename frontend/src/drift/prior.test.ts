@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { annotationOf } from '../intent/annotation';
 import { clock } from '../observed';
 import { priorDepartures } from './prior';
+import { resultState } from './result';
 import { clearedLine, priorDepartureLine, priorListedLine } from './sentences';
 import { readingShape } from './shape';
 
@@ -137,7 +138,7 @@ describe('an earlier departure beside the reading after it', () => {
     expect(priorDepartures([stored()], checked, ENTRIES as never)).toEqual([]);
   });
 
-  it('is not listed where the later reading departs there again or cannot tell', () => {
+  it('is not listed where the later reading departs there again', () => {
     const again = shapeOf({
       result: 'departure',
       cites: ['w1'],
@@ -145,8 +146,59 @@ describe('an earlier departure beside the reading after it', () => {
       why: 'recorded-write',
     });
     expect(priorDepartures([stored()], again, ENTRIES as never)).toEqual([]);
-    const cantTell = shapeOf(UNSETTLED);
-    expect(priorDepartures([stored()], cantTell, ENTRIES as never)).toEqual([]);
+  });
+
+  it('is listed where the later reading cannot tell about the line', () => {
+    for (const later of [
+      UNSETTLED,
+      { result: 'not verifiable from available evidence', why: 'no-work-shown', cites: ['m1'] },
+    ]) {
+      const [prior] = priorDepartures([stored()], shapeOf(later), ENTRIES as never);
+      expect(prior?.key).toBe('line_2');
+      expect(prior?.answer).toBe('cant-tell');
+      expect(resultState(prior!.later)).toBe('cant-tell');
+    }
+  });
+
+  it('is listed where a mid-flight reading has not reached the line', () => {
+    const raw = {
+      revision_read: 3,
+      window_start: 100,
+      scope: 'mid-flight',
+      read_at: 1200,
+      criteria: {
+        goal: { ...UNSETTLED, clause: 'Ship the queue' },
+        line_1: { ...UNSETTLED, clause: 'Tests pass' },
+        line_2: { clause: LINE, detail: '', result: 'not reached at this stop', cites: ['m1'] },
+      },
+    };
+    const annotation = annotationOf({
+      harness: 'claude',
+      sid: 's1',
+      annotation_goal: 'Ship the queue',
+      annotation_line_1: 'Tests pass',
+      annotation_line_2: LINE,
+      annotation_revision: 3,
+      annotation_assessment: raw,
+    } as never);
+    const shape = readingShape(raw, annotation, ENTRIES as never, '', false, () => 'typed');
+    const [prior] = priorDepartures([stored()], shape, ENTRIES as never);
+    expect(prior?.answer).toBe('not-reached');
+  });
+
+  it('is listed on the goal where the goal cannot tell beside a line that is not consistent', () => {
+    const [prior] = priorDepartures(
+      [{ ...stored(), key: 'goal', criterion: { ...stored().criterion, clause: 'Ship the queue' } }],
+      ON_MESSAGE,
+      ENTRIES as never,
+    );
+    expect(prior?.key).toBe('goal');
+    expect(prior?.answer).toBe('cant-tell');
+  });
+
+  it('says it was answered by the agent’s message where the later line rests on it', () => {
+    const [prior] = priorDepartures([stored()], ON_MESSAGE, ENTRIES as never);
+    expect(prior?.answer).toBe('said');
   });
 
   it('is not listed once the reader has changed the words it departed from', () => {
@@ -199,6 +251,39 @@ describe('what the page says about it', () => {
     expect(priorDepartureLine(clock(1000), clock(1200), '#17', 'goal')).toBe(
       `From the ${clock(1000)} reading. The ${clock(1200)} reading rests the goal on what the agent said at #17, which is not a check.`,
     );
+  });
+
+  it('says a later reading that cannot tell shows neither that the departure ended nor that it stands', () => {
+    const at = clock(1000);
+    const later = clock(1200);
+    expect(priorDepartureLine(at, later, '', 'line_2', 'cant-tell')).toBe(
+      `From the ${at} reading. The ${later} reading can't tell about this line, so it shows neither that this departure ended nor that it stands.`,
+    );
+    expect(priorDepartureLine(at, later, '', 'goal', 'cant-tell')).toBe(
+      `From the ${at} reading. The ${later} reading can't tell about the goal, so it shows neither that this departure ended nor that it stands.`,
+    );
+    expect(priorDepartureLine(at, later, '', 'line_2', 'not-reached')).toBe(
+      `From the ${at} reading. The ${later} reading had not reached this line, so it shows neither that this departure ended nor that it stands.`,
+    );
+    expect(priorDepartureLine(at, later, '#17', 'line_2', 'said')).toBe(
+      priorDepartureLine(at, later, '#17', 'line_2'),
+    );
+  });
+
+  it('says the reading after an unanswered departure shows neither that it ended nor that it stands', () => {
+    expect(priorListedLine(1, clock(1000), false, true)).toBe(
+      `The departure from the ${clock(1000)} reading is still listed below: the reading after it shows neither that it ended nor that it stands.`,
+    );
+    expect(priorListedLine(2, clock(1000), false, true)).toBe(
+      `The 2 departures from the ${clock(1000)} reading are still listed below: the reading after them shows neither that they ended nor that they stand.`,
+    );
+    expect(priorListedLine(2, '', false, true)).toBe(
+      'The 2 departures from earlier readings are still listed below: the reading after them shows neither that they ended nor that they stand.',
+    );
+    expect(priorListedLine(1, clock(1000), true, true)).toBe(
+      `Another departure from the ${clock(1000)} reading is still listed below: the reading after it shows neither that it ended nor that it stands.`,
+    );
+    expect(priorListedLine(1, clock(1000), false, false)).toBe(priorListedLine(1, clock(1000)));
   });
 
   it('counts both lines apart when one departure is listed and another no longer holds', () => {

@@ -251,7 +251,7 @@ export function createDriftState(shell: Shell) {
       const since = now.before.readAt;
       const corrections = pastedAt.filter((at) => at > since && at <= readAt).length;
       /* A departure the card still lists, because the reading after it rests that line on the agent's word
-         alone, is not watched to have ended: the verdict says it is listed instead. */
+         alone or cannot tell about it, is not watched to have ended: the verdict says it is listed instead. */
       const watched = now.before.departures.filter((earlier) => !listed.includes(earlier.key));
       const gone = watched.filter(
         (earlier) => !departures.some((later) => sameDeparture(earlier, later)),
