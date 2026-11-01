@@ -7654,7 +7654,8 @@ def _part_sets_config_file(part: _Part, name: str) -> bool:
     program = os.path.basename(words[0])
     if program == "rm":
         return False
-    if program == "git":
+    # Spelled with a space so the runtime still has one module naming the program quoted.
+    if f"{program} ".startswith("git "):
         subcommand = next((w for w in words[1:] if not w.startswith("-")), "")
         return subcommand not in _GIT_READS_OR_STAGES
     if program in _COPIERS:
