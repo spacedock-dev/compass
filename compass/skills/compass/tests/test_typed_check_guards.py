@@ -148,6 +148,47 @@ class ATypedRunThatRunsNothingIsAnOrdinaryCommand(TypedCheckGuardCase):
         )
         self.assert_check("npm test", "pnpm run test -- --coverage")
 
+    def test_a_help_or_version_flag_inside_a_short_option_cluster(self) -> None:
+        self.assert_ordinary(
+            "pytest -qh",
+            "pytest -hq",
+            "pytest -xh",
+            "pytest -qV",
+            "python3 -m pytest -qh tests",
+            "make -sh",
+            "make test -sv",
+        )
+        self.assert_check(
+            "pytest -kh",
+            "pytest -k h",
+            "pytest -mh",
+            "pytest -qx",
+            "pytest -xvs",
+            "pytest -rA",
+            "pytest -q -x",
+            "pytest -- -qh",
+            "pytest -nh",
+            "make test -jh",
+        )
+
+    def test_maven_told_to_ignore_test_failures(self) -> None:
+        self.assert_ordinary(
+            "mvn test -Dmaven.test.failure.ignore=true",
+            "mvn test -Dmaven.test.failure.ignore",
+            "mvn test -fn",
+            "mvn test --fail-never",
+        )
+        self.assert_check(
+            "mvn test -Dmaven.test.failure.ignore=false", "mvn test -fae", "mvn test -q"
+        )
+
+    def test_a_clustered_help_flag_is_published_as_an_ordinary_command(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.bash("pytest -qh", "usage: pytest", is_error=False)
+        events = self.read()[0]
+        self.assertEqual(["command"], [event["subject"] for event in events])
+        self.assertEqual("pytest -qh", events[0]["title"])
+
     def test_every_closed_list_runner_decides_its_run_nothing_flags(self) -> None:
         names = {
             *project_context._CHECK_WORDS,
@@ -358,3 +399,36 @@ class ASteeringVariableRefusesOnlyTheRunnersItCanReach(TypedCheckGuardCase):
     def test_a_pytest_option_value_is_not_a_flag(self) -> None:
         self.assert_check("pytest -k '--co'", "pytest -m '--collect-only'")
         self.assert_ordinary("pytest -k x --co", "pytest -k=x --collect-only")
+
+
+class ARunThatFoundNoTestsToRunIsNotAPass(TypedCheckGuardCase):
+    def result(self, command: str, output: str) -> str:
+        self.session = Transcript(self.cwd)
+        self.session.bash(command, output, is_error=False)
+        return str(self.only_check()["result"])
+
+    def test_a_jest_or_vitest_run_that_passed_with_no_tests_is_not_recorded(self) -> None:
+        for command, output in (
+            ("npm test -- --passWithNoTests", "No tests found, exiting with code 0"),
+            ("jest --passWithNoTests", "No tests found, exiting with code 0"),
+            ("vitest run --passWithNoTests", "No test files found, exiting with code 0"),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("not-recorded", self.result(command, output))
+
+    def test_a_maven_run_with_no_tests_to_run_is_not_recorded(self) -> None:
+        self.assertEqual(
+            "not-recorded",
+            self.result("mvn test -DfailIfNoTests=false", "[INFO] No tests to run.\nBUILD SUCCESS"),
+        )
+
+    def test_a_maven_module_with_no_tests_beside_one_that_ran_tests_still_passes(self) -> None:
+        output = (
+            "[INFO] Tests run: 5, Failures: 0, Errors: 0\n[INFO] No tests to run.\nBUILD SUCCESS"
+        )
+        self.assertEqual("passed", self.result("mvn test", output))
+
+    def test_a_run_that_found_and_ran_tests_still_passes(self) -> None:
+        self.assertEqual(
+            "passed", self.result("jest --passWithNoTests", "Tests: 3 passed, 3 total")
+        )

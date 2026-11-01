@@ -2224,9 +2224,15 @@ _FAILURE_MARKER = re.compile(
 # reads "ran, result not recorded". go's `[no test files]` counts only when no
 # package printed `ok`.
 _RAN_NOTHING = re.compile(
-    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]",
+    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]"
+    # jest and vitest under `--passWithNoTests`, which exit zero for an empty selection.
+    r"|^No tests? (?:files? )?found, exiting with code 0",
     re.MULTILINE,
 )
+# Maven prints this for each module with no tests, so it speaks for the run only where no module
+# ran one (`Tests run: 5`), as go's `[no test files]` does.
+_MAVEN_NO_TESTS = re.compile(r"^\[INFO\] No tests to run\.", re.MULTILINE)
+_MAVEN_RAN_TESTS = re.compile(r"Tests run: [1-9]")
 _NO_TEST_FILES = re.compile(r"\[no test files\]")
 _GO_OK = re.compile(r"^ok\s", re.MULTILINE)
 # Item 4 as amended on 2026-10-04: failed, passed, written, then no recorded
@@ -3463,7 +3469,9 @@ _RUN_NOTHING_FLAGS: dict[str, frozenset[str]] = {
          "-v"}
     ),
     # Only the test goal: a package build with its tests skipped still compiles.
-    "mvn test": frozenset({"-DskipTests", "-Dmaven.test.skip"}),
+    "mvn test": frozenset(
+        {"-DskipTests", "-Dmaven.test.skip", "-Dmaven.test.failure.ignore", "-fn", "--fail-never"}
+    ),
     "mvn": frozenset({"-h", "-v"}),
     "jest": frozenset({"--listTests", "--showConfig"}),
     "vitest": frozenset({"list"}),
@@ -3500,8 +3508,9 @@ _PYTEST_VALUE_OPTIONS = frozenset(
      "--junitxml", "--basetemp"}
 )  # fmt: skip
 _VITEST_SUBCOMMANDS = frozenset({"run", "watch", "dev", "related", "bench", "init"})
-# Make options that take a value, which end a cluster of short ones (`-fnothing`, `-j4`).
+# Options that take a value end a cluster of short ones (`-fnothing`, `-j4`, `-kh` is `-k h`).
 _MAKE_VALUE_OPTIONS = "CIWfjlo"
+_PYTEST_VALUE_LETTERS = "kmrWcpon"
 
 
 def _runner_key(words: list[str]) -> str:
@@ -3520,12 +3529,14 @@ def _runner_key(words: list[str]) -> str:
     return _RUNNER_ALIASES.get(name, name)
 
 
-def _is_make_dry_run(word: str) -> bool:
+def _cluster_names(word: str, letters: str, value_letters: str) -> bool:
+    """Whether a cluster of short options (`-sn`, `-qh`) holds one of `letters` before any letter
+    that takes a value."""
     if word.startswith("-") and not word.startswith("--") and word[1:].isalpha():
         for letter in word[1:]:
-            if letter in _MAKE_VALUE_OPTIONS:
+            if letter in value_letters:
                 return False
-            if letter in "nqt":
+            if letter in letters:
                 return True
     return False
 
@@ -3574,7 +3585,9 @@ def _is_run_nothing_word(key: str, flags: frozenset[str], word: str, earlier: li
         return not (
             key == "vitest" and flag == "list" and _VITEST_SUBCOMMANDS.intersection(earlier)
         )
-    if key == "make" and _is_make_dry_run(word):
+    if key == "make" and _cluster_names(word, "nqthv", _MAKE_VALUE_OPTIONS):
+        return True
+    if key == "pytest" and _cluster_names(word, "hV", _PYTEST_VALUE_LETTERS):
         return True
     # `-xtest` is `-x test` with the task attached.
     return key == "gradle" and word.startswith("-x") and not word.startswith("--")
@@ -4643,8 +4656,10 @@ def _explicit_unittest(words: list[str]) -> bool:
 
 
 def _ran_nothing(tail: str) -> bool:
-    return bool(_RAN_NOTHING.search(tail)) or (
-        bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail)
+    return (
+        bool(_RAN_NOTHING.search(tail))
+        or (bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail))
+        or (bool(_MAVEN_NO_TESTS.search(tail)) and not _MAVEN_RAN_TESTS.search(tail))
     )
 
 
