@@ -65,10 +65,12 @@ DECLARING_FILES: Final = (
 # one, in any folder, withdraws the package declarations like a write of `package.json` does.
 STEERING_FILES: Final = (".npmrc", ".yarnrc", ".yarnrc.yml")
 # The package managers that read each file a script shell or a yarn binary can be set in. A manager
-# that never reads a file is not steered by a write of it (measured, 2026-11-01: npm and yarn 1 take
-# `script-shell` from an `.npmrc`, pnpm 12 only from its own config and `pnpm-workspace.yaml`, yarn
-# from `.yarnrc`, `.yarnrc.yml` and `yarnPath`). The npm file is listed for pnpm as well, since an
-# earlier pnpm read it.
+# that never reads a file is not steered by a write of it (measured, 2026-11-01: npm and yarn 1
+# take `script-shell` from an `.npmrc`, yarn from `.yarnrc`, `.yarnrc.yml` and `yarnPath`; pnpm 8 to
+# 10 read it from `.npmrc` and `npm_config_script_shell`, pnpm 11 and 12 only from
+# `pnpm-workspace.yaml`). The npm file stays listed for pnpm because the transcript does not say
+# which pnpm ran, and a missed latch reads a steered run as a pass. The versions are in
+# docs/design-reading-a-session.md.
 SCRIPT_SETTING_FILES: Final = {
     ".npmrc": ("npm", "pnpm", "yarn"),
     ".yarnrc": ("yarn",),

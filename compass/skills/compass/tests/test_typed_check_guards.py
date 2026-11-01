@@ -444,6 +444,32 @@ class ARunThatFoundNoTestsToRunIsNotAPass(TypedCheckGuardCase):
             with self.subTest(command=command):
                 self.assertEqual("not-recorded", self.result(command, output))
 
+    def test_a_jest_or_vitest_run_with_a_passed_count_beside_a_no_tests_line_still_passes(
+        self,
+    ) -> None:
+        jest = "No tests found, exiting with code 0\nTests:       5 passed, 5 total"
+        vitest = "No test files found, exiting with code 0\n Tests  5 passed (5)"
+        for command, output in (
+            ("npm test", jest),
+            ("npx jest --passWithNoTests", jest),
+            ("npm test", "Tests:       5 passed, 5 total\nNo tests found, exiting with code 0"),
+            ("npm test", "No tests found, exiting with code 0\nTests:       10 passed, 10 total"),
+            ("vitest run --passWithNoTests", vitest),
+        ):
+            with self.subTest(command=command, output=output):
+                self.assertEqual("passed", self.result(command, output))
+
+    def test_a_jest_or_vitest_run_with_only_a_zero_count_beside_a_no_tests_line_is_not_recorded(
+        self,
+    ) -> None:
+        for output in (
+            "No tests found, exiting with code 0\nTests:       0 passed, 0 total",
+            "No tests found, exiting with code 0\nTest Suites: 1 passed, 1 total\nTests: 0 total",
+            "No test files found, exiting with code 0\n Test Files  1 passed (1)\n Tests  0 passed (0)",
+        ):
+            with self.subTest(output=output):
+                self.assertEqual("not-recorded", self.result("npm test", output))
+
     def test_a_maven_run_with_no_tests_to_run_is_not_recorded(self) -> None:
         self.assertEqual(
             "not-recorded",
