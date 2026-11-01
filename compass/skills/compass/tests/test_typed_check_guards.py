@@ -87,6 +87,8 @@ class ATypedRunThatRunsNothingIsAnOrdinaryCommand(TypedCheckGuardCase):
             "./gradlew check -m",
             "./gradlew check -x test",
             "./gradlew check --exclude-task test",
+            "gradle test -xtest",
+            "./gradlew test -xtest",
             "gradle test --dry-run",
             "./gradlew check --version",
         )
@@ -169,6 +171,20 @@ class AnAssignedEnvironmentVariableMakesATypedCheckAnOrdinaryCommand(TypedCheckG
             "PYTEST_ADDOPTS=--collect-only pytest",
             "TOX_ADDOPTS=-n tox",
             "env NODE_OPTIONS=x yarn test",
+            "env -u HOME PATH=/x pytest",
+            "env -u A -u B NODE_OPTIONS=x pytest",
+            "env --unset HOME PYTEST_ADDOPTS=--co pytest",
+            "env --unset=HOME PATH=/x pytest",
+        )
+
+    def test_an_appended_assignment_is_an_assignment(self) -> None:
+        self.assert_ordinary(
+            "export PYTEST_ADDOPTS+=--co; pytest",
+            "PYTEST_ADDOPTS+=--co; pytest",
+            "PATH+=:/x; pytest",
+            "export PATH+=:/x; pytest",
+            "PATH+=:/x pytest",
+            "export MAKEFLAGS+=-n; make test",
         )
 
     def test_an_assignment_exported_earlier_in_the_same_call(self) -> None:
@@ -193,6 +209,11 @@ class AnAssignedEnvironmentVariableMakesATypedCheckAnOrdinaryCommand(TypedCheckG
 
     def test_a_steering_variable_assigned_after_the_check_does_not_reach_it(self) -> None:
         self.assert_check("pytest; export PATH=x")
+
+    def test_an_env_wrapper_that_sets_nothing_steering_leaves_the_check(self) -> None:
+        self.assert_check(
+            "env FOO=1 pytest", "env -u HOME pytest", "env -u HOME FOO=1 pytest", "env -i pytest"
+        )
 
     def test_steering_looking_text_that_is_not_an_assignment_before_the_check(self) -> None:
         self.assert_check(

@@ -801,7 +801,12 @@ class AnExitZeroFlagIsRefusedWhereverItIsWritten(ProjectScriptTestCase):
 
     def test_a_declared_script_with_a_steering_environment_variable_is_refused(self) -> None:
         self.commit({"package.json": package(lint="ruff check .")})
-        for command in ("PATH=/tmp/x:$PATH pnpm lint", "export NODE_OPTIONS=x; pnpm lint"):
+        for command in (
+            "PATH=/tmp/x:$PATH pnpm lint",
+            "export NODE_OPTIONS=x; pnpm lint",
+            "env -u HOME PATH=/x pnpm lint",
+            "export PATH+=:/x; pnpm lint",
+        ):
             self.ran(command)
         self.assertEqual([], self.titles())
 

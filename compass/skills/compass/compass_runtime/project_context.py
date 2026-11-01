@@ -3546,6 +3546,9 @@ def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
             return True
         if key == "make" and _is_make_dry_run(word):
             return True
+        # `-xtest` is `-x test` with the task attached.
+        if key == "gradle" and word.startswith("-x") and not word.startswith("--"):
+            return True
     return False
 
 
@@ -3577,13 +3580,30 @@ def _defeated_by_arguments(words: list[str], runner: str | None = None) -> bool:
     return _exits_zero_by_flag(words) or _runs_nothing(words, runner)
 
 
+# An assignment as the shell reads it, which includes the appending `NAME+=value` that
+# `_ASSIGNMENT_RE` (the wrapper stripper's) does not.
+_SHELL_ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=")
+
+
 def _assigns_environment(raw: tuple[str, ...]) -> bool:
     """Whether a segment starts with an assignment of a variable that steers any runner, read
     by position so `echo PATH=x; pytest` is not caught."""
+    in_env = False
+    skip = False
     for word in raw:
-        if _ASSIGNMENT_RE.match(word):
-            if _ENVIRONMENT_STEERING_RE.search(word.split("=", 1)[0]):
+        if skip:
+            skip = False
+            continue
+        assigned = _SHELL_ASSIGNMENT_RE.match(word)
+        if assigned:
+            if _ENVIRONMENT_STEERING_RE.search(assigned.group(1)):
                 return True
+            continue
+        if os.path.basename(word) == "env":
+            in_env = True
+        elif in_env and word in ("-u", "--unset"):
+            # The name after it is the option's value, not the command `env` runs.
+            skip = True
         elif word not in _ASSIGNING_PREFIX and not word.startswith("-"):
             return False
     return False
@@ -3592,7 +3612,8 @@ def _assigns_environment(raw: tuple[str, ...]) -> bool:
 def _steers_a_script(raw: tuple[str, ...]) -> bool:
     """Whether a segment's words, before stripping, assign a variable that steers a run."""
     return _assigns_environment(raw) or any(
-        _ASSIGNMENT_RE.match(word) and _STEERING_VARIABLE_RE.match(word.split("=", 1)[0])
+        (assigned := _SHELL_ASSIGNMENT_RE.match(word)) is not None
+        and _STEERING_VARIABLE_RE.match(assigned.group(1)) is not None
         for word in raw
     )
 
