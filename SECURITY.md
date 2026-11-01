@@ -4482,7 +4482,7 @@ agent's messages, as the `summary` of an `agent_message` fact on `/api/project-c
 112 characters. Some of what those carriers hold came from a tool call's input rather
 than from a prompt directly: a Claude plan's first line, an `AskUserQuestion` question, and a Codex
 plan's steps, each under the bounds Irreversible actions states. A sweep of the local Claude store
-on the machine this was built on found seven distinct live Anthropic credentials in ordinary prompt
+on the machine this was built on found seven Anthropic credential-shaped strings in ordinary prompt
 history. Loopback is no help against it: the dashboard is what someone opens to show a colleague
 what their agents are doing, so the exposure is the screen and the screenshot.
 
@@ -4499,8 +4499,7 @@ and the observer's goal. At the slice, through `records.redact_clip`, for the st
 collectors build out of their own store by hand: `title` and `last_prompt`. And over the assembled rows
 in `aggregate`, a backstop under both that also reaches `state_detail`, the instruction line, task
 subjects and a subagent name. An ask answer needs no cover, being an index into options the asking
-agent wrote rather than text. The measurement, the false-positive rate and the rejected alternatives
-are in [`docs/design-credential-redaction.md`](docs/design-credential-redaction.md).
+agent wrote rather than text.
 
 Since 2026-10-27 the list also holds the shapes a command's output prints with no vendor prefix: a
 gcloud `ya29.` token, an AWS `"SecretString"` value (escaped JSON inside it included), a netrc
@@ -4560,8 +4559,11 @@ shorter than 16 characters can survive too, as can a value shorter than three
 characters after another cued assignment (`password=ab`, `API_KEY=xy`). Any may
 be a real secret. These are
 the cued rule's documented exceptions, not evidence that the values are harmless;
-this filter does not identify every secret. The [command-boundary rationale](docs/design-credential-redaction.md#amended-2026-10-06-native-command-boundaries-survive-an-early-scrub)
-owns the ordering and the existing fact-identity consequence.
+this filter does not identify every secret. Restoring a person's words from a source window masks
+before it renders: rendering first was tried and rejected, because it folded a line break inside a
+recognized AWS credential and let that credential survive. Corrected titles may receive new fact
+identities under the existing redaction identity rule; no history migration or spend reset is
+performed.
 
 The card, the browser notification body and the native popup are pixels, and a screenshot is what
 each of them risks. Two of the things carrying this text are files. The first is the observer

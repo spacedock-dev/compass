@@ -48,8 +48,8 @@ _UNSAFE_CHARS = re.compile("[\\x00-\\x1f\\x7f\\u200b\\u200e\\u200f\\u202a-\\u202
 # Credential shapes
 #
 # A transcript records what the operator typed, verbatim, and sometimes what they
-# typed was a key. Seven distinct live Anthropic credentials sit in the local
-# Claude store in ordinary prompt history, and every prompt-derived surface on
+# typed was a key. A sweep of the local Claude store found seven Anthropic
+# credential-shaped strings in ordinary prompt history, and every prompt-derived surface on
 # the dashboard — the instruction line, `last_prompt`, `prompt_title`, the
 # observer goal, a Codex title — publishes that text. `127.0.0.1` is not the
 # exposure; a screenshot is.
@@ -62,10 +62,6 @@ _UNSAFE_CHARS = re.compile("[\\x00-\\x1f\\x7f\\u200b\\u200e\\u200f\\u202a-\\u202
 # already uses — 20 carry one of these, and those 20 are what the dashboard
 # publishes today: 18 of 21,116 on Claude and 2 of 1,004 on Codex, re-measured
 # 2026-08-27 with the same figure before and after this branch widened the list.
-#
-# `docs/design-credential-redaction.md` holds the false-positive classification,
-# the corpus figures, the two thresholds they set, and every alternative
-# rejected here.
 #
 # Redacted **in place**, keeping the words around the match, because the words
 # are the instruction and the point of the line. The marker is deliberately
@@ -84,7 +80,6 @@ SECRET_MARKER: Final = _SECRET_MARKER
 # words behind it took the words with it: 85 characters matched and 71 of them
 # instruction, on a probe. A run longer than any key that format issues is not
 # that format, so the cap ends the match there and the rest of the line survives.
-# `docs/design-credential-redaction.md` carries the per-shape lengths.
 #
 # `anchored` shapes must start a token: without it `dask-<40 chars>` reads as an
 # OpenAI key and `mask-ant-…` as an Anthropic one. A hyphen counts as inside a
@@ -1375,8 +1370,7 @@ def safe_text(value: Any, limit: int) -> str:
     a 140-character prompt line, 48 us on a 140-character line naming a key or
     a token (the broad hints send it through the alternation), 68 us on a
     2,000-character observer blob. `_SECRET_HINTS` carries what the gate buys
-    and why, and `docs/design-credential-redaction.md` has the inputs before
-    the filter existed. End to end a whole collect measured 30.5 ms on
+    and why. End to end a whole collect measured 30.5 ms on
     `bench_collect --simulate balanced-five` the same day; the figures before
     the cued shape were taken on another day and are not compared with it.
     """
