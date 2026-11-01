@@ -870,7 +870,9 @@ intact, as does the owner's separate 2026-10-02 operational acceptance.
 The recorded pass measured the reader before the 2026-11-01 amendments to its guards C1, C2 and C5b
 and to the covering match, which are described in
 [the reading design record](../design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message).
-Its counts describe that reader, not the one on this tree. No replay was run.
+Its counts describe that reader, not the one on this tree. The push rule, which lets a "don't push"
+line depart on a recorded push the model cited, postdates it too and could not have acted in it, since
+the scorer keeps only the citations a row publishes. No replay was run.
 
 ### Fourth qualification outcome, 2026-10-06
 
