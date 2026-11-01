@@ -1,4 +1,4 @@
-"""Exercise the shipped detector with controlled Git diff inputs."""
+"""Exercise the shipped detector step with controlled Git diff inputs."""
 
 from __future__ import annotations
 
@@ -14,35 +14,56 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 BASH = shutil.which("bash")
+SCOPE = Path("scripts/ci_scope.py")
+
+# Git's two read results are the only fixtures; the step and the classification are the shipped
+# ones, so a change to either reaches these tests.
+FAKE_GIT = """#!/bin/sh
+case "$1" in
+  merge-base) echo fixture-base ;;
+  diff) printf '%s\\n' "$CHANGED" ;;
+  *) exit 1 ;;
+esac
+"""
 
 
-@unittest.skipUnless(BASH, "the Actions detector needs bash")
-class QualityGateDetectorTest(unittest.TestCase):
-    def detect(self, changed: str, *, root: Path = ROOT) -> str:
-        workflow = yaml.safe_load((ROOT / ".github/workflows/quality-gate.yml").read_text())
-        script = next(
+def detect_step() -> str:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/quality-gate.yml").read_text())
+    return str(
+        next(
             step["run"]
             for step in workflow["jobs"]["changes"]["steps"]
             if step.get("id") == "detect"
         )
-        # Only Git's two read results are fixtures; the actual scan and
-        # classification run from the workflow, so changes there reach this test.
-        git = """
-git() {
-  case "$1" in
-    merge-base) echo fixture-base ;;
-    diff) printf '%s\\n' "$CHANGED" ;;
-    *) return 1 ;;
-  esac
-}
-"""
+    )
+
+
+@unittest.skipUnless(BASH, "the Actions detector needs bash")
+class QualityGateDetectorTest(unittest.TestCase):
+    def detect(
+        self, changed: str, *, root: Path = ROOT, python: str | None = None
+    ) -> dict[str, str]:
+        """The lanes the shipped step writes to `$GITHUB_OUTPUT` for one changed-path list."""
         with tempfile.TemporaryDirectory(prefix="bld-hyg-gate-") as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            git = bin_dir / "git"
+            git.write_text(FAKE_GIT)
+            git.chmod(0o755)
+            if python is not None:
+                fake = bin_dir / "python3"
+                fake.write_text(python)
+                fake.chmod(0o755)
+            if root != ROOT:
+                (root / SCOPE).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(ROOT / SCOPE, root / SCOPE)
             output = Path(tmp) / "output"
-            result = subprocess.run(
-                [BASH or "bash", "-c", git + script],
+            subprocess.run(
+                [BASH or "bash", "-c", detect_step()],
                 cwd=root,
                 env={
                     **os.environ,
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                     "EVENT": "pull_request",
                     "BASE_SHA": "base",
                     "HEAD_SHA": "head",
@@ -52,12 +73,11 @@ git() {
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=10,
+                timeout=30,
             )
-            self.assertIn(output.read_text().strip(), result.stdout)
-            return output.read_text().strip()
+            return dict(line.split("=", 1) for line in output.read_text().split())
 
-    def test_content_dependencies_request_measurable_jobs(self) -> None:
+    def test_content_dependencies_run_the_python_suites(self) -> None:
         for name in (
             "captures/README.md",
             "design-credential-redaction.md",
@@ -66,12 +86,12 @@ git() {
             "promise-map.md",
         ):
             with self.subTest(name=name):
-                self.assertEqual(self.detect("docs/" + name), "code=true")
+                self.assertEqual("true", self.detect("docs/" + name)["python_suites"])
         for name in ("README.md", "SECURITY.md"):
             with self.subTest(name=name):
-                self.assertEqual(self.detect(name), "code=true")
+                self.assertEqual("true", self.detect(name)["python_suites"])
 
-    def test_documents_only_the_citation_checker_reads_request_measurable_jobs(self) -> None:
+    def test_documents_only_the_citation_checker_reads_run_the_python_suites(self) -> None:
         """A doc reached only through a runtime citation link is still a dependency.
 
         Separate from the case above because these arrive by a different route
@@ -97,10 +117,33 @@ git() {
         self.assertTrue(cited, "no runtime citation links found, so this asserts nothing")
         for name in sorted(cited):
             with self.subTest(name=name):
-                self.assertEqual(self.detect(name), "code=true")
+                self.assertEqual("true", self.detect(name)["python_suites"])
 
-    def test_unasserted_prose_skips_measurable_jobs(self) -> None:
-        self.assertEqual(self.detect("docs/" + "demo-ai-demo-night.md"), "code=false")
+    def test_unasserted_prose_runs_no_lane(self) -> None:
+        self.assertEqual(
+            {
+                "python": "false",
+                "lint": "false",
+                "frontend": "false",
+                "contract": "false",
+                "python_suites": "false",
+            },
+            self.detect("docs/" + "design-harness-registry.md"),
+        )
 
     def test_unknown_diff_fails_open(self) -> None:
-        self.assertEqual(self.detect(""), "code=true")
+        found = self.detect("")
+        self.assertEqual(("true", "true"), (found["python"], found["frontend"]))
+
+    def test_a_detector_that_cannot_run_turns_every_lane_on(self) -> None:
+        found = self.detect("docs/" + "design-harness-registry.md", python="#!/bin/sh\nexit 1\n")
+        self.assertEqual(
+            {
+                "python": "true",
+                "lint": "true",
+                "frontend": "true",
+                "contract": "false",
+                "python_suites": "true",
+            },
+            found,
+        )

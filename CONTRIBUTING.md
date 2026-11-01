@@ -318,16 +318,22 @@ same directories through the relative symlinks under `.agents/skills/`.
 CI exercises macOS and Linux. Windows is no longer exercised by CI for the dashboard unit suite or
 frontend. The local pre-PR command list remains unchanged.
 
-Those checks run when the diff contains something they can measure. A change to prose
-documentation alone skips them, because none of them reads it. The `quality-gate` check itself
-always runs and always reports, so a prose-only PR is never left waiting on a check that never
-arrives. `SKILL.md`, `SECURITY.md`, `README.md` and any file under `docs/` that a test opens by
-name count as code here, not as prose, because `test_documentation.py` reads every one of them.
-`validate` runs on every PR regardless. It resolves the Markdown links and heading anchors, and it
-also runs the dashboard suite, which on a PR the detector called prose is the only place that suite
-runs. Do not delete that step as a duplicate of the gate's copy. Frontend and script tests also
-contribute document dependencies before the prose allowlist. The quality gate, release and
-frontend build workflows count as code; unrelated workflow prose retains the short path.
+Those checks run by lane, so a change runs only what it can affect. A Python change runs ruff,
+mypy, coverage and the macOS legs but not the frontend jobs. A frontend change runs the frontend
+jobs and the Python suites once on Linux (they read the frontend's files), but not ruff, mypy,
+coverage or the macOS Python legs. A change to the runtime the frontend starts adds only the
+frontend tests that read it. A document, fixture or skill Markdown a Python test reads runs the
+Python suites once and nothing else. A change to prose no test reads runs none of them.
+`scripts/ci_scope.py` makes that call, prints why for each changed path, and turns everything on
+when it cannot tell. Run `python3 scripts/ci_scope.py --paths <file>...` to see what a change
+would run. The `quality-gate` check itself always runs and always reports, so a PR is never left
+waiting on a check that never arrives. `SKILL.md`, `SECURITY.md`, `README.md` and any file under
+`docs/` that a test opens by name count as code here, not as prose, because a test reads every one
+of them. `validate` runs on every PR regardless. It resolves the Markdown links and heading
+anchors, and when the gate runs no Python suite it also runs the dashboard suite, which on a PR the
+detector called prose is the only place that suite runs. Do not delete that step as a duplicate of
+the gate's copy. The quality gate, validate, release and frontend build workflows turn on both
+lanes; unrelated workflow prose keeps the short path.
 
 `scripts/bench_collect.py` is not part of the gate. It measures what a collection costs, in total and
 per harness, against your own stores: `python3 scripts/bench_collect.py --repeat 7` prints a median,

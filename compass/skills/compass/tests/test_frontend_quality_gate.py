@@ -25,7 +25,7 @@ def jobs() -> dict[str, Any]:
 
 @unittest.skipUnless(detector.BASH, "the shipped gate uses Bash")
 class FrontendDetectorControlsTest(unittest.TestCase):
-    def test_sources_builds_and_relevant_workflows_request_measurable_jobs(self) -> None:
+    def test_sources_builds_and_relevant_workflows_run_the_frontend_lane(self) -> None:
         probe = detector.QualityGateDetectorTest()
         for path in (
             "frontend/src/main.tsx",
@@ -46,12 +46,18 @@ class FrontendDetectorControlsTest(unittest.TestCase):
             ".github/actions/frontend-toolchain/action.yml",
         ):
             with self.subTest(path=path):
-                self.assertEqual("code=true", probe.detect(path))
+                self.assertEqual("true", probe.detect(path)["frontend"])
 
     def test_actual_frontend_doc_reads_precede_prose_classification(self) -> None:
         # Real temporary source inputs, not an invented detector result.
         with tempfile.TemporaryDirectory(prefix="frontend-doc-filter-") as temp:
             root = Path(temp)
+            builder = root / "frontend/build/package.mjs"
+            builder.parent.mkdir(parents=True)
+            builder.write_text(
+                "const WEB = 'web';\nasync function authoredSources(root) {\n"
+                "  const files = [\n    '.gitattributes',\n  ];\n}\n"
+            )
             tests = root / "compass/skills/compass/tests"
             tests.mkdir(parents=True)
             (tests / "dummy.py").write_text("pass\n")
@@ -70,28 +76,52 @@ class FrontendDetectorControlsTest(unittest.TestCase):
             probe = detector.QualityGateDetectorTest()
             for path in (root_doc, quoted_doc, cited_doc):
                 with self.subTest(path=path):
-                    self.assertEqual("code=true", probe.detect(path, root=root))
+                    self.assertEqual("true", probe.detect(path, root=root)["frontend"])
             source.unlink()
-            self.assertEqual("code=false", probe.detect(root_doc, root=root))
-            self.assertEqual("code=false", probe.detect(quoted_doc, root=root))
+            self.assertEqual("false", probe.detect(root_doc, root=root)["frontend"])
+            self.assertEqual("false", probe.detect(quoted_doc, root=root)["frontend"])
             # An unreadable source scan cannot authorize the prose skip path.
             source.write_bytes(b"\xff")
-            self.assertEqual("code=true", probe.detect(root_doc, root=root))
+            found = probe.detect(root_doc, root=root)
+            self.assertEqual(("true", "true"), (found["python"], found["frontend"]))
 
     def test_unrelated_workflow_prose_keeps_its_short_path(self) -> None:
-        self.assertEqual(
-            "code=false",
-            detector.QualityGateDetectorTest().detect(".github/workflows/version-guard.yml"),
-        )
+        found = detector.QualityGateDetectorTest().detect(".github/workflows/version-guard.yml")
+        self.assertEqual(("false", "false"), (found["python"], found["frontend"]))
+
+
+# Each result the aggregate reads, and the lane output that runs its job.
+LANE_OF = {
+    "R_LINT": "LINT",
+    "R_TYPECHECK": "PYTHON",
+    "R_FLOOR": "SUITES",
+    "R_TEST": "PYTHON",
+    "R_PLATFORM": "PYTHON",
+    "R_FRONTEND": "FRONTEND",
+    "R_FRONTEND_COVERAGE": "FRONTEND",
+    "R_FRONTEND_PRODUCTION": "FRONTEND",
+    "R_STORYBOOK": "FRONTEND",
+    "R_CONTRACT": "CONTRACT",
+}
+ALL_ON = {
+    "PYTHON": "true",
+    "LINT": "true",
+    "FRONTEND": "true",
+    "CONTRACT": "true",
+    "SUITES": "true",
+}
+ALL_OFF = dict.fromkeys(ALL_ON, "false")
 
 
 @unittest.skipUnless(detector.BASH, "the shipped aggregate uses Bash")
 class FrontendAggregateControlsTest(unittest.TestCase):
-    def aggregate(self, *, code: str, results: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    def aggregate(
+        self, *, lanes: dict[str, str], results: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
         script = next(step["run"] for step in jobs()["quality-gate"]["steps"] if "run" in step)
         return subprocess.run(
             [detector.BASH or "bash", "-c", script],
-            env={**os.environ, "CODE": code, **results},
+            env={**os.environ, **lanes, "R_CHANGES": "success", **results},
             capture_output=True,
             text=True,
             check=False,
@@ -99,50 +129,39 @@ class FrontendAggregateControlsTest(unittest.TestCase):
         )
 
     def test_every_required_result_rejects_failure_cancellation_and_unexpected_skip(self) -> None:
-        successful = {
-            "R_CHANGES": "success",
-            "R_LINT": "success",
-            "R_TYPECHECK": "success",
-            "R_FLOOR": "success",
-            "R_TEST": "success",
-            "R_PLATFORM": "success",
-            "R_FRONTEND": "success",
-            "R_FRONTEND_COVERAGE": "success",
-            "R_FRONTEND_PRODUCTION": "success",
-            "R_STORYBOOK": "success",
-        }
+        successful = dict.fromkeys(LANE_OF, "success")
         for name in successful:
             for bad in ("failure", "cancelled", "skipped"):
                 with self.subTest(name=name, bad=bad):
-                    result = self.aggregate(code="true", results={**successful, name: bad})
+                    result = self.aggregate(lanes=ALL_ON, results={**successful, name: bad})
                     self.assertNotEqual(0, result.returncode, result.stdout)
-        self.assertEqual(0, self.aggregate(code="true", results=successful).returncode)
+        self.assertEqual(0, self.aggregate(lanes=ALL_ON, results=successful).returncode)
 
-    def test_skip_is_allowed_only_for_prose_and_a_successful_detector(self) -> None:
-        skipped = {
-            "R_CHANGES": "success",
-            "R_LINT": "skipped",
-            "R_TYPECHECK": "skipped",
-            "R_FLOOR": "skipped",
-            "R_TEST": "skipped",
-            "R_PLATFORM": "skipped",
-            "R_FRONTEND": "skipped",
-            "R_FRONTEND_COVERAGE": "skipped",
-            "R_FRONTEND_PRODUCTION": "skipped",
-            "R_STORYBOOK": "skipped",
-        }
-        self.assertEqual(0, self.aggregate(code="false", results=skipped).returncode)
+    def test_a_job_may_skip_only_when_its_own_lane_is_off(self) -> None:
+        skipped = dict.fromkeys(LANE_OF, "skipped")
+        self.assertEqual(0, self.aggregate(lanes=ALL_OFF, results=skipped).returncode)
         for bad in ("failure", "cancelled", "skipped"):
             with self.subTest(detector=bad):
                 self.assertNotEqual(
                     0,
-                    self.aggregate(code="false", results={**skipped, "R_CHANGES": bad}).returncode,
+                    self.aggregate(lanes=ALL_OFF, results={**skipped, "R_CHANGES": bad}).returncode,
                 )
-        for name in ("R_FRONTEND", "R_FRONTEND_COVERAGE", "R_FRONTEND_PRODUCTION", "R_STORYBOOK"):
+        for name in LANE_OF:
             with self.subTest(failed=name):
                 self.assertNotEqual(
-                    0, self.aggregate(code="false", results={**skipped, name: "failure"}).returncode
+                    0,
+                    self.aggregate(lanes=ALL_OFF, results={**skipped, name: "failure"}).returncode,
                 )
+        # One lane on: its jobs must have run, and every other job may skip.
+        for lane in ALL_ON:
+            on = {name for name, owner in LANE_OF.items() if owner == lane}
+            lanes = {**ALL_OFF, lane: "true"}
+            with self.subTest(lane=lane):
+                ran = {name: ("success" if name in on else "skipped") for name in LANE_OF}
+                self.assertEqual(0, self.aggregate(lanes=lanes, results=ran).returncode)
+                for name in on:
+                    result = self.aggregate(lanes=lanes, results={**ran, name: "skipped"})
+                    self.assertNotEqual(0, result.returncode, name)
 
 
 class FrontendWiringControlsTest(unittest.TestCase):
@@ -201,7 +220,19 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertFalse(frontend["strategy"]["fail-fast"])
         self.assertLessEqual(frontend["timeout-minutes"], 30)
         self.assertEqual("changes", frontend["needs"])
-        self.assertEqual("needs.changes.outputs.code == 'true'", frontend["if"])
+        self.assertEqual("needs.changes.outputs.frontend == 'true'", frontend["if"])
+        for name, lane in (
+            ("lint", "lint"),
+            ("typecheck", "python"),
+            ("test", "python"),
+            ("platform-tests", "python"),
+            ("runtime-floor", "python_suites"),
+            ("frontend-contract", "contract"),
+        ):
+            with self.subTest(job=name):
+                self.assertEqual(
+                    f"needs.changes.outputs.{lane} == 'true'", workflow_jobs[name]["if"]
+                )
         aggregate = workflow_jobs["quality-gate"]
         self.assertEqual("always()", aggregate["if"])
         self.assertEqual(
@@ -216,6 +247,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "frontend-coverage",
                 "frontend-production",
                 "storybook",
+                "frontend-contract",
             },
             set(aggregate["needs"]),
         )
@@ -225,11 +257,18 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertEqual("${{ needs.frontend-coverage.result }}", env["R_FRONTEND_COVERAGE"])
         self.assertEqual("${{ needs.frontend-production.result }}", env["R_FRONTEND_PRODUCTION"])
         self.assertEqual("${{ needs.storybook.result }}", env["R_STORYBOOK"])
+        self.assertEqual("${{ needs.frontend-contract.result }}", env["R_CONTRACT"])
         self.assertNotIn("frontend-proofs", workflow_jobs)
         self.assertNotIn("R_FRONTEND_PROOFS", env)
 
     def test_bootstrap_is_exact_without_auth_or_implicit_dependency_scripts(self) -> None:
-        for name in ("frontend", "frontend-coverage", "frontend-production", "storybook"):
+        for name in (
+            "frontend",
+            "frontend-coverage",
+            "frontend-production",
+            "storybook",
+            "frontend-contract",
+        ):
             with self.subTest(job=name):
                 self.check_bootstrap(jobs()[name]["steps"])
 
@@ -370,7 +409,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         job = jobs()["frontend-production"]
         self.assertEqual("ubuntu-latest", job["runs-on"])
         self.assertEqual("changes", job["needs"])
-        self.assertEqual("needs.changes.outputs.code == 'true'", job["if"])
+        self.assertEqual("needs.changes.outputs.frontend == 'true'", job["if"])
         self.assertNotIn("strategy", job, "one rebuild, no shards")
         self.assertLessEqual(job["timeout-minutes"], 15)
         self.assertNotIn("permissions", job, "the job inherits the workflow's read-only token")
@@ -413,12 +452,18 @@ class FrontendWiringControlsTest(unittest.TestCase):
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`
         lets the job skip where the aggregator expects it to run."""
         workflow_jobs = jobs()
-        for name in ("frontend", "frontend-coverage", "frontend-production", "storybook"):
+        for name, lane in (
+            ("frontend", "frontend"),
+            ("frontend-coverage", "frontend"),
+            ("frontend-production", "frontend"),
+            ("storybook", "frontend"),
+            ("frontend-contract", "contract"),
+        ):
             with self.subTest(job=name):
                 job = workflow_jobs[name]
                 self.assertNotIn("continue-on-error", job)
                 self.assertEqual("changes", job["needs"])
-                self.assertEqual("needs.changes.outputs.code == 'true'", job["if"])
+                self.assertEqual(f"needs.changes.outputs.{lane} == 'true'", job["if"])
                 for step in job["steps"]:
                     self.assertNotIn("continue-on-error", step)
         self.assertNotIn("continue-on-error", workflow_jobs["quality-gate"])
