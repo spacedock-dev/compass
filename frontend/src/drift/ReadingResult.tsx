@@ -304,8 +304,11 @@ function DepartureCard({
             {priorDepartureLine(
               datedClock(prior.readAt, now),
               laterAt ? datedClock(laterAt, now) : 'later',
-              resultWhere(prior.later.restsOnEntry, model.numbers) || 'an earlier entry',
+              prior.answer === 'said'
+                ? resultWhere(prior.later.restsOnEntry, model.numbers) || 'an earlier entry'
+                : '',
               row.key,
+              prior.answer,
             )}
           </p>
         ) : (
@@ -849,8 +852,8 @@ export function ReadingResult({
             {steerOff}
           </p>
         ) : null}
-        {/* Earlier departures the standing reading answers only with the agent's word: after the ones that stand,
-            before the quiet rows, one of which is that later answer. */}
+        {/* Earlier departures the standing reading does not answer on the record, only with the agent's word or
+            not at all: after the ones that stand, before the quiet rows, one of which is that later reading. */}
         {marked ? null : priorGroup}
         {quiet ? (
           <div
@@ -939,6 +942,7 @@ export function DriftVerdict({ focus }: { readonly focus: boolean }) {
         model.priors.length,
         priorTimes.size === 1 && priorAt ? datedClock(priorAt, now) : '',
         both,
+        model.priors.some((prior) => prior.answer !== 'said'),
       )
     : '';
   return (

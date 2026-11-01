@@ -251,10 +251,13 @@ export type CiProvider = 'GitHub' | 'GitLab';
 export const ciProvider = (repository: string): CiProvider =>
   repository.split('/')[0]?.includes('.') ? 'GitLab' : 'GitHub';
 /* The provider the verdict's own words name when no CI read is stored: a GitLab merge request URL, or an
-   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word. */
+   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word.
+   `MR` is read in capitals only, as the producer reads it (`_REMOTE_CLAUSE`), because "Mr Smith" and "Mrs Smith"
+   are people. GitLab's own `!N` number is read in any case, since no other tracker writes it. */
 export const requestProviderOf = (text: string): CiProvider => {
   if (/\/-\/merge_requests\/\d/.test(text)) return 'GitLab';
-  const merge = /\b(?:MRs?|merge\s+requests?)\b/i.test(text);
+  const merge =
+    /\bMRs?\b/.test(text) || /\bmrs?\s*!\d/i.test(text) || /\bmerge\s+requests?\b/i.test(text);
   const pull = /\b(?:PRs?|pull\s+requests?)\b|\/pull\/\d/i.test(text);
   return merge && !pull ? 'GitLab' : 'GitHub';
 };
@@ -422,10 +425,17 @@ export const clearedLine = (
   const who = corrections === 1 ? 'your correction' : 'your corrections';
   return `${subject} ${who} named, from the ${at} reading, ${verb}.`;
 };
-/* An earlier departure the next reading answered with the agent's own message, and nothing that shows the work,
-   is not said to be gone: the card lists it, and the verdict says so in place of `clearedLine`. With no single
-   time to name, the readings are named together. Beside a `clearedLine` it is the other one (`alongside`). */
-export const priorListedLine = (count: number, at: string, alongside = false): string => {
+/* An earlier departure the next reading did not answer on the record is not said to be gone: the card lists it,
+   and the verdict says so in place of `clearedLine`. With no single time to name, the readings are named
+   together. Beside a `clearedLine` it is the other one (`alongside`). The reading after it either rested the
+   line on the agent's own message, or `unanswered` it: it could not tell, or had not reached the line, and so
+   shows neither that the departure ended nor that it stands. Owner, 2026-11-01. */
+export const priorListedLine = (
+  count: number,
+  at: string,
+  alongside = false,
+  unanswered = false,
+): string => {
   const subject =
     count === 1
       ? alongside
@@ -436,17 +446,29 @@ export const priorListedLine = (count: number, at: string, alongside = false): s
         : `The ${String(count)} departures`;
   const verb = count === 1 ? 'is' : 'are';
   const from = at ? `the ${at} reading` : 'earlier readings';
-  const after = at ? 'it' : 'them';
-  return `${subject} from ${from} ${verb} still listed below: the reading after ${after} rests on what the agent said.`;
+  const plural = count !== 1;
+  const after = (unanswered ? !plural : Boolean(at)) ? 'it' : 'them';
+  const tail = unanswered
+    ? `shows neither that ${plural ? 'they ended nor that they stand' : 'it ended nor that it stands'}`
+    : 'rests on what the agent said';
+  return `${subject} from ${from} ${verb} still listed below: the reading after ${after} ${tail}.`;
 };
 export const PRIOR_DEPARTURE_LABEL = 'Earlier departure';
+export type PriorAnswer = 'said' | 'cant-tell' | 'not-reached';
 export const priorDepartureLine = (
   earlier: string,
   later: string,
   where: string,
   key = '',
-): string =>
-  `From the ${earlier} reading. The ${later} reading rests ${key === 'goal' ? 'the goal' : 'this line'} on what the agent said at ${where}, which is not a check.`;
+  answer: PriorAnswer = 'said',
+): string => {
+  const line = key === 'goal' ? 'the goal' : 'this line';
+  const lead = `From the ${earlier} reading.`;
+  if (answer === 'said')
+    return `${lead} The ${later} reading rests ${line} on what the agent said at ${where}, which is not a check.`;
+  const how = answer === 'cant-tell' ? `can't tell about ${line}` : `had not reached ${line}`;
+  return `${lead} The ${later} reading ${how}, so it shows neither that this departure ended nor that it stands.`;
+};
 export const CLAIM_LEAD = 'What the agent claimed';
 export const RESULT_CANT_TELL = "Can't tell";
 export const RESULT_NOTHING_SHOWS = "Can't tell: nothing recorded shows this yet";

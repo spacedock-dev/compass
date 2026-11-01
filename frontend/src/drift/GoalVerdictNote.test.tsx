@@ -225,6 +225,13 @@ describe('the harness verdict on the Drift card', () => {
       ['merged https://github.com/acme/widgets/pull/12', 'pull request'],
       ['merged MR !12', 'merge request'],
       ['merged PR #12', 'pull request'],
+      ['merged MRs !12 and !13', 'merge request'],
+      ['merged mr !12', 'merge request'],
+      ['merged the Merge Request', 'merge request'],
+      ['merged after Mr Smith approved', 'pull request'],
+      ['Mrs Smith merged it', 'pull request'],
+      ['Mr. Smith merged it', 'pull request'],
+      ['MRS SMITH merged it', 'pull request'],
     ] as const) {
       const page = mountDrift({
         session: {

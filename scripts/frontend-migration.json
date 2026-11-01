@@ -1439,9 +1439,10 @@
       "oracles": [
         "frontend/stories/DriftLevelNeedsDeparture.stories.tsx",
         "frontend/stories/DriftPastedCorrection.stories.tsx",
-        "frontend/src/drift/ClearedDeparture.test.tsx"
+        "frontend/src/drift/ClearedDeparture.test.tsx",
+        "frontend/src/drift/PriorDeparture.test.tsx"
       ],
-      "contract": "Held for the life of the tab, one per session, bounded at 16, never stored. A later reading with no departure, after one this tab drew with some, is named once as clearing them, and the reading after it takes the line down; a reload says nothing.",
+      "contract": "Held for the life of the tab, one per session, bounded at 16, never stored. A later reading with no departure, after one this tab drew with some, is named once as clearing them, except a departure the card still lists, and the reading after it takes the line down; a reload says nothing.",
       "disposition": "store-held"
     }
   ],

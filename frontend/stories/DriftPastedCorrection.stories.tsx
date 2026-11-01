@@ -466,6 +466,61 @@ export const AnEarlierDepartureClearedOnlyByTheAgentStaysListed: Story = {
   },
 };
 
+const UNTOLD_SESSION = stylesSession();
+const UNTELLING = readingScenario([null]);
+/* The reading after a steer cannot tell about the line, the shape the producer publishes when the only entry
+   is the agent's word. The earlier departure stays listed, said neither to have ended nor to stand. */
+export const AnEarlierDepartureTheNextReadingCannotTellAboutStaysListed: Story = {
+  ...scenario({
+    session: UNTOLD_SESSION,
+    facts: [PERSON, PASSED, STYLES_WRITE, STYLES_CORRECTION, EXPLAINED],
+    work: { analysis_levels: [{ ...analysisRow('claude', 'medium'), reasons: ['departure'] }] },
+    reading: UNTELLING,
+  }),
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-departure="line_2"]')).not.toBeNull(),
+    );
+    await expect(canvasElement.querySelector('[data-next-prior-departures]')).toBeNull();
+    UNTOLD_SESSION['annotation_assessment'] = restyled({
+      result: 'not verifiable from available evidence',
+      why: 'no-work-shown',
+      cites: ['m6'],
+    });
+    UNTOLD_SESSION['annotation_reading_count'] = 2;
+    UNTOLD_SESSION['annotation_prior_departures'] = STYLES_PRIOR;
+    await UNTELLING.finish?.();
+    const group = await waitFor(() => {
+      const node = canvasElement.querySelector<HTMLElement>('[data-next-prior-departures]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    const card = group.querySelector<HTMLElement>('[data-next-prior-departure="line_2"]');
+    await expect(card).not.toBeNull();
+    await expect(card?.querySelector('[data-next-departure-label]')).toHaveTextContent(
+      'Earlier departure · Expected outcome 2',
+    );
+    await expect(card?.querySelector('[data-next-cite="w1"]')).not.toBeNull();
+    await expect(card?.querySelector('[data-next-prior-departure-source]')).toHaveTextContent(
+      new RegExp(
+        `^From the ${clock(1000)} reading\\. The ${clock(1100)} reading can't tell about this line, so it shows neither that this departure ended nor that it stands\\.$`,
+      ),
+    );
+    await expect(
+      canvasElement
+        .querySelector('[data-next-result-row="line_2"]')
+        ?.getAttribute('data-next-result-state'),
+    ).toBe('cant-tell');
+    await expect(canvasElement.querySelector('[data-next-departures]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-next-drift-cleared]')).toBeNull();
+    await expect(canvasElement.textContent).not.toContain('no longer holds');
+    await expect(canvasElement.querySelector('[data-next-drift-prior-listed]')).toHaveTextContent(
+      `The departure from the ${clock(1000)} reading is still listed below: the reading after it shows neither that it ended nor that it stands.`,
+    );
+  },
+};
+
 const CHECKED_SESSION = stylesSession();
 const CHECKING = readingScenario([null]);
 export const AnEarlierDepartureAnsweredByACheckIsNotListed: Story = {
