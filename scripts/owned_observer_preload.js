@@ -93,6 +93,39 @@
     return file === undefined || file === null ? '' : path.basename(String(file));
   }
 
+  // A shell-form launch hands over a whole command line, and its basename is that line,
+  // arguments and all. Split it the way `sh` would, near enough to find the words: quotes group,
+  // a backslash escapes, and every word but the first is redacted like any other argument.
+  function shellWords(line) {
+    const words = [];
+    let word = null;
+    let quote = '';
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      if (quote) {
+        if (char === quote) {
+          quote = '';
+        } else {
+          word += char;
+        }
+      } else if (char === "'" || char === '"') {
+        quote = char;
+        word = word ?? '';
+      } else if (char === '\\' && index + 1 < line.length) {
+        index += 1;
+        word = (word ?? '') + line[index];
+      } else if (/\s/.test(char)) {
+        if (word !== null) {
+          words.push(word);
+        }
+        word = null;
+      } else {
+        word = (word ?? '') + char;
+      }
+    }
+    return word === null ? words : [...words, word];
+  }
+
   // Wrap `owner[name]` so `record(args)` runs first. `depth` is shared by one family of
   // wrappers, so a wrapped call that reaches another wrapper of the same family synchronously
   // (`exec` calls the exported `execFile`; Bun's `spawn` calls `Bun.spawn`) is recorded once.
@@ -137,11 +170,16 @@
   for (const name of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'fork']) {
     wrap(childProcess, name, launches, (args) => {
       const argv = Array.isArray(args[1]) ? args[1] : [];
-      const first = name === 'fork' ? process.execPath : args[0];
-      emit('launch', `child_process.${name}`, {
-        program: program(first),
-        argv: redactArgv([first, ...(name === 'fork' ? [args[0]] : []), ...argv]),
-      });
+      const options = Array.isArray(args[1]) || args[1] == null ? args[2] : args[1];
+      let first = name === 'fork' ? process.execPath : args[0];
+      let list = [first, ...(name === 'fork' ? [args[0]] : []), ...argv];
+      // Without `shell`, a basename with a space is one file whose own name has a space. That is
+      // rare, and misnaming it costs less than printing a command line whole, so it is split too.
+      if (name !== 'fork' && (options?.shell || /\s/.test(program(first)))) {
+        list = [...shellWords(String(first ?? '')), ...argv.map(String)];
+        first = list[0];
+      }
+      emit('launch', `child_process.${name}`, { program: program(first), argv: redactArgv(list) });
     });
   }
   for (const name of ['exec', 'execSync']) {

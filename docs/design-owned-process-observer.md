@@ -72,6 +72,14 @@ Live monitor check. Every other value is recorded as `<N chars>`, so `--token ab
 never reaches the trace. Both sides apply the same lists, and a test holds the preload's copy to the
 Python one.
 
+A launch that hands Node one shell command line (`spawn` or `execFile` with `shell` set, or a file
+name with a space in it) is split into words first, quotes and backslashes honoured, so the program
+is the first word and the rest goes through the same lists. Before that split, the program was the
+whole line: a default journey run's shapes report printed Claude Code's keychain lookup with the
+account name after `-a`. The report adds a second guard. A program name that still holds a space or
+a path separator is printed only as its length, so a recorder that gets this wrong again cannot put
+the line back into `report-shapes.md`.
+
 A connect line keeps the host and port, or `<N chars>` for a Unix socket's path. A request line keeps
 scheme, host and port, never a path or query, so a reach URL's secret part stays out.
 

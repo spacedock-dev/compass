@@ -393,6 +393,33 @@ class TheTraceKeepsOnlyFlagNamesTest(unittest.TestCase):
         )
         self.assertNotIn("sekret", trace.read_text())
 
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_a_shell_string_launch_keeps_its_first_word_as_the_program(self) -> None:
+        # Measured on a default journey run: Claude Code launched its keychain lookup as one
+        # shell string, and the program recorded was that whole line, account name included.
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        trace = tmp / "trace.jsonl"
+        env = owned_observer.observed_environment(_clean_environment(), str(trace))
+        script = (
+            "const cp = require('child_process');"
+            "cp.spawnSync('security find-generic-password -a someone', { shell: true });"
+            "cp.spawnSync(\"'/Users/some one/bin/tool' --model m\", [], { shell: true });"
+        )
+        subprocess.run([shutil.which("node") or "node", "-e", script], env=env, check=True)
+        launches = [e for e in observe_journey.read_trace(trace) if e["kind"] == "launch"]
+        self.assertEqual(
+            [(e["program"], e["argv"]) for e in launches],
+            [
+                ("security", ["security", "find-generic-password", "-a", "<7 chars>"]),
+                ("tool", ["tool", "--model", "m"]),
+            ],
+        )
+        self.assertNotIn("someone", trace.read_text())
+        shapes = observe_journey.render_shapes(observe_journey.report(launches, "default"))
+        self.assertIn("- node launch child_process.spawnSync security x1", shapes)
+        self.assertNotIn("some", shapes)
+
 
 class ExecCarriesTheTraceToItsChildrenTest(unittest.TestCase):
     """`exec` alone puts the preload on the environment, and `hooked` says whether it reached."""
@@ -592,6 +619,23 @@ class TheReportNamesEachRowTest(unittest.TestCase):
         for leak in ("someone", "-C", "<20 chars>", "argv", "s.jsonl"):
             self.assertNotIn(leak, shapes)
         self.assertIn("example.com:443", shapes)
+
+    def test_the_shapes_report_prints_no_program_that_is_a_command_line(self) -> None:
+        line = "security find-generic-password -a someone"
+        trace = [
+            _event("start", "process"),
+            _event("launch", "subprocess.Popen", program="claude", argv=["claude"]),
+            _event("spawned", "subprocess.Popen", child=30, program="claude"),
+            _event("start", "process", src="node", pid=30, ppid=10),
+            _event("launch", "child_process.spawn", src="node", pid=30, ppid=10, program=line),
+            _event("launch", "child_process.spawn", src="node", pid=99, ppid=1, program=line),
+            _event("launch", "subprocess.Popen", program="x/someone", argv=["x"]),
+            _event("spawned", "subprocess.Popen", child=31, program="x/someone"),
+            _event("refused", "subprocess.Popen", program="ps -p someone", budget=0),
+        ]
+        shapes = observe_journey.render_shapes(observe_journey.report(trace, "default"))
+        self.assertNotIn("someone", shapes)
+        self.assertIn(f"node launch <{len(line)} chars>", shapes)
 
 
 if __name__ == "__main__":
