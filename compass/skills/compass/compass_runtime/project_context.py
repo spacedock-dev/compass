@@ -3432,7 +3432,7 @@ _MAKE_INJECTING_VARIABLES = frozenset({"MAKEFILES", "MAKEOVERRIDES", "MAKE"})
 # variable also takes bare letters (`ni`), `--eval=` and `NAME=value` after `--`, so a list of
 # refused flags would miss spellings. `-n -i -q -t -o -W` and anything else refuse.
 _HARMLESS_MAKE_FLAG_RE = re.compile(
-    r"-?[swk]*(?:j\d*)?|--(?:silent|quiet|keep-going|no-print-directory|print-directory|jobs(?:=\d+)?)"
+    r"-?[swk]*(?:j\d*)?|--(?:silent|quiet|keep-going|no-print-directory|print-directory|jobs)"
 )
 # Programs that start other programs, so can start the runner a variable steers: a package
 # manager's script can call `make`, and a recipe can call `npm`. A direct runner is not one.
@@ -3545,11 +3545,15 @@ def _cluster_names(word: str, letters: str, value_letters: str) -> bool:
     return False
 
 
-def _manager_steered(declared: project_scripts.Declarations | None, words: list[str]) -> bool:
-    """Whether the session changed the script shell of the package manager `words` start with."""
+def _manager_steered(
+    declared: project_scripts.Declarations | None, words: list[str], raw: tuple[str, ...] = ()
+) -> bool:
+    """Whether the session changed the script shell of the package manager `words` start with,
+    or of npm for a run `npx` started."""
     if declared is None or not words:
         return False
-    return os.path.basename(_runner_words(words)[0]) in declared.steered_managers
+    program = "npm" if _ran_through_npx(raw, words) else os.path.basename(_runner_words(words)[0])
+    return program in declared.steered_managers
 
 
 def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
@@ -3723,11 +3727,22 @@ def _segment_steering(parts: list[_Part]) -> list[frozenset[str]]:
     return reaching
 
 
-def _family_reaches(families: frozenset[str], words: list[str] | None) -> bool:
+def _ran_through_npx(raw: tuple[str, ...], words: list[str]) -> bool:
+    """Whether `npx` stood before the runner in the segment, which the wrapper stripper has
+    removed from `words`. `npx foo` is `npm exec foo`, so npm's own settings decide whether it
+    runs (measured on npm 11, 2026-11-01), unlike `pnpm exec` and `bunx`, which still run it."""
+    return any(os.path.basename(word) == "npx" for word in raw[: max(0, len(raw) - len(words))])
+
+
+def _family_reaches(
+    families: frozenset[str], words: list[str] | None, raw: tuple[str, ...] = ()
+) -> bool:
     """Whether a steering family reaches the runner `words` start with. With no words, whether any
     family could reach some runner."""
     if words is None:
         return bool(families - {_HARMLESS_MAKE_FLAGS})
+    if words and _ran_through_npx(raw, words):
+        return "package" in families
     if not families or not words or _runner_key(words) not in _RUNNERS_THAT_START_RUNNERS:
         return False
     # A harmless make flag changes nothing for make itself, but a package manager's script
@@ -3743,7 +3758,7 @@ def _steers_a_script(
     """Whether a segment's words, before stripping, assign a variable that steers the run `words`
     start. `steering` is what reaches the segment, where an earlier export adds to its own."""
     families = _family_assignments(raw)[0] if steering is None else steering
-    return _assigns_environment(raw) or _family_reaches(families, words)
+    return _assigns_environment(raw) or _family_reaches(families, words, raw)
 
 
 def _script_invocation(words: list[str], *, deciding: bool = False) -> tuple[str, list[str]] | None:
@@ -3792,7 +3807,7 @@ def _script_line_is_check(
             or _always_zero(words)
             or _defeated_by_arguments(words)
             or _steers_a_script(part.raw, words, steering[index])
-            or _manager_steered(declared, words)
+            or _manager_steered(declared, words, part.raw)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
             return False
@@ -3871,7 +3886,7 @@ def _declared_check(
         or not words
         or not declared.at(directory)
         or _steers_a_script(raw, words, steering)
-        or _manager_steered(declared, words)
+        or _manager_steered(declared, words, raw)
     ):
         return False
     invoked = _script_invocation(words)
@@ -3995,7 +4010,7 @@ def _listed_check(
         declared is None
         or not declared.listed
         or _steers_a_script(raw, words, steering)
-        or _manager_steered(declared, words)
+        or _manager_steered(declared, words, raw)
         or tuple(words) not in declared.listed
     ):
         return False
@@ -5237,8 +5252,8 @@ class _ShellCall:
             for i in self.meaningful
             if _is_check(self.words[i][0])
             and i < steered_from
-            and not _family_reaches(self.steering[i], self.words[i][0])
-            and not _manager_steered(declared, self.words[i][0])
+            and not _family_reaches(self.steering[i], self.words[i][0], self.parts[i].raw)
+            and not _manager_steered(declared, self.words[i][0], self.parts[i].raw)
             and not _defeated_by_arguments(self.words[i][0])
             and not self._declared_body_refuses(
                 declared, i, self.directories[i] if self.placed[i] else ""
@@ -7597,6 +7612,8 @@ def _script_shell_tokens(managers: Iterable[str]) -> set[str]:
 
 def _config_command_managers(words: list[str]) -> tuple[str, ...]:
     """The managers a `config set` of a script setting, or a `yarn set version`, steers."""
+    if words[:1] == ["corepack"]:
+        words = words[1:]
     if not words or os.path.basename(words[0]) not in _SHARED_NPM_CONFIG:
         return ()
     program = os.path.basename(words[0])
@@ -7612,27 +7629,60 @@ def _config_command_managers(words: list[str]) -> tuple[str, ...]:
     if args[:2] in (["config", "edit"], ["c", "edit"]):
         return _SHARED_NPM_CONFIG
     keys = args[2:] if args[:2] in (["config", "set"], ["c", "set"]) else []
-    if program == "npm" and args[:1] == ["set"]:
+    if args[:1] == ["set"]:
         keys = args[1:]
     return _SHARED_NPM_CONFIG if any(map(_SCRIPT_SETTING_RE.search, keys)) else ()
+
+
+# Git subcommands that name a file without changing what it holds. `checkout` and `restore` can
+# change it, and any subcommand not listed fails closed.
+_GIT_READS_OR_STAGES = frozenset(
+    {"add", "commit", "status", "diff", "log", "show", "rm", "blame", "grep", "ls-files"}
+)
+_COPIERS = frozenset({"cp", "mv", "install", "rsync", "ln"})
+
+
+def _part_sets_config_file(part: _Part, name: str) -> bool:
+    """Whether one segment could change what the config file `name` holds: a redirect into it, a
+    copy or link with it as the destination, or any other segment that names it and is not a read.
+    Staging, committing, reading, copying it elsewhere and removing it do not."""
+    if name in {os.path.basename(target) for target in _file_targets(part.redirects)}:
+        return True
+    words = part.words
+    if not words or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
+        return False
+    program = os.path.basename(words[0])
+    if program == "rm":
+        return False
+    if program == "git":
+        subcommand = next((w for w in words[1:] if not w.startswith("-")), "")
+        return subcommand not in _GIT_READS_OR_STAGES
+    if program in _COPIERS:
+        operands = [w for w in words[1:] if not w.startswith("-")]
+        return bool(operands) and os.path.basename(operands[-1]) == name
+    return _part_names_a_write(part, name, frozenset())
 
 
 def _shell_script_shell_managers(command: str) -> set[str]:
     """The managers whose script shell a shell command sets: by `config set`, or by writing a
     config file they read, whatever it holds, since the text may come from another file."""
-    names = frozenset(project_scripts.SCRIPT_SETTING_FILES)
-    found = {
-        manager
-        for name in _shell_names(command, names)
-        for manager in project_scripts.SCRIPT_SETTING_FILES[name]
-    }
+    files = project_scripts.SCRIPT_SETTING_FILES
+    mentioned = {name for name in files if name in command}
     try:
         parts = _call_parts_once(command)
     except Exception:  # noqa: BLE001 - a command that will not parse is failed closed
-        return {*found, *_SHARED_NPM_CONFIG} if _SCRIPT_SETTING_RE.search(command) else found
+        managers = {m for name in mentioned for m in files[name]}
+        return {*managers, *_SHARED_NPM_CONFIG} if _SCRIPT_SETTING_RE.search(command) else managers
+    written = {
+        name
+        for part in parts
+        for name in mentioned
+        if part.hides_change or _part_sets_config_file(part, name)
+    }
+    managers = {m for name in written for m in files[name]}
     for part in parts:
-        found.update(_config_command_managers(part.words))
-    return found
+        managers.update(_config_command_managers(part.words))
+    return managers
 
 
 def _tool_script_shell_managers(path: str, tool_input: dict[str, Any]) -> tuple[str, ...]:

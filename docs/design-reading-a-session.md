@@ -8390,8 +8390,9 @@ This amendment replaces that comparison and hardens the read around it. Where th
   `tox`, `nox`, `rake`), because a package manager's script can call `make` and a recipe can call `npm`. It does
   not refuse a direct runner: `npm_config_loglevel=silent pytest` and `JUST_ROOT=x pytest` count. Under `make`,
   `MAKEFLAGS` and its two siblings may hold only a closed list of harmless flags (`-j`, `-s`, `-w`, `-k`,
-  `--no-print-directory` and their long spellings), because the variable also takes bare letters, `--eval=` and
-  `NAME=value`, which a list of refused flags would miss; `MAKEFILES`, `MAKEOVERRIDES` and `MAKE` always refuse.
+  `--no-print-directory` and the long `--silent`, `--quiet`, `--keep-going`, `--print-directory` and bare
+  `--jobs`; `--jobs=N` refuses, on the safe side, since a value containing `=` is never read), because the variable
+  also takes bare letters, `--eval=` and `NAME=value`, which a list of refused flags would miss; `MAKEFILES`, `MAKEOVERRIDES` and `MAKE` always refuse.
   Under a package manager `MAKEFLAGS` stays value-blind. An inline assignment steers its own segment, an
   `export` or an assignment-only segment steers the later ones, and a word after the program is an assignment
   only to `make` (`make test MAKEFLAGS=-n`). Limits: a direct runner that itself starts `make` (a build script, an
@@ -8410,7 +8411,11 @@ This amendment replaces that comparison and hardens the read around it. Where th
   set` and `pnpm config set` write the user file npm, pnpm and yarn share; `yarn config set` latches yarn; a
   write of `.yarnrc` or `.yarnrc.yml` latches yarn and of `pnpm-workspace.yaml` pnpm. A file tool's write is
   read for the setting it carries, so a registry edit does not latch, while a shell write and a Codex patch
-  latch without reading content. Measured on npm 11, pnpm 12 and yarn 1.22: `script-shell` (flag, config or
+  latch without reading content. A shell command latches only where it could change the file: a redirect into it,
+  `tee`, `sed -i`, a copy, move or link with it as the destination, `git checkout` or `git restore` of it, or a
+  segment that cannot be read. Staging or committing it, `git diff`, `cat`, copying it elsewhere and `rm` do not.
+  `npx` is a run of npm, so npm's latch and `npm_config_*` reach it, which they do not reach `pnpm exec` or
+  `bunx`; `corepack` before a manager is looked through, and `pnpm set` is read like `npm set`. Measured on npm 11, pnpm 12 and yarn 1.22: `script-shell` (flag, config or
   file) and a yarn path change what runs, while `ignore-scripts` does not skip a named `npm test` or `pnpm
   test`, so it is not a trigger. `npm test --script-shell` and `--if-present` on the call refuse that call.
   Limits: a setting already in a config file before the session, `npm pkg set`, and Pi, which builds no

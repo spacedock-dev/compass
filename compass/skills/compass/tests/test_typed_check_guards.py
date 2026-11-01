@@ -339,6 +339,28 @@ class ASteeringVariableRefusesOnlyTheRunnersItCanReach(TypedCheckGuardCase):
             "MAKEFLAGS=-j4 MAKEFILES=x make test",
         )
 
+    def test_npx_is_reached_by_the_package_manager_variables_and_no_other_family(self) -> None:
+        self.assert_ordinary(
+            "npm_config_script_shell=/usr/bin/true npx jest",
+            "npm_config_script_shell=/usr/bin/true npx vitest run",
+            "npm_config_script_shell=/usr/bin/true npx eslint .",
+            "npm_config_script_shell=/usr/bin/true npx tsc --noEmit",
+            "export npm_config_script_shell=/usr/bin/true; npx jest",
+        )
+        self.assert_check(
+            "YARN_X=1 npx jest",
+            "JUST_ROOT=x npx jest",
+            "MAKEFLAGS=-n npx jest",
+            "npx jest",
+            "npm_config_script_shell=/usr/bin/true pnpm exec vitest run",
+            "npm_config_script_shell=/usr/bin/true bunx jest",
+            "npm_config_script_shell=/usr/bin/true pytest npx",
+        )
+
+    def test_a_long_jobs_flag_is_refused_with_a_value_and_counts_without_one(self) -> None:
+        self.assert_ordinary("MAKEFLAGS=--jobs=4 make test")
+        self.assert_check("MAKEFLAGS=--jobs make test")
+
     def test_a_make_flag_stays_refused_before_a_package_manager_whatever_its_value(self) -> None:
         self.assert_ordinary("MAKEFLAGS=-j4 npm test", "export MAKEFLAGS=-j4; pnpm test")
 
@@ -572,6 +594,53 @@ class APackageManagerScriptShellSetEarlierMakesItsLaterChecksOrdinary(TypedCheck
         self.session.bash("npm config set script-shell /usr/bin/true", "ok", is_error=False)
         self.session.bash("npm test", "ok", is_error=False)
         self.assertEqual([], self.checks())
+
+    def test_npx_is_a_run_of_npm_and_is_latched_with_it(self) -> None:
+        self.assert_ordinary_after("npm config set script-shell /usr/bin/true", "npx jest")
+        self.assert_ordinary_after("echo script-shell=/usr/bin/true >> .npmrc", "npx jest")
+        self.assert_check_after("yarn config set scriptShell /usr/bin/true", "npx jest")
+
+    def test_corepack_and_the_pnpm_set_shorthand_latch_like_the_plain_call(self) -> None:
+        self.assert_ordinary_after("corepack npm config set script-shell /usr/bin/true", "npm test")
+        self.assert_ordinary_after(
+            "corepack pnpm config set script-shell /usr/bin/true", "pnpm test"
+        )
+        self.assert_ordinary_after("pnpm set script-shell /usr/bin/true", "pnpm test")
+
+    def test_a_command_that_only_mentions_a_config_file_does_not_latch(self) -> None:
+        for setup, command in (
+            ("git add .npmrc && git commit -m x", "npm test"),
+            ("git add pnpm-workspace.yaml", "pnpm test"),
+            ("git status .npmrc", "npm test"),
+            ("git diff .npmrc", "npm test"),
+            ("git log -p .npmrc", "npm test"),
+            ("git rm .npmrc", "npm test"),
+            ("cp .npmrc /tmp/x", "npm test"),
+            ("mv .npmrc /tmp/x", "npm test"),
+            ("rsync .npmrc /tmp/x", "npm test"),
+            ("rm .npmrc", "npm test"),
+            ("cat .npmrc", "npm test"),
+        ):
+            self.assert_check_after(setup, command)
+
+    def test_a_command_that_could_write_a_config_file_latches(self) -> None:
+        for setup in (
+            "cp x .npmrc",
+            "mv x .npmrc",
+            "install -m 600 x sub/.npmrc",
+            "ln -s x .npmrc",
+            "git checkout -- .npmrc",
+            "git restore .npmrc",
+            "tee .npmrc",
+            "sed -i s/a/b/ .npmrc",
+            "echo x > .npmrc",
+            "cat x > .npmrc",
+            'python3 -c \'open(".npmrc", "w")\'',
+            "echo 'unbalanced > .npmrc",
+            "X=$(cp y .npmrc)",
+            "echo $(tee .npmrc)",
+        ):
+            self.assert_ordinary_after(setup, "npm test")
 
     def test_a_latched_call_is_published_as_an_ordinary_command(self) -> None:
         self.session = Transcript(self.cwd)
