@@ -245,7 +245,7 @@ class AReadingRecordedOutOfOrderTest(_Store):
             "claude",
             "s1",
             assessment=_assessment(150.0),  # type: ignore[arg-type]
-            job_id="job-late",
+            job_id="a1b2c3",
         )
         self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
         self.assertEqual(before + 1, self.entry()["readings"])
@@ -267,6 +267,80 @@ class AReadingRecordedOutOfOrderTest(_Store):
         self.assertEqual(before["withheld"], after["withheld"])
         self.assertEqual(before["withheld_at"], after["withheld_at"])
         self.assertEqual(200.0, after["assessment"]["read_at"])
+
+    def late_job(self, read_at: float, revision: int, job_id: str = "a1b2c3") -> str:
+        return annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=_assessment(read_at, revision=revision),  # type: ignore[arg-type]
+            job_id=job_id,
+        )
+
+    def test_a_reading_of_a_newer_revision_replaces_the_standing_one_though_its_clock_is_older(
+        self,
+    ) -> None:
+        self.read(200.0, line_2=DEPARTED)
+        self.save(lines=[LINE_1, LINE_2, "A third line"])
+        self.assertEqual(2, self.entry()["revisions"][-1]["n"])
+        self.late_job(190.0, 2)
+        standing = self.entry()["assessment"]
+        self.assertEqual((2, 190.0), (standing["revision_read"], standing["read_at"]))
+
+    def test_a_reading_of_the_same_revision_with_an_older_clock_is_still_refused(self) -> None:
+        self.read(200.0, line_2=DEPARTED)
+        self.save(lines=[LINE_1, LINE_2, "A third line"])
+        self.late_job(210.0, 2, "a1")
+        self.late_job(190.0, 2, "a2")
+        self.assertEqual(210.0, self.entry()["assessment"]["read_at"])
+
+    def test_a_reading_of_an_older_revision_with_an_older_clock_is_refused(self) -> None:
+        self.save(lines=[LINE_1, LINE_2, "A third line"])
+        self.late_job(200.0, 2, "a1")
+        self.late_job(190.0, 1, "a2")
+        standing = self.entry()["assessment"]
+        self.assertEqual((2, 200.0), (standing["revision_read"], standing["read_at"]))
+
+    def test_a_reading_of_an_older_revision_with_a_newer_clock_is_refused(self) -> None:
+        self.save(lines=[LINE_1, LINE_2, "A third line"])
+        self.late_job(200.0, 2, "a1")
+        self.late_job(300.0, 1, "a2")
+        standing = self.entry()["assessment"]
+        self.assertEqual((2, 200.0), (standing["revision_read"], standing["read_at"]))
+
+    def test_a_standing_reading_with_no_time_gives_way_to_a_new_one(self) -> None:
+        stored = _assessment(100.0, revision=1)
+        stored["read_at"] = None
+        annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=stored,  # type: ignore[arg-type]
+        )
+        self.read(50.0)
+        self.assertEqual(50.0, self.entry()["assessment"]["read_at"])
+
+    def test_a_refused_late_reading_keeps_the_mark_the_job_and_the_departures(self) -> None:
+        self.read(100.0, line_2=DEPARTED)
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        annotation_store.mark_not_accurate(
+            self.config, self.state, "claude", "s1", read_at=200.0, on=True
+        )
+        before = self.priors()
+        self.assertEqual(1, len(before))
+        self.late_job(150.0, 1)
+        after = self.entry()
+        self.assertTrue(after["not_accurate"])
+        self.assertEqual(200.0, after["assessment"]["read_at"])
+        self.assertIn("a1b2c3", after["jobs"])
+        self.assertEqual(before, self.priors())
+        self.assertEqual(
+            annotation_store.OUTCOME_UNCHANGED,
+            self.late_job(150.0, 1),
+            "a replay answers unchanged",
+        )
 
     def test_a_reading_in_order_after_a_withheld_press_still_clears_the_note(self) -> None:
         self.read(100.0, line_2=ON_THE_AGENTS_WORD)

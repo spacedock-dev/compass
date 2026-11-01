@@ -2177,15 +2177,22 @@ def _with_reading(
     From the reading being replaced, under the caller's lock: the store holds one reading, so
     this is the only moment its departures can be kept (owner, 2026-10-30).
 
-    A reading older than the standing one leaves it standing: replacing it would file the
+    A reading ordered before the standing one leaves it standing: replacing it would file the
     newer reading's departures as "earlier" than the one beside them, and the late one is the
-    only thing refused, so no stored row is lost. Equal times replace.
+    only thing refused, so no stored row is lost. The order is the intent revision read, then
+    the time: a reading of a newer revision wins though a clock stepped back gave it an older
+    time. Equal on both replaces, and a standing reading with no time gives way.
     """
     standing = existing.get("assessment")
-    standing_at = standing.get("read_at") if standing else None
-    new_at = assessment.get("read_at")
-    if standing_at and new_at and new_at < standing_at:
-        return False
+    if standing:
+        standing_at = standing.get("read_at")
+        new_at = assessment.get("read_at")
+        standing_revision = standing["revision_read"]
+        new_revision = assessment["revision_read"]
+        if new_revision < standing_revision or (
+            new_revision == standing_revision and standing_at and new_at and new_at < standing_at
+        ):
+            return False
     updated["assessment"] = assessment
     priors = _departures_cleared(existing, assessment, existing["revisions"][-1], on_a_check)
     if priors:
