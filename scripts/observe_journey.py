@@ -568,7 +568,8 @@ def _attribute(  # noqa: PLR0911 - one answer per kind of line
             return None, None
         return ("" if kind in {"start", "exit"} else tree_row[event["pid"]]), None
     if kind == "refused":
-        why = f"{event.get('program')} refused: past this run's budget of {event.get('budget')}"
+        program = _program_label(event.get("program"))
+        why = f"{program} refused: past this run's budget of {event.get('budget')}"
         return ROW_PRESS, why
     if kind == "fork":
         return ROW_DAEMON, None
@@ -586,8 +587,23 @@ def _attribute(  # noqa: PLR0911 - one answer per kind of line
     return None, None
 
 
+def _program_label(program: object) -> str:
+    """A program's name, or its length when it carries a space or a path separator.
+
+    A recorder records a file name, but one that once took a shell command line's basename
+    printed the whole line, account name and all; this keeps that out of the shapes report.
+    """
+    text = "" if program is None else str(program)
+    if any(char.isspace() or char in "/\\" for char in text):
+        return f"<{len(text)} chars>"
+    return text
+
+
 def _shape(event: Event) -> str:
-    label = event.get("program") if event["kind"] in {"launch", "refused"} else _endpoint(event)
+    if event["kind"] in {"launch", "refused"}:
+        label = _program_label(event.get("program"))
+    else:
+        label = _endpoint(event)
     return f"{event['src']} {event['kind']} {event['op']} {label}"
 
 
@@ -650,7 +666,8 @@ def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of l
         if row is None or row not in rows:
             unlisted.append(event)
             continue
-        label = event.get("program") if event["kind"] == "launch" else _endpoint(event)
+        launched = event["kind"] == "launch"
+        label = _program_label(event.get("program")) if launched else _endpoint(event)
         if callers.get(index):
             label = f"{label} ({callers[index]})"
         by_row[row][f"{event['src']} {event['kind']} {label}"] += 1
@@ -670,7 +687,7 @@ def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of l
         "launches": launches,
         "opaque_launches": sorted(
             {
-                str(launch["program"])
+                _program_label(launch["program"])
                 for launch in launches
                 if launch.get("child") and not launch.get("seen_inside")
             }
