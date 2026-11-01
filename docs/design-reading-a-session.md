@@ -1300,7 +1300,11 @@ prompt, what the reading sends and the shape contract's seven rules are unchange
    an outcome line only when it names a path with a slash in it, speaks of changing files, and says
    which way: negated ("no file under X is edited", "X is left untouched") rules the folder out, and
    limiting ("only files under X change", "nothing outside X is changed") allows only those folders.
-   A clause that mixes the two, says neither, or names no folder is left to the reading. A write the
+   A clause that mixes the two, says neither, or names no folder is left to the reading. Clauses
+   break at a semicolon, comma, newline, "and", "but", "while" or "so", and at a dot only when
+   whitespace or the end follows it, so "Do not edit src/config.py" keeps the file. This splitter
+   is the folder rule's own (`_RULE_CLAUSE_BREAK`); the check-result claims keep the plain one
+   (`_CLAIM_CLAUSE_BREAK`), and the two once shared a name, so the later silently served both. A write the
    record holds inside a ruled-out folder, or outside the only folders allowed, inside the reading's
    window and after the line's own request, makes the line a departure whatever the reply said, even
    for a line the prompt never put to the model. `reading._settled_by_record` stores it with the

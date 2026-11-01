@@ -9,8 +9,10 @@ ahead of the agent's own message on it, so the page can say which check it rests
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from typing import Any, cast
+from unittest import mock
 
 from compass_runtime import correction, levels, reading
 
@@ -442,3 +444,61 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AFolderRuleKeepsTheFilePathItWasWrittenAbout(unittest.TestCase):
+    """The folder rule's clause splitter breaks on a sentence, not on the dot inside a path."""
+
+    def test_a_reader_who_forbids_a_file_gets_the_file_not_its_stem(self) -> None:
+        self.assertEqual(
+            ((reading.RULE_FORBID, ("src/config.py",)),),
+            reading.folder_rules("Do not edit src/config.py"),
+        )
+
+    def test_a_sentence_ending_in_a_file_still_ends_its_clause(self) -> None:
+        self.assertEqual(
+            ((reading.RULE_FORBID, ("src/config.py",)), (reading.RULE_ONLY, ("docs",))),
+            reading.folder_rules("Do not edit src/config.py. Only change docs/."),
+        )
+
+    def test_a_line_that_forbids_one_folder_and_limits_the_work_gives_two_rules(self) -> None:
+        self.assertEqual(
+            ((reading.RULE_FORBID, ("src/api",)), (reading.RULE_ONLY, ("docs",))),
+            reading.folder_rules("Leave src/api untouched and only change docs/"),
+        )
+
+
+class EachClauseSplitterHasItsOwnNameAndItsCallers(unittest.TestCase):
+    """Two splitters once shared one name, and the later one silently served every caller."""
+
+    NEVER = re.compile(r"(?!)")
+    SENTENCE = "Do not edit src/a, and do not edit src/b"
+
+    def test_there_is_no_shared_name_left_to_shadow(self) -> None:
+        self.assertFalse(hasattr(reading, "_CLAUSE_BREAK"))
+
+    def test_the_folder_rule_splits_a_comma_and_an_and_with_its_own_splitter(self) -> None:
+        self.assertEqual(
+            ((reading.RULE_FORBID, ("src/a",)), (reading.RULE_FORBID, ("src/b",))),
+            reading.folder_rules(self.SENTENCE),
+        )
+        with mock.patch.object(reading, "_RULE_CLAUSE_BREAK", self.NEVER):
+            self.assertEqual(
+                ((reading.RULE_FORBID, ("src/a", "src/b")),), reading.folder_rules(self.SENTENCE)
+            )
+        with mock.patch.object(reading, "_CLAIM_CLAUSE_BREAK", self.NEVER):
+            self.assertEqual(2, len(reading.folder_rules(self.SENTENCE)))
+
+    def test_the_claim_callers_split_a_comma_and_an_and_with_the_claim_splitter(self) -> None:
+        line = "lint passes, and tests fail"
+        claim_line = "the lint config is edited, and lint passes"
+        self.assertEqual(["lint passes", " ", " tests fail"], reading._local_clauses(line))
+        self.assertTrue(reading._claims_result(claim_line, "lint"))
+        job_line = "the `lint` job passes, and the rest ran locally"
+        self.assertTrue(reading._job_claimed(job_line, "lint"))
+        with mock.patch.object(reading, "_RULE_CLAUSE_BREAK", self.NEVER):
+            self.assertEqual(["lint passes", " ", " tests fail"], reading._local_clauses(line))
+        with mock.patch.object(reading, "_CLAIM_CLAUSE_BREAK", self.NEVER):
+            self.assertEqual([line], reading._local_clauses(line))
+            self.assertFalse(reading._claims_result(claim_line, "lint"))
+            self.assertFalse(reading._job_claimed(job_line, "lint"))
