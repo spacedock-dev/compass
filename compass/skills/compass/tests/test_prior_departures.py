@@ -216,6 +216,55 @@ class TheReReadingKeepsTheEarlierDepartureTest(_Store):
         self.assertEqual([("line_2", 100.0)], self.keys())
 
 
+class AReadingRecordedOutOfOrderTest(_Store):
+    """An earlier departure is never newer than the standing reading (DEC-15b, 2026-10-30)."""
+
+    def test_a_reading_recorded_late_leaves_the_newer_one_standing_and_the_departure_older(
+        self,
+    ) -> None:
+        self.read(100.0, line_2=DEPARTED)
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        self.read(150.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual(200.0, self.entry()["assessment"]["read_at"])
+        self.assertEqual([("line_2", 100.0)], self.keys())
+
+    def test_a_late_reading_does_not_lose_the_departure_the_standing_one_shows(self) -> None:
+        self.read(200.0, line_2=DEPARTED)
+        self.read(150.0, line_2=ON_THE_AGENTS_WORD)
+        standing = self.entry()["assessment"]
+        self.assertEqual(200.0, standing["read_at"])
+        self.assertEqual(reading.RESULT_DEPARTURE, standing["criteria"]["line_2"]["result"])
+        self.assertEqual([], self.priors())
+
+    def test_a_late_reading_is_still_counted_as_a_press(self) -> None:
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        before = self.entry()["readings"]
+        outcome = annotation_store.record_reading(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            assessment=_assessment(150.0),  # type: ignore[arg-type]
+            job_id="job-late",
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual(before + 1, self.entry()["readings"])
+
+    def test_readings_recorded_in_order_still_replace_one_another(self) -> None:
+        self.read(100.0, line_2=DEPARTED)
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual(200.0, self.entry()["assessment"]["read_at"])
+        self.assertEqual([("line_2", 100.0)], self.keys())
+
+    def test_two_readings_with_the_same_time_replace_one_another(self) -> None:
+        self.read(100.0, line_2=DEPARTED)
+        self.read(100.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertEqual(
+            reading.RESULT_CONSISTENT,
+            self.entry()["assessment"]["criteria"]["line_2"]["result"],
+        )
+
+
 class APassingCheckClearsItForGoodTest(_Store):
     """Owner, 2026-10-30: a departure a later reading answered with a passing check is cleared for
     good, and a still-later reading resting the line on the agent's message does not list it again."""
