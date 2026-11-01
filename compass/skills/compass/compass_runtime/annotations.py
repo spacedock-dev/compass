@@ -2171,16 +2171,26 @@ def _with_reading(
     existing: Annotation,
     assessment: reading.Assessment,
     on_a_check: Collection[str],
-) -> None:
-    """Put a new reading on the entry, with what it leaves earlier.
+) -> bool:
+    """Put a new reading on the entry, with what it leaves earlier. False when it was not kept.
 
     From the reading being replaced, under the caller's lock: the store holds one reading, so
     this is the only moment its departures can be kept (owner, 2026-10-30).
+
+    A reading older than the standing one leaves it standing: replacing it would file the
+    newer reading's departures as "earlier" than the one beside them, and the late one is the
+    only thing refused, so no stored row is lost. Equal times replace.
     """
+    standing = existing.get("assessment")
+    standing_at = standing.get("read_at") if standing else None
+    new_at = assessment.get("read_at")
+    if standing_at and new_at and new_at < standing_at:
+        return False
     updated["assessment"] = assessment
     priors = _departures_cleared(existing, assessment, existing["revisions"][-1], on_a_check)
     if priors:
         updated["prior_departures"] = priors
+    return True
 
 
 def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
@@ -2232,14 +2242,16 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
             "revisions": existing["revisions"],
         }
         _recorded_job(updated, existing, job_id)
+        stored = True
         if assessment is not None:
-            _with_reading(updated, existing, assessment, on_a_check)
+            stored = _with_reading(updated, existing, assessment, on_a_check)
         written = time.time()
         if withheld:
             updated["withheld"] = withheld
             updated["withheld_at"] = written
-        elif "withheld" in existing:
-            # Cleared rather than carried: a reading arrived.
+        elif stored and "withheld" in existing:
+            # Cleared rather than carried: a reading arrived and was kept. A late one that was
+            # not kept leaves the note that the latest press produced none.
             updated["withheld"] = ""
         if spent:
             updated["readings"] = existing.get("readings", 0) + 1
