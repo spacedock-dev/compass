@@ -587,8 +587,8 @@ running or recorded after it, is not stored as not reached. An idle session with
 no call counts as running there: an unanswered call is an interruption. A line may read consistent on one of the
 agent's messages, never beside a check that failed after your words or a file write the record holds:
 there the goal and each line need a check, CI command or CI check that passed, a pull request created
-or a skill used, and a command that only ran, or a file write cited, is neither. A line departs only on recorded work, a failed check or a write the record settles, and on
-messages alone reads "Can't tell"; the goal may still depart on what the agent said. The goal reads
+or a skill used, and a command that only ran, or a file write cited, is neither. A passing check covers a line only when the line names its kind of check without a qualifier ("the tests pass", not "the frontend tests pass"). A line departs only on recorded work, a failed check or a write the record settles, and on
+messages alone reads "Can't tell"; the goal may still depart on what the agent said. A line that only asks for the agent's own report ("Tell me which files changed") is the exception: it is judged on the agent's messages, a "consistent" on one sent after the last file write and a departure only where every message was read whole and the newest is cited. The goal reads
 consistent only when every line asked beside it does, and the level never reads "None or low" on
 the agent's word alone. A goal departure resting on an agent message stops counting once that
 message leaves the transcript tail the board reads. A press that carries the agent's
@@ -596,7 +596,7 @@ messages also asks whether any of them claims a state of the work (running, merg
 the like) that the record contradicts, or, for a pass, a fix or a file written, that the record
 does not show; the reading is asked to keep "not shown" for those, so a claim nothing Compass
 records can show (merged, pushed, deployed) is not meant to read "not shown". "What the agent claimed" quotes the claim's first sentence and then reads "is contradicted at #m", "is not shown by the record" (with its own reason: which kind of check the claim names and what the record holds of it, or, for a claim naming none, that the record read is the board's recent tail, and never where some of the session's checks, passes
-or file writes went unread, or where a check or command that can fail ran inside the window before the claim with no result recorded), "is shown at #m" or "Can't tell", and is not
+or file writes went unread, or where a check or command that can fail ran inside the window before the claim with no result recorded, unless a later run of that command in the same folder recorded one before the claim), "is shown at #m" or "Can't tell", and is not
 drawn when there was no claim. A check that failed before the claim does not contradict it once
 the agent ran the same tool again before claiming, with no failure in that run or an earlier one of it,
 naming nothing after the tool but flags or `.`; the working directory is not recorded. A

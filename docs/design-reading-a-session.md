@@ -403,7 +403,12 @@ Rule 7 is amended below by
 lets an outcome line rest on one of the agent's own messages, and last by
 [the amendment of 2026-10-30](#amended-2026-10-30-owner-a-verdict-on-words-alone-gives-way-to-the-record),
 under which a line's departure needs recorded work and, beside a recorded write, its `consistent` a
-cited write or passing check. Rules 1 and 6 gain a constraint about
+passing check, a CI command or CI check, a created pull request or a used skill (a cited write keeps
+nothing). The owner narrowed it on 2026-11-01: a line asking only for
+[the agent's own report](#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
+is judged on the agent's message, and
+[a re-run, an unrecorded run and the covering match](#amended-2026-11-01-owner-a-re-run-an-unrecorded-run-and-the-covering-match)
+are read more strictly. Rules 1 and 6 gain a constraint about
 what the agent claims, with a fourth result of its own, by
 [the amendment of 2026-10-04](#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint).
 
@@ -1338,6 +1343,10 @@ every unsettled line read the same `Can't tell: what was read does not settle th
 that never quoted the claim. This amendment changes two guards and the words of three rows. The
 prompt, what the reading sends and the shape contract's seven rules are unchanged.
 
+The covering rule in item 4 below was narrowed on 2026-11-01: a line whose check noun is qualified
+no longer takes a pass of another set of checks, under
+[the amendment of that date](#amended-2026-11-01-owner-a-re-run-an-unrecorded-run-and-the-covering-match).
+
 1. **A recorded write settles a line that names a folder.** `reading.folder_rules` reads a clause of
    an outcome line only when it names a path with a slash in it, speaks of changing files, and says
    which way: negated ("no file under X is edited", "X is left untouched") rules the folder out, and
@@ -1586,7 +1595,9 @@ wrote files, which is most of them, a line reads `consistent` only on a passing 
 CI check, a created pull request or a used skill. "Consistent with what the agent said at #n; not a
 check" is now possible only where the window holds no recorded write. That includes a line about
 what the agent tells the reader ("the counts are reported"): beside a write it needs a cited pass as
-well as the message, so it often reads Can't tell. A "don't do X" line whose X then ran and succeeded
+well as the message, so it often reads Can't tell (narrowed by
+[the amendment of 2026-11-01](#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
+for a line that asks only for the agent's own report). A "don't do X" line whose X then ran and succeeded
 cannot depart on the record either, because item 8 drops the passing run from a departure and C1
 then finds only words. A created pull request or a used skill still keeps a `consistent` beside a
 write without saying anything about the line's content; that residual is kept under the
@@ -1623,6 +1634,104 @@ Not changed. The freeze still does not apply the copy store's `copied_correction
 Compass built and the reader pasted reaches the model as the reader's words. That is a follow-up:
 fixing it now would move case `19f966db`'s material after its outputs were seen. The guards are held
 by `test_reading_words_give_way.py`, each with a control that stands.
+
+### Amended 2026-11-01 (owner): a line about what the agent tells you rests on its message
+
+The 2026-10-30 guards left one shape worse than they meant to. Under
+[DEC-23's ruling of 2026-10-01](#amended-2026-10-01-a-line-about-what-the-agent-tells-you-cannot-be-shown),
+only the agent's message can show a line about what the agent tells the reader ("Tell me which
+files changed"). Beside a recorded write, C2 withdrew that line's `consistent` unless a passing
+check was cited too, and C1 withdrew its departure unless recorded work was cited, though no
+check or command can show what the agent said. Two probes of the retry correction review
+reproduced it: P11, a `consistent` on a message sent after the write, and P12, a departure on an
+agent message that never answered the request. Both read Can't tell with the right message cited.
+
+The owner ruled, on 2026-11-01: "Candidate C. A line about the agent's own report to the reader is
+exempt from both C1 and C2, under gates." Rejected: reusing the tells-the-person pattern as the
+exemption, because it over-matches by design (it was built to withdraw a pass, and "The CLI
+reports 0 failures" would stand on the agent saying so), and an exemption for C2 alone, because it
+leaves "it never told you" at Can't tell.
+
+The class is recognised without a model, by `reading.asks_for_a_report`, and it is a strict
+subset of the tells-the-person pattern, so the rule that withdraws a pass and this exemption never
+disagree about it. The whole line is `(please|also|then|finally|and)* PHRASE rest`, where PHRASE is
+`tell me|us`, `let me|us know`, `report back` with an optional `to me|us`, or
+`report|explain|summarise|describe|mention` followed by `to` or `for` and `me|us`. "show",
+"give", "list" and "confirm" are out on purpose: they name a deliverable, and the last two are
+not in the tells-the-person pattern at all. `rest` holds:
+
+- no second clause or instruction: a semicolon, a newline, a sentence break followed by more text,
+  ", and" or "then". This is not `_CLAIM_CLAUSE_BREAK` or the folder rules' break, which split on
+  every comma and "and" and would read a request's own "and why" as a second clause;
+- no `and` or `or` except before a wh-word or a determiner, so "which files changed and why" is in
+  and "which files changed and fix the flaky test" is out;
+- no destination word: README, docs, changelog, PR, pull request, description, commit, comment,
+  issue, ticket, wiki, Slack, email, release notes. "Tell the user in the README how to install"
+  asks for a file, not a report;
+- no path;
+- no check-result claim, so "Tell me whether the tests pass" still needs a pass.
+
+The gates. Each exemption holds only where the message can carry it.
+
+- C2, for a `consistent`: a message of the agent's that the row cites was sent at or after the latest
+  recorded write in the window, counting writes no grant sent. A report sent before the last write
+  does not describe it, so that row still reads `no-work-shown`.
+- C1, for a departure: the reading carried every agent message in the window whole, none as an
+  excerpt and none left out (`Selection.agent_words_whole`, set by `build_prompt` from what it
+  printed), and the row cites the newest of them. Otherwise "it did not tell you" would rest on a
+  crop, or on a message the budget dropped.
+
+Nothing here raises a verdict: a reply of `unverifiable` stays so. The 2026-10-01 rule still runs
+first in `_evidence_rules`, so a `consistent` on a check with no message at or after it still reads
+`tells-the-person`. No token is new, so the page needs no new sentence and the bundle is not
+rebuilt.
+
+What it costs. The accuracy of the report is the model's judgment again, as it was before C2:
+for "Tell me which files changed", an agent that says "I changed a.py" beside writes to a.py and
+b.py may be read as having told the reader. The departure gate closes the larger risk, that an
+earlier message which did tell the reader is left out.
+
+Scope of the measurements. The recorded 2026-10-31 qualification pass measured the reader
+before this amendment, so its counts describe that reader. No replay was run
+([the abstention record](abstention/README.md#retry-qualification-outcome-2026-10-31)). The rule is
+held by `test_reading_record_says_more.py`, each exemption with a control that does not stand.
+
+### Amended 2026-11-01 (owner): a re-run, an unrecorded run and the covering match
+
+C5b and the covering match were reviewed together on 2026-11-01, once the guards were free to
+change. Three findings, from probes on the tree at the time.
+
+1. "Same command" is the publisher's identity, the directory plus the stripped command words,
+   with an unplaced run never the same as another (`project_context._check_identity`). It is not
+   equal text at the reading layer, because facts carry no directory and equal text would settle
+   a run in `a/` with a pass in `b/`. The publisher already keeps one fact per identity, and it is
+   the run with the newest evidence, so a run with no result followed by a pass of the same command
+   before the claim reaches the reader as one passing fact and C5b never sees the lost run. That
+   case needed a pin, not a change; `test_reading_record_says_more.py` holds it through the real
+   publisher. The shape first filed, two facts sharing a text, is one the publisher produces only
+   for runs in different or unplaced directories, which are not the same check. It appears in none
+   of the tenth and retry cases.
+2. The opposite order was a hole. A run with no result before the claim and a pass after it
+   collapses to the pass, which is after the claim, and C5b read nothing at or before it. "Not shown"
+   then stood, in the confident direction. The publisher now keeps `earlier_unrecorded_at` on the
+   fact, the call time of the newest earlier run of the same identity with no recorded result, as
+   `earlier_failed` is kept, for Claude Code, Codex and Pi. C5b also withdraws when that time is
+   at or before the claim and the fact's own evidence is after it. A pass before the claim, with the
+   lost run before that, still stands.
+3. The covering match was too loose, in the false-reassurance direction. `covering_checks` put
+   any recorded pass whose kind the line claims ahead of the agent's message, so an unrelated
+   `pytest -q` pass settled "The frontend tests pass" beside a write, which is the case C2 exists
+   to withdraw. A line that names no path is now covered only when its check noun is unqualified, or
+   qualified only by "the", "all", "every", "each", "existing", "our", "my", "no", "zero" or a numeral,
+   with a closed list of lead-in words ("make sure", "ensure", "confirm", "must" and the like) allowed
+   before those.
+   A language, an area, "e2e", "unit", "new" or a project name before the noun means the pass does
+   not cover it, the model's own citations decide, and C2 applies. `covers_line` is not changed:
+   `_bears_on` reads it for the running-turn guard, and narrowing it there would let more mid-flight
+   departures stand.
+
+Every change moves toward Can't tell. No token is new, and the page needs no change. Like the
+amendment above, it was made after the recorded 2026-10-31 pass, which measured the earlier reader.
 
 ### Repeated calls
 
@@ -2965,6 +3074,11 @@ attribution above, failure evidence outranking a passing flag, node's `ℹ cance
 `[no test files]`. The owner added `rtk` as a wrapper whose checks read the flag alone.
 
 #### Amended 2026-10-01: a line about what the agent tells you cannot be shown
+
+Narrowed again by
+[DEC-17's amendment of 2026-11-01](#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message):
+a line that only asks for the agent's own report is also exempt from the 2026-10-30 guards, which
+had withdrawn it beside a recorded write.
 
 Narrowed by
 [DEC-17's amendment of 2026-10-03](#amended-2026-10-03-owner-the-agents-own-words-are-evidence):

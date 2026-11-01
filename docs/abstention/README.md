@@ -867,6 +867,11 @@ ceiling, and the shared account 100, with thirty in epoch seven. The availabilit
 No replay or live attempt ran. The study stops here. Every earlier packet, key, result and charge stays
 intact, as does the owner's separate 2026-10-02 operational acceptance.
 
+The recorded pass measured the reader before the 2026-11-01 amendments to its guards C1, C2 and C5b
+and to the covering match, which are described in
+[the reading design record](../design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message).
+Its counts describe that reader, not the one on this tree. No replay was run.
+
 ### Fourth qualification outcome, 2026-10-06
 
 The [native fourth result](claude-results-continuation-4.json) failed after two attempts on the
