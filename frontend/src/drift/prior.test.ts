@@ -156,7 +156,7 @@ describe('an earlier departure beside the reading after it', () => {
       const [prior] = priorDepartures([stored()], shapeOf(later), ENTRIES as never);
       expect(prior?.key).toBe('line_2');
       expect(prior?.answer).toBe('cant-tell');
-      expect(resultState(prior!.later)).toBe('cant-tell');
+      expect(prior ? resultState(prior.later) : null).toBe('cant-tell');
     }
   });
 
@@ -188,7 +188,13 @@ describe('an earlier departure beside the reading after it', () => {
 
   it('is listed on the goal where the goal cannot tell beside a line that is not consistent', () => {
     const [prior] = priorDepartures(
-      [{ ...stored(), key: 'goal', criterion: { ...stored().criterion, clause: 'Ship the queue' } }],
+      [
+        {
+          ...stored(),
+          key: 'goal',
+          criterion: { ...stored().criterion, clause: 'Ship the queue' },
+        },
+      ],
       ON_MESSAGE,
       ENTRIES as never,
     );
