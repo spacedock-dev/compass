@@ -4755,7 +4755,10 @@ _PROSE_PAIRS = frozenset(
     }
 )  # fmt: skip
 _PATH_WORD = re.compile(r"[\w][\w.\-]*(?:/[\w][\w.\-]*)*/?")
-_CLAUSE_BREAK = re.compile(r";|\n|(?<=[.!?])\s+")
+# A dot ends a clause only before whitespace or the end: "Do not edit src/config.py" keeps its
+# file. The conjunctions split because "Leave src/api untouched and only change docs/" is two
+# rules, which the sentence-only splitter this replaced read as one and ruled nothing.
+_RULE_CLAUSE_BREAK = re.compile(r"[;,\n]|\.(?=\s|$)|\b(?:and|but|while|so)\b", re.IGNORECASE)
 _RULE_NEGATORS = re.compile(
     r"\b(?:no|not|never|none|nothing|without|untouched|unchanged|zero)\b|n't\b", re.IGNORECASE
 )
@@ -4869,7 +4872,7 @@ def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     or says neither, is left to the reading, as is a line that names no folder at all.
     """
     rules: list[tuple[str, tuple[str, ...]]] = []
-    for clause in _CLAUSE_BREAK.split(text):
+    for clause in _RULE_CLAUSE_BREAK.split(text):
         folders = _path_tokens(clause)
         if not folders or not _RULE_MUTATION.search(clause):
             continue
@@ -5332,7 +5335,7 @@ def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
         and not _JOB_HEDGE.search(clause)
         and not _JOB_LOCAL.search(clause)
         and not _NOT_A_RESULT.search(clause)
-        for clause in _CLAUSE_BREAK.split(marked)
+        for clause in _CLAIM_CLAUSE_BREAK.split(marked)
     )
 
 
@@ -5653,7 +5656,7 @@ _NOT_A_RESULT = re.compile(
 )
 # No colon: "Tests: all passing" says its result after the colon, and splitting there left the
 # subject and the result in different clauses.
-_CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
+_CLAIM_CLAUSE_BREAK = re.compile(r"[.;,]|\b(?:and|but|while|so)\b", re.IGNORECASE)
 
 
 # A phrase that names a remote job is no claim about a local run. A CI job's name is a hyphen- or
@@ -5710,7 +5713,9 @@ def _drop_remote_job(match: re.Match[str]) -> str:
 def _local_clauses(text: str) -> list[str]:
     """The clauses of a line that can speak of a local run, remote phrasing removed."""
     marked = _REMOTE_JOB.sub(_drop_remote_job, _CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text))
-    return [clause for clause in _CLAUSE_BREAK.split(marked) if not _REMOTE_CLAUSE.search(clause)]
+    return [
+        clause for clause in _CLAIM_CLAUSE_BREAK.split(marked) if not _REMOTE_CLAUSE.search(clause)
+    ]
 
 
 def _claims_result(text: str, kind: str, *, remote_aware: bool = False) -> bool:
@@ -5719,7 +5724,7 @@ def _claims_result(text: str, kind: str, *, remote_aware: bool = False) -> bool:
     Only a goal verdict reads remote phrasing out of the line (`remote_aware`); an outcome line
     keeps the plain clause split it always had.
     """
-    clauses = _local_clauses(text) if remote_aware else _CLAUSE_BREAK.split(text)
+    clauses = _local_clauses(text) if remote_aware else _CLAIM_CLAUSE_BREAK.split(text)
     return any(
         _LINE_KINDS[kind].search(clause)
         and _RESULT_CLAIM.search(clause)
