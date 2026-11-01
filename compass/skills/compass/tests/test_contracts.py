@@ -2312,8 +2312,8 @@ class HarnessContractTest(HarnessContractTestCase):
 
     def test_no_harness_publishes_a_credential_out_of_a_prompt(self) -> None:
         # DRC-4267. Every row here is built from what the operator typed, and on
-        # the machine this was found on that text held seven live Anthropic
-        # keys. The fake is a real prefix and a run of one letter, which is the
+        # the machine this was found on that text held seven Anthropic
+        # key-shaped strings. The fake is a real prefix and a run of one letter, which is the
         # only kind of credential value this repository may hold.
         #
         # Asserted over the serialized row rather than over `title`, because the

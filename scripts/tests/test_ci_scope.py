@@ -146,7 +146,6 @@ class DocumentsTestsReadAreNotProseTest(unittest.TestCase):
         # A document can break an assertion, never a lint, a type, coverage or a platform.
         for path in (
             "docs/captures/README.md",
-            "docs/design-credential-redaction.md",
             "docs/promise-map.md",
             "README.md",
             "SECURITY.md",

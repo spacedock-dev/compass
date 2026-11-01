@@ -920,7 +920,7 @@ class PublishedTextCarrierEnumerationTest(unittest.TestCase):
     `state_detail` and `subagents[].name` were each forgotten once already. So
     the count in prose was a claim about a set that nothing read.
 
-    "The line beneath it" is gone from all three copies for the reason
+    "The line beneath it" is gone from both copies for the reason
     `EventEnvelopeEnumerationTest` gives for not glossing the acquisition
     marker: a prose alias is a name no test can check. It resolved to
     `state_detail`, and the phrase was defined nowhere in the repository.
@@ -931,10 +931,9 @@ class PublishedTextCarrierEnumerationTest(unittest.TestCase):
     `field[].key`, the spelling the prose uses, so a key that moves between the
     two lists cannot satisfy the other one's entry.
 
-    All three copies are checked because they had already drifted apart, and one
-    of them is in `docs/design-credential-redaction.md`, outside SECURITY.md
-    entirely: a fix that lands in one place leaves the other two contradicting
-    it, which is worse than the original understatement.
+    Both copies are checked because they had already drifted apart: a fix that
+    lands in one place leaves the other contradicting it, which is worse than the
+    original understatement.
     """
 
     ROOT = SERVER_PATH.parents[3]
@@ -943,11 +942,6 @@ class PublishedTextCarrierEnumerationTest(unittest.TestCase):
     # assertion made about this one.
     SECTION = _flat_section(SECURITY, "## Published text (credential redaction)")
     HISTORY = _flat_section(SECURITY, "## Local history (the session history store)")
-    DESIGN: ClassVar[str] = re.sub(
-        r"\s+",
-        " ",
-        (ROOT / "docs/design-credential-redaction.md").read_text(encoding="utf-8"),
-    )
     NUMBER_WORDS: ClassVar[dict[int, str]] = {
         5: "five",
         6: "six",
@@ -975,20 +969,17 @@ class PublishedTextCarrierEnumerationTest(unittest.TestCase):
             set(re.findall(r"`([A-Za-z_]+(?:\[\]\.[A-Za-z_]+)?)`", match.group(2))),
         )
 
-    def test_all_three_copies_of_the_list_name_the_same_carriers(self) -> None:
+    def test_both_copies_of_the_list_name_the_same_carriers(self) -> None:
         canonical = re.search(self.CLAUSE, self.SECTION)
         assert canonical is not None
-        for name, copy in (("Local history", self.HISTORY), ("the design doc", self.DESIGN)):
-            with self.subTest(copy=name):
-                found = re.search(self.CLAUSE, copy)
-                assert found is not None, f"{name} no longer enumerates the raw carriers"
-                self.assertEqual(canonical.group(0), found.group(0))
+        found = re.search(self.CLAUSE, self.HISTORY)
+        assert found is not None, "Local history no longer enumerates the raw carriers"
+        self.assertEqual(canonical.group(0), found.group(0))
 
     def test_no_copy_still_glosses_a_carrier_as_the_line_beneath_it(self) -> None:
         for name, copy in (
             ("Published text", self.SECTION),
             ("Local history", self.HISTORY),
-            ("the design doc", self.DESIGN),
         ):
             with self.subTest(copy=name):
                 self.assertNotIn("the line beneath it", copy)

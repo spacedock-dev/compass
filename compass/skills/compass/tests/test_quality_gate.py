@@ -80,7 +80,6 @@ class QualityGateDetectorTest(unittest.TestCase):
     def test_content_dependencies_run_the_python_suites(self) -> None:
         for name in (
             "captures/README.md",
-            "design-credential-redaction.md",
             "design-event-driven-observation.md",
             "design-reader-state.md",
             "promise-map.md",
