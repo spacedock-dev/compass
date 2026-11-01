@@ -322,7 +322,7 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
                 # message; with one it is row 2 and the model leaned on the message alone.
                 row = self._line(
                     facts,
-                    "The retry tests pass",
+                    "The tests pass",
                     [2] if grant is None else [3],
                     tool_output=grant,
                 )
@@ -331,7 +331,7 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
 
     def test_a_check_the_reading_already_cites_is_not_cited_twice(self) -> None:
         facts = [base.WORDS_FACT, self._passed(), base.AGENT_MESSAGE_FACT]
-        row = self._line(facts, "The retry tests pass", [2, 3], tool_output=base.ADMITTED)
+        row = self._line(facts, "The tests pass", [2, 3], tool_output=base.ADMITTED)
         self.assertEqual(("check-1", "m1"), row["cites"])
 
     def test_a_check_of_another_kind_is_not_cited(self) -> None:

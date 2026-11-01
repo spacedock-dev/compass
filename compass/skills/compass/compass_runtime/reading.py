@@ -1148,6 +1148,9 @@ class LedgerEntry(TypedDict):
     result: NotRequired[str]
     stale: NotRequired[bool]
     earlier_failed: NotRequired[bool]
+    # When each earlier run of this command with no recorded result was called, oldest first, on a
+    # run that has one: what `_ran_unrecorded_before` reads for a claim made after any of them.
+    earlier_unrecorded_ats: NotRequired[list[float]]
     changed_after: NotRequired[bool]
     read_incomplete: NotRequired[bool]
     # When a check's result arrived, where one did (DRC-4702).
@@ -1219,6 +1222,11 @@ class Selection:
     # row could not hold it, so the excerpt stayed) or "unavailable" (the source could not
     # prove one). Never the words, which the prompt alone carries.
     newest_final: str | None = None
+    # Whether the prompt carried every agent message in the ledger whole, none as an excerpt and
+    # none left out: only then can "it did not tell you" rest on what the agent said. Set by
+    # `build_prompt` from what it printed, never from the ledger alone:
+    # [DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)  # noqa: E501
+    agent_words_whole: bool = False
 
     def __post_init__(self) -> None:
         if self.asked_output is None:
@@ -2258,6 +2266,14 @@ def _add_agent_words(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
             row["agent_excerpt"] = f"first {len(words):,} of {total:,} characters"
 
 
+def _unrecorded_times(value: Any) -> list[float]:
+    """The lost-run times a fact carries, read defensively: positive numbers only, the newest 16."""
+    if not isinstance(value, list):
+        return []
+    times = [t for t in (_number(item) for item in value) if t is not None and t > 0]
+    return sorted(times)[-MAX_UNRECORDED_TIMES:]
+
+
 def _add_report_fields(
     row: LedgerEntry,
     fact: Mapping[str, Any],
@@ -2273,6 +2289,9 @@ def _add_report_fields(
     row["result"] = str(fact.get("result") or "")
     row["stale"] = fact.get("before_last_change") is True
     row["earlier_failed"] = fact.get("earlier_failed") is True
+    unrecorded = _unrecorded_times(fact.get("earlier_unrecorded_ats"))
+    if unrecorded:
+        row["earlier_unrecorded_ats"] = unrecorded
     branch = fact.get("branch")
     record_id = branch.get("record_id") if isinstance(branch, dict) else None
     tail = tool_output.get(record_id) if isinstance(record_id, str) else None
@@ -2300,6 +2319,9 @@ def _add_check_fields(row: LedgerEntry, fact: Mapping[str, Any]) -> None:
     row["result"] = str(fact.get("result") or "")
     row["stale"] = fact.get("before_last_change") is True
     row["earlier_failed"] = fact.get("earlier_failed") is True
+    unrecorded = _unrecorded_times(fact.get("earlier_unrecorded_ats"))
+    if unrecorded:
+        row["earlier_unrecorded_ats"] = unrecorded
     row["changed_after"] = fact.get("changed_after") is True
     row["read_incomplete"] = fact.get("read_incomplete") is True
     result_at = _number(fact.get("result_at"))
@@ -3510,6 +3532,23 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
         asked_claims=asked_claims,
         goal_whole=goal_read != goal_text,
         newest_final=final_state,
+        agent_words_whole=_agents_read_whole(citable, whole, restored),
+    )
+
+
+def _agents_read_whole(
+    citable: Sequence[LedgerEntry], whole: set[int], restored: Mapping[int, LedgerEntry]
+) -> bool:
+    """Whether every agent message in the ledger printed whole: none crowded out, none as an
+    excerpt, and none whose words the ledger never held (`whole` only holds rows the prompt
+    carried, so a message left out is simply absent from it)."""
+    agents = [
+        row
+        for row in citable
+        if row["type"] == AGENT_MESSAGE_TYPE and row["author"] == AUTHOR_AGENT
+    ]
+    return bool(agents) and all(
+        id(row) in whole and not restored.get(id(row), row).get("agent_excerpt") for row in agents
     )
 
 
@@ -3611,6 +3650,8 @@ def parse_reply(
 # thousand indices produced a megabyte of duplicated ids, and the page draws
 # one row per citation.
 MAX_CITES = 12
+# The lost-run times a fact keeps; the publisher bounds them the same way.
+MAX_UNRECORDED_TIMES = 16
 
 
 def _indices(value: Any) -> tuple[int, ...]:
@@ -4011,9 +4052,22 @@ def _ran_unrecorded_before(
         entry.get("type") == TOOL_REPORT_TYPE
         and entry.get("subject") in (CHECK_SUBJECT, COMMAND_SUBJECT)
         and not cannot_fail(entry)
-        and entry.get("result") not in (RESULT_PASSED, RESULT_FAILED)
         and not _before_window(entry, window_start)
-        and (_number(entry.get("at")) or 0.0) <= claimed
+        and (
+            (
+                entry.get("result") not in (RESULT_PASSED, RESULT_FAILED)
+                and (_number(entry.get("at")) or 0.0) <= claimed
+            )
+            # The fact is the newest run of its command, so a pass after the claim hides runs with
+            # no result before it: the record at the claim held those runs and nothing more.
+            or (
+                (evidence_at(entry) or 0.0) > claimed
+                and any(
+                    window_start <= lost <= claimed
+                    for lost in _unrecorded_times(entry.get("earlier_unrecorded_ats"))
+                )
+            )
+        )
         for entry in carried
     )
 
@@ -4223,6 +4277,73 @@ def _about_what_the_agent_tells(result: str | None, name: str, line_text: str) -
         result == RESULT_CONSISTENT
         and is_outcome_line(name)
         and _TELLS_THE_PERSON.search(line_text) is not None
+    )
+
+
+_ME = r"(?:me|us)"
+_REPORT_REQUEST = re.compile(
+    rf"^\s*(?:(?:please|also|then|finally|and)\s+)*"
+    rf"(?:tell\s+{_ME}|let\s+{_ME}\s+know|report\s+back(?:\s+to\s+{_ME})?"
+    rf"|(?:report|explain|summari[sz]e|describe|mention)\s+(?:to|for)\s+{_ME})\b(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+_REPORT_DESTINATION = re.compile(
+    r"\b(?:readme|docs?|documentation|changelog|pr|pull\s+request|description|commit(?:\s+message)?"
+    r"|comments?|issues?|tickets?|files?\s+named|wiki|slack|email|release\s+notes?)\b",
+    re.IGNORECASE,
+)
+# What a report request goes on to ask about: what, why or how, or "with" or "about" something, or
+# a clause about what you did or found. "Tell me when the deploy is green" asks about the deploy
+# and "Let me know the migration ran" states a fact, so neither opens like this.
+_REPORT_OPENER = re.compile(
+    r"^(?:(?:with|about|on|of)\b|(?:what|which|why|how|where|who)\b"
+    r"|(?:when|once|if|whether)\s+(?:you|i|we)\b)",
+    re.IGNORECASE,
+)
+# A later or ordered action is an instruction, not a report on what has happened.
+_REPORT_ORDERING = re.compile(
+    r"\b(?:will|would|shall|should|going\s+to|about\s+to|before|after|until)\b", re.IGNORECASE
+)
+# What an "and" or "or" may join on: a short wh-clause, or a determiner and exactly one word. A
+# longer determiner phrase is a clause ("and the deploy works"), so "and why" and "and the reasons"
+# join and "and all files are removed" does not. Past tense alone cannot tell them apart.
+_REPORT_JOINED = re.compile(
+    r"^(?:(?:why|how|what|which|whether|where|who)\b(?:\s+\w+){0,4}"
+    r"|(?:the|its|their|each|every|all|any)\s+\w+)$",
+    re.IGNORECASE,
+)
+# Not `_CLAIM_CLAUSE_BREAK`, which splits on every comma and "and" and would read a request's own
+# "and why" as a second clause, and not the folder rules' break, which is wider still.
+_REPORT_SECOND_CLAUSE = re.compile(r";|\n|(?<=[.!?])\s+\S|\bthen\b|,\s*and\b", re.IGNORECASE)
+
+
+def asks_for_a_report(line: str) -> bool:
+    """Whether an outcome line asks only for the agent's own report to the reader.
+
+    A strict subset of `_TELLS_THE_PERSON`, which over-matches on purpose because it was built to
+    withdraw a pass and would exempt far too much here. "show", "give", "list" and "confirm" are
+    out: they name a deliverable. What follows must be one clause that opens with a wh-word, "with",
+    "about", "on", "of" or "when you ...", name no destination, path, check result or later action,
+    and join only a short wh-clause or determiner phrase. The ruling:
+    [DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)
+    """
+    match = _REPORT_REQUEST.match(line)
+    if match is None:
+        return False
+    rest = match["rest"].strip().rstrip(".!")
+    if (
+        _REPORT_SECOND_CLAUSE.search(rest)
+        or _REPORT_DESTINATION.search(rest)
+        or _REPORT_ORDERING.search(rest)
+        or _path_tokens(line, files=True)
+        or any(_claims_result(line, kind) for kind in _LINE_KINDS)
+    ):
+        return False
+    if not rest:
+        return True
+    head, *tails = re.split(r"\b(?:and|or)\s+", rest, flags=re.IGNORECASE)
+    return _REPORT_OPENER.match(head.strip()) is not None and all(
+        _REPORT_JOINED.match(tail.strip()) for tail in tails
     )
 
 
@@ -4482,7 +4603,13 @@ def _is_record(entry: Mapping[str, Any]) -> bool:
 
 
 def _departure_on_words(
-    criterion: Criterion, name: str, known: Mapping[str, LedgerEntry]
+    criterion: Criterion,
+    name: str,
+    known: Mapping[str, LedgerEntry],
+    *,
+    line_text: str = "",
+    newest_agent_id: str = "",
+    words_whole: bool = False,
 ) -> Criterion:
     """An outcome line's departure resting only on messages, read as not verifiable.
 
@@ -4494,13 +4621,17 @@ def _departure_on_words(
     What a departure rests on is what it publishes: item 8 has already dropped a write or a pass
     that cannot carry one. A departure the code settled from a recorded write stands, since a
     write is its evidence. The Goal is left, because a stated change of direction is what words
-    are good for there (rule 7).
+    are good for there (rule 7). So is a request for the agent's own report, when the reading
+    carried every message of the agent's whole and the departure cites the newest: only the
+    messages can show that nothing was reported
+    ([DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)).
     """
     if (
         not is_outcome_line(name)
         or criterion.get("result") != RESULT_DEPARTURE
         or criterion.get("why") == WHY_RECORDED_WRITE
         or any(_is_record(known[key]) for key in criterion["cites"] if key in known)
+        or (words_whole and newest_agent_id in criterion["cites"] and asks_for_a_report(line_text))
     ):
         return criterion
     return {**criterion, "result": RESULT_UNVERIFIABLE, "detail": "", "why": WHY_NO_WORK_SHOWN}
@@ -4528,6 +4659,8 @@ def _consistent_on_words(
     *,
     wrote: bool,
     window_start: float,
+    line_text: str = "",
+    latest_write_at: float = 0.0,
 ) -> Criterion:
     """A `consistent` on the Goal or a line that rests only on the agent's message or a tier-3
     command, in a window holding a recorded write, read as not verifiable: the write outlives the
@@ -4535,6 +4668,10 @@ def _consistent_on_words(
 
     Judged on the published citations, as `_departure_on_words` is. A write never survives item 8
     under a `consistent`, because it carries no result, so citing one keeps nothing.
+
+    A request for the agent's own report is the exception, when a message of the agent's it cites
+    was sent at or after the latest write: an earlier one does not describe it
+    ([DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)).
     """
     if (
         not wrote
@@ -4542,6 +4679,16 @@ def _consistent_on_words(
         or criterion.get("result") != RESULT_CONSISTENT
         or any(
             _shows_it_done(known[key], window_start) for key in criterion["cites"] if key in known
+        )
+        or (
+            is_outcome_line(name)
+            and asks_for_a_report(line_text)
+            and any(
+                known[key]["type"] == AGENT_MESSAGE_TYPE
+                and (_number(known[key].get("at")) or 0.0) >= latest_write_at
+                for key in criterion["cites"]
+                if key in known
+            )
         )
     ):
         return criterion
@@ -5761,6 +5908,90 @@ def covers_line(text: str, command: str) -> bool:
     return any(_claims_result(text, kind) for kind in _check_kinds(command))
 
 
+# What may stand before a check noun without narrowing it: "the", "all the", "every", and the
+# quantities of a result claim ("no test failures", "12 tests pass").
+_UNQUALIFIED = frozenset({"the", "all", "every", "each", "existing", "our", "my", "no", "zero"})
+# The word before those, when it only introduces the clause ("make sure the tests pass") and does
+# not say which tests. A closed list: any other word there is read as a qualifier, which only ever
+# leaves a line to the model's own citations.
+_LEAD_IN = frozenset(
+    {"sure", "ensure", "that", "confirm", "verify", "check", "if", "whether", "when", "and", "but",
+     "so", "then", "also", "please", "should", "must", "make", "we", "i", "you", "expect", "want",
+     "need", "keep", "still", "now", "finally", "both"}
+)  # fmt: skip
+
+
+def _unqualified_before(words: list[str]) -> bool:
+    """Whether what precedes a check noun leaves it unqualified: nothing, an article or quantity,
+    or a lead-in word beyond those."""
+    rest = list(words)
+    while rest and (rest[-1].lower() in _UNQUALIFIED or rest[-1].isdigit()):
+        rest.pop()
+    return not rest or rest[-1].lower() in _LEAD_IN
+
+
+# A phrase after the noun that says which tests: "tests for the parser", "tests in the frontend".
+_POSTMODIFIER = re.compile(
+    r"\b(?:for|in|of|on|under|inside|within|from|covering)\s+(?:the\s+|our\s+|my\s+)?\w",
+    re.IGNORECASE,
+)
+
+
+def _names_the_check_unqualified(text: str, command: str) -> bool:
+    """Whether the line's result clause names a kind of check this command is, with no qualifier.
+
+    A pass of `pytest -q` is about the tests, not about "the frontend tests" or "the e2e tests":
+    a language, an area, "unit", "new" or a project name before the noun, or a phrase such as "for
+    the parser" after it, says which tests, and a pass of another set does not show them (owner,
+    2026-11-01). Every clause that names the noun must be unqualified, so a second clause cannot
+    hide a qualified one, and a line that also names a kind of check this command is not cannot be
+    covered by it. Only `covering_checks` asks, because `covers_line` also serves the running-turn
+    guard (`_bears_on`), where narrowing it would let more mid-flight departures stand.
+    """
+    kinds = _check_kinds(command)
+    judged = _clauses_judging_a_result(text)
+    if any(
+        kind not in kinds and noun.search(clause)
+        for clause in judged
+        for kind, noun in _LINE_KINDS.items()
+    ):
+        return False
+    named = False
+    for clause in judged:
+        for kind in kinds:
+            found = _LINE_KINDS[kind].search(clause)
+            if not found:
+                continue
+            if _POSTMODIFIER.search(clause[found.end() :]) or not _unqualified_before(
+                re.findall(r"[\w'-]+", clause[: found.start()])
+            ):
+                return False
+            named = named or _claims_a_result(clause)
+    return named
+
+
+def _claims_a_result(clause: str) -> bool:
+    return bool(_RESULT_CLAIM.search(clause) and not _NOT_A_RESULT.search(clause))
+
+
+def _clauses_judging_a_result(text: str) -> list[str]:
+    """The clauses of a line that say how a check came out, with a bare kind of check ahead of
+    one ("Lint" in "Lint and tests pass") sharing its result. Anything else in the line, such as
+    "the lint config is left alone", claims no result and neither qualifies nor blocks a cover."""
+    judged: list[str] = []
+    shared = False
+    for clause in reversed(_CLAIM_CLAUSE_BREAK.split(text)):
+        bare = re.sub(r"^\s*(?:(?:the|all|our|my)\s+)?", "", clause).strip()
+        if _claims_a_result(clause):
+            judged.append(clause)
+            shared = True
+        elif shared and any(noun.fullmatch(bare) for noun in _LINE_KINDS.values()):
+            judged.append(clause)
+        else:
+            shared = False
+    return judged[::-1]
+
+
 def covering_checks(
     text: str,
     recorded: Recorded,
@@ -5775,6 +6006,9 @@ def covering_checks(
         if check_supports(entry, RESULT_CONSISTENT, window_start)
         and after_line_request(entry, requested_at)
         and covers_line(text, _check_text(entry))
+        and (
+            _path_tokens(text, files=True) or _names_the_check_unqualified(text, _check_text(entry))
+        )
     ]
     passes.sort(key=lambda entry: evidence_at(entry) or 0.0, reverse=True)
     return [entry["id"] for entry in passes[:MAX_RECORDED_CITES]]
@@ -6032,17 +6266,35 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         **{str(entry["id"]): entry for entry in (recorded.checks if recorded else ())},
         **by_id,
     }
-    wrote = any(
-        entry.get("subject") == WRITE_SUBJECT and not _before_window(entry, window_start)
+    writes_at = [
+        _number(entry.get("at")) or 0.0
         for entry in held
+        if entry.get("subject") == WRITE_SUBJECT and not _before_window(entry, window_start)
+    ]
+    agent_messages = [
+        entry
+        for entry in selection.entries
+        if entry["type"] == AGENT_MESSAGE_TYPE and entry["author"] == AUTHOR_AGENT
+    ]
+    newest_agent_id = (
+        str(max(agent_messages, key=lambda entry: entry["at"])["id"]) if agent_messages else ""
     )
     for name, criterion in out.items():
         out[name] = _consistent_on_words(
-            _departure_on_words(criterion, name, known),
+            _departure_on_words(
+                criterion,
+                name,
+                known,
+                line_text=clauses[name],
+                newest_agent_id=newest_agent_id,
+                words_whole=selection.agent_words_whole,
+            ),
             name,
             known,
-            wrote=wrote,
+            wrote=bool(writes_at),
             window_start=window_start,
+            line_text=clauses[name],
+            latest_write_at=max(writes_at, default=0.0),
         )
     _goal_beside_lines(out, lines_asked=selection.asked_output is True)
     return out

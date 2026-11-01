@@ -3894,7 +3894,7 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
         for line in ("The tests pass", "src/probe.py is fixed"):
             with (
                 self.subTest(line=line),
-                mock.patch.object(reading, "_departure_on_words", lambda row, *_a: row),
+                mock.patch.object(reading, "_departure_on_words", lambda row, *_a, **_k: row),
             ):
                 selection = self.line_selected(line, self.write_fact("docs/notes.md", 120.0))
                 self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
@@ -3904,7 +3904,7 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
             fact_id="c9", result="passed", at=110.0, summary="ruff check src/other.py"
         )
         selection = self.line_selected("The tests pass", lint)
-        with mock.patch.object(reading, "_departure_on_words", lambda row, *_a: row):
+        with mock.patch.object(reading, "_departure_on_words", lambda row, *_a, **_k: row):
             self.assertEqual(reading.RESULT_DEPARTURE, self.line_resolved(selection)["result"])
 
     def test_a_later_check_that_covers_the_line_excuses_it(self) -> None:
