@@ -250,6 +250,37 @@ class AReadingRecordedOutOfOrderTest(_Store):
         self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
         self.assertEqual(before + 1, self.entry()["readings"])
 
+    def test_a_late_reading_keeps_the_note_that_the_latest_press_produced_none(self) -> None:
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        annotation_store.record_withheld(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            reason=reading.WITHHELD_CANCELLED,
+            spent=True,
+        )
+        before = self.entry()
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_CANCELLED], before["withheld"])
+        self.read(150.0, line_2=ON_THE_AGENTS_WORD)
+        after = self.entry()
+        self.assertEqual(before["withheld"], after["withheld"])
+        self.assertEqual(before["withheld_at"], after["withheld_at"])
+        self.assertEqual(200.0, after["assessment"]["read_at"])
+
+    def test_a_reading_in_order_after_a_withheld_press_still_clears_the_note(self) -> None:
+        self.read(100.0, line_2=ON_THE_AGENTS_WORD)
+        annotation_store.record_withheld(
+            self.config,
+            self.state,
+            "claude",
+            "s1",
+            reason=reading.WITHHELD_CANCELLED,
+            spent=True,
+        )
+        self.read(200.0, line_2=ON_THE_AGENTS_WORD)
+        self.assertFalse(self.entry().get("withheld"))
+
     def test_readings_recorded_in_order_still_replace_one_another(self) -> None:
         self.read(100.0, line_2=DEPARTED)
         self.read(200.0, line_2=ON_THE_AGENTS_WORD)
