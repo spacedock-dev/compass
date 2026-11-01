@@ -1304,8 +1304,8 @@ prompt, what the reading sends and the shape contract's seven rules are unchange
    break at a semicolon, comma, newline, "and", "but", "while" or "so", and at a dot only when
    whitespace or the end follows it, so "Do not edit src/config.py" keeps the file. This splitter
    is the folder rule's own (`_RULE_CLAUSE_BREAK`); the check-result claims keep the plain one
-   (`_CLAIM_CLAUSE_BREAK`), and the two once shared a name, so the later silently served both. A write the
-   record holds inside a ruled-out folder, or outside the only folders allowed, inside the reading's
+   (`_CLAIM_CLAUSE_BREAK`), and the two once shared a name, so the later silently served both. A
+   write the record holds inside a ruled-out folder, or outside the only folders allowed, inside the
    window and after the line's own request, makes the line a departure whatever the reply said, even
    for a line the prompt never put to the model. `reading._settled_by_record` stores it with the
    fact ids of the first three such writes, a `detail` Compass composes from the count and the

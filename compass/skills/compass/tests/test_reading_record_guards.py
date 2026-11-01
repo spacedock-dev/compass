@@ -442,10 +442,6 @@ class ARecordedPassingCheckIsCitedAheadOfTheAgentsMessage(base.AClaudeCodeReadin
         self.assertEqual((), cast("Any", assessment)["criteria"]["line_1"]["cites"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AFolderRuleKeepsTheFilePathItWasWrittenAbout(unittest.TestCase):
     """The folder rule's clause splitter breaks on a sentence, not on the dot inside a path."""
 
@@ -502,3 +498,10 @@ class EachClauseSplitterHasItsOwnNameAndItsCallers(unittest.TestCase):
             self.assertEqual([line], reading._local_clauses(line))
             self.assertFalse(reading._claims_result(claim_line, "lint"))
             self.assertFalse(reading._job_claimed(job_line, "lint"))
+
+    def test_a_dotted_file_name_in_a_check_claim_is_not_a_claimed_pass(self) -> None:
+        self.assertFalse(reading._claims_result("pytest.ini passes", "test"))
+
+
+if __name__ == "__main__":
+    unittest.main()
