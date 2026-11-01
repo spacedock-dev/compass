@@ -2224,11 +2224,16 @@ _FAILURE_MARKER = re.compile(
 # reads "ran, result not recorded". go's `[no test files]` counts only when no
 # package printed `ok`.
 _RAN_NOTHING = re.compile(
-    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]"
-    # jest and vitest under `--passWithNoTests`, which exit zero for an empty selection.
-    r"|^No tests? (?:files? )?found, exiting with code 0",
+    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]",
     re.MULTILINE,
 )
+# jest and vitest under `--passWithNoTests` exit zero for an empty selection, and a monorepo run can
+# print that beside a package that ran tests. It speaks for the run only where no `Tests` line
+# holds a passed count (jest `Tests:  5 passed, 5 total`, vitest ` Tests  5 passed (5)`). Only that
+# line counts: `Test Suites: 1 passed` can sit beside `Tests: 0 total`. `(?<![\d.])` keeps
+# `0 passed` and `10 passed` apart, as `_RAN_NOTHING` does.
+_JS_NO_TESTS = re.compile(r"^No tests? (?:files? )?found, exiting with code 0", re.MULTILINE)
+_JS_RAN_TESTS = re.compile(r"^\s*Tests:?\s.*(?<![\d.])[1-9]\d* passed\b", re.MULTILINE)
 # Maven prints this for each module with no tests, so it speaks for the run only where no module
 # ran one (`Tests run: 5`), as go's `[no test files]` does.
 _MAVEN_NO_TESTS = re.compile(r"^\[INFO\] No tests to run\.", re.MULTILINE)
@@ -4685,6 +4690,7 @@ def _ran_nothing(tail: str) -> bool:
         bool(_RAN_NOTHING.search(tail))
         or (bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail))
         or (bool(_MAVEN_NO_TESTS.search(tail)) and not _MAVEN_RAN_TESTS.search(tail))
+        or (bool(_JS_NO_TESTS.search(tail)) and not _JS_RAN_TESTS.search(tail))
     )
 
 
