@@ -120,4 +120,4 @@ class NothingIsPassedThatDidNotPass(ClaudeChecksTestCase):
             is_error=False,
         )
         found = results_by_title(self.read()[0])
-        self.assertNotEqual("passed", found["ruff check --exit-zero ."])
+        self.assertNotIn("ruff check --exit-zero .", found)

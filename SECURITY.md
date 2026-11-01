@@ -801,7 +801,7 @@ pure viewer such as `jq`, and neither does running a listed script. A listed scr
 What this does not see is a write that builds the path indirectly, through a script or a variable. A listed
 script named by a relative path counts only from the project's root and only when the session did not write
 it. An entry that is a shell builtin, cannot fail, only reads, writes files or is not one plain command never
-counts, so a listing cannot turn `echo ok` into a pass. Nothing read from the file leaves the machine; the
+counts, so a listing cannot turn `echo ok` into a pass. A listed command that runs nothing (`pytest --collect-only`) is refused the same way. Nothing read from the file leaves the machine; the
 session's own command line is published as any check's is.
 The rulings, [the listing](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-reader-may-list-a-projects-checks)
 and [what counts as a write](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-read-of-a-listed-file-is-not-a-write),
@@ -1966,7 +1966,7 @@ nothing, and its output goes only to the session's own vendor. A command that ca
 status a later `|| true` or `; exit 0` forces is published with no result and withdrawn from every verdict
 and level. The last stage of a `|` speaks for itself, as a check does: a pass is that stage's own pass, and a
 failure counts only for a call of one segment. The stages before it record no result, and `tee` is never
-published because it cannot fail. A tier 3 failure blocks the live
+published because it cannot fail. A typed closed-list runner is held to the same rule: one told to exit zero (`ruff check --exit-zero`), one given a flag that makes it run nothing (`pytest --collect-only`, `cargo test --no-run`, `make test -n`, `--version`), and one started after an assignment of `PATH`, `NODE_OPTIONS`, `BASH_ENV`, `ENV`, `SHELL` or any `*_ADDOPTS` variable, on its own segment or exported earlier in the same call (an appended `+=` counts, and `env -u NAME` does not hide the assignment after it), is published as a plain command and counts for nothing. So does one run under a variable a declared script already refuses: `MAKEFLAGS` and the other `make` flag variables, `npm_config_*`, `YARN_*` or `JUST_*`. A tier 3 failure blocks the live
 estimate's floor only until a later check or command passes. A call whose result carries Claude Code's structured git record publishes that record only, never
 its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
 call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the
