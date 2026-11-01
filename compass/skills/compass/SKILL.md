@@ -402,7 +402,7 @@ the tool reported it and counted from the whole transcript read (a project's own
 when its body is a known runner, read from the commit the session began on, so a script the session edited counts for nothing;
 a command you list for the project in `compass-project-checks.json` under the Compass home also counts, and the page marks it "counted because you listed it"), every other command that is not a
 read with its exit status and the words "Compass does not know what it checks" (an exit of 0 may settle a
-line, and one that cannot fail, such as `echo` or an exit a trailing `|| true` forces, never does; a test or lint run told to exit zero or to run nothing, or started under a changed search path or startup variable, is one of these commands), and what the agent said, each of
+line, and one that cannot fail, such as `echo` or an exit a trailing `|| true` forces, never does; a test or lint run told to exit zero or to run nothing, or started under a changed search path or startup variable, or after the session set its package manager's script shell, is one of these commands), and what the agent said, each of
 its messages an entry marked "Agent said". A reading you press for sends the agent's messages as
 evidence of what it said and claimed, each redacted and up to 1,000 characters, except the newest
 reply the transcript records as ending its turn, which goes whole up to 16,384 characters. The
