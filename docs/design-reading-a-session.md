@@ -410,8 +410,8 @@ is judged on the agent's message, and
 [a re-run, an unrecorded run and the covering match](#amended-2026-11-01-owner-a-re-run-an-unrecorded-run-and-the-covering-match)
 are read more strictly, and
 [a forbidden push that ran](#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)
-is a departure on the command alone. Rules 1 and 6 gain a constraint about
-what the agent claims, with a fourth result of its own, by
+carries the departure a reading gives that line when the reading cites it. Rules 1 and 6 gain a
+constraint about what the agent claims, with a fourth result of its own, by
 [the amendment of 2026-10-04](#amended-2026-10-04-owner-what-the-agent-claims-is-its-own-constraint).
 
 Rules 3 and 7 are load bearing: they make an uncited departure and a deliverable claim resting on
