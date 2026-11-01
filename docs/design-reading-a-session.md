@@ -8372,6 +8372,15 @@ This amendment replaces that comparison and hardens the read around it. Where th
   (`export MAKEFLAGS=-n; make lint`) leaves every later script a command, as one set on the segment itself
   already did. A body that tells its linter to exit zero (`--exit-zero`, `--issues-exit-code=0`, ruff's `-e`)
   never counts, and neither does a reader-listed command that does or a call that forwards one after `--`.
+  The same refusal now holds for a typed closed-list runner, through one shared predicate and one steering scan
+  that typed, declared and listed commands all use. A table of run-nothing flags keyed by runner (`pytest
+  --collect-only`, `cargo test --no-run`, `./gradlew check -x test`, `make test -n` before or after the target,
+  `mvn test -DskipTests`, the listing flags of the JavaScript, Ruby, PHP and C runners, and `--help` and
+  `--version` for every named runner) leaves the run a command. It is keyed because `-m`, `-n`, `-x` and `-q`
+  mean a check's own option to one runner and a dry run to another. `PATH`, `NODE_OPTIONS`, `BASH_ENV`, `ENV`,
+  `SHELL` and any `*_ADDOPTS` variable assigned before a runner, inline or exported earlier in the call, steer it
+  too; they are read by position, so `echo PATH=x; pytest` stays a check. A run that selects nothing without a
+  flag (`pytest -k nothing`) cannot be told apart and is not covered.
 - **Package-manager config counts as the file.** A recorded write to an `.npmrc`, `.yarnrc` or `.yarnrc.yml`
   in any folder withdraws the package declarations, because `script-shell` or `yarnPath` there changes what
   `pnpm lint` runs without touching `package.json`. A shell call that names one counts as a write.
