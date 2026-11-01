@@ -231,3 +231,130 @@ class AnAssignedEnvironmentVariableMakesATypedCheckAnOrdinaryCommand(TypedCheckG
             with self.subTest(assignment=assignment):
                 self.assertTrue(project_context._steers_a_script((assignment, "pnpm", "lint")))
         self.assertFalse(project_context._steers_a_script(("echo", "PATH=x", "pnpm", "lint")))
+
+
+class ASteeringVariableRefusesOnlyTheRunnersItCanReach(TypedCheckGuardCase):
+    def test_each_family_still_refuses_its_own_runner(self) -> None:
+        self.assert_ordinary(
+            "MAKEFLAGS=-n make test",
+            "MAKEOVERRIDES=x make test",
+            "MAKE=true make test",
+            "MAKEFILES=x make test",
+            "npm_config_script_shell=/usr/bin/true npm test",
+            "npm_config_script_shell=/usr/bin/true pnpm test",
+            "npm_config_script_shell=/usr/bin/true yarn test",
+            "YARN_ENABLE_SCRIPTS=0 yarn test",
+            "export npm_config_script_shell=/usr/bin/true; npm test",
+        )
+
+    def test_a_family_variable_does_not_reach_a_direct_runner(self) -> None:
+        self.assert_check(
+            "npm_config_loglevel=silent pytest",
+            "YARN_ENABLE_SCRIPTS=0 pytest",
+            "JUST_ROOT=x pytest",
+            "MAKEFLAGS=-j4 pytest",
+            "MAKEFLAGS=-n pytest",
+            "MAKE=x cargo test",
+            "npm_config_loglevel=silent go test ./...",
+            "export JUST_ROOT=x; pytest",
+            "env JUST_ROOT=x pytest",
+            "env -u HOME npm_config_x=1 pytest",
+        )
+
+    def test_a_family_variable_reaches_a_script_runner_that_could_start_its_runner(self) -> None:
+        self.assert_ordinary(
+            "MAKEFLAGS=-n npm test",
+            "MAKEFLAGS=-n pnpm test",
+            "npm_config_script_shell=/usr/bin/true make test",
+            "JUST_ROOT=x make test",
+            "MAKEFILES=x tox",
+            "YARN_ENABLE_SCRIPTS=0 npm test",
+        )
+
+    def test_a_harmless_make_flag_keeps_make_counting(self) -> None:
+        self.assert_check(
+            "MAKEFLAGS=-j4 make test",
+            'MAKEFLAGS="-j4 -s" make test',
+            "MAKEFLAGS=-k make test",
+            "MAKEFLAGS=--no-print-directory make test",
+            "GNUMAKEFLAGS=--no-print-directory make test",
+            "MFLAGS=-w make test",
+            "MAKEFLAGS=sw make test",
+            "export MAKEFLAGS=-j4; make test",
+        )
+
+    def test_a_make_flag_that_changes_what_runs_still_refuses_make(self) -> None:
+        self.assert_ordinary(
+            "MAKEFLAGS=-n make test",
+            "MAKEFLAGS=-i make test",
+            "MAKEFLAGS=-q make test",
+            "MAKEFLAGS=-t make test",
+            "MAKEFLAGS=ni make test",
+            'MAKEFLAGS="-j4 -n" make test',
+            "MAKEFLAGS='--eval=x' make test",
+            "MAKEFLAGS='-- SHELL=/bin/true' make test",
+            "MAKEFLAGS=$FLAGS make test",
+            "MAKEFLAGS+=-n make test",
+            "MAKEFLAGS=-j4 MAKEFILES=x make test",
+        )
+
+    def test_a_make_flag_stays_refused_before_a_package_manager_whatever_its_value(self) -> None:
+        self.assert_ordinary("MAKEFLAGS=-j4 npm test", "export MAKEFLAGS=-j4; pnpm test")
+
+    def test_an_inline_assignment_steers_only_its_own_segment(self) -> None:
+        self.assertEqual(2, len(self.listed("MAKEFLAGS=-j4 make test && pytest")))
+        self.assert_check(
+            "npm_config_x=1 npm test; pytest",
+            "MAKEFLAGS=-n make test && pytest",
+            "echo NPM_CONFIG_X=1; pytest",
+            "env JUST_ROOT=x make test; pytest",
+        )
+
+    def test_an_export_still_steers_every_later_segment(self) -> None:
+        self.assert_ordinary(
+            "export npm_config_x=1; npm test",
+            "export MAKEFLAGS=-n; make test",
+            "MAKEFLAGS=-n; make test",
+        )
+        self.assertEqual(1, len(self.listed("export npm_config_x=1; pytest; npm test")))
+
+    def test_an_argument_assignment_steers_only_make(self) -> None:
+        self.assert_ordinary("make test MAKEFLAGS=-n", "make MAKEFLAGS=-n test")
+        self.assert_check("echo MAKEFLAGS=-n; pytest", "pytest MAKEFLAGS=-n", "make test FOO=1")
+
+    def test_the_owner_environment_variables_still_refuse_before_any_check(self) -> None:
+        self.assert_ordinary(
+            "PATH=/tmp/x pytest",
+            "PATH=/tmp/x make test && pytest",
+            "NODE_OPTIONS=--require=x pytest",
+            "BASH_ENV=/tmp/x pytest",
+            "ENV=/tmp/x pytest",
+            "SHELL=/bin/true pytest",
+            "PYTEST_ADDOPTS=--co pytest",
+            "TOX_ADDOPTS=-n pytest",
+            "PATH+=:/x pytest",
+            "env -u HOME PATH=/x pytest",
+            "export PATH=/tmp/x; pytest",
+        )
+
+    def test_a_steered_make_call_is_published_as_an_ordinary_command(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.bash("MAKEFLAGS=-n make test", "ok", is_error=False)
+        events = self.read()[0]
+        self.assertEqual(["command"], [event["subject"] for event in events])
+        self.assertEqual("passed", events[0]["result"])
+
+    def test_a_harmless_make_flag_is_published_as_a_check(self) -> None:
+        self.session = Transcript(self.cwd)
+        self.session.bash("MAKEFLAGS=-j4 make test", "ok", is_error=False)
+        events = self.read()[0]
+        self.assertEqual(["check"], [event["subject"] for event in events])
+        self.assertEqual("make test", events[0]["title"])
+
+    def test_vitest_run_list_is_a_filter_not_the_list_subcommand(self) -> None:
+        self.assert_check("vitest run list", "vitest run tests/list", "vitest --root x run list")
+        self.assert_ordinary("vitest list", "vitest list --filesOnly", "vitest --root x list")
+
+    def test_a_pytest_option_value_is_not_a_flag(self) -> None:
+        self.assert_check("pytest -k '--co'", "pytest -m '--collect-only'")
+        self.assert_ordinary("pytest -k x --co", "pytest -k=x --collect-only")

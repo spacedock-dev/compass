@@ -112,6 +112,19 @@ class NothingIsReadFromTheRepository(ReaderChecksTestCase):
 class WhatCannotBeACheckIsIgnoredAndDiagnoseSaysSo(ReaderChecksTestCase):
     ENTRIES = ("echo ok", "true", ":", "exit 0", "printf done", "ls -la", "git status", "cd /tmp")
 
+    def test_a_steering_variable_refuses_a_listed_command_only_where_it_can_reach_it(self) -> None:
+        self.list_checks({str(self.cwd): [BAZEL, "make verify", "npm run verify"]})
+        for command in (
+            "MAKEFLAGS=-n make verify",
+            "npm_config_script_shell=/usr/bin/true npm run verify",
+            "MAKEFLAGS=-n npm run verify",
+        ):
+            self.session.bash(command, "ok")
+        self.assertEqual([], self.titles())
+        for command in ("MAKEFLAGS=-j4 make verify", f"JUST_ROOT=x {BAZEL}"):
+            self.session.bash(command, "ok")
+        self.assertEqual([BAZEL, "make verify"], self.titles())
+
     def test_a_command_that_cannot_fail_or_only_reads_never_counts(self) -> None:
         self.list_checks({str(self.cwd): [*self.ENTRIES, BAZEL]})
         for entry in self.ENTRIES:

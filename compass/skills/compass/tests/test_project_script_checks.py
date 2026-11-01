@@ -335,6 +335,7 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             "npm_config_script_shell=/usr/bin/true npm run typecheck",
             "env NPM_CONFIG_PREFIX=sub npm run typecheck",
             "MAKEFLAGS=-n make lint",
+            "MAKEFLAGS=-j4 pnpm typecheck",
             "MAKE=true make lint",
         )
         for command in refused:
@@ -367,6 +368,30 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
         for command in refused:
             self.ran(command)
         self.assertEqual([], self.titles())
+
+    def test_a_variable_that_cannot_reach_the_runner_leaves_the_script_a_check(self) -> None:
+        self.commit(
+            {
+                "package.json": package(typecheck="tsc --noEmit"),
+                "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+            }
+        )
+        counted = {
+            "MAKEFLAGS=-j4 make lint": "make lint",
+            "MAKEFLAGS=-j4 make lint && pnpm typecheck": "make lint",
+            "MAKEFLAGS=-n make lint && pnpm typecheck": "pnpm typecheck",
+        }
+        for command, title in counted.items():
+            with self.subTest(command=command):
+                self.fresh_repo()
+                self.commit(
+                    {
+                        "package.json": package(typecheck="tsc --noEmit"),
+                        "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+                    }
+                )
+                self.ran(command)
+                self.assertIn(title, self.titles())
 
     def test_a_make_option_that_stops_the_recipe_running_leaves_the_target_a_command(self) -> None:
         self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})

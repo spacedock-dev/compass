@@ -3417,12 +3417,21 @@ def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[
 
 
 # Variables that change which script or recipe a package manager, `make` or `just` runs, or
-# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`). Scanned in
-# every word of a segment, so `make SHELL=/bin/sh test` is caught too.
-_STEERING_VARIABLE_RE = re.compile(
-    r"^(?:npm_config_|JUST_|YARN_)|^(?:MAKEFLAGS|GNUMAKEFLAGS|MFLAGS|MAKEFILES|MAKEOVERRIDES|MAKE)$",
-    re.IGNORECASE,
+# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`). Each steers
+# its own runner and the runners that start other programs, never a direct one: `JUST_ROOT=x
+# pytest` still runs pytest. Read in `_family_assignments`.
+_MAKE_FLAG_VARIABLES = frozenset({"MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS"})
+_MAKE_INJECTING_VARIABLES = frozenset({"MAKEFILES", "MAKEOVERRIDES", "MAKE"})
+# What a make-flag variable may hold and still run the same recipes: a closed list, because the
+# variable also takes bare letters (`ni`), `--eval=` and `NAME=value` after `--`, so a list of
+# refused flags would miss spellings. `-n -i -q -t -o -W` and anything else refuse.
+_HARMLESS_MAKE_FLAG_RE = re.compile(
+    r"-?[swk]*(?:j\d*)?|--(?:silent|quiet|keep-going|no-print-directory|print-directory|jobs(?:=\d+)?)"
 )
+# Programs that start other programs, so can start the runner a variable steers: a package
+# manager's script can call `make`, and a recipe can call `npm`. A direct runner is not one.
+_RUNNERS_THAT_START_RUNNERS = frozenset({"make", "just", "package", "tox", "nox", "rake"})
+_HARMLESS_MAKE_FLAGS = "make-flags"
 # Variables that change what any runner finds or whether it runs: a shadowing `PATH`, a script
 # shell that exits zero, a startup file (`BASH_ENV`), preloaded code (`NODE_OPTIONS`), or a
 # runner's own extra arguments (`PYTEST_ADDOPTS=--collect-only`). Names common words (`ENV`,
@@ -3485,6 +3494,12 @@ _NO_RUN_NOTHING_FLAGS = frozenset(
 )  # fmt: skip
 _PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 _RUNNER_ALIASES = {"py.test": "pytest", "gradlew": "gradle"}
+# Pytest options that take a separate value, which may itself start with `--`.
+_PYTEST_VALUE_OPTIONS = frozenset(
+    {"-k", "-m", "-p", "-c", "-o", "-W", "--deselect", "--ignore", "--ignore-glob", "--rootdir",
+     "--junitxml", "--basetemp"}
+)  # fmt: skip
+_VITEST_SUBCOMMANDS = frozenset({"run", "watch", "dev", "related", "bench", "init"})
 # Make options that take a value, which end a cluster of short ones (`-fnothing`, `-j4`).
 _MAKE_VALUE_OPTIONS = "CIWfjlo"
 
@@ -3538,18 +3553,31 @@ def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
         if "--" in words
         else words
     )
-    for word in scanned:
-        flag, _, value = word.partition("=")
-        if value == "false":
-            continue
-        if flag in flags or (key == "pytest" and _is_collect_prefix(flag)):
-            return True
-        if key == "make" and _is_make_dry_run(word):
-            return True
-        # `-xtest` is `-x test` with the task attached.
-        if key == "gradle" and word.startswith("-x") and not word.startswith("--"):
+    skip = False
+    for position, word in enumerate(scanned):
+        if skip:
+            skip = False
+        elif key == "pytest" and word in _PYTEST_VALUE_OPTIONS:
+            # The word after a value option is its value (`pytest -k "--co"`), not a flag.
+            skip = True
+        elif _is_run_nothing_word(key, flags, word, scanned[:position]):
             return True
     return False
+
+
+def _is_run_nothing_word(key: str, flags: frozenset[str], word: str, earlier: list[str]) -> bool:
+    flag, _, value = word.partition("=")
+    if value == "false":
+        return False
+    if flag in flags or (key == "pytest" and _is_collect_prefix(flag)):
+        # `list` is vitest's subcommand only before any other (`vitest run list` is a filter).
+        return not (
+            key == "vitest" and flag == "list" and _VITEST_SUBCOMMANDS.intersection(earlier)
+        )
+    if key == "make" and _is_make_dry_run(word):
+        return True
+    # `-xtest` is `-x test` with the task attached.
+    return key == "gradle" and word.startswith("-x") and not word.startswith("--")
 
 
 def _is_collect_prefix(flag: str) -> bool:
@@ -3609,13 +3637,93 @@ def _assigns_environment(raw: tuple[str, ...]) -> bool:
     return False
 
 
-def _steers_a_script(raw: tuple[str, ...]) -> bool:
-    """Whether a segment's words, before stripping, assign a variable that steers a run."""
-    return _assigns_environment(raw) or any(
-        (assigned := _SHELL_ASSIGNMENT_RE.match(word)) is not None
-        and _STEERING_VARIABLE_RE.match(assigned.group(1)) is not None
-        for word in raw
-    )
+def _steering_family(name: str, value: str) -> str | None:
+    """The family of runners a variable steers, or None for any other variable."""
+    upper = name.upper()
+    if upper in _MAKE_FLAG_VARIABLES:
+        harmless = not set(value) & set("$`=") and all(
+            _HARMLESS_MAKE_FLAG_RE.fullmatch(token) for token in value.split()
+        )
+        return _HARMLESS_MAKE_FLAGS if harmless else "make"
+    if upper in _MAKE_INJECTING_VARIABLES:
+        return "make"
+    for prefix, family in (("NPM_CONFIG_", "package"), ("YARN_", "yarn"), ("JUST_", "just")):
+        if upper.startswith(prefix):
+            return family
+    return None
+
+
+# Words whose assignments last past their own segment, where an inline `NAME=v cmd` does not.
+_PERSISTING_PREFIX = frozenset({"export", "declare", "typeset", "readonly", "local"})
+
+
+def _assigned_family(word: str) -> str | None:
+    assigned = _SHELL_ASSIGNMENT_RE.match(word)
+    return _steering_family(assigned.group(1), word.split("=", 1)[1]) if assigned else None
+
+
+def _family_assignments(raw: tuple[str, ...]) -> tuple[frozenset[str], bool]:
+    """The steering families a segment assigns, and whether they outlast it.
+
+    An assignment before the program (`MAKEFLAGS=-n make test`, `env JUST_ROOT=x just test`) steers
+    its own segment only; an assignment-only segment or an `export` steers every later one. A word
+    after the program is an assignment only to `make`, whose command line takes them."""
+    persisting = in_env = skip = False
+    program_at = len(raw)
+    for index, word in enumerate(raw):
+        if skip:
+            skip = False
+        elif _SHELL_ASSIGNMENT_RE.match(word):
+            continue
+        elif os.path.basename(word) == "env":
+            in_env = True
+        elif in_env and word in ("-u", "--unset"):
+            skip = True
+        elif word in _PERSISTING_PREFIX:
+            persisting = True
+        elif not (word.startswith("-") or os.path.basename(word) in records.LAUNCH_WRAPPERS):
+            program_at = index
+            break
+    scanned = raw[:program_at]
+    if raw[program_at : program_at + 1] and os.path.basename(raw[program_at]) == "make":
+        scanned = raw
+    found = {family for word in scanned if (family := _assigned_family(word))}
+    return frozenset(found), persisting or (program_at == len(raw) and not in_env)
+
+
+def _segment_steering(parts: list[_Part]) -> list[frozenset[str]]:
+    """The steering families that reach each segment: its own and every earlier persisting one."""
+    inherited: frozenset[str] = frozenset()
+    reaching = []
+    for part in parts:
+        own, persists = _family_assignments(part.raw)
+        reaching.append(inherited | own)
+        if persists:
+            inherited |= own
+    return reaching
+
+
+def _family_reaches(families: frozenset[str], words: list[str] | None) -> bool:
+    """Whether a steering family reaches the runner `words` start with. With no words, whether any
+    family could reach some runner."""
+    if words is None:
+        return bool(families - {_HARMLESS_MAKE_FLAGS})
+    if not families or not words or _runner_key(words) not in _RUNNERS_THAT_START_RUNNERS:
+        return False
+    # A harmless make flag changes nothing for make itself, but a package manager's script
+    # could call make under it with the value read by a recipe nobody read.
+    return bool(families - {_HARMLESS_MAKE_FLAGS}) or _runner_key(words) != "make"
+
+
+def _steers_a_script(
+    raw: tuple[str, ...],
+    words: list[str] | None = None,
+    steering: frozenset[str] | None = None,
+) -> bool:
+    """Whether a segment's words, before stripping, assign a variable that steers the run `words`
+    start. `steering` is what reaches the segment, where an earlier export adds to its own."""
+    families = _family_assignments(raw)[0] if steering is None else steering
+    return _assigns_environment(raw) or _family_reaches(families, words)
 
 
 def _script_invocation(words: list[str], *, deciding: bool = False) -> tuple[str, list[str]] | None:
@@ -3648,6 +3756,7 @@ def _script_line_is_check(
         parts = _call_parts(line)
     except _Unbalanced:
         return False
+    steering = _segment_steering(parts)
     for index, part in enumerate(parts):
         words = part.words
         if (
@@ -3662,7 +3771,7 @@ def _script_line_is_check(
             or _is_fixer(words)
             or _always_zero(words)
             or _defeated_by_arguments(words)
-            or _steers_a_script(part.raw)
+            or _steers_a_script(part.raw, words, steering[index])
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
             return False
@@ -3729,13 +3838,19 @@ def _declared_check(
     directory: str,
     words: list[str],
     raw: tuple[str, ...] = (),
+    steering: frozenset[str] | None = None,
 ) -> bool:
     """Whether a segment runs a script the project's own declarations make a check.
 
     Only in the toplevel of the work tree the declarations were read from: a command in a
     subfolder runs that folder's own scripts, which are not read.
     """
-    if declared is None or not words or not declared.at(directory) or _steers_a_script(raw):
+    if (
+        declared is None
+        or not words
+        or not declared.at(directory)
+        or _steers_a_script(raw, words, steering)
+    ):
         return False
     invoked = _script_invocation(words)
     if invoked is None:
@@ -3843,6 +3958,7 @@ def _listed_check(
     words: list[str],
     raw: tuple[str, ...],
     directory: str,
+    steering: frozenset[str] | None = None,
 ) -> bool:
     """Whether a segment is exactly a command the reader listed for this project.
 
@@ -3856,7 +3972,7 @@ def _listed_check(
     if (
         declared is None
         or not declared.listed
-        or _steers_a_script(raw)
+        or _steers_a_script(raw, words, steering)
         or tuple(words) not in declared.listed
     ):
         return False
@@ -5080,11 +5196,14 @@ class _ShellCall:
         self.meaningful = [
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
         ]
-        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
-        # steers every later segment, which its own words do not show.
+        # An environment variable a segment sets (`export PATH=x; pytest`) steers every later
+        # segment, which its own words do not show. A runner's own variable steers the runners it
+        # can reach, and only from an export or its own segment (`_segment_steering`).
         steered_from = next(
-            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
+            (i for i, part in enumerate(self.parts) if _assigns_environment(part.raw)),
+            len(self.parts),
         )
+        self.steering = _segment_steering(self.parts)
         # A typed runner is held to what a declared one is: its own arguments and the variables
         # before it. The steering segment is itself refused, so `<`; a declared script reads `<=`
         # because it rechecks its own segment's words.
@@ -5093,6 +5212,7 @@ class _ShellCall:
             for i in self.meaningful
             if _is_check(self.words[i][0])
             and i < steered_from
+            and not _family_reaches(self.steering[i], self.words[i][0])
             and not _defeated_by_arguments(self.words[i][0])
             and not self._declared_body_refuses(
                 declared, i, self.directories[i] if self.placed[i] else ""
@@ -5108,7 +5228,13 @@ class _ShellCall:
             if i not in self.checks
             and i <= steered_from
             and self.placed[i]
-            and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
+            and _declared_check(
+                declared,
+                self.directories[i],
+                self.words[i][0],
+                self.parts[i].raw,
+                self.steering[i],
+            )
         ]
         # A command the reader listed is one too, and the page says it counted because they did.
         self.listed_checks = {
@@ -5122,6 +5248,7 @@ class _ShellCall:
                 self.words[i][0],
                 self.parts[i].raw,
                 self.directories[i] if self.placed[i] else "",
+                self.steering[i],
             )
         }
         self.declared_checks = sorted([*self.declared_checks, *self.listed_checks])
@@ -5187,7 +5314,7 @@ class _ShellCall:
         words = self.words[index][0]
         if words[:1] in (["npm"], ["pnpm"], ["yarn"]) and words[1:2] == ["test"]:
             words = [words[0], "run", *words[1:]]
-        steered = _steers_a_script(self.parts[index].raw)
+        steered = _steers_a_script(self.parts[index].raw, words, self.steering[index])
         invoked = None if steered else _script_invocation(words, deciding=True)
         if invoked is None:
             return False
