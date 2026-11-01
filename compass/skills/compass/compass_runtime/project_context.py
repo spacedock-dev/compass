@@ -3400,7 +3400,7 @@ def _package_invocation(
         or _SCRIPT_NAME_RE.fullmatch(name) is None
         or any(arg.startswith("-") for arg in own)
         or any(arg.split("=", 1)[0] in _SCRIPT_WRITING_ARGS for arg in (*own, *forwarded))
-        or _exits_zero_by_flag(forwarded)
+        or _defeated_by_arguments(forwarded, "package")
         # The script's body is not read here, and `-e` is ruff's exit-zero switch, so a forwarded
         # bare `-e` is refused rather than guessed at.
         or "-e" in forwarded
@@ -3417,14 +3417,141 @@ def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[
 
 
 # Variables that change which script or recipe a package manager, `make` or `just` runs, or
-# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`).
+# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`). Scanned in
+# every word of a segment, so `make SHELL=/bin/sh test` is caught too.
 _STEERING_VARIABLE_RE = re.compile(
     r"^(?:npm_config_|JUST_|YARN_)|^(?:MAKEFLAGS|GNUMAKEFLAGS|MFLAGS|MAKEFILES|MAKEOVERRIDES|MAKE)$",
     re.IGNORECASE,
 )
+# Variables that change what any runner finds or whether it runs: a shadowing `PATH`, a script
+# shell that exits zero, a startup file (`BASH_ENV`), preloaded code (`NODE_OPTIONS`), or a
+# runner's own extra arguments (`PYTEST_ADDOPTS=--collect-only`). Names common words (`ENV`,
+# `SHELL`, `PATH`) are also arguments of other commands, so these count only where the shell
+# reads them as an assignment, by position.
+_ENVIRONMENT_STEERING_RE = re.compile(r"^(?:PATH|NODE_OPTIONS|BASH_ENV|ENV|SHELL)$|_ADDOPTS$")
+# Words that may stand between the start of a segment and the assignment they apply.
+_ASSIGNING_PREFIX = frozenset({"env", "export", "declare", "typeset", "readonly", "local"})
 # A linter's own switch that makes it exit zero whatever it finds, so the body cannot fail.
 _EXIT_ZERO_FLAG = "--exit-zero"
 _EXIT_CODE_FLAG = "--issues-exit-code"
+# Flags that make a closed-list runner run nothing, so its exit status says nothing about the
+# code. Keyed by runner because the same spelling is a check's own option elsewhere (`-m` is a
+# pytest marker and gradle's dry run, `-n` is xdist's workers and make's dry run, `-x` is pytest's
+# stop-at-first-failure and gradle's task exclusion, `-q` is make's question and mvn's quiet).
+# `--help` and `--version` are added for every named runner below.
+_INFO_FLAGS = frozenset({"--help", "--version"})
+_RUN_NOTHING_FLAGS: dict[str, frozenset[str]] = {
+    "pytest": frozenset(
+        {"--collect-only", "--collectonly", "--co", "--fixtures", "--funcargs",
+         "--fixtures-per-test", "--markers", "--setup-plan", "-h", "-V"}
+    ),
+    # Excluding any task changes what the check is, so `-x` refuses whichever task follows.
+    "gradle": frozenset({"--dry-run", "-m", "-x", "--exclude-task", "-h", "-v"}),
+    "cargo": frozenset({"--no-run", "--list", "-h", "-V"}),
+    "go": frozenset({"-n", "-list"}),
+    "make": frozenset(
+        {"-n", "--dry-run", "--just-print", "--recon", "-q", "--question", "-t", "--touch", "-h",
+         "-v"}
+    ),
+    # Only the test goal: a package build with its tests skipped still compiles.
+    "mvn test": frozenset({"-DskipTests", "-Dmaven.test.skip"}),
+    "mvn": frozenset({"-h", "-v"}),
+    "jest": frozenset({"--listTests", "--showConfig"}),
+    "vitest": frozenset({"list"}),
+    "mocha": frozenset({"--dry-run", "--list-interfaces", "--list-reporters"}),
+    "rspec": frozenset({"--dry-run"}),
+    "phpunit": frozenset({"--list-tests", "--list-suites", "--list-groups"}),
+    "ctest": frozenset({"-N", "--show-only"}),
+    "tox": frozenset({"--notest", "-l", "--listenvs", "-a", "--listenvs-all"}),
+    "nox": frozenset({"-l", "--list", "--list-sessions"}),
+    "dotnet": frozenset({"--list-tests"}),
+    "swift": frozenset({"--list-tests", "-l"}),
+    "tsc": frozenset({"--showConfig", "--init"}),
+    "eslint": frozenset({"--print-config", "--init"}),
+    # A package manager forwards to a script whose body is unread, so only the long flags that
+    # name a run-nothing mode in more than one runner count.
+    "package": frozenset(
+        {"--collect-only", "--listTests", "--list-tests", "--dry-run", "--no-run"}
+    ),
+}  # fmt: skip
+# Closed-list runners with no flag of their own beyond `--help` and `--version`, so a runner added
+# to the list is a conscious choice here. `bundle` resolves to the runner it execs.
+_NO_RUN_NOTHING_FLAGS = frozenset(
+    {
+        "nose2", "unittest", "flake8", "pylint", "stylelint", "golangci-lint", "rubocop",
+        "shellcheck", "mypy", "pyright", "test-storybook", "storybook", "deno", "rake", "vite",
+        "ruff", "biome", "black", "prettier", "bundle",
+    }
+)  # fmt: skip
+_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
+_RUNNER_ALIASES = {"py.test": "pytest", "gradlew": "gradle"}
+# Make options that take a value, which end a cluster of short ones (`-fnothing`, `-j4`).
+_MAKE_VALUE_OPTIONS = "CIWfjlo"
+
+
+def _runner_key(words: list[str]) -> str:
+    """The name `_RUN_NOTHING_FLAGS` keys a runner by: `python -m pytest` and `py.test` are
+    pytest, `./gradlew` is gradle, and every package manager is `package`."""
+    words = _runner_words(words)
+    name = os.path.basename(words[0])
+    if _PYTHON_RE.match(words[0]) and words[1:2] == ["-m"] and len(words) > 2:
+        name = words[2]
+    elif words[:2] == ["bundle", "exec"] and len(words) > 2:
+        name = os.path.basename(words[2])
+    if name == "mvn" and words[1:2] == ["test"]:
+        return "mvn test"
+    if name in _PACKAGE_MANAGERS:
+        return "package"
+    return _RUNNER_ALIASES.get(name, name)
+
+
+def _is_make_dry_run(word: str) -> bool:
+    if word.startswith("-") and not word.startswith("--") and word[1:].isalpha():
+        for letter in word[1:]:
+            if letter in _MAKE_VALUE_OPTIONS:
+                return False
+            if letter in "nqt":
+                return True
+    return False
+
+
+def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
+    """Whether a runner's own arguments make it run nothing (`pytest --collect-only`,
+    `cargo test --no-run`, `make test -n`). The runner is named by `runner`, or read from the
+    words where they begin with it."""
+    if not words:
+        return False
+    key = runner or _runner_key(words)
+    flags = _RUN_NOTHING_FLAGS.get(key)
+    if key == "mvn test":
+        flags = (flags or frozenset()) | _RUN_NOTHING_FLAGS["mvn"]
+    known = flags is not None or key in _NO_RUN_NOTHING_FLAGS
+    if not known:
+        return False
+    flags = (flags or frozenset()) | _INFO_FLAGS
+    # After a literal `--` a word is a positional for most runners (`pytest -- --version` names
+    # a file). A package manager and cargo forward it, so they read every word.
+    scanned = (
+        words
+        if key in ("package", "cargo")
+        else words[: words.index("--")]
+        if "--" in words
+        else words
+    )
+    for word in scanned:
+        flag, _, value = word.partition("=")
+        if value == "false":
+            continue
+        if flag in flags or (key == "pytest" and _is_collect_prefix(flag)):
+            return True
+        if key == "make" and _is_make_dry_run(word):
+            return True
+    return False
+
+
+def _is_collect_prefix(flag: str) -> bool:
+    """`--collect` and longer, which argparse accepts for `--collect-only`."""
+    return len(flag) >= len("--coll") and "--collect-only".startswith(flag)
 
 
 def _exits_zero_by_flag(words: list[str]) -> bool:
@@ -3444,9 +3571,27 @@ def _exits_zero_by_flag(words: list[str]) -> bool:
     return False
 
 
+def _defeated_by_arguments(words: list[str], runner: str | None = None) -> bool:
+    """Whether a runner's own arguments stop it failing or stop it running, so its exit status
+    is no evidence. The one predicate typed, declared and listed commands all meet."""
+    return _exits_zero_by_flag(words) or _runs_nothing(words, runner)
+
+
+def _assigns_environment(raw: tuple[str, ...]) -> bool:
+    """Whether a segment starts with an assignment of a variable that steers any runner, read
+    by position so `echo PATH=x; pytest` is not caught."""
+    for word in raw:
+        if _ASSIGNMENT_RE.match(word):
+            if _ENVIRONMENT_STEERING_RE.search(word.split("=", 1)[0]):
+                return True
+        elif word not in _ASSIGNING_PREFIX and not word.startswith("-"):
+            return False
+    return False
+
+
 def _steers_a_script(raw: tuple[str, ...]) -> bool:
-    """Whether a segment's words, before stripping, assign a variable that steers a script run."""
-    return any(
+    """Whether a segment's words, before stripping, assign a variable that steers a run."""
+    return _assigns_environment(raw) or any(
         _ASSIGNMENT_RE.match(word) and _STEERING_VARIABLE_RE.match(word.split("=", 1)[0])
         for word in raw
     )
@@ -3495,7 +3640,7 @@ def _script_line_is_check(
             or (index < len(parts) - 1 and part.joiner != "&&")
             or _is_fixer(words)
             or _always_zero(words)
-            or _exits_zero_by_flag(words)
+            or _defeated_by_arguments(words)
             or _steers_a_script(part.raw)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
@@ -3661,6 +3806,8 @@ def listed_entry_refusal(entry: str) -> tuple[str, str]:
     reason = ""
     if _always_zero(listed) or _exits_zero_by_flag(listed):
         reason = reader_checks.CANNOT_FAIL_REASON
+    elif _runs_nothing(listed):
+        reason = reader_checks.RUNS_NOTHING_REASON
     elif os.path.basename(listed[0]) in _LISTED_BUILTINS:
         reason = reader_checks.BUILTIN_REASON
     elif _reads_only([], listed):
@@ -4570,7 +4717,7 @@ def _chain_passes(
 def _cannot_fail(words: list[str]) -> bool:
     """A check whose own arguments make it exit 0 (`ruff check --exit-zero`): `&&` proves nothing
     of it, since it lets what follows run whatever it found."""
-    return _exits_zero_by_flag(words) or _always_zero(words)
+    return _defeated_by_arguments(words) or _always_zero(words)
 
 
 # Setup that cannot print, ahead of the first check (`_check_groups`). A summary-shaped line it
@@ -4912,10 +5059,20 @@ class _ShellCall:
         self.meaningful = [
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
         ]
+        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
+        # steers every later segment, which its own words do not show.
+        steered_from = next(
+            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
+        )
+        # A typed runner is held to what a declared one is: its own arguments and the variables
+        # before it. The steering segment is itself refused, so `<`; a declared script reads `<=`
+        # because it rechecks its own segment's words.
         self.checks = [
             i
             for i in self.meaningful
             if _is_check(self.words[i][0])
+            and i < steered_from
+            and not _defeated_by_arguments(self.words[i][0])
             and not self._declared_body_refuses(
                 declared, i, self.directories[i] if self.placed[i] else ""
             )
@@ -4924,11 +5081,6 @@ class _ShellCall:
         # reader, so it ages earlier passes as any command whose effects are not known does
         # (`changes`, `changes_later_in_call`). It is not in `changing_others`, which would stop
         # its own output from being read as the call's one check's.
-        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
-        # steers every later segment, which its own words do not show.
-        steered_from = next(
-            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
-        )
         self.declared_checks = [
             i
             for i in self.meaningful

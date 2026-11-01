@@ -789,6 +789,27 @@ class AnExitZeroFlagIsRefusedWhereverItIsWritten(ProjectScriptTestCase):
         self.ran("pnpm lint -- src")
         self.assertEqual(["pnpm lint -- src"], self.titles())
 
+    def test_a_forwarded_run_nothing_argument_is_refused(self) -> None:
+        self.commit({"package.json": package(test="pytest")})
+        for command in (
+            "pnpm test -- --collect-only",
+            "npm run test -- --listTests",
+            "pnpm test -- --dry-run",
+        ):
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_declared_script_with_a_steering_environment_variable_is_refused(self) -> None:
+        self.commit({"package.json": package(lint="ruff check .")})
+        for command in ("PATH=/tmp/x:$PATH pnpm lint", "export NODE_OPTIONS=x; pnpm lint"):
+            self.ran(command)
+        self.assertEqual([], self.titles())
+
+    def test_a_listed_command_that_runs_nothing_is_refused(self) -> None:
+        reason, _program = project_context.listed_entry_refusal("pytest --collect-only")
+        self.assertTrue(reason)
+        self.assertEqual("", project_context.listed_entry_refusal("pytest -x")[0])
+
     def test_a_listed_ruff_short_flag_is_refused(self) -> None:
         reason, _program = project_context.listed_entry_refusal("ruff check -e .")
         self.assertTrue(reason)
