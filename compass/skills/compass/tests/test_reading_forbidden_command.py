@@ -82,6 +82,7 @@ class ALineThatForbidsAPushIsRecognisedWholeAndNothingElse(unittest.TestCase):
         ("Must not push into the release/1.0 branch!", None, "release/1.0"),
         ("Fix the retry; do not push to main.", None, "main"),
         ("Fix the retry. Never push to main", None, "main"),
+        ("Don't push to main. Then open a PR.", None, "main"),
         ("And don't push to main", None, "main"),
         ("Don't force-push to main", True, "main"),
         ("Never force push", True, None),
@@ -99,6 +100,11 @@ class ALineThatForbidsAPushIsRecognisedWholeAndNothingElse(unittest.TestCase):
         "Don't push the tag",
         "Do not pull from main",
         "Do not push to main and open a PR",
+        "Don't push to main. Unless CI passes.",
+        "Don't push to main. Exception: hotfixes.",
+        "Don't push to main; unless the owner says so",
+        "Don't push to main. Ask me first.",
+        "Don't push to main. Check with me first.",
         "",
     )
 
@@ -212,6 +218,17 @@ class ALineThatForbidsAPushDepartsWhenThePushRan(unittest.TestCase):
         row = departs(pushed(result=""))
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
         self.assertNotEqual(reading.WHY_RECORDED_COMMAND, row["why"])
+
+    def test_a_push_the_producer_marked_as_unable_to_fail_stays_cant_tell(self) -> None:
+        facts = [
+            base.WORDS_FACT,
+            {**command("k1", 110.0, "passed", PUSH), "cannot_fail": True},
+            said(120.0),
+        ]
+        row = departs(facts)
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+        self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
+        self.assertNotIn("k1", row["cites"])
 
     def test_a_dry_run_stays_cant_tell(self) -> None:
         for text in ("git push --dry-run origin main", "git push -n origin main"):
@@ -385,6 +402,17 @@ class AStoredRecordedCommandRowIsReadAgainByLevelsAndCorrection(unittest.TestCas
         self.assertTrue(
             reading.check_supports(entry, reading.RESULT_DEPARTURE, 50.0, recorded_command=True)
         )
+        for label, other in (
+            ("a passing check", {**entry, "subject": "check"}),
+            ("a command with no recorded result", {**entry, "result": ""}),
+            ("a message", {**entry, "type": "agent_message"}),
+        ):
+            with self.subTest(other=label):
+                self.assertFalse(
+                    reading.check_supports(
+                        other, reading.RESULT_DEPARTURE, 50.0, recorded_command=True
+                    )
+                )
         self.assertFalse(
             reading.check_supports(
                 {**entry, "cannot_fail": True},

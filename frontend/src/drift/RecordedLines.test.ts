@@ -127,6 +127,11 @@ describe('a line the producer settled from a push that ran', () => {
     expect(readPush(ran(), [{ ...PUSH, cannotFail: true }]).result).toBe(UNVERIFIABLE);
   });
 
+  it('does not stand on a passing check or a command with no recorded result', () => {
+    expect(readPush(ran(), [{ ...PUSH, subject: 'check' }]).result).toBe(UNVERIFIABLE);
+    expect(readPush(ran(), [{ ...PUSH, result: '' }]).result).toBe(UNVERIFIABLE);
+  });
+
   it('does not stand on a push from before the words were saved', () => {
     expect(readPush(ran(), [{ ...PUSH, at: 40 }]).result).toBe(UNVERIFIABLE);
   });

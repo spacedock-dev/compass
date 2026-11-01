@@ -4845,7 +4845,7 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
         if rests_on_nothing:
             result, why = RESULT_UNVERIFIABLE, rests_on_nothing
     why, raw_detail = _recorded_command_row(
-        pushes,
+        [push for push in pushes if any(push["id"] == kept["id"] for kept in cited)],
         standing=result == RESULT_DEPARTURE and why == WHY_STANDS,
         why=why,
         detail=row.get("detail"),
@@ -5078,8 +5078,14 @@ def folder_rules(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
 # A line that forbids a push, read whole. The folder rules' clause break splits at a comma and at
 # "and", which would hand "Don't push to main" alone to the grammar in front of "unless CI is
 # green", so this splits only at a sentence end, a semicolon or a newline, and the grammar must
-# match everything between: any condition after the object leaves the line Can't tell.
+# match everything between. A condition anywhere in the line, not only after the object, leaves it
+# Can't tell, so a later sentence that opens with a qualifier voids the ban too.
 # [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)  # noqa: E501
+_QUALIFIES_THE_BAN = re.compile(
+    r"^\s*(?:unless|except|exception|however|only|until|when|if|though|although|apart|other\s+than"
+    r"|without|before|after|provided|aside|besides|but|ask\s+me|check\s+with\s+me)\b",
+    re.IGNORECASE,
+)
 _WHOLE_SENTENCE_BREAK = re.compile(r";|\n|(?<=[.!?])\s+")
 _PUSH_NEGATOR = (
     r"(?:do\s+not|don['\u2019]t|never|must\s+not|mustn['\u2019]t|should\s+not|shouldn['\u2019]t)"
@@ -5121,9 +5127,17 @@ class PushRun:
 
 
 def forbidden_pushes(text: str) -> tuple[ForbiddenPush, ...]:
-    """The pushes a line forbids: each whole sentence that matches the push grammar."""
+    """The pushes a line forbids: each whole sentence that matches the push grammar.
+
+    A condition anywhere in the line, a later sentence or the part after a semicolon that opens
+    with a qualifier ("Unless CI passes", "Exception: hotfixes", "Ask me first"), voids the whole
+    ban, since the line then does not forbid the push outright.
+    """
+    sentences = _WHOLE_SENTENCE_BREAK.split(text)
+    if any(_QUALIFIES_THE_BAN.match(sentence) for sentence in sentences):
+        return ()
     bans = []
-    for sentence in _WHOLE_SENTENCE_BREAK.split(text):
+    for sentence in sentences:
         found = _FORBIDS_A_PUSH.match(sentence)
         if found:
             bans.append(ForbiddenPush(found["ref"], found["force"] is not None))
@@ -5209,9 +5223,9 @@ def _kept_for_a_forbidden_push(
 def _forbidden_pushes_run(text: str, cited: Sequence[LedgerEntry]) -> list[LedgerEntry]:
     """The cited commands that are a push this line forbids and that exited 0, oldest first.
 
-    `cited` has passed rule 3, so each is inside the window and after the line was asked for; a
-    push that cannot fail is dropped by `check_supports` afterwards. A failed push keeps the
-    departure item 8 already gives it, so it is not read here.
+    `cited` has passed rule 3, so each is inside the window and after the line was asked for. A
+    push that cannot fail is skipped here, as `check_supports` would drop it, so it never sets the
+    token. A failed push keeps the departure item 8 already gives it, so it is not read here.
     """
     bans = forbidden_pushes(text)
     if not bans:
@@ -5222,6 +5236,7 @@ def _forbidden_pushes_run(text: str, cited: Sequence[LedgerEntry]) -> list[Ledge
             str(entry.get("type") or "") != TOOL_REPORT_TYPE
             or entry.get("subject") != COMMAND_SUBJECT
             or entry.get("result") != RESULT_PASSED
+            or cannot_fail(entry)
         ):
             continue
         run = push_run(_check_text(entry))
