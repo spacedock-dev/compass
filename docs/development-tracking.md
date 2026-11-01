@@ -29,6 +29,12 @@ at selection.
 
 The five labels and the five columns predate the IDs. Nothing was renamed to make this table.
 
+Work that no stage of the reader's day touches, such as contributor tooling, CI or repository
+hygiene, carries `journey:none` instead, with no promise ID and no board column. It always takes
+the `none` move below. The reverse does not hold: a `none` move that protects a stage, such as a
+test that pins what a reading may send, keeps that stage's label. Ruled by the owner on
+2026-11-01, when the label set had no answer for a flaky CI check.
+
 The move says how the work touches its promise.
 
 | Move | Meaning | May change the promise map |
