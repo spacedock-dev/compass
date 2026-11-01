@@ -8402,7 +8402,10 @@ This amendment replaces that comparison and hardens the read around it. Where th
   (`pytest -k "--co"`) is a value. `-Dmaven.test.failure.ignore`, `-fn` and `--fail-never` make Maven exit zero
   whatever fails. `--passWithNoTests` is read from output, because the flag is harmless when tests exist: jest's
   and vitest's `No tests found, exiting with code 0`, and Maven's `No tests to run.` where no module ran one,
-  read as no recorded result. `vitest list` is the list subcommand only before any other subcommand. Clusters are
+  read as no recorded result. A jest or vitest no-tests line beside a `Tests` line holding a passed count
+  (`Tests: 5 passed, 5 total`, ` Tests  5 passed (5)`), as a monorepo run prints, is a real pass, as a Maven
+  module that ran tests is; only the `Tests` line counts, since `Test Suites: 1 passed` can sit beside
+  `Tests: 0 total`. `vitest list` is the list subcommand only before any other subcommand. Clusters are
   expanded for pytest and make only.
 - **A script shell set once holds for the session.** When any call sets a package manager's script shell or
   yarn binary (`npm config set script-shell`, `yarn config set yarnPath`, `yarn set version`, or a write of a
@@ -8415,9 +8418,17 @@ This amendment replaces that comparison and hardens the read around it. Where th
   `tee`, `sed -i`, a copy, move or link with it as the destination, `git checkout` or `git restore` of it, or a
   segment that cannot be read. Staging or committing it, `git diff`, `cat`, copying it elsewhere and `rm` do not.
   `npx` is a run of npm, so npm's latch and `npm_config_*` reach it, which they do not reach `pnpm exec` or
-  `bunx`; `corepack` before a manager is looked through, and `pnpm set` is read like `npm set`. Measured on npm 11, pnpm 12 and yarn 1.22: `script-shell` (flag, config or
+  `bunx`; `corepack` before a manager is looked through, and `pnpm set` is read like `npm set`. Measured on npm 11 and yarn 1.22, and on pnpm
+  as the next sentences say: `script-shell` (flag, config or
   file) and a yarn path change what runs, while `ignore-scripts` does not skip a named `npm test` or `pnpm
   test`, so it is not a trigger. `npm test --script-shell` and `--if-present` on the call refuse that call.
+  The `.npmrc` latch covers pnpm because older pnpm reads it. Checked on 2026-11-01 with `script-shell` set to
+  a program that exits zero: pnpm 8.15.9, 9.15.9, 10.20.0 and 10.33.0 take it from a project `.npmrc` and from
+  `npm_config_script_shell`, so their `test` ran nothing; 11.0.0, 11.28.10, 12.0.0 and 12.9.1 do not (11.28.10
+  checked for the `.npmrc` only). The setting reaches pnpm 10.20.0 and later from `pnpm-workspace.yaml`
+  (`scriptShell`), and 9.15.9 did not read it there; 8.15.9 was not tried. Compass cannot learn the pnpm
+  version from a transcript, so a write of `.npmrc` latches pnpm even where pnpm 11 or later would ignore it.
+  That errs toward a withheld pass. Narrowing it would read a steered `pnpm test` on pnpm 8 to 10 as a pass.
   Limits: a setting already in a config file before the session, `npm pkg set`, and Pi, which builds no
   declarations and so latches nothing. Codex shell calls reach the same latch.
 - **Package-manager config counts as the file.** A recorded write to an `.npmrc`, `.yarnrc` or `.yarnrc.yml`
