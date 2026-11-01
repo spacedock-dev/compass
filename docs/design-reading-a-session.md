@@ -1673,11 +1673,11 @@ the agent did, found or changed, so `rest` is empty or:
 - holds no second clause or instruction: a semicolon, a newline, a sentence break followed by more
   text, ", and" or "then". This is not `_CLAIM_CLAUSE_BREAK` or the folder rules' break, which split
   on every comma and "and" and would read a request's own "and why" as a second clause;
-- joins with "and" or "or" only a short wh-clause or a short determiner phrase with no past-tense
-  verb, so "which files changed and why" and "what changed and the reasons" are in, and "what
-  changed
-  and all files are removed", "what you did and the deploy succeeded" and "which files changed and
-  fix the flaky test" are out;
+- joins with "and" or "or" only a short wh-clause, or a determiner and exactly one word. "which
+  files changed and why" and "what changed and the reasons" are in. A longer determiner phrase is a
+  clause, so "what changed and all files are removed", "what you did and the deploy works" and
+  "which files changed and fix the flaky test" are out. Past tense alone cannot tell them apart,
+  since "the deploy works" has none;
 - names no destination: README, docs, changelog, PR, pull request, description, commit, comment,
   issue, ticket, wiki, Slack, email, release notes. "Tell the user in the README how to install"
   asks for a file, not a report;
@@ -1738,18 +1738,20 @@ change. Three findings, from probes on the tree at the time.
    also withdraws when any of those times is inside the window and at or before the claim, and the
    fact's own evidence is after it. A pass before the claim, with the lost runs before that, still
    stands, and so does a claim made before every lost run.
-3. The covering match was too loose, in the false-reassurance direction. `covering_checks` put
-   any recorded pass whose kind the line claims ahead of the agent's message, so an unrelated
-   `pytest -q` pass settled "The frontend tests pass" beside a write, which is the case C2 exists
-   to withdraw. A line that names no path is now covered only when every clause naming its check
-   noun leaves it unqualified. Before the noun that means nothing, or "the", "all", "every", "each",
-   "existing", "our", "my", "no", "zero" or a numeral, with a closed list of lead-in words ("make
-   sure", "ensure", "confirm", "must" and the like) allowed before those. After it, a phrase such as
-   "for the parser", "in the frontend" or "of the crate" is a qualifier too. A language, an area,
-   "e2e", "unit", "new" or a project name means the pass does not cover the line, the model's own
-   citations decide, and C2 applies. A line that also names a kind of check the passing command is
-   not ("Lint and tests pass" beside only a pytest pass) is not covered either. `covers_line` is not
-   changed: `_bears_on` reads it for the running-turn guard, and narrowing it there would let more
+3. The covering match was too loose, in the false-reassurance direction. `covering_checks` put any
+   recorded pass whose kind the line claims ahead of the agent's message, so an unrelated `pytest
+   -q` pass settled "The frontend tests pass" beside a write, which is the case C2 exists to
+   withdraw. A line that names no path is now covered only when every clause that says how a check
+   came out leaves its check noun unqualified. A clause that claims no result ("the lint config is
+   left alone", "no tests were deleted") neither qualifies nor blocks the cover. Before the noun
+   that means nothing, or "the", "all", "every", "each", "existing", "our", "my", "no", "zero" or
+   a numeral, with a closed list of lead-in words ("make sure", "ensure", "confirm", "must" and
+   the like) allowed before those. After it, a phrase such as "for the parser", "in the frontend"
+   or "of the crate" is a qualifier too. A language, an area, "e2e", "unit", "new" or a project
+   name means the pass does not cover the line, the model's own citations decide, and C2 applies.
+   A result clause that also names a kind of check the passing command is not ("Lint and tests
+   pass" beside only a pytest pass) is not covered either. `covers_line` is not changed:
+   `_bears_on` reads it for the running-turn guard, and narrowing it there would let more
    mid-flight departures stand.
 
 Every change moves toward Can't tell. No token is new, and the page needs no change. Like the
