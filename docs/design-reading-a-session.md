@@ -8379,8 +8379,47 @@ This amendment replaces that comparison and hardens the read around it. Where th
   `--version` for every named runner) leaves the run a command. It is keyed because `-m`, `-n`, `-x` and `-q`
   mean a check's own option to one runner and a dry run to another. `PATH`, `NODE_OPTIONS`, `BASH_ENV`, `ENV`,
   `SHELL` and any `*_ADDOPTS` variable assigned before a runner, inline or exported earlier in the call, steer it
-  too; they are read by position, so `echo PATH=x; pytest` stays a check. A run that selects nothing without a
-  flag (`pytest -k nothing`) cannot be told apart and is not covered.
+  too; they are read by position, so `echo PATH=x; pytest` stays a check. Those five and `*_ADDOPTS` refuse
+  before any check in the call, inline or exported, and are not scoped by runner.
+  A run that selects nothing cannot always be told apart. `pytest -k nosuch` exits 5 on a real run, so it is
+  not a pass, and `go test -run NONE` prints `[no tests to run]` and reads as no recorded result when no
+  package printed `ok`. `jest -t`, `mvn -Dtest` and `cargo test <filter>` select nothing without a flag or an
+  output line, and stay stated limits.
+- **A steering variable reaches the runners it can start.** A make, `npm_config_*`, `YARN_*` or `JUST_*`
+  variable refuses its own runner and the runners that start other programs (`make`, `just`, a package manager,
+  `tox`, `nox`, `rake`), because a package manager's script can call `make` and a recipe can call `npm`. It does
+  not refuse a direct runner: `npm_config_loglevel=silent pytest` and `JUST_ROOT=x pytest` count. Under `make`,
+  `MAKEFLAGS` and its two siblings may hold only a closed list of harmless flags (`-j`, `-s`, `-w`, `-k`,
+  `--no-print-directory` and the long `--silent`, `--quiet`, `--keep-going`, `--print-directory` and bare
+  `--jobs`; `--jobs=N` refuses, on the safe side, since a value containing `=` is never read), because the variable
+  also takes bare letters, `--eval=` and `NAME=value`, which a list of refused flags would miss; `MAKEFILES`, `MAKEOVERRIDES` and `MAKE` always refuse.
+  Under a package manager `MAKEFLAGS` stays value-blind. An inline assignment steers its own segment, an
+  `export` or an assignment-only segment steers the later ones, and a word after the program is an assignment
+  only to `make` (`make test MAKEFLAGS=-n`). Limits: a direct runner that itself starts `make` (a build script, an
+  exec plugin, a test that shells out) is not covered, and nor is `MAVEN_ARGS` or `.mvn/maven.config`.
+- **More run-nothing spellings.** A help or version flag inside a short cluster (`pytest -qh`, `-xh`, `make -sh`) is
+  read up to the first letter that takes a value (`-kh` is a filter `h`), and a word after a value option
+  (`pytest -k "--co"`) is a value. `-Dmaven.test.failure.ignore`, `-fn` and `--fail-never` make Maven exit zero
+  whatever fails. `--passWithNoTests` is read from output, because the flag is harmless when tests exist: jest's
+  and vitest's `No tests found, exiting with code 0`, and Maven's `No tests to run.` where no module ran one,
+  read as no recorded result. `vitest list` is the list subcommand only before any other subcommand. Clusters are
+  expanded for pytest and make only.
+- **A script shell set once holds for the session.** When any call sets a package manager's script shell or
+  yarn binary (`npm config set script-shell`, `yarn config set yarnPath`, `yarn set version`, or a write of a
+  config file the manager reads), that manager's typed, declared and listed checks are ordinary commands for the
+  whole session, in the order-agnostic way the listing write is, so an earlier pass is withdrawn. `npm config
+  set` and `pnpm config set` write the user file npm, pnpm and yarn share; `yarn config set` latches yarn; a
+  write of `.yarnrc` or `.yarnrc.yml` latches yarn and of `pnpm-workspace.yaml` pnpm. A file tool's write is
+  read for the setting it carries, so a registry edit does not latch, while a shell write and a Codex patch
+  latch without reading content. A shell command latches only where it could change the file: a redirect into it,
+  `tee`, `sed -i`, a copy, move or link with it as the destination, `git checkout` or `git restore` of it, or a
+  segment that cannot be read. Staging or committing it, `git diff`, `cat`, copying it elsewhere and `rm` do not.
+  `npx` is a run of npm, so npm's latch and `npm_config_*` reach it, which they do not reach `pnpm exec` or
+  `bunx`; `corepack` before a manager is looked through, and `pnpm set` is read like `npm set`. Measured on npm 11, pnpm 12 and yarn 1.22: `script-shell` (flag, config or
+  file) and a yarn path change what runs, while `ignore-scripts` does not skip a named `npm test` or `pnpm
+  test`, so it is not a trigger. `npm test --script-shell` and `--if-present` on the call refuse that call.
+  Limits: a setting already in a config file before the session, `npm pkg set`, and Pi, which builds no
+  declarations and so latches nothing. Codex shell calls reach the same latch.
 - **Package-manager config counts as the file.** A recorded write to an `.npmrc`, `.yarnrc` or `.yarnrc.yml`
   in any folder withdraws the package declarations, because `script-shell` or `yarnPath` there changes what
   `pnpm lint` runs without touching `package.json`. A shell call that names one counts as a write.

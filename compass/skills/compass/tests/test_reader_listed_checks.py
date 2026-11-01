@@ -112,6 +112,19 @@ class NothingIsReadFromTheRepository(ReaderChecksTestCase):
 class WhatCannotBeACheckIsIgnoredAndDiagnoseSaysSo(ReaderChecksTestCase):
     ENTRIES = ("echo ok", "true", ":", "exit 0", "printf done", "ls -la", "git status", "cd /tmp")
 
+    def test_a_steering_variable_refuses_a_listed_command_only_where_it_can_reach_it(self) -> None:
+        self.list_checks({str(self.cwd): [BAZEL, "make verify", "npm run verify"]})
+        for command in (
+            "MAKEFLAGS=-n make verify",
+            "npm_config_script_shell=/usr/bin/true npm run verify",
+            "MAKEFLAGS=-n npm run verify",
+        ):
+            self.session.bash(command, "ok")
+        self.assertEqual([], self.titles())
+        for command in ("MAKEFLAGS=-j4 make verify", f"JUST_ROOT=x {BAZEL}"):
+            self.session.bash(command, "ok")
+        self.assertEqual([BAZEL, "make verify"], self.titles())
+
     def test_a_command_that_cannot_fail_or_only_reads_never_counts(self) -> None:
         self.list_checks({str(self.cwd): [*self.ENTRIES, BAZEL]})
         for entry in self.ENTRIES:
@@ -540,6 +553,33 @@ class APagedReadKeepsAnEarlierPagesListingWrite(ReaderChecksTestCase):
             )
         assert second.snapshot is not None
         self.assertEqual(frozenset({reader_checks.FILENAME}), second.snapshot.cursor.listing_writes)
+
+
+class APackageManagerScriptShellSetInTheSessionWithdrawsItsListedChecks(ReaderChecksTestCase):
+    VERIFY = "npm run verify"
+
+    def test_a_listed_package_command_is_refused_after_the_script_shell_is_set(self) -> None:
+        self.list_checks({str(self.cwd): [self.VERIFY, BAZEL]})
+        self.session.bash("npm config set script-shell /usr/bin/true")
+        self.session.bash(self.VERIFY, "ok")
+        self.session.bash(BAZEL, "ok")
+        self.assertEqual([BAZEL], self.titles())
+
+    def test_the_latch_survives_a_page_boundary(self) -> None:
+        self.session.bash("ls", "a")
+        self.session.save(self.path)
+        first = session_source.read(self.config, str(self.path), "claude", "root")
+        assert first.snapshot is not None
+        self.session.bash("npm test", "5 passed")
+        self.session.save(self.path)
+        subjects = {}
+        for label, latch in (("plain", frozenset()), ("latched", frozenset({"script-shell:npm"}))):
+            cursor = dataclasses.replace(first.snapshot.cursor, listing_writes=latch)
+            page = session_source.read(self.config, str(self.path), "claude", "root", after=cursor)
+            assert page.snapshot is not None
+            subjects[label] = [e.title for e in page.entries]
+            self.assertEqual(latch, page.snapshot.cursor.listing_writes)
+        self.assertEqual({"plain": ["npm test"], "latched": []}, subjects)
 
 
 class WhatAShellCommandCouldChangeIsDecidedPerSegmentAndPerStdin(ReaderChecksTestCase):

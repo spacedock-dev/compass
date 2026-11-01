@@ -1884,3 +1884,19 @@ class TheGatesAdmitCodex(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class APackageManagerScriptShellSetEarlierInACodexSession(CodexChecksTestCase):
+    def test_a_codex_shell_call_that_sets_the_script_shell_leaves_a_later_npm_test_ordinary(
+        self,
+    ) -> None:
+        self.rollout.command("npm config set script-shell /usr/bin/true", "", exit_code=0)
+        self.rollout.command("npm test", "5 passed", exit_code=0)
+        self.rollout.command("pytest -q", "3 passed in 0.1s", exit_code=0)
+        self.assertEqual(["pytest -q"], [row["title"] for row in self.of("check")])
+
+    def test_a_codex_patch_of_a_config_file_latches_the_managers_that_read_it(self) -> None:
+        self.rollout.patch({self.file("pnpm-workspace.yaml"): {"type": "update"}})
+        self.rollout.command("pnpm test", "5 passed", exit_code=0)
+        self.rollout.command("npm test", "5 passed", exit_code=0)
+        self.assertEqual(["npm test"], [row["title"] for row in self.of("check")])

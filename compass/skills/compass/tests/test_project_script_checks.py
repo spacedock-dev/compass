@@ -335,6 +335,7 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
             "npm_config_script_shell=/usr/bin/true npm run typecheck",
             "env NPM_CONFIG_PREFIX=sub npm run typecheck",
             "MAKEFLAGS=-n make lint",
+            "MAKEFLAGS=-j4 pnpm typecheck",
             "MAKE=true make lint",
         )
         for command in refused:
@@ -367,6 +368,30 @@ class ANameOrABodyThatIsNotACheckNeverCounts(ProjectScriptTestCase):
         for command in refused:
             self.ran(command)
         self.assertEqual([], self.titles())
+
+    def test_a_variable_that_cannot_reach_the_runner_leaves_the_script_a_check(self) -> None:
+        self.commit(
+            {
+                "package.json": package(typecheck="tsc --noEmit"),
+                "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+            }
+        )
+        counted = {
+            "MAKEFLAGS=-j4 make lint": "make lint",
+            "MAKEFLAGS=-j4 make lint && pnpm typecheck": "make lint",
+            "MAKEFLAGS=-n make lint && pnpm typecheck": "pnpm typecheck",
+        }
+        for command, title in counted.items():
+            with self.subTest(command=command):
+                self.fresh_repo()
+                self.commit(
+                    {
+                        "package.json": package(typecheck="tsc --noEmit"),
+                        "Makefile": ".PHONY: lint\nlint:\n\truff check .\n",
+                    }
+                )
+                self.ran(command)
+                self.assertIn(title, self.titles())
 
     def test_a_make_option_that_stops_the_recipe_running_leaves_the_target_a_command(self) -> None:
         self.commit({"Makefile": ".PHONY: lint\nlint:\n\truff check .\n"})
@@ -527,6 +552,30 @@ class ASessionThatChangedADeclaringFileDeclaresNothing(ProjectScriptTestCase):
         self.ran("echo 'script-shell=/bin/true' > .npmrc")
         self.ran("pnpm lint")
         self.assertNotIn("pnpm lint", self.titles())
+
+    def test_a_script_shell_set_by_config_in_an_earlier_call_withdraws_the_package_scripts(
+        self,
+    ) -> None:
+        self.commit(
+            {
+                "package.json": package(lint="eslint ."),
+                "Makefile": ".PHONY: lint\nlint:\n\tnpm run lint\n",
+                "justfile": "check:\n    mypy .\n",
+            }
+        )
+        self.ran("npm config set script-shell /bin/true")
+        self.ran("npm run lint")
+        self.ran("make lint")
+        self.ran("just check")
+        self.assertEqual(["just check"], self.titles())
+
+    def test_a_setting_that_does_not_change_the_script_shell_leaves_the_scripts_declared(
+        self,
+    ) -> None:
+        self.commit({"package.json": package(lint="eslint .")})
+        self.ran("npm config set registry https://example.test")
+        self.ran("npm run lint")
+        self.assertEqual(["npm run lint"], self.titles())
 
     def test_a_file_changed_by_a_shell_command_differs_from_the_commit_and_declares_nothing(
         self,

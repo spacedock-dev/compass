@@ -2224,9 +2224,15 @@ _FAILURE_MARKER = re.compile(
 # reads "ran, result not recorded". go's `[no test files]` counts only when no
 # package printed `ok`.
 _RAN_NOTHING = re.compile(
-    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]",
+    rf"^{_INFO} pass 0\s*$|(?<![\d.])0 passed\b|^Ran 0 tests\b|\[no tests to run\]"
+    # jest and vitest under `--passWithNoTests`, which exit zero for an empty selection.
+    r"|^No tests? (?:files? )?found, exiting with code 0",
     re.MULTILINE,
 )
+# Maven prints this for each module with no tests, so it speaks for the run only where no module
+# ran one (`Tests run: 5`), as go's `[no test files]` does.
+_MAVEN_NO_TESTS = re.compile(r"^\[INFO\] No tests to run\.", re.MULTILINE)
+_MAVEN_RAN_TESTS = re.compile(r"Tests run: [1-9]")
 _NO_TEST_FILES = re.compile(r"\[no test files\]")
 _GO_OK = re.compile(r"^ok\s", re.MULTILINE)
 # Item 4 as amended on 2026-10-04: failed, passed, written, then no recorded
@@ -3417,12 +3423,21 @@ def _partition_double_dash(args: list[str]) -> tuple[list[str], list[str], list[
 
 
 # Variables that change which script or recipe a package manager, `make` or `just` runs, or
-# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`). Scanned in
-# every word of a segment, so `make SHELL=/bin/sh test` is caught too.
-_STEERING_VARIABLE_RE = re.compile(
-    r"^(?:npm_config_|JUST_|YARN_)|^(?:MAKEFLAGS|GNUMAKEFLAGS|MFLAGS|MAKEFILES|MAKEOVERRIDES|MAKE)$",
-    re.IGNORECASE,
+# whether it runs at all (`npm_config_script_shell=/usr/bin/true`, `MAKEFLAGS=-n`). Each steers
+# its own runner and the runners that start other programs, never a direct one: `JUST_ROOT=x
+# pytest` still runs pytest. Read in `_family_assignments`.
+_MAKE_FLAG_VARIABLES = frozenset({"MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS"})
+_MAKE_INJECTING_VARIABLES = frozenset({"MAKEFILES", "MAKEOVERRIDES", "MAKE"})
+# What a make-flag variable may hold and still run the same recipes: a closed list, because the
+# variable also takes bare letters (`ni`), `--eval=` and `NAME=value` after `--`, so a list of
+# refused flags would miss spellings. `-n -i -q -t -o -W` and anything else refuse.
+_HARMLESS_MAKE_FLAG_RE = re.compile(
+    r"-?[swk]*(?:j\d*)?|--(?:silent|quiet|keep-going|no-print-directory|print-directory|jobs)"
 )
+# Programs that start other programs, so can start the runner a variable steers: a package
+# manager's script can call `make`, and a recipe can call `npm`. A direct runner is not one.
+_RUNNERS_THAT_START_RUNNERS = frozenset({"make", "just", "package", "tox", "nox", "rake"})
+_HARMLESS_MAKE_FLAGS = "make-flags"
 # Variables that change what any runner finds or whether it runs: a shadowing `PATH`, a script
 # shell that exits zero, a startup file (`BASH_ENV`), preloaded code (`NODE_OPTIONS`), or a
 # runner's own extra arguments (`PYTEST_ADDOPTS=--collect-only`). Names common words (`ENV`,
@@ -3454,7 +3469,9 @@ _RUN_NOTHING_FLAGS: dict[str, frozenset[str]] = {
          "-v"}
     ),
     # Only the test goal: a package build with its tests skipped still compiles.
-    "mvn test": frozenset({"-DskipTests", "-Dmaven.test.skip"}),
+    "mvn test": frozenset(
+        {"-DskipTests", "-Dmaven.test.skip", "-Dmaven.test.failure.ignore", "-fn", "--fail-never"}
+    ),
     "mvn": frozenset({"-h", "-v"}),
     "jest": frozenset({"--listTests", "--showConfig"}),
     "vitest": frozenset({"list"}),
@@ -3470,8 +3487,12 @@ _RUN_NOTHING_FLAGS: dict[str, frozenset[str]] = {
     "eslint": frozenset({"--print-config", "--init"}),
     # A package manager forwards to a script whose body is unread, so only the long flags that
     # name a run-nothing mode in more than one runner count.
+    # `--script-shell` swaps the shell npm runs the script with, and `--if-present` exits zero when
+    # the script is missing (measured on npm 11, 2026-11-01); `--ignore-scripts` skips only the
+    # hooks around a script that is named, so it is not here.
     "package": frozenset(
-        {"--collect-only", "--listTests", "--list-tests", "--dry-run", "--no-run"}
+        {"--collect-only", "--listTests", "--list-tests", "--dry-run", "--no-run",
+         "--script-shell", "--if-present"}
     ),
 }  # fmt: skip
 # Closed-list runners with no flag of their own beyond `--help` and `--version`, so a runner added
@@ -3485,8 +3506,15 @@ _NO_RUN_NOTHING_FLAGS = frozenset(
 )  # fmt: skip
 _PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 _RUNNER_ALIASES = {"py.test": "pytest", "gradlew": "gradle"}
-# Make options that take a value, which end a cluster of short ones (`-fnothing`, `-j4`).
+# Pytest options that take a separate value, which may itself start with `--`.
+_PYTEST_VALUE_OPTIONS = frozenset(
+    {"-k", "-m", "-p", "-c", "-o", "-W", "--deselect", "--ignore", "--ignore-glob", "--rootdir",
+     "--junitxml", "--basetemp"}
+)  # fmt: skip
+_VITEST_SUBCOMMANDS = frozenset({"run", "watch", "dev", "related", "bench", "init"})
+# Options that take a value end a cluster of short ones (`-fnothing`, `-j4`, `-kh` is `-k h`).
 _MAKE_VALUE_OPTIONS = "CIWfjlo"
+_PYTEST_VALUE_LETTERS = "kmrWcpon"
 
 
 def _runner_key(words: list[str]) -> str:
@@ -3505,14 +3533,27 @@ def _runner_key(words: list[str]) -> str:
     return _RUNNER_ALIASES.get(name, name)
 
 
-def _is_make_dry_run(word: str) -> bool:
+def _cluster_names(word: str, letters: str, value_letters: str) -> bool:
+    """Whether a cluster of short options (`-sn`, `-qh`) holds one of `letters` before any letter
+    that takes a value."""
     if word.startswith("-") and not word.startswith("--") and word[1:].isalpha():
         for letter in word[1:]:
-            if letter in _MAKE_VALUE_OPTIONS:
+            if letter in value_letters:
                 return False
-            if letter in "nqt":
+            if letter in letters:
                 return True
     return False
+
+
+def _manager_steered(
+    declared: project_scripts.Declarations | None, words: list[str], raw: tuple[str, ...] = ()
+) -> bool:
+    """Whether the session changed the script shell of the package manager `words` start with,
+    or of npm for a run `npx` started."""
+    if declared is None or not words:
+        return False
+    program = "npm" if _ran_through_npx(raw, words) else os.path.basename(_runner_words(words)[0])
+    return program in declared.steered_managers
 
 
 def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
@@ -3538,18 +3579,33 @@ def _runs_nothing(words: list[str], runner: str | None = None) -> bool:
         if "--" in words
         else words
     )
-    for word in scanned:
-        flag, _, value = word.partition("=")
-        if value == "false":
-            continue
-        if flag in flags or (key == "pytest" and _is_collect_prefix(flag)):
-            return True
-        if key == "make" and _is_make_dry_run(word):
-            return True
-        # `-xtest` is `-x test` with the task attached.
-        if key == "gradle" and word.startswith("-x") and not word.startswith("--"):
+    skip = False
+    for position, word in enumerate(scanned):
+        if skip:
+            skip = False
+        elif key == "pytest" and word in _PYTEST_VALUE_OPTIONS:
+            # The word after a value option is its value (`pytest -k "--co"`), not a flag.
+            skip = True
+        elif _is_run_nothing_word(key, flags, word, scanned[:position]):
             return True
     return False
+
+
+def _is_run_nothing_word(key: str, flags: frozenset[str], word: str, earlier: list[str]) -> bool:
+    flag, _, value = word.partition("=")
+    if value == "false":
+        return False
+    if flag in flags or (key == "pytest" and _is_collect_prefix(flag)):
+        # `list` is vitest's subcommand only before any other (`vitest run list` is a filter).
+        return not (
+            key == "vitest" and flag == "list" and _VITEST_SUBCOMMANDS.intersection(earlier)
+        )
+    if key == "make" and _cluster_names(word, "nqthv", _MAKE_VALUE_OPTIONS):
+        return True
+    if key == "pytest" and _cluster_names(word, "hV", _PYTEST_VALUE_LETTERS):
+        return True
+    # `-xtest` is `-x test` with the task attached.
+    return key == "gradle" and word.startswith("-x") and not word.startswith("--")
 
 
 def _is_collect_prefix(flag: str) -> bool:
@@ -3609,13 +3665,100 @@ def _assigns_environment(raw: tuple[str, ...]) -> bool:
     return False
 
 
-def _steers_a_script(raw: tuple[str, ...]) -> bool:
-    """Whether a segment's words, before stripping, assign a variable that steers a run."""
-    return _assigns_environment(raw) or any(
-        (assigned := _SHELL_ASSIGNMENT_RE.match(word)) is not None
-        and _STEERING_VARIABLE_RE.match(assigned.group(1)) is not None
-        for word in raw
-    )
+def _steering_family(name: str, value: str) -> str | None:
+    """The family of runners a variable steers, or None for any other variable."""
+    upper = name.upper()
+    if upper in _MAKE_FLAG_VARIABLES:
+        harmless = not set(value) & set("$`=") and all(
+            _HARMLESS_MAKE_FLAG_RE.fullmatch(token) for token in value.split()
+        )
+        return _HARMLESS_MAKE_FLAGS if harmless else "make"
+    if upper in _MAKE_INJECTING_VARIABLES:
+        return "make"
+    for prefix, family in (("NPM_CONFIG_", "package"), ("YARN_", "yarn"), ("JUST_", "just")):
+        if upper.startswith(prefix):
+            return family
+    return None
+
+
+def _assigned_family(word: str) -> str | None:
+    assigned = _SHELL_ASSIGNMENT_RE.match(word)
+    return _steering_family(assigned.group(1), word.split("=", 1)[1]) if assigned else None
+
+
+def _family_assignments(raw: tuple[str, ...]) -> tuple[frozenset[str], bool]:
+    """The steering families a segment assigns, and whether they outlast it.
+
+    An assignment before the program (`MAKEFLAGS=-n make test`, `env JUST_ROOT=x just test`) steers
+    its own segment only; an assignment-only segment or an `export` steers every later one. A word
+    after the program is an assignment only to `make`, whose command line takes them."""
+    in_env = skip = False
+    program_at = len(raw)
+    for index, word in enumerate(raw):
+        if skip:
+            skip = False
+        elif _SHELL_ASSIGNMENT_RE.match(word):
+            continue
+        elif os.path.basename(word) == "env":
+            in_env = True
+        elif in_env and word in ("-u", "--unset"):
+            skip = True
+        elif word in _ASSIGNING_PREFIX:
+            continue
+        elif not (word.startswith("-") or os.path.basename(word) in records.LAUNCH_WRAPPERS):
+            program_at = index
+            break
+    scanned = raw[:program_at]
+    if raw[program_at : program_at + 1] and os.path.basename(raw[program_at]) == "make":
+        scanned = raw
+    found = {family for word in scanned if (family := _assigned_family(word))}
+    return frozenset(found), program_at == len(raw) and not in_env
+
+
+def _segment_steering(parts: list[_Part]) -> list[frozenset[str]]:
+    """The steering families that reach each segment: its own and every earlier persisting one."""
+    inherited: frozenset[str] = frozenset()
+    reaching = []
+    for part in parts:
+        own, persists = _family_assignments(part.raw)
+        reaching.append(inherited | own)
+        if persists:
+            inherited |= own
+    return reaching
+
+
+def _ran_through_npx(raw: tuple[str, ...], words: list[str]) -> bool:
+    """Whether `npx` stood before the runner in the segment, which the wrapper stripper has
+    removed from `words`. `npx foo` is `npm exec foo`, so npm's own settings decide whether it
+    runs (measured on npm 11, 2026-11-01), unlike `pnpm exec` and `bunx`, which still run it."""
+    return any(os.path.basename(word) == "npx" for word in raw[: max(0, len(raw) - len(words))])
+
+
+def _family_reaches(
+    families: frozenset[str], words: list[str] | None, raw: tuple[str, ...] = ()
+) -> bool:
+    """Whether a steering family reaches the runner `words` start with. With no words, whether any
+    family could reach some runner."""
+    if words is None:
+        return bool(families - {_HARMLESS_MAKE_FLAGS})
+    if words and _ran_through_npx(raw, words):
+        return "package" in families
+    if not families or not words or _runner_key(words) not in _RUNNERS_THAT_START_RUNNERS:
+        return False
+    # A harmless make flag changes nothing for make itself, but a package manager's script
+    # could call make under it with the value read by a recipe nobody read.
+    return bool(families - {_HARMLESS_MAKE_FLAGS}) or _runner_key(words) != "make"
+
+
+def _steers_a_script(
+    raw: tuple[str, ...],
+    words: list[str] | None = None,
+    steering: frozenset[str] | None = None,
+) -> bool:
+    """Whether a segment's words, before stripping, assign a variable that steers the run `words`
+    start. `steering` is what reaches the segment, where an earlier export adds to its own."""
+    families = _family_assignments(raw)[0] if steering is None else steering
+    return _assigns_environment(raw) or _family_reaches(families, words, raw)
 
 
 def _script_invocation(words: list[str], *, deciding: bool = False) -> tuple[str, list[str]] | None:
@@ -3648,6 +3791,7 @@ def _script_line_is_check(
         parts = _call_parts(line)
     except _Unbalanced:
         return False
+    steering = _segment_steering(parts)
     for index, part in enumerate(parts):
         words = part.words
         if (
@@ -3662,7 +3806,8 @@ def _script_line_is_check(
             or _is_fixer(words)
             or _always_zero(words)
             or _defeated_by_arguments(words)
-            or _steers_a_script(part.raw)
+            or _steers_a_script(part.raw, words, steering[index])
+            or _manager_steered(declared, words, part.raw)
             or any(word.split("=", 1)[0] in _BODY_WRITING_ARGS for word in words)
         ):
             return False
@@ -3729,13 +3874,20 @@ def _declared_check(
     directory: str,
     words: list[str],
     raw: tuple[str, ...] = (),
+    steering: frozenset[str] | None = None,
 ) -> bool:
     """Whether a segment runs a script the project's own declarations make a check.
 
     Only in the toplevel of the work tree the declarations were read from: a command in a
     subfolder runs that folder's own scripts, which are not read.
     """
-    if declared is None or not words or not declared.at(directory) or _steers_a_script(raw):
+    if (
+        declared is None
+        or not words
+        or not declared.at(directory)
+        or _steers_a_script(raw, words, steering)
+        or _manager_steered(declared, words, raw)
+    ):
         return False
     invoked = _script_invocation(words)
     if invoked is None:
@@ -3843,6 +3995,7 @@ def _listed_check(
     words: list[str],
     raw: tuple[str, ...],
     directory: str,
+    steering: frozenset[str] | None = None,
 ) -> bool:
     """Whether a segment is exactly a command the reader listed for this project.
 
@@ -3856,7 +4009,8 @@ def _listed_check(
     if (
         declared is None
         or not declared.listed
-        or _steers_a_script(raw)
+        or _steers_a_script(raw, words, steering)
+        or _manager_steered(declared, words, raw)
         or tuple(words) not in declared.listed
     ):
         return False
@@ -4527,8 +4681,10 @@ def _explicit_unittest(words: list[str]) -> bool:
 
 
 def _ran_nothing(tail: str) -> bool:
-    return bool(_RAN_NOTHING.search(tail)) or (
-        bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail)
+    return (
+        bool(_RAN_NOTHING.search(tail))
+        or (bool(_NO_TEST_FILES.search(tail)) and not _GO_OK.search(tail))
+        or (bool(_MAVEN_NO_TESTS.search(tail)) and not _MAVEN_RAN_TESTS.search(tail))
     )
 
 
@@ -5080,11 +5236,14 @@ class _ShellCall:
         self.meaningful = [
             i for i, (words, _rtk) in enumerate(self.words) if words and words[0] != "cd"
         ]
-        # A variable a segment sets for the rest of the call (`export MAKEFLAGS=-n; make lint`)
-        # steers every later segment, which its own words do not show.
+        # An environment variable a segment sets (`export PATH=x; pytest`) steers every later
+        # segment, which its own words do not show. A runner's own variable steers the runners it
+        # can reach, and only from an export or its own segment (`_segment_steering`).
         steered_from = next(
-            (i for i, part in enumerate(self.parts) if _steers_a_script(part.raw)), len(self.parts)
+            (i for i, part in enumerate(self.parts) if _assigns_environment(part.raw)),
+            len(self.parts),
         )
+        self.steering = _segment_steering(self.parts)
         # A typed runner is held to what a declared one is: its own arguments and the variables
         # before it. The steering segment is itself refused, so `<`; a declared script reads `<=`
         # because it rechecks its own segment's words.
@@ -5093,6 +5252,8 @@ class _ShellCall:
             for i in self.meaningful
             if _is_check(self.words[i][0])
             and i < steered_from
+            and not _family_reaches(self.steering[i], self.words[i][0], self.parts[i].raw)
+            and not _manager_steered(declared, self.words[i][0], self.parts[i].raw)
             and not _defeated_by_arguments(self.words[i][0])
             and not self._declared_body_refuses(
                 declared, i, self.directories[i] if self.placed[i] else ""
@@ -5108,7 +5269,13 @@ class _ShellCall:
             if i not in self.checks
             and i <= steered_from
             and self.placed[i]
-            and _declared_check(declared, self.directories[i], self.words[i][0], self.parts[i].raw)
+            and _declared_check(
+                declared,
+                self.directories[i],
+                self.words[i][0],
+                self.parts[i].raw,
+                self.steering[i],
+            )
         ]
         # A command the reader listed is one too, and the page says it counted because they did.
         self.listed_checks = {
@@ -5122,6 +5289,7 @@ class _ShellCall:
                 self.words[i][0],
                 self.parts[i].raw,
                 self.directories[i] if self.placed[i] else "",
+                self.steering[i],
             )
         }
         self.declared_checks = sorted([*self.declared_checks, *self.listed_checks])
@@ -5187,7 +5355,7 @@ class _ShellCall:
         words = self.words[index][0]
         if words[:1] in (["npm"], ["pnpm"], ["yarn"]) and words[1:2] == ["test"]:
             words = [words[0], "run", *words[1:]]
-        steered = _steers_a_script(self.parts[index].raw)
+        steered = _steers_a_script(self.parts[index].raw, words, self.steering[index])
         invoked = None if steered else _script_invocation(words, deciding=True)
         if invoked is None:
             return False
@@ -7430,6 +7598,109 @@ def _shell_names(
     return found
 
 
+# A setting that changes which shell or binary a package manager runs a script with. Neither
+# `ignore-scripts` (it skips the hooks around a named script, which `npm test` and `pnpm test` still
+# run, measured 2026-11-01) nor a registry or an auth token is one.
+_SCRIPT_SETTING_RE = re.compile(r"script[-_]?shell|yarn[-_]?path", re.IGNORECASE)
+_SHARED_NPM_CONFIG = ("npm", "pnpm", "yarn")
+_WRITTEN_TEXT_KEYS = ("content", "new_string", "old_string", "new_source")
+
+
+def _script_shell_tokens(managers: Iterable[str]) -> set[str]:
+    return {project_scripts.SCRIPT_SHELL_PREFIX + manager for manager in managers}
+
+
+def _config_command_managers(words: list[str]) -> tuple[str, ...]:
+    """The managers a `config set` of a script setting, or a `yarn set version`, steers."""
+    if words[:1] == ["corepack"]:
+        words = words[1:]
+    if not words or os.path.basename(words[0]) not in _SHARED_NPM_CONFIG:
+        return ()
+    program = os.path.basename(words[0])
+    args = [word for word in words[1:] if not word.startswith("-")]
+    if program == "yarn" and (
+        args[:2] in (["set", "version"], ["policies", "set-version"])
+        or (args[:2] == ["config", "set"] and any(map(_SCRIPT_SETTING_RE.search, args[2:])))
+    ):
+        return ("yarn",)
+    if program == "yarn":
+        return ()
+    # npm and pnpm write the user-level file the other managers read too.
+    if args[:2] in (["config", "edit"], ["c", "edit"]):
+        return _SHARED_NPM_CONFIG
+    keys = args[2:] if args[:2] in (["config", "set"], ["c", "set"]) else []
+    if args[:1] == ["set"]:
+        keys = args[1:]
+    return _SHARED_NPM_CONFIG if any(map(_SCRIPT_SETTING_RE.search, keys)) else ()
+
+
+# Git subcommands that name a file without changing what it holds. `checkout` and `restore` can
+# change it, and any subcommand not listed fails closed.
+_GIT_READS_OR_STAGES = frozenset(
+    {"add", "commit", "status", "diff", "log", "show", "rm", "blame", "grep", "ls-files"}
+)
+_COPIERS = frozenset({"cp", "mv", "install", "rsync", "ln"})
+
+
+def _part_sets_config_file(part: _Part, name: str) -> bool:
+    """Whether one segment could change what the config file `name` holds: a redirect into it, a
+    copy or link with it as the destination, or any other segment that names it and is not a read.
+    Staging, committing, reading, copying it elsewhere and removing it do not."""
+    if name in {os.path.basename(target) for target in _file_targets(part.redirects)}:
+        return True
+    words = part.words
+    if not words or not any(_names_word(w, name) for w in (*words[1:], *part.raw)):
+        return False
+    program = os.path.basename(words[0])
+    if program == "rm":
+        return False
+    # Spelled with a space so the runtime still has one module naming the program quoted.
+    if f"{program} ".startswith("git "):
+        subcommand = next((w for w in words[1:] if not w.startswith("-")), "")
+        return subcommand not in _GIT_READS_OR_STAGES
+    if program in _COPIERS:
+        operands = [w for w in words[1:] if not w.startswith("-")]
+        return bool(operands) and os.path.basename(operands[-1]) == name
+    return _part_names_a_write(part, name, frozenset())
+
+
+def _shell_script_shell_managers(command: str) -> set[str]:
+    """The managers whose script shell a shell command sets: by `config set`, or by writing a
+    config file they read, whatever it holds, since the text may come from another file."""
+    files = project_scripts.SCRIPT_SETTING_FILES
+    mentioned = {name for name in files if name in command}
+    try:
+        parts = _call_parts_once(command)
+    except Exception:  # noqa: BLE001 - a command that will not parse is failed closed
+        managers = {m for name in mentioned for m in files[name]}
+        return {*managers, *_SHARED_NPM_CONFIG} if _SCRIPT_SETTING_RE.search(command) else managers
+    written = {
+        name
+        for part in parts
+        for name in mentioned
+        if part.hides_change or _part_sets_config_file(part, name)
+    }
+    managers = {m for name in written for m in files[name]}
+    for part in parts:
+        managers.update(_config_command_managers(part.words))
+    return managers
+
+
+def _tool_script_shell_managers(path: str, tool_input: dict[str, Any]) -> tuple[str, ...]:
+    """The managers a file tool's write of a config file steers: by the setting the text it
+    carries names, or by the file alone where the tool carries no text (a Codex patch)."""
+    managers = project_scripts.SCRIPT_SETTING_FILES.get(os.path.basename(path), ())
+    texts = [tool_input[key] for key in _WRITTEN_TEXT_KEYS if key in tool_input]
+    edits = tool_input.get("edits")
+    for edit in edits if isinstance(edits, list) else ():
+        texts += [edit[key] for key in _WRITTEN_TEXT_KEYS if isinstance(edit, dict) and key in edit]
+    if not texts and not isinstance(edits, list):
+        return managers
+    return (
+        managers if any(isinstance(t, str) and _SCRIPT_SETTING_RE.search(t) for t in texts) else ()
+    )
+
+
 def _written_declaring_files(
     parent: list[dict[str, Any]],
     children: Sequence[list[dict[str, Any]]],
@@ -7469,6 +7740,7 @@ def _written_declaring_files(
         for _at, _cwd, _call_id, name, tool_input, _worker in stream:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if name in (*_WRITE_TOOLS, CODEX_PATCH_TOOL) and isinstance(path, str):
+                found |= _script_shell_tokens(_tool_script_shell_managers(path, tool_input))
                 if os.path.basename(path) in watched:
                     found.add(os.path.basename(path))
                 continue
@@ -7477,8 +7749,22 @@ def _written_declaring_files(
                 # Fails closed like the listing: a command that names a package-manager config
                 # file may have written it, and which script a runner starts follows from it.
                 found.update(n for n in project_scripts.STEERING_FILES if n in command)
+                found |= _script_shell_tokens(_shell_script_shell_managers(command))
                 found |= _shell_names(command, also | {reader_checks.FILENAME}, listed)
     return frozenset(found)
+
+
+def _steered_writes(written: frozenset[str]) -> frozenset[str]:
+    return frozenset(w for w in written if w.startswith(project_scripts.SCRIPT_SHELL_PREFIX))
+
+
+def _only_steered(steered: frozenset[str]) -> project_scripts.Declarations | None:
+    """Declarations that hold no script, only the managers a session changed the shell of."""
+    if not steered:
+        return None
+    return dataclasses.replace(
+        project_scripts.Declarations("", "", {}, {}, {}), listing_writes=steered
+    )
 
 
 def _declared_scripts(
@@ -7503,7 +7789,10 @@ def _declared_scripts(
     comparison covers them.
     """
     if not began_in:
-        return None
+        steered = _steered_writes(
+            _written_declaring_files(parent, children, calls=calls) | prior_writes
+        )
+        return _only_steered(steered)
     loaded: project_scripts.Declarations | None = None
     # `--no-git` means no git command runs in any repository, and this reader runs git reads of
     # its own (`git_status.read_committed`).
@@ -7524,7 +7813,8 @@ def _declared_scripts(
     )
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
-    if loaded is None and not listed:
+    steered = _steered_writes(written)
+    if loaded is None and not listed and not steered:
         return None
     if loaded is None:
         loaded = project_scripts.Declarations("", "", {}, {}, {})
@@ -7534,9 +7824,11 @@ def _declared_scripts(
             loaded,
             listed=listed,
             listed_root=os.path.realpath(root) if root else "",
-            listing_writes=written & (scripts | {reader_checks.FILENAME}),
+            listing_writes=written & (scripts | {reader_checks.FILENAME}) | steered,
             memo={},
         )
+    elif steered:
+        loaded = dataclasses.replace(loaded, listing_writes=steered, memo={})
     return loaded.without(written, withdraw_listing=wrote_listing)
 
 
