@@ -251,10 +251,13 @@ export type CiProvider = 'GitHub' | 'GitLab';
 export const ciProvider = (repository: string): CiProvider =>
   repository.split('/')[0]?.includes('.') ? 'GitLab' : 'GitHub';
 /* The provider the verdict's own words name when no CI read is stored: a GitLab merge request URL, or an
-   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word. */
+   `MR`/merge request wording with no `PR`/pull request beside it. Anything else says GitHub's word.
+   `MR` is read in capitals only, as the producer reads it (`_REMOTE_CLAUSE`), because "Mr Smith" and "Mrs Smith"
+   are people. GitLab's own `!N` number is read in any case, since no other tracker writes it. */
 export const requestProviderOf = (text: string): CiProvider => {
   if (/\/-\/merge_requests\/\d/.test(text)) return 'GitLab';
-  const merge = /\b(?:MRs?|merge\s+requests?)\b/i.test(text);
+  const merge =
+    /\bMRs?\b/.test(text) || /\bmrs?\s*!\d/i.test(text) || /\bmerge\s+requests?\b/i.test(text);
   const pull = /\b(?:PRs?|pull\s+requests?)\b|\/pull\/\d/i.test(text);
   return merge && !pull ? 'GitLab' : 'GitHub';
 };

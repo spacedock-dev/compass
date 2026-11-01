@@ -192,6 +192,30 @@ export const ClaimNamingAMergeRequestUrlWithNoCiReadSaysMergeRequest: Story = {
   },
 };
 
+/* A reason naming a person ("Mrs Smith") is not a merge request: `MR` is read in capitals only. */
+export const ClaimNamingAPersonWithNoCiReadSaysPullRequest: Story = {
+  ...scenario({
+    session: {
+      session_goal: {
+        ...GOAL,
+        verdict: { met: true, at: VERDICT_AT, reason: 'Mrs Smith reviewed it and it merged' },
+      },
+      ...checked('agrees', 'pr-created-before'),
+    },
+    facts: [...FACTS],
+    work: HIGH,
+  }),
+  play: async ({ canvasElement }) => {
+    const node = await note(canvasElement);
+    await waitFor(() =>
+      expect(node).toHaveTextContent(
+        'Compass agrees: the pull request its reason names is recorded as created before the verdict.',
+      ),
+    );
+    expect(node).not.toHaveTextContent('merge request');
+  },
+};
+
 /* A pass on a session that changed its own CI configuration still agrees, because a changed CI configuration is a caution and not a block.
    The card says both halves in one sentence. */
 export const ClaimConfirmedByCiOnASessionThatChangedItsConfiguration: Story = {
