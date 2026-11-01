@@ -6,6 +6,8 @@ name: Validate
 # required check, and a required check with a `paths:` filter never reports on
 # a PR that misses the filter — branch protection reads that as pending
 # forever, so the PR can never merge. See AGENTS.md, Calibrating Effort.
+# Only the dashboard suite at the end is conditional, and only on whether the
+# quality gate already runs it.
 on:
   push:
     branches: [main]
@@ -33,6 +35,8 @@ jobs:
       # required check; mutable major tags don't belong here).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          # The scope step below diffs the PR against its merge base.
+          fetch-depth: 0
           persist-credentials: false
       # actions/setup-python@v7.0.0 — pinned to immutable SHA.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -48,12 +52,23 @@ jobs:
         run: python3 -m unittest scripts/tests/test_bump_version.py
       - name: Check version-field parity across all owned locations
         run: python3 scripts/bump_version.py --current
-      # The backstop for a prose-only PR, not a duplicate of quality-gate.yml's
-      # copy of this command: that workflow skips this suite whenever every
-      # changed path is prose its detector cannot measure, so here it is the
-      # only run. Deleting it as redundant would let a prose edit that breaks a
-      # test merge green. Measured on `docs/captures/README.md`, still prose to
-      # the detector and still read by test_documentation.py: one stranded table
-      # row gave detector `code=false`, validator exit 0, and this suite red.
+      # The same lanes quality-gate.yml uses, from the same script.
+      - name: Ask whether the quality gate runs the Python suites
+        id: scope
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci_scope.py
+      # The backstop for a PR the quality gate runs no Python suite on, which is
+      # a prose-only one. Then this is the only run, and deleting it would let a
+      # prose edit that breaks a test merge green. Measured on
+      # `docs/captures/README.md`, once prose to the detector and still read by
+      # test_documentation.py: one stranded table row gave the validator exit 0
+      # and this suite red. When the gate runs the suites (three times, on
+      # Python and frontend changes alike) this copy only repeated them, so it
+      # skips. A failed or missing answer is not `true`, so it fails open.
       - name: Run dashboard tests
+        if: steps.scope.outputs.python_suites != 'true'
         run: python3 scripts/run_tests.py -s compass/skills/compass/tests -t .

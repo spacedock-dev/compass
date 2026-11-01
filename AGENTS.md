@@ -230,9 +230,10 @@ code too. Composed reads still need a reviewed exception; a literal scan is not 
 
 The literal scan is still not dependency analysis, and the first two sources do not discover every
 way a test can read a document. Review new document dependencies against the list, and review the
-root-document prose allowlist by hand. The unfiltered validate suite remains the backstop for
-misclassification; the detector's job is to request all measurable jobs with `code=true` for
-these dependencies.
+root-document prose allowlist by hand. The validate suite remains the backstop for
+misclassification on any PR the gate runs no Python suite on; the detector's job is to turn on the
+lane that reads each of these dependencies (the Python suites for a document a Python test or the
+runtime reads, the frontend lane for one a frontend source reads). `scripts/ci_scope.py` owns the scan and the rules.
 
 The interface is verified in Storybook: a visible change is proven by a story whose `play` function
 asserts it, and `pnpm build:storybook` with `pnpm test:stories` are required before a PR. The Playwright
@@ -455,20 +456,34 @@ is Sonnet 5.5. Reviewer acceptance and scored producer results retain their sepa
 
 Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.11 runtime floor followed by the whole suite there, the same suite under `coverage` on 3.14 (for its `sysmon` tracer) with the `fail_under` threshold from `pyproject.toml` enforced once, and `platform-tests`, the same unit suite re-run natively on macOS with one dashboard leg and three script shards (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
 
-**The required context always reports; its constituent jobs may not run.** A `changes` job decides
-whether the diff contains anything the gate can measure, and the measurable jobs are gated on
-it. The `quality-gate` job itself always runs and always reports, so branch protection is never
-left waiting. That is the failure mode that made a naive `paths:` filter unusable here: a
-required check a filter excludes never reports, and GitHub reads a missing context as pending
-forever rather than as passing. The detector **fails open**: anything it cannot compute runs the
-full gate. The aggregator accepts `skipped` only when the detector said `code=false`, so a
-job skipped because an upstream dependency died still fails the gate. `validate` and
-`version-guard` are deliberately unfiltered for the same required-check reason, and `validate` is
-in any case the check a prose change most needs: it resolves every relative Markdown link and
-heading anchor, and it runs the dashboard suite. That second step is **not** a duplicate of the
-gate's copy: it is the only run of the suite on a PR the detector called prose, so deleting it as
-redundant would let a prose edit that breaks a test merge green. `validate.yml` says the same thing
-at the step itself.
+**The required context always reports; its constituent jobs run by lane.** A `changes` job runs
+`scripts/ci_scope.py`, which decides which lanes the diff can affect, and each measurable job is
+gated on its lane:
+
+| Lane | Jobs | Turned on by |
+|---|---|---|
+| `python` | lint, typecheck, `test` (coverage), `platform-tests` (macOS) | any `.py` file, other code in the plugin roots and `scripts/`, `pyproject.toml`, the requirements files |
+| `lint` | lint alone | the `python` lane, or a Markdown file holding a Python block, which `ruff format` checks everywhere but `docs/plans/` |
+| `frontend` | `frontend` (macOS), `frontend-coverage`, `frontend-production`, `storybook` | `frontend/`, the JS toolchain files, the built page under `web/`, every file `pnpm build` hashes into `react.integrity.json` (read from `package.mjs`, so `.gitattributes` too), docs a frontend source reads |
+| `contract` | `frontend-contract`: `pnpm test:dev`, the build tests and the Vitest files that name the runtime | `server.py` or `compass_runtime/` outside `web/`, when the frontend lane is off |
+| `python_suites` | `runtime-floor`: both Python suites once, on 3.11 | data the Python tests read and nothing executes (docs a test or the runtime citation checker reads, Markdown in the plugin roots, `tests/`, `sample-session/`, `.claude/`, `.agents/`); and either full lane, because the Python suites read nearly every file under `frontend/` (measured 2026-11-01 with an audit hook) |
+
+The gate's own wiring (`quality-gate.yml`, `validate.yml`, `release.yml`, `scripts/ci_scope.py`)
+turns on both full lanes, and so does any path the script does not recognise. A move counts at both
+its old and its new path (`git diff --no-renames`), because something may still read the file where
+it was. The `quality-gate`
+job itself always runs and always reports, so branch protection is never left waiting. That is the
+failure mode that made a naive `paths:` filter unusable here: a required check a filter excludes
+never reports, and GitHub reads a missing context as pending forever rather than as passing. The
+detector **fails open**: anything it cannot compute turns every lane on. The aggregator accepts
+`skipped` only for a job whose lane the detector turned off, so a job skipped because an upstream
+dependency died still fails the gate. `validate` and `version-guard` are deliberately unfiltered for
+the same required-check reason, and `validate` is in any case the check a prose change most needs:
+it resolves every relative Markdown link and heading anchor, and it runs the dashboard suite when
+the gate runs no Python suite at all. That step is **not** a duplicate of the gate's copy: on a PR
+the detector called prose it is the only run of the suite, so deleting it would let a prose edit
+that breaks a test merge green. When the gate does run the suites it skips, because it only
+repeated them. `validate.yml` says the same thing at the step itself.
 
 **CI exercises macOS and Linux.** Windows is no longer exercised by CI for the dashboard unit
 suite or the frontend. `platform-tests` keeps the macOS dashboard leg and three script shards;
@@ -489,8 +504,8 @@ on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-enviro
 
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and
-runs the component assertions in pinned Chromium. All four frontend jobs are in the aggregator's
-`needs` (the comment job is not), and a skipped result passes only when the detector said `code=false`. The required status
+runs the component assertions in pinned Chromium. All four frontend jobs and `frontend-contract` are in the
+aggregator's `needs` (the comment job is not), and a skipped result passes only when its lane is off. The required status
 checks on main remain `validate`, `version-guard` and `quality-gate`. Native harness canary Node
 requirements remain independent of this build toolchain.
 

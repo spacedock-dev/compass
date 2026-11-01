@@ -11,8 +11,11 @@ name: CLI package
 
 on:
   pull_request:
+    # What the binary is built from: the launcher and the runtime package with its page. The
+    # skill's tests, hooks and Markdown are not packaged, so a change to them alone builds nothing.
     paths:
-      - 'compass/skills/compass/**'
+      - 'compass/skills/compass/server.py'
+      - 'compass/skills/compass/compass_runtime/**'
       - 'scripts/package-cli.sh'
       - 'scripts/smoke-cli.sh'
       - 'requirements-cli.txt'

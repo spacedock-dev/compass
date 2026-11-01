@@ -12,29 +12,22 @@ name: Plugin Compatibility
 
 on:
   pull_request:
-    # Prose only. This canary installs upstream CLIs and smoke-tests the
-    # package LAYOUT; none of these files is part of it. Safe to filter because
+    # What the canary installs and checks: the three plugin roots, the Codex/AGY
+    # marketplace, and the validator it runs against the installed copy. The
+    # frontend sources, the scripts and every doc outside the plugin roots are
+    # not part of the package LAYOUT it measures. Safe to filter because
     # `latest-client-smoke` is NOT a required check — a filtered required check
     # never reports, and branch protection reads "never reported" as pending
-    # forever. `SKILL.md` is deliberately absent: it ships inside the plugin.
-    paths-ignore:
-      - 'README.md'
-      - 'HOW_TO_USE.md'
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - 'CONTRIBUTING.md'
-      - 'COMPATIBILITY.md'
-      - 'SECURITY.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'docs/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      # A workflow file cannot change the package LAYOUT this canary measures,
-      # and editing one used to install four upstream CLIs over the network to
-      # prove it. The trade is that a change to THIS file no longer runs on its
-      # own PR; the push-to-main and Monday schedule runs cover it, and it is
-      # not a required check, so nothing is gated on the gap.
-      - '.github/workflows/**'
+    # forever. A change to THIS file does not run on its own PR; the
+    # push-to-main and Monday schedule runs cover it, and nothing is gated on
+    # the gap.
+    paths:
+      - 'compass/**'
+      - 'compass-gemini/**'
+      - 'compass-droid/**'
+      - '.agents/plugins/**'
+      - 'scripts/validate_plugins.py'
+      - 'requirements-validation.txt'
   push:
     branches:
       - main
