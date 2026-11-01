@@ -319,4 +319,34 @@ describe('an earlier departure the later reading cannot tell about', () => {
     expect(textOf('[data-next-prior-departure-source]')).toBe(SENTENCE(1200));
     expect(document.querySelector(CLEARED)).toBeNull();
   });
+
+  it('says neither ended nor stands for two listed departures when only one sits beside a reader who cannot tell', async () => {
+    const page = mountDrift({ facts: FACTS, session: {} });
+    await page.settle();
+    const bothPrior = [
+      ...PRIOR,
+      {
+        key: 'line_1',
+        read_at: 1000,
+        revision_read: 3,
+        criterion: { ...DEPARTED, clause: 'Tests pass' },
+      },
+    ];
+    await page.poll(
+      board(1200, UNSETTLED, 2, 1210, bothPrior, {
+        line_1: { clause: 'Tests pass', detail: '', ...ON_MESSAGE },
+      }),
+    );
+    await page.settle();
+    expect(textOf(LISTED)).toBe(
+      `The 2 departures from the ${clock(1000)} reading are still listed below: the reading after them shows neither that they ended nor that they stand.`,
+    );
+    expect(textOf(LISTED)).not.toContain('rests on what the agent said');
+    expect(
+      textOf('[data-next-prior-departure="line_1"] [data-next-prior-departure-source]'),
+    ).toMatch(/rests this line on what the agent said at /);
+    expect(
+      textOf('[data-next-prior-departure="line_2"] [data-next-prior-departure-source]'),
+    ).toContain("can't tell about this line");
+  });
 });
