@@ -26,7 +26,6 @@ def jobs() -> dict[str, Any]:
 @unittest.skipUnless(detector.BASH, "the shipped gate uses Bash")
 class FrontendDetectorControlsTest(unittest.TestCase):
     def test_sources_builds_and_relevant_workflows_run_the_frontend_lane(self) -> None:
-        probe = detector.QualityGateDetectorTest()
         for path in (
             "frontend/src/main.tsx",
             "frontend/test/setup.ts",
@@ -46,7 +45,16 @@ class FrontendDetectorControlsTest(unittest.TestCase):
             ".github/actions/frontend-toolchain/action.yml",
         ):
             with self.subTest(path=path):
-                self.assertEqual("true", probe.detect(path)["frontend"])
+                self.assertEqual("true", detector.detect_in_process(path)["frontend"])
+
+    def test_the_shipped_step_agrees_for_a_frontend_path(self) -> None:
+        # The in-process cases above call ci_scope.scope directly; this is the one real run of the
+        # workflow step, so the wiring around that call cannot drift from them unseen.
+        path = ".github/workflows/release.yml"
+        self.assertEqual(
+            detector.detect_in_process(path),
+            detector.QualityGateDetectorTest().detect(path),
+        )
 
     def test_actual_frontend_doc_reads_precede_prose_classification(self) -> None:
         # Real temporary source inputs, not an invented detector result.

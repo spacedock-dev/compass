@@ -391,7 +391,10 @@ class AListedDirectionReachesItsSource(_ClaudeSession):
         duplicate["message"]["content"][0]["text"] = words.replace("   ", " ").replace(
             "original boundary", "changed boundary"
         )
-        for k in range(project_context.TRANSCRIPT_USER_FACTS_MAX):
+        # The cap is lowered rather than filled: 4,096 prompts cost 1.9 s to write and read, and
+        # the behaviour is the same at any cap the read can reach.
+        cap = 128
+        for k in range(cap):
             self.session.prompt(f"Use fixture {k} to check the boundary.")
         self.session.rows.append(duplicate)
         self.session.save(self.path)
@@ -399,14 +402,15 @@ class AListedDirectionReachesItsSource(_ClaudeSession):
         # The fact cap is what this test measures, so the wall-clock allowance must not end the read first:
         # under coverage tracing the default two seconds stopped it at 1,281 facts on CI.
         config = dataclasses.replace(self.config, direction_scan_max_seconds=600.0)
-        source = project_context.transcript_user_facts(
-            config, self.state, str(self.path), "claude", SHORT, goal_choices=True
-        )
-        self.assertEqual(project_context.TRANSCRIPT_USER_FACTS_MAX, len(source))
-        app = SimpleNamespace(config=config, state=self.state)
-        choices = annotation_store.prompt_choices(
-            _row(), http_api._prompt_facts(app, _row(), [fact]), 240
-        )
+        with mock.patch.object(project_context, "TRANSCRIPT_USER_FACTS_MAX", cap):
+            source = project_context.transcript_user_facts(
+                config, self.state, str(self.path), "claude", SHORT, goal_choices=True
+            )
+            self.assertEqual(cap, len(source))
+            app = SimpleNamespace(config=config, state=self.state)
+            choices = annotation_store.prompt_choices(
+                _row(), http_api._prompt_facts(app, _row(), [fact]), 240
+            )
         self.assertFalse(any(choice["fact_id"] == fact["fact_id"] for choice in choices))
 
 

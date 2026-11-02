@@ -28,7 +28,7 @@ import sys
 import time
 import unittest
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from compass_runtime import quota, records
 
@@ -1268,13 +1268,27 @@ class ScrubManyValuesTest(unittest.TestCase):
         self.assertLess(elapsed, 1.0)
 
     def test_values_that_each_extend_the_last_scrub_without_a_recursion_error(self) -> None:
+        # The recursion limit is lowered instead of the chain lengthened: 500 chained values
+        # reach the nesting depth the default limit allows by compiling alternations of ~130 KB,
+        # which cost 1.6 s. Here 100 values nest as deep as the lowered limit permits, so the
+        # same overflow appears if `_trie_depth` stops sending them down the flat path.
+        original = sys.getrecursionlimit()
+        depth = 0
+        frame: Any = sys._getframe()
+        while frame is not None:
+            depth += 1
+            frame = frame.f_back
         for values in (
-            ["!" * count + "x" for count in range(3, 520)],
-            ["Tok" + "a" * count for count in range(1, 450)],
+            ["!" * count + "x" for count in range(3, 103)],
+            ["Tok" + "a" * count for count in range(1, 101)],
         ):
             with self.subTest(count=len(values)):
                 longest = max(values, key=len)
-                out = records.scrub_values(f"saw {longest} and {values[3]} ok", values)
+                sys.setrecursionlimit(depth + 80)
+                try:
+                    out = records.scrub_values(f"saw {longest} and {values[3]} ok", values)
+                finally:
+                    sys.setrecursionlimit(original)
                 self.assertEqual(f"saw {records.SECRET_MARKER} and {records.SECRET_MARKER} ok", out)
 
     def test_a_deep_prefix_chain_still_leaves_no_tail_behind_the_shorter_value(self) -> None:
