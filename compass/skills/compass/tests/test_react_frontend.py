@@ -263,6 +263,41 @@ class ReactFrontendTest(unittest.TestCase):
         self.assertNotIn("frontend", result)
 
 
+# The twenty script parts of the retired page. The page is a React build now, so none of them may
+# ship under `web/`; the parts themselves were removed with the paused study that bound them.
+RETIRED_PAGE_PARTS: tuple[str, ...] = (
+    "next-boot.js",
+    "next-observed.js",
+    "next-attention.js",
+    "next-notify.js",
+    "next-cockpit-compat.js",
+    "project.js",
+    "next-chrome.js",
+    "next-capacity.js",
+    "next-sessions.js",
+    "next-projects.js",
+    "next-project.js",
+    "next-intent.js",
+    "next-activity.js",
+    "next-session.js",
+    "next-workstream.js",
+    "next-delegation.js",
+    "next-controls.js",
+    "next-cockpit.js",
+    "next-render.js",
+    "next-live.js",
+)
+
+
+class TheDashboardNoLongerCarriesTheRetiredPageTest(unittest.TestCase):
+    def test_no_part_remains_under_the_shipped_web_directory(self) -> None:
+        web = Path(page.__file__).resolve().parent
+        self.assertTrue((web / "react.html").is_file(), "not the shipped web directory")
+        for name in RETIRED_PAGE_PARTS:
+            with self.subTest(part=name):
+                self.assertFalse((web / name).exists())
+
+
 class InstalledFrontendTest(unittest.TestCase):
     @staticmethod
     def child_environment(root: Path) -> dict[str, str]:

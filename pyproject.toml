@@ -142,12 +142,6 @@ max-args = 8
 "scripts/abstention_ledger.py" = ["INP001"]
 # Shared temporary path reader, imported by standalone scripts.
 "scripts/store_paths.py" = ["INP001"]
-# Model-free study helpers are imported by drift_replay, without a separate CLI.
-"scripts/drift_study.py" = ["INP001"]
-# Matched model-free control library is imported by private replay preflight.
-"scripts/drift_study_controls.py" = ["INP001"]
-# The retired page's script parts and their loader, imported by the drift replay scripts.
-"scripts/frozen_page.py" = ["INP001"]
 # The launcher exists to run the script it is handed (S603, S102), and imports inside
 # functions on purpose (PLC0415): at the floor they would cost ~10 ms per hook for nothing.
 # Its copies ship byte-identical.

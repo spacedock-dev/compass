@@ -1471,9 +1471,6 @@ class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
     # not callers, so `scripts/tests` is not scanned.
     SCRIPTS = SKILL.parents[2] / "scripts"
     SCORER = "scripts/score_abstention.py"
-    # The drift replay check's Analyze tier, authorized by the owner on 2026-10-03 with its own
-    # capped ledger; it builds the model through the scorer's verified, pinned CLI.
-    REPLAY = "scripts/drift_replay.py"
 
     def _users(self, name: str) -> set[str]:
         sources = [
@@ -1496,7 +1493,6 @@ class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
                 "compass/skills/compass/compass_runtime/http_api.py",
                 "compass/skills/compass/compass_runtime/unasked.py",
                 self.SCORER,
-                self.REPLAY,
             },
             self._users("ClaudeReadingModel"),
         )
