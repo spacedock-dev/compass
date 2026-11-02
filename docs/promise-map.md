@@ -18,7 +18,7 @@ Four steps, and only the first two are required.
 1. Install the plugin. For Claude Code that is `claude plugin marketplace add spacedock-dev/marketplace`
    followed by `claude plugin install compass@spacedock`. Codex, Antigravity and Gemini CLI each
    have a one-line equivalent in the [README](../README.md). There is nothing to install alongside
-   it: the server is Python 3.11 or newer and stdlib only, and it runs standalone with no harness
+   it: the server is Python 3.12 or newer and stdlib only, and it runs standalone with no harness
    plugin at all.
 2. Say "open compass". A local dashboard opens at `http://127.0.0.1:4553`, and it maps every
    harness it finds on the machine regardless of which one launched it. No account, no cloud

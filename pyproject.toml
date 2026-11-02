@@ -3,7 +3,7 @@
 # installable package here — this file only configures lint/type/coverage.
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 # The visibility-2x2-template exports are session artifacts (also gitignored);
 # listed here so ruff skips them even when invoked with gitignore disabled.
@@ -145,10 +145,10 @@ max-args = 8
 "**/tests/*.py" = ["S101", "S603", "S108", "S311", "E501", "SLF001", "INP001", "S104"]
 
 [tool.mypy]
-# Python 3.11 is the supported runtime floor. COMPATIBILITY.md owns the list
+# Python 3.12 is the supported runtime floor. COMPATIBILITY.md owns the list
 # of every place it is declared; ruff's target-version above must stay in
 # lockstep with this one.
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 # Analysis platform pin, kept for now but no longer load-bearing: the last

@@ -1409,7 +1409,7 @@ def iso_epoch(value: Any) -> float | None:
     about reading an instant, not about showing one.
 
     `Z` is normalized because `fromisoformat` rejected it before Python 3.11 and
-    the floor is 3.11; keeping the substitution costs nothing and documents the
+    the floor is 3.12; keeping the substitution costs nothing and documents the
     spelling vendors actually send.
     """
     if not isinstance(value, str):

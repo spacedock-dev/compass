@@ -21,7 +21,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Final, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, NamedTuple, cast
 
 from . import (
     ci_read,
@@ -8859,9 +8859,6 @@ def _codex_tally(
     return tally
 
 
-_CachedT = TypeVar("_CachedT")
-
-
 class _CodexReport(NamedTuple):
     """A Codex check read as a cache holds it: no tally, so no records, only what a page takes."""
 
@@ -8881,13 +8878,13 @@ def _codex_stamp(rollout_path: str, child_paths: Sequence[str] | None) -> tuple[
     return (child_paths is None, *stamps)
 
 
-def _codex_cached(
+def _codex_cached[CachedT](
     cache: runtime_state.ExpiringCache | None,
     key: tuple[Any, ...],
     rollout_path: str,
     child_paths: Sequence[str] | None,
-    read: Callable[[], _CachedT],
-) -> _CachedT:
+    read: Callable[[], CachedT],
+) -> CachedT:
     """`read`'s result, held while the root's and every child's size and mtime stand and for
     `CODEX_CHECK_CACHE_SEC`. The key is the rollout and each bound the read depends on; the stamp
     carries the children, so one gained, lost or appended to is a different read.
@@ -8901,7 +8898,7 @@ def _codex_cached(
     now = time.monotonic()
     hit, held = cache.get(key, stamp, now)
     if hit:
-        return cast("_CachedT", held)
+        return cast("CachedT", held)
     value = read()
     cache.put(key, stamp, value, now)
     return value

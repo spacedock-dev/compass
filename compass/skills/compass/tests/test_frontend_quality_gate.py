@@ -97,6 +97,7 @@ LANE_OF = {
     "R_FLOOR": "SUITES",
     "R_TEST": "PYTHON",
     "R_PLATFORM": "PYTHON",
+    "R_PLATFORM_CURRENT": "PYTHON",
     "R_FRONTEND": "FRONTEND",
     "R_FRONTEND_COVERAGE": "FRONTEND",
     "R_FRONTEND_PRODUCTION": "FRONTEND",
@@ -209,6 +210,20 @@ class FrontendWiringControlsTest(unittest.TestCase):
             [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
             platform["strategy"]["matrix"]["exclude"],
         )
+        # macOS on the newest stable CPython beside the 3.12 leg above: 3.12 takes the kqueue exit
+        # watch in supervise.py and 3.13 or newer takes `os.waitid`, so each branch runs on its own OS.
+        current = workflow_jobs["platform-tests-current"]
+        self.check_runners(current, ["macos-latest"])
+        self.assertEqual(
+            "3.15",
+            next(s for s in current["steps"] if "setup-python" in s.get("uses", ""))["with"][
+                "python-version"
+            ],
+        )
+        self.assertIn(
+            "scripts/run_tests.py",
+            next(s for s in current["steps"] if "run_tests" in s.get("run", ""))["run"],
+        )
         gated = {step["name"]: step.get("if") for step in platform["steps"] if "if" in step}
         self.assertEqual(
             {
@@ -226,6 +241,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
             ("typecheck", "python"),
             ("test", "python"),
             ("platform-tests", "python"),
+            ("platform-tests-current", "python"),
             ("runtime-floor", "python_suites"),
             ("frontend-contract", "contract"),
         ):
@@ -243,6 +259,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "runtime-floor",
                 "test",
                 "platform-tests",
+                "platform-tests-current",
                 "frontend",
                 "frontend-coverage",
                 "frontend-production",
@@ -515,7 +532,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertTrue(all("pnpm test:browser" not in command for command in commands))
         self.assertTrue(all(step.get("timeout-minutes", 0) > 0 for step in steps if "run" in step))
         python = next(step for step in steps if step.get("id") == "python")
-        self.assertEqual("3.11", python["with"]["python-version"])
+        self.assertEqual("3.12", python["with"]["python-version"])
 
     def test_no_step_runs_the_retired_embedded_linter_or_a_legacy_recording_mode(self) -> None:
         # The embedded linter checked the previous interface's sources and went with them; Biome,

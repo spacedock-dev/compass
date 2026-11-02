@@ -2080,7 +2080,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         The signal can land before the new thread has reported in, and the
         cleanup's `join` then raised "cannot join thread before it is started",
         which replaced the clean exit with a traceback and exit 1 and skipped
-        the state file's removal. Measured on the 3.11 runtime-floor job.
+        the state file's removal. Measured on the 3.11 runtime-floor job, before the floor moved to 3.12.
         """
         server, _ = self._start_ignoring("SIGTERM", stall_in="producer")
         self.assertTrue(self.state.exists(), "the state file precedes the producer")

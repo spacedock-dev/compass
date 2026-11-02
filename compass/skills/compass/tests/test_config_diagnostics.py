@@ -1190,7 +1190,7 @@ class OperatingSystemExpectationTest(unittest.TestCase):
                 )
 
     def test_task_age_degrades_to_mtime_without_birthtime(self) -> None:
-        # Linux, and Windows before Python 3.12, expose no st_birthtime. The
+        # Linux exposes no st_birthtime. The
         # documented consequence is that completed-task ages come from mtime;
         # it must degrade, not raise.
         now = 1_700_000_000.0

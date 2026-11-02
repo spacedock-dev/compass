@@ -4766,10 +4766,10 @@ issue, and the rest were made within them.
   SIGTERM always gets the handler, so `kill <pid>` stops the server as it did before. A reading not yet
   sent when the runner closes is refused before the reservation, so a stop never charges for it.
 - On POSIX the group is signalled only while its leader is unreaped: the exit is watched without
-  reaping (`waitid` with `WNOWAIT`, a kqueue exit filter on macOS, which has no `waitid`), the group
+  reaping (`waitid` with `WNOWAIT` where `os` has it, which is Linux and macOS from Python 3.13, and a kqueue exit filter on macOS 3.12), the group
   is swept, and only then is the leader reaped, with the end of signalling marked in the same step
   under the group's lock. A group id signalled after the reap could name a stranger's group. kqueue
-  reports a registration error as an event, so only ESRCH there counts as an exit; any other error
+  (the macOS 3.12 branch) reports a registration error as an event, so only ESRCH there counts as an exit; any other error
   leaves the exit unwatchable, and the call then polls rather than reading it as an exit and killing
   a running CLI. A helper that leaves the group is not reached, and the docs say so.
 - A spent outcome the store refuses keeps its marker, marked as refused, and the next start records
@@ -5137,8 +5137,9 @@ the poll-fallback limit on DRC-4713.
   already writing under the bound or starts afterwards, since the poll that sees the exit is the
   reap. The size is looked at before each poll, so a writer caught
   while the leader runs is killed with its group. Seeing the exit without reaping would need a third
-  watcher (libc `waitid` with `WNOWAIT` through ctypes on macOS, measured working), which is the
-  fix this ruling declined.
+  watcher (libc `waitid` with `WNOWAIT` through ctypes on macOS 3.12, measured working), which is the
+  fix this ruling declined. From Python 3.13 CPython ships that watcher itself, so on macOS 3.13 or
+  newer the path cannot arise.
 - The ledger answers "no charge" only for a job that started after its watermark. The watermark is
   the ledger's creation time, raised to 30 days back on every prune, so a row pruned under a clock
   that ran ahead and was then set back, or a store deleted and made again after the crash, reads as

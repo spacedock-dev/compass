@@ -7,7 +7,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from . import annotations as annotation_store
 from . import (
@@ -195,13 +195,13 @@ class OverlaySource(Protocol):
     def command_reports(self) -> list[dict[str, Any]]: ...
 
 
-Collection: TypeAlias = dict[str, Any]
-Discoverer: TypeAlias = Callable[["RuntimeConfig", "RuntimeState"], bool]
-Collector: TypeAlias = Callable[
+type Collection = dict[str, Any]
+type Discoverer = Callable[["RuntimeConfig", "RuntimeState"], bool]
+type Collector = Callable[
     ["RuntimeConfig", "RuntimeState", float, float, bool],
     "list[Session]",
 ]
-UsageProvider: TypeAlias = Callable[
+type UsageProvider = Callable[
     ["RuntimeConfig", "RuntimeState", float, float],
     "list[dict[str, Any]]",
 ]

@@ -251,7 +251,7 @@ work before the account-wide window does.
 
 ## Start
 
-Stdlib-only, Python 3.11+, no dependencies. Resolve `server.py` relative to this `SKILL.md` in the
+Stdlib-only, Python 3.12+, no dependencies. Resolve `server.py` relative to this `SKILL.md` in the
 installed plugin and start it detached, so it keeps running after this session ends:
 
 ```bash
@@ -277,7 +277,7 @@ resolves to `::1` first.
 
 Tell the user the URL, that the page updates itself as sessions change, that it keeps running until
 stopped, and that popups require the server to be running. Completed-task ages/estimates degrade
-where the filesystem exposes no birthtime (Linux, and Windows before Python 3.12).
+where the filesystem exposes no birthtime (Linux).
 
 If the port is busy the server explains that instead of dumping a traceback, and exits non-zero —
 under `--daemon` too. Check whether a dashboard is already there before killing anything:

@@ -111,7 +111,7 @@ jobs:
         run: mypy
 
   runtime-floor:
-    name: Runtime floor (Python 3.11)
+    name: Runtime floor (Python 3.12)
     needs: changes
     if: needs.changes.outputs.python_suites == 'true'
     runs-on: ubuntu-latest
@@ -122,7 +122,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           # Validation requirements only. This job stopped running the suite
           # under `coverage`, and the rest of requirements-dev.txt is ruff and
@@ -141,7 +141,7 @@ jobs:
       # second interpreter measured nothing new, because nothing in the product
       # branches on `sys.version_info`, and it pre-empted that job's
       # `coverage-exception` bypass. What this job is for is the floor itself:
-      # does the shipped code import, launch and pass on 3.11.
+      # does the shipped code import, launch and pass on 3.12.
       #
       # Through scripts/run_tests.py, which is stdlib-only for exactly this job:
       # it installs requirements-validation.txt and nothing else. Same discovery,
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           # 3.14 for `sysmon` below, which coverage refuses with `branch = true`
-          # on any earlier Python. The suites still run on 3.11 in runtime-floor.
+          # on any earlier Python. The suites still run on 3.12 in runtime-floor.
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements-dev.txt
@@ -326,6 +326,36 @@ jobs:
         if: matrix.suite == 'scripts'
         run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
+  # The dashboard suite on macOS beside the floor, on the newest stable CPython. supervise.py
+  # watches a session's exit with `os.waitid` wherever `os` has it and a kqueue exit filter
+  # otherwise. macOS gained `waitid` in 3.13, so the 3.12 leg above runs kqueue and this leg runs
+  # waitid. Without it the branch a Homebrew `python3` takes never ran on its own OS.
+  platform-tests-current:
+    name: Tests (${{ matrix.os }}, Python 3.15, dashboard)
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.15"
+          cache: pip
+          cache-dependency-path: requirements-validation.txt
+      - name: Install validation requirements
+        run: python -m pip install -r requirements-validation.txt
+      - name: Show interpreter
+        run: python -c "import sys, os; print(sys.version, os.name, sys.platform, hasattr(os, 'waitid'))"
+      - name: Run dashboard test discovery
+        run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
+
   frontend:
     name: Frontend (${{ matrix.os }})
     needs: changes
@@ -360,7 +390,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
@@ -573,7 +603,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
@@ -649,7 +679,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
@@ -694,6 +724,7 @@ jobs:
       - runtime-floor
       - test
       - platform-tests
+      - platform-tests-current
       - frontend
       - frontend-coverage
       - frontend-production
@@ -716,6 +747,7 @@ jobs:
           R_FLOOR: ${{ needs.runtime-floor.result }}
           R_TEST: ${{ needs.test.result }}
           R_PLATFORM: ${{ needs.platform-tests.result }}
+          R_PLATFORM_CURRENT: ${{ needs.platform-tests-current.result }}
           R_FRONTEND: ${{ needs.frontend.result }}
           R_FRONTEND_COVERAGE: ${{ needs.frontend-coverage.result }}
           R_FRONTEND_PRODUCTION: ${{ needs.frontend-production.result }}
@@ -738,7 +770,8 @@ jobs:
           # failed upstream and GitHub cascaded it, which is a failure, not a pass.
           for row in "lint:$LINT:$R_LINT" "typecheck:$PYTHON:$R_TYPECHECK" \
                      "runtime-floor:$SUITES:$R_FLOOR" "test:$PYTHON:$R_TEST" \
-                     "platform-tests:$PYTHON:$R_PLATFORM" "frontend:$FRONTEND:$R_FRONTEND" \
+                     "platform-tests:$PYTHON:$R_PLATFORM" \
+                     "platform-tests-current:$PYTHON:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \
                      "storybook:$FRONTEND:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT"; do

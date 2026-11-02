@@ -39,7 +39,7 @@ This repo contains one plugin, `compass`, the agent cartography dashboard skill.
 
 ### Prerequisites
 
-- Python 3.11+. The server is stdlib-only, so there is nothing to install alongside it. A
+- Python 3.12+. The server is stdlib-only, so there is nothing to install alongside it. A
   [standalone binary](#standalone-binary) needs no Python at all.
 - To install it as a plugin: Codex, Claude Code, Antigravity/AGY, or Gemini CLI.
 
