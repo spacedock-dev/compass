@@ -326,7 +326,8 @@ jobs:
         if: matrix.suite == 'scripts'
         run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
-  # The dashboard suite on macOS beside the floor, on the newest stable CPython. supervise.py
+  # The dashboard suite on macOS beside the floor, pinned to 3.15 (the newest stable minor on
+  # 2026-11-02) and moved by hand when a new minor ships. supervise.py
   # watches a session's exit with `os.waitid` wherever `os` has it and a kqueue exit filter
   # otherwise. macOS gained `waitid` in 3.13, so the 3.12 leg above runs kqueue and this leg runs
   # waitid. Without it the branch a Homebrew `python3` takes never ran on its own OS.
