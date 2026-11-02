@@ -5194,6 +5194,15 @@ def _scrubbed_tail(text: str, values: Iterable[str]) -> str:
     return records.redact_secrets(scrubbed.text)[-TOOL_REPORT_TAIL_CHARS:]
 
 
+def _call_tail(tails: dict[str, str], text: str, values: Iterable[str]) -> str:
+    """`_scrubbed_tail` of one call's output, scrubbed once however many runs read it. Keyed by
+    the text, because a check reads it with Claude Code's trailer removed and a command does not.
+    """
+    if text not in tails:
+        tails[text] = _scrubbed_tail(text, values)
+    return tails[text]
+
+
 def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
     """A written path relative to the session's directory, or None outside it.
 
@@ -6216,8 +6225,11 @@ class _ToolReportTally:
             self.scan["other_commands"] += 1
             self.scan["read_only_commands"] += not call.changes()
         result_at = found.at if found is not None else None
-        self._add_runs(call, call_id, result, text, result_at, worker)
-        self._add_commands(call, call_id, result, text, result_at, worker)
+        # The tail is the whole call's output, so its checks and commands share one scrub of it:
+        # once per check multiplied a heavy set's compile and scan by the checks in the call.
+        tails: dict[str, str] = {}
+        self._add_runs(call, call_id, result, text, result_at, worker, tails)
+        self._add_commands(call, call_id, result, text, result_at, worker, tails)
 
     @staticmethod
     def _exited(found: _Result | None, text: str) -> bool:
@@ -6270,6 +6282,7 @@ class _ToolReportTally:
         text: str,
         result_at: float | None,
         worker: str,
+        tails: dict[str, str],
     ) -> None:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
@@ -6368,7 +6381,9 @@ class _ToolReportTally:
                     "listed": index in call.listed_checks,
                     # Held for the press only (`claude_check_tails`); never
                     # copied onto the published entry.
-                    "tail": _scrubbed_tail(text, call.masked_values) if result is not None else "",
+                    "tail": _call_tail(tails, text, call.masked_values)
+                    if result is not None
+                    else "",
                     "seq": self.shell_seq,
                     "worker": worker,
                     "coverage": _check_coverage(
@@ -6443,6 +6458,7 @@ class _ToolReportTally:
         text: str,
         result_at: float | None,
         worker: str,
+        tails: dict[str, str],
     ) -> None:
         """Tier 2 CI reads and tier 3 commands in one call.
 
@@ -6501,8 +6517,8 @@ class _ToolReportTally:
                 outcome, source = _ci_outcome(
                     ci, outcome, source, text, found.exit_code if found is not None else None
                 )
-            if not tail and result is not None:
-                tail = _scrubbed_tail(text, call.masked_values)
+            if result is not None:
+                tail = _call_tail(tails, text, call.masked_values)
             identity = _check_identity(
                 call.directories[index],
                 words,

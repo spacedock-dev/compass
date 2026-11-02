@@ -1834,6 +1834,33 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
         self.assertEqual(3, len(press.masked_values))
         self.assertFalse(press.masked_values_partial)
 
+    def test_a_call_of_many_checks_scrubs_its_output_tail_once(self) -> None:
+        # The tail is the whole call's output, so every check and command in the call shares it:
+        # scrubbing it per check multiplied a heavy set's cost by the number of checks.
+        checks = "pytest -q && ruff check . && mypy . && npm test && make deploy"
+        self.session.bash(f"PASSWORD=FakePass19 {checks}", "+ FakePass19\n3 passed", is_error=False)
+        with mock.patch.object(
+            project_context, "_scrubbed_tail", wraps=project_context._scrubbed_tail
+        ) as scrubbed:
+            entries, _scan = self.read()
+        self.assertGreaterEqual(len([e for e in entries if e["subject"] == "check"]), 4)
+        self.assertEqual(1, scrubbed.call_count)
+
+    def test_a_checks_trailer_free_tail_and_a_commands_raw_tail_are_kept_apart(self) -> None:
+        # A check reads the output with Claude Code's trailer removed, a command reads it whole:
+        # one scrub per distinct text, never one text standing in for the other.
+        tails: dict[str, str] = {}
+        raw = "SYNTHETICOUT 1 passed\nShell cwd was reset to /work"
+        stripped = project_context._without_trailer(raw)
+        with mock.patch.object(
+            project_context, "_scrubbed_tail", wraps=project_context._scrubbed_tail
+        ) as scrubbed:
+            for text in (stripped, raw, stripped, raw):
+                project_context._call_tail(tails, text, ())
+        self.assertEqual(2, scrubbed.call_count)
+        self.assertEqual(project_context._scrubbed_tail(raw, ()), tails[raw])
+        self.assertNotEqual(tails[raw], tails[stripped])
+
     def test_a_session_that_masked_nothing_carries_nothing(self) -> None:
         self.session.bash("pytest -q", "3 passed in 0.1s")
         self.assertEqual(frozenset(), self.press().masked_values)
