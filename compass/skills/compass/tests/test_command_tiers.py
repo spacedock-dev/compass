@@ -153,6 +153,16 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
                     [piece for piece in project_context._SHELL_BLANKS.split(word) if piece],
                 )
 
+    def test_a_quoted_word_of_4096_characters_is_read_and_one_of_4097_is_not(self) -> None:
+        for length, read in ((4_096, True), (4_097, False)):
+            word = "x 'y" + "z" * (length - 7) + "' w"
+            self.assertEqual(length, len(word))
+            with self.subTest(length=length):
+                with mock.patch.object(shlex, "split", wraps=shlex.split) as split:
+                    line = project_context._command_line(["deploy", word])
+                self.assertEqual(int(read), split.call_count)
+                self.assertEqual(not read, line == "deploy …")
+
     def test_a_long_quoted_word_is_shown_as_an_ellipsis_unread(self) -> None:
         word = "x 'y" + "z" * 5_000 + "' w"
         with mock.patch.object(shlex, "split", wraps=shlex.split) as split:

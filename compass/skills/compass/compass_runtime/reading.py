@@ -6209,14 +6209,13 @@ def _local_clauses(text: str) -> list[str]:
     ]
 
 
-def _claims_result(text: str, kind: str, *, remote_aware: bool = False) -> bool:
+def _claims_result(text: str, kind: str) -> bool:
     """Whether one clause of the line speaks of this kind of check and says how it came out.
 
-    Only a goal verdict reads remote phrasing out of the line (`remote_aware`); an outcome line
-    keeps the plain clause split it always had.
+    An outcome line keeps the plain clause split; only a goal verdict reads remote phrasing out of
+    its reason first (`_verdict_check_kinds`).
     """
-    clauses = _local_clauses(text) if remote_aware else _CLAIM_CLAUSE_BREAK.split(text)
-    return _clauses_claim_result(clauses, kind)
+    return _clauses_claim_result(_CLAIM_CLAUSE_BREAK.split(text), kind)
 
 
 def _clauses_claim_result(clauses: Iterable[str], kind: str) -> bool:
@@ -6424,9 +6423,10 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
     return selection.by_index()
 
 
-# What stands in for an explanation withheld because the press masked more values than it keeps.
+# What stands in for an explanation the scrub could not finish, or one the press dropped values for.
 SCRUB_WITHHELD_DETAIL = (
-    "The explanation is withheld because too many values were masked to scrub it."
+    "The explanation is withheld because the values masked in this session could not all be "
+    "scrubbed from it."
 )
 
 

@@ -1585,6 +1585,42 @@ class AHostileScrubFailsClosedTest(unittest.TestCase):
                 self.assertFalse(result.complete)
                 self.assertEqual(records.SECRET_MARKER, result.text)
 
+    def test_values_nested_forty_deep_are_searched_and_forty_one_are_withheld(self) -> None:
+        def chain(depth: int) -> list[str]:
+            # Each value extends the last by one character past a shared head, so each is one
+            # more nested group; the quoted spellings nest the same way, one level apart.
+            values = ["Tok" + "a" * count for count in range(1, depth + 1)]
+            spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+            root: dict[str, Any] = {}
+            for spelling in spellings:
+                node = root
+                for char in spelling:
+                    node = node.setdefault(char, {})
+                node[""] = {}
+            self.assertEqual(depth, records._trie_depth(root))
+            return values
+
+        searched = chain(records._TRIE_DEPTH_MAX)
+        result = records.scrub(f"saw {searched[-1]} and {searched[0]} ok", searched)
+        self.assertEqual(
+            records.Scrubbed(f"saw {records.SECRET_MARKER} and {records.SECRET_MARKER} ok", True),
+            result,
+        )
+        deeper = chain(records._TRIE_DEPTH_MAX + 1)
+        self.assertEqual(
+            records.Scrubbed(records.SECRET_MARKER, False),
+            records.scrub(f"saw {deeper[0]}", deeper),
+        )
+        self.assertEqual(40, records._TRIE_DEPTH_MAX)
+
+    def test_a_tail_chain_of_four_values_hides_every_one(self) -> None:
+        values = ["FakeV01x", "FakeV02x", "FakeV03x", "FakeV04x"]
+        result = records.scrub("auth " + ":".join(values) + " failed", values)
+        self.assertEqual(
+            records.Scrubbed("auth " + ":".join([records.SECRET_MARKER] * 4) + " failed", True),
+            result,
+        )
+
     def test_a_prefix_chain_within_the_depth_cap_is_still_searched(self) -> None:
         values = ["Tok" + "a" * count for count in range(1, 30)]
         result = records.scrub("x " + values[-1] + "b and " + values[-1] + " y", values)

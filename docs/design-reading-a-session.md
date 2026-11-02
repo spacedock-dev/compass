@@ -4064,8 +4064,11 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
 - **Chained values.** The scrub repeats its pass until nothing changes, so a value that was rejected at the
   boundary of another value is read once that one is a marker: prose `V1:V2` masks both. The flag pass takes a
   whole run after `-p`, so `-pV1V2` masks both values. Strict (output tail) mode still keeps a `:`, `.` or `/`
-  between two values as part of one word, as before.
-- **Deep and heavy sets.** The prefix tree is built without recursion past forty nested values, and a
+  between two values as part of one word, as before. Superseded 2026-11-02 for `:` by
+  [the 2026-11-02 amendment](#amended-2026-11-02-owner-a-colon-shields-no-value-and-a-scrub-that-cannot-finish-withholds): a colon ends a value in both modes.
+- **Deep and heavy sets.** Superseded 2026-11-02 by
+  [the 2026-11-02 amendment](#amended-2026-11-02-owner-a-colon-shields-no-value-and-a-scrub-that-cannot-finish-withholds): a set nested deeper than forty is
+  withheld, not read flat, and the press bound counts spelling mass, not characters. The prefix tree is built without recursion past forty nested values, and a
   set that deep is read as a flat alternation, longest first: about 400 values that each extend the last
   once raised a `RecursionError` out of the scrub, and a press would have failed. The press also keeps
   masked values only up to 131,072 characters in total, newest first, and marks itself partial past it
@@ -4133,7 +4136,8 @@ What these read is unchanged; how long they take to read it is not.
 
 - **The remote-job rule.** The pattern that finds a remote job name in a goal-met reason restarted
   after every `.` and `/` of a token and read each restart to the token's end: 7.2 s for a 16,000-character
-  Antigravity goal of `a.a.…-a`, 16.9 s for `a/a/…`, and four times over, once per check kind. A job
+  Antigravity goal of `a.a.…-a`, 16.9 s for `a/a/…` (each figure covers all four check kinds, since the
+  reason was read once per kind). A job
   ends where its run of word characters, `.`, `/` and `-` ends, so `reading._remote_jobs` reads each run
   once: the tail after it, the leftmost start the pattern accepts, then one call of the pattern itself
   at that start, so the matches are the pattern's own. The reason is split into clauses once, not once per

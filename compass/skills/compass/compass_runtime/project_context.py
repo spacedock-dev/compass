@@ -2133,7 +2133,7 @@ TOOL_REPORT_PATH_CHARS = 240
 MASKED_VALUES_MAX = 4096
 # What a per-call output tail becomes in the prompt when its masked values could not be searched
 # (`records.scrub`): a sentence saying so, never the output with a value in it.
-TAIL_WITHHELD = "[output withheld: its masked values were too large to search]"
+TAIL_WITHHELD = "[output withheld: its masked values could not all be searched]"
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -5141,9 +5141,10 @@ _OPAQUE_WORD = "…"
 # differed). shlex builds each token a character at a time: 0.68 s for a 200,000-character token.
 _SHELL_QUOTING = re.compile(r"['\"\\]")
 _SHELL_BLANKS = re.compile(r"[ \t\r\n]+")
-# A quoted word longer than this is shown as `_OPAQUE_WORD` without being parsed. The line is
-# clipped to `TOOL_REPORT_LINE_CHARS` anyway, so this hides at most the first of those characters
-# of a word no real command line spells, which is the safe side.
+# A word holding a quote or a backslash and longer than this is shown as `_OPAQUE_WORD` without
+# being parsed. A real one exists (a `gh pr create --body` of more than 4,096 characters), and its
+# line loses the preview of its first characters that the 120-character clip would have left. That
+# is the safe side.
 _READABLE_QUOTED_MAX = 4096
 
 
