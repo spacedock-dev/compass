@@ -257,7 +257,11 @@ class CachedListingMatchesAFullRelistingTest(unittest.TestCase):
     """At every step of a seeded random session, the cached `entries` and the scan counters equal
     the oracle's, and so do a capped listing's positions and the press's passes and writes."""
 
-    SEEDS = range(40)
+    # 24 seeds a harness, split by harness so the runner schedules the two halves apart: 40 cost
+    # 14.7 s on a hosted runner as one method, and a review fuzz of 300 more seeds found nothing
+    # these miss. Every state below is reached on both harnesses except a bound CI poll on Codex,
+    # which this generator gives no pull request to bind to.
+    SEEDS = range(24)
     CALLS = 90
 
     def replay(self, seed: int, edges: pc._Edges) -> dict[str, int]:
@@ -280,17 +284,26 @@ class CachedListingMatchesAFullRelistingTest(unittest.TestCase):
                 session.oracle.entries(SID)  # keeps the two scans counting in step
         return session.seen
 
-    def test_every_step_lists_what_a_full_relisting_lists(self) -> None:
+    def assert_every_step_matches(
+        self, edges: pc._Edges, unreachable: tuple[str, ...] = ()
+    ) -> None:
         seen: dict[str, int] = {}
-        for edges in (pc._CLAUDE_EDGES, pc._CODEX_EDGES):
-            for seed in self.SEEDS:
-                for key, count in self.replay(seed, edges).items():
-                    seen[key] = seen.get(key, 0) + count
+        for seed in self.SEEDS:
+            for key, count in self.replay(seed, edges).items():
+                seen[key] = seen.get(key, 0) + count
         # The generator reaches the states a stale cache would get wrong, or the comparison above
         # proves nothing about them.
         for key, count in seen.items():
+            if key in unreachable:
+                continue
             with self.subTest(state=key):
                 self.assertGreater(count, 0, seen)
+
+    def test_every_claude_code_step_lists_what_a_full_relisting_lists(self) -> None:
+        self.assert_every_step_matches(pc._CLAUDE_EDGES)
+
+    def test_every_codex_step_lists_what_a_full_relisting_lists(self) -> None:
+        self.assert_every_step_matches(pc._CODEX_EDGES, unreachable=("bound",))
 
 
 class TheListingRebuildsOnlyWhatChangedTest(unittest.TestCase):
