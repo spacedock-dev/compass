@@ -955,7 +955,7 @@
       },
       {
         "file": "frontend/src/observed/landing.ts",
-        "sha256": "898cdc7de0855316864b6a9f22ad176b164954d8f1a7dda78326aab4fe845791"
+        "sha256": "f9cae563dbf829c16c6e288d65eb1f1235134797f4f02354bdca2b1ee1733d46"
       },
       {
         "file": "frontend/src/observed/model.ts",
