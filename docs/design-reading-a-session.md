@@ -4108,6 +4108,27 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   regex parser recurses per nested group), and a tree to depth forty with a flat tail below it
   (unbounded per position).
 
+### Amended 2026-11-02 (owner): a long reason and a long word are read in linear work
+
+What these read is unchanged; how long they take to read it is not.
+
+- **The remote-job rule.** The pattern that finds a remote job name in a goal-met reason restarted
+  after every `.` and `/` of a token and read each restart to the token's end: 7.2 s for a 16,000-character
+  Antigravity goal of `a.a.…-a`, 16.9 s for `a/a/…`, and four times over, once per check kind. A job
+  ends where its run of word characters, `.`, `/` and `-` ends, so `reading._remote_jobs` reads each run
+  once: the tail after it, the leftmost start the pattern accepts, then one call of the pattern itself
+  at that start, so the matches are the pattern's own. The reason is split into clauses once, not once per
+  kind, and the "in", "under" or "of" before a slash-joined job is looked for just before the job rather
+  than across the whole reason before it, which was a second quadratic. Possessive quantifiers alone
+  were measured and rejected: they remove the backtracking but not the restarts (5.0 s at 50,000
+  characters). A differential test against a frozen copy of the old pattern holds every match, group
+  and substitution equal.
+- **A tier 3 line's long word.** `shlex` builds a token one character at a time, so a 200,000-character
+  spaced word took 0.68 s. A word with no quote or backslash is now split on the four blanks `shlex`
+  splits on, which is exact; a quoted word longer than 4,096 characters is shown as `…` without being
+  parsed, which hides only what the 120-character line would have clipped. A linear POSIX splitter was
+  the alternative, at more code. The line is built once per command, not twice.
+
 ### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
 
 Five edges of the lane above, each a place its words or its payload said more or less than was true.

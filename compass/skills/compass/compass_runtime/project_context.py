@@ -5136,6 +5136,17 @@ def _check_line(words: list[str]) -> str:
 _OPAQUE_WORD = "…"
 
 
+# A word with no quote or backslash splits on these exactly as `shlex.split` does: it treats no
+# other character as whitespace, not a vertical tab, NBSP or U+2028 (none of 200,000 random words
+# differed). shlex builds each token a character at a time: 0.68 s for a 200,000-character token.
+_SHELL_QUOTING = re.compile(r"['\"\\]")
+_SHELL_BLANKS = re.compile(r"[ \t\r\n]+")
+# A quoted word longer than this is shown as `_OPAQUE_WORD` without being parsed. The line is
+# clipped to `TOOL_REPORT_LINE_CHARS` anyway, so this hides at most the first of those characters
+# of a word no real command line spells, which is the safe side.
+_READABLE_QUOTED_MAX = 4096
+
+
 def _readable_word(word: str) -> bool:
     """Whether a word holding whitespace splits cleanly and masks to itself.
 
@@ -5143,10 +5154,15 @@ def _readable_word(word: str) -> bool:
     named flag in it, would otherwise show the half of a value that masking one word at a time
     leaves behind.
     """
-    try:
-        pieces = shlex.split(word)
-    except ValueError:
+    if _SHELL_QUOTING.search(word) is None:
+        pieces = [piece for piece in _SHELL_BLANKS.split(word) if piece]
+    elif len(word) > _READABLE_QUOTED_MAX:
         return False
+    else:
+        try:
+            pieces = shlex.split(word)
+        except ValueError:
+            return False
     return records.mask_words(pieces) == pieces
 
 
@@ -6494,11 +6510,12 @@ class _ToolReportTally:
             )
             if self._hash_identities:
                 identity = hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
+            title = _command_line(words)
             run = {
                 "at": call.at,
                 "record_id": call_id,
-                "title": _command_line(words),
-                "title_n": call.title_ordinal(_command_line(words), identity),
+                "title": title,
+                "title_n": call.title_ordinal(title, identity),
                 "segment": index,
                 "result": outcome,
                 "result_source": source,

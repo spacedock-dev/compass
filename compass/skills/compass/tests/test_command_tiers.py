@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import random
 import shlex
 import shutil
 import subprocess
@@ -122,6 +123,51 @@ class TheProducerListsEachTier(ClaudeChecksTestCase):
                 line = project_context._command_line(shlex.split(command))
                 self.assertNotIn("FakePassNine99xyz", line)
                 self.assertIn("…", line)
+
+    def test_a_command_with_a_long_spaced_word_is_shown_without_shell_parsing_it(self) -> None:
+        # shlex builds a token a character at a time, and a 200,000-character word took 0.68 s.
+        # A word with no quote or backslash splits on blanks exactly as shlex would.
+        word = "a" * 100_000 + " " + "b" * 100_000
+        with mock.patch.object(shlex, "split", wraps=shlex.split) as split:
+            line = project_context._command_line(["deploy", word])
+        self.assertEqual(0, split.call_count)
+        self.assertTrue(line.startswith("deploy 'aaaa"), line[:20])
+
+    def test_a_spaced_word_with_no_quotes_reads_as_shell_would_read_it(self) -> None:
+        for word in ("a b", " a\tb ", "a\nb\rc", "a\x0bb c", "a\u00a0b c", "a\u2028b c", "x#y z"):
+            with self.subTest(word=word):
+                self.assertEqual(
+                    project_context._readable_word(word),
+                    records.mask_words(shlex.split(word)) == shlex.split(word),
+                )
+
+    def test_a_random_unquoted_word_splits_on_blanks_exactly_as_the_shell_reader_does(self) -> None:
+        rng = random.Random(5016)
+        alphabet = ["a", "Z", "1", " ", "  ", "\t", "\r", "\n", "\x0b", "\x0c", "\u00a0", "\u2028"]
+        alphabet += ["#", "$", "(", ")", ";", "&", "|", "<", ">", "*", "~", "=", "-", "é", "\x00"]
+        for _ in range(5_000):
+            word = "".join(rng.choices(alphabet, k=rng.randint(1, 24)))
+            with self.subTest(word=word):
+                self.assertEqual(
+                    shlex.split(word),
+                    [piece for piece in project_context._SHELL_BLANKS.split(word) if piece],
+                )
+
+    def test_a_long_quoted_word_is_shown_as_an_ellipsis_unread(self) -> None:
+        word = "x 'y" + "z" * 5_000 + "' w"
+        with mock.patch.object(shlex, "split", wraps=shlex.split) as split:
+            line = project_context._command_line(["deploy", word])
+        self.assertEqual(0, split.call_count)
+        self.assertEqual("deploy …", line)
+
+    def test_a_tier_3_commands_line_is_built_once(self) -> None:
+        self.session.bash("make deploy", "done", is_error=False)
+        with mock.patch.object(
+            project_context, "_command_line", wraps=project_context._command_line
+        ) as built:
+            (command,) = self.commands()
+        self.assertEqual("make deploy", command["title"])
+        self.assertEqual(1, built.call_count)
 
     def test_a_module_run_keeps_its_own_c_flag_readable(self) -> None:
         self.assertEqual(
