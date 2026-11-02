@@ -2396,8 +2396,8 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     hold, separator = stand_ins
     if not patterns.reads_marker:
         text = text.replace(_SECRET_MARKER, hold)
-    if "\x1b" in text and "\x1b" not in patterns.chars:
-        text = _separate_escapes(text, patterns.inner, separator)
+    if ("\x1b" in text or "\x9b" in text) and not patterns.chars & {"\x1b", "\x9b"}:
+        text = _separate_escapes(text, patterns.inner, patterns.longest, separator)
     for _ in range(_SCRUB_PASSES):
         scrubbed = _scrub_pass(text, patterns, hold)
         if scrubbed == text:
@@ -2415,33 +2415,46 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
 # live there, and icon-heavy output would run out of free stand-ins and withhold.
 _SCRUB_STAND_INS: Final = tuple(chr(code) for code in range(0xFDD0, 0xFDF0))
 
-# A CSI sequence (`\x1b[1m`, `\x1b[38;5;196m`, `\x1b[2K`) or a two-byte escape (`\x1b(B`). Its
-# final byte is a letter, which would otherwise make the value after it part of a longer word.
-_TERMINAL_ESCAPE: Final = re.compile(r"\x1b(?:\[[0-?]{0,32}[ -/]{0,4}[@-~]|[ -/]{0,4}[0-~])")
+# A CSI sequence of any length (`\x1b[1m`, `\x1b[38;2;255;255;255;48;2;255;255;255m`, `\x1b[2K`, or
+# U+009B for `\x1b[`), an SS2 or SS3 sequence (`\x1bOA`) or a two-byte escape (`\x1b(B`). Its final
+# byte is often a letter, which would otherwise make the value after it part of a longer word. The
+# parts are disjoint character ranges, so a failed match backtracks nothing.
+_TERMINAL_ESCAPE: Final = re.compile(
+    r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[NO][ -~]|\x1b[ -/]{0,4}[0-~]"
+)
+
+# The last bytes after which a value reads as part of a longer word: the before-boundary's class.
+# An escape ending in anything else, such as the `:` of a userinfo head, is left unseparated,
+# since a separator there buys nothing and would split `head:<value>@host`.
+_JOINING_BYTES: Final = frozenset(string.ascii_letters + string.digits + "_./@+-")
 
 # Passes including the one that confirms nothing changed. A value masked right after another is
-# masked in the same pass, so of 31,012 hostile scrubs of touching values 4,143 settled in one
-# pass, 24,773 in two, 2,090 in three, 6 in four and none needed a fifth; 1.44 million realistic
-# and hostile scrubs withheld none. A scrub still changing on the last pass withholds its text.
+# masked in the same pass, so of 31,048 hostile scrubs of touching values (seed `fx`) 4,065 settled
+# in one pass, 24,919 in two, 2,055 in three, 7 in four, and 2 needed a fifth and are withheld; on
+# seed `7` none did, and 1.44 million realistic and hostile scrubs withheld none. A scrub still
+# changing on the last pass withholds its text.
 _SCRUB_PASSES: Final = 4
 
 
-def _separate_escapes(text: str, inner: re.Pattern[str], separator: str) -> str:
+def _separate_escapes(text: str, inner: re.Pattern[str], longest: int, separator: str) -> str:
     """`text` with `separator` after each terminal escape, so no value after one is read as part
     of a longer word.
 
     Stripping the escape instead would change every coloured line in a prompt, and where the
     escape's final byte is a value's first character (`\\x1b[F…`) it would eat that character and
     show the rest. So no separator goes where a spelling starts inside the escape and runs past its
-    end, which costs at most the escape's length in matches.
+    end. Only a spelling that starts within `longest` of the end can, so an escape of any length
+    costs at most `longest` matches.
     """
     out: list[str] = []
     last = 0
     for escape in _TERMINAL_ESCAPE.finditer(text):
         end = escape.end()
+        if text[end - 1] not in _JOINING_BYTES:
+            continue
         if any(
             (found := inner.match(text, at)) is not None and found.end() > end
-            for at in range(escape.start() + 1, end)
+            for at in range(max(escape.start() + 1, end - longest + 1), end)
         ):
             continue
         out.extend((text[last:end], separator))
@@ -2493,7 +2506,7 @@ def _mask_flags(
     It reads exactly what `{before}(-[pP])(?>(?:{alternation})+){after}` read with `re.sub`: the
     atomic run commits to the longest spelling at each step. A `:` before the flag ends the word,
     as it does before a value, so `-pA:-pB` hides both; the regex restarted at every `-p` inside a
-    run of values that hold one and read it to its end again, 3.2 s at 160,000 characters.
+    run of values that hold one and read it to its end again, 3.13 s at 160,000 characters.
     """
     chain_end = _chain_ends(text, inner)
     out: list[str] = []
@@ -2661,6 +2674,8 @@ class _ScrubPatterns(NamedTuple):
     after: re.Pattern[str]
     # Every character of every spelling: a stand-in must be none of them.
     chars: frozenset[str]
+    # The longest spelling, which bounds how far back from an escape's end a crossing one can start.
+    longest: int
     # A spelling holds the marker's `…`, or starts with the rest of it and runs on: swapping an
     # upstream marker for a stand-in would cut such a value, so markers in the text stay as text.
     reads_marker: bool
@@ -2711,6 +2726,7 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
         inner=re.compile(rf"(?:{alternation})"),
         after=re.compile(after),
         chars=frozenset("".join(spellings)),
+        longest=max(map(len, spellings)),
         reads_marker=any(
             _SECRET_MARKER[0] in spelling or (spelling.startswith(body) and spelling != body)
             for spelling in spellings

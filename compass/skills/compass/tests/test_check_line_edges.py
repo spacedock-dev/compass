@@ -569,6 +569,10 @@ class NothingBesideAMaskedValueShieldsItInATail(_SelectedPromptTestCase):
             f"\x1b[2K\x1b[1G{value}",
             f"user\x1b[2m{value}",
             f"\x1b(B{value}",
+            f"\x1b[38;2;255;255;255;48;2;255;255;255m{value}",
+            f"\x1bOA{value}",
+            f"\x9b31m{value}",
+            f"u \x1b:{value}@host",
         ):
             with self.subTest(output=repr(output.split(value)[0])):
                 self.assertNotIn(value, self.prompt_for({"PGPASSWORD": value}, output))

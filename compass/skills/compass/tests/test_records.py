@@ -1987,6 +1987,33 @@ class AnEscapeOrANonAsciiLetterShieldsNoValueTest(unittest.TestCase):
             ),
         )
 
+    def test_a_masked_value_after_a_long_or_three_byte_or_eight_bit_escape_is_hidden(self) -> None:
+        # A 24-bit foreground and background in one SGR runs to 33 parameter bytes, SS3 (`\x1bO`)
+        # takes one more byte, and U+009B is CSI in one character.
+        m = records.SECRET_MARKER
+        long_sgr = "\x1b[38;2;255;255;255;48;2;255;255;255m"
+        self.assert_scrubs(
+            ["FakePass99"],
+            (
+                (f"pw {long_sgr}FakePass99\x1b[0m", f"pw {long_sgr}{m}\x1b[0m"),
+                ("pw \x1bOAFakePass99 ok", f"pw \x1bOA{m} ok"),
+                ("pw \x9b31mFakePass99 ok", f"pw \x9b31m{m} ok"),
+                ("pw \x1b[" + "1;" * 200 + "mFakePass99", "pw \x1b[" + "1;" * 200 + f"m{m}"),
+            ),
+        )
+
+    def test_an_escape_that_ends_in_a_colon_leaves_a_userinfo_value_masked(self) -> None:
+        # Only an escape whose last byte would join the value to a word is separated: a separator
+        # after `:` split the userinfo head from its value.
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakePass99"],
+            (
+                ("u \x1b:FakePass99@host", f"u \x1b:{m}@host"),
+                ("alice\x1b(:FakePass99@host", f"alice\x1b(:{m}@host"),
+            ),
+        )
+
     def test_a_value_that_begins_with_an_escapes_last_byte_stays_hidden(self) -> None:
         # The escape's final byte is the value's first character: a separator after the escape
         # would cut the value in two and show all of it.
@@ -2044,6 +2071,24 @@ class AnEscapeOrANonAsciiLetterShieldsNoValueTest(unittest.TestCase):
         self.assertEqual(
             records.Scrubbed(records.SECRET_MARKER, False), records.scrub(text, ["FakePass99"])
         )
+
+    def test_a_text_that_leaves_one_stand_in_free_is_withheld(self) -> None:
+        # A masked value and an escape separator each need one.
+        text = "".join(sorted(_NONCHARACTERS)[1:]) + " FakePass99"
+        self.assertEqual(
+            records.Scrubbed(records.SECRET_MARKER, False), records.scrub(text, ["FakePass99"])
+        )
+
+    def test_a_stand_in_is_never_a_character_of_a_masked_value(self) -> None:
+        # Were the masked value held as U+FDD0, the next pass would read `<held>!tail` as the
+        # second value and hide `!tail` too.
+        m = records.SECRET_MARKER
+        for prose in (False, True):
+            with self.subTest(prose=prose):
+                self.assertEqual(
+                    records.Scrubbed(f"{m}!tail ok", True),
+                    records.scrub("FakePass99!tail ok", ["FakePass99", "\ufdd0!tail"], prose=prose),
+                )
 
 
 class TouchingValuesAreHiddenWhicheverWasHiddenFirstTest(unittest.TestCase):
@@ -2268,24 +2313,30 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
         self.assertEqual(0, records._chain_ends("abc", re.compile(""))(0))
 
     def test_colour_codes_are_separated_from_the_text_in_linear_work(self) -> None:
+        patterns = self.patterns(("FakeWxyz",), prose=False)
+        longest = len("'FakeWxyz'")
         for unit, tail in (
             ("\x1b[1mFakeWxyz ", ""),
             ("\x1b[FakeWxyz\x1b[0m ", ""),
             ("\x1b[38;5;196m", "FakeWxyz"),
+            ("\x1b[" + "1;" * 500 + "mFakeWxyz ", ""),
+            ("\x9b31mFakeWxyz \x1bOA", ""),
         ):
-            patterns = self.patterns(("FakeWxyz",), prose=False)
             work = []
             for k in (2_000, 4_000):
                 counted = _CountedInner(patterns.inner)
                 records._separate_escapes(
                     unit * k + tail,
                     counted,  # type: ignore[arg-type]
+                    longest,
                     "\ufdd1",
                 )
                 work.append(counted.calls)
-            with self.subTest(text=repr(unit)):
+            with self.subTest(text=repr(unit[:12])):
                 self.assertGreater(work[0], 0)
                 self.assertLess(work[1], 2.2 * work[0], work)
+                # However long an escape, only the offsets a spelling could cross from are read.
+                self.assertLessEqual(work[1], 4_000 * 2 * longest, work)
 
 
 class MaskCommandTest(unittest.TestCase):

@@ -4151,23 +4151,34 @@ said to be from planning were measured on the prototype the build followed; the 
   changed in planning, each a value before a non-ASCII letter that is now masked
   (`Przemysław` with `Przemys` a value becomes `…REDACTEDław`); on the tool output of 150 local
   sessions, 0 of 62,022 lines changed.
-- **Colour codes.** A noncharacter separator goes after each CSI or two-byte escape and is removed before
-  the scrub returns. Stripping the escapes was rejected: it changes every coloured line of a prompt, and
-  where an escape's final byte is a value's first character (`\x1b[F…`) it eats that character, which
-  showed a five-character piece main hid in 79 of 102 such cases in planning. One lookbehind per CSI length was
-  rejected too: it needs a length cap (32 parameter bytes) and doubled the plain scan. The separator is
-  skipped where a spelling starts inside the escape and runs past its end, which closes the same
-  consumption case (in planning, 45 whole values shown in 3,000 cases without the guard, none with it). When a masked
-  value itself holds an escape character no escape is separated, because a separator could fall inside
-  it; a value beside a colour code then stays as visible as before, the one shape of this kind left.
+- **Colour codes.** A noncharacter separator goes after each terminal escape and is removed before the
+  scrub returns: a CSI sequence of any length (`\x1b[` or the one-character U+009B), an SS2 or SS3
+  sequence (`\x1bOA`) and a two-byte escape (`\x1b(B`). Stripping the escapes was rejected: it changes
+  every coloured line of a prompt, and where an escape's final byte is a value's first character
+  (`\x1b[F…`) it eats that character, which showed a five-character piece main hid in 79 of 102 such
+  cases in planning. One lookbehind per CSI length was rejected too: it needs a length cap and doubled
+  the plain scan. The first build carried that design's cap of 32 parameter bytes into the separator,
+  and review found that a 24-bit foreground and background in one SGR
+  (`\x1b[38;2;255;255;255;48;2;255;255;255m`, 33 bytes) still shielded the value; review found SS3 and
+  U+009B shielding too. The cap is gone. The separator is skipped where a spelling starts inside the
+  escape and runs past its end, which closes the consumption case (in planning, 45 whole values shown
+  in 3,000 cases without the guard, none with it). Only the last `longest spelling` offsets of an
+  escape can start such a spelling, so an escape of any length costs at most that many matches. And a
+  separator goes only after an escape whose last byte would join the value to a word: after a `:`
+  (`u \x1b:<value>@host`) it split a userinfo head from its value, which main masked.
+  Four shapes stay as visible as on main: a value after a colour code when some masked value itself
+  holds an escape character, since no escape is then separated; a value after a colour code written out
+  as text (`\u001b[31m`, `\033[0m`); a value that begins inside the code before it (`\x1b[1F…`, or
+  values `mFake1x` and `Fake1x` after `\x1b[1m`), where the guard rightly leaves the code joined; and
+  the upstream marker below.
 - **Literal escapes.** A backslash escape (`\a\b\e\f\n\r\t\v`) before a value is admitted by a
   lookbehind, not a separator, because a password may hold a backslash and a lookbehind can only admit a
   position, never split a value. `\x` and `\u` escapes were left out (17 ms more at 4,096 values in planning), so a
   value glued after one stays shielded; SECURITY.md lists it with arbitrary encodings.
 - **The flag run.** The flag's lookbehind no longer lists `:`, so `-pA:-pB` hides B. With the regex kept
   that is quadratic when a value holds `:-p` (0.82 s at 80,000 characters in planning), and main already was for a
-  value holding ` -p` (3.1 s at 160,000). `records._mask_flags` follows the longest chain of spellings
-  from each `-p` once, sharing `_mask_runs`'s memo, which is exactly what the atomic flag regex read: a
+  value holding ` -p` (3.13 s at 160,000). `records._mask_flags` follows the longest chain of spellings
+  from each `-p` once, through the `_chain_ends` helper `_mask_runs` uses, which is exactly what the atomic flag regex read: a
   differential test holds them equal, and 70,848 passes did not differ in planning. The ` -p` run
   now takes 0.055 s at 160,000 characters.
 - **The marker ends no word.** While the passes run, each masked value, and each `…REDACTED` already in
@@ -4177,12 +4188,14 @@ said to be from planning were measured on the prototype the build followed; the 
   Admitting a value after the marker alone withheld 141 strict and 199 prose cases of 20,000 hostile ones
   for want of passes in planning, each peeling one value per pass. So the single-value pass
   chains: after it masks a value ending at an offset it tries the next value there at once, as the next
-  pass would. With the pass cap lifted to sixty, none of 32,000 hostile scrubs needed a fifth pass, and
-  none of 1.44 million in the differential below was withheld.
+  pass would. With the pass cap lifted to sixty, 2 of 32,000 hostile scrubs on seed `fx` needed a fifth
+  pass and are withheld at four, which fails closed; on seed `7` none did, and none of 1.44 million in
+  the differential below was withheld.
   Masking a run's longest admitted prefix and restarting was rejected: in planning it traded 15 to 23
   whole values for others on the widest alphabets. A text that leaves fewer than two noncharacters free withholds.
   When a spelling holds the marker's `…`, or starts with `REDACTED` and runs on, markers stay as text,
-  since holding one would cut such a value in two.
+  since holding one would cut such a value in two. A value right after such an upstream marker then
+  stays as visible as on main.
 - **The `later` set is gone.** Passes after the first used to drop every spelling the marker contains,
   or a value `REDACTED` would match inside each new marker. The filed mechanism (an `if not later` exit)
   never ran, since every value has a quote-wrapped spelling the marker lacks; the defect was that a bare
@@ -4191,7 +4204,8 @@ said to be from planning were measured on the prototype the build followed; the 
   held as a noncharacter every pass searches every spelling, one pattern set is compiled per scrub, not
   two, and a text the first pass leaves unchanged returns at once. Passes stay at four: of 32,000
   hostile scrubs (the `diff3` and `wide` corpora below, seed `-7`), 988 had no spelling to search, 4,143
-  settled in one pass, 24,773 in two, 2,090 in three and 6 in four.
+  settled in one pass, 24,773 in two, 2,090 in three and 6 in four. On seed `fx`, 952 had none, 4,065
+  settled in one, 24,919 in two, 2,055 in three, 7 in four, and 2 needed a fifth and were withheld.
 
 **What it costs.** Process time on Python 3.12, median of five, against main at 8767ab87:
 
@@ -4200,8 +4214,8 @@ said to be from planning were measured on the prototype the build followed; the 
 | Cold press, 4,096 values, 8 KB tail | 0.096 s | 0.092 s |
 | Warm tail, 4,096 values, 8 KB | 0.012 s | 0.011 s |
 | 1 MB of docs, 4,096 values | 0.228 s | 0.170 s |
-| 160,000 characters of ` -p<value>` | 3.129 s | 0.055 s |
-| 160,000 characters of colour codes, crossing escapes or a run of escapes | 0.031 to 0.033 s | 0.061 to 0.080 s |
+| 160,000 characters of ` -p<value>` | 3.13 s | 0.055 s |
+| 160,000 characters of colour codes, long SGRs, U+009B, crossing escapes or a run of escapes | 0.027 to 0.033 s | 0.053 to 0.081 s |
 | 160,000 characters of `\n<value>` or `密<value>` | 0.026 s | 0.040 s |
 
 The escape and neighbour shapes cost more because they now mask what main left; each is linear, and a
@@ -4222,9 +4236,10 @@ in both modes, so 1.44 million comparisons against main and against the scrub be
 | Hostile `flags` | values of 4 to 8 from `ab1:-p`, `Fk9 -p`, `ab:p-`, `aP-p1`, one extended by `-p` or `:-p` | 0 | 4 / 2 / 2 | 4 / 2 / 1 |
 
 Main itself shows 882 piece cases (509 whole values) more than the scrub before the colon change on the
-same corpora, so the residue fell by four fifths. Every residual case has values that overlap one another
-and touch. All but 2 of the 99 against main, and 6 of the 179 against the earlier scrub, have a value
-holding `:`; the rest are values of quotes and punctuation such as `!'!'` and `!'!'-`. A trade is a case
+same corpora, so the residue fell by four fifths. Nearly every residual case has values that overlap one
+another and touch; in planning, 2 against main and 3 against the earlier scrub had no two spellings
+adjacent, on the `flags` and `wide` corpora. All but 2 of the 99 against main, and all but 6 of the 179
+against the earlier scrub, have a value holding `:`; the rest are values of quotes and punctuation such as `!'!'` and `!'!'-`. A trade is a case
 where the reference showed another piece that this scrub hides. They are partitions of self-overlapping values, such as values
 `:éa:é密` and `a密密密密:` in a run, read from a different start. Reaching zero there needs the old
 partitioning back, with the marker ending a word again, and the owner accepted the residue on
