@@ -191,7 +191,7 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 4dad1f59 (2026-11-02) -->
+<!-- docs-synced-through: bd3aa95a (2026-11-02) -->
 <!-- Reconciled 5988426c..8ea4d2a: standalone commands, reading source and consent bounds,
      ordinary-driver preparation, conditional study guards and live-estimate disclosures.
      Source-only study machinery grants no activation, source admission or qualification;
