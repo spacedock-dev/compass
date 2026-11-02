@@ -541,6 +541,97 @@ class AColonDoesNotShieldAMaskedValueInATail(_SelectedPromptTestCase):
             self.assertIn(line, prompt)
 
 
+class NothingBesideAMaskedValueShieldsItInATail(_SelectedPromptTestCase):
+    """A colour code, an escape, a non-ASCII letter or a touching masked value beside a value
+    keeps none of it in the prompt a press sends."""
+
+    VALUE = "EXAMPLEshadePass97"
+
+    def prompt_for(self, assignments: dict[str, str], output: str) -> str:
+        self.fresh()
+        names = " ".join(f"{name}={shlex.quote(value)}" for name, value in assignments.items())
+        self.session.bash(f"{names} pytest -q", f"{output}\n1 passed", is_error=False)
+        self.published()
+        self.assertTrue(any(row.get("tail") for row in self.ledger))
+        prompt, _selection = reading.build_prompt(
+            self.ledger, goal="Keep synthetic checks correct", max_bytes=65536
+        )
+        self.assertIn("1 passed", prompt)
+        return prompt
+
+    def test_a_person_whose_output_colours_a_masked_value_does_not_send_it_to_the_model(
+        self,
+    ) -> None:
+        value = self.VALUE
+        for output in (
+            f"pw \x1b[1m{value}\x1b[0m done",
+            f"pw \x1b[38;5;196m{value}\x1b[0m",
+            f"\x1b[2K\x1b[1G{value}",
+            f"user\x1b[2m{value}",
+            f"\x1b(B{value}",
+            f"\x1b[38;2;255;255;255;48;2;255;255;255m{value}",
+            f"\x1bOA{value}",
+            f"\x9b31m{value}",
+            f"u \x1b:{value}@host",
+        ):
+            with self.subTest(output=repr(output.split(value)[0])):
+                self.assertNotIn(value, self.prompt_for({"PGPASSWORD": value}, output))
+
+    def test_a_person_whose_output_escapes_a_newline_before_a_masked_value_does_not_send_it(
+        self,
+    ) -> None:
+        value = self.VALUE
+        for output in (f'echo "line1\\n{value}"', f'echo "a\\t{value}"', f"x\\r{value}"):
+            with self.subTest(output=output.split(value)[0]):
+                self.assertNotIn(value, self.prompt_for({"PGPASSWORD": value}, output))
+
+    def test_a_person_whose_output_is_in_chinese_or_accented_text_does_not_send_the_value(
+        self,
+    ) -> None:
+        value = self.VALUE
+        for output in (
+            f"密码{value}错误",
+            f"é{value}",
+            f"{value}é",
+            f"\uff10{value}",
+            f"パスワードは{value}です",
+        ):
+            with self.subTest(output=output):
+                self.assertNotIn(value, self.prompt_for({"PGPASSWORD": value}, output))
+
+    def test_a_person_whose_output_puts_a_second_password_flag_after_a_colon_sends_neither(
+        self,
+    ) -> None:
+        first, second = "EXAMPLEflagOne97", "EXAMPLEflagTwo97"
+        prompt = self.prompt_for({"A1": first, "A2": second}, f"mysql -p{first}:-p{second}")
+        self.assertNotIn(first, prompt)
+        self.assertNotIn(second, prompt)
+
+    def test_a_person_whose_masked_values_touch_one_already_hidden_sends_none_of_them(
+        self,
+    ) -> None:
+        # Fake values that contain a colon and overlap, shrunk from a hostile corpus.
+        for values, output in (
+            (
+                ("ba1:b", "d1dda1c", ":abb", "ba1:b!"),
+                "ba1:b:abbd1dda1cd1dda1cba1:bd1dda1cba1:bba1:b!ba1:b!d",
+            ),
+            # The last value is part of the word `#Fake11b!!h`, as `test` is part of `test.py`.
+            (("FakeAAb!!", "#Fake11b!!"), "alice:FakeAAb!!#Fake11b!!FakeAAb!!#Fake11b!!h"),
+        ):
+            with self.subTest(output=output):
+                prompt = self.prompt_for({f"A{i}": v for i, v in enumerate(values)}, output)
+                prompt = prompt.replace("#Fake11b!!h", "", 1)
+                self.assertEqual([], [value for value in values if value in prompt])
+
+    def test_a_person_whose_masked_value_is_a_piece_of_the_marker_sends_no_copy_of_it(
+        self,
+    ) -> None:
+        prompt = self.prompt_for({"A1": "REDACTED", "A2": "EDAC"}, "'REDACTED':REDACTED@h")
+        self.assertNotIn(":REDACTED@h", prompt)
+        self.assertIn(f":{records.SECRET_MARKER}@h", prompt)
+
+
 class ATailThatCannotBeSearchedIsWithheldWhole(_SelectedPromptTestCase):
     """A per-call output tail whose masked values are too heavy to search reaches no prompt."""
 

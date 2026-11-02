@@ -2035,7 +2035,9 @@ spellings, each value counted with the quoted and escaped forms it is searched f
 bound it keeps the newest values that fit; a single value too large for the whole budget is dropped
 alone and the values before it stay. When it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
 published unscrubbed. A scrub whose values weigh more than that bound or nest more than forty
-prefixes deep, or that does not settle in four passes, withholds its text rather than returning it half scrubbed: an explanation is replaced
+prefixes deep, whose text and masked values leave fewer than two of the 32 Unicode noncharacters U+FDD0
+to U+FDEF unused (it holds a masked value as one, and separates a colour code with another, while it
+works), or that does not settle in four passes, withholds its text rather than returning it half scrubbed: an explanation is replaced
 by the same sentence, and a command's output tail is replaced in the prompt by a sentence saying its
 output was withheld. The server holds the masked values of the last two scrubs in a small in-memory
 cache for the life of the process, and writes them nowhere. A line that lists a command of the shell
@@ -2044,7 +2046,14 @@ cache for the life of the process, and writes them nowhere. A line that lists a 
 credential inside code has no form a mask can find; a check line keeps its own rule. A value at the
 end of a sentence or inside brackets or quotes is removed from an explanation, and a colon on either
 side of a value does not shield it there or in a command's output tail (`alice:<password>`,
-`<password>: denied`, `<password>:8080`). A value inside a longer word, path or domain stays, and in
+`<password>: denied`, `<password>:8080`). A terminal colour or cursor code, a literal escape such as
+`\n` or `\t`, or a non-ASCII letter beside a value does not shield it either; only an ASCII letter,
+digit or `_`, or a filename character (`.`, `/`, `@`, `+`, `-`), makes it part of a longer word. A
+value that touches one already removed is removed too, and so is a second `-p` value after a colon.
+The exception is a value right after a `…REDACTED` that was already in the text when some masked value
+itself holds `…` or starts with `REDACTED` and runs on: that marker is then left as text, and its last
+letter keeps the value after it.
+A value inside a longer word, path or domain stays, and in
 an output tail so does one followed by `.`, `/`, `@`, `+` or `-`, since a filename ends in `.py`. The class lives in the observed record only, as
 its own fact type, kept out of the semantic history store and out of every session row field, and
 it is named in `history.PROMPT_DERIVED_CARRIERS`.
@@ -2105,7 +2114,13 @@ ids are left as they are. A netrc entry is taken when `login` follows its `machi
 when the value of a loginless one has a digit or a capital, and a signature only when its value has a
 digit, a base64 or percent character, or both letter cases, so "password reset", "machine learning
 password manager" and `sig=overview` are left alone. A shapeless value no named form masked, a masked piece shorter than four
-characters, or an arbitrary encoding of a value can still reach the prompt through the tail.
+characters, or an arbitrary encoding of a value, including one glued after a `\x` or `\u` escape, can
+still reach the prompt through the tail. So can a value after a colour code when some masked value
+itself holds an escape character; a value after a colour code written out as text (`\u001b[31m`,
+`\033[0m`); a value that begins inside the colour code before it (`\x1b[1F…`, or the values `mFake1x`
+and `Fake1x` after `\x1b[1m`), where separating the code would cut the value; and, in deliberately
+built text of masked values that overlap one another and touch, a piece of one value that an earlier
+scrub split differently and hid.
 
 The destination rule: it goes to the reading producer that reads the session, or the fallback
 route `reading_route.resolve` selects and discloses before the press. Tool output is included by

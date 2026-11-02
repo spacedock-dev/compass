@@ -17,7 +17,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 # Private goal-source metadata; never part of the Analyze words or their cache.
 GOAL_SOURCE_CUT_FIELD: Final = "goal_source_cut"
@@ -2366,16 +2366,18 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     `test` does not turn `test_a.py`, `test-file.py` or `src/test` into a
     redacted name.
 
-    A `:` ends a value in both modes, before it or after it. `prose` is for a sentence:
-    there a `.` or `,` that ends the sentence, or a bracket or quote around the word,
-    does not make the value part of a longer word, while `.` or `/` followed by a word
-    character still does. The output tail keeps `.`, `/`, `@`, `+` and `-` inside a word
+    Only an ASCII letter, digit or `_`, or one of those filename characters, makes a value part
+    of a longer word. A non-ASCII letter, a terminal colour code, a literal escape such as `\\n`,
+    or a value already masked does not. A `:` ends a value in both modes, before it or after it.
+    `prose` is for a sentence: there a `.` or `,` that ends the sentence, or a bracket or quote
+    around the word, does not make the value part of a longer word, while `.` or `/` followed by
+    a word character still does. The output tail keeps `.`, `/`, `@`, `+` and `-` inside a word
     because a filename ends in `.py`.
 
     It fails closed. A set of values too heavy to compile (`SCRUB_SPELLING_MASS_MAX`), values
-    that each extend the last past `_TRIE_DEPTH_MAX`, or a text that still changes on the last of
-    `_SCRUB_PASSES` is not searched or not finished, and the result is the bare marker marked
-    incomplete, never the text half scrubbed.
+    that each extend the last past `_TRIE_DEPTH_MAX`, a text that holds nearly every stand-in, or
+    a text that still changes on the last of `_SCRUB_PASSES` is not searched or not finished, and
+    the result is the bare marker marked incomplete, never the text half scrubbed.
     """
     spellings = set().union(*map(_spellings, values))
     if not spellings:
@@ -2385,46 +2387,169 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     patterns = _scrub_patterns(tuple(sorted(spellings)), prose)
     if patterns is None:
         return _SCRUB_WITHHELD
-    text = _scrub_pass(text, patterns)
-    # A later pass reads what the first left behind a marker: a run of touching values, or a
-    # value that only fits once a longer neighbour is a marker. A spelling the marker itself
-    # contains (a value `REDACTED`) is done after the first pass, or it would match inside every
-    # marker.
-    later = tuple(sorted(spelling for spelling in spellings if spelling not in _SECRET_MARKER))
-    if not later:
-        return Scrubbed(text, complete=True)
-    patterns = _scrub_patterns(later, prose)
-    if patterns is None:
+    free = itertools.islice(
+        (char for char in _SCRUB_STAND_INS if char not in text and char not in patterns.chars), 2
+    )
+    stand_ins = tuple(free)
+    if len(stand_ins) < 2:
         return _SCRUB_WITHHELD
-    for _ in range(_SCRUB_PASSES - 1):
-        scrubbed = _scrub_pass(text, patterns)
+    hold, separator = stand_ins
+    if not patterns.reads_marker:
+        text = text.replace(_SECRET_MARKER, hold)
+    if ("\x1b" in text or "\x9b" in text) and not patterns.chars & {"\x1b", "\x9b"}:
+        text = _separate_escapes(text, patterns.inner, patterns.longest, separator)
+    for _ in range(_SCRUB_PASSES):
+        scrubbed = _scrub_pass(text, patterns, hold)
         if scrubbed == text:
-            return Scrubbed(text, complete=True)
+            return Scrubbed(
+                text.replace(hold, _SECRET_MARKER).replace(separator, ""), complete=True
+            )
         text = scrubbed
     return _SCRUB_WITHHELD
 
 
-# Passes including the one that confirms nothing changed. With `:` ending a value, 12,000 random
-# colon-heavy texts settled in two passes 11,750 times in prose (11,724 in a tail) and in three the
-# rest; a colon chain of any length settles in two. A scrub still changing on the last pass
-# withholds its text.
+# A masked value is held as one character while the passes run, so the marker's last letter makes
+# no value after it part of a longer word, and one more character separates a terminal escape from
+# the text after it. Both are Unicode noncharacters, which are reserved for a program's internal
+# use, and are swapped back before the text is returned. Not the Private Use Area: Nerd Font icons
+# live there, and icon-heavy output would run out of free stand-ins and withhold.
+_SCRUB_STAND_INS: Final = tuple(chr(code) for code in range(0xFDD0, 0xFDF0))
+
+# A CSI sequence of any length (`\x1b[1m`, `\x1b[38;2;255;255;255;48;2;255;255;255m`, `\x1b[2K`, or
+# U+009B for `\x1b[`), an SS2 or SS3 sequence (`\x1bOA`) or a two-byte escape (`\x1b(B`). Its final
+# byte is often a letter, which would otherwise make the value after it part of a longer word. The
+# parts are disjoint character ranges, so a failed match backtracks nothing.
+_TERMINAL_ESCAPE: Final = re.compile(
+    r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[NO][ -~]|\x1b[ -/]{0,4}[0-~]"
+)
+
+# The last bytes after which a value reads as part of a longer word: the before-boundary's class.
+# An escape ending in anything else, such as the `:` of a userinfo head, is left unseparated,
+# since a separator there buys nothing and would split `head:<value>@host`.
+_JOINING_BYTES: Final = frozenset(string.ascii_letters + string.digits + "_./@+-")
+
+# Passes including the one that confirms nothing changed. A value masked right after another is
+# masked in the same pass, so of 31,048 hostile scrubs of touching values (seed `fx`) 4,065 settled
+# in one pass, 24,919 in two, 2,055 in three, 7 in four, and 2 needed a fifth and are withheld; on
+# seed `7` none did, and 1.44 million realistic and hostile scrubs withheld none. A scrub still
+# changing on the last pass withholds its text.
 _SCRUB_PASSES: Final = 4
 
 
-def _scrub_pass(text: str, patterns: _ScrubPatterns) -> str:
-    plain, joined_flag, userinfo, starts, inner, after = patterns
-    # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
-    # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
-    text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
-    text = joined_flag.sub(lambda match: match[1] + _SECRET_MARKER, text)
+def _separate_escapes(text: str, inner: re.Pattern[str], longest: int, separator: str) -> str:
+    """`text` with `separator` after each terminal escape, so no value after one is read as part
+    of a longer word.
+
+    Stripping the escape instead would change every coloured line in a prompt, and where the
+    escape's final byte is a value's first character (`\\x1b[F…`) it would eat that character and
+    show the rest. So no separator goes where a spelling starts inside the escape and runs past its
+    end. Only a spelling that starts within `longest` of the end can, so an escape of any length
+    costs at most `longest` matches.
+    """
+    out: list[str] = []
+    last = 0
+    for escape in _TERMINAL_ESCAPE.finditer(text):
+        end = escape.end()
+        if text[end - 1] not in _JOINING_BYTES:
+            continue
+        if any(
+            (found := inner.match(text, at)) is not None and found.end() > end
+            for at in range(max(escape.start() + 1, end - longest + 1), end)
+        ):
+            continue
+        out.extend((text[last:end], separator))
+        last = end
+    out.append(text[last:])
+    return "".join(out)
+
+
+def _scrub_pass(text: str, patterns: _ScrubPatterns, hold: str) -> str:
+    # Userinfo first: a single-value pass would let a short spelling match inside
+    # `user:Fake99!@` in prose and leave the `!` of the longer one, where the one-at-a-time loop
+    # took the longest.
+    text = patterns.userinfo.sub(lambda match: match[1] + hold + match[2], text)
+    # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
+    text = _mask_flags(text, patterns.flag_starts, patterns.inner, patterns.after, hold)
     # Two masked values with nothing between them reject each other at the word boundary, so a
     # run of them is read whole before the single-value pass sees either.
-    text = _mask_runs(text, starts, inner, after)
-    return plain.sub(_SECRET_MARKER, text)
+    text = _mask_runs(text, patterns.run_starts, patterns.inner, patterns.after, hold)
+    return _mask_singles(text, patterns.single_starts, patterns.single, hold)
+
+
+def _chain_ends(text: str, inner: re.Pattern[str]) -> Callable[[int], int]:
+    """Where a chain of touching spellings from each offset ends, each spelling the longest that
+    fits there, followed once and remembered for every offset it passed through."""
+    ends: dict[int, int] = {}
+
+    def chain_end(at: int) -> int:
+        walked = []
+        while at not in ends:
+            found = inner.match(text, at)
+            if found is None or found.end() == at:
+                ends[at] = at
+                break
+            walked.append(at)
+            at = found.end()
+        end = ends[at]
+        for offset in walked:
+            ends[offset] = end
+        return end
+
+    return chain_end
+
+
+def _mask_flags(
+    text: str, starts: re.Pattern[str], inner: re.Pattern[str], after: re.Pattern[str], hold: str
+) -> str:
+    """`text` with the run of values after each `-p` or `-P` masked as one.
+
+    It reads exactly what `{before}(-[pP])(?>(?:{alternation})+){after}` read with `re.sub`: the
+    atomic run commits to the longest spelling at each step. A `:` before the flag ends the word,
+    as it does before a value, so `-pA:-pB` hides both; the regex restarted at every `-p` inside a
+    run of values that hold one and read it to its end again, 3.13 s at 160,000 characters.
+    """
+    chain_end = _chain_ends(text, inner)
+    out: list[str] = []
+    last = 0
+    for start in starts.finditer(text):
+        at = start.start()
+        if at < last:
+            continue
+        end = chain_end(at + 2)
+        if end > at + 2 and after.match(text, end):
+            out.extend((text[last:at], text[at : at + 2], hold))
+            last = end
+    out.append(text[last:])
+    return "".join(out)
+
+
+def _mask_singles(text: str, starts: re.Pattern[str], single: re.Pattern[str], hold: str) -> str:
+    """`text` with each value masked where the before-boundary admits it, and each value right
+    after one masked, as the next pass would read it once the first is a stand-in.
+
+    Each start takes what `{before}(?:{alternation}){after}` takes there. Without the chaining a
+    run of values that peel one at a time, where the run as a whole fails its after-boundary,
+    needed a pass per value and was withheld past `_SCRUB_PASSES`.
+    """
+    out: list[str] = []
+    last = 0
+    for start in starts.finditer(text):
+        at = start.start()
+        if at < last:
+            continue
+        while (found := single.match(text, at)) is not None and found.end() > at:
+            out.extend((text[last:at], hold))
+            last = at = found.end()
+    out.append(text[last:])
+    return "".join(out)
 
 
 def _mask_runs(
-    text: str, starts: re.Pattern[str], inner: re.Pattern[str], after: re.Pattern[str]
+    text: str,
+    starts: re.Pattern[str],
+    inner: re.Pattern[str],
+    after: re.Pattern[str],
+    hold: str,
 ) -> str:
     """`text` with every run of two or more touching values masked by `_mask_run`.
 
@@ -2435,25 +2560,11 @@ def _mask_runs(
     `:FakeWxyz`, and read it to its end again: 3.5 s at 160,000 characters. Here the chain from
     each offset is followed once and remembered for every offset it passed through.
     """
-    ends: dict[int, int] = {}
+    chain_end = _chain_ends(text, inner)
 
     def longest(at: int) -> int:
         found = inner.match(text, at)
         return -1 if found is None else found.end()
-
-    def chain_end(at: int) -> int:
-        walked = []
-        while at not in ends:
-            following = longest(at)
-            if following < 0:
-                ends[at] = at
-                break
-            walked.append(at)
-            at = following
-        end = ends[at]
-        for offset in walked:
-            ends[offset] = end
-        return end
 
     out: list[str] = []
     last = 0
@@ -2468,7 +2579,7 @@ def _mask_runs(
             end = chain_end(first)
             if end != first:
                 if after.match(text, end):
-                    out.extend((text[last:at], _mask_run(text[at:end], inner)))
+                    out.extend((text[last:at], _mask_run(text[at:end], inner, hold)))
                     last = end
                 break
             shorter = inner.match(text, at, first - 1)
@@ -2477,11 +2588,11 @@ def _mask_runs(
     return "".join(out)
 
 
-def _mask_run(run: str, inner: re.Pattern[str]) -> str:
-    """One marker per value in a run of touching values, or one for the run where the values
+def _mask_run(run: str, inner: re.Pattern[str], hold: str) -> str:
+    """One stand-in per value in a run of touching values, or one for the run where the values
     cannot be split back out of it."""
-    split = inner.sub(_SECRET_MARKER, run)
-    return split if split.replace(_SECRET_MARKER, "") == "" else _SECRET_MARKER
+    split = inner.sub(hold, run)
+    return split if split.replace(hold, "") == "" else hold
 
 
 def _trie_alternation(spellings: tuple[str, ...]) -> str | None:
@@ -2547,21 +2658,32 @@ def _trie_regex(node: dict[str, Any]) -> str:
     return f"(?:{body})?" if ends else body
 
 
-# plain, joined flag, userinfo, run starts, one spelling, the after-boundary.
-_ScrubPatterns = tuple[
-    re.Pattern[str],
-    re.Pattern[str],
-    re.Pattern[str],
-    re.Pattern[str],
-    re.Pattern[str],
-    re.Pattern[str],
-]
+class _ScrubPatterns(NamedTuple):
+    """What a scrub applies, each pattern one alternation over every spelling.
+
+    The three `*_starts` patterns open with the same before-boundary, so a test that narrows where
+    a value may start is added in one place.
+    """
+
+    single_starts: re.Pattern[str]
+    single: re.Pattern[str]
+    flag_starts: re.Pattern[str]
+    userinfo: re.Pattern[str]
+    run_starts: re.Pattern[str]
+    inner: re.Pattern[str]
+    after: re.Pattern[str]
+    # Every character of every spelling: a stand-in must be none of them.
+    chars: frozenset[str]
+    # The longest spelling, which bounds how far back from an escape's end a crossing one can start.
+    longest: int
+    # A spelling holds the marker's `…`, or starts with the rest of it and runs on: swapping an
+    # upstream marker for a stand-in would cut such a value, so markers in the text stay as text.
+    reads_marker: bool
 
 
 @lru_cache(maxsize=2)
 def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns | None:
-    """The patterns a scrub applies, each one alternation over every spelling, or None when the
-    spellings nest too deep to compile.
+    """The patterns a scrub applies, or None when the spellings nest too deep to compile.
 
     Compiling three patterns per spelling cost 0.18 s at 512 values and 1.8 s for ten scrubs
     in a press. Longest first, so a value that is a prefix of another leaves no tail: the
@@ -2570,32 +2692,43 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     scrubs several explanations and tails against the same set; two entries, because it holds
     real masked values. The userinfo pattern starts only at the head of a run, as
     `_MASK_USERINFO` does, or a long word rescans its rest at every offset. A run of touching
-    values is read by `_mask_runs` from the offsets `starts` finds, two spellings ahead, so a
+    values is read by `_mask_runs` from the offsets `run_starts` finds, two spellings ahead, so a
     run of overlapping values such as `aaaa`, `aaaaa` and `aaaaaa` is never split in
     exponentially many ways.
     """
     alternation = _trie_alternation(spellings)
     if alternation is None:
         return None
-    boundary = r"[\w./:@+\-]"
+    # ASCII only: `\w` is Unicode in Python, so `密码<value>错误`, `é<value>` or a fullwidth digit
+    # made the value part of a longer word and kept it. Not `re.ASCII`, which would also change the
+    # `\s` that ends a userinfo head at a no-break space.
+    word = "A-Za-z0-9_"
     # A `:` before a word is how `user:password` is written, in prose and in an echoed
-    # `curl -u alice:<password>` alike, so it does not make the value part of a longer word;
-    # a `/`, `.` or `@` still does.
-    before = r"(?<![\w./@+\-])"
+    # `curl -u alice:<password>` alike, so it does not make the value part of a longer word; a
+    # `/`, `.` or `@` still does. Nor does a literal escape such as the `\n` of a JSON string:
+    # one lookbehind admits the position and so can never split a value that holds a backslash.
+    before = rf"(?:(?<![{word}./@+\-])|(?<=\\[abefnrtv]))"
     # A `:` after a value ends it in both modes: `<password>: denied`, `<password>:8080` and each
     # value of `V1:V2` are hidden in one pass. An output tail keeps `.`, `/`, `@`, `+` and `-`
     # inside the word, since a filename ends in `.py`; prose lets a `.` or `/` end a sentence
     # unless a word character follows. Either way this only hides more, and text with no masked
     # value in it is untouched.
-    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
-    return (
-        re.compile(rf"{before}(?:{alternation}){after}"),
-        # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
-        re.compile(rf"(?<!{boundary})(-[pP])(?>(?:{alternation})+){after}"),
-        re.compile(
+    after = rf"(?![{word}@+\-]|[./][{word}/])" if prose else rf"(?![{word}./@+\-])"
+    body = _SECRET_MARKER[1:]
+    return _ScrubPatterns(
+        single_starts=re.compile(rf"{before}(?=(?:{alternation}))"),
+        single=re.compile(rf"(?:{alternation}){after}"),
+        flag_starts=re.compile(rf"{before}-[pP](?=(?:{alternation}))"),
+        userinfo=re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
-        re.compile(rf"{before}(?=(?:{alternation}){{2}})"),
-        re.compile(rf"(?:{alternation})"),
-        re.compile(after),
+        run_starts=re.compile(rf"{before}(?=(?:{alternation}){{2}})"),
+        inner=re.compile(rf"(?:{alternation})"),
+        after=re.compile(after),
+        chars=frozenset("".join(spellings)),
+        longest=max(map(len, spellings)),
+        reads_marker=any(
+            _SECRET_MARKER[0] in spelling or (spelling.startswith(body) and spelling != body)
+            for spelling in spellings
+        ),
     )
