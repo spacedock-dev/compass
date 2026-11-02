@@ -658,6 +658,13 @@ SCOPE_TEXT_LAST_TURN_TRANSCRIPT = (
     "so this covers the work through that turn. It is not a reading of how the session ended."
 )
 
+# Its Codex twin (owner, 2026-11-02): the stop is the rollout's own `task_complete`, so the
+# sentence names the rollout rather than a Claude Code transcript it did not read.
+SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX = (
+    "Codex's rollout recorded the last turn finishing and no session end was observed, "
+    "so this covers the work through that turn. It is not a reading of how the session ended."
+)
+
 
 # The mid-flight sentence for a reader's press on an idle Claude Code session whose last turn has
 # no recorded finish (owner, 2026-10-20, ruling 3 on the usability review): read up to its last
@@ -673,17 +680,23 @@ SCOPE_TEXT_MID_FLIGHT_IDLE = (
 def scope_texts(scope: str) -> tuple[str, ...]:
     """Every sentence a stored reading of `scope` may carry, the default first."""
     if scope == SCOPE_LAST_TURN:
-        return (SCOPE_TEXT[scope], SCOPE_TEXT_LAST_TURN_TRANSCRIPT)
+        return (
+            SCOPE_TEXT[scope],
+            SCOPE_TEXT_LAST_TURN_TRANSCRIPT,
+            SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+        )
     if scope == SCOPE_MID_FLIGHT:
         return (SCOPE_TEXT[scope], SCOPE_TEXT_MID_FLIGHT_IDLE)
     return (SCOPE_TEXT[scope],)
 
 
-# The harnesses a reader may have read at a turn stop: Claude Code only, by the
-# owner's ruling for this milestone and item 13 of the checklist ruling in
-# `docs/design-reading-a-session.md`. The React page's turn-stop list is the same,
-# pinned by the vocabulary fixture.
-TURN_STOP_HARNESSES = ("claude",)
+# The harnesses a reader may have read at a turn stop: Claude Code, and Codex since the owner's
+# 2026-11-02 amendment in `docs/design-reading-a-session.md`, which also has Compass read
+# Codex's recorded turn finish as a transcript stop. One list, not two: `observed_stop` reads a
+# harness's recorded stop under the same names the press admits, so the two cannot disagree.
+# Item 13 of the checklist ruling in that record made it Claude Code only. The React page's
+# turn-stop list is the same, pinned by the vocabulary fixture.
+TURN_STOP_HARNESSES = ("claude", "codex")
 
 # Why there is no reading. One sentence per cause and never a shared one: the
 # same collapse the previous page's `nextCockpitWorkAbsence` already refused, where folding three
@@ -2350,10 +2363,10 @@ def observed_stop(row: Mapping[str, Any]) -> tuple[float, str] | None:
 
     A hook stop (`finished_at`) when one is held: it is the stop. Otherwise,
     on a harness in `TURN_STOP_HARNESSES`, the stop the session's own
-    transcript records (`turn_end_at`, owner 2026-10-02). Every reader of a
-    turn stop in this module reads it here, so the board, the press and the
-    job cannot disagree about which stop a row has. The page's
-    `nextSessionStop` was its port.
+    transcript records (`turn_end_at`, owner 2026-10-02 for Claude Code, 2026-11-02 for
+    Codex). Every reader of a turn stop in this module reads it here, so the board, the press
+    and the job cannot disagree about which stop a row has. The page's `nextSessionStop` was
+    its port.
     """
     hook = _number(row.get("finished_at"))
     if hook is not None and hook > 0:
@@ -2391,8 +2404,10 @@ def end_kind(row: Mapping[str, Any]) -> str:
 
 
 # The idle endings a reader's press on a `TURN_STOP_HARNESSES` session reads mid-flight (owner,
-# 2026-10-20, ruling 3): no recorded finish, no observed end, so the record up to its last entry is
-# all there is, and refusing left a finished-looking session that could never be checked.
+# 2026-10-20, ruling 3; Codex included from 2026-11-02, where the sentence stored beside such a
+# reading stays true because a rollout that recorded the finish is a turn stop, not this): no
+# recorded finish, no observed end, so the record up to its last entry is all there is, and
+# refusing left a finished-looking session that could never be checked.
 IDLE_PRESS_KINDS = ("idle-unknown", "unobservable")
 
 
@@ -2481,11 +2496,6 @@ PRESS_WITHHELD = (
 # page cannot link `HOW_TO_USE.md`, which the installed plugin does not ship,
 # so a sentence names its section in words.
 _HOW_TO_LIVE = 'How to use: "Make the board live rather than polled"'
-_IDLE_CODEX = (
-    "This Codex session is idle. Compass reads a Codex session only while a turn runs, "
-    "because no Codex session end is observed for a final reading to rest on. Analyze opens "
-    "when it runs again."
-)
 _IDLE_UNREACHED = (
     "No event from this session has reached this board since it started, so no session end "
     "can be seen here, and a reading can run only while the session works. Pointing this "
@@ -2522,12 +2532,8 @@ def withheld_sentence(reason: str, row: Mapping[str, Any]) -> str:
     `WITHHELD[reason]` stays the job-time and stored sentence; this is the
     press-time one the board publishes and the reading route answers with.
     """
-    if reason == WITHHELD_IDLE_UNKNOWN:
-        harness = str(row.get("harness") or "")
-        if harness == "codex":
-            return _IDLE_CODEX
-        if harness:
-            return _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
+    if reason == WITHHELD_IDLE_UNKNOWN and str(row.get("harness") or ""):
+        return _IDLE_REACHED if row.get("acquisition") == "event" else _IDLE_UNREACHED
     return _PRESS_SENTENCES.get(reason) or WITHHELD[reason]
 
 
@@ -6951,6 +6957,8 @@ def _scope_text(scope: str, row: Mapping[str, Any]) -> str:
     """The scope sentence for a reading produced now, naming which stop it rested on."""
     stop = observed_stop(row) if scope == SCOPE_LAST_TURN else None
     if stop is not None and stop[1] == STOP_TRANSCRIPT:
+        if str(row.get("harness") or "") == "codex":
+            return SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX
         return SCOPE_TEXT_LAST_TURN_TRANSCRIPT
     if scope == SCOPE_MID_FLIGHT and end_kind(row) in IDLE_PRESS_KINDS:
         return SCOPE_TEXT_MID_FLIGHT_IDLE

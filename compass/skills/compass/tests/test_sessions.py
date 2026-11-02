@@ -1581,7 +1581,8 @@ class PublishedSessionFieldSetTest(HarnessContractTestCase):
                 )
 
     def test_an_idle_row_with_no_stop_and_no_end_is_published_as_unreadable(self) -> None:
-        key, build = next((k, b) for k, b in HARNESSES if k == "codex")
+        # Pi is outside `TURN_STOP_HARNESSES`, so an idle row with nothing observed is refused.
+        key, build = next((k, b) for k, b in HARNESSES if k == "pi")
         # Written ten minutes before the collection, so the row is idle.
         rows = self.sessions_for(self.collect(build, when=self.NOW - 600), key)
         self.assertEqual("idle", rows[0]["state"], "the fixture is not the idle case")
@@ -1593,6 +1594,16 @@ class PublishedSessionFieldSetTest(HarnessContractTestCase):
                 "until": None,
                 "sentence": reading.withheld_sentence(reading.WITHHELD_IDLE_UNKNOWN, rows[0]),
             },
+            rows[0]["reading_eligibility"],
+        )
+
+    def test_an_idle_codex_row_with_no_stop_and_no_end_is_published_as_readable(self) -> None:
+        # Owner, 2026-11-02: a press on it reads up to its last entry, as Claude Code's does.
+        key, build = next((k, b) for k, b in HARNESSES if k == "codex")
+        rows = self.sessions_for(self.collect(build, when=self.NOW - 600), key)
+        self.assertEqual("idle", rows[0]["state"], "the fixture is not the idle case")
+        self.assertEqual(
+            {"ok": True, "reason": None, "until": None, "sentence": None},
             rows[0]["reading_eligibility"],
         )
 

@@ -740,6 +740,21 @@ def codex_instruction(config: RuntimeConfig, state: RuntimeState, path: str) -> 
 # Transcript analyzers (tail pass -> title, prompt, usage, activity)
 
 
+def _codex_non_turn_record(record_type: object, payload: dict[str, Any], closed: set[str]) -> bool:
+    """Whether a rollout record is one of the two measured shapes a turn did not write.
+
+    A closed list on purpose: the guard that retires a turn stop reads anything outside it as
+    a turn's work, the direction DRC-4101 requires when a new Codex record type appears.
+    """
+    if record_type != "event_msg":
+        return False
+    kind = payload.get("type")
+    if kind == "thread_settings_applied":
+        return True
+    turn = payload.get("turn_id")
+    return kind == "item_completed" and isinstance(turn, str) and turn in closed
+
+
 def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]:
     """Codex rollout tail: token_count (usage), tool calls, rate limits.
 
@@ -755,7 +770,15 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         "last_tool": None,
         "last_event_ts": 0,
         "rate_limits": None,  # newest in the tail: (epoch, the raw rate_limits dict)
+        # The newest `task_complete` (a turn Codex recorded finishing; `turn_aborted` is not one)
+        # and the newest record that belongs to a turn, which the stop guard reads (owner,
+        # 2026-11-02, `docs/design-reading-a-session.md`). Two measured shapes are not a turn's:
+        # a settings change, and a command the stopped turn left running finishing after it.
+        # Every other type counts, so a record nobody has measured retires a stop.
+        "turn_stop_ts": 0,
+        "last_turn_ts": 0,
     }
+    closed_turns: set[str] = set()
     for line in runtime_io.read_tail(config, path):
         if not line or line[0] != "{":
             continue
@@ -768,6 +791,14 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
             info["last_event_ts"] = max(info["last_event_ts"], ep)
         t = d.get("type")
         p = records.as_dict(d.get("payload"))
+        if ep and not _codex_non_turn_record(t, p, closed_turns):
+            info["last_turn_ts"] = max(info["last_turn_ts"], ep)
+        if t == "event_msg" and p.get("type") in ("task_complete", "turn_aborted"):
+            turn = p.get("turn_id")
+            if isinstance(turn, str) and turn:
+                closed_turns.add(turn)
+            if ep and p.get("type") == "task_complete":
+                info["turn_stop_ts"] = max(info["turn_stop_ts"], ep)
         if t == "event_msg":
             pt = p.get("type")
             if pt == "token_count":

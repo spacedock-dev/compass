@@ -1358,8 +1358,10 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
             reading.WITHHELD_IDLE_UNKNOWN, {"harness": "antigravity", "acquisition": "event"}
         )
         self.assertIn("Events from this session reach this board", reached)
+        # No Codex-only sentence: a Codex idle row is pressed and read, so the harness-neutral
+        # wording is the one a refusal of any other cause would carry (owner, 2026-11-02).
         codex = reading.withheld_sentence(reading.WITHHELD_IDLE_UNKNOWN, {"harness": "codex"})
-        self.assertIn("only while a turn runs", codex)
+        self.assertNotIn("only while a turn runs", codex)
 
     def test_a_settling_session_says_analyze_opens_by_itself(self) -> None:
         for reason in (reading.WITHHELD_SETTLING, reading.WITHHELD_STOP_SETTLING):
@@ -1399,13 +1401,32 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
             self._press(row, now=self.END + 3.0),
         )
 
-    def test_an_idle_codex_session_is_refused_at_its_turn_stop(self) -> None:
-        # Codex is not in TURN_STOP_HARNESSES (owner, Q8): it reads only while
-        # a turn runs or after a session end.
+    def test_a_reader_can_press_analyze_on_a_codex_session_stopped_at_its_prompt(self) -> None:
+        # Owner, 2026-11-02: Codex joins `TURN_STOP_HARNESSES`, so a stopped Codex session is
+        # read through its last turn on a press, after the same settle a Claude Code one waits.
         row = {"harness": "codex", "state": "idle", "finished_at": self.END}
-        self.assertEqual(reading.WITHHELD_TURN_STOP, self._press(row)["reason"])
+        self.assertEqual(
+            {"ok": True, "reason": None, "until": None, "sentence": None},
+            self._press(row),
+        )
+        settling = self._press(row, now=self.END + 3.0)
+        self.assertEqual(reading.WITHHELD_STOP_SETTLING, settling["reason"])
         working = {"harness": "codex", "state": "working", "finished_at": self.END}
         self.assertTrue(self._press(working)["ok"])
+
+    def test_a_codex_turn_finish_the_rollout_recorded_is_the_stop_a_press_reads(self) -> None:
+        row = {"harness": "codex", "state": "idle", "turn_end_at": self.END}
+        self.assertEqual((self.END, reading.STOP_TRANSCRIPT), reading.observed_stop(row))
+        self.assertTrue(self._press(row)["ok"])
+
+    def test_an_idle_codex_session_with_no_recorded_finish_can_be_pressed(self) -> None:
+        for acquisition in ("event", None):
+            row = {"harness": "codex", "state": "idle", "acquisition": acquisition}
+            with self.subTest(acquisition=acquisition):
+                self.assertEqual(
+                    {"ok": True, "reason": None, "until": None, "sentence": None},
+                    self._press(row),
+                )
 
     def test_a_scan_only_row_is_refused_as_unobservable(self) -> None:
         row = {"harness": "goose", "state": "idle", "acquisition": "scan-only"}
@@ -1446,13 +1467,15 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
 
     def _table(self) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
         table = []
-        for harness in ("claude", "codex"):
+        # "antigravity" is outside `TURN_STOP_HARNESSES`: a press on it is still refused, so the
+        # table reaches the idle and turn-stop tokens that Claude Code and Codex no longer do.
+        for harness in ("claude", "codex", "antigravity"):
             for state in ("idle", "working", "needs_input"):
                 for ended in (None, self.END, self.END + 57.0):
                     for finished in (None, self.END, self.END + 57.0):
                         # The transcript's recorded stop (owner, 2026-10-02): alone at +60 s
                         # and +3 s before the press, beside a hook stop, on a working row,
-                        # and on Codex, where it is ignored.
+                        # and on Codex, where it is read as Claude Code's is.
                         for recorded in (None, self.END, self.END + 57.0):
                             for acquisition in ("event", "scan-only"):
                                 for at in (self.END - 100.0, self.END + 30.0):
@@ -1471,7 +1494,7 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
                                     table.append((row, revisions))
         return table
 
-    def test_a_transcript_stop_is_read_as_a_turn_stop_on_claude_code_alone(self) -> None:
+    def test_a_transcript_stop_is_read_as_a_turn_stop_on_claude_code_and_codex(self) -> None:
         now = self.END + 60.0
         idle = {"harness": "claude", "sid": "s1", "state": "idle", "acquisition": None}
         cases = (
@@ -1484,8 +1507,15 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
             # The hook's stop wins: it settled long ago, so the press is open.
             ({**idle, "turn_end_at": self.END + 57.0, "finished_at": self.END}, True, None),
             ({**idle, "state": "working", "turn_end_at": self.END}, True, None),
+            ({**idle, "harness": "codex", "turn_end_at": self.END}, True, None),
             (
-                {**idle, "harness": "codex", "turn_end_at": self.END},
+                {**idle, "harness": "codex", "turn_end_at": self.END + 57.0},
+                False,
+                (reading.WITHHELD_STOP_SETTLING, self.END + 57.0 + 8.0),
+            ),
+            # A harness outside the list still has its recorded stop ignored.
+            (
+                {**idle, "harness": "antigravity", "turn_end_at": self.END},
                 False,
                 (reading.WITHHELD_IDLE_UNKNOWN, None),
             ),

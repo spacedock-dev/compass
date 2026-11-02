@@ -72,6 +72,11 @@ def _message(fact_id: str, at: Any, **over: Any) -> dict[str, Any]:
     return row
 
 
+def _of_codex(*facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """The same facts as a Codex session's: the ledger is read by the row's own harness."""
+    return [{**fact, "source_session": {"harness": "codex", "sid": "s1"}} for fact in facts]
+
+
 def _check(at: float, result: str = "failed", **over: Any) -> dict[str, Any]:
     return over | {
         "fact_id": f"check-{int(at)}",
@@ -401,10 +406,28 @@ class YourPressOnAWaitingSessionReadsItsLastTurnTest(_PressCase):
         self.assertEqual(PROMPT + 60, assessment["evidence_through"])
         self.assertEqual(reading.SCOPE_TEXT[reading.SCOPE_LAST_TURN], assessment["scope_text"])
 
-    def test_a_codex_row_carrying_a_transcript_stop_is_not_read_through_it(self) -> None:
-        codex = {**_waiting("codex"), "finished_at": None, "turn_end_at": STOP}
-        self.assertIsNone(reading.observed_stop(codex))
-        self.assertEqual(reading.WITHHELD_IDLE_UNKNOWN, reading.end_kind(codex))
+    def test_a_codex_row_carrying_a_transcript_stop_is_read_through_it_in_codexs_words(
+        self,
+    ) -> None:
+        # Owner, 2026-11-02: Codex's recorded turn finish is a transcript stop, and the stored
+        # sentence names the rollout rather than Claude Code's transcript.
+        codex = {**_waiting("codex"), "finished_at": None, "turn_end_at": STOP, "acquisition": None}
+        self.assertEqual((STOP, reading.STOP_TRANSCRIPT), reading.observed_stop(codex))
+        self.assertEqual("turn-stop", reading.end_kind(codex))
+        self.assertEqual(
+            reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+            reading._scope_text(reading.SCOPE_LAST_TURN, codex),
+        )
+        self.assertNotIn("Claude", reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX)
+        self.assertIn(
+            reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+            reading.scope_texts(reading.SCOPE_LAST_TURN),
+        )
+
+    def test_a_forged_transcript_stop_on_a_harness_outside_the_list_is_still_not_read(self) -> None:
+        other = {**_waiting("antigravity"), "finished_at": None, "turn_end_at": STOP}
+        self.assertIsNone(reading.observed_stop(other))
+        self.assertEqual(reading.WITHHELD_IDLE_UNKNOWN, reading.end_kind(other))
 
     def test_the_reading_keeps_where_its_window_opened(self) -> None:
         assessment, _why, _spent = self.produce([_message("m1", PROMPT), _check(PROMPT + 60)])
@@ -420,6 +443,47 @@ class YourPressOnAWaitingSessionReadsItsLastTurnTest(_PressCase):
         self.assertEqual(reading.WITHHELD_TURN_STOP, why)
         self.assertFalse(spent)
         self.assertEqual([], self.prompts)
+
+    def test_nobodys_unasked_check_reads_a_codex_session_at_its_turn_stop(self) -> None:
+        # The unasked lane never passes `admit_turn_stop`, so admitting Codex on a press leaves
+        # it closed to Codex: the real `produce`, a counting model, no model call (owner,
+        # 2026-11-02). A transcript-recorded stop is the same: no press, no reading.
+        for stop in ({"finished_at": STOP}, {"finished_at": None, "turn_end_at": STOP}):
+            row = {**_waiting("codex"), **stop}
+            with self.subTest(stop=stop):
+                self.prompts.clear()
+                assessment, why, spent = self.produce(
+                    [_message("m1", PROMPT), _check(PROMPT + 60)], row=row, admit_turn_stop=False
+                )
+                self.assertIsNone(assessment)
+                self.assertEqual(reading.WITHHELD_TURN_STOP, why)
+                self.assertFalse(spent)
+                self.assertEqual([], self.prompts)
+
+    def test_a_press_on_a_stopped_codex_session_reads_its_last_turn(self) -> None:
+        assessment, why, _spent = self.produce(
+            _of_codex(_message("m1", PROMPT), _check(PROMPT + 60)), row=_waiting("codex")
+        )
+        self.assertEqual("", why)
+        self.assertEqual(reading.SCOPE_LAST_TURN, assessment["scope"])
+        self.assertEqual(reading.SCOPE_TEXT[reading.SCOPE_LAST_TURN], assessment["scope_text"])
+
+    def test_a_press_on_an_idle_codex_session_with_no_recorded_finish_says_so_and_only_so(
+        self,
+    ) -> None:
+        # A rollout that ended on an abort, or whose finish a later turn record retired, publishes
+        # no `turn_end_at`: the sentence "not recorded as finished" is true of exactly these rows.
+        idle = {**_waiting("codex"), "finished_at": None, "turn_end_at": None}
+        facts = _of_codex(_message("m1", PROMPT), _check(PROMPT + 60))
+        assessment, why, _spent = self.produce(facts, row=idle)
+        self.assertEqual("", why)
+        self.assertEqual(reading.SCOPE_MID_FLIGHT, assessment["scope"])
+        self.assertEqual(reading.SCOPE_TEXT_MID_FLIGHT_IDLE, assessment["scope_text"])
+        # A rollout that did record its finish is read at the stop, never under that sentence.
+        stopped = {**idle, "turn_end_at": STOP}
+        assessment, _why, _spent = self.produce(facts, row=stopped)
+        self.assertEqual(reading.SCOPE_LAST_TURN, assessment["scope"])
+        self.assertNotEqual(reading.SCOPE_TEXT_MID_FLIGHT_IDLE, assessment["scope_text"])
 
 
 # ------------------------------------------------------------------------------------ the store

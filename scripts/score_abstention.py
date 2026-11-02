@@ -146,6 +146,9 @@ RUBRIC_PATH = os.path.join(HOME, "abstention-rubric.json")
 # 2026-09-12: every file under captures costs a row in a README table a test
 # reads, and these two files are not hook payloads.
 SUMMARY_PATH = os.path.join(_ROOT, "docs", "abstention", "results.json")
+# The harnesses this check reads at a turn stop, owned by the scorer: the route's own list
+# (`reading.TURN_STOP_HARNESSES`) gained Codex on 2026-11-02 and this one did not follow.
+SCORED_TURN_STOP_HARNESSES = ("claude",)
 # The Claude Code producer's result is its own file (DRC-4666): the Codex
 # acceptance of 2026-09-14 does not qualify Claude, and one file per producer
 # keeps the one from being read as the other.
@@ -1082,9 +1085,11 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                 # the yardstick's one output line comes back as `line_1`.
                 read_lines=True,
                 read_agent_words=read_agent_words,
-                # As the route passes it: a reader's press on a harness that
-                # may be read at a turn stop, and nowhere else.
-                admit_turn_stop=harness in reading.TURN_STOP_HARNESSES,
+                # As the route passed it when these cases were marked: a reader's press on
+                # Claude Code. Not `reading.TURN_STOP_HARNESSES`, which gained Codex on
+                # 2026-11-02: Codex cases were marked with a Codex turn stop withheld, and
+                # re-scoping the check to read one is the owner's decision, not this replay's.
+                admit_turn_stop=harness in SCORED_TURN_STOP_HARNESSES,
                 # Not the idle admission of 2026-10-20: these cases were marked under the
                 # earlier rule, which withheld an idle session with no recorded finish, and
                 # re-scoping the check is the owner's decision, not this replay's.
