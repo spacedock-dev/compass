@@ -4652,17 +4652,27 @@ choosing option A:
   `task_complete` or `turn_aborted` had already closed, a command the stopped turn left running
   (44 times, 36 left as the newest record at the end of a file). Everything else written after a stop
   was a later turn's output, 7 of them in 3 rollouts a new turn's work with no `task_started` record
-  yet. The analyzer (`transcripts.analyze_codex_transcript`) reads the newest turn record and skips
+  yet. Stop timing is in the 0.166.0 capture below. The analyzer (`transcripts.analyze_codex_transcript`) reads the newest turn record and skips
   exactly those two shapes; the collector publishes it as `work_activity`, so the guard no longer reads
   the file's mtime. A record type nobody has measured retires a stop, the safe direction DRC-4101 set.
-  The order of the Stop hook against `task_complete` was not measured; a stop cut drops and counts any
-  entry timed after the stop, so a hook that fired a few milliseconds early is disclosed rather than
-  silent.
+  The Stop hook fires 5 to 6 ms before Codex writes `task_complete`, and the turn's last
+  `item_completed` lands 0.36 to 0.41 s before the hook (codex-cli 0.166.0, one session per arm,
+  [the capture](captures/README.md); one observation each, and the recorder stamps after its own
+  interpreter starts, so the gap may be negative in truth). A hook stop is stamped when the board
+  receives the event, no earlier than the real Stop, so the cut it makes loses nothing of the turn;
+  `task_complete` is not an entry the reading collects. A message queued during a turn gives Stop,
+  a new `task_started` 17 ms later and `UserPromptSubmit` 394 ms after Stop; the first retires a
+  transcript stop at once, the second a hook stop.
 - **The press admits Codex at a stop**, and `IDLE_PRESS_KINDS` (amended 2026-10-20) extends to it: an idle
   Codex row with no observed stop and no observed end is read up to its last recorded entry at the
-  mid-flight scope. Its sentence, "its last turn was not recorded as finished", is true wherever it is
-  stored, because a rollout that did record a finish publishes a stop and is read at it: what is left is
-  an abort, a finish that later work retired, and a session with no turn finished. The stored last-turn
+  mid-flight scope. Its sentence, "its last turn was not recorded as finished", says what Compass saw, and
+  for a Codex row that is what the rollout shows in almost every case: a rollout that did record a
+  finish publishes a stop and is read at it, so what is left is an abort, a finish that later work
+  retired, and a session with no turn finished. It overstates in two rare cases, both in the safe
+  direction (read up to the last entry, never called final): the analyzer reads only the newest
+  400,000 bytes, so a record that large written after the finish pushes `task_complete` out of the
+  tail, and a running subagent's rollout activity retires a finish the parent did record. Claude
+  Code's transcript stop has the same two limits. The stored last-turn
   sentence for a Codex stop names the rollout (`SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX`), not Claude Code's
   transcript, and is admitted on read-back beside the other. The Codex press sentence and its page line are
   gone, since the board no longer refuses an idle Codex session.
