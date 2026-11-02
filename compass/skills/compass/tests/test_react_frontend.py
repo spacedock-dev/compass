@@ -264,7 +264,7 @@ class ReactFrontendTest(unittest.TestCase):
 
 
 # The twenty script parts of the retired page. The page is a React build now, so none of them may
-# ship under `web/`; the parts themselves were removed with the paused study that bound them.
+# ship under `web/`; the parts themselves were removed with the retired study that bound them.
 RETIRED_PAGE_PARTS: tuple[str, ...] = (
     "next-boot.js",
     "next-observed.js",
