@@ -666,9 +666,9 @@ SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX = (
 )
 
 
-# The mid-flight sentence for a reader's press on an idle Claude Code session whose last turn has
-# no recorded finish (owner, 2026-10-20, ruling 3 on the usability review): read up to its last
-# recorded entry as a running one is, and never called running, finished or final. Chosen at
+# The mid-flight sentence for a reader's press on an idle Claude Code or Codex session whose last
+# turn has no recorded finish (owner, 2026-10-20, ruling 3 on the usability review): read up to its
+# last recorded entry as a running one is, and never called running, finished or final. Chosen at
 # production, as the transcript sentence above is, and admitted on read-back only beside
 # `SCOPE_MID_FLIGHT`. The page adds the local time of the last entry read beside it.
 SCOPE_TEXT_MID_FLIGHT_IDLE = (

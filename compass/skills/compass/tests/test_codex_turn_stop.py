@@ -160,6 +160,16 @@ class CodexTurnStopTest(RuntimeTestCase):
         ]
         self.assertAlmostEqual(self.stop + 40, self._collect(entries)["turn_end_at"], delta=1.0)
 
+    def test_a_turn_record_with_no_timestamp_retires_the_stop(self) -> None:
+        # Codex stamps every record measured, but a record that cannot be placed in time may be
+        # newer than the stop, so it retires it; a later dated finish publishes one again.
+        untimed = {"type": "response_item", "payload": {"type": "function_call", "name": "exec"}}
+        self.assertIsNone(self._collect([*self._head(), untimed])["turn_end_at"])
+        later = [untimed, _complete(self.stop + 40, "t2")]
+        self.assertAlmostEqual(
+            self.stop + 40, self._collect([*self._head(), *later])["turn_end_at"], delta=1.0
+        )
+
     def test_a_session_with_no_finished_turn_publishes_no_stop(self) -> None:
         entries = [
             {"type": "session_meta", "payload": {"id": SID, "cwd": "/tmp/project"}},

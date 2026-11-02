@@ -774,7 +774,7 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         # and the newest record that belongs to a turn, which the stop guard reads (owner,
         # 2026-11-02, `docs/design-reading-a-session.md`). Two measured shapes are not a turn's:
         # a settings change, and a command the stopped turn left running finishing after it.
-        # Every other type counts, so a record nobody has measured retires a stop.
+        # Every other record counts, timed or not, so a record nobody has measured retires a stop.
         "turn_stop_ts": 0,
         "last_turn_ts": 0,
     }
@@ -793,6 +793,10 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         p = records.as_dict(d.get("payload"))
         if ep and not _codex_non_turn_record(t, p, closed_turns):
             info["last_turn_ts"] = max(info["last_turn_ts"], ep)
+        elif not ep and not _codex_non_turn_record(t, p, closed_turns):
+            # A turn record we cannot place in time may be newer than any stop: retire it (a later
+            # `task_complete` sets it again). Codex stamps every record measured.
+            info["turn_stop_ts"] = 0
         if t == "event_msg" and p.get("type") in ("task_complete", "turn_aborted"):
             turn = p.get("turn_id")
             if isinstance(turn, str) and turn:

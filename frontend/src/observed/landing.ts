@@ -119,7 +119,7 @@ export type Landing = {
   Pair<'independent'>;
 
 /* `stopped` is `sessionStop`'s answer, or any truthy value for a hook stop. A transcript stop is named
-   as the transcript's: Compass read it from Claude Code's own record rather than observing it. */
+   as the record's own (Claude Code's transcript, Codex's rollout): Compass read it rather than observing it. */
 export function landingOf(
   source: Row,
   ended: boolean,
