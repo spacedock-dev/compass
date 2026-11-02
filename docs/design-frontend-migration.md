@@ -17,6 +17,21 @@ study first. The recorded answers the React page is held to are described in the
 
 ## Held to recorded answers
 
+2026-11-02, a Codex session is read at a turn stop
+([the amendment](design-reading-a-session.md#amended-2026-11-02-owner-codexs-recorded-turn-finish-is-a-turn-stop)).
+The retired page read a turn stop on Claude Code alone and said "Codex sessions can be analyzed only while a
+turn is running." for an idle or stopped Codex session. The page now reads `["claude", "codex"]`, so a Codex
+row's recorded `turn_end_at` is a stop, its hint reads "Reads the session up to its last turn against your
+intent." or up to its last recorded entry, its list carries the "Last turn" label, and the refusal line is gone.
+A stop read from a rollout is named "Codex's rollout" where Claude Code's is named its transcript. No golden
+file is changed. The differential tests ask the legacy functions with the recorded payload, which cannot be
+changed, and depart on this page's side only: `frontend/test/codexRecordedStop.ts` takes `turn_end_at` off
+Codex rows for the observed, Sessions and Attention comparisons; `observed.differential.test.ts` compares a
+Codex row's hint with the recorded one except where it names the last turn or the last entry;
+`workList.differential.test.ts` removes the "from the last turn" words from a Codex list;
+`route.differential.test.ts` reads the recorded Codex press line as the line every harness gets. The three
+`Drift/Idle analysis and Steer back` Codex stories hold the new words and the label.
+
 2026-10-30, a Codex session's checks are work. Its record now lists the checks it ran and the files it
 patched ([the amendment](design-reading-a-session.md#amended-2026-10-30-owner-dec-23-applied-to-codex)),
 so the page reads a Codex `tool_report` as work, draws the Drift level for a Codex session from a stored
