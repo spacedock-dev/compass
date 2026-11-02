@@ -3016,7 +3016,9 @@ class _ShellLexer:
         The body is read again on its own, from depth 0, so without this the
         first lexer never saw inside and each run restarted the count: 16
         repetitions of 32 levels and a run overflowed the stack. The count is
-        proven once, here; an unbalanced body keeps the reading it always had.
+        checked here for substitution and backtick hops (a `-c` wrapper body is
+        still read by a fresh lexer); an unbalanced body keeps the reading it
+        always had.
         """
         start = self.pos
         self._skip_backticks()
