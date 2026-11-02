@@ -2529,7 +2529,11 @@ def _scrub_patterns(
         after = rf"(?:{end}|(?=:(?>(?:{alternation})+)(?:{end}|:)))"
         flag_after = end
     else:
-        after = flag_after = rf"(?!{boundary})"
+        # An output tail keeps `.`, `/`, `@`, `+` and `-` inside the word, since a filename ends in
+        # `.py`, but not `:`: `auth <password>: denied`, `<password>:8080` and `V1:V2` each end the
+        # value at the colon. That only ever hides more, and output with no masked value in it is
+        # untouched.
+        after = flag_after = r"(?![\w./@+\-])"
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),
         # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.

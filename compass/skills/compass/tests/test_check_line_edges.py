@@ -511,6 +511,24 @@ class AColonDoesNotShieldAMaskedValueInATail(_SelectedPromptTestCase):
                 self.assertNotIn(value, prompt)
                 self.assertIn("1 passed", prompt)
 
+    def test_a_person_whose_output_put_the_password_before_a_colon_sends_no_password(self) -> None:
+        value = self.PLACEHOLDER
+        for echoed in (
+            f"auth {value}: denied",
+            f"password {value}:",
+            f"connect {value}:8080 refused",
+        ):
+            with self.subTest(echoed=echoed.split(value)[0]):
+                self.fresh()
+                self.session.bash(
+                    f"curl -u alice:{value} https://x.example; pytest -q",
+                    f"{echoed}\n1 passed",
+                    is_error=False,
+                )
+                prompt = self.prompt_text()
+                self.assertNotIn(value, prompt)
+                self.assertIn("1 passed", prompt)
+
     def test_a_person_whose_output_holds_ordinary_colons_sees_them_unchanged(self) -> None:
         ordinary = "12:34:56 start\nsrc/app.py:12: warn\nhttp://example.com:8080/a ok"
         self.session.bash(

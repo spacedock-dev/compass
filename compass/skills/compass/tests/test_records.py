@@ -1008,6 +1008,31 @@ class ScrubValuesTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(text, records.scrub_values(text, ["test"]))
 
+    def test_the_tail_hides_a_value_on_either_side_of_a_colon(self) -> None:
+        values = ["FakeUser11", "FakePass22"]
+        for text in (
+            "auth FakePass22: denied",
+            "password FakePass22:",
+            "connect FakePass22:8080 refused",
+            "tried FakeUser11:FakePass22 on it",
+        ):
+            with self.subTest(text=text):
+                result = records.scrub(text, values)
+                self.assertTrue(result.complete)
+                for value in values:
+                    self.assertNotIn(value, result.text)
+
+    def test_the_tail_keeps_ordinary_colons_and_a_value_inside_a_longer_word(self) -> None:
+        values = ["FakePass22"]
+        for text in (
+            "src/app.py:12: warning",
+            "12:34:56 started",
+            "https://host:8080/path ok",
+            "FakePass22x:8080 and FakePass22_y: and FakePass22.py:3",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.Scrubbed(text, True), records.scrub(text, values))
+
     def test_a_masked_number_from_a_wrapper_flag_does_not_wipe_output(self) -> None:
         words = shlex.split("docker run --rm -u 1000:1000 img pytest -q")
         self.assertEqual(
@@ -1116,7 +1141,8 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
     Kept as the reference the combined alternation must agree with.
     """
     boundary = r"[\w./:@+\-]"
-    after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
+    # A `:` after the value ends it in the strict tail too, as in the combined scrub.
+    after = r"(?![\w@+\-]|[./:][\w/])" if prose else r"(?![\w./@+\-])"
     spellings = {
         spelling
         for value in values

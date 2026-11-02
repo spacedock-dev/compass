@@ -4080,8 +4080,11 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   value, so an echoed `curl -u alice:<password>` or an `auth alice:<password> failed` line kept the
   password in the tail a press sends. The strict before-boundary now admits `:`, as prose did. Output
   with ordinary colons and no masked value (a timestamp, `file.py:12`, a URL without credentials) is
-  unchanged. The strict after-boundary is not changed, so a value followed by `:` in a tail (`V1:V2`,
-  `<password>: denied`) still keeps that value; only the one after the colon is masked.
+  unchanged. The strict after-boundary no longer counts `:` either, so a value before a colon is
+  masked too: `auth <password>: denied`, `password <password>:`, `<password>:8080` and both values of
+  `V1:V2`. A one-element colon lookahead that blocked `:` before a word was the first proposal; it
+  left `<password>:8080` visible, because `8080` is no masked run. A value inside a longer word
+  (`<password>x:8080`, `<password>.py:3`) still stays, and this only ever hides more.
 - **Colon chains in prose.** A pass freed only the rightmost unmasked value of a chain `V1:V2:…`, and
   the loop stopped at sixteen passes without saying so: forty values left twenty-four visible. A value
   followed by `:` is now accepted when one masked run follows the colon and that run ends the word or

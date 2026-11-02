@@ -2043,7 +2043,8 @@ cache for the life of the process, and writes them nowhere. A line that lists a 
 `deno eval`, `ruby -e`, `perl -e` or `-E` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
 credential inside code has no form a mask can find; a check line keeps its own rule. A value at the
 end of a sentence or inside brackets or quotes is removed, while one inside a
-longer word, path or domain is not. The class lives in the observed record only, as
+longer word, path or domain is not. In a command's output tail a colon on either side of a value
+does not shield it either (`alice:<password>`, `<password>: denied`, `<password>:8080`). The class lives in the observed record only, as
 its own fact type, kept out of the semantic history store and out of every session row field, and
 it is named in `history.PROMPT_DERIVED_CARRIERS`.
 
