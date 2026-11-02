@@ -397,6 +397,19 @@ class BelowTheFloorWithUvTest(LauncherTest):
             if proc.stderr:
                 proc.stderr.close()
 
+    @unittest.skipIf(sys.platform == "win32", "Windows has no signal exit status")
+    def test_a_script_killed_with_sigkill_leaves_the_launcher_dying_of_it_with_no_traceback(
+        self,
+    ) -> None:
+        self.finds_this_interpreter()
+        script = self.root / "server.py"
+        script.write_text(
+            "import os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n", encoding="utf-8"
+        )
+        done = self.run_launcher(script)
+        self.assertEqual(-signal.SIGKILL, done.returncode, done.stderr)
+        self.assertNotIn(b"Traceback", done.stderr)
+
 
 @unittest.skipUnless(
     SYSTEM_PYTHON.exists()

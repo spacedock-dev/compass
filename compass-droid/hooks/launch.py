@@ -160,8 +160,13 @@ def exit_like(status: int) -> int:
     if status < 0 and os.name == "posix":
         import signal
 
-        signal.signal(-status, signal.SIG_DFL)
+        import contextlib
+
+        # SIGKILL's handler cannot be set; the kill still works
+        with contextlib.suppress(OSError, ValueError):
+            signal.signal(-status, signal.SIG_DFL)
         os.kill(os.getpid(), -status)
+        return 128 - status  # still here: the signal was blocked or ignored
     return status
 
 
