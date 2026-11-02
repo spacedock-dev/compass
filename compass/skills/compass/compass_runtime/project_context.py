@@ -2125,13 +2125,15 @@ TOOL_REPORT_PATH_CHARS = 240
 # Bounds the set of masked values a press carries. Past it the oldest values go and the newest stay,
 # since a value the agent quoted lately is the likelier one in an explanation, and the press says
 # the scrub is partial (`PressChecks.masked_values_partial`). The scrub is one compiled alternation,
-# so the first scrub of a press compiles it (about 0.04 s at 512 values, about 0.3 s at 4,096) and
+# so the first scrub of a press compiles it (about 0.09 s at 512 values, 0.7 s at 4,096) and
 # later scrubs of the same set reuse it (a few milliseconds); 512 values once cost 0.45 s each time.
+# The count alone left the size open, and so did a count of characters: compile time follows the
+# spellings a value is searched in, so the newest values are also kept only up to
+# `records.SCRUB_SPELLING_MASS_MAX` of them, the bound the scrub itself refuses past.
 MASKED_VALUES_MAX = 4096
-# The count alone left the size open: 4,096 values of 1,000 characters took 32 s and 2.4 GB to
-# compile cold. Compile time follows total length, about a second per 130,000 characters, so the
-# newest values are kept up to this many characters and the press is partial past it.
-MASKED_VALUES_MAX_CHARS = 131_072
+# What a per-call output tail becomes in the prompt when its masked values could not be searched
+# (`records.scrub`): a sentence saying so, never the output with a value in it.
+TAIL_WITHHELD = "[output withheld: its masked values could not all be searched]"
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -5134,6 +5136,18 @@ def _check_line(words: list[str]) -> str:
 _OPAQUE_WORD = "…"
 
 
+# A word with no quote or backslash splits on these exactly as `shlex.split` does: it treats no
+# other character as whitespace, not a vertical tab, NBSP or U+2028 (none of 200,000 random words
+# differed). shlex builds each token a character at a time: 0.68 s for a 200,000-character token.
+_SHELL_QUOTING = re.compile(r"['\"\\]")
+_SHELL_BLANKS = re.compile(r"[ \t\r\n]+")
+# A word holding a quote or a backslash and longer than this is shown as `_OPAQUE_WORD` without
+# being parsed. A real one exists (a `gh pr create --body` of more than 4,096 characters), and its
+# line loses the preview of its first characters that the 120-character clip would have left. That
+# is the safe side.
+_READABLE_QUOTED_MAX = 4096
+
+
 def _readable_word(word: str) -> bool:
     """Whether a word holding whitespace splits cleanly and masks to itself.
 
@@ -5141,10 +5155,15 @@ def _readable_word(word: str) -> bool:
     named flag in it, would otherwise show the half of a value that masking one word at a time
     leaves behind.
     """
-    try:
-        pieces = shlex.split(word)
-    except ValueError:
+    if _SHELL_QUOTING.search(word) is None:
+        pieces = [piece for piece in _SHELL_BLANKS.split(word) if piece]
+    elif len(word) > _READABLE_QUOTED_MAX:
         return False
+    else:
+        try:
+            pieces = shlex.split(word)
+        except ValueError:
+            return False
     return records.mask_words(pieces) == pieces
 
 
@@ -5169,8 +5188,20 @@ def _scrubbed_tail(text: str, values: Iterable[str]) -> str:
     """The output tail with every value the call masked removed first:
     an echoed command repeats it, and the tail reaches the prompt row
     (review, 2026-09-27). Redaction then runs over the whole window, and the
-    cut comes last (item 5)."""
-    return records.redact_secrets(records.scrub_values(text, values))[-TOOL_REPORT_TAIL_CHARS:]
+    cut comes last (item 5). A scrub that could not finish leaves `TAIL_WITHHELD`."""
+    scrubbed = records.scrub(text, values)
+    if not scrubbed.complete:
+        return TAIL_WITHHELD
+    return records.redact_secrets(scrubbed.text)[-TOOL_REPORT_TAIL_CHARS:]
+
+
+def _call_tail(tails: dict[str, str], text: str, values: Iterable[str]) -> str:
+    """`_scrubbed_tail` of one call's output, scrubbed once however many runs read it. Keyed by
+    the text, because a check reads it with Claude Code's trailer removed and a command does not.
+    """
+    if text not in tails:
+        tails[text] = _scrubbed_tail(text, values)
+    return tails[text]
 
 
 def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
@@ -5885,7 +5916,7 @@ class _ToolReportTally:
         # A dict keeps the order a set loses, so the cap can drop the oldest.
         self.masked_values: dict[str, None] = {}
         self.masked_values_partial = False
-        self.masked_chars = 0
+        self.masked_mass = 0
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -6195,8 +6226,11 @@ class _ToolReportTally:
             self.scan["other_commands"] += 1
             self.scan["read_only_commands"] += not call.changes()
         result_at = found.at if found is not None else None
-        self._add_runs(call, call_id, result, text, result_at, worker)
-        self._add_commands(call, call_id, result, text, result_at, worker)
+        # The tail is the whole call's output, so its checks and commands share one scrub of it:
+        # once per check multiplied a heavy set's compile and scan by the checks in the call.
+        tails: dict[str, str] = {}
+        self._add_runs(call, call_id, result, text, result_at, worker, tails)
+        self._add_commands(call, call_id, result, text, result_at, worker, tails)
 
     @staticmethod
     def _exited(found: _Result | None, text: str) -> bool:
@@ -6249,6 +6283,7 @@ class _ToolReportTally:
         text: str,
         result_at: float | None,
         worker: str,
+        tails: dict[str, str],
     ) -> None:
         flag = result.get("is_error") if result is not None else None
         # Redaction runs over the whole read window before the tail is cut (item 5).
@@ -6347,7 +6382,9 @@ class _ToolReportTally:
                     "listed": index in call.listed_checks,
                     # Held for the press only (`claude_check_tails`); never
                     # copied onto the published entry.
-                    "tail": _scrubbed_tail(text, call.masked_values) if result is not None else "",
+                    "tail": _call_tail(tails, text, call.masked_values)
+                    if result is not None
+                    else "",
                     "seq": self.shell_seq,
                     "worker": worker,
                     "coverage": _check_coverage(
@@ -6422,6 +6459,7 @@ class _ToolReportTally:
         text: str,
         result_at: float | None,
         worker: str,
+        tails: dict[str, str],
     ) -> None:
         """Tier 2 CI reads and tier 3 commands in one call.
 
@@ -6480,8 +6518,8 @@ class _ToolReportTally:
                 outcome, source = _ci_outcome(
                     ci, outcome, source, text, found.exit_code if found is not None else None
                 )
-            if not tail and result is not None:
-                tail = _scrubbed_tail(text, call.masked_values)
+            if result is not None:
+                tail = _call_tail(tails, text, call.masked_values)
             identity = _check_identity(
                 call.directories[index],
                 words,
@@ -6489,11 +6527,12 @@ class _ToolReportTally:
             )
             if self._hash_identities:
                 identity = hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
+            title = _command_line(words)
             run = {
                 "at": call.at,
                 "record_id": call_id,
-                "title": _command_line(words),
-                "title_n": call.title_ordinal(_command_line(words), identity),
+                "title": title,
+                "title_n": call.title_ordinal(title, identity),
                 "segment": index,
                 "result": outcome,
                 "result_source": source,
@@ -6991,6 +7030,7 @@ class _ToolReportTally:
             run = history[self._latest(history)]
             if (
                 run["tail"]
+                and run["tail"] != TAIL_WITHHELD
                 and run.get("attributable") is True
                 and run["recorded"]
                 and not run["background"]
@@ -7003,20 +7043,25 @@ class _ToolReportTally:
         """Add a call's masked values as the newest, and drop the oldest past the bound.
 
         A value met again moves to the newest end, so one the agent keeps typing is not the
-        first to go. Dropping anything marks the scrub partial: it is said, never silent.
+        first to go. A value too heavy for the whole budget is dropped alone: evicting first
+        would empty the set before reaching it. Dropping anything marks the scrub partial: it
+        is said, never silent.
         """
+        budget = records.SCRUB_SPELLING_MASS_MAX
         for value in sorted(values):
+            mass = records.spelling_mass(value)
             if value in self.masked_values:
                 del self.masked_values[value]
-                self.masked_chars -= len(value)
+                self.masked_mass -= mass
+            if mass > budget:
+                self.masked_values_partial = True
+                continue
             self.masked_values[value] = None
-            self.masked_chars += len(value)
-        while len(self.masked_values) > MASKED_VALUES_MAX or (
-            self.masked_chars > MASKED_VALUES_MAX_CHARS
-        ):
+            self.masked_mass += mass
+        while len(self.masked_values) > MASKED_VALUES_MAX or self.masked_mass > budget:
             oldest = next(iter(self.masked_values))
             del self.masked_values[oldest]
-            self.masked_chars -= len(oldest)
+            self.masked_mass -= records.spelling_mass(oldest)
             self.masked_values_partial = True
 
     def tier3_calls(self) -> frozenset[str]:

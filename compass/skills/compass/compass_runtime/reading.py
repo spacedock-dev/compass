@@ -58,7 +58,7 @@ from . import ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 
     from . import reading_policy
     from .config import RuntimeConfig
@@ -4898,18 +4898,19 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # The values the calls masked come out before the shape filter runs, so a short
     # password the agent quoted is held as masked in the explanation as on its line.
     # Only the values that can be a credential: `true` from `CI=true` stays a word.
-    scrubbed = records.scrub_values(
-        raw_detail, records.explanation_values(masked_values), prose=True
-    )
+    scrub = records.scrub(raw_detail, records.explanation_values(masked_values), prose=True)
+    scrubbed = scrub.text
     # A press that dropped masked values past its bound cannot say the explanation is clear of
-    # them, so the prose is not stored: a fixed sentence saying so stands in, so the page shows
-    # why there is no reason rather than an empty one, and a leaked value is never the cost.
+    # them, and neither can a scrub that could not search them all (`records.scrub`), so the prose
+    # is not stored: a fixed sentence saying so stands in, so the page shows why there is no
+    # reason rather than an empty one, and a leaked value is never the cost.
+    withheld = scrub_partial or not scrub.complete
     detail = (
         (SCRUB_WITHHELD_DETAIL if raw_detail else "")
-        if scrub_partial
+        if withheld
         else records.safe_text(scrubbed, detail_cap_chars)
     )
-    if not scrub_partial and detail and len(scrubbed) > len(detail):
+    if not withheld and detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
         detail = f"{detail}…"
@@ -5707,9 +5708,8 @@ def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
 
 
 def _verdict_check_kinds(reason: str) -> frozenset[str]:
-    return frozenset(
-        kind for kind in _LINE_KINDS if _claims_result(reason, kind, remote_aware=True)
-    )
+    clauses = _local_clauses(reason)
+    return frozenset(kind for kind in _LINE_KINDS if _clauses_claim_result(clauses, kind))
 
 
 # Text a reason quotes is looked for only in a recorded check's output, never in the transcript at
@@ -5753,7 +5753,7 @@ def _quoted_spans(reason: str) -> tuple[str, ...]:
             or all(word.strip(".,:;!()[]") in _QUOTED_FILLER for word in span.split())
             or records.redact_secrets(raw) != raw
             or records.SECRET_MARKER in raw
-            or _REMOTE_JOB.sub(_drop_remote_job, raw) != raw
+            or _drop_remote_jobs(raw) != raw
             or _REMOTE_CLAUSE.search(raw)
         ):
             continue
@@ -6072,26 +6072,153 @@ def _drop_remote_job(match: re.Match[str]) -> str:
     job = match["job"]
     if _NOT_A_JOB.match(job) or _is_kind_list(job):
         return match[0]
-    if "/" in job and _PATH_AFTER.search(match.string[: match.start("job")]):
+    if "/" in job and _path_after(match.string, match.start("job")):
         return match[0]
     return " "
 
 
+def _path_after(text: str, end: int) -> bool:
+    """Whether `text[:end]` ends in "in", "under" or "of" and a space, as `_PATH_AFTER` reads it.
+
+    Searching the whole prefix for each job cost O(jobs x length). A match can only start in the
+    blanks and the one quote just before `end`, and the word before them, so only that is searched.
+    """
+    start = end
+    while start > 0 and text[start - 1].isspace():
+        start -= 1
+    if start > 0 and text[start - 1] in _REMOTE_JOB_QUOTES:
+        start -= 1
+    while start > 0 and text[start - 1].isspace():
+        start -= 1
+    return _PATH_AFTER.search(text, max(0, start - len("under")), end) is not None
+
+
+# A remote job's name runs to the end of a run of these characters: what may follow it (a quote,
+# a blank, `:` or `(`) is never one of them. The old pattern restarted after every `.` and `/` of a
+# token and read each restart to the token's end, O(length^2): 16.9 s for one 16,000-character
+# reason. `_remote_jobs` tries each run once, at the one start the pattern would accept.
+_REMOTE_JOB_RUN = re.compile(r"[\w./-]+")
+_REMOTE_JOB_TAIL = re.compile(
+    rf"[`'\"]?(?:\s+(?:job|check))?(?:\s*[:(]\s*|\s+(?:is\s+)?){_RESULT_WORD}\b\)?",
+    re.IGNORECASE,
+)
+_REMOTE_JOB_TYPE_CHECK = re.compile(r"type-?checks?\b", re.IGNORECASE)
+_REMOTE_JOB_QUOTES = "`'\""
+
+
+def _job_start(text: str, start: int, end: int, resume: int) -> int | None:
+    """The leftmost offset of `text[start:end]`, at or after `resume`, where `_REMOTE_JOB` may begin
+    its job: the run's start or just after a `.` or `/`, a word character, and from there segments
+    joined by `-` or `/` each followed by a word character, with at least one joiner.
+    """
+    joined = broken = False
+    valid = [False] * (end - start)
+    for at in range(end - 1, start - 1, -1):
+        char = text[at]
+        if char in "-/":
+            joined = True
+            broken = broken or at + 1 == end or not _is_word(text[at + 1])
+        valid[at - start] = joined and not broken and _is_word(char)
+    for at in range(max(start, resume), end):
+        if (
+            valid[at - start]
+            and (at == start or text[at - 1] in "./")
+            and _REMOTE_JOB_TYPE_CHECK.match(text, at) is None
+        ):
+            return at
+    return None
+
+
+def _is_word(char: str) -> bool:
+    """`\\w` on one character: a str pattern's word characters are `str.isalnum` and `_`."""
+    return char.isalnum() or char == "_"
+
+
+def _remote_jobs(text: str) -> Iterator[re.Match[str]]:
+    """The matches `_REMOTE_JOB.finditer(text)` yields, in work linear in `text`.
+
+    Each run is read once: its tail, then the leftmost start the pattern accepts, then one call of
+    `_REMOTE_JOB` itself bounded to the run and its tail, so the match objects, groups and spans
+    are the pattern's own.
+    """
+    resume = 0
+    for run in _REMOTE_JOB_RUN.finditer(text):
+        start, end = run.span()
+        if end <= resume:
+            continue
+        tail = _REMOTE_JOB_TAIL.match(text, end)
+        if tail is None:
+            continue
+        at = _job_start(text, start, end, resume)
+        if at is None:
+            continue
+        found = None
+        # A quote just before the run opens the match when the character before it allows.
+        if at == start and start - 1 >= resume and text[start - 1] in _REMOTE_JOB_QUOTES:
+            found = _REMOTE_JOB.match(text, start - 1, tail.end())
+        if found is None:
+            found = _REMOTE_JOB.match(text, at, tail.end())
+        if found is not None:
+            resume = found.end()
+            yield found
+
+
+def _drop_remote_jobs(text: str) -> str:
+    """`_REMOTE_JOB.sub(_drop_remote_job, text)`, in linear work."""
+    return _substituted(text, _remote_jobs(text), _drop_remote_job)
+
+
+# A CI run URL ends where its run of non-blank, non-`)` characters ends, since the pattern's own
+# last part reads to there, and the leftmost scheme in a run is the one the pattern would start at.
+# The old pattern restarted at every `http://` of a token: 0.29 s per 16,000-character reason.
+_URL_RUN = re.compile(r"[^\s)]+")
+_URL_SCHEME = re.compile(r"https?://", re.IGNORECASE)
+
+
+def _ci_run_urls(text: str) -> Iterator[re.Match[str]]:
+    """The matches `_CI_RUN_URL.finditer(text)` yields, in work linear in `text`."""
+    for run in _URL_RUN.finditer(text):
+        start, end = run.span()
+        scheme = _URL_SCHEME.search(text, start, end)
+        if scheme is None:
+            continue
+        found = _CI_RUN_URL.match(text, scheme.start(), end)
+        if found is not None:
+            yield found
+
+
+def _substituted(
+    text: str, matches: Iterable[re.Match[str]], replace: Callable[[re.Match[str]], str]
+) -> str:
+    out: list[str] = []
+    last = 0
+    for match in matches:
+        out.extend((text[last : match.start()], replace(match)))
+        last = match.end()
+    out.append(text[last:])
+    return "".join(out)
+
+
 def _local_clauses(text: str) -> list[str]:
     """The clauses of a line that can speak of a local run, remote phrasing removed."""
-    marked = _REMOTE_JOB.sub(_drop_remote_job, _CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text))
+    marked = _drop_remote_jobs(
+        _substituted(text, _ci_run_urls(text), lambda _match: f" {_REMOTE_MARK} ")
+    )
     return [
         clause for clause in _CLAIM_CLAUSE_BREAK.split(marked) if not _REMOTE_CLAUSE.search(clause)
     ]
 
 
-def _claims_result(text: str, kind: str, *, remote_aware: bool = False) -> bool:
+def _claims_result(text: str, kind: str) -> bool:
     """Whether one clause of the line speaks of this kind of check and says how it came out.
 
-    Only a goal verdict reads remote phrasing out of the line (`remote_aware`); an outcome line
-    keeps the plain clause split it always had.
+    An outcome line keeps the plain clause split; only a goal verdict reads remote phrasing out of
+    its reason first (`_verdict_check_kinds`).
     """
-    clauses = _local_clauses(text) if remote_aware else _CLAIM_CLAUSE_BREAK.split(text)
+    return _clauses_claim_result(_CLAIM_CLAUSE_BREAK.split(text), kind)
+
+
+def _clauses_claim_result(clauses: Iterable[str], kind: str) -> bool:
     return any(
         _LINE_KINDS[kind].search(clause)
         and _RESULT_CLAIM.search(clause)
@@ -6296,9 +6423,10 @@ def _numbered(selection: object) -> dict[int, LedgerEntry]:
     return selection.by_index()
 
 
-# What stands in for an explanation withheld because the press masked more values than it keeps.
+# What stands in for an explanation the scrub could not finish, or one the press dropped values for.
 SCRUB_WITHHELD_DETAIL = (
-    "The explanation is withheld because too many values were masked to scrub it."
+    "The explanation is withheld because the values masked in this session could not all be "
+    "scrubbed from it."
 )
 
 

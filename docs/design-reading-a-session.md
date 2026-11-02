@@ -4064,13 +4064,95 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
 - **Chained values.** The scrub repeats its pass until nothing changes, so a value that was rejected at the
   boundary of another value is read once that one is a marker: prose `V1:V2` masks both. The flag pass takes a
   whole run after `-p`, so `-pV1V2` masks both values. Strict (output tail) mode still keeps a `:`, `.` or `/`
-  between two values as part of one word, as before.
-- **Deep and heavy sets.** The prefix tree is built without recursion past forty nested values, and a
+  between two values as part of one word, as before. Superseded 2026-11-02 for `:` by
+  [the 2026-11-02 amendment](#amended-2026-11-02-owner-a-colon-shields-no-value-and-a-scrub-that-cannot-finish-withholds): a colon ends a value in both modes.
+- **Deep and heavy sets.** Superseded 2026-11-02 by
+  [the 2026-11-02 amendment](#amended-2026-11-02-owner-a-colon-shields-no-value-and-a-scrub-that-cannot-finish-withholds): a set nested deeper than forty is
+  withheld, not read flat, and the press bound counts spelling mass, not characters. The prefix tree is built without recursion past forty nested values, and a
   set that deep is read as a flat alternation, longest first: about 400 values that each extend the last
   once raised a `RecursionError` out of the scrub, and a press would have failed. The press also keeps
   masked values only up to 131,072 characters in total, newest first, and marks itself partial past it
   as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
   32 s and 2.4 GB to compile cold.
+
+### Amended 2026-11-02 (owner): a colon shields no value, and a scrub that cannot finish withholds
+
+The scrub above failed open at four edges. Each now hides the value or withholds the text.
+
+- **A value after a colon in an output tail.** The strict (output tail) boundary rejected `:` before a
+  value, so an echoed `curl -u alice:<password>` or an `auth alice:<password> failed` line kept the
+  password in the tail a press sends. The strict before-boundary now admits `:`, as prose did. Output
+  with ordinary colons and no masked value (a timestamp, `file.py:12`, a URL without credentials) is
+  unchanged. The strict after-boundary no longer counts `:` either, so a value before a colon is
+  masked too: `auth <password>: denied`, `password <password>:`, `<password>:8080` and both values of
+  `V1:V2`. A one-element colon lookahead that blocked `:` before a word was the first proposal; it
+  left `<password>:8080` visible, because `8080` is no masked run. A value inside a longer word
+  (`<password>x:8080`, `<password>.py:3`) still stays, and this only ever hides more.
+- **Colon chains and colons in prose.** A pass freed only the rightmost unmasked value of a chain
+  `V1:V2:…`, and the loop stopped at sixteen passes without saying so: forty values left twenty-four
+  visible. The prose after-boundary no longer counts `:` as part of a word either, so each value of a
+  chain is masked in one pass, and so are `<password>:5432`, `<password>:src` and the middle value of
+  `V1:V2:word:V3`, which the explanation used to keep. A chain that ends inside a longer word
+  (`V1:…:Vn.py`) hides all but its last value, where the old boundary hid none. Dropping `:` was first
+  rejected because it changed 5,168 of 12,000 random outputs, with a one-element colon lookahead built
+  instead; that lookahead kept `<password>:5432` and made a colon-bearing value's scan quadratic. Every
+  one of those changed outputs hides more, and the owner's rule is that hiding more is fine: on the
+  repository's own docs, with 200 identifiers drawn from them as stand-in values 40 times, 24 of 36,812
+  lines changed, each toward hiding (`max-height:184px` became `…REDACTED:184px`). A lookahead over the
+  whole chain was quadratic too (7.5 s at 48,000 characters), and reading the whole chain and splitting
+  it back left fragments of overlapping values.
+- **Touching runs read once.** A run of touching values was one atomic regex, two or more spellings
+  and the after-boundary. Its scan restarted at every offset the before-boundary admits, which inside
+  a run of `:FakeWxyz` or `!FakeWxyz` values is after every `:` or `!`, and read the run to its end each
+  time: 3.5 s at 160,000 characters, in both modes, on main as well. `records._mask_runs` finds the
+  offsets with a two-spelling lookahead, follows the longest spelling from each and remembers where
+  every offset's chain ends, so each offset is walked once (0.05 s at 160,000). It returns exactly
+  what the regex returned: a differential test against a frozen copy holds them equal, and 338,000
+  seeded passes in both modes did not differ. Narrower fixes were measured on 20,000 cases heavy in
+  colon-bearing values and rejected, because each hides less: leaving colon-bearing spellings out of
+  the run (5,114 cases more visible than before), not restarting after `:` (the same order), and
+  dropping the run's after-boundary (fragments of a longer value left behind).
+- **Spelling mass.** Compile time follows the spellings a value is searched in, not its length: one
+  value of 131,064 quotes weighs nineteen times its length and took 9.7 s to compile cold within the old
+  131,072-character budget. `records.SCRUB_SPELLING_MASS_MAX` (270,336, the mass of 4,096 ordinary
+  32-character values, so that press keeps every value) replaces the character budget. The press counts
+  each value's mass, keeps the newest that fit, and drops a value heavier than the whole budget alone,
+  where it used to evict every older value first. The count bound of 4,096 stays beside it.
+- **Fail closed.** `records.scrub` returns the text and whether it is complete. A set heavier than the
+  budget, a prefix chain deeper than forty (which used to fall back to a flat alternation, 54 s on
+  50,000 quotes), or a text still changing on the fourth pass compiles or returns nothing: the text is the
+  bare marker and `complete` is false, so a caller that ignores the flag still shows nothing.
+  An explanation stores `reading.SCRUB_WITHHELD_DETAIL`, and an output tail becomes
+  `project_context.TAIL_WITHHELD` in the prompt and is never searched for a verdict's quote. Passes fell
+  from sixteen to four: with `:` ending a value, 12,000 random colon-heavy scrubs settled in two passes or
+  three, in prose and in a tail.
+  What was rejected: chunking the alternation (still O(text x branches)), an iterative tree builder (the
+  regex parser recurses per nested group), and a tree to depth forty with a flat tail below it
+  (unbounded per position).
+
+### Amended 2026-11-02 (owner): a long reason and a long word are read in linear work
+
+What these read is unchanged; how long they take to read it is not.
+
+- **The remote-job rule.** The pattern that finds a remote job name in a goal-met reason restarted
+  after every `.` and `/` of a token and read each restart to the token's end: 7.2 s for a 16,000-character
+  Antigravity goal of `a.a.…-a`, 16.9 s for `a/a/…` (each figure covers all four check kinds, since the
+  reason was read once per kind). A job
+  ends where its run of word characters, `.`, `/` and `-` ends, so `reading._remote_jobs` reads each run
+  once: the tail after it, the leftmost start the pattern accepts, then one call of the pattern itself
+  at that start, so the matches are the pattern's own. The reason is split into clauses once, not once per
+  kind, and the "in", "under" or "of" before a slash-joined job is looked for just before the job rather
+  than across the whole reason before it, which was a second quadratic. Possessive quantifiers alone
+  were measured and rejected: they remove the backtracking but not the restarts (5.0 s at 50,000
+  characters). A differential test against a frozen copy of the old pattern holds every match, group
+  and substitution equal.
+- **A tier 3 line's long word.** `shlex` builds a token one character at a time, so a 200,000-character
+  spaced word took 0.68 s. A word with no quote or backslash is now split on the four blanks `shlex`
+  splits on, which is exact; a word longer than 4,096 characters that holds a quote or a backslash is
+  shown as `…` without being parsed. Such a word is real (a `gh pr create --body` of more than 4,096
+  characters), and its line loses the preview of its first characters that the 120-character clip
+  would have left, which is the safe side. A linear POSIX splitter was the alternative, at more code.
+  The line is built once per command, not twice.
 
 ### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
 

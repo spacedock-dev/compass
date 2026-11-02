@@ -28,12 +28,13 @@ import sys
 import time
 import unittest
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
+from unittest import mock
 
 from compass_runtime import quota, records
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 # +08:00 with no DST, so the offset is the same in every season and a failure
 # reads as a timezone bug rather than as a date-dependent flake. This is also
@@ -1007,6 +1008,31 @@ class ScrubValuesTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(text, records.scrub_values(text, ["test"]))
 
+    def test_the_tail_hides_a_value_on_either_side_of_a_colon(self) -> None:
+        values = ["FakeUser11", "FakePass22"]
+        for text in (
+            "auth FakePass22: denied",
+            "password FakePass22:",
+            "connect FakePass22:8080 refused",
+            "tried FakeUser11:FakePass22 on it",
+        ):
+            with self.subTest(text=text):
+                result = records.scrub(text, values)
+                self.assertTrue(result.complete)
+                for value in values:
+                    self.assertNotIn(value, result.text)
+
+    def test_the_tail_keeps_ordinary_colons_and_a_value_inside_a_longer_word(self) -> None:
+        values = ["FakePass22"]
+        for text in (
+            "src/app.py:12: warning",
+            "12:34:56 started",
+            "https://host:8080/path ok",
+            "FakePass22x:8080 and FakePass22_y: and FakePass22.py:3",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.Scrubbed(text, True), records.scrub(text, values))
+
     def test_a_masked_number_from_a_wrapper_flag_does_not_wipe_output(self) -> None:
         words = shlex.split("docker run --rm -u 1000:1000 img pytest -q")
         self.assertEqual(
@@ -1019,6 +1045,27 @@ class ScrubValuesTest(unittest.TestCase):
             ["true", "production", "Bearer FakeTok99xx", "main", "4096", "FakePass99"]
         )
         self.assertEqual({"FakeTok99xx", "FakePass99"}, values)
+
+
+def _top_level_branches(alternation: str) -> list[str]:
+    """The branches of a trie alternation's outermost group, read past escapes."""
+    body = alternation[3:-1] if alternation.startswith("(?:") else alternation
+    branches, depth, start, at = [], 0, 0, 0
+    while at < len(body):
+        char = body[at]
+        if char == "\\":
+            at += 2
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            branches.append(body[start:at])
+            start = at + 1
+        at += 1
+    branches.append(body[start:])
+    return branches
 
 
 class InlineScriptAndQuoteCostTest(unittest.TestCase):
@@ -1072,14 +1119,16 @@ class InlineScriptAndQuoteCostTest(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual({}, records.inline_script_words(shlex.split(line)))
 
-    def test_a_quote_heavy_result_scrubs_quickly_at_the_value_cap(self) -> None:
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
+    def test_a_quote_heavy_result_is_searched_by_a_prefix_tree_at_the_value_cap(self) -> None:
+        # A flat alternation tried every branch at every quote: 3.5 s for 100,000 quotes. The
+        # tree offers one branch per first character, so a quote costs one branch, not 4,096.
         values = [f"Val{n}secret" for n in range(4096)]
-        started = time.process_time()
-        for text in ("'" * 100_000, "a'" * 50_000):
-            records.scrub_values(text, values, prose=True)
-        self.assertLess(time.process_time() - started, 5.0)
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        alternation = records._trie_alternation(spellings)
+        assert alternation is not None
+        self.assertEqual(
+            len({spelling[0] for spelling in spellings}), len(_top_level_branches(alternation))
+        )
         self.assertEqual(
             "x …REDACTED and Val5secretX …REDACTED",
             records.scrub_values("x Val5secret and Val5secretX 'Val5secret'", values, prose=True),
@@ -1092,7 +1141,8 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
     Kept as the reference the combined alternation must agree with.
     """
     boundary = r"[\w./:@+\-]"
-    after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
+    # A `:` after the value ends it in both modes, as in the combined scrub.
+    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
     spellings = {
         spelling
         for value in values
@@ -1106,7 +1156,9 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
             piece.replace("'", "'\"'\"'"),
         )
     }
-    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
+    # A `:` before the value no longer shields it in the strict tail either: an echoed
+    # `curl -u alice:<password>` is the shape that leaked there.
+    before = r"(?<![\w./@+\-])"
     for spelling in sorted(spellings, key=len, reverse=True):
         text = re.sub(rf"{before}{re.escape(spelling)}{after}", records.SECRET_MARKER, text)
         text = re.sub(
@@ -1267,11 +1319,251 @@ class ScrubManyValuesTest(unittest.TestCase):
         self.assertNotIn("FakeSecret", out)
         self.assertLess(elapsed, 1.0)
 
-    def test_values_that_each_extend_the_last_scrub_without_a_recursion_error(self) -> None:
-        # The recursion limit is lowered instead of the chain lengthened: 500 chained values
-        # reach the nesting depth the default limit allows by compiling alternations of ~130 KB,
-        # which cost 1.6 s. Here 100 values nest as deep as the lowered limit permits, so the
-        # same overflow appears if `_trie_depth` stops sending them down the flat path.
+    def test_a_value_of_regex_syntax_is_matched_literally(self) -> None:
+        out = records.scrub_values("x a.b*c+d(e z", ["a.b*c+d(e", "(((("])
+        self.assertEqual(f"x {records.SECRET_MARKER} z", out)
+
+
+def _spellings_before_the_budget(values: list[str]) -> set[str]:
+    return {
+        spelling
+        for value in values
+        for piece in (value, *value.split())
+        if len(piece) >= records.SCRUB_MIN_CHARS
+        for spelling in (
+            piece,
+            shlex.quote(piece),
+            "'" + piece.replace("'", "'\\''") + "'",
+            piece.replace("'", "'\\''"),
+            piece.replace("'", "'\"'\"'"),
+        )
+    }
+
+
+def _scrub_before_the_budget(text: str, values: list[str], *, prose: bool = False) -> str:
+    """A frozen copy of the scrub before the spelling budget and the colon lookahead: sixteen
+    silent passes and a strict `:`-free after-boundary in prose. A flat longest-first alternation
+    stands in for the prefix tree, which reads the same set in the same order.
+
+    Kept as the reference the new scrub must never leave more of a value visible than.
+    """
+    marker = records.SECRET_MARKER
+    spellings = _spellings_before_the_budget(values)
+
+    def patterns(found: set[str]) -> tuple[re.Pattern[str], ...]:
+        boundary = r"[\w./:@+\-]"
+        after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
+        before = r"(?<![\w./@+\-])"
+        alternation = "|".join(re.escape(s) for s in sorted(found, key=lambda s: (-len(s), s)))
+        return (
+            re.compile(rf"{before}(?:{alternation}){after}"),
+            re.compile(rf"(?<!{boundary})(-[pP])(?>(?:{alternation})+){after}"),
+            re.compile(
+                rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
+            ),
+            re.compile(rf"{before}(?>(?:{alternation}){{2,}}){after}"),
+            re.compile(rf"(?:{alternation})"),
+        )
+
+    def one_pass(text: str, compiled: tuple[re.Pattern[str], ...]) -> str:
+        plain, joined_flag, userinfo, touching, inner = compiled
+        text = userinfo.sub(lambda match: match[1] + marker + match[2], text)
+        text = joined_flag.sub(lambda match: match[1] + marker, text)
+
+        def run(match: re.Match[str]) -> str:
+            split = inner.sub(marker, match[0])
+            return split if split.replace(marker, "") == "" else marker
+
+        text = touching.sub(run, text)
+        return plain.sub(marker, text)
+
+    if not spellings:
+        return text
+    text = one_pass(text, patterns(spellings))
+    later = {spelling for spelling in spellings if spelling not in marker}
+    if not later:
+        return text
+    compiled = patterns(later)
+    for _ in range(15):
+        scrubbed = one_pass(text, compiled)
+        if scrubbed == text:
+            break
+        text = scrubbed
+    return text
+
+
+@contextmanager
+def _counted_compiles() -> Iterator[list[str]]:
+    """Every pattern source `records` compiles inside the block, its cache emptied first."""
+    sources: list[str] = []
+    real = re.compile
+
+    def counted(pattern: Any, flags: int = 0) -> re.Pattern[str]:
+        sources.append(pattern if isinstance(pattern, str) else "")
+        return real(pattern, flags)
+
+    records._scrub_patterns.cache_clear()
+    with mock.patch.object(re, "compile", side_effect=counted):
+        yield sources
+    records._scrub_patterns.cache_clear()
+
+
+class AHostileScrubFailsClosedTest(unittest.TestCase):
+    """A scrub bounded by the size of what it searches for, which withholds rather than leaks."""
+
+    def test_a_person_who_quotes_forty_masked_values_joined_by_colons_sees_every_one_hidden(
+        self,
+    ) -> None:
+        for count in (17, 40, 400):
+            values = [f"FakeChain{i:03d}Zq" for i in range(count)]
+            text = "tried " + ":".join(values) + " on it"
+            with self.subTest(count=count):
+                result = records.scrub(text, values, prose=True)
+                self.assertTrue(result.complete)
+                self.assertEqual([], [value for value in values if value in result.text])
+                self.assertEqual(
+                    "tried " + ":".join([records.SECRET_MARKER] * count) + " on it", result.text
+                )
+
+    def test_a_person_whose_chain_ends_inside_a_file_name_sees_the_end_of_it_and_no_more(
+        self,
+    ) -> None:
+        # Before the budget none of this chain was hidden. A colon now ends a value in prose too,
+        # so only the last value stays: it is part of the file name `….py`, as `test` is part of
+        # `test.py`. More hidden, never less.
+        values = [f"FakeChain{i:03d}Zq" for i in range(40)]
+        text = "x " + ":".join(values) + ".py y"
+        result = records.scrub(text, values, prose=True)
+        self.assertTrue(result.complete)
+        self.assertEqual(
+            "x " + ":".join([records.SECRET_MARKER] * 39 + values[39:]) + ".py y", result.text
+        )
+
+    def test_a_person_whose_explanation_puts_a_colon_after_a_value_sees_it_hidden(self) -> None:
+        values = ["FakePass99", "FakeV01x", "FakeV02x", "FakeV03x"]
+        marker = records.SECRET_MARKER
+        for text, expected in (
+            ("it connected with FakePass99:5432 then", f"it connected with {marker}:5432 then"),
+            ("it read FakePass99:src first", f"it read {marker}:src first"),
+            (
+                "it typed FakeV01x:FakeV02x:word:FakeV03x there",
+                f"it typed {marker}:{marker}:word:{marker} there",
+            ),
+            ("alice:FakePass99 and FakePass99: denied.", f"alice:{marker} and {marker}: denied."),
+            ("see FakePass99.py, FakePass99/x and x/FakePass99", None),
+        ):
+            with self.subTest(text=text):
+                result = records.scrub(text, values, prose=True)
+                self.assertTrue(result.complete)
+                self.assertEqual(text if expected is None else expected, result.text)
+
+    def test_a_person_never_sees_more_of_a_value_than_the_scrub_before_the_budget_showed(
+        self,
+    ) -> None:
+        marker = records.SECRET_MARKER
+        rng = random.Random(5018)
+        for colon_values in (False, True):
+            alphabet = "ab1!.-/:'" if colon_values else "ab1!.-/'"
+            for _ in range(600):
+                values = ["".join(rng.choices(alphabet, k=rng.randint(4, 6))) for _ in range(3)]
+                values.append(values[0] + rng.choice("!.-/1"))
+
+                def token(values: list[str] = values) -> str:
+                    return rng.choice(
+                        (*values, "word", "user", rng.choice(values) + rng.choice(values))
+                    )
+
+                text = " ".join(
+                    rng.choice(("", "(", "'", "-p", "u:", "http://u:"))
+                    + ":".join(token() for _ in range(rng.randint(1, 6)))
+                    + rng.choice(("", ".", ")", "@h", ".py", ":", "x", ",", "'", ":8080", ":src"))
+                    for _ in range(rng.randint(1, 5))
+                )
+                for prose in (False, True):
+                    before = _scrub_before_the_budget(text, values, prose=prose)
+                    after = records.scrub(text, values, prose=prose)
+                    with self.subTest(values=values, text=text, prose=prose):
+                        self.assertTrue(after.complete)
+                        self.assertLessEqual(
+                            sum(after.text.count(value) for value in values),
+                            sum(before.count(value) for value in values),
+                        )
+                        self.assertLessEqual(
+                            len(after.text.replace(marker, "")), len(before.replace(marker, ""))
+                        )
+
+    def test_a_scrub_that_cannot_settle_within_its_passes_shows_the_person_nothing(self) -> None:
+        real = records._scrub_pass
+
+        def never_settles(text: str, patterns: Any) -> str:
+            return real(text, patterns) + "x"
+
+        values = ["FakeUnsettled99"]
+        text = "kept FakeUnsettled99 here and a sentence the person must not half-read"
+        with mock.patch.object(records, "_scrub_pass", side_effect=never_settles) as passes:
+            result = records.scrub(text, values, prose=True)
+            calls = passes.call_count
+            plain = records.scrub_values(text, values, prose=True)
+        self.assertFalse(result.complete)
+        self.assertEqual(records.SECRET_MARKER, result.text)
+        self.assertEqual(records.SECRET_MARKER, plain)
+        # Four passes over a 1 MiB reply is about 1.2 s; sixteen were silent and unbounded in cost.
+        self.assertEqual(4, calls)
+
+    def test_a_chain_after_a_password_flag_is_hidden_whole(self) -> None:
+        values = [f"FakeChain{i:03d}Zq" for i in range(40)]
+        text = "ran mysql -p" + ":".join(values) + " now"
+        result = records.scrub(text, values, prose=True)
+        self.assertTrue(result.complete)
+        self.assertEqual([], [value for value in values if value in result.text])
+
+    def test_a_chain_of_four_hundred_values_settles_in_two_passes(self) -> None:
+        values = [f"FakeChain{i:03d}Zq" for i in range(400)]
+        text = "tried " + ":".join(values) + " on it"
+        with mock.patch.object(records, "_scrub_pass", wraps=records._scrub_pass) as passes:
+            self.assertTrue(records.scrub(text, values, prose=True).complete)
+        self.assertLessEqual(passes.call_count, 2)
+
+    def test_values_heavy_with_quotes_compile_nothing_and_withhold_the_text(self) -> None:
+        for values in (
+            ["'" * 131_064],
+            [" ".join(f"w{i:03d}'" for i in range(26_000))[:131_064]],
+        ):
+            with self.subTest(shape=values[0][:6]):
+                self.assertGreater(
+                    records.spelling_mass(values[0]), records.SCRUB_SPELLING_MASS_MAX
+                )
+                with _counted_compiles() as sources:
+                    result = records.scrub("ran it ok", values, prose=True)
+                    plain = records.scrub_values("ran it ok", values)
+                self.assertEqual([], sources)
+                self.assertFalse(result.complete)
+                self.assertEqual(records.SECRET_MARKER, result.text)
+                self.assertEqual(records.SECRET_MARKER, plain)
+
+    def test_the_ordinary_press_at_the_budget_still_compiles_and_hides_its_values(self) -> None:
+        # 4,096 values of 32 characters is the largest ordinary press, and its spellings weigh
+        # exactly the budget. What it compiles is a fixed multiple of that weight, not more.
+        values = [f"FakeVal{i:05d}" + "x" * 20 for i in range(4096)]
+        mass = sum(records.spelling_mass(value) for value in values)
+        self.assertEqual(records.SCRUB_SPELLING_MASS_MAX, mass)
+        with _counted_compiles() as sources:
+            result = records.scrub(f"ran with {values[3]} ok", values, prose=True)
+        self.assertTrue(result.complete)
+        self.assertEqual(f"ran with {records.SECRET_MARKER} ok", result.text)
+        self.assertLessEqual(len(sources), 10)
+        self.assertLessEqual(sum(map(len, sources)), 20 * records.SCRUB_SPELLING_MASS_MAX)
+
+    def test_one_spelling_past_the_budget_compiles_nothing(self) -> None:
+        values = [f"FakeVal{i:05d}" + "x" * 20 for i in range(4096)] + ["FakeOneMore"]
+        with _counted_compiles() as sources:
+            result = records.scrub("ran with FakeOneMore ok", values, prose=True)
+        self.assertEqual([], sources)
+        self.assertFalse(result.complete)
+
+    def test_values_that_each_extend_the_last_are_withheld_never_searched_flat(self) -> None:
+        # Under a lowered recursion limit too: 500 chained values once overflowed it compiling,
+        # and the depth is now read without recursing and nothing is compiled past it.
         original = sys.getrecursionlimit()
         depth = 0
         frame: Any = sys._getframe()
@@ -1280,38 +1572,192 @@ class ScrubManyValuesTest(unittest.TestCase):
             frame = frame.f_back
         for values in (
             ["!" * count + "x" for count in range(3, 103)],
-            ["Tok" + "a" * count for count in range(1, 101)],
+            ["Tok" + "a" * count for count in range(1, 200)],
         ):
             with self.subTest(count=len(values)):
-                longest = max(values, key=len)
                 sys.setrecursionlimit(depth + 150)
                 try:
-                    out = records.scrub_values(f"saw {longest} and {values[3]} ok", values)
+                    with _counted_compiles() as sources:
+                        result = records.scrub(f"saw {values[-1]} and {values[3]} ok", values)
                 finally:
                     sys.setrecursionlimit(original)
-                self.assertEqual(f"saw {records.SECRET_MARKER} and {records.SECRET_MARKER} ok", out)
+                self.assertEqual([], sources)
+                self.assertFalse(result.complete)
+                self.assertEqual(records.SECRET_MARKER, result.text)
 
-    def test_a_deep_prefix_chain_still_leaves_no_tail_behind_the_shorter_value(self) -> None:
-        values = ["Tok" + "a" * count for count in range(1, 200)]
-        out = records.scrub_values("x " + values[-1] + "b", values)
-        self.assertEqual("x " + values[-1] + "b", out)
-        out = records.scrub_values("x " + values[-1] + " y", values)
-        self.assertEqual(f"x {records.SECRET_MARKER} y", out)
+    def test_values_nested_forty_deep_are_searched_and_forty_one_are_withheld(self) -> None:
+        def chain(depth: int) -> list[str]:
+            # Each value extends the last by one character past a shared head, so each is one
+            # more nested group; the quoted spellings nest the same way, one level apart.
+            values = ["Tok" + "a" * count for count in range(1, depth + 1)]
+            spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+            root: dict[str, Any] = {}
+            for spelling in spellings:
+                node = root
+                for char in spelling:
+                    node = node.setdefault(char, {})
+                node[""] = {}
+            self.assertEqual(depth, records._trie_depth(root))
+            return values
 
-    def test_a_cold_scrub_over_4096_values_compiles_in_seconds(self) -> None:
-        # Base took about 4 s on this input and the combined scrub about 0.26 s here. Fresh values,
-        # so the pattern cache cannot answer for it. The bound is ten times the measured time, wide
-        # enough for a loaded runner.
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
-        values = [f"FakeCold{i:05d}Zqx" for i in range(4096)]
-        start = time.process_time()
-        records.scrub_values("ran with FakeCold00003Zqx", values, prose=True)
-        self.assertLess(time.process_time() - start, 5.0)
+        searched = chain(records._TRIE_DEPTH_MAX)
+        result = records.scrub(f"saw {searched[-1]} and {searched[0]} ok", searched)
+        self.assertEqual(
+            records.Scrubbed(f"saw {records.SECRET_MARKER} and {records.SECRET_MARKER} ok", True),
+            result,
+        )
+        deeper = chain(records._TRIE_DEPTH_MAX + 1)
+        self.assertEqual(
+            records.Scrubbed(records.SECRET_MARKER, False),
+            records.scrub(f"saw {deeper[0]}", deeper),
+        )
+        self.assertEqual(40, records._TRIE_DEPTH_MAX)
 
-    def test_a_value_of_regex_syntax_is_matched_literally(self) -> None:
-        out = records.scrub_values("x a.b*c+d(e z", ["a.b*c+d(e", "(((("])
-        self.assertEqual(f"x {records.SECRET_MARKER} z", out)
+    def test_a_tail_chain_of_four_values_hides_every_one(self) -> None:
+        values = ["FakeV01x", "FakeV02x", "FakeV03x", "FakeV04x"]
+        result = records.scrub("auth " + ":".join(values) + " failed", values)
+        self.assertEqual(
+            records.Scrubbed("auth " + ":".join([records.SECRET_MARKER] * 4) + " failed", True),
+            result,
+        )
+
+    def test_a_prefix_chain_within_the_depth_cap_is_still_searched(self) -> None:
+        values = ["Tok" + "a" * count for count in range(1, 30)]
+        result = records.scrub("x " + values[-1] + "b and " + values[-1] + " y", values)
+        self.assertTrue(result.complete)
+        self.assertEqual("x " + values[-1] + "b and " + records.SECRET_MARKER + " y", result.text)
+
+
+class _CountedInner:
+    """The single-spelling pattern of a scrub, counting the matches the run reader asks of it."""
+
+    def __init__(self, pattern: re.Pattern[str]) -> None:
+        self.pattern = pattern
+        self.calls = 0
+
+    def match(self, string: str, pos: int = 0, endpos: int = sys.maxsize) -> re.Match[str] | None:
+        self.calls += 1
+        return self.pattern.match(string, pos, endpos)
+
+    def sub(self, repl: str, string: str) -> str:
+        self.calls += 1
+        return self.pattern.sub(repl, string)
+
+
+def _old_mask_runs(text: str, spellings: tuple[str, ...], *, prose: bool) -> str:
+    """A frozen copy of the run pass as one regex: two or more touching spellings, atomic, then
+    the after-boundary. Kept as the reference the run reader must agree with byte for byte."""
+    alternation = records._trie_alternation(spellings)
+    assert alternation is not None
+    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
+    run = re.compile(rf"(?<![\w./@+\-])(?>(?:{alternation}){{2,}}){after}")
+    inner = re.compile(rf"(?:{alternation})")
+    return run.sub(lambda match: records._mask_run(match[0], inner), text)
+
+
+class TouchingRunsAreReadInLinearWork(unittest.TestCase):
+    """A run of touching values is read by following each value's longest spelling once."""
+
+    SHAPES: ClassVar[tuple[tuple[tuple[str, ...], Callable[[int], str]], ...]] = (
+        # A value that starts with a colon: every `:` restarted the run regex to the text's end.
+        (("FakeWxyz", ":FakeWxyz"), lambda k: " " + "FakeWxyz:" * k + "FakeWxyz.py"),
+        # A value led by a character the before-boundary admits: the same restart after each `!`.
+        (("FakeWxyz", "!FakeWxyz"), lambda k: " " + "!FakeWxyz" * k + ".py"),
+    )
+
+    def work(self, values: tuple[str, ...], text: str, *, prose: bool) -> int:
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        patterns = records._scrub_patterns(spellings, prose)
+        assert patterns is not None
+        _plain, _flag, _userinfo, starts, inner, after = patterns
+        counted = _CountedInner(inner)
+        records._mask_runs(text, starts, counted, after)  # type: ignore[arg-type]
+        return counted.calls
+
+    def test_a_run_of_values_that_restart_at_every_colon_costs_twice_as_much_at_twice_the_length(
+        self,
+    ) -> None:
+        for values, make in self.SHAPES:
+            for prose in (False, True):
+                with self.subTest(values=values, prose=prose):
+                    small = self.work(values, make(2_000), prose=prose)
+                    large = self.work(values, make(4_000), prose=prose)
+                    self.assertGreater(small, 0)
+                    self.assertLess(large, 2.2 * small, (small, large))
+
+    def test_a_run_whose_end_fails_the_boundary_is_not_retried_with_a_shorter_first_value(
+        self,
+    ) -> None:
+        # The run regex is atomic: `aaaab` then `xxxx` ends inside `xxxxx` and fails, and it does
+        # not go back to `aaaa` then `bxxxxx`, which would end at the space and pass.
+        values = ("aaaa", "aaaab", "xxxx", "bxxxxx")
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        text = "see aaaabxxxxx now"
+        for prose in (False, True):
+            patterns = records._scrub_patterns(spellings, prose)
+            assert patterns is not None
+            _plain, _flag, _userinfo, starts, inner, after = patterns
+            with self.subTest(prose=prose):
+                self.assertEqual(text, _old_mask_runs(text, spellings, prose=prose))
+                self.assertEqual(text, records._mask_runs(text, starts, inner, after))
+
+    def test_the_run_reader_masks_exactly_what_the_run_regex_masked(self) -> None:
+        rng = random.Random(5018)
+        alphabets = (
+            "a b'\"1:",
+            "\u00e9\u5bc6:a",
+            "ab1!.-/:'",
+            "ab1!.-/'",
+            "abcd1:",
+            "Fk9:",
+            "ab:",
+            "a!:",
+        )
+        compared = 0
+        for _ in range(1_500):
+            alphabet = rng.choice(alphabets)
+            values = [
+                "".join(rng.choices(alphabet, k=rng.randint(2, 7)))
+                for _ in range(rng.randint(1, 4))
+            ]
+            values.append(values[0] + rng.choice("!.-/1:"))
+
+            def token(values: list[str] = values) -> str:
+                return rng.choice(
+                    (
+                        *values,
+                        "word",
+                        "user",
+                        "".join(rng.choice(values) for _ in range(rng.randint(2, 4))),
+                    )
+                )
+
+            text = " ".join(
+                rng.choice(("", "(", "'", "-p", "u:", "http://u:", "alice:", "x ", ":", "!"))
+                + rng.choice((":", "", "", "!")).join(token() for _ in range(rng.randint(1, 6)))
+                + rng.choice(
+                    ("", ".", ")", "@h", ".py", ":", "x", ",", "'", ":8080", ":src", ": denied")
+                )
+                for _ in range(rng.randint(1, 5))
+            )
+            spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+            if not spellings:
+                continue
+            for prose in (False, True):
+                patterns = records._scrub_patterns(spellings, prose)
+                if patterns is None:
+                    continue
+                _plain, _flag, _userinfo, starts, inner, after = patterns
+                current = text
+                for _ in range(3):
+                    with self.subTest(values=values, text=current, prose=prose):
+                        self.assertEqual(
+                            _old_mask_runs(current, spellings, prose=prose),
+                            records._mask_runs(current, starts, inner, after),
+                        )
+                    compared += 1
+                    current = records._scrub_pass(current, patterns)
+        self.assertGreater(compared, 5_000)
 
 
 class MaskCommandTest(unittest.TestCase):

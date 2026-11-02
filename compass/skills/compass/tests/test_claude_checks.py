@@ -30,6 +30,7 @@ from compass_runtime import (
     observer,
     project_context,
     reading,
+    records,
     semantic_history,
 )
 from compass_runtime.config import build_runtime_config
@@ -1784,25 +1785,41 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
         self.assertEqual(frozenset({"FakePass29", "FakePass39", "FakePass49"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
-    def test_past_the_total_length_budget_the_newest_values_stay_and_the_press_is_partial(
+    def test_past_the_spelling_budget_the_newest_values_stay_and_the_press_is_partial(
         self,
     ) -> None:
-        with mock.patch.object(project_context, "MASKED_VALUES_MAX_CHARS", 25):
+        # Each `FakePassN9` weighs 22: itself and its quoted spelling.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 50):
             for index in range(5):
                 self.session.bash(f"curl -u alice:FakePass{index}9 https://x.example", "ok")
             press = self.press()
         self.assertEqual(frozenset({"FakePass39", "FakePass49"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
-    def test_one_value_longer_than_the_whole_budget_is_dropped_and_said(self) -> None:
-        huge = "FakePass" * (project_context.MASKED_VALUES_MAX_CHARS // 8 + 1)
+    def test_a_press_counts_a_values_quoted_spellings_against_its_budget(self) -> None:
+        # A value holding an apostrophe is searched for in five spellings, 73 characters for an
+        # 11-character value, and that is what it costs to compile.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 100):
+            for index in range(2):
+                quoted = shlex.quote(f"alice:Fake'Pass{index}9")
+                self.session.bash(f"curl -u {quoted} https://x.example", "ok")
+            press = self.press()
+        self.assertEqual(frozenset({"Fake'Pass19"}), press.masked_values)
+        self.assertTrue(press.masked_values_partial)
+
+    def test_one_value_larger_than_the_whole_budget_is_dropped_alone_and_the_ones_before_stay(
+        self,
+    ) -> None:
+        self.session.bash("curl -u alice:FakePass19 https://x.example", "ok")
+        self.session.bash("curl -u alice:FakePass29 https://x.example", "ok")
+        huge = "FakePass" * (records.SCRUB_SPELLING_MASS_MAX // 16 + 1)
         self.session.bash(f"curl -u alice:{huge} https://x.example", "ok")
         press = self.press()
-        self.assertEqual(frozenset(), press.masked_values)
+        self.assertEqual(frozenset({"FakePass19", "FakePass29"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
     def test_a_value_met_again_is_not_counted_twice_against_the_budget(self) -> None:
-        with mock.patch.object(project_context, "MASKED_VALUES_MAX_CHARS", 25):
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 25):
             for _ in range(4):
                 self.session.bash("curl -u alice:FakePass09 https://x.example", "ok")
             press = self.press()
@@ -1816,6 +1833,33 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
             press = self.press()
         self.assertEqual(3, len(press.masked_values))
         self.assertFalse(press.masked_values_partial)
+
+    def test_a_call_of_many_checks_scrubs_its_output_tail_once(self) -> None:
+        # The tail is the whole call's output, so every check and command in the call shares it:
+        # scrubbing it per check multiplied a heavy set's cost by the number of checks.
+        checks = "pytest -q && ruff check . && mypy . && npm test && make deploy"
+        self.session.bash(f"PASSWORD=FakePass19 {checks}", "+ FakePass19\n3 passed", is_error=False)
+        with mock.patch.object(
+            project_context, "_scrubbed_tail", wraps=project_context._scrubbed_tail
+        ) as scrubbed:
+            entries, _scan = self.read()
+        self.assertGreaterEqual(len([e for e in entries if e["subject"] == "check"]), 4)
+        self.assertEqual(1, scrubbed.call_count)
+
+    def test_a_checks_trailer_free_tail_and_a_commands_raw_tail_are_kept_apart(self) -> None:
+        # A check reads the output with Claude Code's trailer removed, a command reads it whole:
+        # one scrub per distinct text, never one text standing in for the other.
+        tails: dict[str, str] = {}
+        raw = "SYNTHETICOUT 1 passed\nShell cwd was reset to /work"
+        stripped = project_context._without_trailer(raw)
+        with mock.patch.object(
+            project_context, "_scrubbed_tail", wraps=project_context._scrubbed_tail
+        ) as scrubbed:
+            for text in (stripped, raw, stripped, raw):
+                project_context._call_tail(tails, text, ())
+        self.assertEqual(2, scrubbed.call_count)
+        self.assertEqual(project_context._scrubbed_tail(raw, ()), tails[raw])
+        self.assertNotEqual(tails[raw], tails[stripped])
 
     def test_a_session_that_masked_nothing_carries_nothing(self) -> None:
         self.session.bash("pytest -q", "3 passed in 0.1s")

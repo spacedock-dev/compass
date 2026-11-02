@@ -5,8 +5,9 @@ from __future__ import annotations
 import base64
 import shlex
 from typing import SupportsIndex, overload
+from unittest import mock
 
-from compass_runtime import project_context, reading
+from compass_runtime import project_context, reading, records
 
 from .test_check_line_parser import CheckLineTestCase
 
@@ -477,3 +478,91 @@ class ArithmeticQuoteCorrectionTest(_SelectedPromptTestCase):
                 self.assertIs(True, checks[0]["changed_after"])
                 self.assertNotIn(placeholder, text)
                 self.assert_selected_prompt_omits(placeholder)
+
+
+class AColonDoesNotShieldAMaskedValueInATail(_SelectedPromptTestCase):
+    """An echoed `user:password` keeps no password in the prompt a press sends."""
+
+    PLACEHOLDER = "EXAMPLEcolonPass97"
+
+    def prompt_text(self) -> str:
+        self.published()
+        self.assertTrue(any(row.get("tail") for row in self.ledger))
+        prompt, _selection = reading.build_prompt(
+            self.ledger, goal="Keep synthetic checks correct", max_bytes=65536
+        )
+        return prompt
+
+    def test_a_person_whose_command_echoed_user_colon_password_sends_no_password(self) -> None:
+        value = self.PLACEHOLDER
+        for echoed in (
+            f"alice:{value}",
+            f"+ curl -u alice:{value} https://x.example",
+            f"auth alice:{value} failed",
+        ):
+            with self.subTest(echoed=echoed.split(value)[0]):
+                self.fresh()
+                self.session.bash(
+                    f"curl -u alice:{value} https://x.example; pytest -q",
+                    f"{echoed}\n1 passed",
+                    is_error=False,
+                )
+                prompt = self.prompt_text()
+                self.assertNotIn(value, prompt)
+                self.assertIn("1 passed", prompt)
+
+    def test_a_person_whose_output_put_the_password_before_a_colon_sends_no_password(self) -> None:
+        value = self.PLACEHOLDER
+        for echoed in (
+            f"auth {value}: denied",
+            f"password {value}:",
+            f"connect {value}:8080 refused",
+        ):
+            with self.subTest(echoed=echoed.split(value)[0]):
+                self.fresh()
+                self.session.bash(
+                    f"curl -u alice:{value} https://x.example; pytest -q",
+                    f"{echoed}\n1 passed",
+                    is_error=False,
+                )
+                prompt = self.prompt_text()
+                self.assertNotIn(value, prompt)
+                self.assertIn("1 passed", prompt)
+
+    def test_a_person_whose_output_holds_ordinary_colons_sees_them_unchanged(self) -> None:
+        ordinary = "12:34:56 start\nsrc/app.py:12: warn\nhttp://example.com:8080/a ok"
+        self.session.bash(
+            f"curl -u alice:{self.PLACEHOLDER} https://x.example; pytest -q",
+            f"{ordinary}\n1 passed",
+            is_error=False,
+        )
+        prompt = self.prompt_text()
+        for line in ordinary.splitlines():
+            self.assertIn(line, prompt)
+
+
+class ATailThatCannotBeSearchedIsWithheldWhole(_SelectedPromptTestCase):
+    """A per-call output tail whose masked values are too heavy to search reaches no prompt."""
+
+    def test_a_person_whose_tail_cannot_be_searched_sends_a_fixed_sentence_instead(self) -> None:
+        value = "EXAMPLEheavyPass97"
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 5):
+            self.session.bash(
+                f"curl -u alice:{value} https://x.example; pytest -q",
+                f"+ curl -u alice:{value} https://x.example\nSYNTHETICUNSEARCHED 1 passed",
+                is_error=False,
+            )
+            self.published()
+        prompt, _selection = reading.build_prompt(
+            self.ledger, goal="Keep synthetic checks correct", max_bytes=65536
+        )
+        self.assertIn(project_context.TAIL_WITHHELD, prompt)
+        self.assertNotIn(value, prompt)
+        self.assertNotIn("SYNTHETICUNSEARCHED", prompt)
+
+    def test_a_withheld_tail_is_never_searched_for_a_verdicts_quote(self) -> None:
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 5):
+            self.session.bash("pytest -q --password EXAMPLEheavyPass97", "1 passed", is_error=False)
+            self.session.save(self.path)
+            press = project_context.claude_check_press(self.config, str(self.path))
+        self.assertEqual({}, dict(press.quotable))

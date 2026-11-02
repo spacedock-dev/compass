@@ -1976,7 +1976,7 @@ failure counts only for a call of one segment. The stages before it record no re
 published because it cannot fail. A typed closed-list runner is held to the same rule: one told to exit zero (`ruff check --exit-zero`), one given a flag that makes it run nothing (`pytest --collect-only`, `cargo test --no-run`, `make test -n`, `--version`, a help flag inside a short cluster such as `pytest -qh`, a Maven run told to ignore failures with `-fn` or `-Dmaven.test.failure.ignore`), and one started after an assignment of `PATH`, `NODE_OPTIONS`, `BASH_ENV`, `ENV`, `SHELL` or any `*_ADDOPTS` variable, on its own segment or exported earlier in the same call (an appended `+=` counts, and `env -u NAME` does not hide the assignment after it), is published as a plain command and counts for nothing. So does one run under a variable of a runner's own family that can reach it: `MAKEFLAGS` and the other `make` variables before `make`, `npm_config_*` before a package manager, `YARN_*` before yarn, `JUST_*` before `just`, and any of them before a runner that starts other programs (`make`, `just`, a package manager, `tox`, `nox`, `rake`). A direct runner such as `pytest` or `cargo` is not steered by another tool's variable, an assignment on one segment steers only that segment (an `export` steers the rest of the call), and `MAKEFLAGS` holding only harmless flags such as `-j4` leaves `make` counting. So does any package-manager check after the session, in any call, set that manager's script shell or yarn binary (`config set script-shell`, `yarn set version`, or a shell command that writes an `.npmrc`, `.yarnrc`, `.yarnrc.yml` or `pnpm-workspace.yaml`, whatever it holds, where staging, reading, copying or removing the file does not count, or a file-tool write of one that sets one; `npx` counts as npm); the whole session is read, so an earlier pass is withdrawn too. A pass of `jest --passWithNoTests` or a Maven build that printed "No tests to run" where no module ran tests reads as run with no recorded result; one that also printed a passed test count does not. A tier 3 failure blocks the live
 estimate's floor only until a later check or command passes. A call whose result carries Claude Code's structured git record publishes that record only, never
 its command line. A quoted word the masking cannot read word by word, such as the script of a `bash -c`
-call that did not parse, is published as `…`, so half of a value is never shown. The same rules decide the
+call that did not parse, is published as `…`, so half of a value is never shown; so is a word longer than 4,096 characters that holds a quote or a backslash, which is not parsed at all. The same rules decide the
 last 180 characters of output the press reads. The vendor of the session decides what leaves the machine:
 a Claude Code session read through Claude Code may be sent every command's masked line and redacted tail,
 since that vendor already received them. The Live monitor's Haiku check is the exception: it is sent a
@@ -2030,15 +2030,22 @@ environment literal (`true`, `false`, `production`, `main`, `test`), an auth sch
 `Basic`), a bare number and a lowercase-letters-only word stay, because `CI=true` and `-u 1000`
 would otherwise erase ordinary words from a sentence the reader reads. The accepted loss is a
 lowercase-letters-only password quoted in an explanation; the check line and the output tail still
-mask it. A press carries up to 4,096 masked values and 131,072 characters of them and, past either,
-keeps the newest; when it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
-published unscrubbed. The server holds the masked values of the last two scrubs in a small in-memory
+mask it. A press carries up to 4,096 masked values and at most 270,336 characters of their
+spellings, each value counted with the quoted and escaped forms it is searched for in. Past either
+bound it keeps the newest values that fit; a single value too large for the whole budget is dropped
+alone and the values before it stay. When it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
+published unscrubbed. A scrub whose values weigh more than that bound or nest more than forty
+prefixes deep, or that does not settle in four passes, withholds its text rather than returning it half scrubbed: an explanation is replaced
+by the same sentence, and a command's output tail is replaced in the prompt by a sentence saying its
+output was withheld. The server holds the masked values of the last two scrubs in a small in-memory
 cache for the life of the process, and writes them nowhere. A line that lists a command of the shell
 (not a check) shows the script given to `python -c`, `node -e`, `-p`, `--eval` or `--print`, `bun` with the same flags,
 `deno eval`, `ruby -e`, `perl -e` or `-E` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal
 credential inside code has no form a mask can find; a check line keeps its own rule. A value at the
-end of a sentence or inside brackets or quotes is removed, while one inside a
-longer word, path or domain is not. The class lives in the observed record only, as
+end of a sentence or inside brackets or quotes is removed from an explanation, and a colon on either
+side of a value does not shield it there or in a command's output tail (`alice:<password>`,
+`<password>: denied`, `<password>:8080`). A value inside a longer word, path or domain stays, and in
+an output tail so does one followed by `.`, `/`, `@`, `+` or `-`, since a filename ends in `.py`. The class lives in the observed record only, as
 its own fact type, kept out of the semantic history store and out of every session row field, and
 it is named in `history.PROMPT_DERIVED_CARRIERS`.
 

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import events, observer, reading, reading_route, records
+from compass_runtime import events, observer, project_context, reading, reading_route, records
 
 from .reading_pins import named_machine
 from .recorded_name import original_product_name
@@ -4209,6 +4209,35 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
         self.assertEqual(reading.SCRUB_WITHHELD_DETAIL, resolve(True))
         self.assertEqual("", resolve(True, reading.RESULT_CONSISTENT))
         self.assertIn("renamed the wrong flag", resolve(False))
+
+    def test_the_withheld_sentences_name_no_one_cause(self) -> None:
+        # A scrub withholds for the budget, the nesting depth or the passes, and a press for the
+        # values it dropped: each sentence has to be true whichever it was.
+        self.assertEqual(
+            "The explanation is withheld because the values masked in this session could not all "
+            "be scrubbed from it.",
+            reading.SCRUB_WITHHELD_DETAIL,
+        )
+        self.assertEqual(
+            "[output withheld: its masked values could not all be searched]",
+            project_context.TAIL_WITHHELD,
+        )
+
+    def test_a_value_before_a_colon_is_stored_masked(self) -> None:
+        for said in ("it connected with FakePass99:5432", "it read FakePass99:src first"):
+            with self.subTest(said=said):
+                detail = self.resolve_detail(said, frozenset({"FakePass99"}))
+                self.assertNotIn("FakePass99", detail)
+                self.assertIn(records.SECRET_MARKER, detail)
+
+    def test_when_the_scrub_cannot_finish_the_person_sees_the_withheld_sentence(self) -> None:
+        # The press kept every value, but they are too heavy to search: the scrub withholds, and
+        # the stored reason is the fixed sentence, never the bare marker nor the prose.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 5):
+            detail = self.resolve_detail(
+                "it typed FakePass99 and renamed the wrong flag", frozenset({"FakePass99"})
+            )
+        self.assertEqual(reading.SCRUB_WITHHELD_DETAIL, detail)
 
     def test_the_withheld_sentence_is_stored_only_when_an_explanation_was_withheld(self) -> None:
         # A reply that carried no explanation has nothing to withhold, whatever the press dropped.
