@@ -505,7 +505,12 @@ class EachClauseSplitterHasItsOwnNameAndItsCallers(unittest.TestCase):
 
 
 def _frozen_job_spans(text: str, name: str) -> list[tuple[int, int]]:
-    """`reading._job_spans` as it stood before it went linear, kept to compare answers against."""
+    """`reading._job_spans` as it stood before it went linear, kept to compare answers against.
+
+    This copy and `_frozen_job_claimed` call the live `_JOB_*` constants, `_NOT_A_RESULT` and
+    `_CLAIM_CLAUSE_BREAK`, so the differential defends the span-and-marking shape, not those
+    patterns.
+    """
     if not name:
         return []
     plain = re.fullmatch(r"\w+", name) is not None
@@ -541,7 +546,12 @@ _WORK = [0]
 
 
 class _Counted(str):
-    """A string that counts the characters every slice, concatenation and index copies out of it."""
+    """A string that counts the characters every slice, concatenation and index copies out of it.
+
+    It cannot see work done on a plain string: whatever `"".join`, `re.split`, `str.replace`,
+    `re.sub` or `str(text)` return is an ordinary `str`, so a quadratic reintroduced through one
+    of those would not be counted.
+    """
 
     __slots__ = ()
 
