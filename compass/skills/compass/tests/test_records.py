@@ -1141,8 +1141,8 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
     Kept as the reference the combined alternation must agree with.
     """
     boundary = r"[\w./:@+\-]"
-    # A `:` after the value ends it in the strict tail too, as in the combined scrub.
-    after = r"(?![\w@+\-]|[./:][\w/])" if prose else r"(?![\w./@+\-])"
+    # A `:` after the value ends it in both modes, as in the combined scrub.
+    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
     spellings = {
         spelling
         for value in values
@@ -1428,15 +1428,34 @@ class AHostileScrubFailsClosedTest(unittest.TestCase):
     def test_a_person_whose_chain_ends_inside_a_file_name_sees_the_end_of_it_and_no_more(
         self,
     ) -> None:
-        # Today none of this chain is hidden; the last two values stay, since the last one is
-        # part of `.py` and the one before it is judged by what follows it. More hidden, never less.
+        # Before the budget none of this chain was hidden. A colon now ends a value in prose too,
+        # so only the last value stays: it is part of the file name `….py`, as `test` is part of
+        # `test.py`. More hidden, never less.
         values = [f"FakeChain{i:03d}Zq" for i in range(40)]
         text = "x " + ":".join(values) + ".py y"
         result = records.scrub(text, values, prose=True)
         self.assertTrue(result.complete)
         self.assertEqual(
-            "x " + ":".join([records.SECRET_MARKER] * 38 + values[38:]) + ".py y", result.text
+            "x " + ":".join([records.SECRET_MARKER] * 39 + values[39:]) + ".py y", result.text
         )
+
+    def test_a_person_whose_explanation_puts_a_colon_after_a_value_sees_it_hidden(self) -> None:
+        values = ["FakePass99", "FakeV01x", "FakeV02x", "FakeV03x"]
+        marker = records.SECRET_MARKER
+        for text, expected in (
+            ("it connected with FakePass99:5432 then", f"it connected with {marker}:5432 then"),
+            ("it read FakePass99:src first", f"it read {marker}:src first"),
+            (
+                "it typed FakeV01x:FakeV02x:word:FakeV03x there",
+                f"it typed {marker}:{marker}:word:{marker} there",
+            ),
+            ("alice:FakePass99 and FakePass99: denied.", f"alice:{marker} and {marker}: denied."),
+            ("see FakePass99.py, FakePass99/x and x/FakePass99", None),
+        ):
+            with self.subTest(text=text):
+                result = records.scrub(text, values, prose=True)
+                self.assertTrue(result.complete)
+                self.assertEqual(text if expected is None else expected, result.text)
 
     def test_a_person_never_sees_more_of_a_value_than_the_scrub_before_the_budget_showed(
         self,

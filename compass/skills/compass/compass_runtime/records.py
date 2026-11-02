@@ -2350,7 +2350,10 @@ def spelling_mass(value: str) -> int:
 
 
 def scrub_values(text: str, values: Iterable[str], *, prose: bool = False) -> str:
-    """`scrub(...).text`: the scrubbed text, or the bare marker when the scrub could not finish."""
+    """`scrub(...).text`: the scrubbed text, or the bare marker when the scrub could not finish.
+
+    A convenience for tests; no runtime module calls it, since each caller acts on `complete`.
+    """
     return scrub(text, values, prose=prose).text
 
 
@@ -2363,10 +2366,11 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     `test` does not turn `test_a.py`, `test-file.py` or `src/test` into a
     redacted name.
 
-    `prose` is for a sentence: there a `.`, `:` or `,` that ends the sentence, or
-    a bracket or quote around the word, does not make the value part of a longer
-    word, while `.`, `:` or `/` followed by a word character still does. The
-    output tail keeps the strict boundary because a filename ends in `.py`.
+    A `:` ends a value in both modes, before it or after it. `prose` is for a sentence:
+    there a `.` or `,` that ends the sentence, or a bracket or quote around the word,
+    does not make the value part of a longer word, while `.` or `/` followed by a word
+    character still does. The output tail keeps `.`, `/`, `@`, `+` and `-` inside a word
+    because a filename ends in `.py`.
 
     It fails closed. A set of values too heavy to compile (`SCRUB_SPELLING_MASS_MAX`), values
     that each extend the last past `_TRIE_DEPTH_MAX`, or a text that still changes on the last of
@@ -2400,9 +2404,10 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     return _SCRUB_WITHHELD
 
 
-# Passes including the one that confirms nothing changed. With the colon lookahead a prose scrub of
-# 12,000 random texts settled in two passes 11,546 times and in three the rest; a colon chain of any
-# length settles in two. A scrub still changing on the last pass withholds its text.
+# Passes including the one that confirms nothing changed. With `:` ending a value, 12,000 random
+# colon-heavy texts settled in two passes 11,750 times in prose (11,724 in a tail) and in three the
+# rest; a colon chain of any length settles in two. A scrub still changing on the last pass
+# withholds its text.
 _SCRUB_PASSES: Final = 4
 
 
@@ -2516,28 +2521,16 @@ def _scrub_patterns(
     # `curl -u alice:<password>` alike, so it does not make the value part of a longer word;
     # a `/`, `.` or `@` still does.
     before = r"(?<![\w./@+\-])"
-    if prose:
-        end = r"(?![\w@+\-]|[./:][\w/])"
-        # `V1:V2` is how a value list is quoted, and V1 fails `end` at the `:`. It is accepted
-        # when one masked run follows the `:` and that run ends the word or meets another `:`.
-        # Without this a chain freed one value per pass from the right, and a chain longer than
-        # the passes stayed visible. One element of lookahead keeps the scan linear; a lookahead
-        # over the whole chain was quadratic (7.5 s at 48,000 characters). A chain ending inside
-        # a longer word (`V1:V2:V3.py`) hides all but its last two values, where the old
-        # boundary hid none. The flag pattern keeps `end`: the lookahead doubles a pattern's
-        # compile time, and `-pV1:V2:…` settles anyway, its chain in one pass and V1 in the next.
-        after = rf"(?:{end}|(?=:(?>(?:{alternation})+)(?:{end}|:)))"
-        flag_after = end
-    else:
-        # An output tail keeps `.`, `/`, `@`, `+` and `-` inside the word, since a filename ends in
-        # `.py`, but not `:`: `auth <password>: denied`, `<password>:8080` and `V1:V2` each end the
-        # value at the colon. That only ever hides more, and output with no masked value in it is
-        # untouched.
-        after = flag_after = r"(?![\w./@+\-])"
+    # A `:` after a value ends it in both modes: `<password>: denied`, `<password>:8080` and each
+    # value of `V1:V2` are hidden in one pass. An output tail keeps `.`, `/`, `@`, `+` and `-`
+    # inside the word, since a filename ends in `.py`; prose lets a `.` or `/` end a sentence
+    # unless a word character follows. Either way this only hides more, and text with no masked
+    # value in it is untouched.
+    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),
         # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
-        re.compile(rf"(?<!{boundary})(-[pP])(?>(?:{alternation})+){flag_after}"),
+        re.compile(rf"(?<!{boundary})(-[pP])(?>(?:{alternation})+){after}"),
         re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),

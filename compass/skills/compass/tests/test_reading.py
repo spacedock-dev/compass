@@ -4210,6 +4210,13 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
         self.assertEqual("", resolve(True, reading.RESULT_CONSISTENT))
         self.assertIn("renamed the wrong flag", resolve(False))
 
+    def test_a_value_before_a_colon_is_stored_masked(self) -> None:
+        for said in ("it connected with FakePass99:5432", "it read FakePass99:src first"):
+            with self.subTest(said=said):
+                detail = self.resolve_detail(said, frozenset({"FakePass99"}))
+                self.assertNotIn("FakePass99", detail)
+                self.assertIn(records.SECRET_MARKER, detail)
+
     def test_when_the_scrub_cannot_finish_the_person_sees_the_withheld_sentence(self) -> None:
         # The press kept every value, but they are too heavy to search: the scrub withholds, and
         # the stored reason is the fixed sentence, never the bare marker nor the prose.

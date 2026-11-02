@@ -4085,16 +4085,19 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   `V1:V2`. A one-element colon lookahead that blocked `:` before a word was the first proposal; it
   left `<password>:8080` visible, because `8080` is no masked run. A value inside a longer word
   (`<password>x:8080`, `<password>.py:3`) still stays, and this only ever hides more.
-- **Colon chains in prose.** A pass freed only the rightmost unmasked value of a chain `V1:V2:…`, and
-  the loop stopped at sixteen passes without saying so: forty values left twenty-four visible. A value
-  followed by `:` is now accepted when one masked run follows the colon and that run ends the word or
-  meets another `:`, so a chain of any length is masked in one pass. The lookahead is one element long,
-  so the scan stays linear; a lookahead over the whole chain was quadratic (7.5 s at 48,000
-  characters), reading the whole chain and splitting it back left fragments of overlapping values, and
-  dropping `:` from the after-boundary changed 5,168 of 12,000 random outputs. The accepted change is
-  toward hiding: a chain that ends inside a longer word (`V1:…:Vn.py`) hides all but its last two
-  values, where the old boundary hid none. The `-p` flag pattern keeps the plain boundary, because the
-  lookahead doubles a pattern's compile time and a flag chain settles in the next pass anyway.
+- **Colon chains and colons in prose.** A pass freed only the rightmost unmasked value of a chain
+  `V1:V2:…`, and the loop stopped at sixteen passes without saying so: forty values left twenty-four
+  visible. The prose after-boundary no longer counts `:` as part of a word either, so each value of a
+  chain is masked in one pass, and so are `<password>:5432`, `<password>:src` and the middle value of
+  `V1:V2:word:V3`, which the explanation used to keep. A chain that ends inside a longer word
+  (`V1:…:Vn.py`) hides all but its last value, where the old boundary hid none. Dropping `:` was first
+  rejected because it changed 5,168 of 12,000 random outputs, with a one-element colon lookahead built
+  instead; that lookahead kept `<password>:5432` and made a colon-bearing value's scan quadratic. Every
+  one of those changed outputs hides more, and the owner's rule is that hiding more is fine: on the
+  repository's own docs, with 200 identifiers drawn from them as stand-in values 40 times, 24 of 36,812
+  lines changed, each toward hiding (`max-height:184px` became `…REDACTED:184px`). A lookahead over the
+  whole chain was quadratic too (7.5 s at 48,000 characters), and reading the whole chain and splitting
+  it back left fragments of overlapping values.
 - **Spelling mass.** Compile time follows the spellings a value is searched in, not its length: one
   value of 131,064 quotes weighs nineteen times its length and took 9.7 s to compile cold within the old
   131,072-character budget. `records.SCRUB_SPELLING_MASS_MAX` (270,336, the mass of 4,096 ordinary
@@ -4107,7 +4110,8 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   bare marker and `complete` is false, so a caller that ignores the flag still shows nothing.
   An explanation stores `reading.SCRUB_WITHHELD_DETAIL`, and an output tail becomes
   `project_context.TAIL_WITHHELD` in the prompt and is never searched for a verdict's quote. Passes fell
-  from sixteen to four: with the lookahead, 12,000 random prose scrubs settled in two passes or three.
+  from sixteen to four: with `:` ending a value, 12,000 random colon-heavy scrubs settled in two passes or
+  three, in prose and in a tail.
   What was rejected: chunking the alternation (still O(text x branches)), an iterative tree builder (the
   regex parser recurses per nested group), and a tree to depth forty with a flat tail below it
   (unbounded per position).
