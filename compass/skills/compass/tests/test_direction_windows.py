@@ -394,6 +394,7 @@ class AListedDirectionReachesItsSource(_ClaudeSession):
         # The cap is lowered rather than filled: 4,096 prompts cost 1.9 s to write and read, and
         # the behaviour is the same at any cap the read can reach.
         cap = 128
+        self.assertEqual(4096, project_context.TRANSCRIPT_USER_FACTS_MAX, "the production cap")
         for k in range(cap):
             self.session.prompt(f"Use fixture {k} to check the boundary.")
         self.session.rows.append(duplicate)

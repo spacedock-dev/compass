@@ -49,12 +49,12 @@ class FrontendDetectorControlsTest(unittest.TestCase):
 
     def test_the_shipped_step_agrees_for_a_frontend_path(self) -> None:
         # The in-process cases above call ci_scope.scope directly; this is the one real run of the
-        # workflow step, so the wiring around that call cannot drift from them unseen.
-        path = ".github/workflows/release.yml"
-        self.assertEqual(
-            detector.detect_in_process(path),
-            detector.QualityGateDetectorTest().detect(path),
-        )
+        # workflow step, so the wiring around that call cannot drift from them unseen. A source path
+        # that only the frontend lane claims, so the answer differs from the fail-open one.
+        path = "frontend/src/main.tsx"
+        expected = detector.detect_in_process(path)
+        self.assertEqual("false", expected["python"], "a fail-open answer would read true here")
+        self.assertEqual(expected, detector.QualityGateDetectorTest().detect(path))
 
     def test_actual_frontend_doc_reads_precede_prose_classification(self) -> None:
         # Real temporary source inputs, not an invented detector result.

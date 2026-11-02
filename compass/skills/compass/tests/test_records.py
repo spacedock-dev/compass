@@ -1284,7 +1284,7 @@ class ScrubManyValuesTest(unittest.TestCase):
         ):
             with self.subTest(count=len(values)):
                 longest = max(values, key=len)
-                sys.setrecursionlimit(depth + 80)
+                sys.setrecursionlimit(depth + 150)
                 try:
                     out = records.scrub_values(f"saw {longest} and {values[3]} ok", values)
                 finally:

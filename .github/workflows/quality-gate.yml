@@ -165,7 +165,8 @@ jobs:
       # Through scripts/run_tests.py, which is stdlib-only for exactly this job:
       # it installs requirements-validation.txt and nothing else. Same discovery,
       # fixtures and verdict as `unittest discover`, spread over the runner's
-      # cores (131s serial against 34s on four workers, measured 2026-09-23).
+      # cores (the dashboard suite: 131s serial against 34s on four workers,
+      # measured 2026-09-23; the script suite is sharded below).
       - name: Run dashboard test discovery on the floor
         if: matrix.suite == 'dashboard'
         run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
