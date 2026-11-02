@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import ast
 import json
+import os
+import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -76,6 +79,7 @@ class LauncherTest(unittest.TestCase):
         python: str = sys.executable,
         exit_code: int = 0,
         timeout: float = 30,
+        cwd: Path | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         env = {
             "PATH": str(self.bin),
@@ -92,6 +96,7 @@ class LauncherTest(unittest.TestCase):
             env=env,
             timeout=timeout,
             check=False,
+            cwd=cwd,
         )
 
     def logged(self) -> list[str]:
@@ -137,6 +142,34 @@ class AtOrAboveTheFloorTest(LauncherTest):
         self.assertEqual(b"stdin:" + POST_TOOL, done.stdout)
         self.assertEqual(b"", done.stderr)
         self.assertEqual([sys.executable, "['claude', '9999']"], self.logged())
+
+    def test_the_script_runs_as_the_main_module_so_dataclasses_and_type_hints_resolve(
+        self,
+    ) -> None:
+        script = self.root / "server.py"
+        script.write_text(
+            "from __future__ import annotations\n"
+            "import sys, typing\n"
+            "from dataclasses import dataclass, fields\n"
+            "from typing import ClassVar\n"
+            "@dataclass\n"
+            "class A:\n"
+            "    x: int = 1\n"
+            "    y: ClassVar[int] = 3\n"
+            "typing.get_type_hints(A)\n"
+            "assert [f.name for f in fields(A)] == ['x']\n"
+            "assert sys.modules['__main__'].__file__.endswith('server.py')\n",
+            encoding="utf-8",
+        )
+        done = self.run_launcher(script, assume=None)
+        self.assertEqual((0, b""), (done.returncode, done.stderr))
+
+    def test_a_missing_script_exits_2_like_python_does_and_agy_still_gets_its_object(self) -> None:
+        done = self.run_launcher(self.root / "nope.py", assume=None)
+        self.assertEqual(2, done.returncode)
+        self.assertNotIn(b"Traceback", done.stderr)
+        done = self.run_launcher(self.root / "agy_hook.py", assume=None)
+        self.assertEqual((2, b"{}\n"), (done.returncode, done.stdout))
 
     def test_someone_on_a_new_python_never_triggers_a_uv_lookup(self) -> None:
         self.finds_this_interpreter()
@@ -187,6 +220,18 @@ class BelowTheFloorWithoutUvTest(LauncherTest):
         done = self.run_launcher(self.target("agy_hook.py"), "PostToolUse", stdin=POST_TOOL)
         self.assertEqual((0, b""), (done.returncode, done.stderr))
 
+    def test_the_antigravity_hook_still_prints_its_empty_object_when_nothing_can_run_it(
+        self,
+    ) -> None:
+        # SECURITY.md: agy_hook.py prints exactly `{}` on every path.
+        for payload in (POST_TOOL, SESSION_START, b"", b"not json"):
+            with self.subTest(payload):
+                done = self.run_launcher(self.target("agy_hook.py"), "PostToolUse", stdin=payload)
+                self.assertEqual((0, b"{}\n"), (done.returncode, done.stdout))
+        self.fake_uv('echo "/nonexistent/python3.12"')
+        done = self.run_launcher(self.target("agy_hook.py"), stdin=POST_TOOL)
+        self.assertEqual((0, b"{}\n"), (done.returncode, done.stdout))
+
     def test_the_mcp_server_and_server_py_say_the_sentence_and_fail_whatever_arrives(self) -> None:
         for name in ("mcp_server.py", "server.py"):
             with self.subTest(name):
@@ -194,6 +239,27 @@ class BelowTheFloorWithoutUvTest(LauncherTest):
                 self.assertNotEqual(0, done.returncode)
                 self.assertTrue(done.stderr.decode().startswith("Compass needs Python 3.12"))
                 self.assertFalse(self.log.exists())
+
+
+@unittest.skipUnless(shutil.which("uv") and os.name == "posix", "needs a real uv and /bin/sh")
+class UvDoesNotExecuteTheProjectTest(LauncherTest):
+    def test_a_venv_planted_in_or_above_the_working_directory_is_never_run(self) -> None:
+        shutil.copy(shutil.which("uv") or "", self.bin / "uv")
+        project = self.root / "project"
+        venv_bin = project / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (project / ".venv" / "pyvenv.cfg").write_text("home = /nowhere\n", encoding="utf-8")
+        marker = self.root / "PLANTED_VENV_RAN"
+        for name in ("python", "python3"):
+            fake = venv_bin / name
+            fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\nexit 1\n", encoding="utf-8")
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        (project / "uv.toml").write_text('python-preference = "only-system"\n', encoding="utf-8")
+        for cwd in (project, project / "deeper"):
+            cwd.mkdir(exist_ok=True)
+            with self.subTest(cwd=cwd.name):
+                self.run_launcher(self.target(), stdin=POST_TOOL, cwd=cwd)
+                self.assertFalse(marker.exists(), "uv executed a file from the project tree")
 
 
 class BelowTheFloorWithUvTest(LauncherTest):
@@ -214,6 +280,8 @@ class BelowTheFloorWithUvTest(LauncherTest):
         self.assertEqual(["python", "find"], asked[:2])
         self.assertIn("--no-python-downloads", asked)
         self.assertIn("--no-project", asked)
+        self.assertIn("--no-config", asked, "a project's uv.toml is repository-controlled")
+        self.assertIn("--system", asked, "without it uv executes a .venv found in or above cwd")
         self.assertIn(">=3.12", asked)
         self.assertNotIn("run", asked, "`uv run` would create a .venv in the user's project")
 
@@ -249,6 +317,37 @@ class BelowTheFloorWithUvTest(LauncherTest):
         self.assertLess(time.monotonic() - started, 4.5)
         self.assertNotEqual(0, done.returncode)
         self.assertTrue(done.stderr.decode().startswith("Compass needs Python 3.12"))
+
+    @unittest.skipUnless(os.name == "posix", "process groups")
+    def test_ctrl_c_lets_a_server_that_needs_a_second_to_shut_down_finish_cleanly(self) -> None:
+        self.finds_this_interpreter()
+        ready, done_mark = self.root / "ready", self.root / "shut-down"
+        script = self.root / "server.py"
+        script.write_text(
+            "import signal, sys, time\n"
+            "def stop(*_):\n"
+            "    time.sleep(1)\n"
+            f"    open({str(done_mark)!r}, 'w').close()\n"
+            "    sys.exit(0)\n"
+            "signal.signal(signal.SIGINT, stop)\n"
+            f"open({str(ready)!r}, 'w').close()\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        proc = subprocess.Popen(
+            [sys.executable, str(LAUNCHER), str(script)],
+            env={"PATH": str(self.bin), "HOME": str(self.root), SEAM: OLD},
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        os.killpg(proc.pid, signal.SIGINT)
+        stderr = proc.communicate(timeout=10)[1]
+        self.assertEqual(0, proc.returncode, stderr)
+        self.assertTrue(done_mark.exists(), "the child was killed instead of shutting down")
+        self.assertNotIn(b"Traceback", stderr)
 
 
 @unittest.skipUnless(

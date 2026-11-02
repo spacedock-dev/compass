@@ -47,7 +47,7 @@ You do not need all four. The dashboard maps every harness it finds on the machi
 which one launched it, and it runs standalone with no client installed at all:
 
 ```bash
-python3 compass/skills/compass/server.py --port 4553 --daemon
+python3 compass/skills/compass/launch.py compass/skills/compass/server.py --port 4553 --daemon
 ```
 
 `--daemon` detaches so the dashboard keeps running after this shell exits. Stop it with `--stop`;

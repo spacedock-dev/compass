@@ -17,13 +17,15 @@ and `json` cost about ten milliseconds per hook that nothing at or above the flo
 
 1. A hook's payload is read from stdin, because the event decides whether anyone is told.
 2. `uv`, if installed, is asked for a Python 3.12 or newer that is already on the machine.
-   It never downloads (`--no-python-downloads`), never reads the project (`--no-project`)
-   and is cut off after two seconds, because Gemini gives a hook five. If it finds one,
+   It never downloads (`--no-python-downloads`), never reads the project or its config
+   (`--no-project --no-config`), never executes a `.venv` found in or above the working
+   directory, which is the user's project and not ours (`--system`), and is cut off
+   after two seconds, because Gemini gives a hook five. If it finds one,
    the script runs there with the payload, arguments and exit status passed through.
 3. Otherwise one sentence goes to stderr. A hook exits nonzero only on `SessionStart`,
    so the notice appears once per session; every later event exits 0 silently. The MCP
    server and `server.py` always exit nonzero. Antigravity's hooks have no session-start
-   event, so they stay silent.
+   event, so they print only the `{}` it reads from stdout.
 
 `COMPASS_LAUNCH_ASSUME_PYTHON` (for example `3.9.6`) makes the version check believe
 that version. It exists for `test_launch.py` and nothing else documents or reads it.
@@ -37,6 +39,7 @@ SEAM = "COMPASS_LAUNCH_ASSUME_PYTHON"
 UV_TIMEOUT_SECONDS = 2
 HOOK_SCRIPTS = ("event_hook.py", "agy_hook.py", "notify_hook.py", "statusline_hook.py")
 SESSION_START = "SessionStart"
+AGY_HOOK = "agy_hook.py"
 
 
 def running_version() -> "tuple[tuple[int, ...], str]":
@@ -73,6 +76,8 @@ def find_new_python() -> "str | None":
                 f">={FLOOR[0]}.{FLOOR[1]}",
                 "--no-python-downloads",
                 "--no-project",
+                "--no-config",
+                "--system",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -106,11 +111,17 @@ def run_elsewhere(
 
     command = [interpreter, target, *args]
     try:
-        if payload is None:
-            return subprocess.call(command)
-        child = subprocess.Popen(command, stdin=subprocess.PIPE)
+        child = subprocess.Popen(command, stdin=None if payload is None else subprocess.PIPE)
     except OSError:
         return None
+    if payload is None:
+        while True:
+            try:
+                return child.wait()
+            except KeyboardInterrupt:  # noqa: PERF203 - waiting is the point
+                # Ctrl-C reaches the whole process group; the child is shutting down on
+                # its own. subprocess.call would kill it after 0.25 s, so keep waiting.
+                continue
     try:
         child.communicate(payload)
     except OSError:  # the child closed stdin early; its exit status still counts
@@ -134,6 +145,8 @@ def below_floor(target: str, args: "list[str]", version_text: str) -> int:
     if is_hook and not (
         os.path.basename(target) == "event_hook.py" and starts_a_session(payload or b"")
     ):
+        if os.path.basename(target) == AGY_HOOK:
+            sys.stdout.write("{}\n")  # Antigravity reads stdout JSON; see SECURITY.md
         return 0
     sys.stderr.write(sentence(version_text) + "\n")
     return 1
@@ -147,11 +160,24 @@ def main(argv: "list[str]") -> int:
     version, version_text = running_version()
     if version < FLOOR:
         return below_floor(target, args, version_text)
+    try:
+        with open(target, "rb") as handle:
+            code = compile(handle.read(), target, "exec")
+    except OSError as error:
+        if os.path.basename(target) == AGY_HOOK:
+            sys.stdout.write("{}\n")
+        sys.stderr.write(f"launch.py: can't open {target!r}: {error.strerror}\n")
+        return 2
     sys.path.insert(0, os.path.dirname(os.path.abspath(target)))
     sys.argv = [target, *args]
-    with open(target, "rb") as handle:
-        code = compile(handle.read(), target, "exec")
-    exec(code, {"__name__": "__main__", "__file__": target})
+    # A real `__main__` module, as `python target` has: dataclasses, typing.get_type_hints and
+    # pickle look the running module up in sys.modules by name, and find launch.py otherwise.
+    import types
+
+    main_module = types.ModuleType("__main__")
+    main_module.__file__ = os.path.abspath(target)
+    sys.modules["__main__"] = main_module
+    exec(code, main_module.__dict__)
     return 0
 
 

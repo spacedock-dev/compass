@@ -239,7 +239,7 @@ Copilot contributes per-session AI Units from disk but no percentage because its
 stored locally. Antigravity can forward quota from its status-line payload:
 
 ```json
-"statusLine": {"command": "python3 <skill-dir>/notify_hook.py http://127.0.0.1:4553/api/usage", "enabled": true}
+"statusLine": {"command": "python3 <skill-dir>/launch.py <skill-dir>/notify_hook.py http://127.0.0.1:4553/api/usage", "enabled": true}
 ```
 
 `--no-usage` disables credential-backed vendor fetching for a run whatever the page has stored; disk-read evidence remains.
@@ -288,7 +288,7 @@ If the port is busy the server explains that instead of dumping a traceback, and
 under `--daemon` too. Check whether a dashboard is already there before killing anything:
 
 ```bash
-python3 "<skill-dir>/server.py" --port 4553 --status
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --status
 ```
 
 `--status` reports one of three things, and never guesses: running (with pid and start time), not
@@ -696,21 +696,21 @@ Use the bundled `notify_hook.py` (next to `server.py`) rather than a `curl` one-
 ```json
 "hooks": {
   "Notification": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/notify_hook.py\"", "async": true}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/notify_hook.py\"", "async": true}]}
   ],
   "SessionEnd": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/notify_hook.py\""}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/notify_hook.py\""}]}
   ]
 }
 ```
 
-On native Windows use `python` instead of `python3`, and a Windows path. Pass a URL as the first argument for a non-default port: `python3 "<skill-dir>/notify_hook.py" http://127.0.0.1:9999/api/notify`.
+On native Windows use `python` instead of `python3`, and a Windows path. Pass a URL as the first argument for a non-default port: `python3 "<skill-dir>/launch.py" "<skill-dir>/notify_hook.py" http://127.0.0.1:9999/api/notify`.
 
 After adding it (or after any settings change that breaks it), tell the user to open `/hooks` once or restart Claude Code to reload hook config.
 
 Simulate for testing:
 ```bash
-echo '{"session_id":"<id>","message":"test"}' | python3 "<skill-dir>/notify_hook.py"
+echo '{"session_id":"<id>","message":"test"}' | python3 "<skill-dir>/launch.py" "<skill-dir>/notify_hook.py"
 ```
 
 3. **Lifecycle events** — the plugin's own bundled hooks at `hooks/hooks.json`, so there is **nothing to add to a settings file**. They forward general lifecycle events to `/api/events/claude`: session started and ended, prompt submitted, turn stopped, permission requested, a tool run finishing, subagent started or stopped, tasks changed, compaction finished. Where path 2 sets one piece of side state, this drives the session's Working, Needs-input and Idle state directly, so the board reacts to a turn starting instead of waiting for the next scan.
@@ -722,21 +722,21 @@ echo '{"session_id":"<id>","message":"test"}' | python3 "<skill-dir>/notify_hook
 ```json
 "hooks": {
   "UserPromptSubmit": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/event_hook.py\" claude", "async": true}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/event_hook.py\" claude", "async": true}]}
   ],
   "Stop": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/event_hook.py\" claude", "async": true}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/event_hook.py\" claude", "async": true}]}
   ],
   "PermissionRequest": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/event_hook.py\" claude", "async": true}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/event_hook.py\" claude", "async": true}]}
   ],
   "SessionEnd": [
-    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/event_hook.py\" claude"}]}
+    {"matcher": "", "hooks": [{"type": "command", "command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/event_hook.py\" claude"}]}
   ]
 }
 ```
 
-The harness name is the first argument and is required. Pass a **port** second for a non-default instance: `python3 "<skill-dir>/event_hook.py" claude 9999`. Note that this differs from `notify_hook.py`, which takes a whole URL.
+The harness name is the first argument and is required. Pass a **port** second for a non-default instance: `python3 "<skill-dir>/launch.py" "<skill-dir>/event_hook.py" claude 9999`. Note that this differs from `notify_hook.py`, which takes a whole URL.
 
 Claude Code and Codex after-tool hooks also report fixed command shapes: force push, hard reset,
 DROP TABLE in supported SQL-client forms, and recursive delete outside literal temporary prefixes.
@@ -815,7 +815,7 @@ Antigravity has two paths, and they do different jobs.
 **Working and Idle state comes from the status line**, which cannot be plugin-bundled, so that half is opt-in. Point it at `statusline_hook.py`, which forwards both the quota figures and the lifecycle state:
 
 ```json
-"statusLine": {"command": "python3 \"<skill-dir>/statusline_hook.py\"", "enabled": true}
+"statusLine": {"command": "python3 \"<skill-dir>/launch.py\" \"<skill-dir>/statusline_hook.py\"", "enabled": true}
 ```
 
 Pass a port as the first argument for a non-default instance. This replaces the older `notify_hook.py <url>/api/usage` line, which still works and still feeds the quota band; the new script additionally drives Working state and sends the quota block *alone* rather than the whole status-line document, which carries the account email and the transcript path.
@@ -933,7 +933,7 @@ Paths 2 and 3 are complementary and can both be installed. Keep `Notification` o
 ## Stop
 
 ```bash
-python3 "<skill-dir>/server.py" --port 4553 --stop
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --stop
 ```
 
 The command uses `POST /api/shutdown` and waits for the port to come free before reporting success,
