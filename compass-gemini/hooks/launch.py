@@ -158,9 +158,8 @@ def forward_signals(children: "list[Any]", early: "list[int]") -> "Callable[[], 
 def exit_like(status: int) -> int:
     """If the child died of a signal, die of it too, so the caller sees what `exec` would show."""
     if status < 0 and os.name == "posix":
-        import signal
-
         import contextlib
+        import signal
 
         # SIGKILL's handler cannot be set; the kill still works
         with contextlib.suppress(OSError, ValueError):
