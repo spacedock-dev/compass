@@ -4148,9 +4148,11 @@ What these read is unchanged; how long they take to read it is not.
   and substitution equal.
 - **A tier 3 line's long word.** `shlex` builds a token one character at a time, so a 200,000-character
   spaced word took 0.68 s. A word with no quote or backslash is now split on the four blanks `shlex`
-  splits on, which is exact; a quoted word longer than 4,096 characters is shown as `…` without being
-  parsed, which hides only what the 120-character line would have clipped. A linear POSIX splitter was
-  the alternative, at more code. The line is built once per command, not twice.
+  splits on, which is exact; a word longer than 4,096 characters that holds a quote or a backslash is
+  shown as `…` without being parsed. Such a word is real (a `gh pr create --body` of more than 4,096
+  characters), and its line loses the preview of its first characters that the 120-character clip
+  would have left, which is the safe side. A linear POSIX splitter was the alternative, at more code.
+  The line is built once per command, not twice.
 
 ### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
 
