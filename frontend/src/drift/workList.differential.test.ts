@@ -12,7 +12,7 @@ import type { ContextEntry } from '../store/board';
 import { genEntries, mulberry32, pick, type Rng } from './generate.test.helper';
 import { loadLegacyDrift } from './legacy.test.helper';
 import { WORK_READ_FROM } from './sentences';
-import { workList } from './workList';
+import { LAST_TURN_MARK, workList } from './workList';
 import { harnessLabels } from '../sessions/rows';
 import { recordedActivityActor } from '../../test/recorded-activity';
 import { projectRecordedLoadedActivity } from '../../test/recorded-loaded-activity';
@@ -231,7 +231,15 @@ describe('the numbered list reads as the legacy page reads it', () => {
         ),
       );
       const a = recorded.replace(squash(RECORDED_READ_FROM), squash(WORK_READ_FROM));
-      const b = assemble(asRecorded(mine, String(session['harness']), payload), false);
+      /* Departure, 2026-11-02: a Codex session at a turn stop is read through its last turn, so its list
+         carries the "from the last turn" words the retired page drew only for Claude Code
+         (docs/design-frontend-migration.md#held-to-recorded-answers). Those words are taken out of this
+         page's text and everything else is held to the recording; the label is held by the Drift stories. */
+      const assembled = assemble(asRecorded(mine, String(session['harness']), payload), false);
+      const b =
+        session['harness'] === 'codex'
+          ? assembled.replaceAll(squash(LAST_TURN_MARK.words), '')
+          : assembled;
       if (a !== b) {
         let at = 0;
         while (a[at] === b[at]) at += 1;

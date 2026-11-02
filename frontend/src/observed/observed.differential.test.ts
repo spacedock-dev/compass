@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
+import { withoutCodexRecordedStop, withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { projectRecordedCommandOpener } from '../../test/recordedCommandOpener';
 import {
   canonical,
@@ -17,6 +18,9 @@ import { delegatedWork, observe, readHint, sessionDot, sessionStop } from './ind
    a source gap, unicode, wrong-typed fields), and a failure names the seed and the first path that
    differs. */
 const legacy = loadLegacySessions();
+const LAST_TURN = 'Reads the session up to its last turn against your intent.';
+const IDLE_ENTRY =
+  'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
 const CASES = 80;
 const SEEDS = CASES;
 
@@ -51,7 +55,9 @@ describe('nextObserved and observe agree over generated payloads', () => {
         ),
         payload,
       );
-      const mine = withoutHistory(observe(payload) as unknown as Record<string, unknown>);
+      const mine = withoutHistory(
+        observe(withoutCodexRecordedStops(payload)) as unknown as Record<string, unknown>,
+      );
       const found = firstDifference(canonical(old), canonical(mine));
       if (found) failures.push(`seed ${String(seed)}: ${found}`);
       if (failures.length >= 5) break;
@@ -103,17 +109,26 @@ describe('the helpers a view calls agree with their legacy twins', () => {
       expect(
         firstDifference(
           canonical(legacy.call('nextSessionStop', row)),
-          canonical(sessionStop(row)),
+          canonical(sessionStop(withoutCodexRecordedStop(row) as Record<string, unknown>)),
         ),
       ).toBeNull();
       /* Departure, 2026-10-20: the owner admitted Analyze drift on an idle Claude Code row with no recorded
          stop or end, where the retired page said nothing (docs/design-frontend-migration.md, Held to recorded
          answers). That row's hint is asserted in observed.test.ts; every other row is held to the recording. */
-      const admitted =
-        readHint(row) ===
-        'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
-      if (admitted) expect(legacy.call('nextObservedReadHint', row)).toBe('');
-      else expect(readHint(row)).toBe(legacy.call('nextObservedReadHint', row));
+      const stripped = withoutCodexRecordedStop(row) as Record<string, unknown>;
+      const hint = readHint(stripped);
+      const recorded = legacy.call('nextObservedReadHint', row);
+      /* Departure, 2026-11-02: Codex is read at a turn stop, so on a Codex row the hint may name its last turn,
+         or its last recorded entry, where the retired page said nothing. Those two sentences are the only
+         difference allowed there; every other Codex answer is held to the recording. */
+      if (
+        stripped['harness'] === 'codex' &&
+        recorded === '' &&
+        [IDLE_ENTRY, LAST_TURN].includes(hint)
+      )
+        continue;
+      if (hint === IDLE_ENTRY) expect(recorded).toBe('');
+      else expect(hint).toBe(recorded);
     }
   });
 

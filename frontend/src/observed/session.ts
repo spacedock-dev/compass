@@ -1,6 +1,6 @@
 import { nextNumber } from '../api/bootstrap';
 import { formatDuration } from '../shell/format';
-import { goalOf, landingOf, sessionStop, type Landing } from './landing';
+import { goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
 import {
   ageSeconds,
   endedAt,
@@ -170,7 +170,7 @@ export function observeSession(
       (failures ? ` · ${String(failures)} failures this turn` : '')
     : '';
   const stopped = state === 'idle' && (nextNumber(source['finished_at']) ?? 0) > 0;
-  /* A stop Claude Code's transcript records is named as the transcript's, here as in HOW IT LANDED beside
+  /* A stop a harness's own record carries is named as that record's, here as in HOW IT LANDED beside
      it, so "Session facts" never says no stop was observed next to a card naming one. */
   const recordedStop = state === 'idle' ? sessionStop(source) : null;
   const transcriptStop = !stopped && Boolean(recordedStop && recordedStop.kind === 'transcript');
@@ -179,7 +179,7 @@ export function observeSession(
     ? 'Session ended'
     : stopped
       ? 'Stop observed'
-      : "Turn stop in Claude Code's transcript";
+      : `Turn stop in ${stopRecord(source)}`;
   const landing = landingOf(source, ended, recordedStop);
   const gitKnown = typeof source['dirty'] === 'boolean';
   const outcome = outcomeKnown

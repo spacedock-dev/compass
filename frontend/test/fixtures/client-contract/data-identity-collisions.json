@@ -399,9 +399,9 @@
           "provider": null,
           "rate_per_min": null,
           "reading_eligibility": {
-            "ok": false,
-            "reason": "idle-unknown",
-            "sentence": "This Codex session is idle. Compass reads a Codex session only while a turn runs, because no Codex session end is observed for a final reading to rest on. Analyze opens when it runs again.",
+            "ok": true,
+            "reason": null,
+            "sentence": null,
             "until": null
           },
           "resume_id": null,
@@ -625,7 +625,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23258",
+      "Content-Length": "23061",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

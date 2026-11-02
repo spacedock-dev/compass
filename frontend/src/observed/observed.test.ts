@@ -317,7 +317,7 @@ describe('delegated work states what it cannot see', () => {
 });
 
 describe('a turn stop is the hook’s, or the transcript’s named as the transcript’s', () => {
-  it('prefers the hook, and reads the transcript stop only for a harness that records one', () => {
+  it('prefers the hook, and reads the transcript stop for Claude Code and Codex, which record one', () => {
     expect(sessionStop({ harness: 'claude', finished_at: 5, turn_end_at: 9 })).toEqual({
       at: 5,
       kind: 'hook',
@@ -326,7 +326,26 @@ describe('a turn stop is the hook’s, or the transcript’s named as the transc
       at: 9,
       kind: 'transcript',
     });
-    expect(sessionStop({ harness: 'codex', turn_end_at: 9 })).toBeNull();
+    // Owner, 2026-11-02: Codex's recorded turn finish is a stop too.
+    expect(sessionStop({ harness: 'codex', turn_end_at: 9 })).toEqual({
+      at: 9,
+      kind: 'transcript',
+    });
+    expect(sessionStop({ harness: 'antigravity', turn_end_at: 9 })).toBeNull();
+  });
+
+  it('names the record a recorded stop came from, and never calls a Codex rollout a Claude Code transcript', () => {
+    const stopped = (harness: string) =>
+      observe(board([{ harness, sid: 's', project: 'p', state: 'idle', turn_end_at: 9 }]))
+        .sessions[0];
+    expect(stopped('claude')?.outcomeText).toContain("Turn stop in Claude Code's transcript");
+    expect(stopped('codex')?.outcomeText).toContain("Turn stop in Codex's rollout");
+    expect(stopped('codex')?.landing.endText).toBe(
+      "Codex's rollout shows the last turn finished; no session end was observed",
+    );
+    expect(stopped('claude')?.landing.endText).toBe(
+      "Claude Code's transcript shows the last turn finished; no session end was observed",
+    );
   });
 
   it('says what an analysis will read before the press, and nothing where the server would refuse', () => {
@@ -339,16 +358,23 @@ describe('a turn stop is the hook’s, or the transcript’s named as the transc
     expect(readHint({ harness: 'claude', state: 'idle', finished_at: 4 })).toBe(
       'Reads the session up to its last turn against your intent.',
     );
-    expect(readHint({ harness: 'codex', state: 'idle', finished_at: 4 })).toBe('');
+    expect(readHint({ harness: 'codex', state: 'idle', finished_at: 4 })).toBe(
+      'Reads the session up to its last turn against your intent.',
+    );
+    expect(readHint({ harness: 'codex', state: 'idle', turn_end_at: 4 })).toBe(
+      'Reads the session up to its last turn against your intent.',
+    );
+    expect(readHint({ harness: 'antigravity', state: 'idle', finished_at: 4 })).toBe('');
   });
 
-  it('says an idle Claude Code session with no recorded finish is read up to its last entry', () => {
+  it('says an idle Claude Code or Codex session with no recorded finish is read up to its last entry', () => {
     const line =
       'Reads the session up to its last recorded entry; its last turn was not recorded as finished.';
     expect(readHint({ harness: 'claude', state: 'idle' })).toBe(line);
     expect(readHint({ harness: 'claude', state: 'idle', acquisition: 'scan-only' })).toBe(line);
+    expect(readHint({ harness: 'codex', state: 'idle' })).toBe(line);
     // Another harness is still withheld there, so it is told nothing about what would be read.
-    expect(readHint({ harness: 'codex', state: 'idle' })).toBe('');
+    expect(readHint({ harness: 'antigravity', state: 'idle' })).toBe('');
   });
 });
 

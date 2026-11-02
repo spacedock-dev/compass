@@ -186,12 +186,25 @@ describe('the route and unchanged refusals read as the legacy page reads them', 
                   /* Deviation (owner, 2026-10-20): Claude Code has no idle line of its own, since an
                      idle Claude Code session is read rather than refused; a stale idle token falls to
                      the line every harness gets. */
-                  theirs.replace(
-                    "Last turn isn't recorded as finished. Run another turn to open Analyze.",
-                    session['acquisition'] === 'event'
-                      ? 'Analyze opens while this session runs or once it ends.'
-                      : 'Analyze opens while this session runs.',
-                  ),
+                  theirs
+                    .replace(
+                      "Last turn isn't recorded as finished. Run another turn to open Analyze.",
+                      session['acquisition'] === 'event'
+                        ? 'Analyze opens while this session runs or once it ends.'
+                        : 'Analyze opens while this session runs.',
+                    )
+                    /* Deviation (owner, 2026-11-02): Codex has no line of its own either, since a Codex
+                       session is read at a turn stop and up to its last entry; a stale token falls to the
+                       line every harness gets for it. */
+                    .replace(
+                      'Codex sessions can be analyzed only while a turn is running.',
+                      eligibility(session as never, answered, Date.now())?.['reason'] ===
+                        'turn-stop'
+                        ? 'Analyze opens while a turn runs or once the session ends.'
+                        : session['acquisition'] === 'event'
+                          ? 'Analyze opens while this session runs or once it ends.'
+                          : 'Analyze opens while this session runs.',
+                    ),
                 )
               : theirs,
           ),

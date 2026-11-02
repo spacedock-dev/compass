@@ -509,7 +509,7 @@ export const READ_SCOPE: Readonly<Record<string, string>> = {
   'last-turn': 'Everything up to the last finished turn.',
   withdrawn: 'The session end this analysis relied on is no longer reported.',
 };
-/* `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, the stored sentence of a press on an idle Claude Code session whose
+/* `reading.SCOPE_TEXT_MID_FLIGHT_IDLE`, the stored sentence of a press on an idle Claude Code or Codex session whose
    last turn has no recorded finish (owner, 2026-10-20). Recognised by its words, because its scope token is
    the running session's, and drawn as the reading's own line with the local time of the last entry it read. */
 export const SCOPE_TEXT_IDLE =
@@ -548,7 +548,6 @@ export const PRESS_LINES: Readonly<Record<string, string>> = {
   'stop-settling': 'Ready in a few seconds.',
   'revision-after-end': 'Your intent was saved after this session ended.',
 };
-export const PRESS_CODEX = 'Codex sessions can be analyzed only while a turn is running.';
 export const PRESS_EVENTS = 'Analyze opens while this session runs or once it ends.';
 /* The disclosure under a refused Analyze, which holds the server's whole sentence. Its old name, "Why it can't
    read", answered a question the reader had not asked; the reader wants to know why the button is off. */
