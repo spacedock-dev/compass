@@ -12,10 +12,10 @@ If you are looking for what to work on rather than how, [docs/visibility-2x2](do
 
 ## Development setup
 
-Prerequisites: Python 3.11+ (`runtime-floor` runs the shipped entry point and the suite on 3.11,
+Prerequisites: Python 3.12+ (`runtime-floor` runs the shipped entry point and the suite on 3.12,
 while lint and types run on 3.12 and the coverage threshold on 3.14), `git`, the Node 26 version in
 `.node-version`, the pnpm version in `package.json`, and optionally the Claude Code / AGY CLIs for native
-validation. See [COMPATIBILITY.md](COMPATIBILITY.md) for why 3.11 is the floor.
+validation. See [COMPATIBILITY.md](COMPATIBILITY.md) for why 3.12 is the floor.
 
 ```bash
 git clone https://github.com/spacedock-dev/compass.git compass
@@ -55,7 +55,7 @@ A story that is about a whole page state rather than one component mounts the re
 backend. `frontend/stories/Drift.stories.tsx` does this for the Intent and drift card, one story per
 stage, harness limit and route reason, on the shared harness in `drift.scenario.tsx`. Its route fixtures
 live in `drift.reasons.ts`. `drift.reasons.test.ts` (run by `pnpm test`) imports the producer's
-`reading_route.REASONS` and the phases a running reading publishes with Python 3.11 or newer, and fails
+`reading_route.REASONS` and the phases a running reading publishes with Python 3.12 or newer, and fails
 when a reason has no fixture or no exported story or a phase is reworded. It does not skip without Python;
 set `COMPASS_TEST_PYTHON` to name one. Add the story with the reason.
 
@@ -297,13 +297,13 @@ same directories through the relative symlinks under `.agents/skills/`.
 - `ruff format --check .`
 - `mypy` in `--strict` mode with `warn_unreachable`.
 - `runtime-floor`, which launches the shipped `server.py` entry point directly from outside the
-  checkout on Python 3.11, exercises `--help` and `--diagnose --json`, and then runs the whole suite
+  checkout on Python 3.12, exercises `--help` and `--diagnose --json`, and then runs the whole suite
   on the floor without coverage.
 - The full unittest suite under `coverage`, against the `fail_under` threshold in `pyproject.toml`.
   That threshold only ratchets up. A PR that must merge below it needs the `coverage-exception`
   label, which is visible in the PR timeline.
-- `platform-tests`, the unit suite re-run natively on macOS, with one dashboard leg and three script
-  shards. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there.
+- `platform-tests`, the unit suite re-run natively on macOS on 3.12, with one dashboard leg and three script
+  shards, and `platform-tests-current`, the dashboard suite on macOS on Python 3.15. MacOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there.
 - `Frontend (macos-latest)`, with exact Node and pnpm pins, lint, strict types, unit tests, owned
   development startup and cleanup tests, and a clean preview build.
 - `Frontend tests + coverage threshold`, the Vitest suite under coverage on Linux. Statements,
@@ -483,7 +483,7 @@ services are held are owned by
 a runtime file or an import between two of them: the import graph is asserted by a test, and its
 allowlist changes only in a PR that makes a reviewed ownership decision.
 
-- Stdlib only, Python 3.11+. No dependencies, ever. The skill must run on a bare `python3`.
+- Stdlib only, Python 3.12+. No dependencies, ever. The skill must run on a bare `python3`.
 - Read-only. The server only reads harness session stores. It must never write to them or block a
   live agent's writes, so use `mode=ro` SQLite connections with short timeouts.
 - Defensive parsing. A broken or unexpected harness store is skipped, never fatal. One bad record

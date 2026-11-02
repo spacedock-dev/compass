@@ -9,7 +9,7 @@
    The producer's values are the real ones: the test imports the Python modules and prints them as JSON, so a
    source layout this file cannot parse (a second `REASONS +=`, a tuple built elsewhere) cannot make it agree
    with a stale list. A Python it cannot run is a failure and never a skip, because a guard that skips on a
-   machine without Python guards nothing there. Both CI jobs that run `pnpm test` have Python 3.11 on PATH
+   machine without Python guards nothing there. Both CI jobs that run `pnpm test` have Python 3.12 on PATH
    (`quality-gate.yml` Frontend, `release.yml` verify-frontend); `COMPASS_TEST_PYTHON` names another, as the
    development-supervisor tests do. The stories are read from the module's own exports, so one that is
    removed or commented out is not counted. Every reason reaches the page with its own copy: a reason with no
@@ -57,7 +57,7 @@ function producer(): Producer {
   } catch (error) {
     throw new Error(
       `Could not read the producer's reasons and phases with ${python}: ${String(error)}. ` +
-        'This guard needs Python 3.11+ (set COMPASS_TEST_PYTHON to name one); it does not skip.',
+        'This guard needs Python 3.12+ (set COMPASS_TEST_PYTHON to name one); it does not skip.',
       { cause: error },
     );
   }

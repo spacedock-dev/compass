@@ -135,7 +135,7 @@ chmod +x "$dist/compass/compass"
         result = self.package(FAKE_PYTHON_REFUSES="1")
 
         self.assertEqual(1, result.returncode)
-        self.assertIn("3.11 or newer", result.stderr)
+        self.assertIn("3.12 or newer", result.stderr)
         self.assertEqual([], list((self.root / "out").glob("*.tar.gz")))
 
     def test_it_says_so_when_pyinstaller_is_not_installed(self) -> None:

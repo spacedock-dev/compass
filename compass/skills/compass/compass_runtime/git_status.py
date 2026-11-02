@@ -100,7 +100,7 @@ def _rooted(part: str) -> bool:
     Not `os.path.isabs`, which is not that property on Windows and is permissive
     in the direction this repository ships: measured 2026-09-08,
     `ntpath.isabs(r"\bin")` is True on 3.11.9 and 3.12.13 and False on 3.13.13,
-    and the gate runs 3.11 and 3.12 (DRC-4469). A driveless root resolves against
+    and the gate runs 3.12 (DRC-4469). A driveless root resolves against
     the process's current drive, which is part of its working directory.
 
     The drive test is Windows-only because `posixpath.splitdrive` never reports

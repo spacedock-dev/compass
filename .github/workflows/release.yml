@@ -184,7 +184,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"

@@ -21,7 +21,7 @@ import hashlib
 import json
 import secrets
 import threading
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from . import config as runtime_config
 from . import (
@@ -39,8 +39,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from .config import RuntimeConfig
-
-_T = TypeVar("_T")
 
 PROVIDER = "claude"
 SOURCE = "Live monitor · Haiku"
@@ -353,9 +351,9 @@ def preempt(config: RuntimeConfig, session_key: str, *, wait_sec: float | None =
     return True
 
 
-def start_with_priority(
-    config: RuntimeConfig, session_key: str, start: Callable[[], _T | None]
-) -> _T | None:
+def start_with_priority[T](
+    config: RuntimeConfig, session_key: str, start: Callable[[], T | None]
+) -> T | None:
     """Run an Analyze press's `start` ahead of any tick, which is cancelled and waited for.
 
     The press is never refused because of a tick: no new tick may take the slot between the

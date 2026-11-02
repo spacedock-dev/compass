@@ -1132,7 +1132,7 @@ class GitProbeCallSiteTest(unittest.TestCase):
         # executable from the directory being probed.
         #
         # DRC-4469 renamed it off "non-absolute", which was the wrong property to
-        # name: `ntpath.isabs(r"\bin")` is True at the 3.11 and 3.12 the gate
+        # name: `ntpath.isabs(r"\bin")` is True at the 3.12 the gate
         # runs, so the last two elements below are ones Windows calls absolute
         # and this filter must drop anyway. On this POSIX host they are dropped
         # for the ordinary reason and prove nothing; the arm that bites runs on
@@ -1183,8 +1183,8 @@ class GitProbeCallSiteTest(unittest.TestCase):
         if sys.version_info < (3, 13):
             # The reason the guard exists, pinned rather than left in a comment:
             # measured 2026-09-08, `ntpath.isabs(r"\bin")` is True on 3.11.9 and
-            # 3.12.13 and False on 3.13.13 and 3.14.7. The gate runs 3.11 and
-            # 3.12, so this is the reading that ships. If CPython ever backports
+            # 3.12.13 and False on 3.13.13 and 3.14.7. The floor is 3.12,
+            # so this is the reading that ships. If CPython ever backports
             # the change, this says so instead of the comment going stale.
             self.assertTrue(
                 ntpath.isabs("\\bin"),
@@ -1196,7 +1196,7 @@ class GitProbeCallSiteTest(unittest.TestCase):
             fully_qualified = git_status._rooted("C:\\bin")
         # A driveless root resolves against the process's current drive, which is
         # part of its working directory, so it is exactly what the filter claims
-        # to drop — and what `os.path.isabs` alone kept at the 3.11/3.12 floor.
+        # to drop — and what `os.path.isabs` alone kept at the 3.12 floor.
         self.assertFalse(driveless, "a driveless root survived the Windows predicate")
         # The drive-relative form `isabs` already refused. Kept as a control, so
         # this test cannot pass by refusing everything.
@@ -1209,7 +1209,7 @@ class GitProbeCallSiteTest(unittest.TestCase):
         # the second time it was, so the claim gets a check rather than a
         # sentence. On Windows `shutil.which` answers with a path built from the
         # PATH element it matched, so a `\bin` element yields `\bin\git.exe` —
-        # which `os.path.isabs` alone calls absolute at the 3.11/3.12 floor and
+        # which `os.path.isabs` alone calls absolute at the 3.12 floor and
         # would hand straight to the child. `which` is stubbed because a real one
         # cannot be made to answer that way off Windows.
         with (
@@ -1303,7 +1303,7 @@ class PorcelainCountTest(unittest.TestCase):
         # own allocation rather than the output's. The bound has three orders of
         # magnitude of headroom on purpose: the split peaks around 1.3 MB at this
         # N against a few hundred bytes streaming, and a tight pin would flake
-        # across the 3.11/3.12 by three-platform matrix for no extra strictness.
+        # across the 3.12 by three-platform matrix for no extra strictness.
         entries = 20000
         raw = b"".join(b" M src/module/file%05d.py\n" % index for index in range(entries))
         tracemalloc.start()

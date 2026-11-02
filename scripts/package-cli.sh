@@ -27,8 +27,8 @@ esac
 
 # The floor in COMPATIBILITY.md is what the dashboard needs; the interpreter embedded here is
 # what users get, so refuse one below it rather than ship a binary the runtime would reject.
-"$python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null \
-	|| { echo "package-cli.sh: $python must be Python 3.11 or newer" >&2; exit 1; }
+"$python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null \
+	|| { echo "package-cli.sh: $python must be Python 3.12 or newer" >&2; exit 1; }
 "$python" -m PyInstaller --version >/dev/null 2>&1 \
 	|| { echo "package-cli.sh: PyInstaller is not installed for $python; install requirements-cli.txt" >&2; exit 1; }
 

@@ -159,11 +159,11 @@ export async function startDevelopment(options = {}) {
         { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] },
       ),
     );
-    if (!isAbsolute(result[0]) || result[1][0] !== 3 || result[1][1] < 11)
-      throw Error('Python 3.11 or later is required.');
+    if (!isAbsolute(result[0]) || result[1][0] !== 3 || result[1][1] < 12)
+      throw Error('Python 3.12 or later is required.');
     python = result[0];
   } catch {
-    throw Error('Python 3.11 or later was not found. Use --python ABSOLUTE_PATH.');
+    throw Error('Python 3.12 or later was not found. Use --python ABSOLUTE_PATH.');
   }
   // Refuse missing dependencies before launching either serving child.
   try {

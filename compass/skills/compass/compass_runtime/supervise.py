@@ -105,8 +105,10 @@ def kill_group(pgid: int) -> bool:
 def _state(pid: int, timeout: float) -> str:
     """Whether a child is running, has exited, or is already reaped. Never reaps.
 
-    `waitid` with `WNOWAIT` where it exists (Linux), and a kqueue exit filter
-    where it does not (macOS, whose `os` has no `waitid`). This only observes:
+    `waitid` with `WNOWAIT` where `os` has it (Linux, and macOS from Python
+    3.13), and a kqueue exit filter where it does not (macOS on 3.12, the
+    floor). CI runs a macOS leg on each, since `hasattr` picks the branch. This
+    only observes:
     what keeps a group from being signalled after its leader is reaped is
     `Group._reaped`, set under the group's lock in the same step as the reap.
 

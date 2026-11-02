@@ -19,14 +19,14 @@ python3 compass/skills/compass/server.py --forget [--port PORT]
 
 Paths above are relative to the repository root. For a plugin installation, use the
 `server.py` beside the installed `SKILL.md`; [find that copy](HOW_TO_USE.md#find-the-copy-your-commands-will-run)
-and use the same launcher and port for start, status and stop. On Windows, use your Python 3.11+
+and use the same launcher and port for start, status and stop. On Windows, use your Python 3.12+
 command, such as `py -3`, in place of `python3`. The [standalone binary](README.md#standalone-binary)
 takes the same options: run `compass/compass` from the unpacked archive in place of the whole
 `python3 …/server.py` command.
 
 ## Description
 
-Compass is a Python 3.11+ standard-library server that reads local coding-agent stores and displays
+Compass is a Python 3.12+ standard-library server that reads local coding-agent stores and displays
 sessions across harnesses. With no operation flag it runs in the foreground until stopped. Open
 `http://127.0.0.1:4553/` in a browser, or use the port you selected. `/api/data` serves the session
 snapshot as JSON. The launcher does not open a browser for you.

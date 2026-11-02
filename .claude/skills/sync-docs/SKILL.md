@@ -76,7 +76,7 @@ The dashboard test suite asserts the skill body against the code. Both are requi
 - The documentation-matches-code test additionally requires: every backticked `~/…` path must
   prefix-match (in either direction) a real `resolve_store_roots` output, except `~/.claude/settings*`
   which is carved out; the set of backticked store environment variables must **equal**
-  `STORE_ENV_VARS` in the code; the literal `Python 3.11+` must appear; and the body must contain
+  `STORE_ENV_VARS` in the code; the literal `Python 3.12+` must appear; and the body must contain
   `http://127.0.0.1:4553` and must not contain the equivalent `localhost:4553` URL. The repository
   validator applies that same ban to every prose doc — including this file, which is why the banned
   spelling is not written out here.
@@ -454,7 +454,7 @@ minutes, a Python version. Stale counts are this repository's most common drift.
    - **Standalone/periodic run** — you are the PR author, so run the **whole** pre-PR suite from
      `AGENTS.md` before opening anything. `quality-gate` is a required check covering ruff, format,
      `mypy --strict`, the frontend lint, strict types and tests, coverage against `fail_under`, and `platform-tests` on
-     macOS and Windows; none of that is implied by a to e. Opening a PR you have not gated pushes your own
+     macOS; none of that is implied by a to e. Opening a PR you have not gated pushes your own
      verification onto the reviewer.
 
    Never open or update a PR on the strength of a to e alone.

@@ -9,14 +9,14 @@ import posixpath
 import re
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Final, TypeAlias
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from .config import RuntimeConfig
 
-Session: TypeAlias = dict[str, Any]
+type Session = dict[str, Any]
 
 
 def encoded_home_prefix(home: str) -> str:

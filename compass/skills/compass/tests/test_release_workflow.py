@@ -814,7 +814,7 @@ class GateParityTest(unittest.TestCase):
             "${{ steps.python.outputs.python-path }}", step["env"]["COMPASS_TEST_PYTHON"]
         )
         python = next(s for s in steps("verify-frontend") if s.get("id") == "python")
-        self.assertEqual("3.11", python["with"]["python-version"])
+        self.assertEqual("3.12", python["with"]["python-version"])
 
     def test_the_tree_verifier_installs_before_it_validates_on_the_same_python(self) -> None:
         listed = steps("verify-tree")

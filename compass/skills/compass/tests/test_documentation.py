@@ -271,10 +271,10 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
                 self.assertEqual([expected], roots[key])
 
     def test_the_documented_python_floor_matches_the_tooling(self) -> None:
-        self.assertIn("Python 3.11+", self.SKILL)
+        self.assertIn("Python 3.12+", self.SKILL)
         pyproject = (SERVER_PATH.parents[3] / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('python_version = "3.11"', pyproject)
-        self.assertIn('target-version = "py311"', pyproject)
+        self.assertIn('python_version = "3.12"', pyproject)
+        self.assertIn('target-version = "py312"', pyproject)
 
     def test_documented_urls_use_the_address_the_server_binds(self) -> None:
         # The listener is IPv4-only, so "localhost" can resolve to ::1 and fail.
