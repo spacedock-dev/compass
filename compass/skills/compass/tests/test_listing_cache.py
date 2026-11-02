@@ -12,6 +12,7 @@ from __future__ import annotations
 import random
 import unittest
 from typing import Any
+from unittest import mock
 
 from compass_runtime import ci_read, live_estimate
 from compass_runtime import project_context as pc
@@ -35,6 +36,10 @@ _CHECKS = (
     "ruff check .",
     "mypy",
     "cd sub && pytest tests",
+    # One check twice in a call: two runs at one time, which only call order separates, and the
+    # call's status speaks for the last of them alone.
+    "pytest tests; pytest tests",
+    "mypy && mypy",
 )
 _COMMANDS = (
     "npm run build",
@@ -121,7 +126,8 @@ class _Session:
 
     def _result(self, call_id: str, text: str, *, error: bool = False, **extra: Any) -> None:
         # A result can arrive well after later calls began: it then decides which run is latest.
-        delay = self.rnd.choice((0.2, 0.2, 5.0, 30.0))
+        # A delay of 0 or a whole second can tie a result with a later call's time.
+        delay = self.rnd.choice((0.0, 0.2, 1.0, 5.0, 30.0))
         self.seen["late"] += delay > 2
         block = {"type": "tool_result", "tool_use_id": call_id, "content": text, "is_error": error}
         self.results[call_id] = pc._Result(block, self.at + delay, **extra)
@@ -191,6 +197,9 @@ class _Session:
             name, tool_input = self._launch(call_id)
         elif roll < 0.43:
             name, tool_input = self._pull_request(call_id)
+        elif roll < 0.55:
+            # A check that runs once: the only kind of head a shifted window may drop.
+            name, tool_input = self._shell(call_id, f"pytest tests/test_u.py::test_{self.n}")
         else:
             name, tool_input = self._shell(call_id, rnd.choice(_CHECKS))
         return (self.at, SESSION_DIR, call_id, name, tool_input, worker)
@@ -276,6 +285,45 @@ class CachedListingMatchesAFullRelistingTest(unittest.TestCase):
         for key, count in seen.items():
             with self.subTest(state=key):
                 self.assertGreater(count, 0, seen)
+
+
+class TheListingRebuildsOnlyWhatChangedTest(unittest.TestCase):
+    """The work a listing does after one call is the work that call made, not the session's."""
+
+    def tally(self, checks: int) -> pc._ToolReportTally:
+        results: dict[str, pc._Result] = {}
+        tally = pc._ToolReportTally(results, SESSION_DIR)
+        for i in range(checks):
+            call_id = f"c{i}"
+            block = {"type": "tool_result", "tool_use_id": call_id, "content": _PASSED}
+            results[call_id] = pc._Result(block, 1000.0 + i)
+            tally.add(1000.0 + i, SESSION_DIR, call_id, "Bash", {"command": f"pytest t.py::t{i}"})
+        tally.entries(SID)
+        return tally
+
+    def test_one_added_check_builds_one_entry(self) -> None:
+        tally = self.tally(40)
+        block = {"type": "tool_result", "tool_use_id": "new", "content": _PASSED}
+        tally.results["new"] = pc._Result(block, 2000.0)
+        tally.add(2000.0, SESSION_DIR, "new", "Bash", {"command": "pytest t.py::new"})
+        with mock.patch.object(tally, "_check_entry", wraps=tally._check_entry) as built:
+            tally.entries(SID)
+        self.assertEqual(1, built.call_count)
+
+    def test_an_unchanged_tally_finds_no_latest_run_again(self) -> None:
+        tally = self.tally(40)
+        with mock.patch.object(pc, "_evidence_at", wraps=pc._evidence_at) as read:
+            tally.entries(SID)
+        self.assertEqual(0, read.call_count)
+
+    def test_a_checkpoint_keeps_the_entries_and_latest_runs_it_copied(self) -> None:
+        saved = live_estimate._checkpoint(self.tally(40))
+        with (
+            mock.patch.object(saved, "_check_entry", wraps=saved._check_entry) as built,
+            mock.patch.object(pc, "_evidence_at", wraps=pc._evidence_at) as read,
+        ):
+            saved.entries(SID)
+        self.assertEqual((0, 0), (built.call_count, read.call_count))
 
 
 if __name__ == "__main__":

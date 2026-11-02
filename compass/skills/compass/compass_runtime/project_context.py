@@ -5834,10 +5834,16 @@ class _ToolReportTally:
         self.completed_launch_calls: dict[str, float] = {}
         self._hash_identities = False
         self._last_added_runs: list[tuple[str, dict[str, Any]]] = []
-        # Replay asks for entries after nearby calls. A new check changes one
-        # identity; a write or changing command can age every pass, so it
-        # invalidates the whole private, bounded candidate cache.
+        # Replay asks for entries after every call of its window. A write or changing command can
+        # age every pass, so it empties the whole private, bounded candidate cache. A new check
+        # changes its own history and may cover or release another's failure, so each check entry
+        # is kept with what it was built from (`_entry_sources`) and rebuilt when that differs.
+        # Why, and what was rejected:
+        # [the incremental listing](docs/design-reading-a-session.md#what-the-incremental-listing-decided-2026-11-02)  # noqa: E501
         self._entry_cache: dict[str, dict[str, Any]] = {}
+        self._entry_sources: dict[str, tuple[tuple[str, int], ...]] = {}
+        # Each history's length and its latest run when last asked, by `_entry_cache`'s keys.
+        self._latest_at: dict[str, tuple[int, int]] = {}
         self.writes: dict[str, dict[str, Any]] = {}
         # Pull requests Claude Code recorded as created, by repository and number, and the skills
         # a Skill call launched, by name. The first of each is kept: it is when the work was done.
@@ -6281,7 +6287,6 @@ class _ToolReportTally:
             )
             if self._hash_identities:
                 identity = hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
-            self._entry_cache.clear()
             self.runs.setdefault(identity, []).append(
                 {
                     "at": call.at,
@@ -6509,13 +6514,7 @@ class _ToolReportTally:
             "earlier_failed": any(
                 run["result"] == "failed" for i, run in enumerate(history) if i != index
             ),
-            "before_last_change": (
-                latest["fixes"]
-                or any(
-                    at >= latest["at"] and call_id != latest["record_id"]
-                    for at, call_id in self.write_calls
-                )
-            ),
+            "before_last_change": bool(latest["fixes"]) or self._changed_since(latest),
             "changed_after": self._changed_after(latest),
             "read_incomplete": self._read_incomplete(latest),
             "source": source,
@@ -6562,6 +6561,27 @@ class _ToolReportTally:
             key=lambda i: (_evidence_at(history[i]), i),
         )
 
+    def _latest_index(self, key: str, history: list[dict[str, Any]]) -> int:
+        """`_latest` of the history `key` names, extended over the runs appended since last asked.
+
+        A history only grows between listings (`_forget_check` drops one whole), so the latest of
+        its first n runs stays the latest of those n, and a later run replaces it when its evidence
+        is at least as new: `_latest` breaks ties toward the later run. Found afresh, every history
+        was read four times per listing, at every step of the live replay.
+        """
+        count, best = self._latest_at.get(key, (0, 0))
+        if count > len(history):
+            count, best = 0, 0
+        if count == len(history):
+            return best
+        newest = _evidence_at(history[best]) if count else float("-inf")
+        for i in range(count, len(history)):
+            at = _evidence_at(history[i])
+            if at >= newest:
+                best, newest = i, at
+        self._latest_at[key] = (len(history), best)
+        return best
+
     def _check_entry(
         self, history: list[dict[str, Any]], own: list[dict[str, Any]] | None = None
     ) -> dict[str, Any]:
@@ -6578,13 +6598,10 @@ class _ToolReportTally:
             "earlier_failed": any(
                 run["result"] == "failed" for i, run in enumerate(history) if i != index
             ),
-            "before_last_change": (
-                latest["fixes"]
-                or any(
-                    at >= latest["at"] and call_id != latest["record_id"]
-                    for at, call_id in self.write_calls
-                )
-            ),
+            # Another call's write or fixer dated at or after this run (DRC-4709). `_changed_since`
+            # answers it from the newest two calls that changed files; every write was read per
+            # entry per listing before, which the live replay paid at every step (DRC-5062).
+            "before_last_change": bool(latest["fixes"]) or self._changed_since(latest),
             # Whether a command that may change files followed this run, in its
             # own call or a later one, in command order: the press's
             # `changed_after`, published so the live level can block on it
@@ -6626,14 +6643,28 @@ class _ToolReportTally:
         entry["runs"] = [{"at": run["at"], "piped": run.get("piped") is True} for run in runs]
         return entry
 
-    def _histories(self) -> list[tuple[str, list[dict[str, Any]]]]:
+    def _forget_check(self, identity: str) -> None:
+        """Remove one check's whole history, and every entry and index kept from it."""
+        del self.runs[identity]
+        self._latest_at.pop(identity, None)
+        for key, sources in list(self._entry_sources.items()):
+            if any(source == identity for source, _count in sources):
+                self._entry_cache.pop(key, None)
+                del self._entry_sources[key]
+        self._entry_cache.pop(identity, None)
+
+    def _histories(self) -> list[tuple[str, list[dict[str, Any]], tuple[str, ...]]]:
+        """Each listed check's history, a covered failure's runs joined to the pass that covers it,
+        and the identities whose runs it holds, its own first."""
         histories = {
-            identity: list(history)
+            identity: history
             for identity, history in self.runs.items()
             if not all(run["background"] for run in history)
         }
+        sources: dict[str, tuple[str, ...]] = {identity: (identity,) for identity in histories}
         latest = {
-            identity: history[self._latest(history)] for identity, history in histories.items()
+            identity: history[self._latest_index(identity, history)]
+            for identity, history in histories.items()
         }
         passes = [(identity, run) for identity, run in latest.items() if run["result"] == "passed"]
         for identity, run in latest.items():
@@ -6642,29 +6673,43 @@ class _ToolReportTally:
             covering = [(key, passed) for key, passed in passes if _covers_check(passed, run)]
             if covering:
                 key, _passed = max(covering, key=lambda pair: _evidence_at(pair[1]))
+                # Copied on its first join only: `runs` itself is never extended.
+                if len(sources[key]) == 1:
+                    histories[key] = list(histories[key])
                 histories[key].extend(histories.pop(identity))
-        return list(histories.items())
+                sources[key] += sources.pop(identity)
+        return [(identity, history, sources[identity]) for identity, history in histories.items()]
 
     def _last_pass_at(self) -> float | None:
         """The call time of the newest foreground check or tier 3 command whose latest run
         passed."""
+        latest = [
+            *(history[self._latest_index(key, history)] for key, history in self.runs.items()),
+            *(
+                history[self._latest_index(f"command:{key}", history)]
+                for key, history in self.commands.items()
+            ),
+        ]
         times = [
-            history[self._latest(history)]["at"]
-            for histories in (self.runs, self.commands)
-            for history in histories.values()
-            if history[self._latest(history)]["result"] == "passed"
-            and not history[self._latest(history)]["background"]
-            and history[self._latest(history)].get("subject") != CI_SUBJECT
+            run["at"]
+            for run in latest
+            if run["result"] == "passed"
+            and not run["background"]
+            and run.get("subject") != CI_SUBJECT
         ]
         return max(times) if times else None
 
     def entries(
         self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
     ) -> list[dict[str, Any]]:
-        return _assemble_entries(self.edges.harness, sid, index, self.listing(cap))
+        # Without a message index no position is published, and the live replay lists at every
+        # step of its window, so the positions are not counted for it.
+        listing = self.listing(cap, positions=index is not None)
+        return _assemble_entries(self.edges.harness, sid, index, listing)
 
-    def listing(self, cap: int = TOOL_REPORT_MAX_ENTRIES) -> _Listing:
-        """The listed rows and the fixed positions, once per tally: it adds to `scan`."""
+    def listing(self, cap: int = TOOL_REPORT_MAX_ENTRIES, *, positions: bool = True) -> _Listing:
+        """The listed rows and, unless `positions` is off, the fixed positions, once per tally: it
+        adds to `scan`."""
         histories = self._histories()
         candidates = self._ranked(histories)
         last_pass_at = self._last_pass_at()
@@ -6714,6 +6759,8 @@ class _ToolReportTally:
         # or not the listing keeps it: evicting one leaves a gap and moves no number after it. A
         # failed check a later pass covers, and one that has only run in the background, leave the
         # candidates but keep their place, or the entries after them would move when it happened.
+        if not positions:
+            return _Listing(listed, {})
         counted = {
             row["_key"]: row["_first_at"]
             for row in candidates
@@ -6773,14 +6820,21 @@ class _ToolReportTally:
             **({"worker_kind": skill["worker"]} if skill["worker"] else {}),
         }
 
-    def _ranked(self, histories: list[tuple[str, list[dict[str, Any]]]]) -> list[dict[str, Any]]:
+    def _ranked(
+        self, histories: list[tuple[str, list[dict[str, Any]], tuple[str, ...]]]
+    ) -> list[dict[str, Any]]:
         """Every check's entry and every written path, in the order item 4 keeps them."""
         candidates: list[dict[str, Any]] = []
-        for identity, history in histories:
+        for identity, history, joined in histories:
+            # What the entry is built from: its own runs and every covered failure's, in the order
+            # they were joined. A history only grows, so equal lengths are equal runs, and a check
+            # that covers or releases a failure changes the sources of both entries it moves.
+            sources = tuple((key, len(self.runs[key])) for key in joined)
             entry = self._entry_cache.get(identity)
-            if entry is None:
+            if entry is None or self._entry_sources.get(identity) != sources:
                 entry = self._check_entry(history, self.runs[identity])
                 self._entry_cache[identity] = entry
+                self._entry_sources[identity] = sources
             # Its own first run, not the merged history's: a failed run another pass covers joins
             # that pass's history, and the covered run's earlier time must not move the pass's
             # position.
@@ -6801,7 +6855,7 @@ class _ToolReportTally:
             # number of every check and file after it in a session already read.
             candidates.append(
                 {
-                    **self._bound(entry, history[self._latest(history)]),
+                    **self._bound(entry, history[self._latest_index(key, history)]),
                     "_key": key,
                     "_first_at": history[0]["at"],
                 }

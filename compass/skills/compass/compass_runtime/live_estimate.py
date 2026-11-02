@@ -296,6 +296,18 @@ def _checkpoint(tally: pc._ToolReportTally) -> pc._ToolReportTally:
         for identity, entry in tally._entry_cache.items()  # noqa: SLF001
         if not identity.startswith("command:")
     }
+    # What each copied entry was built from, under the same hashed names, or none of them would
+    # be reused: an entry whose sources differ is rebuilt.
+    saved._entry_sources = {  # noqa: SLF001
+        _cached_identity(identity, tally): tuple(
+            (_cached_identity(source, tally), count) for source, count in sources
+        )
+        for identity, sources in tally._entry_sources.items()  # noqa: SLF001
+    }
+    saved._latest_at = {  # noqa: SLF001
+        _cached_key(key, tally): latest
+        for key, latest in tally._latest_at.items()  # noqa: SLF001
+    }
     return saved
 
 
@@ -303,6 +315,13 @@ def _cached_identity(identity: str, tally: pc._ToolReportTally) -> str:
     if tally._hash_identities:  # noqa: SLF001
         return identity
     return hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
+
+
+def _cached_key(key: str, tally: pc._ToolReportTally) -> str:
+    """A check's identity, or a command's under the `command:` prefix the tally keys it by."""
+    if key.startswith("command:"):
+        return "command:" + _cached_identity(key.removeprefix("command:"), tally)
+    return _cached_identity(key, tally)
 
 
 def _safe_head_effect(
@@ -370,8 +389,7 @@ def _drop_safe_head(tally: pc._ToolReportTally, effects: list[tuple[str, int] | 
             # identities in a fresh scan. Keeping its dictionary slot changes
             # stable ordering at the twelve-entry listing boundary.
             return False
-        del tally.runs[identity]
-        tally._entry_cache.pop(identity, None)  # noqa: SLF001
+        tally._forget_check(identity)  # noqa: SLF001
         tally.scan["shell_calls"] -= 1
         tally.scan["check_runs"] -= 1
     return True

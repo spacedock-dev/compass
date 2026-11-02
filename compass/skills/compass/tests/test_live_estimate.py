@@ -709,6 +709,8 @@ class TheReplayIsBoundedTest(_Replay):
         # The unbounded replay took about 150 times the record's cost on this transcript.
         # The bounded one measured about 11 times on macOS and 23 times on the Windows
         # runner (PR #429), so the bound catches the regression without timing the runner.
+        # Keeping each check's entry between listings brought it to about 3 times on macOS
+        # (DRC-5062).
         self.assertLess(live, 1.0 + 50 * record, (live, record))
 
 

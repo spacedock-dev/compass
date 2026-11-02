@@ -7161,6 +7161,38 @@ was settled on the withholding side.
   saved words the nudge goes too, because Analyze is refused there; the level and the pill stay,
   since they are about the saved words.
 
+### What the incremental listing decided, 2026-11-02
+
+The replay asks the tally for its entries after every call of its window, so each listing differs
+from the one before it by one call. On a 5,000-call, 8 MB transcript one estimate took about 3.7 s on
+a Mac, and most of that went on checks that had not changed: a new check emptied the whole entry
+cache, every listing found each history's latest run again, four times over, and every entry
+scanned every write (DRC-5062). The listing now keeps what it can between two asks, and publishes
+what it did before.
+
+- A check's entry is kept with what it was built from: its own identity and each covered failure's,
+  in the order they were joined, each with its run count. The entry is rebuilt when that differs.
+  A history only grows between listings, so equal counts are equal runs. Emptying the new check's
+  own entry alone is not enough: a pass that now covers an earlier failure moves that failure's runs
+  into its own entry, and a failure that replaces a pass releases them again. Object ids were
+  rejected as the record of what an entry was built from, because a checkpoint copies every run, so
+  every copied entry would miss, and a freed id can come back as another run.
+- A history's latest run is extended over the runs appended since it was last asked. A later run
+  takes over on equal evidence, which is how `_latest` breaks ties.
+- A write, a fixer or a changing command still empties the whole cache, because it can age every
+  pass. Whether another call changed files at or after a run is `_changed_since`, which keeps the
+  newest change of two calls, where each entry used to scan every write.
+- Fixed positions are counted only when a message index asks for them, and the replay never passes
+  one.
+- A checkpoint copies the entries, what each was built from and the latest runs, all under its
+  hashed names. A dropped head forgets its whole history and every entry that held its runs.
+
+`tests/test_listing_cache.py` holds the cached listing to a full re-listing at every step of seeded
+random sessions, and counts the work a listing does after one call. The 8 MB test went from 26.8 s to
+14.9 s, and the 3,000-call one from 4.5 s to 1.4 s (median of three, Python 3.12, one Mac under a
+load of about 6). What is left is linear in a session's checks at every listing: copying and sorting
+every candidate, and counting the ones the cap left out.
+
 
 ### Amended 2026-10-04 (owner): delegated launches
 
