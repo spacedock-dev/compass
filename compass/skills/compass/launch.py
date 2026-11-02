@@ -34,6 +34,11 @@ that version. It exists for `test_launch.py` and nothing else documents or reads
 import os
 import sys
 
+TYPE_CHECKING = False  # `typing` costs an import at every hook; the checker reads this anyway
+if TYPE_CHECKING:
+    import subprocess
+    from typing import Any, Callable
+
 FLOOR = (3, 12)
 SEAM = "COMPASS_LAUNCH_ASSUME_PYTHON"
 UV_TIMEOUT_SECONDS = 2
@@ -104,16 +109,7 @@ def starts_a_session(payload: bytes) -> bool:
     return event == SESSION_START
 
 
-def run_elsewhere(
-    interpreter: str, target: str, args: "list[str]", payload: "bytes | None"
-) -> "int | None":
-    import subprocess
-
-    command = [interpreter, target, *args]
-    try:
-        child = subprocess.Popen(command, stdin=None if payload is None else subprocess.PIPE)
-    except OSError:
-        return None
+def wait_for(child: "subprocess.Popen[bytes]", payload: "bytes | None") -> int:
     if payload is None:
         while True:
             try:
@@ -127,6 +123,69 @@ def run_elsewhere(
     except OSError:  # the child closed stdin early; its exit status still counts
         child.wait()
     return child.returncode
+
+
+def forward_signals(children: "list[Any]", early: "list[int]") -> "Callable[[], None]":
+    """Pass SIGTERM and SIGHUP to the child; return what puts the old handlers back.
+
+    A shell's `exec` leaves one process, so a signal for it reaches the script. This process
+    is a second one, so it passes the signal on and lets the child decide. One that lands
+    before the child exists waits in `early` for the caller to deliver.
+
+    Windows has no signal to forward: SIGTERM there is a hard kill of this process, so no
+    handler could run, and a console Ctrl-C already reaches the child by itself.
+    """
+    if os.name != "posix":
+        return lambda: None
+    import signal
+
+    def forward(number: int, _frame: object) -> None:
+        if children:
+            children[0].send_signal(number)
+        else:
+            early.append(number)
+
+    numbers = [getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)]
+    previous = [(number, signal.signal(number, forward)) for number in numbers]
+
+    def restore() -> None:
+        for number, handler in previous:
+            signal.signal(number, handler)
+
+    return restore
+
+
+def exit_like(status: int) -> int:
+    """If the child died of a signal, die of it too, so the caller sees what `exec` would show."""
+    if status < 0 and os.name == "posix":
+        import signal
+
+        signal.signal(-status, signal.SIG_DFL)
+        os.kill(os.getpid(), -status)
+    return status
+
+
+def run_elsewhere(
+    interpreter: str, target: str, args: "list[str]", payload: "bytes | None"
+) -> "int | None":
+    import subprocess
+
+    children: list[Any] = []
+    early: list[int] = []
+    restore = forward_signals(children, early)
+    try:
+        command = [interpreter, target, *args]
+        try:
+            child = subprocess.Popen(command, stdin=None if payload is None else subprocess.PIPE)
+        except OSError:
+            return None
+        children.append(child)
+        for number in early:
+            child.send_signal(number)
+        status = wait_for(child, payload)
+    finally:
+        restore()
+    return exit_like(status)
 
 
 def below_floor(target: str, args: "list[str]", version_text: str) -> int:

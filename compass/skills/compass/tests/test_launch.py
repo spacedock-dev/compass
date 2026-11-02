@@ -7,6 +7,7 @@ so it is the one file that must run on an interpreter too old for the rest of Co
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 import shutil
@@ -348,6 +349,53 @@ class BelowTheFloorWithUvTest(LauncherTest):
         self.assertEqual(0, proc.returncode, stderr)
         self.assertTrue(done_mark.exists(), "the child was killed instead of shutting down")
         self.assertNotIn(b"Traceback", stderr)
+
+    @unittest.skipIf(sys.platform == "win32", "Windows has no SIGTERM to forward")
+    def test_stopping_the_launcher_on_an_old_python_also_stops_the_script_it_started(self) -> None:
+        self.finds_this_interpreter()
+        pid_file = self.root / "child.pid"
+        script = self.root / "server.py"
+        script.write_text(
+            "import os, time\n"
+            f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+            "time.sleep(60)\n",
+            encoding="utf-8",
+        )
+        proc = subprocess.Popen(
+            [sys.executable, str(LAUNCHER), str(script)],
+            env={"PATH": str(self.bin), "HOME": str(self.root), SEAM: OLD},
+            stderr=subprocess.PIPE,
+        )
+        child_pid = 0
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if pid_file.exists() and pid_file.read_text(encoding="utf-8"):
+                    child_pid = int(pid_file.read_text(encoding="utf-8"))
+                    break
+                time.sleep(0.05)
+            self.assertTrue(child_pid, "the script never started")
+            proc.send_signal(signal.SIGTERM)  # the launcher alone, not its process group
+            proc.wait(timeout=10)
+            gone = False
+            for _ in range(100):
+                try:
+                    os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    gone = True
+                    break
+                time.sleep(0.05)
+            self.assertTrue(gone, "the script outlived the launcher")
+            self.assertEqual(-signal.SIGTERM, proc.returncode)  # as if it had been exec'd
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            if child_pid:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(child_pid, signal.SIGKILL)
+            if proc.stderr:
+                proc.stderr.close()
 
 
 @unittest.skipUnless(
