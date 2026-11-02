@@ -90,6 +90,12 @@ class FullListing(pc._ToolReportTally):
     def _command_entry(self, history: list[dict[str, Any]]) -> dict[str, Any]:
         return self._with_scanned_writes(super()._command_entry(history), history)
 
+    def _forget_check(self, identity: str) -> None:
+        # The drop as it was before the listing kept anything, so the oracle shares no code with
+        # the cache it checks.
+        del self.runs[identity]
+        self._entry_cache.pop(identity, None)
+
     def _with_scanned_writes(
         self, entry: dict[str, Any], history: list[dict[str, Any]]
     ) -> dict[str, Any]:
