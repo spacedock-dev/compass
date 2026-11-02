@@ -78,6 +78,7 @@ _SHIPPED_SIBLINGS: tuple[str, ...] = (
     "server.py",
     "notify_hook.py",
     "event_hook.py",
+    "launch.py",
     "agy_hook.py",
     "statusline_hook.py",
     "mcp_server.py",

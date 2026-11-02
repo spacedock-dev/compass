@@ -43,6 +43,28 @@ Use the same interpreter every time. The one that started the server is recorded
 and a second Python on the PATH is the usual reason a hook works from one shell and not another. On
 native Windows `python3` is not a reliable spelling; use `python` or `py -3`.
 
+## When `python3` is older than 3.12
+
+Every hook, the MCP server and the start command run through `launch.py`, so an older `python3`
+gets one sentence instead of a traceback. Claude Code, Codex, Gemini CLI and Droid show it once, when
+a session starts; every later hook stays silent. The MCP server and `server.py` print it and exit
+with status 1. Antigravity's hooks have no session-start event, so they say nothing.
+
+```
+Compass needs Python 3.12 or newer; python3 here is 3.9.6 (/usr/bin/python3). Install Python 3.12 or newer, or run `uv python install 3.12`.
+```
+
+If `uv` is on your PATH and already holds a Python 3.12 or newer, the launcher uses it and you see
+nothing. It never downloads one. The lookup is this command, bounded at two seconds, and it prints
+the interpreter it would use:
+
+```bash
+uv python find '>=3.12' --no-python-downloads --no-project
+```
+
+If it prints nothing useful, `uv python install 3.12` installs one for good. That one is not run
+by Compass and was not run for this page.
+
 ## Let a session ask you a question
 
 Compass ships one MCP tool, `ask_operator`. A session that hits a decision it cannot make calls it,
@@ -83,7 +105,7 @@ claude mcp list
 ```
 
 ```
-plugin:compass:compass: python3 /.../compass/skills/compass/mcp_server.py - Connected
+plugin:compass:compass: python3 /.../compass/skills/compass/launch.py /.../compass/skills/compass/mcp_server.py - Connected
 ```
 
 The tool arrives under a name qualified by both the plugin and the server key:
@@ -128,12 +150,13 @@ a scratch directory. No port needs configuring.
 
 ### Register the MCP server in Codex
 
-The plugin does not register it. Point Codex at the `mcp_server.py` inside the installed plugin. The
-CLI writes the table for you:
+The plugin does not register it. Point Codex at `launch.py` and the `mcp_server.py` beside it inside the
+installed plugin. The CLI writes the table for you:
 
 ```bash
 codex mcp add compass --env COMPASS_HOME="$HOME/.compass" \
-  -- python3 ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/mcp_server.py
+  -- python3 ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/launch.py \
+     ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/mcp_server.py
 ```
 
 That is the whole configuration, and writing it by hand into `~/.codex/config.toml` is equivalent:
@@ -141,7 +164,10 @@ That is the whole configuration, and writing it by hand into `~/.codex/config.to
 ```toml
 [mcp_servers.compass]
 command = "python3"
-args = ["/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/mcp_server.py"]
+args = [
+  "/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/launch.py",
+  "/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/mcp_server.py",
+]
 
 [mcp_servers.compass.env]
 COMPASS_HOME = "/Users/you/.compass"
@@ -153,7 +179,7 @@ Three things about that path and that block:
   the version you registered, so re-run `codex mcp add` after an upgrade.
 - The `env` block is only needed for a relocated `COMPASS_HOME`. Leave it out and the server looks
   in `~/.compass`, where a default dashboard publishes its state file.
-- A port can be given directly instead: `args = [".../mcp_server.py", "4601"]` makes the server try
+- A port can be given directly instead: `args = [".../launch.py", ".../mcp_server.py", "4601"]` makes the server try
   4601 first. Verified with no state file at all to read.
 
 Check it:

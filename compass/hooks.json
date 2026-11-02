@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"./skills/compass/agy_hook.py\" PostToolUse"
+            "command": "python3 \"./skills/compass/launch.py\" \"./skills/compass/agy_hook.py\" PostToolUse"
           }
         ]
       }
@@ -14,7 +14,7 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "python3 \"./skills/compass/agy_hook.py\" PostInvocation"
+        "command": "python3 \"./skills/compass/launch.py\" \"./skills/compass/agy_hook.py\" PostInvocation"
       }
     ]
   }

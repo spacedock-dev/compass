@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${DROID_PLUGIN_ROOT}/hooks/event_hook.py\" droid"
+            "command": "python3 \"${DROID_PLUGIN_ROOT}/hooks/launch.py\" \"${DROID_PLUGIN_ROOT}/hooks/event_hook.py\" droid"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${DROID_PLUGIN_ROOT}/hooks/event_hook.py\" droid"
+            "command": "python3 \"${DROID_PLUGIN_ROOT}/hooks/launch.py\" \"${DROID_PLUGIN_ROOT}/hooks/event_hook.py\" droid"
           }
         ]
       }

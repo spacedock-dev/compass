@@ -9,6 +9,13 @@ line-length = 100
 # listed here so ruff skips them even when invoked with gitignore disabled.
 extend-exclude = [".venv", "venv", "visibility-2x2-template", "visibility-2x2-template-alt"]
 
+# The launcher runs before anyone knows the Python is new enough for the rest, so it
+# must stay valid Python 3.6. Its copies in the hooks-only roots are byte-identical.
+[tool.ruff.per-file-target-version]
+"compass/skills/compass/launch.py" = "py37"
+"compass-gemini/hooks/launch.py" = "py37"
+"compass-droid/hooks/launch.py" = "py37"
+
 [tool.ruff.format]
 # The formatter reads Python code blocks inside Markdown, which is what holds
 # the prose docs to the same style as the code they quote. Plan docs are the one
@@ -141,6 +148,12 @@ max-args = 8
 "scripts/drift_study_controls.py" = ["INP001"]
 # The retired page's script parts and their loader, imported by the drift replay scripts.
 "scripts/frozen_page.py" = ["INP001"]
+# The launcher exists to run the script it is handed (S603, S102), and imports inside
+# functions on purpose (PLC0415): at the floor they would cost ~10 ms per hook for nothing.
+# Its copies ship byte-identical.
+"compass/skills/compass/launch.py" = ["S603", "S102", "PLC0415"]
+"compass-gemini/hooks/launch.py" = ["S603", "S102", "PLC0415"]
+"compass-droid/hooks/launch.py" = ["S603", "S102", "PLC0415"]
 # Tests: assert usage, subprocess invocations of node, and long fixture lines.
 "**/tests/*.py" = ["S101", "S603", "S108", "S311", "E501", "SLF001", "INP001", "S104"]
 

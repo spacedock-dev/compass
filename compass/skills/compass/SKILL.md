@@ -255,11 +255,16 @@ Stdlib-only, Python 3.12+, no dependencies. Resolve `server.py` relative to this
 installed plugin and start it detached, so it keeps running after this session ends:
 
 ```bash
-python3 "<skill-dir>/server.py" --port 4553 --daemon
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --daemon
 ```
 
 One line on every platform and in every shell — `--daemon` does the detaching itself, so no
 backgrounding operator is involved. It prints the URL, the pid and the log path, and returns.
+
+`launch.py` runs `server.py` unchanged on a current Python. On an older `python3` it prints one
+sentence naming the floor and the Python it found, and exits nonzero, instead of a traceback. If
+`uv` is installed and already holds Python 3.12 or newer, it runs `server.py` there instead, and
+never downloads one. Relay that sentence to the user as written.
 On native Windows `python3` is not a reliable spelling; use `python` (or `py -3`). Whichever
 interpreter starts the server, reuse it for the commands below.
 

@@ -43,6 +43,12 @@ prints exactly `{}` and nothing else on every path including every failure path,
 that for malformed, empty and valid input alike. Irreversible actions below carries the same rule
 for the hook that matches destructive shapes.
 
+Every one of those scripts is started through `launch.py`. On a `python3` older than the floor it
+may run `uv python find '>=3.12' --no-python-downloads --no-project` (two-second limit, no network,
+no download, no project files read) and then start the script with the interpreter `uv` reports,
+passing the hook payload through unchanged. It adds no other traffic and reads the payload only to
+decide whether to print its one-line notice.
+
 The third kind is one stdio MCP server, `mcp_server.py`, described under The ask lane below. It is
 not a forwarder and shares none of the four's transport: a harness spawns it, it speaks JSON-RPC on
 stdin and stdout, and it reaches the dashboard on loopback under the same three guards.

@@ -10,6 +10,7 @@
     "compass": {
       "command": "python3",
       "args": [
+        "${CLAUDE_PLUGIN_ROOT}/skills/compass/launch.py",
         "${CLAUDE_PLUGIN_ROOT}/skills/compass/mcp_server.py"
       ]
     }
