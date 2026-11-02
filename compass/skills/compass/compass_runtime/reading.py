@@ -6168,6 +6168,25 @@ def _drop_remote_jobs(text: str) -> str:
     return _substituted(text, _remote_jobs(text), _drop_remote_job)
 
 
+# A CI run URL ends where its run of non-blank, non-`)` characters ends, since the pattern's own
+# last part reads to there, and the leftmost scheme in a run is the one the pattern would start at.
+# The old pattern restarted at every `http://` of a token: 0.29 s per 16,000-character reason.
+_URL_RUN = re.compile(r"[^\s)]+")
+_URL_SCHEME = re.compile(r"https?://", re.IGNORECASE)
+
+
+def _ci_run_urls(text: str) -> Iterator[re.Match[str]]:
+    """The matches `_CI_RUN_URL.finditer(text)` yields, in work linear in `text`."""
+    for run in _URL_RUN.finditer(text):
+        start, end = run.span()
+        scheme = _URL_SCHEME.search(text, start, end)
+        if scheme is None:
+            continue
+        found = _CI_RUN_URL.match(text, scheme.start(), end)
+        if found is not None:
+            yield found
+
+
 def _substituted(
     text: str, matches: Iterable[re.Match[str]], replace: Callable[[re.Match[str]], str]
 ) -> str:
@@ -6182,7 +6201,9 @@ def _substituted(
 
 def _local_clauses(text: str) -> list[str]:
     """The clauses of a line that can speak of a local run, remote phrasing removed."""
-    marked = _drop_remote_jobs(_CI_RUN_URL.sub(f" {_REMOTE_MARK} ", text))
+    marked = _drop_remote_jobs(
+        _substituted(text, _ci_run_urls(text), lambda _match: f" {_REMOTE_MARK} ")
+    )
     return [
         clause for clause in _CLAIM_CLAUSE_BREAK.split(marked) if not _REMOTE_CLAUSE.search(clause)
     ]

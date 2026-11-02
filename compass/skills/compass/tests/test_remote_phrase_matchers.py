@@ -53,6 +53,11 @@ _JOB_PIECES = (
     "ci/build", "server-unittest", "14/14", "in ", "under ", " of ", "tests/unit", "lint-test",
     "x.y", "..", "./", "\u017f",
 )  # fmt: skip
+_URL_PIECES = (
+    "http://", "https://", "HTTPS://", "ht", "tp", "s", ":", "/", "//", "x", "a.b", "actions/runs",
+    "/actions/runs/", "pipelines", "/pipelines/", "/jobs/", "jobs", "12", "7", "\u0661", " ", ")",
+    "(", "-", "?q=1", "#", "\u017f", "\n",
+)  # fmt: skip
 
 
 def _texts(pieces: tuple[str, ...], seed: int, count: int) -> Iterator[str]:
@@ -80,6 +85,28 @@ def _shaped_job_texts(seed: int, count: int) -> Iterator[str]:
             + rng.choice(gap)
             + rng.choice(result)
             + rng.choice(("", ")", " ", ".", "/x", "-y"))
+            for _ in range(rng.randint(1, 4))
+        )
+
+
+def _shaped_url_texts(seed: int, count: int) -> Iterator[str]:
+    rng = random.Random(seed)
+    scheme = ("http://", "https://", "HTTPS://", "Http://", "htp://", "")
+    part: tuple[str, ...] = (
+        "x",
+        "a.b",
+        "/",
+        "actions",
+        "/actions/runs/",
+        "/pipelines/",
+        "/jobs/",
+        "runs",
+        "12",
+    )
+    part += ("\u0661", "?q=1", "-", "http://", "(", "\u017f")
+    for _ in range(count):
+        yield rng.choice(("", " ", ")", "x")).join(
+            rng.choice(scheme) + "".join(rng.choices(part, k=rng.randint(1, 8)))
             for _ in range(rng.randint(1, 4))
         )
 
@@ -130,6 +157,7 @@ def _charged() -> Iterator[list[int]]:
     spent = [0]
     with (
         mock.patch.object(reading, "_REMOTE_JOB", _Charged(reading._REMOTE_JOB, spent)),
+        mock.patch.object(reading, "_CI_RUN_URL", _Charged(reading._CI_RUN_URL, spent)),
         mock.patch.object(reading, "_PATH_AFTER", _Charged(reading._PATH_AFTER, spent)),
     ):
 
@@ -147,9 +175,12 @@ def _charged() -> Iterator[list[int]]:
 _HOSTILE: dict[str, Callable[[int], str]] = {
     "dotted then joined": lambda n: "a." * (n // 2) + "-a",
     "slash-joined": lambda n: "a/" * (n // 2),
+    "a URL of segments": lambda n: "https://x/" + "x/" * (n // 2),
+    "repeated schemes": lambda n: "http://" * (n // 7),
     "slash jobs that pass": lambda n: "a/b passes " * (n // 11),
     "quoted jobs": lambda n: "'x-y' " * (n // 6),
     "a dotted result": lambda n: "a." * (n // 2) + " passes",
+    "run URLs": lambda n: "https://x/actions/runs/1 " * (n // 25),
 }
 
 
@@ -192,6 +223,13 @@ class EveryReasonTheOldMatchersReadIsReadTheSameWay(unittest.TestCase):
                 self.assertEqual(
                     _OLD_REMOTE_JOB.sub(_old_drop_remote_job, text),
                     reading._drop_remote_jobs(text),
+                )
+
+    def test_a_run_url_is_found_where_the_old_pattern_found_it(self) -> None:
+        for text in (*_texts(_URL_PIECES, 5070, 20_000), *_shaped_url_texts(5070, 20_000)):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    _spans(_OLD_CI_RUN_URL.finditer(text)), _spans(reading._ci_run_urls(text))
                 )
 
     def test_a_reason_the_old_matchers_read_as_remote_is_read_the_same_way(self) -> None:
