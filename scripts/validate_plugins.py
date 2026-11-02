@@ -160,6 +160,7 @@ GEMINI_EXTENSION_ROOT = "compass-gemini"
 GEMINI_EXTENSION_FILES = (
     "gemini-extension.json",
     "hooks/hooks.json",
+    "hooks/launch.py",
     "hooks/event_hook.py",
     "hooks/notify_hook.py",
 )
@@ -168,12 +169,15 @@ DROID_EXTENSION_ROOT = "compass-droid"
 DROID_EXTENSION_FILES = (
     ".factory-plugin/plugin.json",
     "hooks/hooks.json",
+    "hooks/launch.py",
     "hooks/event_hook.py",
     "hooks/notify_hook.py",
 )
 
 # Which shipped file is a byte-identical copy of which source of truth.
 DUPLICATED_SCRIPTS = (
+    (f"{GEMINI_EXTENSION_ROOT}/hooks/launch.py", "compass/skills/compass/launch.py"),
+    (f"{DROID_EXTENSION_ROOT}/hooks/launch.py", "compass/skills/compass/launch.py"),
     (f"{GEMINI_EXTENSION_ROOT}/hooks/event_hook.py", "compass/skills/compass/event_hook.py"),
     (f"{GEMINI_EXTENSION_ROOT}/hooks/notify_hook.py", "compass/skills/compass/notify_hook.py"),
     (f"{DROID_EXTENSION_ROOT}/hooks/event_hook.py", "compass/skills/compass/event_hook.py"),
@@ -414,6 +418,7 @@ COMPASS_RUNTIME_FILES = (
     "hooks/codex-hooks.json",
     "hooks.json",
     "skills/compass/server.py",
+    "skills/compass/launch.py",
     "skills/compass/notify_hook.py",
     "skills/compass/event_hook.py",
     "skills/compass/statusline_hook.py",

@@ -17,6 +17,10 @@ python3 compass/skills/compass/server.py --stop [--port PORT]
 python3 compass/skills/compass/server.py --forget [--port PORT]
 ```
 
+On a `python3` older than 3.12, start it through the `launch.py` beside it
+(`python3 compass/skills/compass/launch.py compass/skills/compass/server.py ...`) for a one-line
+explanation instead of a traceback.
+
 Paths above are relative to the repository root. For a plugin installation, use the
 `server.py` beside the installed `SKILL.md`; [find that copy](HOW_TO_USE.md#find-the-copy-your-commands-will-run)
 and use the same launcher and port for start, status and stop. On Windows, use your Python 3.12+

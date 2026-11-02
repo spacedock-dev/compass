@@ -22,7 +22,7 @@ This page owns none of the following, and links to it instead:
 
 ## Find the copy your commands will run
 
-Every command below starts with a path to `server.py`, and there are usually two on the machine: the
+Every command below runs `server.py` through the `launch.py` beside it, and there are usually two on the machine: the
 one your harness installed and the one in a checkout. They are different builds and they answer
 differently.
 
@@ -36,12 +36,35 @@ whichever you meant, and use it for everything in the session including `--statu
 
 ```bash
 SKILL="$(dirname "$(find ~/.claude/plugins/cache -name server.py -path '*compass*' | head -1)")"
-python3 "$SKILL/server.py" --diagnose
+python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
 ```
 
 Use the same interpreter every time. The one that started the server is recorded in its state file,
 and a second Python on the PATH is the usual reason a hook works from one shell and not another. On
 native Windows `python3` is not a reliable spelling; use `python` or `py -3`.
+
+## When `python3` is older than 3.12
+
+Every hook, the MCP server and the start command run through `launch.py`, so an older `python3`
+gets one sentence instead of a traceback. Claude Code shows it once, when a session starts, as a
+hook-error notice. Codex, Gemini CLI and Droid treat the nonzero exit as non-blocking and carry on;
+whether each shows the sentence has not been measured. Every later hook stays silent. The MCP server and `server.py` print it and exit
+with status 1. Antigravity's hooks have no session-start event, so they print only the `{}` it reads.
+
+```
+Compass needs Python 3.12 or newer; python3 here is 3.9.6 (/usr/bin/python3). Install Python 3.12 or newer, or run `uv python install 3.12`.
+```
+
+If `uv` is on your PATH and already holds a Python 3.12 or newer, the launcher uses it and you see
+nothing. It never downloads one. The lookup is this command, bounded at two seconds, and it prints
+the interpreter it would use:
+
+```bash
+uv python find '>=3.12' --no-python-downloads --no-project --no-config --system
+```
+
+If it prints nothing useful, `uv python install 3.12` installs one for good. That one is not run
+by Compass and was not run for this page.
 
 ## Let a session ask you a question
 
@@ -83,7 +106,7 @@ claude mcp list
 ```
 
 ```
-plugin:compass:compass: python3 /.../compass/skills/compass/mcp_server.py - Connected
+plugin:compass:compass: python3 /.../compass/skills/compass/launch.py /.../compass/skills/compass/mcp_server.py - Connected
 ```
 
 The tool arrives under a name qualified by both the plugin and the server key:
@@ -128,12 +151,13 @@ a scratch directory. No port needs configuring.
 
 ### Register the MCP server in Codex
 
-The plugin does not register it. Point Codex at the `mcp_server.py` inside the installed plugin. The
-CLI writes the table for you:
+The plugin does not register it. Point Codex at `launch.py` and the `mcp_server.py` beside it inside the
+installed plugin. The CLI writes the table for you:
 
 ```bash
 codex mcp add compass --env COMPASS_HOME="$HOME/.compass" \
-  -- python3 ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/mcp_server.py
+  -- python3 ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/launch.py \
+     ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/mcp_server.py
 ```
 
 That is the whole configuration, and writing it by hand into `~/.codex/config.toml` is equivalent:
@@ -141,7 +165,10 @@ That is the whole configuration, and writing it by hand into `~/.codex/config.to
 ```toml
 [mcp_servers.compass]
 command = "python3"
-args = ["/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/mcp_server.py"]
+args = [
+  "/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/launch.py",
+  "/Users/you/.codex/plugins/cache/compass-marketplace/compass/0.12.0/skills/compass/mcp_server.py",
+]
 
 [mcp_servers.compass.env]
 COMPASS_HOME = "/Users/you/.compass"
@@ -153,7 +180,7 @@ Three things about that path and that block:
   the version you registered, so re-run `codex mcp add` after an upgrade.
 - The `env` block is only needed for a relocated `COMPASS_HOME`. Leave it out and the server looks
   in `~/.compass`, where a default dashboard publishes its state file.
-- A port can be given directly instead: `args = [".../mcp_server.py", "4601"]` makes the server try
+- A port can be given directly instead: `args = [".../launch.py", ".../mcp_server.py", "4601"]` makes the server try
   4601 first. Verified with no state file at all to read.
 
 Check it:
@@ -197,7 +224,7 @@ on a small fix, and neither has a hand configuration you could add today.
 
 | Check | Command | Good looks like |
 |---|---|---|
-| The dashboard is up | `python3 "$SKILL/server.py" --port 4601 --status` | `Compass: running on port 4601 (pid ..., since 12:16)` |
+| The dashboard is up | `python3 "$SKILL/launch.py" "$SKILL/server.py" --port 4601 --status` | `Compass: running on port 4601 (pid ..., since 12:16)` |
 | The lane is on | `curl -s http://127.0.0.1:4601/api/data \| python3 -c 'import json,sys; print(json.load(sys.stdin).get("ask"))'` | `True`. Anything else means the lane is off. Do not grep for `"ask":true`: the payload is serialised with spaces after the colon, so that never matches |
 | The harness has the server | `claude mcp list` or `codex mcp list` | connected, or `enabled` |
 | The tool is reachable | ask the session to name its ask tool | the qualified name above, not a guess |
@@ -355,7 +382,7 @@ reads local paths, may run the read-only local `git` commands that read a projec
 (`--no-git` stops them), writes nothing, transmits nothing, and starts no server:
 
 ```bash
-python3 "$SKILL/server.py" --diagnose
+python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
 ```
 
 Two traps in reading its output, both reproduced:
@@ -400,7 +427,7 @@ a shell command that names it and does more than read it (`cat` and `grep` only 
 withdrawn for that session, and the page says so. Check it with:
 
 ```bash
-python3 "$SKILL/server.py" --diagnose
+python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
 ```
 
 The `Reader-listed checks` section names the file, any read failure, and each ignored entry with its reason.
@@ -444,7 +471,7 @@ bound to loopback. Reach for `--host` when there is no ssh to be had, such as a 
 a port or a VM whose host browser cannot see its loopback:
 
 ```bash
-python3 "<skill-dir>/server.py" --port 4553 --host 0.0.0.0 --daemon
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --host 0.0.0.0 --daemon
 ```
 
 Then open `http://<the machine's address>:4553/`. Not its hostname: a name is refused whichever
@@ -516,7 +543,7 @@ session summaries, removes the records of any session you discarded everything f
 than in the table below, because what it does is not undone by running the next command without it:
 
 ```bash
-python3 "<skill-dir>/server.py" --forget
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --forget
 ```
 
 It removes the history file whether or not the store was enabled, so turning the feature off and then
@@ -621,7 +648,7 @@ The history keeps 14 days of observations inside a 1 MiB file, and both figures 
 than constants:
 
 ```bash
-python3 "<skill-dir>/server.py" --history-days 3 --history-max-bytes 262144
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --history-days 3 --history-max-bytes 262144
 ```
 
 Either one alone still applies: narrowing the window drops what falls outside it, and the cap drops
@@ -650,7 +677,7 @@ When configured, Compass can post a scalar count to a webhook URL you provide wh
 need input or finish unread while you are away:
 
 ```bash
-python3 "<skill-dir>/server.py" --reach-url "https://ntfy.sh/my-topic"
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --reach-url "https://ntfy.sh/my-topic"
 ```
 
 The URL can also be set via the `COMPASS_REACH_URL` environment variable or saved in
@@ -666,7 +693,7 @@ When configured, Compass suppresses non-urgent notifications (native popups, una
 tripwire alerts, and reach nudges) during a specified local time window:
 
 ```bash
-python3 "<skill-dir>/server.py" --quiet-hours "22:00-08:00"
+python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --quiet-hours "22:00-08:00"
 ```
 
 The window can also be set via the `COMPASS_QUIET_HOURS` environment variable or saved in
@@ -677,7 +704,7 @@ Quiet hours can be disabled for any run with `--no-quiet-hours`.
 ## Stop a dashboard, and unstick a port
 
 ```bash
-COMPASS_HOME="$HOME/.compass" python3 "$SKILL/server.py" --port 4553 --stop
+COMPASS_HOME="$HOME/.compass" python3 "$SKILL/launch.py" "$SKILL/server.py" --port 4553 --stop
 ```
 
 [SKILL.md](compass/skills/compass/SKILL.md#stop) owns the last-resort per-platform commands for a

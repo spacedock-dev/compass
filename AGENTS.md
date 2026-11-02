@@ -32,6 +32,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
 └── skills/
     └── compass/                   # the dashboard skill
         ├── SKILL.md                # shared skill body (all harnesses)
+        ├── launch.py               # starts every hook, the MCP server and server.py; parses on Python 3.6
         ├── server.py               # the stable launcher: calls compass_runtime.cli.main
         ├── notify_hook.py          # loopback POST forwarder for the user-installed Claude hooks
         ├── event_hook.py           # posts Claude and Codex command-hook lifecycle events
@@ -64,12 +65,14 @@ scripts/frozen-page/               # the retired page's script parts, outside th
 compass-gemini/                    # extension root: Gemini CLI (hooks only)
 └── hooks/
     ├── hooks.json                  # Gemini CLI lifecycle hooks
+    ├── launch.py                   # byte-identical copy of the skill's launch.py
     ├── event_hook.py               # posts Gemini command-hook lifecycle events
     └── notify_hook.py              # loopback POST forwarder
 compass-droid/                     # plugin root: Droid (hooks only)
 ├── .factory-plugin/plugin.json     # Droid plugin manifest
 └── hooks/
     ├── hooks.json                  # Droid lifecycle hooks
+    ├── launch.py                   # byte-identical copy of the skill's launch.py
     ├── event_hook.py               # posts Droid command-hook lifecycle events
     └── notify_hook.py              # loopback POST forwarder
 tests/                              # pushback session fixtures (not shipped, not a test suite)

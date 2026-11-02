@@ -7,7 +7,7 @@
           {
             "type": "command",
             "name": "compass-session-started",
-            "command": "python3 \"${extensionPath}/hooks/event_hook.py\" gemini",
+            "command": "python3 \"${extensionPath}/hooks/launch.py\" \"${extensionPath}/hooks/event_hook.py\" gemini",
             "timeout": 5000
           }
         ]
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "name": "compass-turn-started",
-            "command": "python3 \"${extensionPath}/hooks/event_hook.py\" gemini",
+            "command": "python3 \"${extensionPath}/hooks/launch.py\" \"${extensionPath}/hooks/event_hook.py\" gemini",
             "timeout": 5000
           }
         ]
@@ -33,7 +33,7 @@
           {
             "type": "command",
             "name": "compass-store-changed",
-            "command": "python3 \"${extensionPath}/hooks/event_hook.py\" gemini",
+            "command": "python3 \"${extensionPath}/hooks/launch.py\" \"${extensionPath}/hooks/event_hook.py\" gemini",
             "timeout": 5000
           }
         ]
@@ -46,7 +46,7 @@
           {
             "type": "command",
             "name": "compass-turn-stopped",
-            "command": "python3 \"${extensionPath}/hooks/event_hook.py\" gemini",
+            "command": "python3 \"${extensionPath}/hooks/launch.py\" \"${extensionPath}/hooks/event_hook.py\" gemini",
             "timeout": 5000
           }
         ]
@@ -59,7 +59,7 @@
           {
             "type": "command",
             "name": "compass-session-ended",
-            "command": "python3 \"${extensionPath}/hooks/event_hook.py\" gemini",
+            "command": "python3 \"${extensionPath}/hooks/launch.py\" \"${extensionPath}/hooks/event_hook.py\" gemini",
             "timeout": 5000
           }
         ]
