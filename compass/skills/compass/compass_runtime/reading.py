@@ -5641,9 +5641,17 @@ def _job_spans(text: str, name: str) -> list[tuple[int, int]]:
     pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
     spans: list[tuple[int, int]] = []
     for found in re.finditer(pattern, text, re.IGNORECASE):
-        before, after = text[: found.start()][-1:], text[found.end() :][:1]
-        if not plain or (before in _JOB_QUOTES and after in _JOB_QUOTES):
-            spans.append(found.span())
+        # Index the two neighbours: slicing the text either side of every match copies it whole
+        # each time, which is quadratic in a reason that repeats the name.
+        start, end = found.span()
+        quoted = (
+            start > 0
+            and end < len(text)
+            and text[start - 1] in _JOB_QUOTES
+            and text[end] in _JOB_QUOTES
+        )
+        if not plain or quoted:
+            spans.append((start, end))
     return spans
 
 
@@ -5694,9 +5702,14 @@ def _job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
     result_words = (_JOB_RESULT, _JOB_FAILURE) if failed else (_JOB_RESULT,)
     # Only an occurrence that names the job is marked: a plain word of the reason that happens to be
     # the job's name ("the lint is clean") is not a claim about the job, whatever else is quoted.
-    marked = text
-    for start, end in reversed(spans):
-        marked = marked[:start] + _JOB_MARK + marked[end:]
+    # One join of the gaps, not a rebuild of the whole text per span.
+    pieces: list[str] = []
+    last = 0
+    for start, end in spans:
+        pieces.extend((text[last:start], _JOB_MARK))
+        last = end
+    pieces.append(text[last:])
+    marked = "".join(pieces)
     return any(
         _JOB_MARK in clause
         and any(words.search(clause) for words in result_words)
