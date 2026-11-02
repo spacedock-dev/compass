@@ -2411,16 +2411,70 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
 _SCRUB_PASSES: Final = 4
 
 
-def _scrub_pass(text: str, patterns: tuple[re.Pattern[str], ...]) -> str:
-    plain, joined_flag, userinfo, touching, inner = patterns
+def _scrub_pass(text: str, patterns: _ScrubPatterns) -> str:
+    plain, joined_flag, userinfo, starts, inner, after = patterns
     # Userinfo first: a plain pass would let a short spelling match inside `user:Fake99!@` in
     # prose and leave the `!` of the longer one, where the one-at-a-time loop took the longest.
     text = userinfo.sub(lambda match: match[1] + _SECRET_MARKER + match[2], text)
     text = joined_flag.sub(lambda match: match[1] + _SECRET_MARKER, text)
     # Two masked values with nothing between them reject each other at the word boundary, so a
     # run of them is read whole before the single-value pass sees either.
-    text = touching.sub(lambda match: _mask_run(match[0], inner), text)
+    text = _mask_runs(text, starts, inner, after)
     return plain.sub(_SECRET_MARKER, text)
+
+
+def _mask_runs(
+    text: str, starts: re.Pattern[str], inner: re.Pattern[str], after: re.Pattern[str]
+) -> str:
+    """`text` with every run of two or more touching values masked by `_mask_run`.
+
+    It reads exactly what `{before}(?>(?:{alternation}){2,}){after}` read with `re.sub`, from the
+    original text, left to right. That atomic run commits to its first success: the longest first
+    value that another value follows, then the longest value at each step. The regex restarted the
+    run at every offset the before-boundary admits, after each `:` or `!` of a value such as
+    `:FakeWxyz`, and read it to its end again: 3.5 s at 160,000 characters. Here the chain from
+    each offset is followed once and remembered for every offset it passed through.
+    """
+    ends: dict[int, int] = {}
+
+    def longest(at: int) -> int:
+        found = inner.match(text, at)
+        return -1 if found is None else found.end()
+
+    def chain_end(at: int) -> int:
+        walked = []
+        while at not in ends:
+            following = longest(at)
+            if following < 0:
+                ends[at] = at
+                break
+            walked.append(at)
+            at = following
+        end = ends[at]
+        for offset in walked:
+            ends[offset] = end
+        return end
+
+    out: list[str] = []
+    last = 0
+    for start in starts.finditer(text):
+        at = start.start()
+        if at < last:
+            continue
+        # The first value's spellings at `at`, longest first: the tree prefers the deeper branch,
+        # so each shorter one is the longest that ends before the last.
+        first = longest(at)
+        while first > at:
+            end = chain_end(first)
+            if end != first:
+                if after.match(text, end):
+                    out.extend((text[last:at], _mask_run(text[at:end], inner)))
+                    last = end
+                break
+            shorter = inner.match(text, at, first - 1)
+            first = -1 if shorter is None else shorter.end()
+    out.append(text[last:])
+    return "".join(out)
 
 
 def _mask_run(run: str, inner: re.Pattern[str]) -> str:
@@ -2493,13 +2547,19 @@ def _trie_regex(node: dict[str, Any]) -> str:
     return f"(?:{body})?" if ends else body
 
 
+# plain, joined flag, userinfo, run starts, one spelling, the after-boundary.
+_ScrubPatterns = tuple[
+    re.Pattern[str],
+    re.Pattern[str],
+    re.Pattern[str],
+    re.Pattern[str],
+    re.Pattern[str],
+    re.Pattern[str],
+]
+
+
 @lru_cache(maxsize=2)
-def _scrub_patterns(
-    spellings: tuple[str, ...], prose: bool
-) -> (
-    tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]]
-    | None
-):
+def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns | None:
     """The patterns a scrub applies, each one alternation over every spelling, or None when the
     spellings nest too deep to compile.
 
@@ -2509,9 +2569,10 @@ def _scrub_patterns(
     branch that stops inside a longer word. The cache is keyed by the spellings, since a press
     scrubs several explanations and tails against the same set; two entries, because it holds
     real masked values. The userinfo pattern starts only at the head of a run, as
-    `_MASK_USERINFO` does, or a long word rescans its rest at every offset. The run pattern is
-    atomic, so a run of overlapping values such as `aaaa`, `aaaaa` and `aaaaaa` cannot be
-    split in exponentially many ways when the boundary after it fails.
+    `_MASK_USERINFO` does, or a long word rescans its rest at every offset. A run of touching
+    values is read by `_mask_runs` from the offsets `starts` finds, two spellings ahead, so a
+    run of overlapping values such as `aaaa`, `aaaaa` and `aaaaaa` is never split in
+    exponentially many ways.
     """
     alternation = _trie_alternation(spellings)
     if alternation is None:
@@ -2534,6 +2595,7 @@ def _scrub_patterns(
         re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
-        re.compile(rf"{before}(?>(?:{alternation}){{2,}}){after}"),
+        re.compile(rf"{before}(?=(?:{alternation}){{2}})"),
         re.compile(rf"(?:{alternation})"),
+        re.compile(after),
     )

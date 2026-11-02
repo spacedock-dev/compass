@@ -4098,6 +4098,17 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   lines changed, each toward hiding (`max-height:184px` became `…REDACTED:184px`). A lookahead over the
   whole chain was quadratic too (7.5 s at 48,000 characters), and reading the whole chain and splitting
   it back left fragments of overlapping values.
+- **Touching runs read once.** A run of touching values was one atomic regex, two or more spellings
+  and the after-boundary. Its scan restarted at every offset the before-boundary admits, which inside
+  a run of `:FakeWxyz` or `!FakeWxyz` values is after every `:` or `!`, and read the run to its end each
+  time: 3.5 s at 160,000 characters, in both modes, on main as well. `records._mask_runs` finds the
+  offsets with a two-spelling lookahead, follows the longest spelling from each and remembers where
+  every offset's chain ends, so each offset is walked once (0.05 s at 160,000). It returns exactly
+  what the regex returned: a differential test against a frozen copy holds them equal, and 338,000
+  seeded passes in both modes did not differ. Narrower fixes were measured on 20,000 cases heavy in
+  colon-bearing values and rejected, because each hides less: leaving colon-bearing spellings out of
+  the run (5,114 cases more visible than before), not restarting after `:` (the same order), and
+  dropping the run's after-boundary (fragments of a longer value left behind).
 - **Spelling mass.** Compile time follows the spellings a value is searched in, not its length: one
   value of 131,064 quotes weighs nineteen times its length and took 9.7 s to compile cold within the old
   131,072-character budget. `records.SCRUB_SPELLING_MASS_MAX` (270,336, the mass of 4,096 ordinary

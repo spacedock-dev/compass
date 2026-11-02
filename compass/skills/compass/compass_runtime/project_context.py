@@ -2125,7 +2125,7 @@ TOOL_REPORT_PATH_CHARS = 240
 # Bounds the set of masked values a press carries. Past it the oldest values go and the newest stay,
 # since a value the agent quoted lately is the likelier one in an explanation, and the press says
 # the scrub is partial (`PressChecks.masked_values_partial`). The scrub is one compiled alternation,
-# so the first scrub of a press compiles it (about 0.04 s at 512 values, about 0.3 s at 4,096) and
+# so the first scrub of a press compiles it (about 0.09 s at 512 values, 0.7 s at 4,096) and
 # later scrubs of the same set reuse it (a few milliseconds); 512 values once cost 0.45 s each time.
 # The count alone left the size open, and so did a count of characters: compile time follows the
 # spellings a value is searched in, so the newest values are also kept only up to

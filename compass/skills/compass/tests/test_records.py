@@ -28,13 +28,13 @@ import sys
 import time
 import unittest
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
 from compass_runtime import quota, records
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 # +08:00 with no DST, so the offset is the same in every season and a failure
 # reads as a timezone bug rather than as a date-dependent flake. This is also
@@ -1590,6 +1590,138 @@ class AHostileScrubFailsClosedTest(unittest.TestCase):
         result = records.scrub("x " + values[-1] + "b and " + values[-1] + " y", values)
         self.assertTrue(result.complete)
         self.assertEqual("x " + values[-1] + "b and " + records.SECRET_MARKER + " y", result.text)
+
+
+class _CountedInner:
+    """The single-spelling pattern of a scrub, counting the matches the run reader asks of it."""
+
+    def __init__(self, pattern: re.Pattern[str]) -> None:
+        self.pattern = pattern
+        self.calls = 0
+
+    def match(self, string: str, pos: int = 0, endpos: int = sys.maxsize) -> re.Match[str] | None:
+        self.calls += 1
+        return self.pattern.match(string, pos, endpos)
+
+    def sub(self, repl: str, string: str) -> str:
+        self.calls += 1
+        return self.pattern.sub(repl, string)
+
+
+def _old_mask_runs(text: str, spellings: tuple[str, ...], *, prose: bool) -> str:
+    """A frozen copy of the run pass as one regex: two or more touching spellings, atomic, then
+    the after-boundary. Kept as the reference the run reader must agree with byte for byte."""
+    alternation = records._trie_alternation(spellings)
+    assert alternation is not None
+    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
+    run = re.compile(rf"(?<![\w./@+\-])(?>(?:{alternation}){{2,}}){after}")
+    inner = re.compile(rf"(?:{alternation})")
+    return run.sub(lambda match: records._mask_run(match[0], inner), text)
+
+
+class TouchingRunsAreReadInLinearWork(unittest.TestCase):
+    """A run of touching values is read by following each value's longest spelling once."""
+
+    SHAPES: ClassVar[tuple[tuple[tuple[str, ...], Callable[[int], str]], ...]] = (
+        # A value that starts with a colon: every `:` restarted the run regex to the text's end.
+        (("FakeWxyz", ":FakeWxyz"), lambda k: " " + "FakeWxyz:" * k + "FakeWxyz.py"),
+        # A value led by a character the before-boundary admits: the same restart after each `!`.
+        (("FakeWxyz", "!FakeWxyz"), lambda k: " " + "!FakeWxyz" * k + ".py"),
+    )
+
+    def work(self, values: tuple[str, ...], text: str, *, prose: bool) -> int:
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        patterns = records._scrub_patterns(spellings, prose)
+        assert patterns is not None
+        _plain, _flag, _userinfo, starts, inner, after = patterns
+        counted = _CountedInner(inner)
+        records._mask_runs(text, starts, counted, after)  # type: ignore[arg-type]
+        return counted.calls
+
+    def test_a_run_of_values_that_restart_at_every_colon_costs_twice_as_much_at_twice_the_length(
+        self,
+    ) -> None:
+        for values, make in self.SHAPES:
+            for prose in (False, True):
+                with self.subTest(values=values, prose=prose):
+                    small = self.work(values, make(2_000), prose=prose)
+                    large = self.work(values, make(4_000), prose=prose)
+                    self.assertGreater(small, 0)
+                    self.assertLess(large, 2.2 * small, (small, large))
+
+    def test_a_run_whose_end_fails_the_boundary_is_not_retried_with_a_shorter_first_value(
+        self,
+    ) -> None:
+        # The run regex is atomic: `aaaab` then `xxxx` ends inside `xxxxx` and fails, and it does
+        # not go back to `aaaa` then `bxxxxx`, which would end at the space and pass.
+        values = ("aaaa", "aaaab", "xxxx", "bxxxxx")
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        text = "see aaaabxxxxx now"
+        for prose in (False, True):
+            patterns = records._scrub_patterns(spellings, prose)
+            assert patterns is not None
+            _plain, _flag, _userinfo, starts, inner, after = patterns
+            with self.subTest(prose=prose):
+                self.assertEqual(text, _old_mask_runs(text, spellings, prose=prose))
+                self.assertEqual(text, records._mask_runs(text, starts, inner, after))
+
+    def test_the_run_reader_masks_exactly_what_the_run_regex_masked(self) -> None:
+        rng = random.Random(5018)
+        alphabets = (
+            "a b'\"1:",
+            "\u00e9\u5bc6:a",
+            "ab1!.-/:'",
+            "ab1!.-/'",
+            "abcd1:",
+            "Fk9:",
+            "ab:",
+            "a!:",
+        )
+        compared = 0
+        for _ in range(1_500):
+            alphabet = rng.choice(alphabets)
+            values = [
+                "".join(rng.choices(alphabet, k=rng.randint(2, 7)))
+                for _ in range(rng.randint(1, 4))
+            ]
+            values.append(values[0] + rng.choice("!.-/1:"))
+
+            def token(values: list[str] = values) -> str:
+                return rng.choice(
+                    (
+                        *values,
+                        "word",
+                        "user",
+                        "".join(rng.choice(values) for _ in range(rng.randint(2, 4))),
+                    )
+                )
+
+            text = " ".join(
+                rng.choice(("", "(", "'", "-p", "u:", "http://u:", "alice:", "x ", ":", "!"))
+                + rng.choice((":", "", "", "!")).join(token() for _ in range(rng.randint(1, 6)))
+                + rng.choice(
+                    ("", ".", ")", "@h", ".py", ":", "x", ",", "'", ":8080", ":src", ": denied")
+                )
+                for _ in range(rng.randint(1, 5))
+            )
+            spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+            if not spellings:
+                continue
+            for prose in (False, True):
+                patterns = records._scrub_patterns(spellings, prose)
+                if patterns is None:
+                    continue
+                _plain, _flag, _userinfo, starts, inner, after = patterns
+                current = text
+                for _ in range(3):
+                    with self.subTest(values=values, text=current, prose=prose):
+                        self.assertEqual(
+                            _old_mask_runs(current, spellings, prose=prose),
+                            records._mask_runs(current, starts, inner, after),
+                        )
+                    compared += 1
+                    current = records._scrub_pass(current, patterns)
+        self.assertGreater(compared, 5_000)
 
 
 class MaskCommandTest(unittest.TestCase):
