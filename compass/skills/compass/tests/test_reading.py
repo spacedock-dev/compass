@@ -4210,6 +4210,15 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
         self.assertEqual("", resolve(True, reading.RESULT_CONSISTENT))
         self.assertIn("renamed the wrong flag", resolve(False))
 
+    def test_when_the_scrub_cannot_finish_the_person_sees_the_withheld_sentence(self) -> None:
+        # The press kept every value, but they are too heavy to search: the scrub withholds, and
+        # the stored reason is the fixed sentence, never the bare marker nor the prose.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 5):
+            detail = self.resolve_detail(
+                "it typed FakePass99 and renamed the wrong flag", frozenset({"FakePass99"})
+            )
+        self.assertEqual(reading.SCRUB_WITHHELD_DETAIL, detail)
+
     def test_the_withheld_sentence_is_stored_only_when_an_explanation_was_withheld(self) -> None:
         # A reply that carried no explanation has nothing to withhold, whatever the press dropped.
         def stored(said: str, *, unfinished: bool) -> str:

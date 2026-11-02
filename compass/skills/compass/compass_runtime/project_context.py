@@ -2127,11 +2127,13 @@ TOOL_REPORT_PATH_CHARS = 240
 # the scrub is partial (`PressChecks.masked_values_partial`). The scrub is one compiled alternation,
 # so the first scrub of a press compiles it (about 0.04 s at 512 values, about 0.3 s at 4,096) and
 # later scrubs of the same set reuse it (a few milliseconds); 512 values once cost 0.45 s each time.
+# The count alone left the size open, and so did a count of characters: compile time follows the
+# spellings a value is searched in, so the newest values are also kept only up to
+# `records.SCRUB_SPELLING_MASS_MAX` of them, the bound the scrub itself refuses past.
 MASKED_VALUES_MAX = 4096
-# The count alone left the size open: 4,096 values of 1,000 characters took 32 s and 2.4 GB to
-# compile cold. Compile time follows total length, about a second per 130,000 characters, so the
-# newest values are kept up to this many characters and the press is partial past it.
-MASKED_VALUES_MAX_CHARS = 131_072
+# What a per-call output tail becomes in the prompt when its masked values could not be searched
+# (`records.scrub`): a sentence saying so, never the output with a value in it.
+TAIL_WITHHELD = "[output withheld: its masked values were too large to search]"
 _SCRUB_MIN_CHARS = records.SCRUB_MIN_CHARS
 _WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -5169,8 +5171,11 @@ def _scrubbed_tail(text: str, values: Iterable[str]) -> str:
     """The output tail with every value the call masked removed first:
     an echoed command repeats it, and the tail reaches the prompt row
     (review, 2026-09-27). Redaction then runs over the whole window, and the
-    cut comes last (item 5)."""
-    return records.redact_secrets(records.scrub_values(text, values))[-TOOL_REPORT_TAIL_CHARS:]
+    cut comes last (item 5). A scrub that could not finish leaves `TAIL_WITHHELD`."""
+    scrubbed = records.scrub(text, values)
+    if not scrubbed.complete:
+        return TAIL_WITHHELD
+    return records.redact_secrets(scrubbed.text)[-TOOL_REPORT_TAIL_CHARS:]
 
 
 def _written_path(raw: object, cwd: str, session_dir: str = "") -> str | None:
@@ -5885,7 +5890,7 @@ class _ToolReportTally:
         # A dict keeps the order a set loses, so the cap can drop the oldest.
         self.masked_values: dict[str, None] = {}
         self.masked_values_partial = False
-        self.masked_chars = 0
+        self.masked_mass = 0
         # (time, call id) of every recorded write and fixer run. A pass is aged
         # by one from another call at or after its own time, since recorded
         # time cannot order two calls that share it (DRC-4709); its own call is
@@ -6991,6 +6996,7 @@ class _ToolReportTally:
             run = history[self._latest(history)]
             if (
                 run["tail"]
+                and run["tail"] != TAIL_WITHHELD
                 and run.get("attributable") is True
                 and run["recorded"]
                 and not run["background"]
@@ -7003,20 +7009,25 @@ class _ToolReportTally:
         """Add a call's masked values as the newest, and drop the oldest past the bound.
 
         A value met again moves to the newest end, so one the agent keeps typing is not the
-        first to go. Dropping anything marks the scrub partial: it is said, never silent.
+        first to go. A value too heavy for the whole budget is dropped alone: evicting first
+        would empty the set before reaching it. Dropping anything marks the scrub partial: it
+        is said, never silent.
         """
+        budget = records.SCRUB_SPELLING_MASS_MAX
         for value in sorted(values):
+            mass = records.spelling_mass(value)
             if value in self.masked_values:
                 del self.masked_values[value]
-                self.masked_chars -= len(value)
+                self.masked_mass -= mass
+            if mass > budget:
+                self.masked_values_partial = True
+                continue
             self.masked_values[value] = None
-            self.masked_chars += len(value)
-        while len(self.masked_values) > MASKED_VALUES_MAX or (
-            self.masked_chars > MASKED_VALUES_MAX_CHARS
-        ):
+            self.masked_mass += mass
+        while len(self.masked_values) > MASKED_VALUES_MAX or self.masked_mass > budget:
             oldest = next(iter(self.masked_values))
             del self.masked_values[oldest]
-            self.masked_chars -= len(oldest)
+            self.masked_mass -= records.spelling_mass(oldest)
             self.masked_values_partial = True
 
     def tier3_calls(self) -> frozenset[str]:

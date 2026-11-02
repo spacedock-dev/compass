@@ -4072,6 +4072,42 @@ Four small changes to the masking and scrub, each closing a way a value or a fal
   as the count bound does: compile time follows total length, and 4,096 values of 1,000 characters took
   32 s and 2.4 GB to compile cold.
 
+### Amended 2026-11-02 (owner): a colon shields no value, and a scrub that cannot finish withholds
+
+The scrub above failed open at four edges. Each now hides the value or withholds the text.
+
+- **A value after a colon in an output tail.** The strict (output tail) boundary rejected `:` before a
+  value, so an echoed `curl -u alice:<password>` or an `auth alice:<password> failed` line kept the
+  password in the tail a press sends. The strict before-boundary now admits `:`, as prose did. Output
+  with ordinary colons and no masked value (a timestamp, `file.py:12`, a URL without credentials) is
+  unchanged.
+- **Colon chains in prose.** A pass freed only the rightmost unmasked value of a chain `V1:V2:…`, and
+  the loop stopped at sixteen passes without saying so: forty values left twenty-four visible. A value
+  followed by `:` is now accepted when one masked run follows the colon and that run ends the word or
+  meets another `:`, so a chain of any length is masked in one pass. The lookahead is one element long,
+  so the scan stays linear; a lookahead over the whole chain was quadratic (7.5 s at 48,000
+  characters), reading the whole chain and splitting it back left fragments of overlapping values, and
+  dropping `:` from the after-boundary changed 5,168 of 12,000 random outputs. The accepted change is
+  toward hiding: a chain that ends inside a longer word (`V1:…:Vn.py`) hides all but its last two
+  values, where the old boundary hid none. The `-p` flag pattern keeps the plain boundary, because the
+  lookahead doubles a pattern's compile time and a flag chain settles in the next pass anyway.
+- **Spelling mass.** Compile time follows the spellings a value is searched in, not its length: one
+  value of 131,064 quotes weighs nineteen times its length and took 9.7 s to compile cold within the old
+  131,072-character budget. `records.SCRUB_SPELLING_MASS_MAX` (270,336, the mass of 4,096 ordinary
+  32-character values, so that press keeps every value) replaces the character budget. The press counts
+  each value's mass, keeps the newest that fit, and drops a value heavier than the whole budget alone,
+  where it used to evict every older value first. The count bound of 4,096 stays beside it.
+- **Fail closed.** `records.scrub` returns the text and whether it is complete. A set heavier than the
+  budget, a prefix chain deeper than forty (which used to fall back to a flat alternation, 54 s on
+  50,000 quotes), or a text still changing on the fourth pass compiles or returns nothing: the text is the
+  bare marker and `complete` is false, so a caller that ignores the flag still shows nothing.
+  An explanation stores `reading.SCRUB_WITHHELD_DETAIL`, and an output tail becomes
+  `project_context.TAIL_WITHHELD` in the prompt and is never searched for a verdict's quote. Passes fell
+  from sixteen to four: with the lookahead, 12,000 random prose scrubs settled in two passes or three.
+  What was rejected: chunking the alternation (still O(text x branches)), an iterative tree builder (the
+  regex parser recurses per nested group), and a tree to depth forty with a flat tail below it
+  (unbounded per position).
+
 ### Amended 2026-10-28 (owner): the unasked lane withholds a mixed call's tail and says what a later pass superseded
 
 Five edges of the lane above, each a place its words or its payload said more or less than was true.

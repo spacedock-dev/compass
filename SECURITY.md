@@ -2030,9 +2030,14 @@ environment literal (`true`, `false`, `production`, `main`, `test`), an auth sch
 `Basic`), a bare number and a lowercase-letters-only word stay, because `CI=true` and `-u 1000`
 would otherwise erase ordinary words from a sentence the reader reads. The accepted loss is a
 lowercase-letters-only password quoted in an explanation; the check line and the output tail still
-mask it. A press carries up to 4,096 masked values and 131,072 characters of them and, past either,
-keeps the newest; when it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
-published unscrubbed. The server holds the masked values of the last two scrubs in a small in-memory
+mask it. A press carries up to 4,096 masked values and at most 270,336 characters of their
+spellings, each value counted with the quoted and escaped forms it is searched for in. Past either
+bound it keeps the newest values that fit; a single value too large for the whole budget is dropped
+alone and the values before it stay. When it has dropped any, the stored explanation is replaced by a fixed sentence saying it was withheld, rather than
+published unscrubbed. A scrub whose values weigh more than that bound or nest more than forty
+prefixes deep, or that does not settle in four passes, withholds its text rather than returning it half scrubbed: an explanation is replaced
+by the same sentence, and a command's output tail is replaced in the prompt by a sentence saying its
+output was withheld. The server holds the masked values of the last two scrubs in a small in-memory
 cache for the life of the process, and writes them nowhere. A line that lists a command of the shell
 (not a check) shows the script given to `python -c`, `node -e`, `-p`, `--eval` or `--print`, `bun` with the same flags,
 `deno eval`, `ruby -e`, `perl -e` or `-E` and `php -r` as one ellipsis, also behind a wrapper such as `docker exec`, `timeout` or `uv run`, since a literal

@@ -4898,18 +4898,19 @@ def _resolve_one(  # noqa: PLR0913 - each is one fact the evidence rules read
     # The values the calls masked come out before the shape filter runs, so a short
     # password the agent quoted is held as masked in the explanation as on its line.
     # Only the values that can be a credential: `true` from `CI=true` stays a word.
-    scrubbed = records.scrub_values(
-        raw_detail, records.explanation_values(masked_values), prose=True
-    )
+    scrub = records.scrub(raw_detail, records.explanation_values(masked_values), prose=True)
+    scrubbed = scrub.text
     # A press that dropped masked values past its bound cannot say the explanation is clear of
-    # them, so the prose is not stored: a fixed sentence saying so stands in, so the page shows
-    # why there is no reason rather than an empty one, and a leaked value is never the cost.
+    # them, and neither can a scrub that could not search them all (`records.scrub`), so the prose
+    # is not stored: a fixed sentence saying so stands in, so the page shows why there is no
+    # reason rather than an empty one, and a leaked value is never the cost.
+    withheld = scrub_partial or not scrub.complete
     detail = (
         (SCRUB_WITHHELD_DETAIL if raw_detail else "")
-        if scrub_partial
+        if withheld
         else records.safe_text(scrubbed, detail_cap_chars)
     )
-    if not scrub_partial and detail and len(scrubbed) > len(detail):
+    if not withheld and detail and len(scrubbed) > len(detail):
         # A cut sentence loses its qualifier, and the qualifier is always last.
         # Say so rather than publishing half a claim as a whole one.
         detail = f"{detail}…"

@@ -30,6 +30,7 @@ from compass_runtime import (
     observer,
     project_context,
     reading,
+    records,
     semantic_history,
 )
 from compass_runtime.config import build_runtime_config
@@ -1784,25 +1785,41 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
         self.assertEqual(frozenset({"FakePass29", "FakePass39", "FakePass49"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
-    def test_past_the_total_length_budget_the_newest_values_stay_and_the_press_is_partial(
+    def test_past_the_spelling_budget_the_newest_values_stay_and_the_press_is_partial(
         self,
     ) -> None:
-        with mock.patch.object(project_context, "MASKED_VALUES_MAX_CHARS", 25):
+        # Each `FakePassN9` weighs 22: itself and its quoted spelling.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 50):
             for index in range(5):
                 self.session.bash(f"curl -u alice:FakePass{index}9 https://x.example", "ok")
             press = self.press()
         self.assertEqual(frozenset({"FakePass39", "FakePass49"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
-    def test_one_value_longer_than_the_whole_budget_is_dropped_and_said(self) -> None:
-        huge = "FakePass" * (project_context.MASKED_VALUES_MAX_CHARS // 8 + 1)
+    def test_a_press_counts_a_values_quoted_spellings_against_its_budget(self) -> None:
+        # A value holding an apostrophe is searched for in five spellings, 73 characters for an
+        # 11-character value, and that is what it costs to compile.
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 100):
+            for index in range(2):
+                quoted = shlex.quote(f"alice:Fake'Pass{index}9")
+                self.session.bash(f"curl -u {quoted} https://x.example", "ok")
+            press = self.press()
+        self.assertEqual(frozenset({"Fake'Pass19"}), press.masked_values)
+        self.assertTrue(press.masked_values_partial)
+
+    def test_one_value_larger_than_the_whole_budget_is_dropped_alone_and_the_ones_before_stay(
+        self,
+    ) -> None:
+        self.session.bash("curl -u alice:FakePass19 https://x.example", "ok")
+        self.session.bash("curl -u alice:FakePass29 https://x.example", "ok")
+        huge = "FakePass" * (records.SCRUB_SPELLING_MASS_MAX // 16 + 1)
         self.session.bash(f"curl -u alice:{huge} https://x.example", "ok")
         press = self.press()
-        self.assertEqual(frozenset(), press.masked_values)
+        self.assertEqual(frozenset({"FakePass19", "FakePass29"}), press.masked_values)
         self.assertTrue(press.masked_values_partial)
 
     def test_a_value_met_again_is_not_counted_twice_against_the_budget(self) -> None:
-        with mock.patch.object(project_context, "MASKED_VALUES_MAX_CHARS", 25):
+        with mock.patch.object(records, "SCRUB_SPELLING_MASS_MAX", 25):
             for _ in range(4):
                 self.session.bash("curl -u alice:FakePass09 https://x.example", "ok")
             press = self.press()
