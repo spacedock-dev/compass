@@ -297,8 +297,10 @@ same directories through the relative symlinks under `.agents/skills/`.
 - `ruff format --check .`
 - `mypy` in `--strict` mode with `warn_unreachable`.
 - `runtime-floor`, which launches the shipped `server.py` entry point directly from outside the
-  checkout on Python 3.12, exercises `--help` and `--diagnose --json`, and then runs the whole suite
-  on the floor without coverage.
+  checkout on Python 3.12 and exercises `--help` and `--diagnose --json`, once, and runs the whole
+  suite on the floor without coverage. The suite runs as parallel legs, one runner each: the
+  dashboard suite, and the script suite in three `--shard K/3` shards, so no leg waits on the
+  other suite.
 - The full unittest suite under `coverage`, against the `fail_under` threshold in `pyproject.toml`.
   That threshold only ratchets up. A PR that must merge below it needs the `coverage-exception`
   label, which is visible in the PR timeline.

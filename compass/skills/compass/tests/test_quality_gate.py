@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -25,6 +29,36 @@ case "$1" in
   *) exit 1 ;;
 esac
 """
+
+
+@functools.cache
+def _ci_scope() -> Any:
+    """The shipped detector module, loaded from the repository as the workflow runs it."""
+    spec = importlib.util.spec_from_file_location("ci_scope_under_test", ROOT / SCOPE)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # its dataclass resolves annotations through sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def _repository_documents() -> Any:
+    """The document scan of this repository, read once for every in-process case."""
+    module = _ci_scope()
+    return (module.python_documents(ROOT), module.frontend_documents(ROOT))
+
+
+def detect_in_process(changed: str) -> dict[str, str]:
+    """The lanes `scripts/ci_scope.py` decides for these paths, without starting Bash or Python.
+
+    Each shell round trip costs about 0.9 s, so the many-path cases call the same `scope`
+    function the script's entry point calls; `detect` keeps one real run of the shipped step per
+    class, and the test beside it compares the two.
+    """
+    paths = changed.splitlines()
+    return dict(_ci_scope().scope(paths, ROOT, documents=_repository_documents()).outputs())
 
 
 def detect_step() -> str:
@@ -85,10 +119,16 @@ class QualityGateDetectorTest(unittest.TestCase):
             "promise-map.md",
         ):
             with self.subTest(name=name):
-                self.assertEqual("true", self.detect("docs/" + name)["python_suites"])
+                self.assertEqual("true", detect_in_process("docs/" + name)["python_suites"])
         for name in ("README.md", "SECURITY.md"):
             with self.subTest(name=name):
-                self.assertEqual("true", self.detect(name)["python_suites"])
+                self.assertEqual("true", detect_in_process(name)["python_suites"])
+
+    def test_the_shipped_step_agrees_with_the_in_process_call(self) -> None:
+        """The one real run of the workflow step the in-process cases stand in for."""
+        for changed in ("docs/promise-map.md", "docs/" + "design-harness-registry.md", "README.md"):
+            with self.subTest(changed=changed):
+                self.assertEqual(detect_in_process(changed), self.detect(changed))
 
     def test_documents_only_the_citation_checker_reads_run_the_python_suites(self) -> None:
         """A doc reached only through a runtime citation link is still a dependency.
@@ -116,7 +156,7 @@ class QualityGateDetectorTest(unittest.TestCase):
         self.assertTrue(cited, "no runtime citation links found, so this asserts nothing")
         for name in sorted(cited):
             with self.subTest(name=name):
-                self.assertEqual("true", self.detect(name)["python_suites"])
+                self.assertEqual("true", detect_in_process(name)["python_suites"])
 
     def test_unasserted_prose_runs_no_lane(self) -> None:
         self.assertEqual(
