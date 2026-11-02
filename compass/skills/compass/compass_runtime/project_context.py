@@ -2488,6 +2488,12 @@ class _Unbalanced(Exception):  # noqa: N818 - a parse outcome, not an error the 
     target, or nesting past the cap: the call is read as not run."""
 
 
+class _TooDeep(_Unbalanced):
+    """Nesting past the cap. A subclass so a backtick body that is merely
+    unbalanced can be told apart from one that is too deep: the first keeps its
+    old reading, the second refuses the call."""
+
+
 class _Redirect(NamedTuple):
     # Quoting belongs to the target, never to the operator. Joining them
     # made `> '&1'` indistinguishable from `>&1` (DRC-4725).
@@ -2879,10 +2885,7 @@ class _ShellLexer:
         mark: its body is kept for reading, and the word shows `$(…)`."""
         if self._at() == "`":
             self.pos += 1
-            start = self.pos
-            self._skip_backticks()
-            body = re.sub(r"\\([\\`$])", r"\1", self.text[start : self.pos - 1])
-            self.bodies.append(body)
+            self.bodies.append(self._backtick_body())
             return _SUBSTITUTED
         arithmetic = self.text.startswith("$((", self.pos)
         self.pos += 2
@@ -2980,10 +2983,11 @@ class _ShellLexer:
 
     def _nest(self) -> None:
         # Measured: 400 nested `"$(` overflowed Python's stack at four frames a
-        # level. Deeper than any command a person or an agent writes.
+        # level. Deeper than any command a person or an agent writes. A backtick
+        # run counts as one level too: docs/design-reading-a-session.md.
         self.depth += 1
         if self.depth > _NESTING_CAP:
-            raise _Unbalanced
+            raise _TooDeep
 
     def _braced(self) -> str:
         """`${…}`, kept as written, read atomically: a quoted `}` or a `)` in it
@@ -3004,6 +3008,30 @@ class _ShellLexer:
                 self.pos += 1
         self.depth -= 1
         return self.text[start : self.pos]
+
+    def _backtick_body(self) -> str:
+        """A backtick run from just past its opening mark: one nesting level, its
+        body unescaped and lexed here at the carried depth.
+
+        The body is read again on its own, from depth 0, so without this the
+        first lexer never saw inside and each run restarted the count: 16
+        repetitions of 32 levels and a run overflowed the stack. The count is
+        proven once, here; an unbalanced body keeps the reading it always had.
+        """
+        start = self.pos
+        self._skip_backticks()
+        body = re.sub(r"\\([\\`$])", r"\1", self.text[start : self.pos - 1])
+        self._nest()
+        inner = _ShellLexer(body)
+        inner.depth = self.depth
+        try:
+            inner.segments()
+        except _TooDeep:
+            raise
+        except _Unbalanced:
+            pass
+        self.depth -= 1
+        return body
 
     def _skip_backticks(self) -> None:
         while True:
@@ -3104,7 +3132,7 @@ class _ShellLexer:
             self._double_quoted()
         elif char == "`":
             self.pos += 1
-            self._skip_backticks()
+            self._backtick_body()
         else:
             return False
         return True
