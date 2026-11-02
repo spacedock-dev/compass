@@ -28,7 +28,7 @@ import sys
 import time
 import unittest
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 from unittest import mock
 
 from compass_runtime import quota, records
@@ -1495,8 +1495,8 @@ class AHostileScrubFailsClosedTest(unittest.TestCase):
     def test_a_scrub_that_cannot_settle_within_its_passes_shows_the_person_nothing(self) -> None:
         real = records._scrub_pass
 
-        def never_settles(text: str, patterns: Any) -> str:
-            return real(text, patterns) + "x"
+        def never_settles(text: str, patterns: Any, hold: str) -> str:
+            return real(text, patterns, hold) + "x"
 
         values = ["FakeUnsettled99"]
         text = "kept FakeUnsettled99 here and a sentence the person must not half-read"
@@ -1646,13 +1646,16 @@ class _CountedInner:
 
 def _old_mask_runs(text: str, spellings: tuple[str, ...], *, prose: bool) -> str:
     """A frozen copy of the run pass as one regex: two or more touching spellings, atomic, then
-    the after-boundary. Kept as the reference the run reader must agree with byte for byte."""
+    the after-boundary, both ASCII and the before-boundary admitting a literal escape. Kept as the
+    reference the run reader must agree with byte for byte."""
     alternation = records._trie_alternation(spellings)
     assert alternation is not None
-    after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
-    run = re.compile(rf"(?<![\w./@+\-])(?>(?:{alternation}){{2,}}){after}")
+    word = "A-Za-z0-9_"
+    before = rf"(?:(?<![{word}./@+\-])|(?<=\\[abefnrtv]))"
+    after = rf"(?![{word}@+\-]|[./][{word}/])" if prose else rf"(?![{word}./@+\-])"
+    run = re.compile(rf"{before}(?>(?:{alternation}){{2,}}){after}")
     inner = re.compile(rf"(?:{alternation})")
-    return run.sub(lambda match: records._mask_run(match[0], inner), text)
+    return run.sub(lambda match: records._mask_run(match[0], inner, records.SECRET_MARKER), text)
 
 
 class TouchingRunsAreReadInLinearWork(unittest.TestCase):
@@ -1669,9 +1672,14 @@ class TouchingRunsAreReadInLinearWork(unittest.TestCase):
         spellings = tuple(sorted(set().union(*map(records._spellings, values))))
         patterns = records._scrub_patterns(spellings, prose)
         assert patterns is not None
-        _plain, _flag, _userinfo, starts, inner, after = patterns
-        counted = _CountedInner(inner)
-        records._mask_runs(text, starts, counted, after)  # type: ignore[arg-type]
+        counted = _CountedInner(patterns.inner)
+        records._mask_runs(
+            text,
+            patterns.run_starts,
+            counted,  # type: ignore[arg-type]
+            patterns.after,
+            records.SECRET_MARKER,
+        )
         return counted.calls
 
     def test_a_run_of_values_that_restart_at_every_colon_costs_twice_as_much_at_twice_the_length(
@@ -1696,10 +1704,14 @@ class TouchingRunsAreReadInLinearWork(unittest.TestCase):
         for prose in (False, True):
             patterns = records._scrub_patterns(spellings, prose)
             assert patterns is not None
-            _plain, _flag, _userinfo, starts, inner, after = patterns
             with self.subTest(prose=prose):
                 self.assertEqual(text, _old_mask_runs(text, spellings, prose=prose))
-                self.assertEqual(text, records._mask_runs(text, starts, inner, after))
+                self.assertEqual(
+                    text,
+                    records._mask_runs(
+                        text, patterns.run_starts, patterns.inner, patterns.after, "\ufdd0"
+                    ),
+                )
 
     def test_the_run_reader_masks_exactly_what_the_run_regex_masked(self) -> None:
         rng = random.Random(5018)
@@ -1747,17 +1759,533 @@ class TouchingRunsAreReadInLinearWork(unittest.TestCase):
                 patterns = records._scrub_patterns(spellings, prose)
                 if patterns is None:
                     continue
-                _plain, _flag, _userinfo, starts, inner, after = patterns
                 current = text
                 for _ in range(3):
                     with self.subTest(values=values, text=current, prose=prose):
                         self.assertEqual(
                             _old_mask_runs(current, spellings, prose=prose),
-                            records._mask_runs(current, starts, inner, after),
+                            records._mask_runs(
+                                current,
+                                patterns.run_starts,
+                                patterns.inner,
+                                patterns.after,
+                                records.SECRET_MARKER,
+                            ),
                         )
                     compared += 1
-                    current = records._scrub_pass(current, patterns)
+                    current = records._scrub_pass(current, patterns, "\ufdd0")
         self.assertGreater(compared, 5_000)
+
+
+def _scrub_on_main(  # noqa: C901, PLR0911 - a frozen copy keeps the shape it was copied in
+    text: str, values: list[str], *, prose: bool = False
+) -> str | None:
+    """A frozen copy of the scrub before ASCII boundaries, escape separators and the stand-in:
+    Unicode `\\w` boundaries, a flag lookbehind that still lists `:`, the marker read back as text,
+    and later passes that drop every spelling the marker contains. None where it withheld.
+
+    Kept as the reference the scrub must never leave more of a value visible than, on realistic
+    and credential-shaped corpora.
+    """
+    marker = records.SECRET_MARKER
+    spellings = set().union(*map(records._spellings, values))
+    if not spellings:
+        return text
+    if sum(map(len, spellings)) > records.SCRUB_SPELLING_MASS_MAX:
+        return None
+
+    def compiled(found: set[str]) -> tuple[re.Pattern[str], ...] | None:
+        alternation = records._trie_alternation(tuple(sorted(found)))
+        if alternation is None:
+            return None
+        before = r"(?<![\w./@+\-])"
+        after = r"(?![\w@+\-]|[./][\w/])" if prose else r"(?![\w./@+\-])"
+        return (
+            re.compile(rf"{before}(?:{alternation}){after}"),
+            re.compile(rf"(?<![\w./:@+\-])(-[pP])(?>(?:{alternation})+){after}"),
+            re.compile(
+                rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
+            ),
+            re.compile(rf"{before}(?>(?:{alternation}){{2,}}){after}"),
+            re.compile(rf"(?:{alternation})"),
+        )
+
+    def one_pass(text: str, patterns: tuple[re.Pattern[str], ...]) -> str:
+        plain, joined_flag, userinfo, touching, inner = patterns
+        text = userinfo.sub(lambda match: match[1] + marker + match[2], text)
+        text = joined_flag.sub(lambda match: match[1] + marker, text)
+
+        def run(match: re.Match[str]) -> str:
+            split = inner.sub(marker, match[0])
+            return split if split.replace(marker, "") == "" else marker
+
+        text = touching.sub(run, text)
+        return plain.sub(marker, text)
+
+    first = compiled(spellings)
+    if first is None:
+        return None
+    text = one_pass(text, first)
+    later = {spelling for spelling in spellings if spelling not in marker}
+    if not later:
+        return text
+    patterns = compiled(later)
+    if patterns is None:
+        return None
+    for _ in range(3):
+        scrubbed = one_pass(text, patterns)
+        if scrubbed == text:
+            return text
+        text = scrubbed
+    return None
+
+
+def _value_pieces(values: list[str]) -> set[str]:
+    """Each value, or each five-character piece of a longer one: what a reader could recognise."""
+    pieces: set[str] = set()
+    for value in values:
+        if len(value) <= 5:
+            pieces.add(value)
+        else:
+            pieces.update(value[at : at + 5] for at in range(len(value) - 4))
+    return pieces
+
+
+def _credential_case(rng: random.Random) -> tuple[list[str], str]:
+    """Credential-shaped values, separated the way real output separates them."""
+
+    def credential() -> str:
+        return "Fake" + "".join(rng.choices("ABCxyz0123456789!_", k=rng.randint(4, 10)))
+
+    values = [credential() for _ in range(rng.randint(1, 5))]
+    if rng.random() < 0.3:
+        values.append(values[0] + rng.choice("!.-/1"))
+    parts = []
+    for _ in range(rng.randint(1, 8)):
+        parts.append(
+            rng.choice(("", "alice:", "postgres://bob:", "-p", "user=", "token ", "'", '"', "x/"))
+        )
+        parts.append(rng.choice(values) if rng.random() < 0.8 else rng.choice(("word", "src")))
+        parts.append(
+            rng.choice(
+                (":", " ", ": ", "@", "/", ".", ",", "'", "=", " -p", "\n", "\t", ")", ":5432")
+            )
+            if rng.random() < 0.8
+            else rng.choice(("", ": denied", ".py", "@host"))
+        )
+    return values, "".join(parts)
+
+
+def _colon_value_case(rng: random.Random) -> tuple[list[str], str]:
+    """Values that themselves hold a colon, as a host:port or user:pass does, touching or not."""
+
+    def credential() -> str:
+        head = "Fake" + "".join(rng.choices("ABxy01!", k=rng.randint(3, 6)))
+        return (
+            head + rng.choice((":", ":", "")) + "".join(rng.choices("ABxy01", k=rng.randint(0, 4)))
+        )
+
+    values = [credential() for _ in range(rng.randint(1, 4))]
+    parts = []
+    for _ in range(rng.randint(1, 7)):
+        parts.append(rng.choice(("", " ", "alice:", "-p", "'", "(", "://u:", "x ")))
+        parts.append(rng.choice(values))
+        parts.append(
+            rng.choice((" ", "", ":", ".", ")", ": denied", ":8080", ".py", "@h", ",", "'"))
+        )
+    return values, "".join(parts)
+
+
+def _escape_case(rng: random.Random) -> tuple[list[str], str]:
+    """Values beside colour codes, literal escapes, non-ASCII letters and password flags."""
+
+    def credential() -> str:
+        head = rng.choice(("Fake", "F", "\u5bc6", "\u00e9", "x"))
+        return head + "".join(rng.choices("ABxy019!_\u00e9\u5bc6:-p", k=rng.randint(3, 9)))
+
+    values = [credential() for _ in range(rng.randint(1, 4))]
+    if rng.random() < 0.3:
+        values.append(values[0] + rng.choice("!.-/1:\u00e9"))
+    before = (
+        *("", " ", "\x1b[1m", "\x1b[38;5;196m", "\x1b[0m", "\x1b[2K\x1b[1G", "\x1b(B", "\\n"),
+        *("\\t", "\\r", "\\\\n", "\u5bc6\u7801", "\u00e9", "\uff10", "-p", " -p", ":-p"),
+        *("alice:", "'", "\x1b[", "\x1b", "x", "m", "\\"),
+    )
+    after = (
+        *("", " ", "\x1b[0m", "\\n", "\u9519\u8bef", "\u00e9", ".", ":", ".py", "x", "'"),
+        *("\x1b[K", "\\"),
+    )
+    parts = []
+    for _ in range(rng.randint(1, 7)):
+        parts.append(rng.choice(before))
+        parts.append(rng.choice(values) if rng.random() < 0.85 else "word")
+        parts.append(rng.choice(after))
+    return values, "".join(parts)
+
+
+_NONCHARACTERS: Final = frozenset(chr(code) for code in range(0xFDD0, 0xFDF0))
+
+
+class AnEscapeOrANonAsciiLetterShieldsNoValueTest(unittest.TestCase):
+    """Only an ASCII letter, digit or `_`, or a filename character, makes a value part of a word."""
+
+    def assert_scrubs(self, values: list[str], cases: tuple[tuple[str, str], ...]) -> None:
+        for prose in (False, True):
+            for text, expected in cases:
+                with self.subTest(text=repr(text), prose=prose):
+                    self.assertEqual(
+                        records.Scrubbed(expected, True), records.scrub(text, values, prose=prose)
+                    )
+
+    def test_a_masked_value_after_a_colour_code_is_hidden_and_the_code_is_kept(self) -> None:
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakePass99"],
+            (
+                ("pw \x1b[1mFakePass99\x1b[0m done", f"pw \x1b[1m{m}\x1b[0m done"),
+                ("pw \x1b[38;5;196mFakePass99\x1b[0m", f"pw \x1b[38;5;196m{m}\x1b[0m"),
+                ("\x1b[2K\x1b[1GFakePass99", f"\x1b[2K\x1b[1G{m}"),
+                ("user\x1b[2mFakePass99", f"user\x1b[2m{m}"),
+                ("\x1b(BFakePass99 ok", f"\x1b(B{m} ok"),
+            ),
+        )
+
+    def test_a_masked_value_after_a_literal_newline_or_tab_escape_is_hidden(self) -> None:
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakePass99"],
+            (
+                ('echo "line1\\nFakePass99"', f'echo "line1\\n{m}"'),
+                ('echo "a\\tFakePass99"', f'echo "a\\t{m}"'),
+                ("x\\rFakePass99", f"x\\r{m}"),
+                ('echo "FakePass99\\nnext"', f'echo "{m}\\nnext"'),
+            ),
+        )
+
+    def test_a_masked_value_beside_a_non_ascii_letter_is_hidden(self) -> None:
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakeV01x", "FakeV02x"],
+            (
+                ("\u5bc6\u7801FakeV01x\u9519\u8bef", f"\u5bc6\u7801{m}\u9519\u8bef"),
+                ("\u00e9FakeV01x", f"\u00e9{m}"),
+                ("FakeV01x\u00e9", f"{m}\u00e9"),
+                ("\uff10FakeV01x", f"\uff10{m}"),
+                ("\u5bc6\u7801FakeV01xFakeV02x\u9519\u8bef", f"\u5bc6\u7801{m}{m}\u9519\u8bef"),
+                ("\u00e9-pFakeV01x", f"\u00e9-p{m}"),
+                ("\u5bc6-pFakeV01xFakeV02x\u00e9", f"\u5bc6-p{m}\u00e9"),
+            ),
+        )
+
+    def test_a_second_password_flag_after_a_colon_is_hidden(self) -> None:
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakeV01x", "FakeV02x"],
+            (
+                ("-pFakeV01x:-pFakeV02x", f"-p{m}:-p{m}"),
+                ("mysql -pFakeV01x:-PFakeV02x now", f"mysql -p{m}:-P{m} now"),
+            ),
+        )
+
+    def test_a_value_that_begins_with_an_escapes_last_byte_stays_hidden(self) -> None:
+        # The escape's final byte is the value's first character: a separator after the escape
+        # would cut the value in two and show all of it.
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["FakeV99x"],
+            (
+                ("\x1bFakeV99x ok", f"\x1b{m} ok"),
+                ("\x1b[FakeV99x ok", f"\x1b[{m} ok"),
+                ("\x1b(FakeV99x ok", f"\x1b({m} ok"),
+                ("\x1b[1;FakeV99x ok", f"\x1b[1;{m} ok"),
+            ),
+        )
+
+    def test_a_value_that_holds_an_escape_stays_hidden(self) -> None:
+        # No escape is separated when a value holds one, since a separator could fall inside it.
+        m = records.SECRET_MARKER
+        self.assert_scrubs(
+            ["Fake\x1b[1mV99x"],
+            (
+                ("see Fake\x1b[1mV99x ok", f"see {m} ok"),
+                ("\x1b[0m Fake\x1b[1mV99x", f"\x1b[0m {m}"),
+            ),
+        )
+
+    def test_output_with_no_masked_value_keeps_every_colour_code_and_escape(self) -> None:
+        text = (
+            "\x1b[32m1 passed\x1b[0m in \x1b[1m2s\x1b[0m\n\x1b[2K\x1b[1Gtests/test_a.py ...\n"
+            'echo "a\\tb\\nc"\n\u5bc6\u7801\u9519\u8bef \u00e9t\u00e9 \uff10\x1b(B\x1b'
+        )
+        for prose in (False, True):
+            with self.subTest(prose=prose):
+                self.assertEqual(
+                    records.Scrubbed(text, True), records.scrub(text, ["FakePass99"], prose=prose)
+                )
+                masked = records.scrub(text + " FakePass99", ["FakePass99"], prose=prose)
+                self.assertEqual(records.Scrubbed(text + " " + records.SECRET_MARKER, True), masked)
+
+    def test_a_value_that_starts_with_the_marker_or_holds_it_stays_hidden(self) -> None:
+        # The marker is held as one character while the passes run, so a value that reads into
+        # an upstream marker would no longer be found unless the marker is left as it was.
+        for value, text in (
+            ("REDACTEDxyz1", "x \u2026REDACTEDxyz1 y"),
+            ("ab\u2026REDACTEDcd", "x ab\u2026REDACTEDcd y"),
+            ("\u2026REDACTEDzz", "x \u2026REDACTEDzz y"),
+        ):
+            for prose in (False, True):
+                with self.subTest(value=value, prose=prose):
+                    result = records.scrub(text, [value], prose=prose)
+                    self.assertTrue(result.complete)
+                    self.assertNotIn(value, result.text)
+
+    def test_a_text_that_holds_every_stand_in_is_withheld(self) -> None:
+        text = "".join(sorted(_NONCHARACTERS)) + " FakePass99"
+        self.assertEqual(
+            records.Scrubbed(records.SECRET_MARKER, False), records.scrub(text, ["FakePass99"])
+        )
+
+
+class TouchingValuesAreHiddenWhicheverWasHiddenFirstTest(unittest.TestCase):
+    """A value touching one already hidden is hidden too, and the scrub settles in its passes."""
+
+    def test_a_person_never_sees_a_value_that_touches_one_already_hidden(self) -> None:
+        for values, text in (
+            (
+                ["ba1:b", "d1dda1c", ":abb", "ba1:b!"],
+                "ba1:b:abbd1dda1cd1dda1cba1:bd1dda1cba1:bba1:b!ba1:b!d",
+            ),
+        ):
+            for prose in (False, True):
+                with self.subTest(text=text, prose=prose):
+                    result = records.scrub(text, values, prose=prose)
+                    self.assertTrue(result.complete)
+                    self.assertEqual([], [value for value in values if value in result.text])
+        # The last value is part of the word `#Fake11b!!h`, as `test` is part of `test.py`; every
+        # value before it is hidden.
+        m = records.SECRET_MARKER
+        for prose in (False, True):
+            self.assertEqual(
+                records.Scrubbed(f"alice:{m}{m}{m}#Fake11b!!h", True),
+                records.scrub(
+                    "alice:FakeAAb!!#Fake11b!!FakeAAb!!#Fake11b!!h",
+                    ["FakeAAb!!", "#Fake11b!!"],
+                    prose=prose,
+                ),
+            )
+
+    def test_a_value_right_after_a_marker_already_in_the_text_is_hidden(self) -> None:
+        # The marker ends in a letter, so it once made the value after it part of a longer word.
+        m = records.SECRET_MARKER
+        for prose in (False, True):
+            with self.subTest(prose=prose):
+                self.assertEqual(
+                    records.Scrubbed(f"ran -p{m}{m} and {m}:{m} ok", True),
+                    records.scrub(
+                        f"ran -p{m}FakePass99 and {m}:FakePass99 ok", ["FakePass99"], prose=prose
+                    ),
+                )
+
+    def test_a_person_whose_masked_value_is_a_piece_of_the_marker_has_every_copy_hidden(
+        self,
+    ) -> None:
+        # Every pass once dropped a spelling the marker contains, so a bare `REDACTED` the first
+        # pass left was never searched again and the scrub said it was complete.
+        m = records.SECRET_MARKER
+        for prose in (False, True):
+            with self.subTest(prose=prose):
+                self.assertEqual(
+                    records.Scrubbed(f"{m}:{m}@h", True),
+                    records.scrub("'REDACTED':REDACTED@h", ["REDACTED", "EDAC"], prose=prose),
+                )
+
+    def test_touching_colon_bearing_values_are_hidden_wherever_the_one_at_a_time_scrub_hid_them(
+        self,
+    ) -> None:
+        rng = random.Random(5078)
+        for _ in range(1_000):
+            values, text = _colon_value_case(rng)
+            for prose in (False, True):
+                result = records.scrub(text, values, prose=prose)
+                reference = _one_at_a_time_scrub(text, values, prose=prose)
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertTrue(result.complete)
+                    self.assertLessEqual(
+                        sum(result.text.count(value) for value in values),
+                        sum(reference.count(value) for value in values),
+                    )
+
+    def test_a_chain_of_touching_values_is_never_withheld_for_want_of_passes(self) -> None:
+        rng = random.Random(5078)
+        withheld: list[tuple[list[str], str, bool]] = []
+        for _ in range(1_000):
+            alphabet = rng.choice(("ab1!.-/:'", "ab1!.-/'", "abcd1:", "Fk9:"))
+            values = ["".join(rng.choices(alphabet, k=rng.randint(4, 7))) for _ in range(3)]
+            values.append(values[0] + rng.choice("!.-/1:"))
+
+            def token(values: list[str] = values) -> str:
+                return "".join(rng.choice(values) for _ in range(rng.randint(1, 3)))
+
+            text = " ".join(
+                rng.choice(("", "(", "'", "-p", "u:", "http://u:", "alice:", "x "))
+                + rng.choice((":", "", "")).join(token() for _ in range(rng.randint(1, 6)))
+                + rng.choice(("", ".", ")", "@h", ".py", ":", "x", ",", "'", ":8080", ": denied"))
+                for _ in range(rng.randint(1, 5))
+            )
+            withheld.extend(
+                (values, text, prose)
+                for prose in (False, True)
+                if not records.scrub(text, values, prose=prose).complete
+            )
+        self.assertEqual([], withheld)
+
+
+class NeverMoreVisibleThanTheScrubBeforeTheBoundariesTest(unittest.TestCase):
+    """On realistic and credential-shaped text, the scrub hides at least what it hid before, and
+    withholds nothing."""
+
+    def test_no_value_or_piece_of_one_is_shown_more_often_than_before(self) -> None:
+        for name, case in (
+            ("credentials", _credential_case),
+            ("colon values", _colon_value_case),
+            ("escapes", _escape_case),
+        ):
+            rng = random.Random(f"{name}-5077")
+            shown = []
+            for _ in range(300):
+                values, text = case(rng)
+                pieces = _value_pieces(values)
+                for prose in (False, True):
+                    result = records.scrub(text, values, prose=prose)
+                    before = _scrub_on_main(text, values, prose=prose)
+                    with self.subTest(corpus=name, values=values, text=repr(text), prose=prose):
+                        self.assertTrue(result.complete)
+                        self.assertEqual(set(), _NONCHARACTERS & set(result.text))
+                    if before is not None and any(
+                        result.text.count(piece) > before.count(piece) for piece in pieces
+                    ):
+                        shown.append((values, text, prose))
+            with self.subTest(corpus=name):
+                self.assertEqual([], shown)
+
+
+class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
+    """The flag, single-value and escape readers do a fixed amount of work per character."""
+
+    def patterns(self, values: tuple[str, ...], *, prose: bool) -> Any:
+        spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+        patterns = records._scrub_patterns(spellings, prose)
+        assert patterns is not None
+        return patterns
+
+    def test_a_password_flag_run_is_read_in_linear_work(self) -> None:
+        for values, unit in (
+            (("FakeWxyz", " -pFakeWxyz"), " -pFakeWxyz"),
+            (("FakeWxyz", ":-pFakeWxyz"), ":-pFakeWxyz"),
+        ):
+            for prose in (False, True):
+                patterns = self.patterns(values, prose=prose)
+                work = []
+                for k in (2_000, 4_000):
+                    counted = _CountedInner(patterns.inner)
+                    records._mask_flags(
+                        unit * k + ".py",
+                        patterns.flag_starts,
+                        counted,  # type: ignore[arg-type]
+                        patterns.after,
+                        "\ufdd0",
+                    )
+                    work.append(counted.calls)
+                with self.subTest(values=values, prose=prose):
+                    self.assertGreater(work[0], 0)
+                    self.assertLess(work[1], 2.2 * work[0], work)
+
+    def test_a_password_flag_run_of_160_thousand_characters_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        values = ["FakeWxyz", " -pFakeWxyz"]
+        text = " -pFakeWxyz" * 14_545 + ".py"
+        records.scrub_values("warm", values)
+        started = time.process_time()
+        records.scrub(text, values)
+        self.assertLess(time.process_time() - started, 1.0)
+
+    def test_the_flag_reader_masks_exactly_what_the_flag_regex_masked(self) -> None:
+        rng = random.Random(5077)
+        marker = records.SECRET_MARKER
+        compared = 0
+        for _ in range(1_000):
+            alphabet = rng.choice(("ab1:-p", "Fk9 -p", "ab:p-", "aP-p1", "\u00e9\u5bc6:a", "a!:"))
+            values = ["".join(rng.choices(alphabet, k=rng.randint(4, 8))) for _ in range(2)]
+            values.append(values[0] + rng.choice(("-p", ":", " -p", ":-p", "!")))
+            text = "".join(
+                rng.choice(("-p", " -p", ":-p", "-P", "", "x", ":", " ", "\\n-p", "\u00e9-p"))
+                + rng.choice(values)
+                + rng.choice(("", ":", ".py", " ", "x", "@h"))
+                for _ in range(rng.randint(1, 8))
+            )
+            spellings = tuple(sorted(set().union(*map(records._spellings, values))))
+            alternation = records._trie_alternation(spellings)
+            if not spellings or alternation is None:
+                continue
+            for prose in (False, True):
+                patterns = records._scrub_patterns(spellings, prose)
+                assert patterns is not None
+                word = "A-Za-z0-9_"
+                before = rf"(?:(?<![{word}./@+\-])|(?<=\\[abefnrtv]))"
+                after = rf"(?![{word}@+\-]|[./][{word}/])" if prose else rf"(?![{word}./@+\-])"
+                flag = re.compile(rf"{before}(-[pP])(?>(?:{alternation})+){after}")
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertEqual(
+                        flag.sub(lambda match: match[1] + marker, text),
+                        records._mask_flags(
+                            text, patterns.flag_starts, patterns.inner, patterns.after, marker
+                        ),
+                    )
+                compared += 1
+        self.assertGreater(compared, 1_500)
+
+    def test_a_chain_of_single_values_is_read_in_linear_work(self) -> None:
+        for prose in (False, True):
+            patterns = self.patterns(("FakeWxyz", "!FakeWxyz"), prose=prose)
+            work = []
+            for k in (2_000, 4_000):
+                counted = _CountedInner(patterns.single)
+                out = records._mask_singles(
+                    " " + "!FakeWxyz" * k + " ",
+                    patterns.single_starts,
+                    counted,  # type: ignore[arg-type]
+                    "\ufdd0",
+                )
+                self.assertNotIn("Fake", out)
+                work.append(counted.calls)
+            with self.subTest(prose=prose):
+                self.assertGreater(work[0], 0)
+                self.assertLess(work[1], 2.2 * work[0], work)
+
+    def test_a_chain_that_cannot_advance_ends_where_it_started(self) -> None:
+        # A spelling that matched nothing would otherwise walk the same offset for ever.
+        self.assertEqual(0, records._chain_ends("abc", re.compile(""))(0))
+
+    def test_colour_codes_are_separated_from_the_text_in_linear_work(self) -> None:
+        for unit, tail in (
+            ("\x1b[1mFakeWxyz ", ""),
+            ("\x1b[FakeWxyz\x1b[0m ", ""),
+            ("\x1b[38;5;196m", "FakeWxyz"),
+        ):
+            patterns = self.patterns(("FakeWxyz",), prose=False)
+            work = []
+            for k in (2_000, 4_000):
+                counted = _CountedInner(patterns.inner)
+                records._separate_escapes(
+                    unit * k + tail,
+                    counted,  # type: ignore[arg-type]
+                    "\ufdd1",
+                )
+                work.append(counted.calls)
+            with self.subTest(text=repr(unit)):
+                self.assertGreater(work[0], 0)
+                self.assertLess(work[1], 2.2 * work[0], work)
 
 
 class MaskCommandTest(unittest.TestCase):

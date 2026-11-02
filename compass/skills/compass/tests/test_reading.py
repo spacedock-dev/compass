@@ -4230,6 +4230,73 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
                 self.assertNotIn("FakePass99", detail)
                 self.assertIn(records.SECRET_MARKER, detail)
 
+    def test_a_person_reading_a_chinese_or_accented_explanation_never_sees_the_masked_value(
+        self,
+    ) -> None:
+        value, other = "FakePass99", "FakeOther88"
+        for said in (
+            f"密码{value}错误",
+            f"it typed é{value} first",
+            f"it typed {value}é first",
+            f"it typed \uff10{value} first",
+            f"パスワードは{value}です",
+            f"密码{value}{other}错误",
+            f"it ran é-p{value} first",
+        ):
+            with self.subTest(said=said):
+                detail = self.resolve_detail(said, frozenset({value, other}))
+                self.assertNotIn(value, detail)
+                self.assertNotIn(other, detail)
+                self.assertIn(records.SECRET_MARKER, detail)
+
+    def test_a_person_whose_explanation_quotes_coloured_or_escaped_output_never_sees_the_value(
+        self,
+    ) -> None:
+        value = "FakePass99"
+        for said in (
+            f"it printed \x1b[1m{value}\x1b[0m",
+            f"it printed \x1b[38;5;196m{value}",
+            f"it printed \x1b[2K\x1b[1G{value}",
+            f"it printed user\x1b[2m{value}",
+            f"it printed \x1b(B{value}",
+            f'it echoed "line1\\n{value}"',
+            f'it echoed "a\\t{value}"',
+            f"it echoed x\\r{value}",
+        ):
+            with self.subTest(said=repr(said)):
+                detail = self.resolve_detail(said, frozenset({value}))
+                self.assertNotIn(value, detail)
+                self.assertIn(records.SECRET_MARKER, detail)
+
+    def test_a_person_never_reads_a_second_password_flag_after_a_colon(self) -> None:
+        detail = self.resolve_detail(
+            "it ran mysql -pFakeFlagOne97:-pFakeFlagTwo97 first",
+            frozenset({"FakeFlagOne97", "FakeFlagTwo97"}),
+        )
+        self.assertNotIn("FakeFlagOne97", detail)
+        self.assertNotIn("FakeFlagTwo97", detail)
+
+    def test_a_person_never_reads_a_value_that_touches_one_already_hidden(self) -> None:
+        for values, said in (
+            (
+                ("ba1:b", "d1dda1c", ":abb", "ba1:b!"),
+                "ba1:b:abbd1dda1cd1dda1cba1:bd1dda1cba1:bba1:b!ba1:b!d",
+            ),
+            # The last value is part of the word `#Fake11b!!h`, as `test` is part of `test.py`.
+            (("FakeAAb!!", "#Fake11b!!"), "alice:FakeAAb!!#Fake11b!!FakeAAb!!#Fake11b!!h"),
+        ):
+            with self.subTest(said=said):
+                detail = self.resolve_detail(said, frozenset(values))
+                detail = detail.replace("#Fake11b!!h", "", 1)
+                self.assertEqual([], [value for value in values if value in detail])
+
+    def test_a_person_whose_masked_value_is_a_piece_of_the_marker_reads_no_copy_of_it(
+        self,
+    ) -> None:
+        detail = self.resolve_detail("'REDACTED':REDACTED@h", frozenset({"REDACTED", "EDAC"}))
+        self.assertNotIn(":REDACTED@h", detail)
+        self.assertIn(f":{records.SECRET_MARKER}@h", detail)
+
     def test_when_the_scrub_cannot_finish_the_person_sees_the_withheld_sentence(self) -> None:
         # The press kept every value, but they are too heavy to search: the scrub withholds, and
         # the stored reason is the fixed sentence, never the bare marker nor the prose.
