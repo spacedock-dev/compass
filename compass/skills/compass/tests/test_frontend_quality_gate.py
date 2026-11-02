@@ -26,7 +26,6 @@ def jobs() -> dict[str, Any]:
 @unittest.skipUnless(detector.BASH, "the shipped gate uses Bash")
 class FrontendDetectorControlsTest(unittest.TestCase):
     def test_sources_builds_and_relevant_workflows_run_the_frontend_lane(self) -> None:
-        probe = detector.QualityGateDetectorTest()
         for path in (
             "frontend/src/main.tsx",
             "frontend/test/setup.ts",
@@ -46,7 +45,16 @@ class FrontendDetectorControlsTest(unittest.TestCase):
             ".github/actions/frontend-toolchain/action.yml",
         ):
             with self.subTest(path=path):
-                self.assertEqual("true", probe.detect(path)["frontend"])
+                self.assertEqual("true", detector.detect_in_process(path)["frontend"])
+
+    def test_the_shipped_step_agrees_for_a_frontend_path(self) -> None:
+        # The in-process cases above call ci_scope.scope directly; this is the one real run of the
+        # workflow step, so the wiring around that call cannot drift from them unseen. A source path
+        # that only the frontend lane claims, so the answer differs from the fail-open one.
+        path = "frontend/src/main.tsx"
+        expected = detector.detect_in_process(path)
+        self.assertEqual("false", expected["python"], "a fail-open answer would read true here")
+        self.assertEqual(expected, detector.QualityGateDetectorTest().detect(path))
 
     def test_actual_frontend_doc_reads_precede_prose_classification(self) -> None:
         # Real temporary source inputs, not an invented detector result.
@@ -277,6 +285,36 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertEqual("${{ needs.frontend-contract.result }}", env["R_CONTRACT"])
         self.assertNotIn("frontend-proofs", workflow_jobs)
         self.assertNotIn("R_FRONTEND_PROOFS", env)
+
+    def test_runtime_floor_runs_as_parallel_legs_with_one_smoke_launch(self) -> None:
+        floor = jobs()["runtime-floor"]
+        matrix = floor["strategy"]["matrix"]
+        # The dashboard suite and the script suite in three shards, one runner each, like
+        # `platform-tests`: serial in one job they took 557 s, and the script suite set the wall clock.
+        self.assertEqual(["dashboard", "scripts"], matrix["suite"])
+        self.assertEqual([1, 2, 3], matrix["shard"])
+        self.assertEqual(
+            [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
+            matrix["exclude"],
+        )
+        self.assertFalse(floor["strategy"]["fail-fast"])
+        by_name = {step["name"]: step for step in floor["steps"] if "name" in step}
+        smoke = by_name["Direct-launch smoke on the supported floor"]
+        self.assertEqual("matrix.suite == 'dashboard'", smoke["if"], "the launch runs once")
+        self.assertIn("server.py", smoke["run"])
+        dashboard = by_name["Run dashboard test discovery on the floor"]
+        scripts = by_name["Run script unit tests on the floor"]
+        self.assertEqual("matrix.suite == 'dashboard'", dashboard["if"])
+        self.assertEqual("matrix.suite == 'scripts'", scripts["if"])
+        self.assertIn("--shard ${{ matrix.shard }}/3", scripts["run"])
+        self.assertNotIn("--shard", dashboard["run"])
+        # Together the legs run the same two suites the single job ran, with nothing left out.
+        self.assertIn("-s compass/skills/compass/tests -t .", dashboard["run"])
+        self.assertIn("-s scripts/tests -t scripts/tests", scripts["run"])
+        # The shard count in the command is the count in the matrix, or a shard would never run.
+        self.assertEqual(len(matrix["shard"]), int(scripts["run"].split("}}/")[1].split()[0]))
+        # One job id, so the aggregator reads one result for every leg and a failed leg fails it.
+        self.assertIn("runtime-floor", jobs()["quality-gate"]["needs"])
 
     def test_bootstrap_is_exact_without_auth_or_implicit_dependency_scripts(self) -> None:
         for name in (

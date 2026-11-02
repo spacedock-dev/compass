@@ -35,7 +35,7 @@ from compass_runtime import (
 
 from . import test_levels as lv
 from . import test_reading as base
-from .test_claude_checks import BOUND_GOAL, REMOTE, SHORT, ClaudeChecksTestCase
+from .test_claude_checks import BOUND_GOAL, REMOTE, SHORT, ClaudeChecksTestCase, Transcript
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -735,24 +735,49 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         for poll in found.values():
             self.assert_unbound(poll)
 
+    def calls_made_reading(self, count: int) -> tuple[int, dict[str, dict[str, Any]]]:
+        """The Python calls one read of a single call holding `count` polls makes, and its polls."""
+        self.session = Transcript(self.cwd)
+        self.session.prompt("Add retry with backoff to the webhook handler.")
+        polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
+        polls.insert(count // 2, "export GH_REPO=other/old")
+        self.session.bash(" && ".join(polls), "all pass", is_error=False)
+        self.session.save(self.path)
+        made = 0
+
+        def counting(_frame: Any, event: str, _arg: Any) -> None:
+            nonlocal made
+            made += event == "call"
+
+        sys.setprofile(counting)
+        try:
+            entries, _scan = project_context.claude_tool_reports(
+                self.config, str(self.path), SHORT, goal_texts=self.goal_texts
+            )
+        finally:
+            sys.setprofile(None)
+        found = {
+            e["title"]: e
+            for e in entries
+            if e["subject"] in ("command", "ci_command") and e["title"].startswith("gh pr checks")
+        }
+        return made, found
+
     def test_a_call_of_thousands_of_polls_costs_a_pass_and_keeps_the_environment_order(
         self,
     ) -> None:
-        if sys.gettrace() is not None or "coverage" in sys.modules:
-            self.skipTest("timed without a tracer only")
-        count = 12000
-        polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
-        polls.insert(count // 2, "export GH_REPO=other/old")
-        command = " && ".join(polls)
-        started = time.process_time()
-        self.session.bash(command, "all pass", is_error=False)
-        found = {t: p for t, p in self.polls().items() if t.startswith("gh pr checks")}
-        # Linear in the polls: about 1.5 s here. The earlier per-poll scans took half a minute.
-        self.assertLess(time.process_time() - started, 8.0)
+        # Work is counted in Python calls, not seconds, so a loaded runner cannot fail it and a
+        # quadratic scan cannot hide in a fast one: doubling the polls must about double the calls.
+        # The earlier per-poll scans of every earlier word took half a minute at 12,000 polls.
+        count = 400
+        small, _ = self.calls_made_reading(count)
+        large, found = self.calls_made_reading(2 * count)
+        self.assertGreater(small, count)
+        self.assertLess(large, 2.5 * small, (small, large))
         self.assertGreater(len(found), 0)
         for text, poll in found.items():
             number = int(text.rsplit(" ", 1)[1])
-            if number > count // 2:
+            if number > count:
                 self.assert_unbound(poll)
 
     def test_a_run_view_url_binds_by_the_repository_it_names(self) -> None:

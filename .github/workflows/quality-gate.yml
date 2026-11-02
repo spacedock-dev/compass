@@ -110,12 +110,28 @@ jobs:
       - name: Mypy (strict)
         run: mypy
 
+  # Parallel legs, one runner each: the dashboard suite, and the script suite in shards. Serial in one
+  # job they took 557 s (the dashboard suite 120 s, then the script suite 428 s, 2026-11-02), and the
+  # script suite is what set the wall clock. `QualificationRetry` is one class with a class fixture
+  # and cannot be split across legs, so the shard count is the one that keeps its shard from being
+  # the long pole by much. The job keeps its id, so the aggregator reads one result for all legs:
+  # a failed leg fails the job, and a skipped job is a skipped lane.
   runtime-floor:
-    name: Runtime floor (Python 3.12)
+    name: Runtime floor (Python 3.12, ${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.python_suites == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false # a red leg must not hide the others
+      matrix:
+        suite: [dashboard, scripts]
+        shard: [1, 2, 3]
+        exclude:
+          - suite: dashboard
+            shard: 2
+          - suite: dashboard
+            shard: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -131,7 +147,10 @@ jobs:
           cache-dependency-path: requirements-validation.txt
       - name: Install validation requirements
         run: python -m pip install -r requirements-validation.txt
+      # Once, on the dashboard leg: the launch is the same on every leg, so repeating it would
+      # only spend three more runners' start-up on the same answer.
       - name: Direct-launch smoke on the supported floor
+        if: matrix.suite == 'dashboard'
         run: |
           cd "${RUNNER_TEMP}"
           python "${GITHUB_WORKSPACE}/compass/skills/compass/server.py" --help
@@ -146,11 +165,14 @@ jobs:
       # Through scripts/run_tests.py, which is stdlib-only for exactly this job:
       # it installs requirements-validation.txt and nothing else. Same discovery,
       # fixtures and verdict as `unittest discover`, spread over the runner's
-      # cores (131s serial against 34s on four workers, measured 2026-09-23).
-      - name: Run the full suite on the floor
-        run: |
-          python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
-          python scripts/run_tests.py -s scripts/tests -t scripts/tests
+      # cores (the dashboard suite: 131s serial against 34s on four workers,
+      # measured 2026-09-23; the script suite is sharded below).
+      - name: Run dashboard test discovery on the floor
+        if: matrix.suite == 'dashboard'
+        run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
+      - name: Run script unit tests on the floor
+        if: matrix.suite == 'scripts'
+        run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
   test:
     name: Tests + coverage threshold
