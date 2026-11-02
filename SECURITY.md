@@ -46,7 +46,7 @@ for the hook that matches destructive shapes.
 Every one of those scripts is started through `launch.py`. On a `python3` older than the floor it
 may run `uv python find '>=3.12' --no-python-downloads --no-project --no-config --system` (two-second limit, no network,
 no download, no project or config files read and no `.venv` executed) and then start the script with the interpreter `uv` reports,
-passing the hook payload through unchanged. It adds no other traffic and reads the payload only to
+passing the hook payload through unchanged, and a SIGTERM or SIGHUP sent to the launcher is passed on to that script (not on Windows). It adds no other traffic and reads the payload only to
 decide whether to print its one-line notice. Antigravity's hook still prints `{}` through it
 on every path.
 
