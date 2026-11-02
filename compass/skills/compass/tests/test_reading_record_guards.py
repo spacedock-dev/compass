@@ -9,6 +9,7 @@ ahead of the agent's own message on it, so the page can say which check it rests
 from __future__ import annotations
 
 import json
+import random
 import re
 import unittest
 from typing import Any, cast
@@ -501,6 +502,123 @@ class EachClauseSplitterHasItsOwnNameAndItsCallers(unittest.TestCase):
 
     def test_a_dotted_file_name_in_a_check_claim_is_not_a_claimed_pass(self) -> None:
         self.assertFalse(reading._claims_result("pytest.ini passes", "test"))
+
+
+def _frozen_job_spans(text: str, name: str) -> list[tuple[int, int]]:
+    """`reading._job_spans` as it stood before it went linear, kept to compare answers against."""
+    if not name:
+        return []
+    plain = re.fullmatch(r"\w+", name) is not None
+    pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
+    spans: list[tuple[int, int]] = []
+    for found in re.finditer(pattern, text, re.IGNORECASE):
+        before, after = text[: found.start()][-1:], text[found.end() :][:1]
+        if not plain or (before in reading._JOB_QUOTES and after in reading._JOB_QUOTES):
+            spans.append(found.span())
+    return spans
+
+
+def _frozen_job_claimed(text: str, name: str, *, failed: bool = False) -> bool:
+    """`reading._job_claimed` as it stood before it went linear."""
+    spans = _frozen_job_spans(text, name)
+    if not spans:
+        return False
+    result_words = (reading._JOB_RESULT, reading._JOB_FAILURE) if failed else (reading._JOB_RESULT,)
+    marked = text
+    for start, end in reversed(spans):
+        marked = marked[:start] + reading._JOB_MARK + marked[end:]
+    return any(
+        reading._JOB_MARK in clause
+        and any(words.search(clause) for words in result_words)
+        and not reading._JOB_HEDGE.search(clause)
+        and not reading._JOB_LOCAL.search(clause)
+        and not reading._NOT_A_RESULT.search(clause)
+        for clause in reading._CLAIM_CLAUSE_BREAK.split(marked)
+    )
+
+
+_WORK = [0]
+
+
+class _Counted(str):
+    """A string that counts the characters every slice, concatenation and index copies out of it."""
+
+    __slots__ = ()
+
+    def __getitem__(self, key: Any) -> Any:
+        out = str.__getitem__(self, key)
+        _WORK[0] += len(out)
+        return _Counted(out)
+
+    def __add__(self, other: str) -> Any:
+        out = str.__add__(self, other)
+        _WORK[0] += len(out)
+        return _Counted(out)
+
+    def __radd__(self, other: str) -> Any:
+        out = str.__add__(other, self)
+        _WORK[0] += len(out)
+        return _Counted(out)
+
+
+class AReaderWhoseReasonRepeatsAJobNameSeesTheSameVerdictsAsBefore(unittest.TestCase):
+    NAMES = ("lint", "Lint", "unit", "unit-tests", "server-unittest", "unit / python 3.12", "a", "")
+    TOKENS = (
+        "lint", "LINT", "unit", "unit-tests", "lint-fix", "lintlint", "`", "'", '"', "\u2018",
+        "\u2019", "\u201c", "\u201d", " ", " ", "-", "_", ".", ",", " and ", "passes", "green",
+        "failed", "fails", "will", "not", "locally", "\ue001", "unit / python 3.12", "é", "\u017f",
+    )  # fmt: skip
+    ADVERSARIAL = (
+        "", "lint", "`lint`", "`lint` `lint` `lint` passes", "lintlint", "lint lint", "`lint`lint`",
+        "``lint``", "'lint\"", "\u201clint\u201d is green", "`unit-tests` and `unit` pass",
+        "unit-tests unit unit_tests `unit`", "the lint-fix job and `lint` job passed",
+        "`lint` failed, `lint` passes", "`lint` will fail until `lint` passes", "\ue001`lint`\ue001 ok",
+        "server-unittest passes. `server-unittest` failed", "`lint", "lint`", "`lint` ok" * 50,
+        "unit / python 3.12 passes, `Unit / Python 3.12` failed",
+    )  # fmt: skip
+
+    def assert_same(self, text: str) -> None:
+        for name in self.NAMES:
+            self.assertEqual(
+                _frozen_job_spans(text, name), reading._job_spans(text, name), (text, name)
+            )
+            for failed in (False, True):
+                self.assertEqual(
+                    _frozen_job_claimed(text, name, failed=failed),
+                    reading._job_claimed(text, name, failed=failed),
+                    (text, name, failed),
+                )
+
+    def test_a_hand_picked_reason_gets_the_answer_it_always_got(self) -> None:
+        for text in self.ADVERSARIAL:
+            self.assert_same(text)
+
+    def test_a_seeded_random_reason_gets_the_answer_it_always_got(self) -> None:
+        rng = random.Random(5076)
+        for _ in range(3000):
+            self.assert_same("".join(rng.choice(self.TOKENS) for _ in range(rng.randint(0, 24))))
+
+
+class AReaderWhoseReasonRepeatsAJobNameDoesNotWaitOnQuadraticWork(unittest.TestCase):
+    UNIT = "`lint` passes. "
+
+    def work(self, call: Any, size: int) -> int:
+        text = _Counted(self.UNIT * (size // len(self.UNIT)))
+        _WORK[0] = 0
+        call(text)
+        return _WORK[0]
+
+    def assert_linear(self, call: Any) -> None:
+        for size in (16_000, 400_000):
+            single, double = self.work(call, size), self.work(call, 2 * size)
+            self.assertLess(double / max(single, 1), 2.5, (size, single, double))
+            self.assertLess(double, 8 * 2 * size, (size, double))
+
+    def test_a_reason_naming_one_job_many_times_finds_its_spans_in_linear_work(self) -> None:
+        self.assert_linear(lambda text: reading._job_spans(text, "lint"))
+
+    def test_a_reason_naming_one_job_many_times_marks_its_claim_in_linear_work(self) -> None:
+        self.assert_linear(lambda text: reading._job_claimed(text, "lint"))
 
 
 if __name__ == "__main__":
