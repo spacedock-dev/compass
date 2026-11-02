@@ -4516,7 +4516,8 @@ model, so this changes neither the permission disclosure nor its content version
 DRC-4679 built item 13. These are the calls the ruling left open, each made by the orchestrator
 within the milestone's scope and recorded on the issue.
 
-- Only Claude Code is read at a turn stop. `eligibility` takes an `admit_turn_stop` switch that is
+- Only Claude Code is read at a turn stop (superseded 2026-11-02: Codex joined it, see
+  [the amendment](#amended-2026-11-02-owner-codexs-recorded-turn-finish-is-a-turn-stop)). `eligibility` takes an `admit_turn_stop` switch that is
   off by default, and only the reading route turns it on, for a harness in
   `reading.TURN_STOP_HARNESSES`. The unasked lane fires on every working-to-idle change, which is
   every turn stop, so it keeps the closed default. The test for that runs the lane with the real
@@ -4569,7 +4570,8 @@ only while a write kept the row Working and closed 90 seconds after the last one
 dashboard on any port but the hooks' (4553 by default), every stop from before a restart, since
 the coordinator holds stops in memory, and an `away_summary` that turned an idle row Working.
 The owner's walk on 2026-10-02 saw Analyze go inert, live and inert again with no word why
-(arbiter spec, `ui3`). Item 13 now admits a second kind of turn stop, for Claude Code alone:
+(arbiter spec, `ui3`). Item 13 now admits a second kind of turn stop, for Claude Code alone (extended to Codex on 2026-11-02, see
+[the amendment](#amended-2026-11-02-owner-codexs-recorded-turn-finish-is-a-turn-stop)):
 the transcript's own top-level `stop_hook_summary` for this session, written when Claude Code
 runs its Stop hooks, directly after the turn's last assistant reply, and with no `user` or
 `assistant` record and no other activity newer than it by more than the activity grace. A
@@ -4591,7 +4593,7 @@ knows a summary labelled `PreToolUse`, written mid-turn after a tool call and be
 runs, so only an absent label or `Stop` is admitted (verifier S2, `ui3`, read from the installed
 bundle). No capture under `docs/captures/` records the label, and the test fixtures carry one only
 where a test sets it. The press withholds a non-stop with Claude Code's own sentence. The unasked
-lane still withholds at every turn stop, and no other harness changes. One thing does change for
+lane still withholds at every turn stop, and no other harness changed then. One thing does change for
 it, on a board no hook reaches: a quick turn's row now changes state twice, Working to Idle at its
 stop and back at the next prompt, where before it read Working throughout, and the lane, which
 considers a typed-goal row whenever its state changes, may read it mid-flight at each return to
@@ -4624,6 +4626,67 @@ such a session: it is read up to its last recorded entry, the way a running sess
 - The Claude Code press line and Why sentence for an idle row are gone, since the board no longer
   refuses one. Every line the board can still publish states the condition that holds, a press on a
   refused Analyze opens its disclosure, and the disclosure is named "Why Analyze is off".
+
+#### Amended 2026-11-02 (owner): Codex's recorded turn finish is a turn stop
+
+An idle or stopped Codex session could not be read for drift: Analyze drift was refused with "Codex
+sessions can be analyzed only while a turn is running." The issue asked first whether Codex appends to
+its rollout after its stop hook, as Claude Code's `away_summary` did (the 2026-10-02 amendment and
+DRC-4770), and then admitted Codex at an observed turn stop on a press. The owner ruled on 2026-11-02,
+choosing option A:
+
+- **Compass reads Codex's recorded turn finish as a turn stop**, under the rules of Claude Code's
+  transcript stop. The collector publishes the rollout's newest `task_complete` as `turn_end_at`, and
+  `reading.observed_stop` reads it on every harness in `reading.TURN_STOP_HARNESSES`, which is now
+  `("claude", "codex")`. One list rather than a second one for transcript stops: the two answer the
+  same question, and a separate list would have let a harness be pressed at a stop that `observed_stop`
+  would not read, or the reverse. A `turn_aborted` is not a stop. It is a turn record, so it retires
+  one. It stands only while no turn record is newer than it, no subagent is running, and no other
+  work is newer than it by more than the activity grace (`transcript_turn_end` in the Codex collector).
+  A hook stop, when held, still wins. A stopped Codex session is therefore read through its last turn
+  whether or not a Codex hook reaches the board.
+- **The measurement behind the guard.** 1,087 Codex rollouts (codex-cli 0.77 to 0.165) hold 2,816
+  `task_complete` stops. After 526 of them (18.7%) Codex wrote at least one record before the next turn
+  opened. Two shapes are not a turn's work: an `event_msg` `thread_settings_applied` (491 times, 5 left
+  as the newest record at the end of a file), and an `item_completed` whose `turn_id` an earlier
+  `task_complete` or `turn_aborted` had already closed, a command the stopped turn left running
+  (44 times, 36 left as the newest record at the end of a file). Everything else written after a stop
+  was a later turn's output, 7 of them in 3 rollouts a new turn's work with no `task_started` record
+  yet. Stop timing is in the 0.166.0 capture below. The analyzer (`transcripts.analyze_codex_transcript`) reads the newest turn record and skips
+  exactly those two shapes; the collector publishes it as `work_activity`, so the guard no longer reads
+  the file's mtime. A record type nobody has measured retires a stop, the safe direction DRC-4101 set.
+  The Stop hook fires 5 to 6 ms before Codex writes `task_complete`, and the turn's last
+  `item_completed` lands 0.36 to 0.41 s before the hook (codex-cli 0.166.0, one session per arm,
+  [the capture](captures/README.md); one observation each, and the recorder stamps after its own
+  interpreter starts, so the gap may be negative in truth). A hook stop is stamped when the board
+  receives the event, no earlier than the real Stop, so the cut it makes loses nothing of the turn;
+  `task_complete` is not an entry the reading collects. A message queued during a turn gives Stop,
+  a new `task_started` 17 ms later and `UserPromptSubmit` 394 ms after Stop; the first retires a
+  transcript stop at once, the second a hook stop.
+- **The press admits Codex at a stop**, and `IDLE_PRESS_KINDS` (amended 2026-10-20) extends to it: an idle
+  Codex row with no observed stop and no observed end is read up to its last recorded entry at the
+  mid-flight scope. Its sentence, "its last turn was not recorded as finished", says what Compass saw, and
+  for a Codex row that is what the rollout shows in almost every case: a rollout that did record a
+  finish publishes a stop and is read at it, so what is left is an abort, a finish that later work
+  retired, and a session with no turn finished. It overstates in two rare cases, both in the safe
+  direction (read up to the last entry, never called final): the analyzer reads only the newest
+  400,000 bytes, so a record that large written after the finish pushes `task_complete` out of the
+  tail, and a running subagent's rollout activity retires a finish the parent did record. Claude
+  Code's transcript stop has the same two limits. The stored last-turn
+  sentence for a Codex stop names the rollout (`SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX`), not Claude Code's
+  transcript, and is admitted on read-back beside the other. The Codex press sentence and its page line are
+  gone, since the board no longer refuses an idle Codex session.
+- **The unasked lane stays closed for Codex.** It never sets `admit_turn_stop`; a test runs the real
+  `reading.produce` with a model that counts its calls on a Codex row at a hook stop and at a recorded one.
+- **The scorer keeps its own list.** `scripts/score_abstention.py` freezes `("claude",)` as
+  `SCORED_TURN_STOP_HARNESSES`: its Codex cases were marked with a Codex turn stop withheld, and
+  re-scoping the check is the owner's decision.
+- **The page's departures from the retired page** are recorded in
+  [the frontend migration](design-frontend-migration.md#held-to-recorded-answers).
+
+This supersedes item 13's and the last-turn build's "only Claude Code is read at a turn stop", the
+2026-10-02 amendment's "for Claude Code alone" and "no other harness changes", owner Q8 "Claude Code
+first" (2026-10-01), and the 2026-10-20 amendment's limit to Claude Code. Its other rulings stand.
 
 #### Amended 2026-10-21 (owner): editing the goal keeps the reading's start
 
@@ -4776,7 +4839,8 @@ section below the fold.
   by a test), and the server's own `WITHHELD` sentence, published beside the token as
   `reading_eligibility.sentence`, is under "Why it can't read". A Codex row between turns says
   "Codex sessions can be analyzed only while a turn is running." (owner Q8, 2026-10-01: Claude Code
-  first). A Codex row whose turn is running is published eligible and can be pressed.
+  first; superseded 2026-11-02, when a Codex row stopped at its prompt or idle was admitted and the line
+  was removed). A Codex row whose turn is running is published eligible and can be pressed.
 - A settling row is inert until `until`, read at render and at the press. No timer is added; the
   next collection drops the token.
 - A row with no published eligibility (annotations off, or an older payload) offers the press and

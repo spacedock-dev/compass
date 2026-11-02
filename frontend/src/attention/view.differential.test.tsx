@@ -1,4 +1,5 @@
 import { act } from '@testing-library/react';
+import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
 import { mountShell } from '../shell/testing';
@@ -177,7 +178,7 @@ describe('the Attention screen reads as the legacy screen does, over generated p
       ];
       for (const [expanded, capability] of arms) {
         const old = legacySummary(payload, expanded, capability);
-        const mine = await reactSummary(payload, expanded, capability);
+        const mine = await reactSummary(withoutCodexRecordedStops(payload), expanded, capability);
         const left = JSON.stringify(old);
         const right = JSON.stringify(mine);
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {

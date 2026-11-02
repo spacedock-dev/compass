@@ -3,13 +3,18 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { clock, datedClock } from '../src/observed/values';
 import { readerUtcOffset } from '../src/drift/correction';
 import {
-  PRESS_CODEX,
   SCOPE_TEXT_IDLE,
   STEER_OFF_MARKED,
   STEER_OFF_OLDER,
   WHY_OFF,
 } from '../src/drift/sentences';
-import { DEPARTURE_READING, DriftScenario, fact, type Scenario } from './drift.scenario';
+import {
+  DEPARTURE_READING,
+  DriftScenario,
+  fact,
+  STORED_READING,
+  type Scenario,
+} from './drift.scenario';
 
 /* The usability review's rulings of 2026-10-20 (owner): an idle Claude Code session whose last turn has no
    recorded finish can be analyzed and says how far it read; a refused Analyze says its true condition and a
@@ -92,6 +97,70 @@ export const AnIdleReadingSaysHowFarItRead: Story = {
   },
 };
 
+/* Owner, 2026-11-02: Codex is read as Claude Code is. A stopped Codex session (its Stop hook, or the turn finish
+   its rollout records) opens Analyze and says it reads through its last turn; one with no recorded finish says
+   it reads up to its last entry; and a stored last-turn reading labels the turn. The sentence that used to
+   refuse every idle Codex session is gone. */
+const CODEX_REFUSED = 'Codex sessions can be analyzed only while a turn is running.';
+const CODEX_STOPPED = { state: 'idle', finished_at: null, turn_end_at: 900 };
+const ASKED = fact(
+  'm0',
+  200,
+  { type: 'user_message', by: 'person:me', summary: 'Ship the queue' },
+  'codex',
+);
+const TURN_WORK = fact(
+  'm1',
+  600,
+  { type: 'agent_message', by: 'agent', summary: 'Done: the queue ships.' },
+  'codex',
+);
+
+export const AnalyzeOpensOnAStoppedCodexSession: Story = {
+  ...scenario({ harness: 'codex', session: CODEX_STOPPED }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    await expect(analyze).not.toHaveAttribute('aria-disabled');
+    await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
+    await expect(canvasElement.textContent).not.toContain(WHY_OFF);
+    await expect(
+      await canvas.findByText(/^Reads the session up to its last turn against your intent\./),
+    ).toBeVisible();
+  },
+};
+
+export const AnalyzeOpensOnAnIdleCodexSessionWithNoRecordedFinish: Story = {
+  ...scenario({ harness: 'codex', session: IDLE }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const analyze = await canvas.findByRole('button', { name: 'Analyze drift' });
+    await expect(analyze).not.toHaveAttribute('aria-disabled');
+    await expect(canvasElement.textContent).not.toContain(CODEX_REFUSED);
+    await expect(
+      await canvas.findByText(
+        /^Reads the session up to its last recorded entry; its last turn was not recorded as finished\./,
+      ),
+    ).toBeVisible();
+  },
+};
+
+export const AStoredCodexLastTurnReadingLabelsTheTurn: Story = {
+  ...scenario({
+    harness: 'codex',
+    session: { ...CODEX_STOPPED, ...STORED_READING },
+    facts: [ASKED, TURN_WORK],
+  }),
+  play: async ({ canvasElement }) => {
+    const label = await waitFor(() => {
+      const node = canvasElement.querySelector('[aria-label^="from the last turn"]');
+      if (!node) throw new Error('no last-turn label');
+      return node;
+    });
+    await expect(label).toHaveTextContent('Last turn');
+  },
+};
+
 /* Each refusal the board can still publish says the condition that holds, and a press reveals the server's
    whole sentence under Why Analyze is off. */
 function refusal(
@@ -123,7 +192,6 @@ function refusal(
   };
 }
 
-export const RefusedCodexBetweenTurns = refusal('codex', 'idle-unknown', PRESS_CODEX);
 export const RefusedTurnStopElsewhere = refusal(
   'antigravity',
   'turn-stop',

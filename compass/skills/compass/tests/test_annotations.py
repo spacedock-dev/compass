@@ -2222,6 +2222,10 @@ class AFinalReadingRetractsItselfWhenTheEndStopsBeingPublishedTest(unittest.Test
                 runtime_reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT,
                 runtime_reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT,
             ),
+            (
+                runtime_reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+                runtime_reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+            ),
             # Words of the sidecar's own are never read back.
             ("Anything at all.", runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_LAST_TURN]),
         ):

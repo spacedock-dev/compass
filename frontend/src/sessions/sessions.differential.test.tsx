@@ -1,4 +1,5 @@
 import { disclosureReadings, normalizeDisclosures } from '../../test/disclosures';
+import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
 import { loadLegacyViews } from '../observed/legacy.test.helper';
@@ -195,7 +196,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
     for (let seed = 1; seed <= SEEDS; seed += 1) {
       const payload = genPayload(seed, { wellFormed: true });
       const old = legacySummary(payload);
-      const mine = await reactSummary(payload);
+      const mine = await reactSummary(withoutCodexRecordedStops(payload));
       for (const [index, group] of old.groups.entries()) {
         const other = mine.groups[index];
         if (

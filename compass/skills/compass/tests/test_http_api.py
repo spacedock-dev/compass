@@ -4300,28 +4300,49 @@ class ReadingRouteTest(unittest.TestCase):
         assert entry is not None
         self.assertEqual(runtime_reading.SCOPE_LAST_TURN, entry["assessment"]["scope"])
 
-    def test_a_codex_session_waiting_at_its_prompt_is_still_withheld_and_spends_nothing(
+    def test_a_codex_reader_pressing_on_a_session_stopped_at_its_prompt_gets_its_last_turn(
         self,
     ) -> None:
+        # Owner, 2026-11-02: Codex is read at a turn stop on a press. A record written after the
+        # stop (a later turn's entry) is counted as not read, as it is on Claude Code.
         config, state = self._runtime()
+        later = {**self.FACT, "fact_id": "f2", "at": 1_700_000_090.0, "summary": "a newer turn"}
         with (
-            self._counting_model(harness="codex") as calls,
+            self._counting_model(("codex",), harness="codex", extra_facts=(later,)) as calls,
             self._serving(self._app(config, state, "codex", row=self.WAITING)) as port,
         ):
+            before = self._published_row(port, "codex")
             status, body = self._post(port, self._press(harness="codex"))
-        # Answered at the press since DRC-4758 slice A2: 200, no job, nothing
-        # recorded, where it used to be a 202 whose job then withheld.
-        self.assertEqual(200, status, body)
-        answer = json.loads(body)
-        self.assertEqual("withheld", answer["reason"])
-        self.assertEqual(runtime_reading.WITHHELD_TURN_STOP, answer["withheld"])
         self.assertEqual(
-            runtime_reading.withheld_sentence(answer["withheld"], {"harness": "codex"}),
-            answer["sentence"],
+            {"ok": True, "reason": None, "until": None, "sentence": None},
+            before["reading_eligibility"],
         )
-        self.assertFalse(answer["produced"])
-        self.assertEqual([], self.outcomes, "a job ran for a press the board refused")
-        self.assertEqual([], calls)
+        self.assertEqual(202, status, body)
+        self.assertTrue(self.outcomes[-1]["produced"], body)
+        self.assertEqual(1, len(calls))
+        entry = annotation_store.find(annotation_store.load(config), "codex", "s1")
+        assert entry is not None
+        self.assertEqual(runtime_reading.SCOPE_LAST_TURN, entry["assessment"]["scope"])
+        self.assertIn("ship the parser please", calls[0])
+        self.assertNotIn("a newer turn", calls[0])
+
+    def test_a_codex_rollouts_own_turn_finish_is_enough_for_a_press_with_no_hook(self) -> None:
+        config, state = self._runtime()
+        recorded = {**self.WAITING, "finished_at": None, "turn_end_at": 1_700_000_050.0}
+        with (
+            self._counting_model(("codex",), harness="codex") as calls,
+            self._serving(self._app(config, state, "codex", row=recorded)) as port,
+        ):
+            status, body = self._post(port, self._press(harness="codex"))
+        self.assertEqual(202, status, body)
+        self.assertEqual(1, len(calls))
+        entry = annotation_store.find(annotation_store.load(config), "codex", "s1")
+        assert entry is not None
+        self.assertEqual(runtime_reading.SCOPE_LAST_TURN, entry["assessment"]["scope"])
+        self.assertEqual(
+            runtime_reading.SCOPE_TEXT_LAST_TURN_TRANSCRIPT_CODEX,
+            entry["assessment"]["scope_text"],
+        )
 
     IDLE_UNKNOWN: ClassVar[dict[str, Any]] = {
         "state": "idle",
@@ -4359,6 +4380,7 @@ class ReadingRouteTest(unittest.TestCase):
     def test_a_press_the_board_says_cannot_read_starts_no_job_and_counts_no_attempt(
         self,
     ) -> None:
+        # Pi, a harness outside `TURN_STOP_HARNESSES`: the one an idle row is still refused for.
         config, state = self._runtime()
         # Paused, then resumed: model calls on, and no provider holds an Allow.
         reading_policy.set_consent(config, False, now=1_700_000_100.0)
@@ -4372,13 +4394,11 @@ class ReadingRouteTest(unittest.TestCase):
 
         with (
             mock.patch.object(runtime_reading, "start_job", counted),
-            self._counting_model(harness="codex") as calls,
-            self._serving(self._app(config, state, "codex", row=self.IDLE_UNKNOWN)) as port,
+            self._counting_model() as calls,
+            self._serving(self._app(config, state, "pi", row=self.IDLE_UNKNOWN)) as port,
         ):
-            status, body = self._post(
-                port, self._press(harness="codex", allow=True, words_destination="")
-            )
-            published = self._published_row(port, "codex")
+            status, body = self._post(port, self._press(allow=True, words_destination=""))
+            published = self._published_row(port, "pi")
         self.assertEqual(200, status, body)
         answer = json.loads(body)
         self.assertEqual(runtime_reading.WITHHELD_IDLE_UNKNOWN, answer["withheld"])
@@ -4397,7 +4417,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual({}, runtime_reading.published_jobs(config))
         self.assertEqual([], calls)
         self.assertEqual([], self.outcomes)
-        entry = annotation_store.find(annotation_store.load(config), "codex", "s1")
+        entry = annotation_store.find(annotation_store.load(config), "pi", "s1")
         assert entry is not None
         self.assertEqual(0, entry.get("readings", 0), "an attempt was counted")
         self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])

@@ -70,16 +70,23 @@ export function delegatedWork(session: Row | null | undefined, now: number | nul
 }
 
 /* The harnesses whose turn stop a reader may have analyzed, spelt once on this side: the server's
-   `reading.TURN_STOP_HARNESSES` is the same list, and the legacy page's test compares the two. */
-export const READING_TURN_STOP_HARNESSES: readonly string[] = ['claude'];
+   `reading.TURN_STOP_HARNESSES` is the same list, and the vocabulary fixture compares the two. Codex joined
+   Claude Code on 2026-11-02 (docs/design-reading-a-session.md); the retired page's list stayed `["claude"]`. */
+export const READING_TURN_STOP_HARNESSES: readonly string[] = ['claude', 'codex'];
+
+/* The record a recorded stop is read from, named for the harness that wrote it: a Codex stop is its rollout's,
+   and calling it a Claude Code transcript would say what was not read (owner, 2026-11-02). */
+export function stopRecord(source: Row | null | undefined): string {
+  return source?.['harness'] === 'codex' ? "Codex's rollout" : "Claude Code's transcript";
+}
 
 export interface SessionStop {
   readonly at: number;
   readonly kind: 'hook' | 'transcript';
 }
 
-/* The turn stop a row rests on: the hook's when held, else the stop Claude Code's transcript records on
-   a harness read at a turn stop. The Close section and the observed-stops count read `finished_at`
+/* The turn stop a row rests on: the hook's when held, else the stop the session's own record carries (Claude
+   Code's transcript, Codex's rollout) on a harness read at a turn stop. The Close section and the observed-stops count read `finished_at`
    alone, because they count what was observed. */
 export function sessionStop(source: Row | null | undefined): SessionStop | null {
   const hook = nextNumber(source?.['finished_at']);
@@ -112,7 +119,7 @@ export type Landing = {
   Pair<'independent'>;
 
 /* `stopped` is `sessionStop`'s answer, or any truthy value for a hook stop. A transcript stop is named
-   as the transcript's: Compass read it from Claude Code's own record rather than observing it. */
+   as the record's own (Claude Code's transcript, Codex's rollout): Compass read it rather than observing it. */
 export function landingOf(
   source: Row,
   ended: boolean,
@@ -134,7 +141,7 @@ export function landingOf(
       ? 'A session end was observed'
       : endKind === 'turn-stop'
         ? recorded
-          ? "Claude Code's transcript shows the last turn finished; no session end was observed"
+          ? `${stopRecord(source)} shows the last turn finished; no session end was observed`
           : 'A turn stop was observed; no session end was'
         : '';
   const endWhy =
@@ -173,8 +180,9 @@ export function landingOf(
 /* What an analysis will read, said before the press, from the same end kind HOW IT LANDED shows so the
    two cannot disagree. Empty where the server would withhold whatever was pressed: an idle row with no
    stop or end, or a turn stop, on a harness it does not read there. A running session is read mid-flight
-   and says so, so a press on it never reads as a final one. An idle Claude Code row with no recorded stop
-   or end is read the same way up to its last recorded entry (owner, 2026-10-20), and says that too. */
+   and says so, so a press on it never reads as a final one. An idle Claude Code or Codex row with no recorded
+   stop or end is read the same way up to its last recorded entry (owner, 2026-10-20, and 2026-11-02 for
+   Codex), and says that too. */
 export function readHint(source: Row): string {
   const ended = endedAt(source) !== null;
   const stopped = source['state'] === 'idle' ? sessionStop(source) : null;

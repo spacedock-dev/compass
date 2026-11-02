@@ -387,6 +387,61 @@ def _session_state(
     return "working", detail
 
 
+def transcript_turn_end(
+    config: RuntimeConfig,
+    info: dict[str, Any] | None,
+    *,
+    work_activity: float,
+    blocked: bool,
+) -> float | None:
+    """The turn finish this rollout records, while it still stands, else None.
+
+    Codex's own `task_complete` (owner, 2026-11-02), read as Claude Code's transcript stop is
+    (`collectors.claude.transcript_turn_end`): for a board no Codex hook reaches and for a stop
+    from before a restart. It stands only while no turn record is newer than it (a
+    `turn_aborted` is one, so an aborted turn publishes no stop), no subagent is running, and no
+    other work is newer by more than the activity grace. Never written as `finished_at`.
+    """
+    stop = (info or {}).get("turn_stop_ts") or 0
+    if not (
+        stop > 0
+        and ((info or {}).get("last_turn_ts") or 0) <= stop
+        and not blocked
+        and work_activity <= stop + config.overlay_wait_activity_grace_sec
+    ):
+        return None
+    return float(stop)
+
+
+def turn_stop_fields(
+    config: RuntimeConfig,
+    now: float,
+    info: dict[str, Any] | None,
+    activity_sources: tuple[float, ...],
+    *,
+    blocked: bool,
+) -> dict[str, float | None]:
+    """`work_activity` and `turn_end_at` for one Codex row.
+
+    What retires an observed stop is the rollout's newest turn record in place of its mtime
+    (`activity_sources[0]`), which a settings change or a late command finish moves minutes after a
+    turn stops (owner, 2026-11-02; the split DRC-4770 made for Claude Code). Child rollouts stay
+    mtimes, so a subagent writing still retires the stop (DRC-4101). An unanalyzed row falls back to
+    the mtime, which retires rather than keeps. `last_activity` is unchanged.
+    """
+    work_activity = sessions.newest_plausible(
+        config,
+        now,
+        ((info or {}).get("last_turn_ts") or activity_sources[0], *activity_sources[1:]),
+    )
+    return {
+        "work_activity": work_activity,
+        "turn_end_at": transcript_turn_end(
+            config, info, work_activity=work_activity, blocked=blocked
+        ),
+    }
+
+
 def session_spacedock(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -650,6 +705,13 @@ def collect(
                 "state_detail": state_detail,
                 "active": active,
                 "last_activity": last_activity,
+                **turn_stop_fields(
+                    config,
+                    now,
+                    info,
+                    (mtime, *data["activity"]),
+                    blocked=bool(subagents),
+                ),
                 # What retires a gate this session already answered. Codex reports
                 # a gate through the event overlay, and the reducer only lets a
                 # wait lapse when the session's OWN activity outruns it -- so

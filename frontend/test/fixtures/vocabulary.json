@@ -256,7 +256,8 @@
     }
   },
   "turnStopHarnesses": [
-    "claude"
+    "claude",
+    "codex"
   ],
   "unsafeChars": {
     "codePoints": [

@@ -564,8 +564,8 @@ earlier one exited 0. Checks separated by `;`, each cut by `tail`, each take the
 in order, but only when there is exactly one such line per check and the last ends the output; a
 bare unittest `OK` counts when the command names the tests it runs. When nothing departs and the
 goal line rests on what the agent said, green pull request checks that count (on the session's
-commit, or merged into its branch) are enough for a level of None or low. An idle Claude Code session whose last turn has no recorded finish is read up to
-its last recorded entry, and the result says so with that entry's time, never as a final verdict. General scope and the
+commit, or merged into its branch) are enough for a level of None or low. An idle Claude Code or Codex session whose last turn has no recorded finish is read up to
+its last recorded entry, and the result says so with that entry's time, never as a final verdict. A Codex session that finished a turn is read through that turn, from the finish its own record shows or from its Stop hook. General scope and the
 count-by-kind cutoff remain under What the analysis read, which groups the model, your intent, the
 session read and what is never read under their own headings. Coverage holds only counts, time and closed state
 tokens and changes no verdict. A departure is a card whose What gives each cited entry as one line in its own words with its number (the

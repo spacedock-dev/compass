@@ -3707,6 +3707,14 @@ exposure accepted throughout. The worst it buys is a reading the reader pressed 
 covers a turn that had not finished. A summary written after a hook's feedback, which keeps the
 turn going, is refused by the collector and by the scorer's transcript vouching above alike.
 
+A Codex turn stop is read the same way from the rollout's `task_complete` record (owner, 2026-11-02), from
+the same bounded tail, and is never written as `finished_at`. A `turn_aborted` is not a stop, and any
+record about a turn newer than the finish retires it. The guard reads the rollout by its newest turn
+record, which is not its mtime: Codex appends a settings change or the stopped turn's own late command
+finish minutes after a turn ends, and read as mtime either one retired every stop. Those two shapes are
+the only ones skipped, so a record type nobody has measured retires a stop. The forgery exposure is the
+same local-process one, with the same worst case.
+
 The coordinator is the only writer, so two flags govern the file by construction rather than by a
 switch of their own. `--no-events` leaves it unread and unwritten, exactly as it leaves the focus
 command with no capability: with no coordinator there is nothing to write an end and the
