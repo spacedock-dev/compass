@@ -477,3 +477,46 @@ class ArithmeticQuoteCorrectionTest(_SelectedPromptTestCase):
                 self.assertIs(True, checks[0]["changed_after"])
                 self.assertNotIn(placeholder, text)
                 self.assert_selected_prompt_omits(placeholder)
+
+
+class AColonDoesNotShieldAMaskedValueInATail(_SelectedPromptTestCase):
+    """An echoed `user:password` keeps no password in the prompt a press sends."""
+
+    PLACEHOLDER = "EXAMPLEcolonPass97"
+
+    def prompt_text(self) -> str:
+        self.published()
+        self.assertTrue(any(row.get("tail") for row in self.ledger))
+        prompt, _selection = reading.build_prompt(
+            self.ledger, goal="Keep synthetic checks correct", max_bytes=65536
+        )
+        return prompt
+
+    def test_a_person_whose_command_echoed_user_colon_password_sends_no_password(self) -> None:
+        value = self.PLACEHOLDER
+        for echoed in (
+            f"alice:{value}",
+            f"+ curl -u alice:{value} https://x.example",
+            f"auth alice:{value} failed",
+        ):
+            with self.subTest(echoed=echoed.split(value)[0]):
+                self.fresh()
+                self.session.bash(
+                    f"curl -u alice:{value} https://x.example; pytest -q",
+                    f"{echoed}\n1 passed",
+                    is_error=False,
+                )
+                prompt = self.prompt_text()
+                self.assertNotIn(value, prompt)
+                self.assertIn("1 passed", prompt)
+
+    def test_a_person_whose_output_holds_ordinary_colons_sees_them_unchanged(self) -> None:
+        ordinary = "12:34:56 start\nsrc/app.py:12: warn\nhttp://example.com:8080/a ok"
+        self.session.bash(
+            f"curl -u alice:{self.PLACEHOLDER} https://x.example; pytest -q",
+            f"{ordinary}\n1 passed",
+            is_error=False,
+        )
+        prompt = self.prompt_text()
+        for line in ordinary.splitlines():
+            self.assertIn(line, prompt)

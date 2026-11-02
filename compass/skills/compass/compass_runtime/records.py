@@ -2453,9 +2453,10 @@ def _scrub_patterns(
     """
     boundary = r"[\w./:@+\-]"
     after = r"(?![\w@+\-]|[./:][\w/])" if prose else rf"(?!{boundary})"
-    # In prose a `:` after a word is how `user:password` is quoted, so it does not
-    # make the value part of a longer word; a `/`, `.` or `@` still does.
-    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
+    # A `:` before a word is how `user:password` is written, in prose and in an echoed
+    # `curl -u alice:<password>` alike, so it does not make the value part of a longer word;
+    # a `/`, `.` or `@` still does.
+    before = r"(?<![\w./@+\-])"
     alternation = _trie_alternation(spellings)
     return (
         re.compile(rf"{before}(?:{alternation}){after}"),

@@ -1106,7 +1106,9 @@ def _one_at_a_time_scrub(text: str, values: list[str], *, prose: bool = False) -
             piece.replace("'", "'\"'\"'"),
         )
     }
-    before = r"(?<![\w./@+\-])" if prose else rf"(?<!{boundary})"
+    # A `:` before the value no longer shields it in the strict tail either: an echoed
+    # `curl -u alice:<password>` is the shape that leaked there.
+    before = r"(?<![\w./@+\-])"
     for spelling in sorted(spellings, key=len, reverse=True):
         text = re.sub(rf"{before}{re.escape(spelling)}{after}", records.SECRET_MARKER, text)
         text = re.sub(
