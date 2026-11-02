@@ -668,6 +668,91 @@ class EveryUnterminatedConstructIsACallThatDidNotRun(CheckLineTestCase):
         self.assertEqual(1, len(checks))
         self.assertEqual(0, scan["not_run"])
 
+    @staticmethod
+    def _bare(levels: int, inner: str = "x") -> str:
+        return "$(echo " * levels + inner + ")" * levels
+
+    @staticmethod
+    def _backticked(inner: str) -> str:
+        """One backtick run around `inner`, escaped the way a shell needs."""
+        return "`" + inner.replace("\\", "\\\\").replace("`", "\\`") + "`"
+
+    def _alternating(self) -> str:
+        text = "x"
+        for _ in range(16):
+            text = self._bare(32, self._backticked(text))
+        return text
+
+    def _refused(self, command: str) -> bool:
+        self.fresh()
+        self.session.bash("pytest -q " + command, "")
+        _text, checks, scan = self.published()
+        self.assertEqual(len(checks) + scan["not_run"], 1)
+        return bool(scan["not_run"] == 1)
+
+    def test_a_pasted_command_that_alternates_nesting_and_backticks_is_refused_not_overflowed(
+        self,
+    ) -> None:
+        command = self._alternating()
+        self.assertGreater(len(command), 100_000)
+        # The cap's own refusal, not Python's stack: the call is read directly, so the
+        # catch-all at the call cannot turn a RecursionError into the same outcome.
+        with self.assertRaises(project_context._Unbalanced):
+            project_context._call_parts("pytest -q " + command)
+
+    def test_a_session_read_of_the_alternating_command_refuses_it_and_ages_the_pass(self) -> None:
+        # Green before the fix and after, by design: the catch-all at the call turned the
+        # stack overflow into the same refusal. This pins the reader's outcome.
+        self.session.bash("pytest", "5 passed", is_error=False)
+        self.session.bash("pytest -q " + self._alternating(), "", is_error=False)
+        text, checks, scan = self.published()
+        self.assertEqual(1, scan["not_run"])
+        self.assertIs(True, checks[0]["changed_after"])
+        self.assertNotIn(HALF_A, text)
+
+    def test_a_backtick_run_around_deep_nesting_is_refused_like_bare_nesting(self) -> None:
+        # The run is one level, so 31 bare levels inside it make 32 and 32 make 33.
+        for levels, refused in ((31, False), (32, True), (33, True), (40, True)):
+            with self.subTest(levels=levels):
+                self.assertIs(refused, self._refused(self._backticked(self._bare(levels))))
+
+    def test_nesting_split_around_a_backtick_run_is_counted_across_it(self) -> None:
+        def outer(inner: int) -> str:
+            return self._bare(16, self._backticked(self._bare(inner)))
+
+        for inner, refused in ((15, False), (16, True)):
+            with self.subTest(inner=inner):
+                self.assertIs(refused, self._refused(outer(inner)))
+        with self.subTest(shape="20 levels, a backtick run, 20 more"):
+            self.assertTrue(self._refused(self._bare(20, self._backticked(self._bare(20)))))
+
+    def test_a_backtick_run_inside_a_group_carries_its_depth_too(self) -> None:
+        # The group scan skips a backtick through its own path, so this is the site a
+        # substitution-only fix would miss.
+        for levels, refused in ((15, False), (16, True)):
+            with self.subTest(levels=levels):
+                body = self._backticked(self._bare(levels))
+                self.assertIs(refused, self._refused(self._bare(16, body)))
+
+    def test_backtick_runs_below_the_bound_keep_their_evidence(self) -> None:
+        for command in (
+            '"$(echo `date`)"',
+            "`echo \\`echo \\\\\\`echo hi\\\\\\`\\``",
+            self._backticked(self._bare(5)),
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self._refused(command))
+
+    def test_an_unbalanced_backtick_body_is_read_as_it_was_before_the_cap_counted_runs(
+        self,
+    ) -> None:
+        for command in ("`echo '$(' `", "`echo '`"):
+            with self.subTest(command=command):
+                self.fresh()
+                self.session.bash("pytest -q " + command, "")
+                _text, checks, scan = self.published()
+                self.assertEqual((1, 0), (len(checks), scan["not_run"]))
+
     def test_a_parser_fault_fails_closed_at_the_call(self) -> None:
         # The call memo would answer these two texts from an earlier test and never reach the
         # patched parser.

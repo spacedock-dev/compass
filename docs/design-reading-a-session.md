@@ -3297,8 +3297,13 @@ item 5's fields and the closed lists.
    backtick, and a heredoc operator or redirection with no word after it, is a syntax error in every
    shell. The call is not listed, it is counted in `not_run`, and nothing from its text is published.
    It still counts as a change, because bash runs the complete lines before it, so an earlier pass
-   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions (quoted or not: `$(…)`, `<(…)`, `>(…)`, `$((…))`, `${…}`; a backtick run and a plain `( … )` subshell are not counted), and any other
-   fault in the parser are read the same way. A shell wrapper whose command string is unbalanced is
+   ages. A raw NUL in the command, nesting deeper than 32 substitutions or expansions (quoted or not: `$(…)`, `<(…)`, `>(…)`, `$((…))`, `${…}`, and a backtick run; a plain `( … )` subshell is not counted), and any other
+   fault in the parser are read the same way. A backtick run is one level that carries its enclosing
+   depth into its body, so a run around or between substitutions does not restart the count: a run
+   around 32 bare levels is 33 and is refused. An unbalanced backtick body keeps its old reading: the call is still read and
+   listed, not refused. The bound is checked once, by the lexer that meets a substitution or a
+   backtick run, so every hop of those is inside it; the body of a `bash -c` or `sh -c` wrapper is
+   still read by a fresh lexer that starts its own count. A shell wrapper whose command string is unbalanced is
    different: the inner shell fails and the rest of the call runs, so only that wrapper segment is
    unread, and it is a change. A trailing lone backslash is not unbalanced: measured, bash runs the
    line and passes no argument for it.
