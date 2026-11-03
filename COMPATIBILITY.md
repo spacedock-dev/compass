@@ -144,7 +144,7 @@ Other notes:
 - Quota follows discovery, for every harness. A harness that is not discovered publishes no usage entry and, if it is one of the fetched ones, is never fetched for either. Two consequences are worth knowing because neither is obvious from the quota path itself: on a build with no `sqlite3` Cursor's quota is absent even though the fetch needs no SQLite, and a freshly installed Cursor CLI with no conversation yet is undiscovered, so its quota waits on the first chat. This is deliberate. The alternative is a quota tile for a harness the machine shows no other sign of using.
 - Gemini CLI stopped serving consumer accounts (Google AI Pro, Google AI Ultra and the free individual tier) on 2026-06-18, and Antigravity CLI is the successor for those users. Enterprise Gemini Code Assist licences and API-key authentication were explicitly unaffected, so on a machine using either of those the CLI still runs and still writes `~/.gemini/tmp`. This file owns that distinction; it is restated in `README.md`, `compass/skills/compass/SKILL.md` and `docs/design-harness-registry.md` (H-2), which must move together. Gemini and Antigravity are two harness rows. Antigravity is the current consumer one, and the Gemini row reads `~/.gemini/tmp`: historical on a consumer machine, where its sessions read as idle and need `?all=1` to appear, and live on an enterprise or API-key one, where they appear like any other harness. `GEMINI_CLI_HOME` relocates both, since Antigravity's store sits inside the Gemini home.
 - Cursor's quota tile is macOS-only. The Cursor CLI keeps its session token in the macOS Keychain, and where it persists that token on Linux and Windows has not been verified, so those platforms read no credential rather than a guessed path: Cursor's sessions still appear, only its usage entry is absent. Verifying the location on either platform is what lifts this, and it needs the CLI installed there. Every other harness's usage figure is platform-independent.
-- `--footer` is a Claude Code status line command: it reads the JSON Claude Code passes on standard input, which carries `rate_limits` only for Pro and Max subscriptions and only after a session's first reply, and it counts waits for every harness that can report one, though it writes a file only for Claude Code sessions. It is measured on macOS. On native Windows a pipe cannot be polled, so its standard input is read in a thread that is given a quarter of a second and then abandoned; no Windows run has covered it.
+- `--footer` is a Claude Code status line command: it reads the JSON Claude Code passes on standard input, which carries `rate_limits` only for Pro and Max subscriptions and only after a session's first reply, and it counts waits for every harness that can report one, though it writes a file only for Claude Code sessions. It is measured on macOS: the wrapper procedure in [HOW_TO_USE](HOW_TO_USE.md#a-status-line-you-already-have-such-as-barista) was also run inside a live Claude Code 2.1.317 session with Barista, and `resets_at` is epoch seconds, as the [payload record](docs/captures/claude/status-line-2.1.317-macos.jsonl) shows. On native Windows a pipe cannot be polled, so its standard input is read in a thread that is given a quarter of a second and then abandoned; no Windows run has covered it.
 
 Pi extension gate reporting was measured on `@earendil-works/pi-coding-agent@0.85.1`
 on macOS. This is an exact tested version, not a minimum-version claim. The deprecated
@@ -192,8 +192,8 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 0d7eaae2 (2026-11-02) -->
-<!-- Reconciled 5988426c..8ea4d2a: standalone commands, reading source and consent bounds,
-     ordinary-driver preparation, conditional study guards and live-estimate disclosures.
-     Source-only study machinery grants no activation, source admission or qualification;
-     independent source review, cold participants and complete outbound attribution remain open. -->
+<!-- docs-synced-through: 51f0d53d (2026-11-04) -->
+<!-- Reconciled 0d7eaae2..51f0d53d: the terminal client and a lone `--version`, the `--footer`
+     status line segment and the files the dashboard writes for it, the `--sessions` list and the one
+     waiting rule they share, with the status line payload recorded by shape. Docs-only: the quota
+     scrub and observer commits in the range change no documented behavior. -->
