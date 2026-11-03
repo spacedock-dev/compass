@@ -932,6 +932,17 @@ def _restore_sigterm(handlers: Any) -> None:
             signal.signal(number, handler)
 
 
+def _remove_footer_lines(application: object) -> None:
+    """On every exit path, `--stop` included, so a status line never reads a dashboard that is gone.
+
+    A crash leaves the files to the client's staleness ceiling and the hourly sweep.
+    """
+    footer = getattr(application, "footer_lines", None)
+    if footer is not None:
+        with contextlib.suppress(Exception):
+            footer.remove_all()
+
+
 def serve(
     config: RuntimeConfig,
     server: http_api.CompassHTTPServer,
@@ -1034,6 +1045,7 @@ def serve(
             # nobody declined holds silently until the process exits under it.
             with contextlib.suppress(Exception):
                 application.state.asks.decline_all()
+            _remove_footer_lines(application)
         remove_state(config, port)
         with contextlib.suppress(OSError):
             server.server_close()

@@ -1186,6 +1186,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.diagnostics",
             "compass_runtime.ends",
+            # The serving path attaches the status line's file writer; `aggregate` reaches it
+            # through a protocol, so the edge runs from the assembly point alone.
+            "compass_runtime.footer_lines",
             "compass_runtime.history",
             "compass_runtime.http_api",
             "compass_runtime.interaction_prototype",
@@ -1204,6 +1207,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.entry": {"compass_runtime.cli", "compass_runtime.terminal_client"},
         # Standard library only, so a short command answers before any collector is imported.
         "compass_runtime.terminal_client": set(),
+        # One small file per Claude session for the status line, written through the owner-only
+        # writer. A leaf over `io`, so the module that owns collection never imports it.
+        "compass_runtime.footer_lines": {"compass_runtime.io"},
         # Outstanding asks and their one-slot answer mailboxes. Imports no
         # runtime module, for the reason `stream` does not: that is what lets
         # `state` own the registry while `http_api` and `aggregate` serve from it
