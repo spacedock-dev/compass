@@ -2489,11 +2489,12 @@ class LongValueScrubTest(unittest.TestCase):
     def test_a_userinfo_shape_of_one_long_value_scrubs_quickly(self) -> None:
         if sys.gettrace() is not None or "coverage" in sys.modules:
             self.skipTest("timed without a tracer only")
-        value, text = "a:" * 20_000 + "x", "a:" * 40_000
+        value, text = "a:" * 30_000 + "x", "a:" * 60_000
         records.scrub_values("warm", [value])
         started = time.process_time()
         records.scrub(text, [value])
-        self.assertLess(time.process_time() - started, 0.3)
+        # 0.35 s here and about 1 s on a slow runner; the regex took 7.4 s.
+        self.assertLess(time.process_time() - started, 3.0)
 
     def test_a_run_of_touching_long_values_builds_a_fixed_number_of_indexes(self) -> None:
         values = [f"V{i:03d}" + "x" * 70 for i in range(500)]
@@ -2519,7 +2520,8 @@ class LongValueScrubTest(unittest.TestCase):
         records.scrub_values("warm", [value])
         started = time.process_time()
         records.scrub(text, [value])
-        self.assertLess(time.process_time() - started, 1.0)
+        # 0.42 s here and 1.2 s on a slow runner; the regex took 14 s.
+        self.assertLess(time.process_time() - started, 5.0)
 
 
 class MaskCommandTest(unittest.TestCase):
