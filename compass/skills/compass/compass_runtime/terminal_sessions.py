@@ -878,6 +878,18 @@ def board(payload: Mapping[str, Any], *, exclude: str | None = None) -> Board:
     return Board(active, history, waiting, gates, unreported, annotate)
 
 
+def waiting_queue(payload: Mapping[str, Any]) -> tuple[int, frozenset[tuple[str, str]]]:
+    """The Attention queue as `--sessions waiting` lists it, with nobody left out as the caller.
+
+    Returns how many needs it holds and the `(harness, sid)` of each row that owns one, so a
+    caller that is one of the rows (the status line footer) can subtract its own session. This is
+    the one definition of what waits: the footer's file writer imports it rather than keep a rule
+    of its own, which is how the two once disagreed on a waiting row the board hides as a risk.
+    """
+    waiting = board(payload).waiting
+    return len(waiting), frozenset(_key(w.entry.source) for w in waiting if w.entry is not None)
+
+
 def _enc(part: str) -> str:
     # `encodeURIComponent` leaves these unescaped, and the page's route grammar is built on it.
     return quote(part, safe="-_.!~*'()")

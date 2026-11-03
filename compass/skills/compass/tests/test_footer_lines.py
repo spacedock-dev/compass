@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, cli, footer_lines, observation
+from compass_runtime import aggregate, cli, footer_lines, observation, terminal_sessions
 from compass_runtime import io as runtime_io
 
 from . import support
@@ -66,6 +66,59 @@ def ask(session_id: str | None, question: str | None = "May I?", **more: Any) ->
 
 def waiting_of(built: dict[tuple[str, str], dict[str, Any]], sid: str) -> object:
     return built[("claude", sid)]["waiting"]
+
+
+SESSIONS_PAYLOADS = [
+    json.loads(
+        (
+            support.SERVER_PATH.parents[3]
+            / "frontend"
+            / "test"
+            / "fixtures"
+            / "client-contract"
+            / "data-session-states.json"
+        ).read_text(encoding="utf-8")
+    )["response"]["body"]
+]
+
+
+class OneRuleTest(unittest.TestCase):
+    """The footer and `--sessions waiting` count the Attention queue by one definition."""
+
+    def test_every_row_counts_the_subjects_the_sessions_list_names_less_its_own(self) -> None:
+        for payload in SESSIONS_PAYLOADS:
+            built = footer_lines.build(payload, pid=1, now=NOW)
+            self.assertTrue(built)
+            for (_harness, identity), body in built.items():
+                with self.subTest(row=identity):
+                    listed = terminal_sessions.board(payload, exclude=identity).waiting
+                    self.assertEqual(len(listed), body["waiting"])
+
+    def test_the_footer_holds_no_queue_rule_of_its_own(self) -> None:
+        source = (support.SERVER_PATH.parent / "compass_runtime" / "footer_lines.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("terminal_sessions", source)
+        for private in ("_subjects", "_ask_owner", '"needs_input"', '"question"'):
+            self.assertFalse(private in source, private)
+
+    def test_a_board_no_harness_measured_says_nothing_and_a_quiet_measured_one_says_zero(
+        self,
+    ) -> None:
+        quiet = [row("claude", "a"), row("claude", "b")]
+
+        unmeasured = footer_lines.build(
+            board(quiet, [harness("claude", "Claude Code", reports=False)]), pid=1, now=NOW
+        )
+        failed = footer_lines.build(
+            board(quiet, [harness("claude", "Claude Code", error="boom")]), pid=1, now=NOW
+        )
+        measured = footer_lines.build(board(quiet), pid=1, now=NOW)
+
+        self.assertEqual([None, None], [waiting_of(unmeasured, s) for s in "ab"])
+        self.assertEqual([None, None], [waiting_of(failed, s) for s in "ab"])
+        self.assertEqual([0, 0], [waiting_of(measured, s) for s in "ab"])
 
 
 class BuildTest(unittest.TestCase):

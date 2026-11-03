@@ -19,6 +19,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import io as runtime_io
+from compass_runtime import terminal_sessions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -100,49 +101,11 @@ def _identity(row: Mapping[str, Any]) -> str:
     return sid  # type: ignore[no-any-return]
 
 
-def _text(value: object) -> str:
-    return "" if value is None else str(value)
-
-
-def _ask_owner(rows: list[Mapping[str, Any]], ask: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    """The one row an ask belongs to: its session id, and its harness when it names one."""
-    sid = _text(ask.get("session_id"))
-    if not sid:
-        return None
-    harness = _text(ask.get("harness"))
-    matches = [
-        row for row in rows if row["sid"] == sid and (not harness or row["harness"] == harness)
-    ]
-    return matches[0] if len(matches) == 1 else None
-
-
-def _subjects(rows: list[Mapping[str, Any]], asks: list[Any]) -> set[tuple[str, ...]]:
-    """The Attention queue's needs: every worded ask, then each waiting row no ask holds.
-
-    The board derives this in `attention/model.ts` (`attentionModel`), and `terminal_sessions.py`
-    keeps the terminal's copy, `_subjects`; this is the third, because a status line cannot reach
-    either. An ask is a subject of its owner's, so a row that is waiting and holds an ask is one
-    need, and an ask nobody owns is a need of its own that every session sees.
-    """
-    found: set[tuple[str, ...]] = set()
-    for index, ask in enumerate(asks):
-        if not isinstance(ask, dict) or not _text(ask.get("question")).strip():
-            continue
-        owner = _ask_owner(rows, ask)
-        if owner is None:
-            found.add(("ask", _text(ask["id"]) if ask.get("id") is not None else f"index:{index}"))
-        else:
-            found.add(("session", owner["harness"], owner["sid"]))
-    for row in rows:
-        if row.get("state") == "needs_input":
-            found.add(("session", row["harness"], row["sid"]))
-    return found
-
-
 def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
     """What each Claude session's file says, from the board as the page-default snapshot has it.
 
-    `waiting` counts the needs of the board's Attention queue other than this session's own, and
+    `waiting` counts the needs of the board's Attention queue other than this session's own, as
+    `terminal_sessions.waiting_queue` defines them (the rule `--sessions waiting` lists by), and
     is None unless at least one harness that can report a wait was found and read: a zero there
     would be a statement about the schema rather than about the sessions. A pending ask is counted
     because it is a wait the board shows whether or not any row says `needs_input`.
@@ -153,20 +116,19 @@ def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
         h.get("reports_needs_input") is True and h.get("discovered") is True and not h.get("error")
         for h in harnesses
     )
-    asks = collection.get("asks")
-    subjects = _subjects(rows, asks if isinstance(asks, list) else [])
+    queue, owners = terminal_sessions.waiting_queue(collection)
     blind = _blind_labels(harnesses, rows)
     built: Built = {}
     for row in rows:
         key = (row["harness"], _identity(row))
         if key[0] != "claude" or key in built:
             continue
-        own = ("session", row["harness"], row["sid"]) in subjects
+        own = (row["harness"], row["sid"]) in owners
         built[key] = {
             "v": SHAPE_VERSION,
             "at": now,
             "pid": pid,
-            "waiting": len(subjects) - own if measured else None,
+            "waiting": queue - own if measured else None,
             "blind": list(blind),
             # Left for the monitor to fill. The client prints no drift while `monitor` is not true.
             "monitor": None,
