@@ -2349,6 +2349,8 @@ class IndexedScrubMatchesRegexScrubTest(unittest.TestCase):
         "\u00e9a:!",
         "ab1_./@",
         "a:/@",
+        "h:/@a",
+        "u:@a/",
     )
     PIECES: ClassVar[tuple[str, ...]] = (
         "",
@@ -2458,7 +2460,7 @@ class LongValueScrubTest(unittest.TestCase):
 
     SHAPES: ClassVar[dict[str, Any]] = {
         "recipe": (lambda m: "!" * m + "x", lambda m: "!" * m),
-        "userinfo": (lambda m: "a:" * m + "x", lambda m: "a:" * m),
+        "userinfo": (lambda m: "a:" * m + "x", lambda m: "a:" * (2 * m)),
         "flag": (lambda m: "!" * m + "x", lambda m: "z -p" + "!" * m),
     }
 
@@ -2483,6 +2485,15 @@ class LongValueScrubTest(unittest.TestCase):
             with self.subTest(shape=shape):
                 self.assertGreater(work[0], 0)
                 self.assertLess(work[1], 2.2 * work[0], work)
+
+    def test_a_userinfo_shape_of_one_long_value_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        value, text = "a:" * 20_000 + "x", "a:" * 40_000
+        records.scrub_values("warm", [value])
+        started = time.process_time()
+        records.scrub(text, [value])
+        self.assertLess(time.process_time() - started, 0.3)
 
     def test_the_recipe_scrubs_120_thousand_characters_quickly(self) -> None:
         if sys.gettrace() is not None or "coverage" in sys.modules:

@@ -2474,13 +2474,64 @@ def _scrub_pass(text: str, patterns: _ScrubPatterns, hold: str) -> str:
     # Userinfo first: a single-value pass would let a short spelling match inside
     # `user:Fake99!@` in prose and leave the `!` of the longer one, where the one-at-a-time loop
     # took the longest.
-    text = patterns.userinfo.sub(lambda match: match[1] + hold + match[2], text)
+    if patterns.long:
+        text = _mask_userinfo_indexed(text, patterns.bind(text)[0], hold)
+    else:
+        text = patterns.userinfo.sub(lambda match: match[1] + hold + match[2], text)
     # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
     text = _mask_flags(text, patterns.flag_starts, patterns.bind(text)[0], patterns.after, hold)
     # Two masked values with nothing between them reject each other at the word boundary, so a
     # run of them is read whole before the single-value pass sees either.
     text = _mask_runs(text, patterns.run_starts, patterns.bind(text)[0], patterns.after, hold)
     return _mask_singles(text, patterns.single_starts, patterns.bind(text)[1], hold)
+
+
+# Where `user:value@` can begin: the same before-boundary and head the userinfo pattern opens with,
+# found without reading a value, so a long value is compared only where a head stands.
+_USERINFO_START: Final = re.compile(
+    r"(?<![^\s:/@'\"])(?=(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)"
+)
+_USERINFO_SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+_USERINFO_HEAD: Final = re.compile(r"[^\s:/@'\"]+:")
+
+
+def _mask_userinfo_indexed(text: str, inner: _Substituter, hold: str) -> str:
+    """`text` with the value of each `user:value@` masked, as the userinfo pattern masked it.
+
+    It reads what that pattern's `re.sub` read, left to right and without overlap: a head with its
+    `scheme://` first and then without it, and at the end of the head the longest spelling that an
+    `@` follows, falling back to each shorter one. Only the value is read through `inner`, which is
+    where the pattern compared a long spelling at every head.
+    """
+    out: list[str] = []
+    last = 0
+    for start in _USERINFO_START.finditer(text):
+        at = start.start()
+        if at < last:
+            continue
+        scheme = _USERINFO_SCHEME.match(text, at)
+        for head_from in (at,) if scheme is None else (scheme.end(), at):
+            head = _USERINFO_HEAD.match(text, head_from)
+            if head is None:
+                continue
+            end = _value_end_before_at(text, head.end(), inner)
+            if end is not None:
+                out.extend((text[last : head.end()], hold, "@"))
+                last = end + 1
+                break
+    out.append(text[last:])
+    return "".join(out)
+
+
+def _value_end_before_at(text: str, at: int, inner: _Matcher) -> int | None:
+    """The end of the longest spelling at `at` that an `@` follows, or None."""
+    found = inner.match(text, at)
+    while found is not None:
+        end = found.end()
+        if text.startswith("@", end):
+            return end
+        found = inner.match(text, at, end - 1)
+    return None
 
 
 def _chain_ends(text: str, inner: _Matcher) -> Callable[[int], int]:
@@ -2679,6 +2730,21 @@ def _hash(text: str) -> int:
     return value
 
 
+@lru_cache(maxsize=4)
+def _spelling_table(
+    spellings: tuple[str, ...], prefix_len: int
+) -> tuple[dict[str, list[tuple[int, int]]], dict[int, int]]:
+    """Each spelling's length and hash under its first `prefix_len` characters, and the power of
+    the base for each length. Hashing a 100,000-character spelling per read cost more than the
+    reads, and a scrub binds an index for every pass over its text."""
+    by_prefix: dict[str, list[tuple[int, int]]] = {}
+    for spelling in set(spellings):
+        by_prefix.setdefault(spelling[:prefix_len], []).append((len(spelling), _hash(spelling)))
+    for candidates in by_prefix.values():
+        candidates.sort(reverse=True)
+    return by_prefix, {n: pow(_HASH_BASE, n, _HASH_MOD) for n in {len(s) for s in spellings}}
+
+
 class _LongIndex:
     """Where each long spelling occurs in one text, by rolling hash, in constant work per offset.
 
@@ -2695,14 +2761,7 @@ class _LongIndex:
         self.steps = 0
         self._text = text
         self._prefix_len = prefix_len
-        self._by_prefix: dict[str, list[tuple[int, int]]] = {}
-        for spelling in set(spellings):
-            self._by_prefix.setdefault(spelling[:prefix_len], []).append(
-                (len(spelling), _hash(spelling))
-            )
-        for candidates in self._by_prefix.values():
-            candidates.sort(reverse=True)
-        self._powers = {n: pow(_HASH_BASE, n, _HASH_MOD) for n in {len(s) for s in spellings}}
+        self._by_prefix, self._powers = _spelling_table(spellings, prefix_len)
         self._prefix_hashes: list[int] | None = None
         self._memo: dict[int, tuple[int, ...]] = {}
 
@@ -2775,6 +2834,7 @@ class _IndexedMatcher:
         short: re.Pattern[str],
         long: tuple[str, ...],
         prefix_len: int,
+        index: _LongIndex,
         text: str,
         after: re.Pattern[str] | None = None,
     ) -> None:
@@ -2783,7 +2843,7 @@ class _IndexedMatcher:
         self._prefix_len = prefix_len
         self._text = text
         self._after = after
-        self._index = _LongIndex(text, long, prefix_len)
+        self._index = index
 
     def _index_for(self, string: str) -> _LongIndex:
         if string is self._text:
@@ -2841,9 +2901,10 @@ class _ScrubPatterns(NamedTuple):
         wrappers that consult an index of that text."""
         if not self.long:
             return self.inner, self.single
+        index = _LongIndex(text, self.long, self.long_prefix)
         return (
-            _IndexedMatcher(self.inner, self.long, self.long_prefix, text),
-            _IndexedMatcher(self.single, self.long, self.long_prefix, text, self.after),
+            _IndexedMatcher(self.inner, self.long, self.long_prefix, index, text),
+            _IndexedMatcher(self.single, self.long, self.long_prefix, index, text, self.after),
         )
 
 
@@ -2866,12 +2927,10 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     short = tuple(spelling for spelling in spellings if len(spelling) < long_min)
     long = tuple(spelling for spelling in spellings if len(spelling) >= long_min)
     prefixes = tuple(sorted({spelling[:long_min] for spelling in long}))
-    # Until the userinfo reader consults the index, its pattern carries every spelling.
-    full = _trie_alternation(spellings)
     alternation = _trie_alternation(short)
     starts = _trie_alternation((*short, *prefixes)) if long else alternation
     lead = _trie_alternation(prefixes)
-    if full is None or alternation is None or starts is None or lead is None:
+    if alternation is None or starts is None or lead is None:
         return None
     # ASCII only: `\w` is Unicode in Python, so `密码<value>错误`, `é<value>` or a fullwidth digit
     # made the value part of a longer word and kept it. Not `re.ASCII`, which would also change the
@@ -2902,7 +2961,7 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
         single=re.compile(rf"(?:{alternation}){after}"),
         flag_starts=re.compile(rf"{before}-[pP](?=(?:{starts}))"),
         userinfo=re.compile(
-            rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{full})(@)"
+            rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
         run_starts=re.compile(rf"{before}(?={run})"),
         inner=re.compile(rf"(?:{alternation})"),
