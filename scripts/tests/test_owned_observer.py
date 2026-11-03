@@ -18,6 +18,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -636,6 +637,47 @@ class TheReportNamesEachRowTest(unittest.TestCase):
         shapes = observe_journey.render_shapes(observe_journey.report(trace, "default"))
         self.assertNotIn("someone", shapes)
         self.assertIn(f"node launch <{len(line)} chars>", shapes)
+
+
+class AConnectIsPairedWithItsLookupTest(unittest.TestCase):
+    """A connect carries an address, so the host named by the lookup just before it decides its row."""
+
+    def _quota(self, *, connect_tid: int, gap: float, connect_pid: int = 10) -> dict[str, Any]:
+        trace = [
+            _event("start", "process"),
+            _event("resolve", "socket.getaddrinfo", host="api2.cursor.sh", port=443, tid=7, t=5.0),
+            _event(
+                "connect",
+                "socket.connect",
+                family="inet",
+                host="104.18.19.125",
+                port=443,
+                tid=connect_tid,
+                pid=connect_pid,
+                t=5.0 + gap,
+            ),
+        ]
+        return observe_journey.report(trace, "default")
+
+    def test_a_connect_on_the_same_thread_right_after_the_lookup_is_the_quota_poll(self) -> None:
+        result = self._quota(connect_tid=7, gap=0.010)
+        self.assertEqual(result["unlisted"], [])
+        self.assertIn(
+            "python connect 104.18.19.125:443",
+            result["by_row"][observe_journey.ROW_QUOTA],
+        )
+
+    def test_a_connect_on_another_thread_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=8, gap=0.010)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_in_another_process_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=7, gap=0.010, connect_pid=11)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_long_after_the_lookup_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=7, gap=2.0)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
 
 
 if __name__ == "__main__":

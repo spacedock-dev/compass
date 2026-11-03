@@ -558,10 +558,24 @@ def _endpoint(event: Event) -> str:
     return f"{event.get('host', '')}:{event.get('port', '')}"
 
 
+# A connect records the address it dialled, so its host alone names no row. The thread that just
+# resolved a host dials it next: the vendor quota poll's one `socket.connect` followed its
+# `api2.cursor.sh` lookup by about 10 ms on the same pid and thread. 100 ms is ten times that,
+# enough for a loaded machine and short enough that an unrelated connect later on the same thread
+# is left for a person to read rather than attributed by luck.
+RESOLVE_PAIR_SECONDS = 0.1
+
+
 def _attribute(  # noqa: PLR0911 - one answer per kind of line
-    event: Event, tree_row: dict[int, str], reach_host: str | None
+    event: Event,
+    tree_row: dict[int, str],
+    reach_host: str | None,
+    resolved: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """(row, departure) for an event that is not a Python-side launch."""
+    """(row, departure) for an event that is not a Python-side launch.
+
+    `resolved` is the host this connect's thread looked up just before it, when there was one.
+    """
     kind, src = event["kind"], event["src"]
     if src != "python":
         if event["pid"] not in tree_row:
@@ -576,7 +590,7 @@ def _attribute(  # noqa: PLR0911 - one answer per kind of line
     if kind in {"connect", "request", "resolve", "send"}:
         if event.get("family") == "unix":
             return ROW_WRITE, "a Unix-domain socket connection, the path a hand-off would take"
-        host = str(event.get("host", ""))
+        host = resolved if kind == "connect" and resolved else str(event.get("host", ""))
         if host in QUOTA_HOSTS:
             return ROW_QUOTA, None
         # A loopback connection, or any host but the configured reach endpoint, is left for a
@@ -652,13 +666,22 @@ def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of l
     by_row: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
     departures: list[dict[str, Any]] = []
     unlisted: list[Event] = []
+    lookups: dict[tuple[object, object], tuple[float, str]] = {}
     for index, event in enumerate(events):
+        thread = (event["pid"], event.get("tid"))
+        resolved = None
+        if event["src"] == "python" and event["kind"] == "resolve" and event.get("host"):
+            lookups[thread] = (event["t"], str(event["host"]))
+        elif event["src"] == "python" and event["kind"] == "connect" and thread in lookups:
+            when, host = lookups[thread]
+            if 0 <= event["t"] - when <= RESOLVE_PAIR_SECONDS:
+                resolved = host
         if index in decided:
             row, departure = decided[index]
         elif event["kind"] == "launch":
             row, departure = (tree_row.get(event["pid"]), None)
         else:
-            row, departure = _attribute(event, tree_row, reach_host)
+            row, departure = _attribute(event, tree_row, reach_host, resolved)
         if departure:
             departures.append({"row": row, "why": departure, "event": event})
         if row == "":
