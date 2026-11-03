@@ -1,5 +1,7 @@
 # The drift replay check, committed half
 
+The owner retired the Intent and drift study on 2026-11-01, and the tooling that produced these records was removed. The records below are kept as they were written; the commands they name no longer exist.
+
 This directory holds what blind agents marked at each cut of the pushback sessions, and what Compass's
 drift detectors did there. It never holds the session text either one came from.
 [SECURITY.md](../../SECURITY.md#the-abstention-check) holds the ruling for this check and its two

@@ -4,8 +4,8 @@ This document records the interface first released behind `?next=true` and the d
 survived its promotion to the dashboard. That interface is the legacy page now, and it is gone: the
 React page replaced it and nothing serves it, so this is a record of what was decided and why. Where it
 names a file under `web/` (`styles.css`, `next-*.js`, `project.js`), a test or a linter, it names what
-existed while that page did; the script parts remain in the repository, under `scripts/frozen-page/`
-and outside the plugin, only because the paused Intent and drift study binds their digest. The React frontend's own record is
+existed while that page did; the script parts were removed from the repository when the owner retired the paused Intent and
+drift study that bound their digest (2026-11-01). The React frontend's own record is
 [design-frontend-migration.md](design-frontend-migration.md). The rationale below still binds the React
 page wherever it kept the behaviour: the route grammar and the retained browser namespace, the cockpit
 information architecture, the absence rules, and the palette and type tokens that

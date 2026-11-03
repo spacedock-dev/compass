@@ -9,11 +9,10 @@ frontend preserves the [existing promises](promise-map.md), including their limi
 The interface it replaced is called the legacy page below. It is gone: it is not served, not
 rendered, and its shell, its rollback flag and the tests that pinned its bytes were removed. What
 remains of it is kept on purpose and is not part of any page or of the shipped product. The twenty
-legacy script parts (`next-*.js` and `project.js`) moved out of `compass_runtime/web/` to
-`scripts/frozen-page/`, byte for byte, because the paused Intent and drift study evaluates their text
-and binds the digest of `frozen_page.load_script()`; the plugin, the standalone binary, the runtime
-and the frontend neither carry nor read them. Deleting them is separate work that has to rebind that
-study first. The recorded answers the React page is held to are described in the next section.
+legacy script parts (`next-*.js` and `project.js`) left `compass_runtime/web/` for 1.0.0 and were kept
+outside the plugin only because the paused Intent and drift study evaluated their text. The owner
+retired that study on 2026-11-01 and the parts were deleted with it; a test under the dashboard suite
+keeps all twenty names out of `web/`. The recorded answers the React page is held to are described in the next section.
 
 ## Held to recorded answers
 
@@ -440,7 +439,7 @@ A mounted comparison rejects changed evidence, session identity, surface classes
 removing the normalization fails at its class comparison. ProjectTabs adds a display:contents
 Root around the original nav and panel. The route still owns selection, ids and panel content.
 The Button chrome summary ignores Base UI Tabs' redundant aria-disabled=false, while true
-remains compared. Recorded fixtures and frozen legacy sources are unchanged. The
+remains compared. Recorded fixtures are unchanged. The
 [family adoption](design-shadcn-adoption.md#project-console-timeline-shell-and-terminal-layer)
 owns the keyboard contract, measured reference and native decisions.
 
@@ -510,7 +509,7 @@ local session stores. Every row names a migration owner, a contract and oracles 
 checkout; a row that names a file that is gone refuses the map. The reader-state rows must match the
 table in the reader-state inventory, and the storage rows must match the keys the React codec owns
 (`frontend/src/storage/keys.ts`). The `parts` rows are the historical map of the twenty legacy parts
-and are checked for form only, because their source is frozen and no longer a thing to derive coverage
+and are checked for form only, because their source was removed and is no longer a thing to derive coverage
 from. Surface and route rows are a reviewed enumeration, not proof that a static scanner can discover
 every workflow. Differential tests protect semantic contracts; they cannot certify native undo,
 composition, open option lists or browser layout, which the browser proofs cover.
@@ -1355,11 +1354,10 @@ can serve, assemble, select or roll back to the legacy page:
 - `--frontend`, `DEFAULT_FRONTEND`, `FRONTENDS`, `RuntimeConfig.frontend`, `lifecycle.probe_frontend`, the
   status and in-use sentences that named the renderer on a busy port, and the rollback text in the
   load-failure message are gone. `load_frontend_page()` and `build_id()` take no argument.
-- The twenty legacy script parts and `frozen_page.load_script()` stay, frozen, under
-  `scripts/frozen-page/` for the paused study's source binding only. They are not shipped, not served,
-  not rendered, and nothing in the frontend or the runtime may read them. They left the plugin for
-  1.0.0 without changing a byte, so every digest the study bound still holds. Deleting them has to
-  rebind the study.
+- The twenty legacy script parts and their loader were kept outside the plugin after 1.0.0, unchanged, for
+  the paused study's source binding. The owner retired the study on 2026-11-01 and both were deleted
+  with it, so the recorded answers under `frontend/test/golden/` are the only trace of what that page
+  said.
 - What replaced the removed oracles is a behavioural or build-integrity check for each: the recorded
   vitest and browser differentials above, the React-side behaviour and browser proofs the
   inventory names, the hostile-literal parser proof, the installed
@@ -1418,9 +1416,8 @@ does, because no disposable fork was available; the Release workflow's job bound
 actionlint, not exercised. Controlled fixtures prove frontend behaviour, not model accuracy. The hold stays until
 the owner lifts it in a reviewed pull request.
 
-The Intent and drift study remains paused. Controlled reading fixtures prove frontend parity,
-not model accuracy. Earlier failed measurements stay failed. A future study resume must bind the
-final runtime again rather than reuse a pre-migration source binding.
+The owner retired the Intent and drift study on 2026-11-01. Controlled reading fixtures prove
+frontend parity, not model accuracy. Earlier failed measurements stay failed.
 
 
 ### Activity list order

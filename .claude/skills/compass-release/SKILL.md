@@ -382,8 +382,8 @@ bump, tag move or `stable`. If main cannot be read at all, both refuse: an unrea
 is not a missing hold.
 
 When a hold exists, the file records why and what lifts it. The hold that covered the React cutover
-lifted for 1.0.0: the legacy frontend and its rollback were removed (the script parts frozen for the
-recorded Intent and drift replay live under `scripts/frozen-page/`, outside the plugin), and the
+lifted for 1.0.0: the legacy frontend and its rollback were removed (its script parts were kept outside the
+plugin for the paused study until the owner retired that study on 2026-11-01), and the
 Python-only install and backend-connected development checks passed on one build of `main`. Only the
 repository owner lifts a hold, by deleting the file in a reviewed pull request. This skill never
 deletes it, and never edits it to make a release pass.

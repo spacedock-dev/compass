@@ -39,8 +39,6 @@ top-level conversation with tool calls and tool output dropped:
 - A typed message counts as one. A slash command counts as one typed message, written as
   `/command args`. A typed message that the app running the session prefixed with its own
   `<system_instruction>` or `<user-preferences>` block counts as one too, without that block.
-  `scripts/drift_replay.py` does not count these yet, so its numbers run behind the Conductor
-  collection's annotations.
 - All of Claude's reply text between two typed messages, joined, counts as one. That includes
   text the harness wrote in Claude's place, such as a usage-limit notice.
 - Not counted: messages from other agents, task notifications, interrupt markers, compaction
@@ -51,40 +49,14 @@ A line in a Claude reply that quotes another session's prompts is replaced with
 
 ## Redaction
 
-The original four sessions use `scripts/redact_session.py`. The October 5 collection uses its
-generic rules plus private, session-specific rules for the full logs. Names, handles,
-organisations and places are kept in local configuration, never committed. The repository
-redactor's default configuration is `~/.compass/redaction.json`:
-
-```json
-{
-  "v": 1,
-  "home_user_prefix": "<the start of your macOS user name>",
-  "repository_under_home": "repos/<org>/compass",
-  "self_tag": "NAME_1",
-  "names": [{"pattern": "Full Name|\\bFirst\\b|handle", "tag": "NAME_1"}],
-  "orgs": [{"pattern": "Company|company", "tag": "ORG_NAME_1"}],
-  "places": ["City", "Country"]
-}
-```
-
-A name pattern matches case-insensitively unless it sets `"case_sensitive": true`, which short
-initials need. `self_tag` is the tag of the person whose chat messages are kept; everyone else's
-message body is removed.
-
-The JSONL is parsed line by line and redacted value by value, so line counts, key counts, types and
-tool-use ids match the source. A string value that itself holds JSON is redacted inside and written
-back in its own layout, and left untouched when nothing in it changed. A path outside this
-repository becomes `/[EXTERNAL_PATH_N]`: absolute, and numbered per distinct path, so a write
-outside the working directory still reads as outside and two directories never merge into one. A
-runner's own name survives the hidden directory (`/[EXTERNAL_PATH_1]/python3`), so a check run
-through it is still a check.
-
-Those three rules are what make the original four redacted copies replayable. Measured on that
-collection on 2026-10-03, against the originals with their subagent logs cut at the same moment: the live level
-and the listed checks are the same at all 31 pushback cuts. Six cuts still differ in shell-call
-counts, because the board's 8 MiB backward scan reaches a little further or less far when a line's
-length changes. [The drift replay check](../docs/drift-replay/README.md) replays these copies.
+The committed excerpts and annotations were redacted with a local redaction tool, removed
+with the retired drift study (owner, 2026-11-01). It kept the names, handles, organisations and
+places that identify real people in local configuration, never committed, and replaced them with
+the tags below; it also replaced secrets, emails, identifiers, private addresses, time zones,
+paths outside the repository, other sessions' prompt listings and other people's chat messages.
+A path outside the repository became `/[EXTERNAL_PATH_N]`, numbered per distinct path, and a
+runner's own name survived the hidden directory (`/[EXTERNAL_PATH_1]/python3`). The tags a
+committed excerpt carries:
 
 | Tag | Replaces |
 |---|---|
@@ -172,7 +144,7 @@ The ZIP contains no subagents, configuration, source originals, or HTML artifact
 Public repository paths, session IDs, issue keys, loopback addresses and documented placeholder
 credentials are preserved. Name aliases next to Chinese characters use Latin-token boundaries;
 ordinary Unicode word boundaries can miss them. These logs have not been through the original
-collection's drift-replay equivalence check.
+collection's equivalence check against the originals.
 
 ### Conductor collection
 
@@ -196,11 +168,11 @@ translation. One agent annotated each session and a separate reviewer checked it
 numbered conversation. A privacy reviewer and a fidelity reviewer then checked the generated files,
 and a second privacy pass checked the fixes.
 
-The redaction runs `scripts/redact_session.py` with this contributor's own configuration, through a
+The redaction ran the retired redaction tool with this contributor's own configuration, through a
 local wrapper that adds rules for personal hosts, tailnet addresses, tunnel names, CDN edge codes,
 device, room and share ids, private repository slugs and local clock times, and removes quoted
 teammate remarks. The wrapper redacts the numbered conversation with the same instance as its JSONL,
 so a tag in an excerpt names the same value as in the log. Every local JSONL line parses and its
 line count matches the source. Base64 image data is left untouched, so screenshots inside the local
-logs are not redacted. These logs have not been through the original collection's drift-replay
-equivalence check.
+logs are not redacted. These logs have not been through the original collection's equivalence check
+against the originals.

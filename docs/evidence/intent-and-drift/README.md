@@ -1,5 +1,7 @@
 # Intent and drift teammate evidence
 
+The owner retired the Intent and drift study on 2026-11-01, and the tooling that produced the records it describes was removed; the records are kept as written.
+
 [Share the sidecar prompt](PROMPT.md) with a developer who wants to offer feedback from real Claude Code work. Their agent can run current `main` against a recent session and record what the drift panel says. This is optional exploratory evidence, with agent-operated and human-operated steps identified separately.
 
 The owner removed the cold-study requirement on 2026-10-06. No cold participants need to be recruited, and no cold-study pass is claimed. The [archived protocol](COLD_STUDY_PROTOCOL.md) records the former procedure. For optional feedback, use the [kickoff and consent note](PARTICIPANT_KICKOFF.md) and [run template](RUN_TEMPLATE.md). Application verification and producer accuracy qualification remain separate requirements.

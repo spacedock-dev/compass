@@ -1,5 +1,7 @@
 # The abstention check, committed half
 
+The owner retired the paused Intent and drift study on 2026-11-01 and removed its replay tooling; the abstention scorer and marker that produced these records remain.
+
 What DEC-17's abstention check expected and what the producer did, and never the session text
 either was drawn from. The ruling that fixes this split is restated in
 [SECURITY.md](../../SECURITY.md#the-abstention-check); the reasoning behind the check is

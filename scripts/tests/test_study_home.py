@@ -28,7 +28,6 @@ sys.path.insert(0, scripts)
 pwd.getpwuid = lambda _uid: types.SimpleNamespace(pw_dir=canonical, pw_name='synthetic_account')
 import abstention_ledger as ledger
 import analyze_campaign as campaign
-import drift_replay as replay
 import mark_abstention as marker
 import claude_route_verification as route
 committed = {'first': 'f' * 32, 'calls': 68, 'head': 'a' * 64}
@@ -44,7 +43,6 @@ print(json.dumps({
     'shared': campaign.LEDGER_PATH,
     'qualification': campaign.QUALIFICATION_PATH,
     'replay': campaign.REPLAY_PATH,
-    'replay_ledger': replay.LEDGER_PATH,
     'store_home': marker.STORE_HOME,
     'route_state': str(route.STATE_PATH),
     'route_private': str(route.PRIVATE_DIR),
@@ -105,7 +103,6 @@ class StudyLedgersArePinnedToTheirHomeTest(unittest.TestCase):
         self.assertEqual(observed["native"], observed["qualification"])
         self.assertEqual(str(study / "analyze-closure-spend.json"), observed["shared"])
         self.assertEqual(str(study / "drift-replay" / "spend.json"), observed["replay"])
-        self.assertEqual(observed["replay"], observed["replay_ledger"])
         # The freeze still reads the live dashboard store, where new sessions are observed.
         self.assertEqual(str(self.canonical / ".compass"), observed["store_home"])
 
@@ -120,7 +117,6 @@ class StudyLedgersArePinnedToTheirHomeTest(unittest.TestCase):
             "native",
             "shared",
             "replay",
-            "replay_ledger",
             "route_state",
             "route_private",
             "route_activation",
