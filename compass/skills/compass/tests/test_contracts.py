@@ -1211,8 +1211,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.terminal_client": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_sessions": set(),
         # One small file per Claude session for the status line, written through the owner-only
-        # writer. A leaf over `io`, so the module that owns collection never imports it.
-        "compass_runtime.footer_lines": {"compass_runtime.io"},
+        # writer. A leaf over `io` and `terminal_sessions`, so the module that owns collection never
+        # imports it. The second edge is the one definition of what waits, shared with `--sessions`.
+        "compass_runtime.footer_lines": {"compass_runtime.io", "compass_runtime.terminal_sessions"},
         # Outstanding asks and their one-slot answer mailboxes. Imports no
         # runtime module, for the reason `stream` does not: that is what lets
         # `state` own the registry while `http_api` and `aggregate` serve from it
