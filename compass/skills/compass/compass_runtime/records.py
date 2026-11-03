@@ -2854,17 +2854,24 @@ class _IndexedMatcher:
         return _LongIndex(string, self._long, self._prefix_len)
 
     def match(self, string: str, pos: int = 0, endpos: int = sys.maxsize) -> _Ended | None:
-        for end in self._index_for(string).ends(pos):
+        return self._match(self._index_for(string), string, pos, endpos)
+
+    def _match(
+        self, index: _LongIndex, string: str, pos: int, endpos: int = sys.maxsize
+    ) -> _Ended | None:
+        for end in index.ends(pos):
             if end <= endpos and (self._after is None or self._after.match(string, end)):
                 return _Span(end)
         found = self._short.match(string, pos, endpos)
         return None if found is None or found.end() == pos else found
 
     def sub(self, repl: str, string: str) -> str:
+        # One index for the whole string: `match` would build one per offset for a slice.
+        index = self._index_for(string)
         out: list[str] = []
         at = 0
         while at < len(string):
-            found = self.match(string, at)
+            found = self._match(index, string, at)
             if found is None:
                 out.append(string[at])
                 at += 1

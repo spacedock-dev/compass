@@ -2495,6 +2495,23 @@ class LongValueScrubTest(unittest.TestCase):
         records.scrub(text, [value])
         self.assertLess(time.process_time() - started, 0.3)
 
+    def test_a_run_of_touching_long_values_builds_a_fixed_number_of_indexes(self) -> None:
+        values = [f"V{i:03d}" + "x" * 70 for i in range(500)]
+        text = "pre " + "".join(values) + " post"
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        records._scrub_patterns.cache_clear()
+        with mock.patch.object(records, "_LongIndex", Recording):
+            result = records.scrub(text, values)
+        records._scrub_patterns.cache_clear()
+        self.assertNotIn("xxxx", result.text)
+        self.assertLess(len(built), 40, len(built))
+
     def test_the_recipe_scrubs_120_thousand_characters_quickly(self) -> None:
         if sys.gettrace() is not None or "coverage" in sys.modules:
             self.skipTest("timed without a tracer only")
