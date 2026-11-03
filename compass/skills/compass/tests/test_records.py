@@ -1676,7 +1676,7 @@ class TouchingRunsAreReadInLinearWork(unittest.TestCase):
         records._mask_runs(
             text,
             patterns.run_starts,
-            counted,  # type: ignore[arg-type]
+            counted,
             patterns.after,
             records.SECRET_MARKER,
         )
@@ -2236,7 +2236,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                     records._mask_flags(
                         unit * k + ".py",
                         patterns.flag_starts,
-                        counted,  # type: ignore[arg-type]
+                        counted,
                         patterns.after,
                         "\ufdd0",
                     )
@@ -2299,7 +2299,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 out = records._mask_singles(
                     " " + "!FakeWxyz" * k + " ",
                     patterns.single_starts,
-                    counted,  # type: ignore[arg-type]
+                    counted,
                     "\ufdd0",
                 )
                 self.assertNotIn("Fake", out)
@@ -2327,7 +2327,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 counted = _CountedInner(patterns.inner)
                 records._separate_escapes(
                     unit * k + tail,
-                    counted,  # type: ignore[arg-type]
+                    counted,
                     longest,
                     "\ufdd1",
                 )
@@ -2337,6 +2337,80 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 self.assertLess(work[1], 2.2 * work[0], work)
                 # However long an escape, only the offsets a spelling could cross from are read.
                 self.assertLessEqual(work[1], 4_000 * 2 * longest, work)
+
+
+class IndexedScrubMatchesRegexScrubTest(unittest.TestCase):
+    """Finding long values by index masks exactly what the all-regex scrub masked."""
+
+    ALPHABETS: ClassVar[tuple[str, ...]] = (
+        "ab!:",
+        "a!-p:",
+        "Fk9 -p",
+        "\u00e9a:!",
+        "ab1_./@",
+        "a:/@",
+    )
+    PIECES: ClassVar[tuple[str, ...]] = (
+        "",
+        ":",
+        ".py",
+        " ",
+        "x",
+        "@h",
+        "-p",
+        " -p",
+        ":-p",
+        "\\n",
+        "\x1b[1m",
+        "'",
+        '"',
+        "//",
+        "http://u:",
+        "u:",
+    )
+
+    def scrub_both_ways(
+        self, text: str, values: list[str], *, prose: bool
+    ) -> tuple[records.Scrubbed, records.Scrubbed, int]:
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        results = []
+        for threshold in (10**9, 3):
+            records._scrub_patterns.cache_clear()
+            with (
+                mock.patch.object(records, "_LONG_SPELLING_MIN", threshold),
+                mock.patch.object(records, "_LongIndex", Recording),
+            ):
+                results.append(records.scrub(text, values, prose=prose))
+        records._scrub_patterns.cache_clear()
+        return results[0], results[1], len(built)
+
+    def test_the_indexed_scrub_masks_exactly_what_the_regex_scrub_masked(self) -> None:
+        rng = random.Random(5080)
+        compared = indexed = 0
+        for _ in range(3_000):
+            alphabet = rng.choice(self.ALPHABETS)
+            values = [
+                "".join(rng.choices(alphabet, k=rng.randint(4, 8)))
+                for _ in range(rng.randint(2, 4))
+            ]
+            if rng.random() < 0.5:
+                values.append(values[0] + rng.choice(("!", ":", "-p", "ab")))
+            parts = [*values, *(shlex.quote(value) for value in values), *self.PIECES]
+            text = "".join(rng.choice(parts) for _ in range(rng.randint(1, 10)))
+            for prose in (False, True):
+                oracle, indexed_result, built = self.scrub_both_ways(text, values, prose=prose)
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertEqual(oracle, indexed_result)
+                compared += 1
+                indexed += built
+        self.assertGreater(compared, 1_500)
+        self.assertGreater(indexed, 1_000)
 
 
 class LongIndexTest(unittest.TestCase):
