@@ -471,8 +471,9 @@ MODES: dict[str, Mode] = {
         0,
         False,
         None,
-        "Press Pause model calls before opening any session. Then open a finished Claude Code "
-        "session and press Analyze, Find goal and the Live monitor switch; all are refused.",
+        "Press Pause model calls first (see the run table in docs/design-owned-process-observer.md "
+        "for where it lives). Then open a finished Claude Code session and press Analyze, Find "
+        "goal and the Live monitor switch; all are refused.",
     ),
     "default": Mode(
         (),
@@ -480,8 +481,10 @@ MODES: dict[str, Mode] = {
         3,
         False,
         None,
-        "Open a finished Claude Code session short enough for one summary window, with a pull "
-        "request so gh runs (summary: 2 calls). Press Analyze once (1 call). Copy the correction.",
+        "Open a finished Claude Code session short enough for one summary window (summary: 2 "
+        "calls). Press Analyze once (1 call); gh runs on that press when a pull request is bound "
+        "to the session and the CI read setting is on, and the run table lists what stops it. "
+        "Copy the correction.",
     ),
     "monitor-only": Mode(
         (),
@@ -489,7 +492,8 @@ MODES: dict[str, Mode] = {
         3,
         True,
         150.0,
-        "Summaries off. Open a session that is live now, switch on the Live monitor, keep the "
+        "Summaries off. Open a session that is live now, save an intent, switch on the Live "
+        "monitor (no saved intent skips the check), keep the "
         "tab visible and press nothing else. The run ends after 150 seconds.",
     ),
     # `--allow-tool-output` is accepted and does nothing for one release (SECURITY.md, "The launch
@@ -558,10 +562,27 @@ def _endpoint(event: Event) -> str:
     return f"{event.get('host', '')}:{event.get('port', '')}"
 
 
+# A connect records the address it dialled, so its host alone names no row. The thread that just
+# resolved a host dials it next: the vendor quota poll's one `socket.connect` followed its
+# `api2.cursor.sh` lookup by about 10 ms on the same pid and thread. 100 ms is ten times that,
+# enough for a loaded machine and short enough that an unrelated connect later on the same thread
+# is left for a person to read rather than attributed by luck. A lookup pairs one connect, the
+# first after it, at most this long afterwards. A second connect on the thread, such as a
+# fallback to another address, stays unlisted for a person to read: the safe direction, since an
+# unattributed line is read and a wrongly attributed one is not.
+RESOLVE_PAIR_SECONDS = 0.1
+
+
 def _attribute(  # noqa: PLR0911 - one answer per kind of line
-    event: Event, tree_row: dict[int, str], reach_host: str | None
+    event: Event,
+    tree_row: dict[int, str],
+    reach_host: str | None,
+    resolved: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """(row, departure) for an event that is not a Python-side launch."""
+    """(row, departure) for an event that is not a Python-side launch.
+
+    `resolved` is the host this connect's thread looked up just before it, when there was one.
+    """
     kind, src = event["kind"], event["src"]
     if src != "python":
         if event["pid"] not in tree_row:
@@ -576,7 +597,7 @@ def _attribute(  # noqa: PLR0911 - one answer per kind of line
     if kind in {"connect", "request", "resolve", "send"}:
         if event.get("family") == "unix":
             return ROW_WRITE, "a Unix-domain socket connection, the path a hand-off would take"
-        host = str(event.get("host", ""))
+        host = resolved if kind == "connect" and resolved else str(event.get("host", ""))
         if host in QUOTA_HOSTS:
             return ROW_QUOTA, None
         # A loopback connection, or any host but the configured reach endpoint, is left for a
@@ -652,13 +673,24 @@ def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of l
     by_row: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
     departures: list[dict[str, Any]] = []
     unlisted: list[Event] = []
+    lookups: dict[tuple[object, object], tuple[float, str]] = {}
     for index, event in enumerate(events):
+        thread = (event["pid"], event.get("tid"))
+        resolved = None
+        # Without a thread id every such event would share one key, so none pairs.
+        pairable = event["src"] == "python" and event.get("tid") is not None
+        if pairable and event["kind"] == "resolve" and event.get("host"):
+            lookups[thread] = (event["t"], str(event["host"]))
+        elif pairable and event["kind"] == "connect" and thread in lookups:
+            when, host = lookups.pop(thread)
+            if 0 <= event["t"] - when <= RESOLVE_PAIR_SECONDS:
+                resolved = host
         if index in decided:
             row, departure = decided[index]
         elif event["kind"] == "launch":
             row, departure = (tree_row.get(event["pid"]), None)
         else:
-            row, departure = _attribute(event, tree_row, reach_host)
+            row, departure = _attribute(event, tree_row, reach_host, resolved)
         if departure:
             departures.append({"row": row, "why": departure, "event": event})
         if row == "":

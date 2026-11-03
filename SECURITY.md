@@ -109,7 +109,14 @@ The posture rests on two invariants:
    and its rename (`flock` on POSIX, `msvcrt.locking` on Windows), so two dashboards sharing one
    Compass home cannot write an older copy over a newer save or reuse a revision number: a write
    that named a revision the other dashboard has moved past is refused as stale, and a plain goal
-   save appends after it. A write that waits ten seconds for the lock writes nothing and answers
+   save appends after it. A collection's re-read of the file waits for the same lock, at most a
+   quarter of a second (ten seconds on a dashboard's first collection, which has no copy to keep),
+   and holds it for the read, so when it can take the lock it does not hold the file open across
+   the other dashboard's rename, which Windows refuses. When the lock stays held it keeps the copy
+   it has until the next collection. Where the lock cannot be taken (a lock file this user cannot
+   open, one that cannot be made, a filesystem without locks) the re-read goes ahead without it, as
+   `--diagnose` does when no lock file exists, since it writes nothing.
+   A write that waits ten seconds for the lock writes nothing and answers
    `unwritable`, and so does one whose lock file exists or can be made but cannot be opened or locked
    by this user, such as a lock file left mode 000 or owned by another account. Only a filesystem
    that reports it cannot lock at all (`ENOLCK` or `EOPNOTSUPP`) falls back to the one dashboard's
@@ -1442,7 +1449,10 @@ A press names the revision its page drew. The route checks it against the annota
 from disk under the store's lock, not this process's copy, before the route, any Allow write and
 the job, and checks the entry it hands the job again the same way. A save another dashboard on
 the same home made in between, or one landing between the check and the job, answers 409
-`revision-changed`, so the model never reads words the page did not show.
+`revision-changed`, so the model never reads words the page did not show. When that read cannot
+be made, the press answers 503 with `annotation-store-busy` (another dashboard held the store past
+the wait) or `annotation-store-unavailable` (the store cannot be read), never that the session has
+no words, and nothing is started or spent.
 
 ### Observer model calls
 

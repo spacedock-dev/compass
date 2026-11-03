@@ -206,9 +206,6 @@ class RuntimeState:
     # means a file exists this build cannot read, which the board says rather
     # than showing every session as one nobody typed against.
     annotations_trusted: bool = True
-    # Moved by every write to `annotations` a save or a locked read makes, so a
-    # `refresh` whose read began before one does not put the older copy over it.
-    annotation_generation: int = 0
     # When a dashboard tab last reported a working notification lane in itself,
     # under
     # [DEC-19](docs/design-reading-a-session.md#dec-19-the-page-may-report-a-lane-never-a-delivery).

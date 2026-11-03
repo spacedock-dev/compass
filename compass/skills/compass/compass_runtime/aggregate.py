@@ -851,7 +851,11 @@ class Application:
         # Alongside the dismissal refresh and for its reason: two dashboards can
         # bind on one machine and the file is the record, so a save made in the
         # other is picked up here rather than at the next restart.
-        annotation_entries = annotation_store.refresh(config, state)
+        # No history lane is `--diagnose` (`cli.build_application`'s one signal for
+        # it), which reads the store and must not make a lock file beside it.
+        annotation_entries = annotation_store.refresh(
+            config, state, create_lock=self.history_lane is not None
+        )
         # Sampled before the harness loop for the reason Claude's collector used
         # to sample it before its transcript scan: a SessionEnd that commits
         # while this collection is in flight must invalidate the popup, and a
