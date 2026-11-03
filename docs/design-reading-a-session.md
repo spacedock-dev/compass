@@ -4181,6 +4181,25 @@ said to be from planning were measured on the prototype the build followed; the 
   from each `-p` once, through the `_chain_ends` helper `_mask_runs` uses, which is exactly what the atomic flag regex read: a
   differential test holds them equal, and 70,848 passes did not differ in planning. The ` -p` run
   now takes 0.055 s at 160,000 characters.
+- **One long value.** The prefix tree reads a failing long literal to its end at every offset where the
+  text shares its start, so one masked value made a scrub cost the text's length times its own: a `-p`
+  followed by `!` characters and an `x`, scrubbed against text of `!`, took 1.1 s at 30,000 characters,
+  4.0 s at 60,000 and 14 s at 120,000, on main as well. Spellings of 64 characters or more
+  (`records._LONG_SPELLING_MIN`) now leave the tree and are found by `records._LongIndex`, a rolling hash
+  of the text that costs one comparison per candidate offset (the same recipe takes 0.42 s at 120,000).
+  The start patterns match only the first 64 characters of each long spelling, a superset of the real
+  starts, and the readers ask the index for the end. The `user:value@` reader walks its heads in Python
+  for the same reason. A hash hit is not re-checked character by character: a collision (about 2^-61
+  per comparison, with a base drawn once per process) can only mask extra text, and a re-check would
+  make overlapping true matches quadratic again. A differential test holds the output equal to the
+  all-regex scrub, lowering the threshold to 3 so that nearly every spelling takes the index path, and
+  a 40,000-case fuzz in review found no difference. Two fixes were rejected. A fixed-length prefix check
+  does not help the recipe, because every offset passes it. A fail-closed bound on longest spelling
+  times text length would withhold a legitimate long value, such as a private key, on a large tail,
+  and bounds the work without making it linear. Not covered: many long spellings that share their
+  first 64 characters cost one hash comparison each per candidate offset (1,900 of them took 3.3 s at
+  130,000 characters), and values that each extend the last are no longer counted by the depth bound,
+  which now applies to the short spellings only.
 - **The marker ends no word.** While the passes run, each masked value, and each `…REDACTED` already in
   the text, is held as one Unicode noncharacter (U+FDD0 to U+FDEF, reserved for a program's internal use;
   the Private Use Area was rejected because Nerd Font icons live there), swapped back to the marker
