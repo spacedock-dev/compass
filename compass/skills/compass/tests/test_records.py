@@ -2339,6 +2339,47 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 self.assertLessEqual(work[1], 4_000 * 2 * longest, work)
 
 
+class LongValueScrubTest(unittest.TestCase):
+    """One very long masked value costs work linear in the text, whatever its length."""
+
+    SHAPES: ClassVar[dict[str, Any]] = {
+        "recipe": (lambda m: "!" * m + "x", lambda m: "!" * m),
+        "userinfo": (lambda m: "a:" * m + "x", lambda m: "a:" * m),
+        "flag": (lambda m: "!" * m + "x", lambda m: "z -p" + "!" * m),
+    }
+
+    def steps(self, shape: str, m: int) -> int:
+        value, text = (build(m) for build in self.SHAPES[shape])
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        records._scrub_patterns.cache_clear()
+        with mock.patch.object(records, "_LongIndex", Recording):
+            records.scrub(text, [value])
+        records._scrub_patterns.cache_clear()
+        return sum(index.steps for index in built)
+
+    def test_a_scrub_of_one_long_value_is_linear_in_the_text(self) -> None:
+        for shape in self.SHAPES:
+            work = [self.steps(shape, m) for m in (8_000, 16_000)]
+            with self.subTest(shape=shape):
+                self.assertGreater(work[0], 0)
+                self.assertLess(work[1], 2.2 * work[0], work)
+
+    def test_the_recipe_scrubs_120_thousand_characters_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        value, text = "!" * 120_000 + "x", "!" * 120_000
+        records.scrub_values("warm", [value])
+        started = time.process_time()
+        records.scrub(text, [value])
+        self.assertLess(time.process_time() - started, 1.0)
+
+
 class MaskCommandTest(unittest.TestCase):
     def test_the_string_masker_that_split_on_whitespace_is_gone(self) -> None:  # V9
         # It leaked a quoted value's tail; the check line masks shell words.

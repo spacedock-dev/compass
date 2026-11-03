@@ -2325,6 +2325,11 @@ class Scrubbed(NamedTuple):
 SCRUB_SPELLING_MASS_MAX: Final = 270_336
 _SCRUB_WITHHELD: Final = Scrubbed(_SECRET_MARKER, complete=False)
 
+# Spellings this long are found by `_LongIndex`, not the trie regex: the regex reads a failing long
+# literal to its end at every offset, so one value of 30,000 characters cost 1.1 s and one of 60,000
+# cost 4.0 s on text that shares its prefix.
+_LONG_SPELLING_MIN: Final = 64
+
 
 def _spellings(value: str) -> set[str]:
     """Every form a masked value is searched for in: the value and each whitespace piece of it,
