@@ -17,9 +17,10 @@ import shlex
 import shutil
 import stat
 import subprocess
+import threading
 import time
-from collections import deque
-from collections.abc import Callable, Iterable, Mapping
+from collections import OrderedDict, deque
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, cast
 
@@ -5184,15 +5185,79 @@ def _command_line(words: list[str]) -> str:
     return records.safe_text(bounded, len(bounded))
 
 
+# Scrubbed tails held across collections. A refresh re-reads every transcript and rebuilds its
+# tally, so without this each call's tail compiled its value set again: `records._scrub_patterns`
+# keeps 2 sets and Python's regex cache 512 patterns (six per set), and 95 distinct sets took
+# 7.4 s per refresh. 4,096 tails of at most `TOOL_REPORT_TAIL_CHARS` characters is about 1 MB.
+SCRUBBED_TAILS_MAX: Final = 4096
+
+
+class _TailCache:
+    """A bounded least-recently-used map from (output, masked values) to the scrubbed tail.
+
+    Keyed by digests of both, so it holds no masked value: the key is a hash and the result is the
+    text already published. The tail is a pure function of the two, so nothing can go stale.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._lock = threading.Lock()
+        self._held: OrderedDict[tuple[bytes, bytes], str] = OrderedDict()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._held)
+
+    def __iter__(self) -> Iterator[tuple[bytes, bytes]]:
+        with self._lock:
+            return iter(list(self._held))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._held.clear()
+
+    def get(self, key: tuple[bytes, bytes]) -> str | None:
+        with self._lock:
+            found = self._held.get(key)
+            if found is not None:
+                self._held.move_to_end(key)
+            return found
+
+    def put(self, key: tuple[bytes, bytes], tail: str) -> None:
+        with self._lock:
+            self._held[key] = tail
+            self._held.move_to_end(key)
+            while len(self._held) > self._limit:
+                self._held.popitem(last=False)
+
+
+_scrubbed_tails: Final = _TailCache(SCRUBBED_TAILS_MAX)
+
+
 def _scrubbed_tail(text: str, values: Iterable[str]) -> str:
     """The output tail with every value the call masked removed first:
     an echoed command repeats it, and the tail reaches the prompt row
     (review, 2026-09-27). Redaction then runs over the whole window, and the
-    cut comes last (item 5). A scrub that could not finish leaves `TAIL_WITHHELD`."""
+    cut comes last (item 5). A scrub that could not finish leaves `TAIL_WITHHELD`.
+
+    Held across collections by digest of the output and of the value set, so a changed set is
+    scrubbed again and an unchanged one costs a hash, not a compile (`_scrubbed_tails`)."""
+    values = sorted(set(values))
+    key = (
+        hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest(),
+        hashlib.sha256("\0".join(values).encode("utf-8", "surrogatepass")).digest(),
+    )
+    held = _scrubbed_tails.get(key)
+    if held is not None:
+        return held
     scrubbed = records.scrub(text, values)
-    if not scrubbed.complete:
-        return TAIL_WITHHELD
-    return records.redact_secrets(scrubbed.text)[-TOOL_REPORT_TAIL_CHARS:]
+    tail = (
+        records.redact_secrets(scrubbed.text)[-TOOL_REPORT_TAIL_CHARS:]
+        if scrubbed.complete
+        else TAIL_WITHHELD
+    )
+    _scrubbed_tails.put(key, tail)
+    return tail
 
 
 def _call_tail(tails: dict[str, str], text: str, values: Iterable[str]) -> str:
