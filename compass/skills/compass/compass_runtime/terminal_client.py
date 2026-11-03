@@ -41,8 +41,8 @@ STDIN_CAP_CHARS: Final = 65_536
 # One place each, because the sentences name them and a restart that tells a reader to type a
 # command that does not exist is worse than none. `--stop` and `--daemon` are Compass's own
 # options (MANUAL.md); Spacedock has no restart command of its own to name instead.
-START_COMMAND: Final = "spacedock compass --daemon"
-STOP_COMMAND: Final = "spacedock compass --stop"
+START_COMMAND: Final = "spacedock-compass --daemon"
+STOP_COMMAND: Final = "spacedock-compass --stop"
 
 _STATE_NAME = re.compile(r"compass-([1-9][0-9]{0,4})\.json")
 _PATH = re.compile(r"/[!-~]*")

@@ -213,6 +213,16 @@ class PublishedVersionTest(unittest.TestCase):
             written = json.loads(Path(lifecycle.state_path(config, 4553)).read_text())
         self.assertEqual("7.7.7", written["version"])
 
+    def test_a_dashboard_started_by_the_cli_publishes_the_release_version(self) -> None:
+        release = terminal_client.release_version()
+        self.assertIsNotNone(release)
+
+        config, state = cli.build_runtime(cli.build_parser().parse_args([]), started=1.0)
+
+        self.assertEqual(release, config.release_version)
+        application = cli.build_application(config, state)
+        self.assertEqual(release, application.config.release_version)
+
     def test_a_health_answer_without_a_version_still_counts_as_a_dashboard(self) -> None:
         with FakeDashboard(version=None) as fake:
             kind, answered = lifecycle.probe_port(fake.port)
@@ -435,8 +445,17 @@ class VersionGuardTest(unittest.TestCase):
         self.assertIsNotNone(terminal_client.version_guard(self.found(None), "1.2.3"))
 
     def test_the_restart_commands_use_only_the_documented_options(self) -> None:
-        self.assertTrue(terminal_client.STOP_COMMAND.endswith("--stop"))
-        self.assertTrue(terminal_client.START_COMMAND.endswith("--daemon"))
+        parser_options = {
+            option for action in cli.build_parser()._actions for option in action.option_strings
+        }
+        for command, option in (
+            (terminal_client.STOP_COMMAND, "--stop"),
+            (terminal_client.START_COMMAND, "--daemon"),
+        ):
+            with self.subTest(command=command):
+                # `spacedock compass` exists only from Spacedock 0.28; this name works on both.
+                self.assertEqual(["spacedock-compass", option], command.split(" "))
+                self.assertIn(option, parser_options)
 
 
 class MissingDashboardTest(HomeCase):
@@ -615,7 +634,7 @@ class WordingTest(unittest.TestCase):
 
     def test_the_sentences_a_reader_sees_are_pinned(self) -> None:
         self.assertEqual(
-            "Compass is not running. Start it with `spacedock compass --daemon`.",
+            "Compass is not running. Start it with `spacedock-compass --daemon`.",
             terminal_client.sentence("not_running"),
         )
         self.assertEqual(
@@ -623,7 +642,7 @@ class WordingTest(unittest.TestCase):
             terminal_client.sentence("starting"),
         )
         self.assertEqual(
-            "Compass could not start the dashboard. Start it with `spacedock compass --daemon`.",
+            "Compass could not start the dashboard. Start it with `spacedock-compass --daemon`.",
             terminal_client.sentence("start_failed"),
         )
         self.assertEqual(
@@ -632,8 +651,8 @@ class WordingTest(unittest.TestCase):
         )
         self.assertEqual(
             "The running dashboard is version 0.9.0 and this is version 1.0.0, so nothing was sent. "
-            "Stop it with `spacedock compass --stop` and start it again with "
-            "`spacedock compass --daemon`.",
+            "Stop it with `spacedock-compass --stop` and start it again with "
+            "`spacedock-compass --daemon`.",
             terminal_client.sentence("version_mismatch", own="1.0.0", theirs="0.9.0"),
         )
 
