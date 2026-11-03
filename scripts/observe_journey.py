@@ -471,8 +471,9 @@ MODES: dict[str, Mode] = {
         0,
         False,
         None,
-        "Press Pause model calls before opening any session. Then open a finished Claude Code "
-        "session and press Analyze, Find goal and the Live monitor switch; all are refused.",
+        "Press Pause model calls first (see the run table in docs/design-owned-process-observer.md "
+        "for where it lives). Then open a finished Claude Code session and press Analyze, Find "
+        "goal and the Live monitor switch; all are refused.",
     ),
     "default": Mode(
         (),
@@ -480,8 +481,10 @@ MODES: dict[str, Mode] = {
         3,
         False,
         None,
-        "Open a finished Claude Code session short enough for one summary window, with a pull "
-        "request so gh runs (summary: 2 calls). Press Analyze once (1 call). Copy the correction.",
+        "Open a finished Claude Code session short enough for one summary window (summary: 2 "
+        "calls). Press Analyze once (1 call); gh runs on that press when a pull request is bound "
+        "to the session and the CI read setting is on, and the run table lists what stops it. "
+        "Copy the correction.",
     ),
     "monitor-only": Mode(
         (),
@@ -489,7 +492,8 @@ MODES: dict[str, Mode] = {
         3,
         True,
         150.0,
-        "Summaries off. Open a session that is live now, switch on the Live monitor, keep the "
+        "Summaries off. Open a session that is live now, save an intent, switch on the Live "
+        "monitor (no saved intent skips the check), keep the "
         "tab visible and press nothing else. The run ends after 150 seconds.",
     ),
     # `--allow-tool-output` is accepted and does nothing for one release (SECURITY.md, "The launch
@@ -562,7 +566,10 @@ def _endpoint(event: Event) -> str:
 # resolved a host dials it next: the vendor quota poll's one `socket.connect` followed its
 # `api2.cursor.sh` lookup by about 10 ms on the same pid and thread. 100 ms is ten times that,
 # enough for a loaded machine and short enough that an unrelated connect later on the same thread
-# is left for a person to read rather than attributed by luck.
+# is left for a person to read rather than attributed by luck. A lookup pairs one connect, the
+# first after it, at most this long afterwards. A second connect on the thread, such as a
+# fallback to another address, stays unlisted for a person to read: the safe direction, since an
+# unattributed line is read and a wrongly attributed one is not.
 RESOLVE_PAIR_SECONDS = 0.1
 
 
@@ -670,10 +677,12 @@ def report(  # noqa: C901, PLR0912, PLR0915 - one pass, one branch per kind of l
     for index, event in enumerate(events):
         thread = (event["pid"], event.get("tid"))
         resolved = None
-        if event["src"] == "python" and event["kind"] == "resolve" and event.get("host"):
+        # Without a thread id every such event would share one key, so none pairs.
+        pairable = event["src"] == "python" and event.get("tid") is not None
+        if pairable and event["kind"] == "resolve" and event.get("host"):
             lookups[thread] = (event["t"], str(event["host"]))
-        elif event["src"] == "python" and event["kind"] == "connect" and thread in lookups:
-            when, host = lookups[thread]
+        elif pairable and event["kind"] == "connect" and thread in lookups:
+            when, host = lookups.pop(thread)
             if 0 <= event["t"] - when <= RESOLVE_PAIR_SECONDS:
                 resolved = host
         if index in decided:

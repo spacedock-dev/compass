@@ -679,6 +679,47 @@ class AConnectIsPairedWithItsLookupTest(unittest.TestCase):
         result = self._quota(connect_tid=7, gap=2.0)
         self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
 
+    def _trace(self, *events: dict[str, object]) -> dict[str, Any]:
+        return observe_journey.report([_event("start", "process"), *events], "default")
+
+    def _lookup(self, t: float = 5.0, **fields: object) -> dict[str, object]:
+        return _event(
+            "resolve", "socket.getaddrinfo", host="api2.cursor.sh", port=443, t=t, **fields
+        )
+
+    def _connect(
+        self, t: float, host: str = "104.18.19.125", **fields: object
+    ) -> dict[str, object]:
+        return _event(
+            "connect", "socket.connect", family="inet", host=host, port=443, t=t, **fields
+        )
+
+    def test_a_lookup_pairs_one_connect_and_a_second_is_left_to_read(self) -> None:
+        result = self._trace(
+            self._lookup(tid=7),
+            self._connect(5.01, tid=7),
+            self._connect(5.02, host="6.6.6.6", tid=7),
+        )
+        self.assertEqual([e["host"] for e in result["unlisted"]], ["6.6.6.6"])
+        quota = result["by_row"][observe_journey.ROW_QUOTA]
+        self.assertIn("python connect 104.18.19.125:443", quota)
+        self.assertNotIn("python connect 6.6.6.6:443", quota)
+
+    def test_events_without_a_thread_id_are_never_paired(self) -> None:
+        result = self._trace(self._lookup(), self._connect(5.01))
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_before_the_lookup_is_not_paired(self) -> None:
+        result = self._trace(self._connect(4.99, tid=7), self._lookup(tid=7))
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_the_window_is_at_most_its_length_after_the_lookup(self) -> None:
+        window = observe_journey.RESOLVE_PAIR_SECONDS
+        at = self._trace(self._lookup(t=0.0, tid=7), self._connect(window, tid=7))
+        self.assertEqual(at["unlisted"], [])
+        past = self._trace(self._lookup(t=0.0, tid=7), self._connect(window + 1e-6, tid=7))
+        self.assertEqual([e["kind"] for e in past["unlisted"]], ["connect"])
+
 
 if __name__ == "__main__":
     unittest.main()
