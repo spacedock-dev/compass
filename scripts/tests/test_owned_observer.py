@@ -18,6 +18,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -636,6 +637,88 @@ class TheReportNamesEachRowTest(unittest.TestCase):
         shapes = observe_journey.render_shapes(observe_journey.report(trace, "default"))
         self.assertNotIn("someone", shapes)
         self.assertIn(f"node launch <{len(line)} chars>", shapes)
+
+
+class AConnectIsPairedWithItsLookupTest(unittest.TestCase):
+    """A connect carries an address, so the host named by the lookup just before it decides its row."""
+
+    def _quota(self, *, connect_tid: int, gap: float, connect_pid: int = 10) -> dict[str, Any]:
+        trace = [
+            _event("start", "process"),
+            _event("resolve", "socket.getaddrinfo", host="api2.cursor.sh", port=443, tid=7, t=5.0),
+            _event(
+                "connect",
+                "socket.connect",
+                family="inet",
+                host="104.18.19.125",
+                port=443,
+                tid=connect_tid,
+                pid=connect_pid,
+                t=5.0 + gap,
+            ),
+        ]
+        return observe_journey.report(trace, "default")
+
+    def test_a_connect_on_the_same_thread_right_after_the_lookup_is_the_quota_poll(self) -> None:
+        result = self._quota(connect_tid=7, gap=0.010)
+        self.assertEqual(result["unlisted"], [])
+        self.assertIn(
+            "python connect 104.18.19.125:443",
+            result["by_row"][observe_journey.ROW_QUOTA],
+        )
+
+    def test_a_connect_on_another_thread_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=8, gap=0.010)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_in_another_process_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=7, gap=0.010, connect_pid=11)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_long_after_the_lookup_is_left_for_a_person_to_read(self) -> None:
+        result = self._quota(connect_tid=7, gap=2.0)
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def _trace(self, *events: dict[str, object]) -> dict[str, Any]:
+        return observe_journey.report([_event("start", "process"), *events], "default")
+
+    def _lookup(self, t: float = 5.0, **fields: object) -> dict[str, object]:
+        return _event(
+            "resolve", "socket.getaddrinfo", host="api2.cursor.sh", port=443, t=t, **fields
+        )
+
+    def _connect(
+        self, t: float, host: str = "104.18.19.125", **fields: object
+    ) -> dict[str, object]:
+        return _event(
+            "connect", "socket.connect", family="inet", host=host, port=443, t=t, **fields
+        )
+
+    def test_a_lookup_pairs_one_connect_and_a_second_is_left_to_read(self) -> None:
+        result = self._trace(
+            self._lookup(tid=7),
+            self._connect(5.01, tid=7),
+            self._connect(5.02, host="6.6.6.6", tid=7),
+        )
+        self.assertEqual([e["host"] for e in result["unlisted"]], ["6.6.6.6"])
+        quota = result["by_row"][observe_journey.ROW_QUOTA]
+        self.assertIn("python connect 104.18.19.125:443", quota)
+        self.assertNotIn("python connect 6.6.6.6:443", quota)
+
+    def test_events_without_a_thread_id_are_never_paired(self) -> None:
+        result = self._trace(self._lookup(), self._connect(5.01))
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_a_connect_before_the_lookup_is_not_paired(self) -> None:
+        result = self._trace(self._connect(4.99, tid=7), self._lookup(tid=7))
+        self.assertEqual([e["kind"] for e in result["unlisted"]], ["connect"])
+
+    def test_the_window_is_at_most_its_length_after_the_lookup(self) -> None:
+        window = observe_journey.RESOLVE_PAIR_SECONDS
+        at = self._trace(self._lookup(t=0.0, tid=7), self._connect(window, tid=7))
+        self.assertEqual(at["unlisted"], [])
+        past = self._trace(self._lookup(t=0.0, tid=7), self._connect(window + 1e-6, tid=7))
+        self.assertEqual([e["kind"] for e in past["unlisted"]], ["connect"])
 
 
 if __name__ == "__main__":
