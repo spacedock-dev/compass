@@ -7,16 +7,22 @@ is in
 
 This file sends no POST of its own. It holds the request path, discovery, the session rule, the
 version guard and the wording, for the operations that call them.
+
+`--footer` is the one operation that never reaches the dashboard. It runs on every status line
+refresh, so it reads what the dashboard already wrote and the JSON the status line
+hands it, and `http.client` is imported only by the functions that do reach the dashboard, which
+keeps it out of this command's import set.
 """
 
 from __future__ import annotations
 
-import http.client
 import json
 import math
 import os
 import re
+import stat
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
@@ -37,6 +43,21 @@ REQUEST_TIMEOUT_SEC: Final = 5.0
 HEALTH_CAP_BYTES: Final = 4096
 REPLY_CAP_BYTES: Final = 1_048_576
 STDIN_CAP_CHARS: Final = 65_536
+# A status line command is run on every refresh with its JSON written at once, so a quarter of a
+# second is generous for a producer that is alive and short enough that a pipe held open cannot
+# hold the bar.
+STDIN_DEADLINE_SEC: Final = 0.25
+# Four times the dashboard's 15 s refresh of its line files: one missed refresh and the
+# collection that follows it still leave the file fresh. A constant here rather than a
+# `config.py` value because this module imports nothing from the runtime.
+LINE_STALE_SEC: Final = 60.0
+LINE_CAP_BYTES: Final = 8192
+# A file dated further ahead than this is a clock that moved or a file nobody wrote.
+LINE_FUTURE_SLACK_SEC: Final = 5.0
+LABEL_CAP_CHARS: Final = 40
+SHAPE_VERSION: Final = 1
+FOOTER_DIRECTORY: Final = "footer"
+_MS_EPOCH_FLOOR: Final = 1e11  # a seconds value this large is the year 5138; it is milliseconds
 
 # One place each, because the sentences name them and a restart that tells a reader to type a
 # command that does not exist is worse than none. `--stop` and `--daemon` are Compass's own
@@ -80,7 +101,31 @@ class Operation(NamedTuple):
     help: str
 
 
-OPERATIONS = (Operation("--version", "print the Compass version and exit"),)
+class Option(NamedTuple):
+    """A client operation's option that takes a value, registered beside the flags."""
+
+    flag: str
+    metavar: str
+    help: str
+
+
+OPERATIONS = (
+    Operation("--version", "print the Compass version and exit"),
+    Operation(
+        "--footer",
+        "print one status line segment (other sessions waiting, the tightest quota window) "
+        "from the JSON on stdin and the dashboard's line file, and exit 0; "
+        "it reaches no dashboard, so it stands alone or with --session",
+    ),
+)
+OPTIONS = (
+    Option(
+        "--session",
+        "HARNESS:SESSION_ID",
+        "the session --footer reports for, such as claude:SESSION_ID; "
+        "default: the status line's session_id, then CLAUDE_CODE_SESSION_ID",
+    ),
+)
 
 
 def release_version() -> str | None:
@@ -108,17 +153,38 @@ def print_version() -> int:
     return 0
 
 
+def parse_footer_args(argv: list[str]) -> tuple[bool, str | None]:
+    """Whether `argv` is exactly a footer request, and the `--session` value it carries.
+
+    `--footer` once, and optionally `--session X` or `--session=X` once, in either order.
+    Anything else is not the client's: argparse keeps judging it.
+    """
+    rest = list(argv)
+    if rest.count("--footer") != 1:
+        return False, None
+    rest.remove("--footer")
+    if not rest:
+        return True, None
+    if len(rest) == 1 and rest[0].startswith("--session="):
+        return True, rest[0][len("--session=") :]
+    if len(rest) == 2 and rest[0] == "--session":
+        return True, rest[1]
+    return False, None
+
+
 def handles(argv: list[str]) -> bool:
     """Whether the client answers `argv` itself.
 
-    Only a lone operation flag. Anything else, `--version` beside another option included, goes to
-    the CLI so argparse keeps judging combinations and usage errors exactly as it did.
+    Only a lone operation: `--version`, or `--footer` with its own `--session`. Anything else,
+    `--version` beside another option included, goes to the CLI so argparse keeps judging
+    combinations and usage errors exactly as it did.
     """
-    return len(argv) == 1 and argv[0] == "--version"
+    return (len(argv) == 1 and argv[0] == "--version") or parse_footer_args(argv)[0]
 
 
 def run(argv: list[str]) -> int:
-    del argv  # the only operation is `--version`
+    if parse_footer_args(argv)[0]:
+        return run_footer(argv, os.environ, sys.stdin, sys.stdout)
     return print_version()
 
 
@@ -205,6 +271,8 @@ def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
     The acceptance rule is `lifecycle.probe_port`'s, written out again because that module is not
     importable from here. An older dashboard answers without `version`; it is still a dashboard.
     """
+    import http.client  # noqa: PLC0415 — only a command that reaches the dashboard pays for it
+
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         conn.request("GET", "/api/health")
@@ -263,6 +331,8 @@ def request(
     if _PATH.fullmatch(path) is None or path.startswith("//"):
         msg = "path must start with one / and hold no spaces or control characters"
         raise ValueError(msg)
+    import http.client  # noqa: PLC0415 — see `probe`
+
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         conn.request(method, path, body=body, headers=dict(headers or {}))
@@ -364,20 +434,102 @@ def _say(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-def _status_line_session(stream: TextIO | None) -> str | None:
-    if stream is None or stream.isatty():
+def read_status_line(
+    stream: TextIO | None, *, deadline: float = STDIN_DEADLINE_SEC
+) -> dict[str, Any] | None:
+    """The one JSON object a status line command is given, or None.
+
+    Bounded in bytes and in time. A producer that writes the object and leaves the pipe open
+    answers at once, because the buffer is parsed as it grows; one that writes nothing, or stops
+    in the middle, costs `deadline` and answers None. `readline` was rejected: the payload is not
+    documented to end in a newline.
+    """
+    if stream is None:
         return None
+    fd: int | None
+    try:
+        if stream.isatty():
+            return None
+        fd = stream.fileno()
+    except (OSError, ValueError, AttributeError):
+        fd = None
+    raw: bytes | str | None
+    if fd is None:
+        raw = _read_whole(stream)
+    elif os.name == "nt":
+        raw = _read_in_thread(stream, deadline)
+    else:
+        raw = _read_pipe(fd, deadline)
+    return _object(raw)
+
+
+def _object(raw: bytes | str | None) -> dict[str, Any] | None:
+    try:
+        data = json.loads(raw) if raw else None
+    except (ValueError, RecursionError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_whole(stream: TextIO) -> str | None:
+    """A stream with no descriptor is in memory, so a bounded read cannot hang."""
     try:
         raw = stream.read(STDIN_CAP_CHARS + 1)
-        data = json.loads(raw) if len(raw) <= STDIN_CAP_CHARS else None
-    except (OSError, ValueError, RecursionError):
+    except (OSError, ValueError):
         return None
-    value = data.get("session_id") if isinstance(data, dict) else None
-    return value if isinstance(value, str) and _SESSION_ID.fullmatch(value) else None
+    return raw if len(raw) <= STDIN_CAP_CHARS else None
+
+
+def _read_pipe(fd: int, deadline: float) -> bytes | None:
+    import select  # noqa: PLC0415 — only a footer call reads a pipe
+
+    end = time.monotonic() + deadline
+    buffer = b""
+    while True:
+        remaining = end - time.monotonic()
+        try:
+            if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+                return None
+            chunk = os.read(fd, 65_536)
+        except (OSError, ValueError):
+            return None
+        buffer += chunk
+        if len(buffer) > STDIN_CAP_CHARS:
+            return None
+        if not chunk or _complete(buffer):
+            return buffer
+
+
+def _complete(buffer: bytes) -> bool:
+    """Whether `buffer` already holds one whole JSON value, so a held-open pipe is not waited on."""
+    try:
+        json.loads(buffer)
+    except (ValueError, RecursionError):
+        return False
+    return True
+
+
+def _read_in_thread(stream: TextIO, deadline: float) -> str | None:
+    """Windows cannot `select` a pipe, so the read runs in a thread abandoned at the deadline.
+
+    Not exercised by CI, which runs macOS and Linux: it ends at end of input, as a status line
+    command's stdin does.
+    """
+    import threading  # noqa: PLC0415
+
+    box: list[str | None] = []
+    worker = threading.Thread(target=lambda: box.append(_read_whole(stream)), daemon=True)
+    worker.start()
+    worker.join(deadline)
+    return box[0] if box else None
 
 
 def resolve_session(
-    flag: str | None, environ: Mapping[str, str], stdin: TextIO | None
+    flag: str | None,
+    environ: Mapping[str, str],
+    stdin: TextIO | None,
+    *,
+    payload: Mapping[str, Any] | None = None,
 ) -> Session | Unresolved:
     """Which session this command is in: `--session`, else the status line, else the environment.
 
@@ -390,9 +542,193 @@ def resolve_session(
         if match is None:
             return Unresolved(sentence("bad_session_flag"))
         return Session(match.group(1), match.group(2), "flag")
-    if (line := _status_line_session(stdin)) is not None:
-        return Session("claude", line, "status line")
+    # A caller that already read stdin passes what it read, so stdin is never read twice.
+    status_line = payload if payload is not None else read_status_line(stdin)
+    value = status_line.get("session_id") if status_line is not None else None
+    if isinstance(value, str) and _SESSION_ID.fullmatch(value):
+        return Session("claude", value, "status line")
     value = environ.get(CLAUDE_SESSION_ENV)
     if value is not None and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "environment")
     return Unresolved(sentence("no_session"))
+
+
+class Window(NamedTuple):
+    """One quota window the status line reported: its label, percent used and reset (epoch)."""
+
+    label: str
+    used: float
+    resets_at: float | None
+
+
+class Line(NamedTuple):
+    """What the dashboard last wrote for one session: others waiting (None if unmeasured)."""
+
+    waiting: int | None
+    blind: tuple[str, ...]
+
+
+_WINDOWS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        return float(value) if math.isfinite(value) else None
+    except OverflowError:
+        # A JSON integer past a float's range: `isfinite` raises on it, and the blanket handler
+        # in `run_footer` would then hide a valid waiting count along with the window.
+        return None
+
+
+def _reset_epoch(value: object) -> float | None:
+    """Epoch seconds, or ISO text, or None. No capture of the real payload exists yet, so both."""
+    if isinstance(value, str):
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        try:
+            moment = datetime.fromisoformat(value.strip())
+        except ValueError:
+            return None
+        return (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).timestamp()
+    seconds = _number(value)
+    return seconds if seconds is not None and 0 < seconds < _MS_EPOCH_FLOOR else None
+
+
+def tightest_window(payload: Mapping[str, Any] | None, now: float) -> Window | None:
+    """The window with the higher percent used, among those that can be read and have not reset.
+
+    A percent that is not a number from 0 to 100 withholds its window: zero would be a statement
+    about the schema. A window that has already reset describes a finished period, so it is
+    dropped rather than shown at its old, alarming figure. A usable percent with no usable reset
+    is kept and shown without one.
+    """
+    limits = payload.get("rate_limits") if payload is not None else None
+    if not isinstance(limits, dict):
+        return None
+    found: list[Window] = []
+    for key, label in _WINDOWS:
+        window = limits.get(key)
+        if not isinstance(window, dict):
+            continue
+        used = _number(window.get("used_percentage"))
+        if used is None or not 0 <= used <= 100:
+            continue
+        resets_at = _reset_epoch(window.get("resets_at"))
+        if resets_at is not None and resets_at <= now:
+            continue
+        found.append(Window(label, used, resets_at))
+    # Higher use first, then the sooner reset (none last), then the five-hour window.
+    found.sort(key=lambda w: (-w.used, math.inf if w.resets_at is None else w.resets_at))
+    return found[0] if found else None
+
+
+def _until(seconds: float) -> str:
+    minutes = max(1, int(seconds // 60))
+    if minutes >= 1440:
+        return f"{minutes // 1440}d {minutes % 1440 // 60}h"
+    if minutes >= 60:
+        return f"{minutes // 60}h {minutes % 60}m"
+    return f"{minutes}m"
+
+
+def format_window(window: Window, now: float) -> str:
+    text = f"{window.label} {int(window.used + 0.5)}%"
+    if window.resets_at is None:
+        return text
+    return f"{text} resets in {_until(window.resets_at - now)}"
+
+
+def line_name(harness: str, sid: str) -> str:
+    """The dashboard's name for one session's file, written again because the client imports no
+    runtime module. A test holds the two equal.
+    """
+    import hashlib  # noqa: PLC0415
+
+    return f"{harness}-{hashlib.sha256(sid.encode('utf-8', 'replace')).hexdigest()[:32]}.json"
+
+
+def _label(value: object) -> str | None:
+    ok = isinstance(value, str) and 0 < len(value) <= LABEL_CAP_CHARS
+    return (
+        value
+        if ok and isinstance(value, str) and value.isprintable() and value == value.strip()
+        else None
+    )
+
+
+def read_line(home: str, session: Session, now: float) -> Line | None:
+    """The dashboard's file for `session`, or None for anything that is not fresh and plain.
+
+    Missing, unreadable, not a regular file, oversized, not JSON, another shape version, older
+    than the ceiling or dated in the future all leave the segments out. The file is opened
+    without following a link, and the name is a hash, so an outside id reaches no path.
+    """
+    path = os.path.join(home, FOOTER_DIRECTORY, line_name(session.harness, session.sid))
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None
+            raw = os.read(fd, LINE_CAP_BYTES + 1)
+        finally:
+            os.close(fd)
+        data = json.loads(raw) if len(raw) <= LINE_CAP_BYTES else None
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not isinstance(data, dict) or type(data.get("v")) is not int or data["v"] != SHAPE_VERSION:
+        return None
+    at = _number(data.get("at"))
+    if at is None or at > now + LINE_FUTURE_SLACK_SEC or now - at > LINE_STALE_SEC:
+        return None
+    waiting = data.get("waiting")
+    count = waiting if type(waiting) is int and waiting >= 0 else None
+    labels = data.get("blind")
+    blind = tuple(x for x in (_label(v) for v in labels) if x) if isinstance(labels, list) else ()
+    return Line(count, blind)
+
+
+def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: float) -> str:
+    """The one line: waiting, then who cannot report a wait, then the tightest quota window.
+
+    An unmeasured or zero count prints nothing, and a steady board prints nothing at all.
+    """
+    parts: list[str] = []
+    if line is not None and line.waiting:
+        parts.append(f"{line.waiting} waiting")
+    if line is not None and line.blind:
+        parts.append(f"waits not reported for {', '.join(line.blind)}")
+    window = tightest_window(payload, now)
+    if window is not None:
+        parts.append(format_window(window, now))
+    return " · ".join(parts)
+
+
+def run_footer(
+    argv: list[str],
+    environ: Mapping[str, str],
+    stdin: TextIO | None,
+    stdout: TextIO,
+    *,
+    now: float | None = None,
+) -> int:
+    """Print the status line segment. Always 0, and silent when it cannot tell.
+
+    A status line discards stderr and shows a nonzero exit as nothing useful, so every failure
+    here is an empty line. It sends no request: there is nothing in this path that could.
+    """
+    try:
+        moment = time.time() if now is None else now
+        flag = parse_footer_args(argv)[1]
+        payload = read_status_line(stdin)
+        session = resolve_session(flag, environ, None, payload=payload or {})
+        if isinstance(session, Session):
+            line = read_line(state_home(environ), session, moment)
+            text = compose_footer(payload, line, moment)
+            if text:
+                stdout.write(text + "\n")
+    except Exception:  # noqa: BLE001 — nothing may reach a status bar but the line
+        return 0
+    return 0

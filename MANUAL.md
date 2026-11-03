@@ -15,6 +15,7 @@ python3 compass/skills/compass/server.py --diagnose [--json] [OPTIONS]
 python3 compass/skills/compass/server.py --status [--port PORT]
 python3 compass/skills/compass/server.py --stop [--port PORT]
 python3 compass/skills/compass/server.py --forget [--port PORT]
+python3 compass/skills/compass/server.py --footer [--session HARNESS:SESSION_ID]
 ```
 
 On a `python3` older than 3.12, start it through the `launch.py` beside it
@@ -57,7 +58,9 @@ then `--forget`, then `--stop`, then `--status`; it does not execute a sequence 
 `--daemon` with any of those four operations is a usage error. `--version` is checked before all of
 them and ignores the other flags, though their values must still parse. A lone `--version` is
 answered before the dashboard's modules load; beside any other option it goes through the full
-parser, which is what checks those values.
+parser, which is what checks those values. `--footer` is a client operation too: alone, or with its
+own `--session`, it is answered before the dashboard's modules load, and beside any other option it
+is a usage error.
 
 ### Starting and inspecting an instance
 
@@ -65,6 +68,8 @@ parser, which is what checks those values.
 |---|---|
 | `-h`, `--help` | Print the launcher's current option list and exit. |
 | `--version` | Print the Compass version alone on one line and exit. The standalone binary prints the release it was built for. `server.py` prints the version of the plugin it sits in. Exits `1` with a message when an installation records no version. Alone, it answers without loading the dashboard. |
+| `--footer` | Print one status line segment and exit `0`: the number of other needs on the Attention queue (sessions waiting on you and pending asks), the harnesses that cannot report a wait, and the tighter of the five-hour and seven-day quota windows with its reset. It reads the JSON a Claude Code status line passes on standard input and the line file the running dashboard keeps for that session, makes no request and starts nothing, and prints nothing when it cannot tell. Alone, or with `--session`, it answers without loading the dashboard. [Set it up](HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line). |
+| `--session HARNESS:SESSION_ID` | The session `--footer` reports for, such as `claude:SESSION_ID`. Default: the `session_id` on standard input, then `CLAUDE_CODE_SESSION_ID`. A value that does not parse prints nothing. Valid only with `--footer`. |
 | `--port PORT` | TCP port, an integer from 1 through 65535. Default: `4553`. Also selects the instance addressed by status, stop and forget. |
 | `--frontend-dev-manifest PATH` | Contributor-only startup ticket for an owned Vite child. Requires foreground operation and `127.0.0.1`; refuses diagnose/forget and disables model calls, quota fetching and native actions. Validates fixture locations and a fresh child handshake before serving. Status/stop do not read the ticket or probe Vite. Use the [frontend development command](CONTRIBUTING.md#frontend-development) to create and own it. |
 | `--host ADDRESS` | Accepts only `127.0.0.1` (default) or `0.0.0.0`. The latter exposes the dashboard on every IPv4 interface without authentication. Other addresses and IPv6 are rejected. Read [remote-access risks](SECURITY.md#known-and-accepted) before changing it; prefer an SSH tunnel. |
@@ -192,6 +197,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 |---|---|
 | `compass-PORT.json` | Per-port instance state, including process identity and capabilities. |
 | `compass-PORT.log` | Detached instance output and diagnostics. |
+| `footer/HARNESS-HASH.json` | One small file per Claude Code session for `--footer`: a count, harness names and a time. Written by a running dashboard, removed when it stops. [What it holds](SECURITY.md#the-status-line-files). |
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
@@ -223,7 +229,7 @@ hours are forwarded.
 
 | Code | Meaning |
 |---|---|
-| `0` | Help, the version or diagnosis completed; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
+| `0` | Help, the version or diagnosis completed; `--footer` always, including when it printed nothing; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
 | `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 
@@ -287,6 +293,6 @@ python3 compass/skills/compass/server.py --port 4581 --forget
 
 The [launcher](compass/skills/compass/server.py) delegates to
 [`compass_runtime.entry`](compass/skills/compass/compass_runtime/entry.py), which answers a lone
-`--version` itself and otherwise hands over to
+`--version` and `--footer` itself and otherwise hands over to
 [`compass_runtime.cli`](compass/skills/compass/compass_runtime/cli.py), which owns the parser.
 `--help` reflects the copy you actually run; this manual follows the repository's current code.

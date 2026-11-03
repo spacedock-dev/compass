@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
@@ -152,6 +153,20 @@ class HistoryLane(Protocol):
     def record(self, rows: Iterable[Mapping[str, Any]], *, now: float) -> list[dict[str, Any]]: ...
 
     def notice(self) -> str | None: ...
+
+
+class FooterLane(Protocol):
+    """The status line's file writer, as a collection reaches it.
+
+    A protocol for `HistoryLane`'s reason: `footer_lines` stays a leaf over `io`, and the module
+    that owns collection takes no edge toward a module that owns files.
+    """
+
+    def update(self, collection: Mapping[str, Any], now: float) -> None: ...
+
+    def touch(self, now: float) -> None: ...
+
+    def remove_all(self) -> None: ...
 
 
 class OverlaySource(Protocol):
@@ -756,6 +771,10 @@ class Application:
         # collection and must not start a `codex` subprocess while reporting
         # what the stores hold.
         self.unasked_lane: UnaskedLane | None = None
+        # Attached by the serving path alone, so `--diagnose`, a save and every test collect
+        # without writing a file into the reader's home. Written from `collect_json`, the one
+        # place the page-default snapshot is made.
+        self.footer_lines: FooterLane | None = None
         # Created on the first Live monitor start, so a board nobody monitors holds no table and
         # runs no thread. Never persisted: a restart starts with no lease.
         self.live_leases: Any = None
@@ -1682,10 +1701,12 @@ class Application:
             # Read before collecting: a clear while this collection runs means a
             # write it may have missed, so its body is not kept (DRC-4760).
             generation = self.snapshot.generation()
-            body = json.dumps(self.collect(show_all=show_all)).encode()
+            collection = self.collect(show_all=show_all)
+            body = json.dumps(collection).encode()
             revision, kept = self.snapshot.publish(
                 key, body, now=self.clock(), generation=generation
             )
+            self._write_footer_lines(collection, show_all=show_all)
             # Only a freshly minted revision that was kept is worth announcing. A
             # warm reuse returns above without reaching this line, so a connected
             # client is never woken for a state it already has; and a body that
@@ -1695,6 +1716,17 @@ class Application:
             if kept:
                 self.state.streams.publish(revision)
             return revision, body
+
+    def _write_footer_lines(self, collection: Collection, *, show_all: bool) -> None:
+        """The status line's files, from the page-default variant only.
+
+        `show_all` carries old rows, which would count waits the board does not show.
+        """
+        writer = self.footer_lines
+        if writer is None or show_all:
+            return
+        with contextlib.suppress(Exception):
+            writer.update(collection, self.clock())
 
     def _fresh_snapshot(
         self, key: runtime_snapshot.SnapshotKey

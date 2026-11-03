@@ -435,6 +435,8 @@ COMPASS_RUNTIME_FILES = (
     # `cli` only for everything else. Both ship or `server.py` cannot start at all.
     "skills/compass/compass_runtime/entry.py",
     "skills/compass/compass_runtime/terminal_client.py",
+    # The status line's per-session files, written by the dashboard and read by `--footer`.
+    "skills/compass/compass_runtime/footer_lines.py",
     "skills/compass/compass_runtime/config.py",
     "skills/compass/compass_runtime/frontend_dev.py",
     "skills/compass/compass_runtime/state.py",

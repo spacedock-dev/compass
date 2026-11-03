@@ -671,6 +671,106 @@ button, and Turn on brings it back, without a restart. `--no-usage` refuses it f
 [SECURITY.md](SECURITY.md#usage-quota-reads-the-quota-fetcher) owns the contract, including what is
 sent, what comes back, and what is never touched.
 
+## Show waiting sessions and quota in the Claude Code status line
+
+Claude Code can run a command to draw its status line. `--footer` is a command for that: it prints one
+short line with the number of your other sessions that are waiting on you and your tightest quota window,
+for example `1 waiting · 5h 82% resets in 2h 9m`. It needs no browser, but it needs a running dashboard
+to know about the waits: `spacedock-compass --daemon` starts one. Compass edits no settings file and
+never replaces a status line you have, so both procedures below are yours to apply.
+
+What the line says, and when it says nothing:
+
+- `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other
+  sessions that are waiting on you, and questions a session has put to you through the ask lane. It is left
+  out when the count is zero, when the dashboard is not running, or when the file is more than a minute old.
+  While nothing is collecting, the dashboard restamps a file whose content has not changed every 15 seconds,
+  so a state that changes only with the passing of time is not seen until the next event or collection.
+- `waits not reported for Cursor, Droid` names the harnesses on your board that cannot say when they are
+  waiting, so a quiet line is not read as a quiet board. These are the names the board's coverage note uses.
+- `5h 82% resets in 2h 9m` is whichever of the five-hour and seven-day windows is the more used. Claude
+  Code supplies it, only for Pro and Max subscriptions and only after the session's first reply. A window
+  that has already reset, or whose percent it cannot read, is left out rather than shown as zero.
+- Anything it cannot tell, it leaves out and still exits `0`. A status line discards error text, so it
+  prints none.
+
+It sends no request and starts nothing, and a call takes about 40 milliseconds. A session is found from the
+`--session claude:SESSION_ID`, then from the `session_id` Claude Code sends, then from
+`CLAUDE_CODE_SESSION_ID`. [SECURITY.md](SECURITY.md#the-status-line-files) owns what the dashboard writes
+for it.
+
+### A status line of its own
+
+Add this to the Claude Code settings file you choose (`~/.claude/settings.json` for every project),
+using the `server.py` you pinned in [Find the copy your commands will run](#find-the-copy-your-commands-will-run):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer"
+  }
+}
+```
+
+The installed directory carries the plugin version, so the path moves on every update. The
+[standalone binary](README.md#standalone-binary) takes the same option and does not move: use
+`/path/to/compass/compass --footer`.
+
+### A status line you already have, such as Barista
+
+A status line command has one slot, so keep your command and add Compass to it with a wrapper. The wrapper
+reads the JSON once, because it arrives on standard input and can be read only once, hands it to your
+existing command, hands the same text to `--footer`, and prints both. Save it as
+`~/.claude/statusline-with-compass.sh` and make it executable:
+
+```bash
+#!/bin/bash
+input=$(cat)
+
+# Your existing status line command, unchanged. For Barista, the barista.sh you already run.
+existing=$(printf '%s' "$input" | "$HOME/.claude/barista/barista.sh")
+footer=$(printf '%s' "$input" | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer)
+
+if [ -n "$footer" ]; then
+  printf '%s  %s\n' "$existing" "$footer"
+else
+  printf '%s\n' "$existing"
+fi
+```
+
+Then point `statusLine.command` at that script, leaving everything else in the setting alone. If your
+command is the one Claude Code names in `statusLine.command` today, put that exact command in place of the
+`barista.sh` line.
+
+Barista already has a module that shows quota, so for Barista the footer's quota segment repeats it. Take
+it out by giving `--footer` a copy of the JSON without `rate_limits`; the waiting count is unaffected:
+
+```bash
+footer=$(printf '%s' "$input" | jq -c 'del(.rate_limits)' | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer)
+```
+
+Barista 1.8.0 does not run a module file you drop into its `modules` directory: it decides which
+modules exist from fixed lists in `barista.sh`, and it hands the status line JSON only to its own
+`context`, `model` and `cost` modules. A wrapper is the route that works without editing Barista. This
+was run against a scratch copy of Barista 1.8.0 and its own `barista.conf`, with the `--footer` line
+appended as in the script above. [Checking it](#checking-it-worked-on-your-own-status-line) below shows how
+to see the same on yours.
+
+### Checking it worked on your own status line
+
+Without waiting for Claude Code to redraw, feed the command a payload by hand, with a session id from your
+board:
+
+```bash
+printf '{"session_id":"YOUR-SESSION-ID"}' | python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer
+```
+
+It prints nothing when that session has no file yet, which takes one dashboard collection after the
+session first appears. A second session left waiting on a permission prompt makes the first one's line
+read `1 waiting`. On Windows the standard input is read in a thread that is given a quarter of a second and
+then abandoned, because a pipe cannot be polled there. That path has not been measured.
+
 ## Reach nudges away from the desk
 
 When configured, Compass can post a scalar count to a webhook URL you provide when sessions

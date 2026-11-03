@@ -1109,6 +1109,23 @@ class Observation:
                 due, reason = self._due()
             if due:
                 self._collect(reason)
+            else:
+                self._touch_footer()
+
+    def _touch_footer(self) -> None:
+        """Keep the status line's files fresh while nothing is collecting.
+
+        Measured: a dashboard with no tab open collects only on an event, so a board that is
+        quiet and correct would otherwise age past the client's ceiling and lose its segment.
+        This only restamps files whose content the last collection published; it reads no store.
+        """
+        writer = getattr(self.application, "footer_lines", None)
+        if writer is None:
+            return
+        try:
+            writer.touch(self.clock())
+        except Exception as exc:  # noqa: BLE001 (a status line file must not stop the worker)
+            runtime_io.diag(f"Compass: footer refresh failed: {exc}", self.diagnostic_sink)
 
     def _sleep_for(self) -> float:
         """How long to sleep, under `_lock`.

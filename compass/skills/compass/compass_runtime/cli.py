@@ -20,6 +20,7 @@ from compass_runtime import (
     deliveries,
     diagnostics,
     ends,
+    footer_lines,
     frontend_dev,
     history,
     http_api,
@@ -213,6 +214,28 @@ def claude_monitor_model_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(msg) from error
 
 
+def attach_footer_lines(application: aggregate.Application, config: RuntimeConfig) -> None:
+    """The status line's file writer, on the serving path only.
+
+    Not in `build_application`: `--diagnose` and every test build one, and none of them may write
+    into the reader's home.
+    """
+    application.footer_lines = footer_lines.Lines(config.state_home, diagnostic_sink=print)
+
+
+def refuse_footer_with_other_options(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    """A lone `--footer` never reaches here (`entry.main` answers it), so any that does has company.
+
+    It reaches no dashboard, so it cannot also serve, stop or report one.
+    """
+    if args.footer or args.session is not None:
+        parser.error(
+            "--footer and --session stand alone: they read the status line, not a dashboard"
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The CLI surface. argparse owns --help and its own usage errors."""
     # Abbreviations are off so a removed option stays refused: `--frontend` is a unique prefix of
@@ -225,6 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help=operation.help,
         )
+    for option in terminal_client.OPTIONS:
+        parser.add_argument(option.flag, metavar=option.metavar, default=None, help=option.help)
     parser.add_argument("--port", type=lifecycle.tcp_port, default=4553)
     parser.add_argument(
         "--frontend-dev-manifest",
@@ -884,6 +909,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.version:
         return terminal_client.print_version()
+    refuse_footer_with_other_options(parser, args)
     # Sampled before the combination check: the start stamp names this process,
     # and must not shift depending on which validation ran first.
     started = time.time()
@@ -947,6 +973,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # application to collect, and the application reads the coordinator for
         # overlays. Nothing has started a thread yet, which is what lets the
         # daemon fork below happen safely.
+        attach_footer_lines(application, config)
         coordinator = None
         if not args.no_events:
             coordinator = observation.Observation(application)
