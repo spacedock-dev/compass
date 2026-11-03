@@ -117,7 +117,6 @@ class StudyLedgersArePinnedToTheirHomeTest(unittest.TestCase):
             "native",
             "shared",
             "replay",
-            "replay_ledger",
             "route_state",
             "route_private",
             "route_activation",
