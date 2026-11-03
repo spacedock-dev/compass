@@ -2339,6 +2339,46 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 self.assertLessEqual(work[1], 4_000 * 2 * longest, work)
 
 
+class LongIndexTest(unittest.TestCase):
+    """`_LongIndex` reports where a long spelling occurs without comparing it character by character."""
+
+    @staticmethod
+    def brute(text: str, spellings: tuple[str, ...], at: int) -> list[int]:
+        return sorted((at + len(s) for s in spellings if text.startswith(s, at)), reverse=True)
+
+    def test_the_index_finds_exactly_what_startswith_finds(self) -> None:
+        rng = random.Random(5080)
+        for _ in range(2_000):
+            spellings = tuple(
+                {
+                    "".join(rng.choices("ab!:", k=rng.randint(4, 12)))
+                    for _ in range(rng.randint(1, 4))
+                }
+            )
+            text = "".join(rng.choices("ab!:", k=rng.randint(0, 40)))
+            index = records._LongIndex(text, spellings, 3)
+            for at in range(len(text) + 1):
+                with self.subTest(spellings=spellings, text=text, at=at):
+                    self.assertEqual(self.brute(text, spellings, at), list(index.ends(at)))
+
+    def test_a_text_with_no_candidate_offset_builds_no_hash_array(self) -> None:
+        index = records._LongIndex("z" * 500, ("abcdefgh", "abcdxxxx"), 4)
+        self.assertTrue(all(index.ends(at) == () for at in range(501)))
+        self.assertEqual(0, index.steps)
+
+    def test_a_forced_collision_over_masks_and_never_misses(self) -> None:
+        rng = random.Random(7)
+        with mock.patch.object(records, "_HASH_MOD", 101):
+            for _ in range(300):
+                spellings = tuple(
+                    {"".join(rng.choices("ab", k=rng.randint(4, 9))) for _ in range(3)}
+                )
+                text = "".join(rng.choices("ab", k=30))
+                index = records._LongIndex(text, spellings, 3)
+                for at in range(len(text) + 1):
+                    self.assertLessEqual(set(self.brute(text, spellings, at)), set(index.ends(at)))
+
+
 class LongValueScrubTest(unittest.TestCase):
     """One very long masked value costs work linear in the text, whatever its length."""
 

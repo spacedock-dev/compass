@@ -7,6 +7,7 @@ import itertools
 import json
 import math
 import os
+import random
 import re
 import shlex
 import string
@@ -2661,6 +2662,80 @@ def _trie_regex(node: dict[str, Any]) -> str:
         return ""
     body = branches[0] if len(branches) == 1 else "(?:" + "|".join(branches) + ")"
     return f"(?:{body})?" if ends else body
+
+
+# A prime modulus and a per-process random base. A collision can only report an occurrence that is
+# not there, which masks extra text; it can never hide a real one, so nothing re-checks a hit
+# character by character (overlapping true matches would make that check quadratic again).
+_HASH_MOD: Final = (1 << 61) - 1
+_HASH_BASE: Final = random.SystemRandom().randrange(1 << 20, (1 << 61) - 2)
+
+
+def _hash(text: str) -> int:
+    value = 0
+    for char in text:
+        value = (value * _HASH_BASE + ord(char)) % _HASH_MOD
+    return value
+
+
+class _LongIndex:
+    """Where each long spelling occurs in one text, by rolling hash, in constant work per offset.
+
+    The trie regex reads a failing long literal to its end at every offset, so one long value costs
+    O(text x value length). Here an offset is a candidate only when the `prefix_len` characters at
+    it are the start of some spelling, and a candidate costs one hash comparison per spelling that
+    shares that start. Every spelling must be at least `prefix_len` long.
+    """
+
+    def __init__(self, text: str, spellings: tuple[str, ...], prefix_len: int) -> None:
+        if any(len(spelling) < prefix_len for spelling in spellings):
+            msg = "a spelling shorter than the prefix can never be found"
+            raise ValueError(msg)
+        self.steps = 0
+        self._text = text
+        self._prefix_len = prefix_len
+        self._by_prefix: dict[str, list[tuple[int, int]]] = {}
+        for spelling in set(spellings):
+            self._by_prefix.setdefault(spelling[:prefix_len], []).append(
+                (len(spelling), _hash(spelling))
+            )
+        for candidates in self._by_prefix.values():
+            candidates.sort(reverse=True)
+        self._powers = {n: pow(_HASH_BASE, n, _HASH_MOD) for n in {len(s) for s in spellings}}
+        self._prefix_hashes: list[int] | None = None
+        self._memo: dict[int, tuple[int, ...]] = {}
+
+    def ends(self, at: int) -> tuple[int, ...]:
+        """The end of every spelling that occurs at `at`, longest first."""
+        known = self._memo.get(at)
+        if known is not None:
+            return known
+        candidates = self._by_prefix.get(self._text[at : at + self._prefix_len])
+        found: tuple[int, ...] = ()
+        if candidates:
+            hashes = self._hashes()
+            found = tuple(
+                at + length
+                for length, full in candidates
+                if at + length <= len(self._text) and self._window(hashes, at, length) == full
+            )
+        self._memo[at] = found
+        return found
+
+    def _window(self, hashes: list[int], at: int, length: int) -> int:
+        self.steps += 1
+        return (hashes[at + length] - hashes[at] * self._powers[length]) % _HASH_MOD
+
+    def _hashes(self) -> list[int]:
+        if self._prefix_hashes is None:
+            self.steps += len(self._text)
+            base, mod = _HASH_BASE, _HASH_MOD
+            self._prefix_hashes = list(
+                itertools.accumulate(
+                    self._text, lambda value, char: (value * base + ord(char)) % mod, initial=0
+                )
+            )
+        return self._prefix_hashes
 
 
 class _ScrubPatterns(NamedTuple):
