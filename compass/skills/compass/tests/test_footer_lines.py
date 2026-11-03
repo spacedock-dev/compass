@@ -48,13 +48,20 @@ def row(
 
 
 def board(
-    sessions: list[dict[str, Any]], harnesses: list[dict[str, Any]] | None = None
+    sessions: list[dict[str, Any]],
+    harnesses: list[dict[str, Any]] | None = None,
+    asks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
+        "asks": asks or [],
         "generated": NOW,
         "harnesses": [harness("claude", "Claude Code")] if harnesses is None else harnesses,
         "sessions": sessions,
     }
+
+
+def ask(session_id: str | None, question: str | None = "May I?", **more: Any) -> dict[str, Any]:
+    return {"id": "a1", "harness": "claude", "session_id": session_id, "question": question} | more
 
 
 def waiting_of(built: dict[tuple[str, str], dict[str, Any]], sid: str) -> object:
@@ -130,6 +137,66 @@ class BuildTest(unittest.TestCase):
         )
 
         self.assertEqual((1, 1), (waiting_of(built, full), waiting_of(built, "ffff0000")))
+
+    def waits(self, sessions: list[dict[str, Any]], asks: list[dict[str, Any]]) -> list[object]:
+        built = self.build(board(sessions, asks=asks))
+        return [waiting_of(built, r["sid"]) for r in sessions]
+
+    def test_a_pending_ask_owned_by_another_session_is_a_wait_the_footer_counts(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("claude", "bbbbbbbb")]
+
+        self.assertEqual([1, 0], self.waits(rows, [ask("bbbbbbbb")]))
+
+    def test_a_pending_ask_owned_by_the_current_session_is_not_counted_against_itself(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("claude", "bbbbbbbb")]
+
+        self.assertEqual([0, 1], self.waits(rows, [ask("aaaaaaaa")]))
+
+    def test_an_ownerless_ask_counts_for_every_session(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("claude", "bbbbbbbb")]
+
+        self.assertEqual([1, 1], self.waits(rows, [ask(None)]))
+        self.assertEqual([1, 1], self.waits(rows, [ask("nobody-has-this-id")]))
+
+    def test_an_ask_whose_owner_matches_two_rows_is_ownerless(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("codex", "aaaaaaaa"), row("claude", "cccccccc")]
+
+        got = self.waits(rows, [ask("aaaaaaaa", harness="")])
+
+        self.assertEqual([1, 1, 1], got)
+
+    def test_a_row_that_is_waiting_and_holds_an_ask_is_one_wait_not_two(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("claude", "bbbbbbbb", "needs_input")]
+
+        self.assertEqual([1, 0], self.waits(rows, [ask("bbbbbbbb")]))
+
+    def test_each_ask_and_each_waiting_row_is_its_own_subject(self) -> None:
+        rows = [
+            row("claude", "aaaaaaaa"),
+            row("claude", "bbbbbbbb"),
+            row("claude", "cccccccc", "needs_input"),
+        ]
+        asks = [ask("bbbbbbbb", id="x"), ask("bbbbbbbb", id="y"), ask(None, id="z")]
+
+        self.assertEqual([3, 2, 2], self.waits(rows, asks))
+
+    def test_an_ask_with_no_question_is_ignored(self) -> None:
+        rows = [row("claude", "aaaaaaaa"), row("claude", "bbbbbbbb")]
+
+        for blank in ("", "   ", None):
+            with self.subTest(question=blank):
+                self.assertEqual([0, 0], self.waits(rows, [ask("bbbbbbbb", question=blank)]))
+
+    def test_pending_asks_do_not_make_an_unmeasured_board_measured(self) -> None:
+        built = self.build(
+            board(
+                [row("claude", "aaaaaaaa")],
+                [harness("claude", "Claude Code", reports=False)],
+                [ask(None)],
+            )
+        )
+
+        self.assertIsNone(waiting_of(built, "aaaaaaaa"))
 
     def test_a_board_with_no_waiter_reads_a_measured_zero(self) -> None:
         built = self.build(board([row("claude", "a"), row("claude", "b")]))
@@ -314,6 +381,17 @@ class LinesTest(unittest.TestCase):
             sorted(["notes.txt", os.path.basename(young), footer_lines.line_name("claude", "a")]),
             self.files(),
         )
+
+    def test_a_departed_sessions_file_is_swept_once_it_is_old_and_is_forgotten_with_it(
+        self,
+    ) -> None:
+        self.lines.update(board([row("claude", "a")]), NOW)
+        gone = footer_lines.line_name("claude", "a")
+
+        self.lines.update(board([row("claude", "b")]), NOW + footer_lines.SWEEP_EVERY_SEC + 10)
+
+        self.assertNotIn(gone, self.files())
+        self.assertNotIn(gone, self.lines._written)
 
     def test_the_sweep_runs_at_most_once_an_interval(self) -> None:
         self.lines.update(board([row("claude", "a")]), NOW)

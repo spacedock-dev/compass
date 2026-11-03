@@ -681,9 +681,11 @@ never replaces a status line you have, so both procedures below are yours to app
 
 What the line says, and when it says nothing:
 
-- `N waiting` counts the other sessions the board shows as needing you, never the one the line is in. It
-  is left out when the count is zero, when the dashboard is not running, or when it has not confirmed the
-  board for a minute.
+- `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other
+  sessions that are waiting on you, and questions a session has put to you through the ask lane. It is left
+  out when the count is zero, when the dashboard is not running, or when the file is more than a minute old.
+  While nothing is collecting, the dashboard restamps a file whose content has not changed every 15 seconds,
+  so a state that changes only with the passing of time is not seen until the next event or collection.
 - `waits not reported for Cursor, Droid` names the harnesses on your board that cannot say when they are
   waiting, so a quiet line is not read as a quiet board. These are the names the board's coverage note uses.
 - `5h 82% resets in 2h 9m` is whichever of the five-hour and seven-day windows is the more used. Claude
@@ -693,7 +695,7 @@ What the line says, and when it says nothing:
   prints none.
 
 It sends no request and starts nothing, and a call takes about 40 milliseconds. A session is found from the
-`session_id` Claude Code sends, then from `--session claude:SESSION_ID`, then from
+`--session claude:SESSION_ID`, then from the `session_id` Claude Code sends, then from
 `CLAUDE_CODE_SESSION_ID`. [SECURITY.md](SECURITY.md#the-status-line-files) owns what the dashboard writes
 for it.
 
@@ -766,8 +768,8 @@ printf '{"session_id":"YOUR-SESSION-ID"}' | python3 /path/to/skills/compass/laun
 
 It prints nothing when that session has no file yet, which takes one dashboard collection after the
 session first appears. A second session left waiting on a permission prompt makes the first one's line
-read `1 waiting`. On Windows the standard input is read to its end rather than to a deadline, which a
-status line command's input reaches.
+read `1 waiting`. On Windows the standard input is read in a thread that is given a quarter of a second and
+then abandoned, because a pipe cannot be polled there. That path has not been measured.
 
 ## Reach nudges away from the desk
 

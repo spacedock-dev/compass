@@ -3613,8 +3613,8 @@ status line refresh, so a running dashboard writes what it would say. For each C
 the board it keeps `footer/claude-<hash>.json` in the Compass home, owner-only (`0o600`, in a `0o700`
 directory), written atomically. The name is the first 32 hex characters of the SHA-256 of the session
 id, so an id never reaches a path and the file name does not reveal it. The file holds one line of
-JSON: a shape version, a time, the dashboard's process id, the count of the other sessions waiting on
-you (`null` when no harness that can report a wait was read), the board's names for harnesses that
+JSON: a shape version, a time, the dashboard's process id, the count of the other needs on the
+Attention queue, sessions waiting on you and pending asks (`null` when no harness that can report a wait was read), the board's names for harnesses that
 cannot report one, and two reserved keys, both `null`. It holds no title, no path, no prompt, no
 session id and no tool output.
 

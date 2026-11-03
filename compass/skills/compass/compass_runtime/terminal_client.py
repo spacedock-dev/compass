@@ -572,9 +572,14 @@ _WINDOWS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
 
 
 def _number(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return float(value)
+    try:
+        return float(value) if math.isfinite(value) else None
+    except OverflowError:
+        # A JSON integer past a float's range: `isfinite` raises on it, and the blanket handler
+        # in `run_footer` would then hide a valid waiting count along with the window.
+        return None
 
 
 def _reset_epoch(value: object) -> float | None:

@@ -553,6 +553,24 @@ class RunFooterTest(unittest.TestCase):
 
         self.assertEqual("4 waiting\n", out)
 
+    def test_a_number_too_large_for_a_float_withholds_its_window_not_the_whole_line(self) -> None:
+        line_file(self.home, "claude", "sess-1", good_line(waiting=2))
+        huge = 10**400
+        for field in ("used_percentage", "resets_at"):
+            payload = pro_payload(
+                rate_limits={
+                    "five_hour": {"used_percentage": 50, "resets_at": NOW + 600} | {field: huge}
+                }
+            )
+            with self.subTest(field=field):
+                text = json.dumps(payload)
+
+                code, out, err = self.run_footer(["--footer"], text)
+
+                self.assertEqual(0, code)
+                self.assertEqual("", err)
+                self.assertTrue(out.startswith("2 waiting"), out)
+
     def test_nothing_it_does_can_raise_into_the_status_bar(self) -> None:
         with mock.patch.object(terminal_client, "compose_footer", side_effect=RuntimeError("x")):
             code, out, err = self.run_footer(["--footer"], json.dumps(pro_payload()))
@@ -599,21 +617,27 @@ class FooterDispatchTest(unittest.TestCase):
         main.assert_not_called()
 
     def test_footer_beside_serving_options_is_a_usage_error_from_the_cli(self) -> None:
+        acted = AssertionError("a usage error must come before anything acts")
         for argv in (
             ["--footer", "--port", "4631"],
             ["--footer", "--status"],
             ["--footer", "--stop"],
+            ["--footer", "--forget"],
+            ["--footer", "--diagnose"],
         ):
-            with self.subTest(argv=argv):
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as home:
                 err = io.StringIO()
-                # The error must come before anything acts: these options stop and start real
-                # dashboards, so a regression here must fail loudly rather than reach one.
+                # These options stop, inspect and delete from a real dashboard and a real home, so
+                # a regression must fail loudly here rather than reach either: a temporary home,
+                # and every action patched to raise.
                 with (
+                    mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
                     contextlib.redirect_stderr(err),
-                    mock.patch.object(cli, "build_runtime", side_effect=AssertionError("acted")),
-                    mock.patch.object(
-                        lifecycle, "stop_instance", side_effect=AssertionError("stopped")
-                    ),
+                    mock.patch.object(cli, "build_runtime", side_effect=acted),
+                    mock.patch.object(cli, "run_one_shot", side_effect=acted),
+                    mock.patch.object(lifecycle, "stop_instance", side_effect=acted),
+                    mock.patch.object(lifecycle, "instance_status", side_effect=acted),
+                    mock.patch.object(lifecycle, "serve", side_effect=acted),
                     self.assertRaises(SystemExit) as raised,
                 ):
                     cli.main(argv)
@@ -623,7 +647,13 @@ class FooterDispatchTest(unittest.TestCase):
 
     def test_session_alone_is_a_usage_error_from_the_cli(self) -> None:
         err = io.StringIO()
-        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+            mock.patch.object(cli, "build_runtime", side_effect=AssertionError("acted")),
+            contextlib.redirect_stderr(err),
+            self.assertRaises(SystemExit) as raised,
+        ):
             cli.main(["--session", "claude:abc"])
 
         self.assertEqual(2, raised.exception.code)
