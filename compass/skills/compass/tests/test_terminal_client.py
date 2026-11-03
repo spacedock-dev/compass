@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Self
 from unittest import mock
 
-from compass_runtime import cli, entry, lifecycle, terminal_client
+from compass_runtime import cli, entry, lifecycle, terminal_client, terminal_sessions
 
 from . import support
 from .support import SERVER_PATH
@@ -752,6 +752,22 @@ class SessionsCommandTest(HomeCase):
 
         self.assertEqual((1, ""), (code, out))
         self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+
+    def test_a_listing_that_fails_to_render_is_one_sentence_and_exit_one_never_a_traceback(
+        self,
+    ) -> None:
+        for name in ("render_sessions", "render_waiting"):
+            with (
+                self.subTest(name),
+                FakeDashboard(answers=data_reply(BOARD)) as fake,
+                mock.patch.object(terminal_sessions, name, side_effect=OverflowError("big")),
+            ):
+                code, out, err = self.run_sessions(
+                    "waiting" if name == "render_waiting" else None, port=fake.port
+                )
+
+            self.assertEqual((1, ""), (code, out))
+            self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
 
     def test_the_cli_path_renders_from_the_named_port_and_starts_nothing(self) -> None:
         with (

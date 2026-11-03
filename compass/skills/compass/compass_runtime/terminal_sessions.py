@@ -1,6 +1,6 @@
 """What `--sessions` and `--sessions waiting` print, derived from one `/api/data` payload.
 
-Standard library only, and no other runtime module, for the reason `terminal_client` gives: a short
+Standard library only, and no runtime module, for the reason `terminal_client` gives: a short
 command runs before the collectors load. The reasoning, and what was rejected, is in
 [R-1](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
@@ -135,7 +135,11 @@ def _identity(value: object) -> str:
 def _num(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return float(value) if math.isfinite(value) else None
+    try:
+        number = float(value)
+    except OverflowError:  # an integer past what a float holds, which a payload may carry
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _positive(value: object) -> float:
@@ -813,7 +817,9 @@ def _coverage(payload: Mapping[str, Any], seen: list[_Seen]) -> tuple[str, list[
     for row in _records(payload.get("harnesses")):
         if not row.get("error") and row.get("reports_needs_input") is True:
             continue
-        label = _trimmed(row.get("label")) or _text(row.get("key") or "Harness not published")
+        label = printable(_trimmed(row.get("label")) or _text(row.get("key") or "")) or (
+            "Harness not published"
+        )
         reason = (
             "Harness source could not be read"
             if row.get("error")

@@ -3,6 +3,9 @@
 The recorded payload and the expected file are the ones `frontend/src/sessions/terminalParity.test.ts`
 checks the board against, so a pass here and a pass there mean the terminal and the board give one
 answer for the same payload.
+
+`session-groups.json` is the BOARD's output, committed by hand. It must never be regenerated from
+this module's port: a file the port wrote would agree with the port by construction and prove nothing.
 """
 
 from __future__ import annotations
@@ -517,6 +520,114 @@ class WaitingRenderTest(unittest.TestCase):
 
     def test_the_coverage_line_prints_whenever_something_is_waiting_too(self) -> None:
         self.assertIn("report block state", "\n".join(self.render()))
+
+
+HOSTILE = "\x1b]52;c;QUJD\x07\x1b[31m\u202e\u2066x\x00"
+
+
+def assert_clean(test: unittest.TestCase, text: str) -> None:
+    test.assertNotIn(ESC, text)
+    test.assertNotRegex(text, "[\u202a-\u202e\u2066-\u2069\x00\x07\x08\x9b]")
+    test.assertNotIn("52;c;QUJD", text)
+
+
+class CoverageTextTest(unittest.TestCase):
+    def hostile_payload(self) -> dict[str, Any]:
+        payload = copy.deepcopy(PAYLOAD)
+        payload["harnesses"][2]["label"] = HOSTILE
+        payload["harnesses"].append(
+            {"key": HOSTILE, "label": "", "reports_needs_input": False, "discovered": True}
+        )
+        payload["harnesses"].append(
+            {"key": "x", "label": HOSTILE, "error": HOSTILE, "reports_needs_input": True}
+        )
+        return payload
+
+    def test_a_hostile_harness_label_or_key_survives_neither_listing(self) -> None:
+        payload = self.hostile_payload()
+
+        sessions = "\n".join(terminal_sessions.render_sessions(payload))
+        waiting = "\n".join(
+            terminal_sessions.render_waiting(payload, port=4553, exclude=None, nothing=NOTHING)
+        )
+
+        assert_clean(self, sessions)
+        assert_clean(self, waiting)
+        self.assertIn("Harness does not report blocks", waiting)
+
+    def test_a_label_that_is_nothing_but_controls_falls_back_to_a_plain_name(self) -> None:
+        payload = copy.deepcopy(PAYLOAD)
+        payload["harnesses"][2]["label"] = "\x1b[31m\x00"
+        payload["harnesses"][2]["key"] = "\x00"
+
+        waiting = "\n".join(
+            terminal_sessions.render_waiting(payload, port=4553, exclude=None, nothing=NOTHING)
+        )
+
+        self.assertIn("Harness not published: Harness does not report blocks", waiting)
+
+
+class AbsurdNumbersTest(unittest.TestCase):
+    HUGE = 10**400
+
+    def renders(self, payload: dict[str, Any]) -> tuple[list[str], list[str]]:
+        return (
+            terminal_sessions.render_sessions(payload),
+            terminal_sessions.render_waiting(payload, port=4553, exclude=None, nothing=NOTHING),
+        )
+
+    def test_an_integer_too_big_for_a_float_is_no_number_at_all(self) -> None:
+        self.assertIsNone(terminal_sessions._num(self.HUGE))
+        self.assertIsNone(terminal_sessions._num(-self.HUGE))
+        self.assertEqual(3.0, terminal_sessions._num(3))
+
+    def test_a_huge_generated_stamp_is_absent_and_both_listings_still_print(self) -> None:
+        payload = {**PAYLOAD, "generated": self.HUGE}
+
+        sessions, waiting = self.renders(payload)
+
+        self.assertIn("Active now", sessions)
+        self.assertIn("Waiting on you", waiting)
+
+    def test_a_huge_departure_time_is_an_unknown_age_not_a_crash(self) -> None:
+        payload = with_rows(f6a7b8c9={"departures": [{"at": self.HUGE, "revision": 1}]})
+
+        sessions, _ = self.renders(payload)
+
+        self.assertIn("  Drift · age unknown", sessions)
+
+    def test_a_huge_loop_error_count_prints_both_listings(self) -> None:
+        payload = with_rows(a7b8c9d0={"loop": {"errors": self.HUGE, "failures": self.HUGE}})
+
+        sessions, waiting = self.renders(payload)
+
+        self.assertIn("Active now", sessions)
+        self.assertNotIn("Ended while it still asked for input", "\n".join(waiting))
+
+
+class SortOrderTest(unittest.TestCase):
+    # Pinned to what the board's `localeCompare(..., 'en')` gives, taken from node
+    # (`names.sort((a, b) => a.localeCompare(b, 'en'))`) and not from this module.
+    NAMES = ("Zeta", "alpha", "Beta", "_tmp", "app-2", "Alpha")
+    BOARD_ORDER = ("_tmp", "alpha", "Alpha", "app-2", "Beta", "Zeta")
+
+    def test_waiting_sessions_sort_by_project_the_way_the_board_compares_text(self) -> None:
+        sessions = [
+            {
+                "harness": "claude",
+                "sid": f"s{i}",
+                "project": name,
+                "title": f"t{i}",
+                "state": "needs_input",
+            }
+            for i, name in enumerate(self.NAMES)
+        ]
+        payload = {"generated": 1000.0, "harnesses": [{"key": "claude"}], "sessions": sessions}
+
+        lines = terminal_sessions.render_waiting(payload, port=4553, exclude=None, nothing=NOTHING)
+
+        got = [m.group(1) for line in lines if (m := re.match(r"claude  (\S+)  t\d", line))]
+        self.assertEqual(list(self.BOARD_ORDER), got)
 
 
 if __name__ == "__main__":

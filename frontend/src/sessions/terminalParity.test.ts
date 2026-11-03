@@ -1,7 +1,10 @@
 // @vitest-environment node
 /* The terminal's `--sessions` and `--sessions waiting` against the board. The recorded payload and the
    expected file are read by this test and by `tests/test_terminal_sessions.py`, so the two readers are held
-   to one answer: this file proves the board gives it, that one proves the terminal does. */
+   to one answer: this file proves the board gives it, that one proves the terminal does.
+
+   `session-groups.json` is the BOARD's output, committed by hand after reading it. It must never be
+   regenerated from the Python port: a file the port wrote would agree with the port by construction. */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { attentionModel } from '../attention/model';

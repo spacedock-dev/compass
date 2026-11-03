@@ -765,6 +765,7 @@ def run_footer(
                 stdout.write(text + "\n")
     except Exception:  # noqa: BLE001 — nothing may reach a status bar but the line
         return 0
+    return 0
 
 
 def _emit(lines: list[str], stream: TextIO) -> None:
@@ -802,15 +803,19 @@ def run_sessions(
     ):
         print(sentence("unreadable_reply"), file=sys.stderr)
         return 1
-    if mode == "waiting":
-        caller = resolve_session(None, env, None)
-        lines = terminal_sessions.render_waiting(
-            payload,
-            port=found.port,
-            exclude=caller.sid if isinstance(caller, Session) else None,
-            nothing=sentence("nothing_waiting"),
-        )
-    else:
-        lines = terminal_sessions.render_sessions(payload)
+    try:
+        if mode == "waiting":
+            caller = resolve_session(None, env, None)
+            lines = terminal_sessions.render_waiting(
+                payload,
+                port=found.port,
+                exclude=caller.sid if isinstance(caller, Session) else None,
+                nothing=sentence("nothing_waiting"),
+            )
+        else:
+            lines = terminal_sessions.render_sessions(payload)
+    except Exception:  # noqa: BLE001 - a payload is untrusted; whatever it holds, say one sentence
+        print(sentence("unreadable_reply"), file=sys.stderr)
+        return 1
     _emit(lines, sys.stdout)
     return 0
