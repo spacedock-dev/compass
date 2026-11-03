@@ -1526,6 +1526,86 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
   },
 };
 
+/* A reader confirms Discard everything in a tab drawn at revision 2 after another tab saved revision 3. The
+   page names the revision it showed, so the server refuses: the reader is told nothing was discarded, sees the
+   newer words the other tab saved, and keeps their place beside the card. The server below takes any other
+   discard, so a page that named no revision would discard the newer words here. */
+export const ADiscardFromAStaleTabTakesNothingNewer: Story = {
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Keep the parser small and pure',
+        annotation_goal_why: '',
+        annotation_revision: 2,
+        annotation_revision_count: 2,
+        annotation_at: 1_760_000_500,
+        annotation_goal_saved_at: 1_760_000_500,
+      },
+      onAnnotate: async (body) => {
+        const update = (
+          window as unknown as {
+            __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+          }
+        ).__updateIntentSession;
+        const stale = body['clear'] === true && body['expected_revision'] === 2;
+        await update(
+          stale
+            ? {
+                annotation_goal: 'Keep the parser small, pure and streaming',
+                annotation_revision: 3,
+                annotation_revision_count: 3,
+                annotation_at: 1_760_000_800,
+                annotation_goal_saved_at: 1_760_000_800,
+              }
+            : {
+                annotation_goal: '',
+                annotation_goal_why: 'Discarded with everything else you asked of this session.',
+                annotation_revision: 0,
+                annotation_revision_count: 0,
+                annotation_discarded_at: 1_760_001_000,
+              },
+        );
+        return new Response(
+          JSON.stringify(
+            stale
+              ? { ok: true, outcome: 'refused', persisted: false, revision: 3, withdrew: true }
+              : { ok: true, outcome: 'stored', persisted: true, withdrew: true, removed: 3 },
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const { card, kept, confirm } = await armDiscard(canvasElement);
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(confirm);
+    const said = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>(
+        '.next-cockpit-held-discard .next-cockpit-held-cue',
+      );
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    // The server's own refusal sentence, as `annotate_discard.refused` publishes it.
+    await expect(said).toHaveTextContent('Could not discard.');
+    await waitFor(() =>
+      expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+        'Keep the parser small, pure and streaming',
+      ),
+    );
+    await expect(canvasElement.textContent).not.toContain('Discarded. Everything you asked');
+    // Confirm discard is gone; focus is on the More trigger it stood beside, not on the page.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(kept).getByRole('button', { name: 'More about these words' }),
+      ),
+    );
+  },
+};
+
 /* An armed Discard everything is the card's own, not the menu's: the warning and Confirm discard are drawn
    whether or not More is open, stay where they were drawn through a board refresh and the passing of time, and
    leave only when confirmed, kept or lapsed. */

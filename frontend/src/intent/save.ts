@@ -496,9 +496,16 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
   const press = pendingStart(ctx, key, 'Discarding…', 'Discarding.');
   if (!press) return;
   ctx.held.notify();
+  /* The revision the reader was shown, as a typed save names it: words another tab or dashboard saved since
+     are newer than what this press asked to discard, so the store refuses it rather than taking them. */
+  const drawn = nextNumber(readInput(ctx, identity, row)?.annotation?.['revision']) || 0;
+  let landed = false;
   try {
     const reply = answered(
-      await ctx.shell.runtime.client.postAnnotate({ ...identity, clear: true }, press.signal),
+      await ctx.shell.runtime.client.postAnnotate(
+        { ...identity, clear: true, expected_revision: drawn },
+        press.signal,
+      ),
     );
     if (reply.kind === 'lost') {
       /* No answer: disarmed, said as unknown, and never re-armed on its own, so a second press is the
@@ -570,6 +577,7 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
             ? (summaryKind[summarySuffix] ?? result)
             : result;
     if (DISCARD_LANDED.has(kind)) {
+      landed = true;
       // The independent log may already hold these words, even if the next dashboard fetch fails.
       intentLogFor(ctx.shell).invalidate();
       /* The drafts go with the annotation. They are an independent lane, so a half-typed box would otherwise
@@ -588,7 +596,10 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     markAndSay(ctx, key, 'discard-refused');
   } finally {
     pendingEnd(ctx, key, press);
-    ctx.held.requestFocus(key);
+    /* Where the words still stand, Confirm discard is gone and the only control under its key is the offer
+       inside the closed More menu, which cannot take focus: measured, a refused discard left focus on the
+       page. The More trigger the armed question stood beside is drawn whenever there are words. */
+    ctx.held.requestFocus(landed ? key : `intent-menu:${compatSessKey(row)}`);
   }
 }
 
