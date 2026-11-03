@@ -388,6 +388,69 @@ class EveryWriterSharesTheBoundaryTest(_SharedHomeCase):
         self.assertEqual(1, entry.get("readings"))
         self.assertIn("5a4ed0e0f0a1e5", entry.get("jobs", ()))
 
+    def test_a_discard_drawn_against_an_older_revision_withdraws_nothing(self) -> None:
+        # This dashboard drew revision 1; the other saved revision 2 since.
+        self.seed()
+        newer = annotation_store.annotate(
+            self.config, self.second, "claude", SID, goal="Newer words", now=START + 101
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, newer)
+        receipt: dict[str, int] = {}
+
+        outcome = annotation_store.clear(
+            self.config,
+            self.first,
+            "claude",
+            SID,
+            now=START + 102,
+            expected_revision=1,
+            receipt=receipt,
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({}, receipt)
+        entry = self.entry()
+        self.assertFalse(annotation_store.is_discarded(entry))
+        self.assertEqual(
+            ["Seeded goal", "Newer words"], [revision["goal"] for revision in entry["revisions"]]
+        )
+        # The press that names what it drew still discards.
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.clear(
+                self.config, self.first, "claude", SID, now=START + 103, expected_revision=2
+            ),
+        )
+        self.assertEqual(2, annotation_store.discarded_revision(self.entry()))
+
+    def test_a_discard_naming_a_revision_that_is_not_a_number_is_refused(self) -> None:
+        self.seed()
+        for bad in ("1", True, 1.0):
+            with self.subTest(bad=bad):
+                outcome = annotation_store.clear(
+                    self.config, self.first, "claude", SID, now=START + 102, expected_revision=bad
+                )
+                self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+                self.assertFalse(annotation_store.is_discarded(self.entry()))
+
+    def test_a_guarded_discard_racing_a_newer_save_never_takes_the_newer_words(self) -> None:
+        self.seed()
+        clear = lambda: annotation_store.clear(  # noqa: E731
+            self.config, self.second, "claude", SID, now=START + 102, expected_revision=1
+        )
+
+        first, second, overlapped = self.race(
+            self.goal(self.first, "Saved just before the discard", START + 101), clear
+        )
+
+        self.assertFalse(overlapped)
+        self.assertEqual(
+            (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_REFUSED), (first, second)
+        )
+        entry = self.entry()
+        self.assertFalse(annotation_store.is_discarded(entry))
+        self.assertEqual("Saved just before the discard", entry["revisions"][-1]["goal"])
+
     def test_forget_does_not_write_away_a_session_saved_while_it_swept(self) -> None:
         self.seed()
         annotation_store.clear(self.config, self.first, "claude", SID, now=START + 60)
@@ -941,27 +1004,229 @@ class ARefreshCannotUndoASaveTest(_SharedHomeCase):
     assigned its older copy, so the press that followed found no entry.
     """
 
-    def test_a_refresh_that_read_before_a_save_keeps_the_saved_entry(self) -> None:
-        real = annotation_store._read_store
-        saved: list[str] = []
+    def save_during_refresh(self) -> str:
+        """A save pressed while a refresh sits between its read and its copy; its outcome.
 
-        def read_then_save(config: Any) -> Any:
-            store = real(config)
-            if not saved:
-                # Marked first: the save reads the store again, through this same patch.
-                saved.append("")
-                saved[0] = annotation_store.annotate(
+        Over a store holding no entries, because a refresh with no file reads nothing.
+        """
+        Path(annotation_store.store_path(self.config)).write_text(
+            json.dumps({"v": annotation_store.SCHEMA_VERSION, "entries": []}), "utf-8"
+        )
+        pause = _PauseAfterRead()
+        saved: list[str] = []
+        refreshing = threading.Thread(
+            target=annotation_store.refresh, args=(self.config, self.first)
+        )
+        saving = threading.Thread(
+            target=lambda: saved.append(
+                annotation_store.annotate(
                     self.config, self.first, "claude", SID, goal=FIRST, now=FIRST_AT
                 )
-            return store
+            )
+        )
+        pause.thread = refreshing
+        with mock.patch.object(annotation_store, "_read_store", pause):
+            refreshing.start()
+            try:
+                self.assertTrue(pause.paused.wait(10), "the refresh never read the store")
+                saving.start()
+                saving.join(BLOCKED_FOR)
+            finally:
+                pause.release.set()
+                refreshing.join(20)
+                saving.join(20)
+        self.assertFalse(refreshing.is_alive() or saving.is_alive())
+        return saved[0]
 
-        with mock.patch.object(annotation_store, "_read_store", side_effect=read_then_save):
-            annotation_store.refresh(self.config, self.first)
-        self.assertEqual([annotation_store.OUTCOME_STORED], saved)
+    def test_a_refresh_that_read_before_a_save_keeps_the_saved_entry(self) -> None:
+        self.assertEqual(annotation_store.OUTCOME_STORED, self.save_during_refresh())
         entry = annotation_store.find(
             annotation_store.active(self.config, self.first), "claude", SID
         )
         self.assertIsNotNone(entry, "the refresh put its older copy over the save")
+
+    def test_a_save_during_a_refresh_leaves_the_store_notice_true_to_the_file(self) -> None:
+        # The board said the store was unreadable, and the file has since been
+        # repaired: the next refresh reads it whole while a save lands.
+        store = Path(annotation_store.store_path(self.config))
+        store.write_text("not a store", "utf-8")
+        annotation_store.refresh(self.config, self.first)
+        self.assertEqual(
+            annotation_store.STORE_UNREADABLE, annotation_store.store_notice(self.first)
+        )
+
+        # `save_during_refresh` repairs the file before the refresh reads it.
+        self.assertEqual(annotation_store.OUTCOME_STORED, self.save_during_refresh())
+
+        self.assertTrue(self.first.annotations_trusted, "the notice stayed up over a whole file")
+        self.assertEqual("", annotation_store.store_notice(self.first))
+
+    def test_a_save_over_a_repaired_store_takes_the_notice_down_before_any_collection(self) -> None:
+        store = Path(annotation_store.store_path(self.config))
+        store.write_text("not a store", "utf-8")
+        annotation_store.refresh(self.config, self.first)
+        self.assertEqual(
+            annotation_store.STORE_UNREADABLE, annotation_store.store_notice(self.first)
+        )
+        store.write_text(json.dumps({"v": annotation_store.SCHEMA_VERSION, "entries": []}), "utf-8")
+
+        saved = annotation_store.annotate(
+            self.config, self.first, "claude", SID, goal=FIRST, now=FIRST_AT
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_STORED, saved)
+        self.assertEqual("", annotation_store.store_notice(self.first))
+
+
+class AFirstCollectionWaitsForABusyStoreTest(_SharedHomeCase):
+    """A dashboard's first collection, and a later one, while another process holds the store.
+
+    The first has no copy to keep, so giving up shows every session as one
+    nobody typed against, and history records the words going and coming
+    back. It waits as long as a save would. A later collection keeps its copy
+    after the short wait instead, so a stuck holder never stalls the board.
+    """
+
+    def seed(self) -> None:
+        saved = annotation_store.annotate(
+            self.config, self.first, "claude", SID, goal=FIRST, now=FIRST_AT
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, saved)
+
+    def test_a_first_collection_waits_out_a_short_hold_and_shows_the_words(self) -> None:
+        self.seed()
+        self.assertIsNone(self.second.annotations)
+        holder = self.hold()
+        release = threading.Timer(1.0, _kill, args=(holder,))
+        release.start()
+        self.addCleanup(release.cancel)
+        began = time.monotonic()
+
+        entries = annotation_store.refresh(self.config, self.second)
+
+        self.assertGreater(time.monotonic() - began, 0.5, "the holder was never waited for")
+        self.assertIsNotNone(annotation_store.find(entries, "claude", SID))
+        self.assertIsNotNone(
+            annotation_store.find(annotation_store.active(self.config, self.second), "claude", SID)
+        )
+
+    def test_a_later_collection_keeps_its_copy_after_the_short_wait(self) -> None:
+        self.seed()
+        cached = annotation_store.active(self.config, self.first)
+        self.hold()
+        began = time.monotonic()
+
+        entries = annotation_store.refresh(self.config, self.first)
+
+        self.assertLess(time.monotonic() - began, 0.9)
+        self.assertEqual(cached, entries)
+
+
+# A collection's refresh in a second process, holding its read handle on the
+# store open for `HOLD` seconds. While held it keeps a marker beside the store,
+# which the saving process reads as Windows does an open handle: `os.replace`
+# onto the store is refused. The marker goes just before the handle closes, so
+# it marks the window the handle is open and nothing after it.
+_REFRESH_HOLDING_READ = textwrap.dedent(
+    """
+    import builtins, os, sys, time
+    from pathlib import Path
+    sys.path.insert(0, sys.argv[1])
+    from compass_runtime import annotations as store
+    from compass_runtime.config import build_runtime_config
+    from compass_runtime.state import build_runtime_state
+    home, hold = sys.argv[2], float(sys.argv[3])
+    config = build_runtime_config(
+        environ={**os.environ, "HOME": home, "COMPASS_HOME": os.path.join(home, "state")},
+        platform_name=sys.platform,
+        os_name=os.name,
+        launcher_path=Path(home) / "server.py",
+    )
+    state = build_runtime_state(config, started=time.time())
+    marker = store.store_path(config) + ".reading"
+
+    class Held:
+        def __init__(self, handle):
+            self.handle = handle
+        def __enter__(self):
+            Path(marker).touch()
+            print("reading", flush=True)
+            time.sleep(hold)
+            return self.handle
+        def __exit__(self, *exc):
+            os.unlink(marker)
+            self.handle.close()
+
+    def held_open(path, *args, **kwargs):
+        handle = builtins.open(path, *args, **kwargs)
+        return Held(handle) if os.fspath(path) == store.store_path(config) else handle
+
+    store.open = held_open
+    entries = store.refresh(config, state)
+    print("read", len(entries), flush=True)
+    """
+)
+
+
+class ARefreshNeverFailsAnotherDashboardsSaveTest(unittest.TestCase):
+    """A collection in one dashboard reading while another dashboard saves.
+
+    Windows refuses `os.replace` onto a file another handle has open, and the
+    replace retries for about a third of a second. A refresh that read outside
+    the store's lock held its handle across the other dashboard's whole write,
+    so a read slower than the retries failed that save. CI has no Windows, so
+    the refusal is modelled: the saving process's `os.replace` is refused for
+    as long as the refreshing process holds its real read handle.
+    """
+
+    HOLD = 1.5
+
+    @unittest.skipIf(os.name == "nt", "models Windows' refusal on POSIX")
+    def test_a_save_made_while_another_process_reads_the_store_is_stored(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        config, state = make_runtime(
+            state_home=os.path.join(home, "state"), state_dir=Path(home, "state")
+        )
+        seeded = annotation_store.annotate(config, state, "claude", SID, goal="Seed", now=START)
+        self.assertEqual(annotation_store.OUTCOME_STORED, seeded)
+        target = annotation_store.store_path(config)
+        marker = f"{target}.reading"
+        real_replace = os.replace
+
+        def windows_replace(src: Any, dst: Any) -> None:
+            if os.fspath(dst) == target and os.path.exists(marker):
+                raise PermissionError(errno.EACCES, "held open by another process", target)
+            real_replace(src, dst)
+
+        env = {k: v for k, v in os.environ.items() if not k.startswith("COMPASS_")}
+        reader = subprocess.Popen(
+            [sys.executable, "-c", _REFRESH_HOLDING_READ, str(SKILL_DIR), home, str(self.HOLD)],
+            stdout=subprocess.PIPE,
+            env=env,
+        )
+        self.addCleanup(_kill, reader)
+        assert reader.stdout is not None
+        self.assertEqual(b"reading", reader.stdout.readline().rstrip())
+        said: list[str] = []
+        with mock.patch("os.replace", side_effect=windows_replace):
+            outcome = annotation_store.annotate(
+                config,
+                state,
+                "claude",
+                SID,
+                goal="Saved while the other dashboard read",
+                now=START + 1,
+                diagnostic_sink=said.append,
+            )
+        out, _ = reader.communicate(timeout=30)
+
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome, said)
+        self.assertEqual(0, reader.returncode)
+        self.assertEqual(b"read 1", out.strip())
+        entry = annotation_store.find(annotation_store._read(config), "claude", SID)
+        assert entry is not None
+        self.assertEqual("Saved while the other dashboard read", entry["revisions"][-1]["goal"])
 
 
 class AWriterInsideAWriterTest(_SharedHomeCase):

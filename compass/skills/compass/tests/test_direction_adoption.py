@@ -15,6 +15,7 @@ import dataclasses
 import http.client
 import io
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -35,6 +36,7 @@ from compass_runtime import (
     records,
 )
 from compass_runtime import annotations as annotation_store
+from compass_runtime import io as runtime_io
 from compass_runtime import reading as runtime_reading
 from compass_runtime import reading_jobs as runtime_reading_jobs
 from compass_runtime import sessions as runtime_sessions
@@ -1882,6 +1884,31 @@ class _ReadingRouteHandler(unittest.TestCase):
         handler.rfile = io.BytesIO(body)
         return handler
 
+    def _plain(self, config: Any, state: Any, **over: Any) -> Any:
+        payload = {
+            "harness": "claude",
+            "sid": SHORT,
+            "press": True,
+            "observer_model": 1,
+            "provider": "codex",
+            # Where the stubbed route says the words go, as the page sends it.
+            **({"words_destination": ""} if over.get("allow") else {}),
+            **over,
+        }
+        payload = {k: v for k, v in payload.items() if v is not None}
+        handler = self._handler(config, state, payload)
+        with (
+            mock.patch.object(
+                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+            ),
+            mock.patch.object(reading_route, "destination", return_value=""),
+            mock.patch.object(
+                handler, "_compose_reading", return_value=(None, "test", False)
+            ) as compose,
+        ):
+            handler._reading()
+        return compose
+
 
 class KeepRouteTest(_ReadingRouteHandler):
     """Keep on both routes: settling needs no reader, and a press settles first."""
@@ -2056,31 +2083,6 @@ class APlainPressNamesItsRevisionTest(_ReadingRouteHandler):
     anything. A press that names no revision (an older page) is unchanged.
     """
 
-    def _plain(self, config: Any, state: Any, **over: Any) -> Any:
-        payload = {
-            "harness": "claude",
-            "sid": SHORT,
-            "press": True,
-            "observer_model": 1,
-            "provider": "codex",
-            # Where the stubbed route says the words go, as the page sends it.
-            **({"words_destination": ""} if over.get("allow") else {}),
-            **over,
-        }
-        payload = {k: v for k, v in payload.items() if v is not None}
-        handler = self._handler(config, state, payload)
-        with (
-            mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
-            ),
-            mock.patch.object(reading_route, "destination", return_value=""),
-            mock.patch.object(
-                handler, "_compose_reading", return_value=(None, "test", False)
-            ) as compose,
-        ):
-            handler._reading()
-        return compose
-
     def _saved(self, config: Any, state: Any) -> None:
         annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
 
@@ -2246,6 +2248,108 @@ class APlainPressNamesItsRevisionTest(_ReadingRouteHandler):
                 compose = self._plain(config, state, allow=True, expected_revision=bad)
                 self.assertEqual(0, compose.call_count)
                 self.assertEqual(400, self.replies[-1][1])
+
+
+class ABusyStoreIsSaidOnThePressTest(_ReadingRouteHandler):
+    """Another dashboard holding the annotation store past the wait.
+
+    The press reads the entry it hands the model from disk under the store's
+    lock. When that lock stays busy the press must say so, never that no
+    annotated session has that name: the session has words, they are only
+    unreadable for now.
+    """
+
+    def _held(self, config: Any) -> Any:
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        held = stack.enter_context(
+            runtime_io.held_file_lock(annotation_store.lock_path(config), wait=1.0)
+        )
+        self.assertEqual(runtime_io.LOCK_HELD, held)
+        stack.enter_context(mock.patch.object(annotation_store, "_STORE_LOCK_WAIT_SECONDS", 0.1))
+        stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        return stack
+
+    def test_a_press_naming_no_revision_answers_that_the_store_is_busy(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
+        self._held(config)
+        compose = self._plain(config, state, allow=True)
+        self.assertEqual(0, compose.call_count)
+        answer, code = self.replies[-1]
+        self.assertEqual(
+            (503, False, annotation_store.FRESH_BUSY),
+            (code, answer.get("ok"), answer.get("reason")),
+        )
+        self.assertEqual({}, runtime_reading.published_jobs(config))
+
+    def test_a_press_naming_its_revision_answers_that_the_store_is_busy(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
+        self._held(config)
+        compose = self._plain(config, state, allow=True, expected_revision=1)
+        self.assertEqual(0, compose.call_count)
+        answer, code = self.replies[-1]
+        self.assertEqual((503, annotation_store.FRESH_BUSY), (code, answer.get("reason")))
+
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "POSIX file modes, which root ignores")
+    def test_a_lock_file_this_reader_cannot_open_is_said_as_unavailable_not_busy(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
+        lock = annotation_store.lock_path(config)
+        os.chmod(lock, 0)
+        self.addCleanup(os.chmod, lock, 0o600)
+        with contextlib.redirect_stdout(io.StringIO()):
+            compose = self._plain(config, state, allow=True)
+        self.assertEqual(0, compose.call_count)
+        answer, code = self.replies[-1]
+        self.assertEqual((503, annotation_store.FRESH_UNAVAILABLE), (code, answer.get("reason")))
+
+    def test_an_unreadable_store_is_not_said_as_no_annotated_session(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
+        Path(annotation_store.store_path(config)).write_text("not a store", "utf-8")
+        compose = self._plain(config, state, allow=True)
+        self.assertEqual(0, compose.call_count)
+        answer, code = self.replies[-1]
+        self.assertEqual((503, annotation_store.FRESH_UNAVAILABLE), (code, answer.get("reason")))
+
+
+class AStaleDiscardIsRefusedTest(_ReadingRouteHandler):
+    """Discard everything from a page drawn before another dashboard's save."""
+
+    def _discard(self, config: Any, state: Any, **over: Any) -> dict[str, Any]:
+        payload = {"harness": "claude", "sid": SHORT, "clear": True, **over}
+        self._handler(config, state, payload)._annotate()
+        answer, code = self.replies[-1]
+        self.assertEqual(200, code)
+        return answer
+
+    def test_a_discard_naming_an_older_revision_keeps_the_newer_words(self) -> None:
+        config, state = self._runtime()
+        other = build_runtime_state(config, started=NOW)
+        annotation_store.annotate(config, state, "claude", SHORT, goal="Drawn", now=FIRST_AT)
+        annotation_store.annotate(config, other, "claude", SHORT, goal="Newer", now=FIRST_AT + 1)
+
+        answer = self._discard(config, state, expected_revision=1)
+
+        self.assertEqual(
+            (annotation_store.OUTCOME_REFUSED, False, None, "untouched"),
+            (answer["outcome"], answer["persisted"], answer["removed"], answer["summary"]),
+        )
+        self.assertEqual(2, answer["revision"])
+        entry = annotation_store.load(config)[0]
+        self.assertFalse(annotation_store.is_discarded(entry))
+        self.assertEqual("Newer", entry["revisions"][-1]["goal"])
+
+    def test_a_discard_naming_the_current_revision_discards(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="Drawn", now=FIRST_AT)
+        answer = self._discard(config, state, expected_revision=1)
+        self.assertEqual(
+            (annotation_store.OUTCOME_STORED, 1), (answer["outcome"], answer["removed"])
+        )
+        self.assertTrue(annotation_store.is_discarded(annotation_store.load(config)[0]))
 
 
 if __name__ == "__main__":

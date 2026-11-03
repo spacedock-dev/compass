@@ -995,6 +995,42 @@ class DiagnoseTest(unittest.TestCase):
                 [], os.listdir(compass_home), "--diagnose wrote files into compass_home"
             )
 
+    def test_diagnose_over_saved_words_with_no_lock_file_writes_nothing(self) -> None:
+        # Words an older build saved, which made no lock file beside them.
+        from compass_runtime.cli import main as cli_main  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as td:
+            compass_home = Path(td) / "compass"
+            compass_home.mkdir(mode=0o700)
+            home = Path(td) / "home"
+            home.mkdir()
+            store = {
+                "v": 2,
+                "entries": [
+                    {
+                        "harness": "claude",
+                        "sid": "a1b2c3d4",
+                        "revisions": [{"n": 1, "goal": "Keep the parser small", "at": 1.0}],
+                    }
+                ],
+            }
+            (compass_home / "compass-annotations.json").write_text(
+                json.dumps(store), encoding="utf-8"
+            )
+            before = sorted(os.listdir(compass_home))
+            env = {
+                **os.environ,
+                "COMPASS_HOME": str(compass_home),
+                "HOME": str(home),
+                "CLAUDE_CONFIG_DIR": str(home / ".claude"),
+            }
+            with mock.patch.dict(os.environ, env, clear=True):
+                code = cli_main(["--diagnose"])
+            self.assertEqual(0, code)
+            self.assertEqual(
+                before, sorted(os.listdir(compass_home)), "--diagnose wrote files into compass_home"
+            )
+
 
 class OperatingSystemExpectationTest(unittest.TestCase):
     """What Compass should do per OS, stated as expectations rather than

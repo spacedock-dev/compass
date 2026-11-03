@@ -496,9 +496,16 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
   const press = pendingStart(ctx, key, 'Discarding…', 'Discarding.');
   if (!press) return;
   ctx.held.notify();
+  /* The latest revision this page has drawn, as a typed save names it: words another tab or dashboard saved
+     that this page has not drawn yet are newer than what this press asked to discard, so the store refuses it
+     rather than taking them. */
+  const drawn = nextNumber(readInput(ctx, identity, row)?.annotation?.['revision']) || 0;
   try {
     const reply = answered(
-      await ctx.shell.runtime.client.postAnnotate({ ...identity, clear: true }, press.signal),
+      await ctx.shell.runtime.client.postAnnotate(
+        { ...identity, clear: true, expected_revision: drawn },
+        press.signal,
+      ),
     );
     if (reply.kind === 'lost') {
       /* No answer: disarmed, said as unknown, and never re-armed on its own, so a second press is the

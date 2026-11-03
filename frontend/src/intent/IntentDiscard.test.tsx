@@ -163,7 +163,12 @@ describe('Discard everything', () => {
     await press(discard());
     await settle(page);
     expect(page.allPosts()).toHaveLength(1);
-    expect(page.allPosts()[0]?.body).toEqual({ harness: 'claude', sid: 's1', clear: true });
+    expect(page.allPosts()[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      clear: true,
+      expected_revision: 2,
+    });
     expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.stored);
     expect(text('#next-cockpit-cue-status')).toBe(SENTENCES.stored);
     // The alert region no longer holds a warning that says nothing was deleted.
@@ -440,6 +445,76 @@ describe('Discard everything', () => {
       'Compass did not answer, so this page cannot tell whether the words were discarded.',
     );
     expect(silent.allPosts()).toHaveLength(1);
+  });
+
+  /* Another tab or dashboard saved newer words after this page drew revision 2. The discard names the revision
+     the reader was shown, so the server refuses it rather than taking words the reader never saw. */
+  it('tells a reader whose tab is stale that nothing was discarded, and shows the newer words it kept', async () => {
+    const page = mount({
+      '/api/annotate': (request) => {
+        const body = request.body as Record<string, unknown>;
+        if (body['expected_revision'] !== 2) {
+          page.state.data = withSentences(board({}, { discarded: true }));
+          return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true, removed: 2 });
+        }
+        page.state.data = withSentences(
+          board({}, { goal: 'Newer words from the other tab', revision: 3 }),
+        );
+        return json({
+          ok: true,
+          outcome: 'refused',
+          persisted: false,
+          revision: 3,
+          withdrew: true,
+        });
+      },
+    });
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(page.allPosts()).toHaveLength(1);
+    expect(page.allPosts()[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      clear: true,
+      expected_revision: 2,
+    });
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
+    expect(text('#next-cockpit-cue-status')).toBe(SENTENCES.refused);
+    expect(goalBox().value).toBe('Newer words from the other tab');
+  });
+
+  it('keeps what a reader with a stale tab was typing when the discard is refused', async () => {
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences(
+          board({}, { goal: 'Newer words from the other tab', revision: 3 }),
+        );
+        return json({
+          ok: true,
+          outcome: 'refused',
+          persisted: false,
+          revision: 3,
+          withdrew: true,
+        });
+      },
+    });
+    await settle(page);
+    type(goalBox(), 'half-typed words');
+    page.state.data = withSentences(page.state.data as object);
+    await page.poll(page.state.data);
+    await press(discard());
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
+    expect(goalBox().value).toBe('half-typed words');
   });
 
   it('withdraws the Intent log’s retained rows the moment the discard lands, before the board has refreshed', async () => {
