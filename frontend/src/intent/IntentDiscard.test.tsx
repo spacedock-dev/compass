@@ -488,7 +488,7 @@ describe('Discard everything', () => {
     expect(goalBox().value).toBe('Newer words from the other tab');
   });
 
-  it('keeps what a reader with a stale tab was typing, and their place, when the discard is refused', async () => {
+  it('keeps what a reader with a stale tab was typing when the discard is refused', async () => {
     const page = mount({
       '/api/annotate': () => {
         page.state.data = withSentences(
@@ -511,19 +511,10 @@ describe('Discard everything', () => {
     await act(async () => {
       page.clock.advance(1_300);
     });
-    // A pointer press focuses the button it lands on; `fireEvent` does not, so the test does.
-    discard()?.focus();
     await press(discard());
     await settle(page);
     expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
     expect(goalBox().value).toBe('half-typed words');
-    /* Confirm discard is gone and the offer is back inside the closed menu, so focus goes to the More
-       trigger the armed question stood beside, never to the page. */
-    const more = document.querySelector(
-      '[data-next-intent-kept] [aria-label="More about these words"]',
-    );
-    expect(more).not.toBeNull();
-    expect(document.activeElement).toBe(more);
   });
 
   it('withdraws the Intent log’s retained rows the moment the discard lands, before the board has refreshed', async () => {

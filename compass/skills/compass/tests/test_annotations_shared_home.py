@@ -1061,6 +1061,66 @@ class ARefreshCannotUndoASaveTest(_SharedHomeCase):
         self.assertTrue(self.first.annotations_trusted, "the notice stayed up over a whole file")
         self.assertEqual("", annotation_store.store_notice(self.first))
 
+    def test_a_save_over_a_repaired_store_takes_the_notice_down_before_any_collection(self) -> None:
+        store = Path(annotation_store.store_path(self.config))
+        store.write_text("not a store", "utf-8")
+        annotation_store.refresh(self.config, self.first)
+        self.assertEqual(
+            annotation_store.STORE_UNREADABLE, annotation_store.store_notice(self.first)
+        )
+        store.write_text(json.dumps({"v": annotation_store.SCHEMA_VERSION, "entries": []}), "utf-8")
+
+        saved = annotation_store.annotate(
+            self.config, self.first, "claude", SID, goal=FIRST, now=FIRST_AT
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_STORED, saved)
+        self.assertEqual("", annotation_store.store_notice(self.first))
+
+
+class AFirstCollectionWaitsForABusyStoreTest(_SharedHomeCase):
+    """A dashboard's first collection, and a later one, while another process holds the store.
+
+    The first has no copy to keep, so giving up shows every session as one
+    nobody typed against, and history records the words going and coming
+    back. It waits as long as a save would. A later collection keeps its copy
+    after the short wait instead, so a stuck holder never stalls the board.
+    """
+
+    def seed(self) -> None:
+        saved = annotation_store.annotate(
+            self.config, self.first, "claude", SID, goal=FIRST, now=FIRST_AT
+        )
+        self.assertEqual(annotation_store.OUTCOME_STORED, saved)
+
+    def test_a_first_collection_waits_out_a_short_hold_and_shows_the_words(self) -> None:
+        self.seed()
+        self.assertIsNone(self.second.annotations)
+        holder = self.hold()
+        release = threading.Timer(1.0, _kill, args=(holder,))
+        release.start()
+        self.addCleanup(release.cancel)
+        began = time.monotonic()
+
+        entries = annotation_store.refresh(self.config, self.second)
+
+        self.assertGreater(time.monotonic() - began, 0.5, "the holder was never waited for")
+        self.assertIsNotNone(annotation_store.find(entries, "claude", SID))
+        self.assertIsNotNone(
+            annotation_store.find(annotation_store.active(self.config, self.second), "claude", SID)
+        )
+
+    def test_a_later_collection_keeps_its_copy_after_the_short_wait(self) -> None:
+        self.seed()
+        cached = annotation_store.active(self.config, self.first)
+        self.hold()
+        began = time.monotonic()
+
+        entries = annotation_store.refresh(self.config, self.first)
+
+        self.assertLess(time.monotonic() - began, 0.9)
+        self.assertEqual(cached, entries)
+
 
 # A collection's refresh in a second process, holding its read handle on the
 # store open for `HOLD` seconds. While held it keeps a marker beside the store,

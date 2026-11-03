@@ -109,9 +109,13 @@ The posture rests on two invariants:
    and its rename (`flock` on POSIX, `msvcrt.locking` on Windows), so two dashboards sharing one
    Compass home cannot write an older copy over a newer save or reuse a revision number: a write
    that named a revision the other dashboard has moved past is refused as stale, and a plain goal
-   save appends after it. A collection's re-read of the file takes the same lock for a quarter of a
-   second at most, so it never holds the file open across the other dashboard's rename, which
-   Windows refuses; when the lock stays held it keeps the copy it has until the next collection.
+   save appends after it. A collection's re-read of the file waits for the same lock, at most a
+   quarter of a second (ten seconds on a dashboard's first collection, which has no copy to keep),
+   and holds it for the read, so when it can take the lock it does not hold the file open across
+   the other dashboard's rename, which Windows refuses. When the lock stays held it keeps the copy
+   it has until the next collection. Where the lock cannot be taken (a lock file this user cannot
+   open, one that cannot be made, a filesystem without locks) the re-read goes ahead without it, as
+   `--diagnose` does when no lock file exists, since it writes nothing.
    A write that waits ten seconds for the lock writes nothing and answers
    `unwritable`, and so does one whose lock file exists or can be made but cannot be opened or locked
    by this user, such as a lock file left mode 000 or owned by another account. Only a filesystem

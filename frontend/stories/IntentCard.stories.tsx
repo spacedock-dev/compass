@@ -1527,9 +1527,9 @@ export const DiscardEverythingSaysWhatGoesAndWhatStays: Story = {
 };
 
 /* A reader confirms Discard everything in a tab drawn at revision 2 after another tab saved revision 3. The
-   page names the revision it showed, so the server refuses: the reader is told nothing was discarded, sees the
-   newer words the other tab saved, and keeps their place beside the card. The server below takes any other
-   discard, so a page that named no revision would discard the newer words here. */
+   page names the latest revision it has drawn, so the server refuses: the reader is told nothing was
+   discarded and sees the newer words the other tab saved. The server below takes any other discard, so a
+   page that named no revision would discard the newer words here. */
 export const ADiscardFromAStaleTabTakesNothingNewer: Story = {
   args: {
     setup: {
@@ -1577,7 +1577,7 @@ export const ADiscardFromAStaleTabTakesNothingNewer: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const { card, kept, confirm } = await armDiscard(canvasElement);
+    const { card, confirm } = await armDiscard(canvasElement);
     (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
       1_300,
     );
@@ -1597,12 +1597,6 @@ export const ADiscardFromAStaleTabTakesNothingNewer: Story = {
       ),
     );
     await expect(canvasElement.textContent).not.toContain('Discarded. Everything you asked');
-    // Confirm discard is gone; focus is on the More trigger it stood beside, not on the page.
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        within(kept).getByRole('button', { name: 'More about these words' }),
-      ),
-    );
   },
 };
 

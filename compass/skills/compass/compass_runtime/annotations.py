@@ -641,11 +641,15 @@ _STORE_LOCK_WAIT_SECONDS = 10.0
 # How long a collection's `refresh` waits for the same locks before keeping the
 # copy it has. Long enough to outlast a write in progress, short because the
 # board must not stall behind a stuck holder (`_locked_store`'s measured stall);
-# giving up costs one collection a copy that is one save old.
+# giving up costs one collection a copy that is one save old. A dashboard's
+# first collection has no copy to keep, so it waits `_STORE_LOCK_WAIT_SECONDS`.
 _REFRESH_LOCK_WAIT_SECONDS = 0.25
 # What `_store_locks` yields when this process's own writer lock stayed held
 # past the wait: a save here was queued behind one that is still waiting.
 _QUEUED = "queued"
+# What it yields when asked not to create a lock file that does not exist: this
+# process's two locks are held and the OS lock is not taken.
+_UNLOCKED = "unlocked"
 
 # Why `fresh` has no store to give, spelled for the reading route's reply.
 # Busy: another write held the store past the wait, so the words are there and
@@ -672,7 +676,8 @@ _UNLOCKABLE_NAMED_LOCK = threading.Lock()
 
 # One writer per store per process, before the OS lock. Keyed by store path
 # rather than held on a state, so two dashboards in one process share it, and
-# never `annotation_lock`, so `refresh` and `active` do not wait behind it.
+# never `annotation_lock`, so `active` does not wait behind it. A collection's
+# `refresh` takes it too, for its own bounded wait.
 _WRITERS: dict[str, threading.Lock] = {}
 _WRITERS_LOCK = threading.Lock()
 # The stores this thread is writing now. A writer that calls another writer
@@ -700,13 +705,15 @@ def _store_locks(
     *,
     wait: float,
     make_home: bool,
+    create_lock: bool = True,
 ) -> Iterator[str]:
     """The three locks `_locked_store` describes, in its order, on one `wait` deadline.
 
     Yields the OS lock's answer from `held_file_lock`, or `_QUEUED` when this
-    process's writer lock stayed held. `annotation_lock` is held under every
-    answer but `_QUEUED` and `LOCK_BUSY`, which hold nothing the caller may
-    read under.
+    process's writer lock stayed held, or `_UNLOCKED` when `create_lock` is
+    False and there is no lock file to take. `annotation_lock` is held under
+    every answer but `_QUEUED` and `LOCK_BUSY`, which hold nothing the caller
+    may read under.
     """
     path = store_path(config)
     writing = _writing()
@@ -724,6 +731,10 @@ def _store_locks(
             # The lock file sits in the state home, which the first save creates.
             with contextlib.suppress(OSError):
                 os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+        if not create_lock and not os.path.lexists(lock_path(config)):
+            with state.annotation_lock if state is not None else contextlib.nullcontext():
+                yield _UNLOCKED
+            return
         with runtime_io.held_file_lock(
             lock_path(config), wait=max(0.0, deadline - time.monotonic())
         ) as held:
@@ -1861,7 +1872,9 @@ def _cache(state: RuntimeState, entries: tuple[Annotation, ...]) -> None:
     state.annotations_trusted = True
 
 
-def refresh(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...]:
+def refresh(
+    config: RuntimeConfig, state: RuntimeState, *, create_lock: bool = True
+) -> tuple[Annotation, ...]:
     """Re-read the store into this process's copy, and return it.
 
     Two dashboards can bind on one machine and the file is the record, so a save
@@ -1875,7 +1888,15 @@ def refresh(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...
     keeping the save's copy and returning early, leaving the store notice one
     collection stale. When the locks stay held past `_REFRESH_LOCK_WAIT_SECONDS`
     a write is in progress or stuck, and the copy this process has is kept
-    rather than read under it: the next collection reads again.
+    rather than read under it: the next collection reads again. A first
+    collection has no copy, and giving up would show every session as one
+    nobody typed against and record the words leaving history and coming back,
+    so it waits as long as a save does.
+
+    `create_lock` False never makes a lock file that is not there, and reads
+    under this process's locks alone when there is none: `--diagnose` writes
+    nothing. A serving collection keeps the default, because only a lock file
+    lets it keep out of another dashboard's rename.
     """
     if not config.annotations_enabled:
         with state.annotation_lock:
@@ -1891,14 +1912,17 @@ def refresh(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...
             state.annotations = ()
             state.annotations_trusted = True
             return ()
-    with _store_locks(config, state, wait=_REFRESH_LOCK_WAIT_SECONDS, make_home=False) as held:
+        cold = state.annotations is None
+    wait = _STORE_LOCK_WAIT_SECONDS if cold else _REFRESH_LOCK_WAIT_SECONDS
+    with _store_locks(config, state, wait=wait, make_home=False, create_lock=create_lock) as held:
         if held in (_QUEUED, runtime_io.LOCK_BUSY):
             with state.annotation_lock:
                 return cast("tuple[Annotation, ...]", state.annotations or ())
         # Every other answer holds `annotation_lock` and this process's writer
         # lock. Without the OS lock (a filesystem that cannot lock, a lock file
-        # that cannot be made or opened) the read is the one it always was:
-        # this process's own saves cannot run beside it either.
+        # that cannot be made or opened, or none made for `--diagnose`) the
+        # read is the one it always was: this process's own saves cannot run
+        # beside it either.
         store = _read_store(config)
         state.annotations = _stored(store.entries)
         state.annotations_trusted = store.trusted

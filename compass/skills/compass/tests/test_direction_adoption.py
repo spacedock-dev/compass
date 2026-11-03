@@ -15,6 +15,7 @@ import dataclasses
 import http.client
 import io
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -2290,6 +2291,19 @@ class ABusyStoreIsSaidOnThePressTest(_ReadingRouteHandler):
         self.assertEqual(0, compose.call_count)
         answer, code = self.replies[-1]
         self.assertEqual((503, annotation_store.FRESH_BUSY), (code, answer.get("reason")))
+
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "POSIX file modes, which root ignores")
+    def test_a_lock_file_this_reader_cannot_open_is_said_as_unavailable_not_busy(self) -> None:
+        config, state = self._runtime()
+        annotation_store.annotate(config, state, "claude", SHORT, goal="My goal", now=FIRST_AT)
+        lock = annotation_store.lock_path(config)
+        os.chmod(lock, 0)
+        self.addCleanup(os.chmod, lock, 0o600)
+        with contextlib.redirect_stdout(io.StringIO()):
+            compose = self._plain(config, state, allow=True)
+        self.assertEqual(0, compose.call_count)
+        answer, code = self.replies[-1]
+        self.assertEqual((503, annotation_store.FRESH_UNAVAILABLE), (code, answer.get("reason")))
 
     def test_an_unreadable_store_is_not_said_as_no_annotated_session(self) -> None:
         config, state = self._runtime()
