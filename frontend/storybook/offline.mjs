@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { openPage } from '../e2e/support/browser.mjs';
+import { warmDevServer } from './warm.mjs';
 const root = resolve('.storybook-build');
 const types = {
   '.html': 'text/html',
@@ -99,6 +100,9 @@ try {
       }
     }, 100);
   });
+  // The followers' leader wait is 1000 ms and the first page load makes the server transform the preview,
+  // so do that before the browser asks (frontend/storybook/warm.mjs says why).
+  await warmDevServer('http://127.0.0.1:6006');
   devBrowser = await chromium.launch({ headless: true });
   const opened = await openPage(devBrowser, 'http://127.0.0.1:6006');
   try {
