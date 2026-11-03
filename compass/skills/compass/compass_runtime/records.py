@@ -2332,6 +2332,13 @@ _SCRUB_WITHHELD: Final = Scrubbed(_SECRET_MARKER, complete=False)
 # cost 4.0 s on text that shares its prefix.
 _LONG_SPELLING_MIN: Final = 64
 
+# The compiled root holds one branch per distinct first character, and a position the
+# before-boundary admits tries every one. Non-ASCII text admits every position, so 4,096
+# CJK-led values cost 2.4 s over 120,000 characters of CJK text, and 16,384 cost 18 s. A set
+# of spellings with more first characters than this is withheld; every printable ASCII
+# character leading a value is 95, with room for accented and CJK values beside them.
+_ROOT_FANOUT_MAX: Final = 128
+
 
 def _spellings(value: str) -> set[str]:
     """Every form a masked value is searched for in: the value and each whitespace piece of it,
@@ -2937,6 +2944,9 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     short = tuple(spelling for spelling in spellings if len(spelling) < long_min)
     long = tuple(spelling for spelling in spellings if len(spelling) >= long_min)
     prefixes = tuple(sorted({spelling[:long_min] for spelling in long}))
+    firsts = {spelling[0] for spelling in spellings}
+    if len(firsts) > _ROOT_FANOUT_MAX:
+        return None
     alternation = _trie_alternation(short)
     starts = _trie_alternation((*short, *prefixes)) if long else alternation
     lead = _trie_alternation(prefixes)
@@ -2957,6 +2967,10 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     # unless a word character follows. Either way this only hides more, and text with no masked
     # value in it is untouched.
     after = rf"(?![{word}@+\-]|[./][{word}/])" if prose else rf"(?![{word}./@+\-])"
+    # A position whose character cannot begin a spelling is rejected by one set test instead of
+    # one trial per root branch. Hostile text made of first characters still reaches the root,
+    # which `_ROOT_FANOUT_MAX` bounds.
+    gate = "(?=[" + "".join(sorted(map(re.escape, firsts))) + "])"
     body = _SECRET_MARKER[1:]
     # A start is only where to look, so the long spellings' prefixes widen it to a superset and
     # `inner` decides the real end. A run opens with two spellings, or with a long one.
@@ -2967,13 +2981,13 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     else:
         run = f"(?:{alternation})(?:{starts})|(?:{lead})"
     return _ScrubPatterns(
-        single_starts=re.compile(rf"{before}(?=(?:{starts}))"),
+        single_starts=re.compile(rf"{before}{gate}(?=(?:{starts}))"),
         single=re.compile(rf"(?:{alternation}){after}"),
-        flag_starts=re.compile(rf"{before}-[pP](?=(?:{starts}))"),
+        flag_starts=re.compile(rf"{before}-[pP]{gate}(?=(?:{starts}))"),
         userinfo=re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
-        run_starts=re.compile(rf"{before}(?={run})"),
+        run_starts=re.compile(rf"{before}{gate}(?={run})"),
         inner=re.compile(rf"(?:{alternation})"),
         after=re.compile(after),
         chars=frozenset("".join(spellings)),
