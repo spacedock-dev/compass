@@ -1760,9 +1760,8 @@ owner's acceptance opened the gate on 2026-10-02.** `annotations.CLAUDE_ABSTENTI
 `reading_route` selects it for a Claude Code session when an absolute `claude` is on PATH, and for
 another harness's session only when `codex` is not. The unasked lane resolves with Claude Code
 first on a harness that has no producer of its own (owner, 2026-10-20), and sends through
-`reading_policy.GuardedModel`. Goal summaries never invoke it. Outside the runtime, only the qualification scorer and the drift replay check's
-owner-authorized Analyze tier build one, both through the scorer's verified, pinned copy of the CLI,
-and a test holds that list. Set back to `not-run`, the gate is read before the CLI is looked for, so no route,
+`reading_policy.GuardedModel`. Goal summaries never invoke it. Outside the runtime, only the qualification scorer builds one,
+through its verified, pinned copy of the CLI, and a test holds that list. Set back to `not-run`, the gate is read before the CLI is looked for, so no route,
 fallback or forged request can invoke it.
 
 The argv, every flag checked against `claude --help` on 2.1.280, run without a shell:
@@ -2971,8 +2970,8 @@ The drift replay check was a third check under the same rules, and `docs/drift-r
 committed half. The owner retired the study on 2026-11-01 and the tooling that ran it, including
 the replay script and the redaction tool behind its fixtures, was removed; nothing in the
 repository sends a case to a model for it any more. What stays true of what remains: the committed
-records hold only count and digest summaries, the digests hold digests and counts, and the results
-closed tokens, counts, and case and claim ids salted with a local secret, so a committed id cannot
+records hold only count and digest summaries: the digests hold digests and counts, and the results
+hold closed tokens, counts, and case and claim ids salted with a local secret, so a committed id cannot
 be recomputed from a session id and a time. The cases, the owner's blind marks, the outputs, the
 claim items and marks and the salt stayed under `~/.compass/drift-replay/` on the machines that
 made them, and are not read by anything shipped. Its spend ledger, `~/.cargento/drift-replay/spend.json`,
