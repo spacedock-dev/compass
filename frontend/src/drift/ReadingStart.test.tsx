@@ -124,7 +124,7 @@ describe('a store that cannot take the press says so, and does not say the answe
   const BUSY =
     'Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.';
   const UNREADABLE =
-    'Compass could not read the file that holds what you typed, so nothing was started or spent. The notice on the card says how to repair it.';
+    'Compass could not use the file that holds what you typed, so nothing was started or spent.';
   it.each([
     ['annotation-store-busy', BUSY],
     ['annotation-store-unavailable', UNREADABLE],
@@ -152,16 +152,19 @@ describe('a store that cannot take the press says so, and does not say the answe
     expect(said).toContain(sentence);
   });
 
-  it('keeps the generic sentence for any other refusal the page cannot read', async () => {
-    const page = mountDrift({
-      routes: { '/api/reading': () => json({ ok: false, reason: 'something-new' }, 503) },
-    });
-    await page.settle();
-    await page.settle();
-    await press(byAction('reading-ask'));
-    await page.settle();
-    expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
-  });
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty', 'something-new'])(
+    'keeps the generic sentence for the refusal reason %s, which names no cause',
+    async (reason) => {
+      const page = mountDrift({
+        routes: { '/api/reading': () => json({ ok: false, reason }, 503) },
+      });
+      await page.settle();
+      await page.settle();
+      await press(byAction('reading-ask'));
+      await page.settle();
+      expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
+    },
+  );
 });
 
 describe('a refusal is a state', () => {

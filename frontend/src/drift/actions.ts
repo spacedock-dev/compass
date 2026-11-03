@@ -197,17 +197,18 @@ export async function askForReading(
     if (!reply.ok) {
       /* The store refused before anything started: a named cause, not a lost answer. Any other refusal falls
          through to the generic sentence below. */
-      const cause = {
-        'annotation-store-busy': STORE_BUSY_PRESS,
-        'annotation-store-unavailable': STORE_UNREADABLE_PRESS,
-      }[String(answer?.['reason'])];
+      const causes = new Map([
+        ['annotation-store-busy', STORE_BUSY_PRESS],
+        ['annotation-store-unavailable', STORE_UNREADABLE_PRESS],
+      ]);
+      const cause = causes.get(String(answer?.['reason']));
       if (cause) {
         /* Not `refusal`: ReadingControl drops a refusal whose words are not the board's own reason as stale,
            which erased this sentence on the render after it. An answered message is drawn in the card's
            polite live region (`role="status"`) and kept until the next press. */
         note.message = cause;
-        /* An unreadable store is one the board has not necessarily said yet, and the sentence points at the
-           card's notice, so the board is read now rather than at the next poll. */
+        /* An unusable store may be an unreadable file the board has not said yet, whose notice the card then
+           draws, so the board is read now rather than at the next poll. */
         if (cause === STORE_UNREADABLE_PRESS) await refresh(intent);
         return;
       }

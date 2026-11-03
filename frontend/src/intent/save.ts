@@ -498,8 +498,7 @@ const DISCARD_LANDED: ReadonlySet<string> = new Set([
   'discard-summary_unknown',
 ]);
 
-/* A discard that left the words standing removed the Confirm control the reader was on, and the other copy
-   of it sits in the closed More menu, so focus would fall to the page. It goes to the More trigger, where
+/* A discard that left the words standing removed the Confirm control the reader was on, and the other copy of it sits in the closed More menu, so focus fell to the page. It goes to the More trigger, where
    the words are managed, and only where nobody has taken it elsewhere. The reply can come up to ten seconds
    after the press (the store waits on a busy writer), so the reader may by then be in the goal box, and an
    unconditional ask took focus out of it. The ask goes through the Drift page's own gate, which registers
@@ -508,6 +507,8 @@ const DISCARD_LANDED: ReadonlySet<string> = new Set([
    ([the focus rows](../../../docs/design-reader-state.md)). */
 function focusMoreIfStillAdrift(ctx: Ctx, row: Row, key: string): void {
   const active = typeof document === 'undefined' ? null : document.activeElement;
+  /* The Confirm control counts too: jsdom has unmounted it by now, but in Chromium it can still hold focus
+     when the reply is handled, and the story for a refused discard fails without this clause. */
   const confirm = ctx.shell.controls.focusLane.element(key);
   const parked = !active || active === document.body || active === confirm;
   if (parked) requestFocus(driftCtxFor(ctx.shell), `intent-menu:${compatSessKey(row)}`);
