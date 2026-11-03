@@ -1676,7 +1676,7 @@ class TouchingRunsAreReadInLinearWork(unittest.TestCase):
         records._mask_runs(
             text,
             patterns.run_starts,
-            counted,  # type: ignore[arg-type]
+            counted,
             patterns.after,
             records.SECRET_MARKER,
         )
@@ -2236,7 +2236,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                     records._mask_flags(
                         unit * k + ".py",
                         patterns.flag_starts,
-                        counted,  # type: ignore[arg-type]
+                        counted,
                         patterns.after,
                         "\ufdd0",
                     )
@@ -2299,7 +2299,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 out = records._mask_singles(
                     " " + "!FakeWxyz" * k + " ",
                     patterns.single_starts,
-                    counted,  # type: ignore[arg-type]
+                    counted,
                     "\ufdd0",
                 )
                 self.assertNotIn("Fake", out)
@@ -2327,7 +2327,7 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 counted = _CountedInner(patterns.inner)
                 records._separate_escapes(
                     unit * k + tail,
-                    counted,  # type: ignore[arg-type]
+                    counted,
                     longest,
                     "\ufdd1",
                 )
@@ -2337,6 +2337,191 @@ class ScrubDriversReadInLinearWorkTest(unittest.TestCase):
                 self.assertLess(work[1], 2.2 * work[0], work)
                 # However long an escape, only the offsets a spelling could cross from are read.
                 self.assertLessEqual(work[1], 4_000 * 2 * longest, work)
+
+
+class IndexedScrubMatchesRegexScrubTest(unittest.TestCase):
+    """Finding long values by index masks exactly what the all-regex scrub masked."""
+
+    ALPHABETS: ClassVar[tuple[str, ...]] = (
+        "ab!:",
+        "a!-p:",
+        "Fk9 -p",
+        "\u00e9a:!",
+        "ab1_./@",
+        "a:/@",
+        "h:/@a",
+        "u:@a/",
+    )
+    PIECES: ClassVar[tuple[str, ...]] = (
+        "",
+        ":",
+        ".py",
+        " ",
+        "x",
+        "@h",
+        "-p",
+        " -p",
+        ":-p",
+        "\\n",
+        "\x1b[1m",
+        "'",
+        '"',
+        "//",
+        "http://u:",
+        "u:",
+    )
+
+    def scrub_both_ways(
+        self, text: str, values: list[str], *, prose: bool
+    ) -> tuple[records.Scrubbed, records.Scrubbed, int]:
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        results = []
+        for threshold in (10**9, 3):
+            records._scrub_patterns.cache_clear()
+            with (
+                mock.patch.object(records, "_LONG_SPELLING_MIN", threshold),
+                mock.patch.object(records, "_LongIndex", Recording),
+            ):
+                results.append(records.scrub(text, values, prose=prose))
+        records._scrub_patterns.cache_clear()
+        return results[0], results[1], len(built)
+
+    def test_the_indexed_scrub_masks_exactly_what_the_regex_scrub_masked(self) -> None:
+        rng = random.Random(5080)
+        compared = indexed = 0
+        for _ in range(3_000):
+            alphabet = rng.choice(self.ALPHABETS)
+            values = [
+                "".join(rng.choices(alphabet, k=rng.randint(4, 8)))
+                for _ in range(rng.randint(2, 4))
+            ]
+            if rng.random() < 0.5:
+                values.append(values[0] + rng.choice(("!", ":", "-p", "ab")))
+            parts = [*values, *(shlex.quote(value) for value in values), *self.PIECES]
+            text = "".join(rng.choice(parts) for _ in range(rng.randint(1, 10)))
+            for prose in (False, True):
+                oracle, indexed_result, built = self.scrub_both_ways(text, values, prose=prose)
+                with self.subTest(values=values, text=text, prose=prose):
+                    self.assertEqual(oracle, indexed_result)
+                compared += 1
+                indexed += built
+        self.assertGreater(compared, 1_500)
+        self.assertGreater(indexed, 1_000)
+
+
+class LongIndexTest(unittest.TestCase):
+    """`_LongIndex` reports where a long spelling occurs without comparing it character by character."""
+
+    @staticmethod
+    def brute(text: str, spellings: tuple[str, ...], at: int) -> list[int]:
+        return sorted((at + len(s) for s in spellings if text.startswith(s, at)), reverse=True)
+
+    def test_the_index_finds_exactly_what_startswith_finds(self) -> None:
+        rng = random.Random(5080)
+        for _ in range(2_000):
+            spellings = tuple(
+                {
+                    "".join(rng.choices("ab!:", k=rng.randint(4, 12)))
+                    for _ in range(rng.randint(1, 4))
+                }
+            )
+            text = "".join(rng.choices("ab!:", k=rng.randint(0, 40)))
+            index = records._LongIndex(text, spellings, 3)
+            for at in range(len(text) + 1):
+                with self.subTest(spellings=spellings, text=text, at=at):
+                    self.assertEqual(self.brute(text, spellings, at), list(index.ends(at)))
+
+    def test_a_text_with_no_candidate_offset_builds_no_hash_array(self) -> None:
+        index = records._LongIndex("z" * 500, ("abcdefgh", "abcdxxxx"), 4)
+        self.assertTrue(all(index.ends(at) == () for at in range(501)))
+        self.assertEqual(0, index.steps)
+
+    def test_a_forced_collision_over_masks_and_never_misses(self) -> None:
+        rng = random.Random(7)
+        with mock.patch.object(records, "_HASH_MOD", 101):
+            for _ in range(300):
+                spellings = tuple(
+                    {"".join(rng.choices("ab", k=rng.randint(4, 9))) for _ in range(3)}
+                )
+                text = "".join(rng.choices("ab", k=30))
+                index = records._LongIndex(text, spellings, 3)
+                for at in range(len(text) + 1):
+                    self.assertLessEqual(set(self.brute(text, spellings, at)), set(index.ends(at)))
+
+
+class LongValueScrubTest(unittest.TestCase):
+    """One very long masked value costs work linear in the text, whatever its length."""
+
+    SHAPES: ClassVar[dict[str, Any]] = {
+        "recipe": (lambda m: "!" * m + "x", lambda m: "!" * m),
+        "userinfo": (lambda m: "a:" * m + "x", lambda m: "a:" * (2 * m)),
+        "flag": (lambda m: "!" * m + "x", lambda m: "z -p" + "!" * m),
+    }
+
+    def steps(self, shape: str, m: int) -> int:
+        value, text = (build(m) for build in self.SHAPES[shape])
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        records._scrub_patterns.cache_clear()
+        with mock.patch.object(records, "_LongIndex", Recording):
+            records.scrub(text, [value])
+        records._scrub_patterns.cache_clear()
+        return sum(index.steps for index in built)
+
+    def test_a_scrub_of_one_long_value_is_linear_in_the_text(self) -> None:
+        for shape in self.SHAPES:
+            work = [self.steps(shape, m) for m in (8_000, 16_000)]
+            with self.subTest(shape=shape):
+                self.assertGreater(work[0], 0)
+                self.assertLess(work[1], 2.2 * work[0], work)
+
+    def test_a_userinfo_shape_of_one_long_value_scrubs_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        value, text = "a:" * 30_000 + "x", "a:" * 60_000
+        records.scrub_values("warm", [value])
+        started = time.process_time()
+        records.scrub(text, [value])
+        # 0.35 s here and about 1 s on a slow runner; the regex took 7.4 s.
+        self.assertLess(time.process_time() - started, 3.0)
+
+    def test_a_run_of_touching_long_values_builds_a_fixed_number_of_indexes(self) -> None:
+        values = [f"V{i:03d}" + "x" * 70 for i in range(500)]
+        text = "pre " + "".join(values) + " post"
+        built: list[Any] = []
+
+        class Recording(records._LongIndex):
+            def __init__(self, *args: Any) -> None:
+                super().__init__(*args)
+                built.append(self)
+
+        records._scrub_patterns.cache_clear()
+        with mock.patch.object(records, "_LongIndex", Recording):
+            result = records.scrub(text, values)
+        records._scrub_patterns.cache_clear()
+        self.assertNotIn("xxxx", result.text)
+        self.assertLess(len(built), 40, len(built))
+
+    def test_the_recipe_scrubs_120_thousand_characters_quickly(self) -> None:
+        if sys.gettrace() is not None or "coverage" in sys.modules:
+            self.skipTest("timed without a tracer only")
+        value, text = "!" * 120_000 + "x", "!" * 120_000
+        records.scrub_values("warm", [value])
+        started = time.process_time()
+        records.scrub(text, [value])
+        # 0.42 s here and 1.2 s on a slow runner; the regex took 14 s.
+        self.assertLess(time.process_time() - started, 5.0)
 
 
 class MaskCommandTest(unittest.TestCase):

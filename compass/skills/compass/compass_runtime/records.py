@@ -7,14 +7,16 @@ import itertools
 import json
 import math
 import os
+import random
 import re
 import shlex
 import string
+import sys
 import unicodedata
 from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Final, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -2325,6 +2327,11 @@ class Scrubbed(NamedTuple):
 SCRUB_SPELLING_MASS_MAX: Final = 270_336
 _SCRUB_WITHHELD: Final = Scrubbed(_SECRET_MARKER, complete=False)
 
+# Spellings this long are found by `_LongIndex`, not the trie regex: the regex reads a failing long
+# literal to its end at every offset, so one value of 30,000 characters cost 1.1 s and one of 60,000
+# cost 4.0 s on text that shares its prefix.
+_LONG_SPELLING_MIN: Final = 64
+
 
 def _spellings(value: str) -> set[str]:
     """Every form a masked value is searched for in: the value and each whitespace piece of it,
@@ -2374,6 +2381,9 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     a word character still does. The output tail keeps `.`, `/`, `@`, `+` and `-` inside a word
     because a filename ends in `.py`.
 
+    A value of `_LONG_SPELLING_MIN` characters or more is found by `_LongIndex`, so one very long
+    value costs work linear in the text, not text times its length.
+
     It fails closed. A set of values too heavy to compile (`SCRUB_SPELLING_MASS_MAX`), values
     that each extend the last past `_TRIE_DEPTH_MAX`, a text that holds nearly every stand-in, or
     a text that still changes on the last of `_SCRUB_PASSES` is not searched or not finished, and
@@ -2397,7 +2407,7 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     if not patterns.reads_marker:
         text = text.replace(_SECRET_MARKER, hold)
     if ("\x1b" in text or "\x9b" in text) and not patterns.chars & {"\x1b", "\x9b"}:
-        text = _separate_escapes(text, patterns.inner, patterns.longest, separator)
+        text = _separate_escapes(text, patterns.bind(text)[0], patterns.longest, separator)
     for _ in range(_SCRUB_PASSES):
         scrubbed = _scrub_pass(text, patterns, hold)
         if scrubbed == text:
@@ -2436,7 +2446,7 @@ _JOINING_BYTES: Final = frozenset(string.ascii_letters + string.digits + "_./@+-
 _SCRUB_PASSES: Final = 4
 
 
-def _separate_escapes(text: str, inner: re.Pattern[str], longest: int, separator: str) -> str:
+def _separate_escapes(text: str, inner: _Matcher, longest: int, separator: str) -> str:
     """`text` with `separator` after each terminal escape, so no value after one is read as part
     of a longer word.
 
@@ -2467,16 +2477,67 @@ def _scrub_pass(text: str, patterns: _ScrubPatterns, hold: str) -> str:
     # Userinfo first: a single-value pass would let a short spelling match inside
     # `user:Fake99!@` in prose and leave the `!` of the longer one, where the one-at-a-time loop
     # took the longest.
-    text = patterns.userinfo.sub(lambda match: match[1] + hold + match[2], text)
+    if patterns.long:
+        text = _mask_userinfo_indexed(text, patterns.bind(text)[0], hold)
+    else:
+        text = patterns.userinfo.sub(lambda match: match[1] + hold + match[2], text)
     # A run after the flag is one password (`-pV1V2`), so the flag pass takes all of it.
-    text = _mask_flags(text, patterns.flag_starts, patterns.inner, patterns.after, hold)
+    text = _mask_flags(text, patterns.flag_starts, patterns.bind(text)[0], patterns.after, hold)
     # Two masked values with nothing between them reject each other at the word boundary, so a
     # run of them is read whole before the single-value pass sees either.
-    text = _mask_runs(text, patterns.run_starts, patterns.inner, patterns.after, hold)
-    return _mask_singles(text, patterns.single_starts, patterns.single, hold)
+    text = _mask_runs(text, patterns.run_starts, patterns.bind(text)[0], patterns.after, hold)
+    return _mask_singles(text, patterns.single_starts, patterns.bind(text)[1], hold)
 
 
-def _chain_ends(text: str, inner: re.Pattern[str]) -> Callable[[int], int]:
+# Where `user:value@` can begin: the same before-boundary and head the userinfo pattern opens with,
+# found without reading a value, so a long value is compared only where a head stands.
+_USERINFO_START: Final = re.compile(
+    r"(?<![^\s:/@'\"])(?=(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)"
+)
+_USERINFO_SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+_USERINFO_HEAD: Final = re.compile(r"[^\s:/@'\"]+:")
+
+
+def _mask_userinfo_indexed(text: str, inner: _Substituter, hold: str) -> str:
+    """`text` with the value of each `user:value@` masked, as the userinfo pattern masked it.
+
+    It reads what that pattern's `re.sub` read, left to right and without overlap: a head with its
+    `scheme://` first and then without it, and at the end of the head the longest spelling that an
+    `@` follows, falling back to each shorter one. Only the value is read through `inner`, which is
+    where the pattern compared a long spelling at every head.
+    """
+    out: list[str] = []
+    last = 0
+    for start in _USERINFO_START.finditer(text):
+        at = start.start()
+        if at < last:
+            continue
+        scheme = _USERINFO_SCHEME.match(text, at)
+        for head_from in (at,) if scheme is None else (scheme.end(), at):
+            head = _USERINFO_HEAD.match(text, head_from)
+            if head is None:
+                continue
+            end = _value_end_before_at(text, head.end(), inner)
+            if end is not None:
+                out.extend((text[last : head.end()], hold, "@"))
+                last = end + 1
+                break
+    out.append(text[last:])
+    return "".join(out)
+
+
+def _value_end_before_at(text: str, at: int, inner: _Matcher) -> int | None:
+    """The end of the longest spelling at `at` that an `@` follows, or None."""
+    found = inner.match(text, at)
+    while found is not None:
+        end = found.end()
+        if text.startswith("@", end):
+            return end
+        found = inner.match(text, at, end - 1)
+    return None
+
+
+def _chain_ends(text: str, inner: _Matcher) -> Callable[[int], int]:
     """Where a chain of touching spellings from each offset ends, each spelling the longest that
     fits there, followed once and remembered for every offset it passed through."""
     ends: dict[int, int] = {}
@@ -2499,7 +2560,7 @@ def _chain_ends(text: str, inner: re.Pattern[str]) -> Callable[[int], int]:
 
 
 def _mask_flags(
-    text: str, starts: re.Pattern[str], inner: re.Pattern[str], after: re.Pattern[str], hold: str
+    text: str, starts: re.Pattern[str], inner: _Matcher, after: re.Pattern[str], hold: str
 ) -> str:
     """`text` with the run of values after each `-p` or `-P` masked as one.
 
@@ -2523,7 +2584,7 @@ def _mask_flags(
     return "".join(out)
 
 
-def _mask_singles(text: str, starts: re.Pattern[str], single: re.Pattern[str], hold: str) -> str:
+def _mask_singles(text: str, starts: re.Pattern[str], single: _Matcher, hold: str) -> str:
     """`text` with each value masked where the before-boundary admits it, and each value right
     after one masked, as the next pass would read it once the first is a stand-in.
 
@@ -2547,7 +2608,7 @@ def _mask_singles(text: str, starts: re.Pattern[str], single: re.Pattern[str], h
 def _mask_runs(
     text: str,
     starts: re.Pattern[str],
-    inner: re.Pattern[str],
+    inner: _Substituter,
     after: re.Pattern[str],
     hold: str,
 ) -> str:
@@ -2588,7 +2649,7 @@ def _mask_runs(
     return "".join(out)
 
 
-def _mask_run(run: str, inner: re.Pattern[str], hold: str) -> str:
+def _mask_run(run: str, inner: _Substituter, hold: str) -> str:
     """One stand-in per value in a run of touching values, or one for the run where the values
     cannot be split back out of it."""
     split = inner.sub(hold, run)
@@ -2658,6 +2719,168 @@ def _trie_regex(node: dict[str, Any]) -> str:
     return f"(?:{body})?" if ends else body
 
 
+# A prime modulus and a per-process random base. A collision can only report an occurrence that is
+# not there, which masks extra text; it can never hide a real one, so nothing re-checks a hit
+# character by character (overlapping true matches would make that check quadratic again).
+_HASH_MOD: Final = (1 << 61) - 1
+_HASH_BASE: Final = random.SystemRandom().randrange(1 << 20, (1 << 61) - 2)
+
+
+def _hash(text: str) -> int:
+    value = 0
+    for char in text:
+        value = (value * _HASH_BASE + ord(char)) % _HASH_MOD
+    return value
+
+
+@lru_cache(maxsize=4)
+def _spelling_table(
+    spellings: tuple[str, ...], prefix_len: int
+) -> tuple[dict[str, list[tuple[int, int]]], dict[int, int]]:
+    """Each spelling's length and hash under its first `prefix_len` characters, and the power of
+    the base for each length. Hashing a 100,000-character spelling per read cost more than the
+    reads, and a scrub binds an index for every pass over its text."""
+    by_prefix: dict[str, list[tuple[int, int]]] = {}
+    for spelling in set(spellings):
+        by_prefix.setdefault(spelling[:prefix_len], []).append((len(spelling), _hash(spelling)))
+    for candidates in by_prefix.values():
+        candidates.sort(reverse=True)
+    return by_prefix, {n: pow(_HASH_BASE, n, _HASH_MOD) for n in {len(s) for s in spellings}}
+
+
+class _LongIndex:
+    """Where each long spelling occurs in one text, by rolling hash, in constant work per offset.
+
+    The trie regex reads a failing long literal to its end at every offset, so one long value costs
+    O(text x value length). Here an offset is a candidate only when the `prefix_len` characters at
+    it are the start of some spelling, and a candidate costs one hash comparison per spelling that
+    shares that start. Every spelling must be at least `prefix_len` long.
+    """
+
+    def __init__(self, text: str, spellings: tuple[str, ...], prefix_len: int) -> None:
+        if any(len(spelling) < prefix_len for spelling in spellings):
+            msg = "a spelling shorter than the prefix can never be found"
+            raise ValueError(msg)
+        self.steps = 0
+        self._text = text
+        self._prefix_len = prefix_len
+        self._by_prefix, self._powers = _spelling_table(spellings, prefix_len)
+        self._prefix_hashes: list[int] | None = None
+        self._memo: dict[int, tuple[int, ...]] = {}
+
+    def ends(self, at: int) -> tuple[int, ...]:
+        """The end of every spelling that occurs at `at`, longest first."""
+        known = self._memo.get(at)
+        if known is not None:
+            return known
+        candidates = self._by_prefix.get(self._text[at : at + self._prefix_len])
+        found: tuple[int, ...] = ()
+        if candidates:
+            hashes = self._hashes()
+            found = tuple(
+                at + length
+                for length, full in candidates
+                if at + length <= len(self._text) and self._window(hashes, at, length) == full
+            )
+        self._memo[at] = found
+        return found
+
+    def _window(self, hashes: list[int], at: int, length: int) -> int:
+        self.steps += 1
+        return (hashes[at + length] - hashes[at] * self._powers[length]) % _HASH_MOD
+
+    def _hashes(self) -> list[int]:
+        if self._prefix_hashes is None:
+            self.steps += len(self._text)
+            base, mod = _HASH_BASE, _HASH_MOD
+            self._prefix_hashes = list(
+                itertools.accumulate(
+                    self._text, lambda value, char: (value * base + ord(char)) % mod, initial=0
+                )
+            )
+        return self._prefix_hashes
+
+
+class _Ended(Protocol):
+    def end(self) -> int: ...
+
+
+class _Matcher(Protocol):
+    """What the readers ask of a pattern: where a spelling ends at an offset."""
+
+    def match(self, string: str, pos: int = 0, endpos: int = sys.maxsize) -> _Ended | None: ...
+
+
+class _Substituter(_Matcher, Protocol):
+    def sub(self, repl: str, string: str) -> str: ...
+
+
+class _Span:
+    def __init__(self, end: int) -> None:
+        self._end = end
+
+    def end(self) -> int:
+        return self._end
+
+
+class _IndexedMatcher:
+    """A scrub's spellings as the readers see them: the short ones through the regex, the long
+    ones through `_LongIndex`, bound to the text being read.
+
+    Long spellings are longer than every short one, so the longest end at an offset is a long end
+    when there is one. `bounded` is the after-boundary of `single`, which backtracks to a shorter
+    spelling exactly as the regex alternation did.
+    """
+
+    def __init__(
+        self,
+        short: re.Pattern[str],
+        long: tuple[str, ...],
+        prefix_len: int,
+        index: _LongIndex,
+        text: str,
+        after: re.Pattern[str] | None = None,
+    ) -> None:
+        self._short = short
+        self._long = long
+        self._prefix_len = prefix_len
+        self._text = text
+        self._after = after
+        self._index = index
+
+    def _index_for(self, string: str) -> _LongIndex:
+        if string is self._text:
+            return self._index
+        return _LongIndex(string, self._long, self._prefix_len)
+
+    def match(self, string: str, pos: int = 0, endpos: int = sys.maxsize) -> _Ended | None:
+        return self._match(self._index_for(string), string, pos, endpos)
+
+    def _match(
+        self, index: _LongIndex, string: str, pos: int, endpos: int = sys.maxsize
+    ) -> _Ended | None:
+        for end in index.ends(pos):
+            if end <= endpos and (self._after is None or self._after.match(string, end)):
+                return _Span(end)
+        found = self._short.match(string, pos, endpos)
+        return None if found is None or found.end() == pos else found
+
+    def sub(self, repl: str, string: str) -> str:
+        # One index for the whole string: `match` would build one per offset for a slice.
+        index = self._index_for(string)
+        out: list[str] = []
+        at = 0
+        while at < len(string):
+            found = self._match(index, string, at)
+            if found is None:
+                out.append(string[at])
+                at += 1
+            else:
+                out.append(repl)
+                at = found.end()
+        return "".join(out)
+
+
 class _ScrubPatterns(NamedTuple):
     """What a scrub applies, each pattern one alternation over every spelling.
 
@@ -2679,6 +2902,20 @@ class _ScrubPatterns(NamedTuple):
     # A spelling holds the marker's `…`, or starts with the rest of it and runs on: swapping an
     # upstream marker for a stand-in would cut such a value, so markers in the text stay as text.
     reads_marker: bool
+    # The spellings `_LongIndex` finds, and the prefix its candidates share with the text.
+    long: tuple[str, ...]
+    long_prefix: int
+
+    def bind(self, text: str) -> tuple[_Substituter, _Matcher]:
+        """`(inner, single)` for reading `text`: the compiled patterns, or with long spellings
+        wrappers that consult an index of that text."""
+        if not self.long:
+            return self.inner, self.single
+        index = _LongIndex(text, self.long, self.long_prefix)
+        return (
+            _IndexedMatcher(self.inner, self.long, self.long_prefix, index, text),
+            _IndexedMatcher(self.single, self.long, self.long_prefix, index, text, self.after),
+        )
 
 
 @lru_cache(maxsize=2)
@@ -2696,8 +2933,14 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     run of overlapping values such as `aaaa`, `aaaaa` and `aaaaaa` is never split in
     exponentially many ways.
     """
-    alternation = _trie_alternation(spellings)
-    if alternation is None:
+    long_min = _LONG_SPELLING_MIN
+    short = tuple(spelling for spelling in spellings if len(spelling) < long_min)
+    long = tuple(spelling for spelling in spellings if len(spelling) >= long_min)
+    prefixes = tuple(sorted({spelling[:long_min] for spelling in long}))
+    alternation = _trie_alternation(short)
+    starts = _trie_alternation((*short, *prefixes)) if long else alternation
+    lead = _trie_alternation(prefixes)
+    if alternation is None or starts is None or lead is None:
         return None
     # ASCII only: `\w` is Unicode in Python, so `密码<value>错误`, `é<value>` or a fullwidth digit
     # made the value part of a longer word and kept it. Not `re.ASCII`, which would also change the
@@ -2715,14 +2958,22 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
     # value in it is untouched.
     after = rf"(?![{word}@+\-]|[./][{word}/])" if prose else rf"(?![{word}./@+\-])"
     body = _SECRET_MARKER[1:]
+    # A start is only where to look, so the long spellings' prefixes widen it to a superset and
+    # `inner` decides the real end. A run opens with two spellings, or with a long one.
+    if not long:
+        run = rf"(?:{alternation}){{2}}"
+    elif not short:
+        run = f"(?:{lead})"
+    else:
+        run = f"(?:{alternation})(?:{starts})|(?:{lead})"
     return _ScrubPatterns(
-        single_starts=re.compile(rf"{before}(?=(?:{alternation}))"),
+        single_starts=re.compile(rf"{before}(?=(?:{starts}))"),
         single=re.compile(rf"(?:{alternation}){after}"),
-        flag_starts=re.compile(rf"{before}-[pP](?=(?:{alternation}))"),
+        flag_starts=re.compile(rf"{before}-[pP](?=(?:{starts}))"),
         userinfo=re.compile(
             rf"((?<![^\s:/@'\"])(?:[A-Za-z][A-Za-z0-9+.-]*://)?[^\s:/@'\"]+:)(?:{alternation})(@)"
         ),
-        run_starts=re.compile(rf"{before}(?=(?:{alternation}){{2}})"),
+        run_starts=re.compile(rf"{before}(?={run})"),
         inner=re.compile(rf"(?:{alternation})"),
         after=re.compile(after),
         chars=frozenset("".join(spellings)),
@@ -2731,4 +2982,6 @@ def _scrub_patterns(spellings: tuple[str, ...], prose: bool) -> _ScrubPatterns |
             _SECRET_MARKER[0] in spelling or (spelling.startswith(body) and spelling != body)
             for spelling in spellings
         ),
+        long=long,
+        long_prefix=long_min,
     )
