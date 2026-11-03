@@ -4127,6 +4127,13 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   for a first character before the root, and `records._ROOT_FANOUT_MAX` (128: all 95 printable ASCII
   characters, the shell-quote form's `'` and room for accented and CJK values) withholds a set past it.
   The worst admitted case, 127 first characters over 1.6 MB of text, costs 1.3 s.
+- **Tails held across refreshes.** A refresh re-reads each transcript and rebuilds its tally, so every
+  call's output tail used to compile its value set again: the pattern cache keeps 2 sets and Python's
+  regex cache 512 patterns at six per set, and 95 distinct sets cost 7.4 s per refresh.
+  `project_context._scrubbed_tails` holds each scrubbed tail by digest of the output and of the value set
+  (4,096 entries, about 1 MB), so a changed set is scrubbed again and an unchanged one costs a hash. The
+  key is a hash, so the cache holds no masked value. A per-refresh compile budget that fails closed was
+  rejected: it would withhold tails that are fine.
 - **Fail closed.** `records.scrub` returns the text and whether it is complete. A set heavier than the
   budget, one with more than `_ROOT_FANOUT_MAX` first characters, a prefix chain deeper than forty (which used to fall back to a flat alternation, 54 s on
   50,000 quotes), or a text still changing on the fourth pass compiles or returns nothing: the text is the

@@ -1846,6 +1846,60 @@ class ThePressCarriesTheValuesACallMasked(ClaudeChecksTestCase):
         self.assertGreaterEqual(len([e for e in entries if e["subject"] == "check"]), 4)
         self.assertEqual(1, scrubbed.call_count)
 
+    def _calls(self, count: int, *, changed: int | None = None) -> None:
+        """`count` calls that each mask a password of their own, and print it back."""
+        self.session = Transcript(self.cwd)
+        self.session.prompt("Add retry with backoff to the webhook handler.")
+        for index in range(count):
+            word = f"FakePass{index:03d}z" if index != changed else f"FakeOther{index:03d}z"
+            self.session.bash(f"curl -u alice:{word} https://x.example", f"+ {word}\nok")
+
+    def test_a_second_collection_of_an_unchanged_session_scrubs_no_tail(self) -> None:
+        # Past 85 value sets: Python's regex cache holds 512 patterns and each set compiles six, so
+        # a refresh that scrubbed again recompiled all of them. Held across collections instead.
+        project_context._scrubbed_tails.clear()
+        self._calls(90)
+        with mock.patch.object(records, "scrub", wraps=records.scrub) as scrubbed:
+            first, _scan = self.read()
+            self.assertGreaterEqual(scrubbed.call_count, 90)
+            scrubbed.reset_mock()
+            with mock.patch.object(
+                records, "_scrub_patterns", wraps=records._scrub_patterns
+            ) as compiled:
+                second, _scan = self.read()
+        self.assertEqual(0, scrubbed.call_count)
+        self.assertEqual(0, compiled.call_count)
+        self.assertEqual(first, second)
+
+    def test_a_call_whose_masked_values_changed_is_scrubbed_again(self) -> None:
+        project_context._scrubbed_tails.clear()
+        self._calls(5)
+        self.read()
+        self._calls(5, changed=3)
+        with mock.patch.object(records, "scrub", wraps=records.scrub) as scrubbed:
+            entries, _scan = self.read()
+        self.assertEqual(1, scrubbed.call_count)
+        self.assertNotIn("FakeOther003z", json.dumps(entries))
+
+    def test_the_same_output_under_other_values_is_not_read_from_the_cache(self) -> None:
+        project_context._scrubbed_tails.clear()
+        text = "+ FakeAlpha99 FakeBeta99"
+        alpha = project_context._scrubbed_tail(text, ["FakeAlpha99"])
+        beta = project_context._scrubbed_tail(text, ["FakeBeta99"])
+        self.assertNotEqual(alpha, beta)
+        self.assertEqual(alpha, project_context._scrubbed_tail(text, ["FakeAlpha99"]))
+        self.assertIn("FakeBeta99", alpha)
+        self.assertIn("FakeAlpha99", beta)
+
+    def test_the_tail_cache_is_bounded_and_holds_no_value(self) -> None:
+        project_context._scrubbed_tails.clear()
+        limit = project_context.SCRUBBED_TAILS_MAX
+        for index in range(limit + 10):
+            project_context._scrubbed_tail(f"out {index}", [f"FakeBound{index:06d}"])
+        self.assertEqual(limit, len(project_context._scrubbed_tails))
+        for key in project_context._scrubbed_tails:
+            self.assertNotIn("FakeBound", repr(key))
+
     def test_a_checks_trailer_free_tail_and_a_commands_raw_tail_are_kept_apart(self) -> None:
         # A check reads the output with Claude Code's trailer removed, a command reads it whole:
         # one scrub per distinct text, never one text standing in for the other.
