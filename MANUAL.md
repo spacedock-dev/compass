@@ -55,14 +55,16 @@ leaving an off switch out on a later start enables that feature again without de
 Pass one operation flag at a time. If combined, the current implementation chooses `--diagnose`,
 then `--forget`, then `--stop`, then `--status`; it does not execute a sequence of operations.
 `--daemon` with any of those four operations is a usage error. `--version` is checked before all of
-them and ignores the other flags, though their values must still parse.
+them and ignores the other flags, though their values must still parse. A lone `--version` is
+answered before the dashboard's modules load; beside any other option it goes through the full
+parser, which is what checks those values.
 
 ### Starting and inspecting an instance
 
 | Option | Behavior and default |
 |---|---|
 | `-h`, `--help` | Print the launcher's current option list and exit. |
-| `--version` | Print the Compass version alone on one line and exit. The standalone binary prints the release it was built for. `server.py` prints the version of the plugin it sits in. Exits `1` with a message when an installation records no version. |
+| `--version` | Print the Compass version alone on one line and exit. The standalone binary prints the release it was built for. `server.py` prints the version of the plugin it sits in. Exits `1` with a message when an installation records no version. Alone, it answers without loading the dashboard. |
 | `--port PORT` | TCP port, an integer from 1 through 65535. Default: `4553`. Also selects the instance addressed by status, stop and forget. |
 | `--frontend-dev-manifest PATH` | Contributor-only startup ticket for an owned Vite child. Requires foreground operation and `127.0.0.1`; refuses diagnose/forget and disables model calls, quota fetching and native actions. Validates fixture locations and a fresh child handshake before serving. Status/stop do not read the ticket or probe Vite. Use the [frontend development command](CONTRIBUTING.md#frontend-development) to create and own it. |
 | `--host ADDRESS` | Accepts only `127.0.0.1` (default) or `0.0.0.0`. The latter exposes the dashboard on every IPv4 interface without authentication. Other addresses and IPv6 are rejected. Read [remote-access risks](SECURITY.md#known-and-accepted) before changing it; prefer an SSH tunnel. |
@@ -284,5 +286,7 @@ python3 compass/skills/compass/server.py --port 4581 --forget
 - [Compatibility](COMPATIBILITY.md): harness and platform support.
 
 The [launcher](compass/skills/compass/server.py) delegates to
+[`compass_runtime.entry`](compass/skills/compass/compass_runtime/entry.py), which answers a lone
+`--version` itself and otherwise hands over to
 [`compass_runtime.cli`](compass/skills/compass/compass_runtime/cli.py), which owns the parser.
 `--help` reflects the copy you actually run; this manual follows the repository's current code.

@@ -721,6 +721,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
         "quota": "Vendor quota poll",
         "reach": "Reach nudge",
         "supervise": "A press for a reading",
+        "terminal_client": "The hook forwarders, the MCP server and the terminal client",
         "ci_read": "A press for a reading that reads a pull request's CI checks",
         "git_status": "The git probe",
         "project_scripts": "The git probe",

@@ -33,7 +33,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
     └── compass/                   # the dashboard skill
         ├── SKILL.md                # shared skill body (all harnesses)
         ├── launch.py               # starts every hook, the MCP server and server.py; parses on Python 3.6
-        ├── server.py               # the stable launcher: calls compass_runtime.cli.main
+        ├── server.py               # the stable launcher: calls compass_runtime.entry.main
         ├── notify_hook.py          # loopback POST forwarder for the user-installed Claude hooks
         ├── event_hook.py           # posts Claude and Codex command-hook lifecycle events
         ├── opencode_plugin.js      # passive per-project OpenCode parent permission events
@@ -43,6 +43,8 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         ├── mcp_server.py           # stdio MCP server: the one tool a session calls to ask the reader
         ├── compass_runtime/       # importable dashboard runtime package
         │                           # per-module map: docs/design-runtime-architecture.md
+        │   ├── entry.py            # what server.py runs: terminal_client's short operations, else cli.main
+        │   ├── terminal_client.py  # stdlib-only client for the loopback API; imports no runtime module
         │   ├── collectors/         # one harness collector per file, one per supported harness
         │   └── web/                # the built React page, its integrity metadata and licenses, vendored
         │                           # terminal assets, fonts and the page loader (`page.py`)

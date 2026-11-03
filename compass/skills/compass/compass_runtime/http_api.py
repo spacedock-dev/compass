@@ -1267,6 +1267,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     "pid": os.getpid(),
                     "port": getattr(self.server, "server_port", 0),
                     "started": self.server.application.state.server_started,
+                    "version": self.server.application.config.release_version,
                 }
             ).encode(),
             "application/json",

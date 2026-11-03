@@ -100,7 +100,7 @@ handing to the child.
 
 ## D-3: One state file per port, written by every instance that binds
 
-`~/.compass/compass-<port>.json` holds `pid`, `port`, `started`, `log` and `python`;
+`~/.compass/compass-<port>.json` holds `pid`, `port`, `started`, `version` (the release, null when an install records none), `log` and `python`;
 `~/.compass/compass-<port>.log` is the log. The directory is created `0o700`. `COMPASS_HOME`
 relocates it, which is how this project already treats store locations: when the variable is set it
 is authoritative.
@@ -203,7 +203,7 @@ silently would teach that it had been honored.
 
 ## D-6: The two new routes, and why stopping happens on its own thread
 
-`GET /api/health` returns `{"ok": true, "pid": …, "port": …, "started": …}` and touches no
+`GET /api/health` returns `{"ok": true, "pid": …, "port": …, "started": …, "version": …}` and touches no
 filesystem. The skill previously sent the agent to `/api/data` to ask whether a dashboard is up,
 which runs a full scan across every harness store to answer a yes-or-no question.
 

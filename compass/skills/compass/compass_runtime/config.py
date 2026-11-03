@@ -716,6 +716,9 @@ class RuntimeConfig:
     live_monitor_window_sec: float
     live_monitor_daily_cap: int
     live_monitor_in_flight_limit: int
+    # The release this process runs, handed in as data so the health answer and the state file can
+    # name it without `http_api` importing the terminal client. None when the install records none.
+    release_version: str | None = None
 
 
 def resolve_store_roots(
@@ -854,6 +857,7 @@ def build_runtime_config(
     history_enabled: bool = True,
     history_retention_sec: float = HISTORY_RETENTION_DEFAULT_DAYS * SECONDS_PER_DAY,
     history_max_bytes: int = HISTORY_MAX_BYTES_DEFAULT,
+    release_version: str | None = None,
 ) -> RuntimeConfig:
     """Construct runtime configuration solely from explicit inputs."""
     selected_claude_model = validate_claude_reading_model(claude_reading_model)
@@ -1063,6 +1067,7 @@ def build_runtime_config(
         dismissal_body_cap_bytes=1_024,
         history_retention_sec=history_retention_sec,
         history_max_bytes=history_max_bytes,
+        release_version=release_version,
         prompt_path_collapse_min_length=25,
         first_line_json_cap_bytes=200_000,
         notification_body_cap_bytes=65_536,

@@ -1,0 +1,398 @@
+"""The terminal's one client for the dashboard's loopback API.
+
+Standard library only, and no other runtime module: `entry.main` runs this before `cli` is
+imported, so a short command never pays for the collectors. The reasoning, and what was rejected,
+is in
+[R-1](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
+
+This file sends no POST of its own. It holds the request path, discovery, the session rule, the
+version guard and the wording, for the operations that call them.
+"""
+
+from __future__ import annotations
+
+import http.client
+import json
+import math
+import os
+import re
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+    from typing import TextIO
+
+BUNDLED_VERSION_PATH = Path(__file__).with_name("release-version.txt")
+PLUGIN_MANIFEST_PATH = Path(__file__).resolve().parents[3] / ".claude-plugin" / "plugin.json"
+
+DEFAULT_PORT = 4553
+# The state files are searched newest first and the default port is always among them, so a stale
+# file left by a crash costs one refused connection each. Eight is more dashboards than one
+# person runs.
+MAX_CANDIDATES: Final = 8
+HEALTH_TIMEOUT_SEC: Final = 0.3
+REQUEST_TIMEOUT_SEC: Final = 5.0
+HEALTH_CAP_BYTES: Final = 4096
+REPLY_CAP_BYTES: Final = 1_048_576
+STDIN_CAP_CHARS: Final = 65_536
+
+# One place each, because the sentences name them and a restart that tells a reader to type a
+# command that does not exist is worse than none. `--stop` and `--daemon` are Compass's own
+# options (MANUAL.md); Spacedock has no restart command of its own to name instead.
+START_COMMAND: Final = "spacedock-compass --daemon"
+STOP_COMMAND: Final = "spacedock-compass --stop"
+
+_STATE_NAME = re.compile(r"compass-([1-9][0-9]{0,4})\.json")
+_PATH = re.compile(r"/[!-~]*")
+_SESSION_FLAG = re.compile(r"([a-z][a-z0-9_-]{0,31}):([!-~]{1,200})")
+_SESSION_ID = re.compile(r"[!-~]{1,200}")
+CLAUDE_SESSION_ENV: Final = "CLAUDE_CODE_SESSION_ID"
+
+# Every sentence the terminal prints about reaching the dashboard. The page derives its own
+# wording elsewhere; this is the terminal's single copy, so a result reads the same from every
+# command that produces it.
+SENTENCES: Final[dict[str, str]] = {
+    "not_running": "Compass is not running. Start it with `{start}`.",
+    "starting": "Compass was not running, so this started it as `--daemon` does.",
+    "start_failed": "Compass could not start the dashboard. Start it with `{start}`.",
+    "no_session": "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
+    "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
+    "version_mismatch": (
+        "The running dashboard is version {theirs} and this is version {own}, so nothing was sent. "
+        "Stop it with `{stop}` and start it again with `{start}`."
+    ),
+}
+
+
+def sentence(key: str, **values: str) -> str:
+    """The wording for `key`, with the two commands filled in unless a caller names others."""
+    values.setdefault("start", START_COMMAND)
+    values.setdefault("stop", STOP_COMMAND)
+    return SENTENCES[key].format(**values)
+
+
+class Operation(NamedTuple):
+    """An option the terminal client owns. `cli.build_parser` registers each one from this table."""
+
+    flag: str
+    help: str
+
+
+OPERATIONS = (Operation("--version", "print the Compass version and exit"),)
+
+
+def release_version() -> str | None:
+    """The Compass version: the stamp a standalone binary carries, else the plugin manifest."""
+    try:
+        stamped = BUNDLED_VERSION_PATH.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        stamped = ""
+    if stamped:
+        return stamped
+    try:
+        manifest = json.loads(PLUGIN_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version if isinstance(version, str) and version else None
+
+
+def print_version() -> int:
+    version = release_version()
+    if version is None:
+        print("Compass: this installation does not record its version", file=sys.stderr)
+        return 1
+    print(version)
+    return 0
+
+
+def handles(argv: list[str]) -> bool:
+    """Whether the client answers `argv` itself.
+
+    Only a lone operation flag. Anything else, `--version` beside another option included, goes to
+    the CLI so argparse keeps judging combinations and usage errors exactly as it did.
+    """
+    return len(argv) == 1 and argv[0] == "--version"
+
+
+def run(argv: list[str]) -> int:
+    del argv  # the only operation is `--version`
+    return print_version()
+
+
+class DashboardUnreachable(OSError):  # noqa: N818
+    """Nothing answered, or what answered broke the HTTP exchange."""
+
+
+class Dashboard(NamedTuple):
+    port: int
+    pid: int
+    started: float
+    version: str | None
+
+
+class Reply(NamedTuple):
+    status: int
+    data: Any
+
+
+class Refusal(NamedTuple):
+    """One sentence for the reader and the exit code that goes with it."""
+
+    message: str
+    code: int = 1
+
+
+class Session(NamedTuple):
+    harness: str
+    sid: str
+    source: str
+
+
+class Unresolved(NamedTuple):
+    message: str
+
+
+def state_home(environ: Mapping[str, str]) -> str:
+    override = environ.get("COMPASS_HOME")
+    if override and override.strip():
+        return override
+    return os.path.join(os.path.expanduser("~"), ".compass")
+
+
+def published_ports(home: str) -> list[int]:
+    """Ports named by state files, newest first, from file names and mtimes alone.
+
+    A state file holds the event-ingress tokens, so no code path here opens one: the name carries
+    the port and `stat` carries when it was written. Symlinks and directories are skipped because
+    neither is something Compass wrote.
+    """
+    found: list[tuple[float, int]] = []
+    try:
+        with os.scandir(home) as entries:
+            for entry in entries:
+                match = _STATE_NAME.fullmatch(entry.name)
+                if match is None or int(match.group(1)) > 65535:
+                    continue
+                try:
+                    if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                        continue
+                    found.append((entry.stat(follow_symlinks=False).st_mtime, int(match.group(1))))
+                except OSError:
+                    continue
+    except OSError:
+        return []
+    found.sort(key=lambda item: (-item[0], item[1]))
+    return [port for _, port in found]
+
+
+def candidate_ports(home: str, port: int | None = None) -> tuple[int, ...]:
+    if port is not None:
+        return (port,)
+    ports = [p for p in published_ports(home) if p != DEFAULT_PORT][: MAX_CANDIDATES - 1]
+    return (*ports, DEFAULT_PORT)
+
+
+def _valid_port(port: object) -> bool:
+    return type(port) is int and 1 <= port <= 65535
+
+
+def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
+    """The dashboard answering `/api/health` on `port`, or None for nothing or something else.
+
+    The acceptance rule is `lifecycle.probe_port`'s, written out again because that module is not
+    importable from here. An older dashboard answers without `version`; it is still a dashboard.
+    """
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    try:
+        conn.request("GET", "/api/health")
+        response = conn.getresponse()
+        body = response.read(HEALTH_CAP_BYTES)
+        if response.status != 200:
+            return None
+        data = json.loads(body)
+    except (OSError, http.client.HTTPException, ValueError, RecursionError):
+        return None
+    finally:
+        conn.close()
+    if not isinstance(data, dict):
+        return None
+    pid, reported, started = data.get("pid"), data.get("port"), data.get("started")
+    if (
+        data.get("ok") is not True
+        or type(pid) is not int
+        or pid <= 0
+        or type(reported) is not int
+        or reported != port
+        or isinstance(started, bool)
+        or not isinstance(started, int | float)
+        or not math.isfinite(started)
+    ):
+        return None
+    version = data.get("version")
+    return Dashboard(port, pid, float(started), version if isinstance(version, str) else None)
+
+
+def find_dashboard(
+    home: str, *, port: int | None = None, timeout: float = HEALTH_TIMEOUT_SEC
+) -> Dashboard | None:
+    """The newest-started dashboard among the candidate ports."""
+    answers = [d for p in candidate_ports(home, port) if (d := probe(p, timeout)) is not None]
+    return max(answers, key=lambda d: d.started, default=None)
+
+
+def request(
+    method: str,
+    port: int,
+    path: str,
+    body: bytes | None = None,
+    *,
+    headers: Mapping[str, str] | None = None,
+    timeout: float = REQUEST_TIMEOUT_SEC,
+) -> Reply:
+    """One loopback exchange. The host is the literal 127.0.0.1 and the port an integer.
+
+    `http.client` reads no proxy variable and follows no redirect, so there is nothing to switch
+    off: a 3xx comes back as an ordinary reply with `data` empty and no second request.
+    """
+    if not _valid_port(port):
+        msg = "port must be an integer from 1 to 65535"
+        raise ValueError(msg)
+    if _PATH.fullmatch(path) is None or path.startswith("//"):
+        msg = "path must start with one / and hold no spaces or control characters"
+        raise ValueError(msg)
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    try:
+        conn.request(method, path, body=body, headers=dict(headers or {}))
+        response = conn.getresponse()
+        raw = response.read(REPLY_CAP_BYTES + 1)
+        status = response.status
+    except (OSError, http.client.HTTPException) as error:
+        msg = f"no answer from 127.0.0.1:{port}"
+        raise DashboardUnreachable(msg) from error
+    finally:
+        conn.close()
+    data: Any = None
+    if len(raw) <= REPLY_CAP_BYTES and 200 <= status < 300:
+        try:
+            data = json.loads(raw)
+        except (ValueError, RecursionError):
+            data = None
+    return Reply(status, data)
+
+
+def get(port: int, path: str, *, timeout: float = REQUEST_TIMEOUT_SEC) -> Reply:
+    return request("GET", port, path, timeout=timeout)
+
+
+def post(
+    port: int,
+    path: str,
+    payload: Mapping[str, Any],
+    *,
+    headers: Mapping[str, str] | None = None,
+    timeout: float = REQUEST_TIMEOUT_SEC,
+) -> Reply:
+    """Nothing calls this yet. The first operation that spends builds its body and its headers."""
+    sent = {"Content-Type": "application/json", **(headers or {})}
+    return request("POST", port, path, json.dumps(payload).encode(), headers=sent, timeout=timeout)
+
+
+def version_guard(dashboard: Dashboard, own_version: str | None) -> str | None:
+    """One sentence when the dashboard is another release than this client, else None.
+
+    A dashboard that reports no version is another release, since the first one to report it is
+    this one. Only the release string is compared, so two dev checkouts of one number are not
+    told apart.
+    """
+    if dashboard.version is not None and dashboard.version == own_version:
+        return None
+    return sentence(
+        "version_mismatch", own=own_version or "unknown", theirs=dashboard.version or "unknown"
+    )
+
+
+def start_daemon(port: int) -> None:
+    """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
+    import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
+
+    root = Path(__file__).resolve().parents[1]
+    if getattr(sys, "frozen", False):
+        argv = [sys.executable]
+    else:
+        argv = [sys.executable, str(root / "launch.py"), str(root / "server.py")]
+    argv += ["--daemon", "--port", str(port)]
+    try:
+        subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
+            argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
+def ensure_dashboard(
+    home: str,
+    *,
+    port: int | None,
+    spend: bool,
+    own_version: str | None,
+    start: Callable[[int], None] = start_daemon,
+    say: Callable[[str], None] | None = None,
+) -> Dashboard | Refusal:
+    """The one rule for a missing dashboard, and for a dashboard of another release.
+
+    A read with none running says so and stops. A spend starts one and says it did. A spend
+    against another release stops before it sends anything; a read is still served.
+    """
+    found = find_dashboard(home, port=port)
+    if found is None:
+        if not spend:
+            return Refusal(sentence("not_running"))
+        (say or _say)(sentence("starting"))
+        start(DEFAULT_PORT if port is None else port)
+        found = find_dashboard(home, port=port, timeout=2.0)
+        if found is None:
+            return Refusal(sentence("start_failed"))
+    if spend and (message := version_guard(found, own_version)) is not None:
+        return Refusal(message)
+    return found
+
+
+def _say(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _status_line_session(stream: TextIO | None) -> str | None:
+    if stream is None or stream.isatty():
+        return None
+    try:
+        raw = stream.read(STDIN_CAP_CHARS + 1)
+        data = json.loads(raw) if len(raw) <= STDIN_CAP_CHARS else None
+    except (OSError, ValueError, RecursionError):
+        return None
+    value = data.get("session_id") if isinstance(data, dict) else None
+    return value if isinstance(value, str) and _SESSION_ID.fullmatch(value) else None
+
+
+def resolve_session(
+    flag: str | None, environ: Mapping[str, str], stdin: TextIO | None
+) -> Session | Unresolved:
+    """Which session this command is in: `--session`, else the status line, else the environment.
+
+    Never the working directory. A session id names a session and proves nothing about who asked,
+    so a spend still passes the dashboard's own guards. A `--session` that does not parse is
+    refused, not replaced by a looser source.
+    """
+    if flag is not None:
+        match = _SESSION_FLAG.fullmatch(flag)
+        if match is None:
+            return Unresolved(sentence("bad_session_flag"))
+        return Session(match.group(1), match.group(2), "flag")
+    if (line := _status_line_session(stdin)) is not None:
+        return Session("claude", line, "status line")
+    value = environ.get(CLAUDE_SESSION_ENV)
+    if value is not None and _SESSION_ID.fullmatch(value):
+        return Session("claude", value, "environment")
+    return Unresolved(sentence("no_session"))

@@ -112,6 +112,7 @@ def write_state(
         "pid": os.getpid(),
         "port": port,
         "started": started,
+        "version": config.release_version,
         "log": log_path(config, port),
         "python": sys.executable,
         "irreversible_enabled": bool(capabilities) and config.irreversible_enabled,
