@@ -321,6 +321,13 @@
     },
     {
       "method": "GET",
+      "name": "data-session-states",
+      "route": "/api/data",
+      "sha256": "aea2a8c6cac2a74903f14fc95f1675a0fadb5987e4e1e0dbc4a135de2fa8a62c",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
       "sha256": "2da1608f95c7321d80adf012c252cbd21ed512d03abc9423d8bb84a42bbbf584",

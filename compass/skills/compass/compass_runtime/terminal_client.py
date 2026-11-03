@@ -1,8 +1,8 @@
 """The terminal's one client for the dashboard's loopback API.
 
-Standard library only, and no other runtime module: `entry.main` runs this before `cli` is
-imported, so a short command never pays for the collectors. The reasoning, and what was rejected,
-is in
+Standard library only, and no runtime module but the leaf `terminal_sessions`: `entry.main` runs
+this before `cli` is imported, so a short command never pays for the collectors. The reasoning,
+and what was rejected, is in
 [R-1](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
 This file sends no POST of its own. It holds the request path, discovery, the session rule, the
@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
+from compass_runtime import terminal_sessions
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from typing import TextIO
@@ -42,6 +44,10 @@ HEALTH_TIMEOUT_SEC: Final = 0.3
 REQUEST_TIMEOUT_SEC: Final = 5.0
 HEALTH_CAP_BYTES: Final = 4096
 REPLY_CAP_BYTES: Final = 1_048_576
+# The board's own read. `/api/data` measured 1,096,870 bytes on a real board on 2026-11-03, so the
+# 1 MiB reply cap above refuses an ordinary board. Sixteen times that holds the `?all=1` variant
+# the page never asks for with room to spare, and still bounds a hostile answer.
+DATA_CAP_BYTES: Final = 16_777_216
 STDIN_CAP_CHARS: Final = 65_536
 # A status line command is run on every refresh with its JSON written at once, so a quarter of a
 # second is generous for a producer that is alive and short enough that a pipe held open cannot
@@ -80,6 +86,8 @@ SENTENCES: Final[dict[str, str]] = {
     "start_failed": "Compass could not start the dashboard. Start it with `{start}`.",
     "no_session": "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
+    "unreadable_reply": "Compass answered, but its session list could not be read.",
+    "nothing_waiting": "Nothing is reported as waiting on you.",
     "version_mismatch": (
         "The running dashboard is version {theirs} and this is version {own}, so nothing was sent. "
         "Stop it with `{stop}` and start it again with `{start}`."
@@ -99,6 +107,8 @@ class Operation(NamedTuple):
 
     flag: str
     help: str
+    # Values the flag may take after it. Empty means a switch; otherwise the value is optional.
+    choices: tuple[str, ...] = ()
 
 
 class Option(NamedTuple):
@@ -116,6 +126,12 @@ OPERATIONS = (
         "print one status line segment (other sessions waiting, the tightest quota window) "
         "from the JSON on stdin and the dashboard's line file, and exit 0; "
         "it reaches no dashboard, so it stands alone or with --session",
+    ),
+    Operation(
+        "--sessions",
+        "list the sessions running now and those that finished lately; with `waiting`, only "
+        "the ones waiting on you",
+        ("waiting",),
     ),
 )
 OPTIONS = (
@@ -172,19 +188,33 @@ def parse_footer_args(argv: list[str]) -> tuple[bool, str | None]:
     return False, None
 
 
-def handles(argv: list[str]) -> bool:
-    """Whether the client answers `argv` itself.
+def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
+    """The operation `argv` is, and the value it carries, when `argv` is exactly one operation.
 
-    Only a lone operation: `--version`, or `--footer` with its own `--session`. Anything else,
-    `--version` beside another option included, goes to the CLI so argparse keeps judging
-    combinations and usage errors exactly as it did.
+    A lone flag, or a flag with one of its own choices in either spelling. `--footer` is claimed
+    here only when alone; `parse_footer_args` owns it with its `--session`. Anything else,
+    `--version` beside another option included, is not claimed and goes to the CLI so argparse
+    keeps judging combinations and usage errors exactly as it did.
     """
-    return (len(argv) == 1 and argv[0] == "--version") or parse_footer_args(argv)[0]
+    for operation in OPERATIONS:
+        if argv == [operation.flag]:
+            return operation, None
+        for choice in operation.choices:
+            if argv in ([operation.flag, choice], [f"{operation.flag}={choice}"]):
+                return operation, choice
+    return None
+
+
+def handles(argv: list[str]) -> bool:
+    return parse_footer_args(argv)[0] or claim(argv) is not None
 
 
 def run(argv: list[str]) -> int:
     if parse_footer_args(argv)[0]:
         return run_footer(argv, os.environ, sys.stdin, sys.stdout)
+    claimed = claim(argv)
+    if claimed is not None and claimed[0].flag == "--sessions":
+        return run_sessions(claimed[1] or True)
     return print_version()
 
 
@@ -319,6 +349,7 @@ def request(
     *,
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
+    cap: int | None = None,
 ) -> Reply:
     """One loopback exchange. The host is the literal 127.0.0.1 and the port an integer.
 
@@ -333,11 +364,12 @@ def request(
         raise ValueError(msg)
     import http.client  # noqa: PLC0415 — see `probe`
 
+    limit = REPLY_CAP_BYTES if cap is None else cap
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         conn.request(method, path, body=body, headers=dict(headers or {}))
         response = conn.getresponse()
-        raw = response.read(REPLY_CAP_BYTES + 1)
+        raw = response.read(limit + 1)
         status = response.status
     except (OSError, http.client.HTTPException) as error:
         msg = f"no answer from 127.0.0.1:{port}"
@@ -345,7 +377,7 @@ def request(
     finally:
         conn.close()
     data: Any = None
-    if len(raw) <= REPLY_CAP_BYTES and 200 <= status < 300:
+    if len(raw) <= limit and 200 <= status < 300:
         try:
             data = json.loads(raw)
         except (ValueError, RecursionError):
@@ -353,8 +385,10 @@ def request(
     return Reply(status, data)
 
 
-def get(port: int, path: str, *, timeout: float = REQUEST_TIMEOUT_SEC) -> Reply:
-    return request("GET", port, path, timeout=timeout)
+def get(
+    port: int, path: str, *, timeout: float = REQUEST_TIMEOUT_SEC, cap: int | None = None
+) -> Reply:
+    return request("GET", port, path, timeout=timeout, cap=cap)
 
 
 def post(
@@ -731,4 +765,57 @@ def run_footer(
                 stdout.write(text + "\n")
     except Exception:  # noqa: BLE001 — nothing may reach a status bar but the line
         return 0
+    return 0
+
+
+def _emit(lines: list[str], stream: TextIO) -> None:
+    text = "\n".join(lines) + "\n"
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    # A pipe in a non-UTF-8 locale would raise on goal text the board shows without trouble.
+    stream.write(text.encode(encoding, "replace").decode(encoding, "replace"))
+
+
+def run_sessions(
+    mode: str | bool | None = None,
+    *,
+    port: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """`--sessions`, and `--sessions waiting` for the second one: read the board, print it.
+
+    Read only. With no dashboard it says so and stops; it never starts one. The caller is left
+    out of the waiting list, since a session that asks what waits on you is not what waits.
+    """
+    env = os.environ if environ is None else environ
+    found = ensure_dashboard(state_home(env), port=port, spend=False, own_version=None)
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    try:
+        reply = get(found.port, "/api/data", cap=DATA_CAP_BYTES)
+    except DashboardUnreachable:
+        reply = Reply(0, None)
+    payload = reply.data
+    if (
+        reply.status != 200
+        or not isinstance(payload, dict)
+        or not isinstance(payload.get("sessions"), list)
+    ):
+        print(sentence("unreadable_reply"), file=sys.stderr)
+        return 1
+    try:
+        if mode == "waiting":
+            caller = resolve_session(None, env, None)
+            lines = terminal_sessions.render_waiting(
+                payload,
+                port=found.port,
+                exclude=caller.sid if isinstance(caller, Session) else None,
+                nothing=sentence("nothing_waiting"),
+            )
+        else:
+            lines = terminal_sessions.render_sessions(payload)
+    except Exception:  # noqa: BLE001 - a payload is untrusted; whatever it holds, say one sentence
+        print(sentence("unreadable_reply"), file=sys.stderr)
+        return 1
+    _emit(lines, sys.stdout)
     return 0

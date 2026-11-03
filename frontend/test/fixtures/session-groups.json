@@ -1,0 +1,190 @@
+{
+  "board": {
+    "active": [
+      {
+        "key": [
+          "claude",
+          "c3d4e5f6"
+        ],
+        "state": "Waiting on you",
+        "outcome": null,
+        "git": null,
+        "command": "claude --resume c3d4e5f6-11111111-2222-4333-8444-555500000003",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "b2c3d4e5"
+        ],
+        "state": "Waiting on you",
+        "outcome": null,
+        "git": null,
+        "command": "claude --resume b2c3d4e5-11111111-2222-4333-8444-555500000002",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "codex",
+          "019c0000-1111-7222-8333-444455556666"
+        ],
+        "state": "Waiting on you",
+        "outcome": null,
+        "git": null,
+        "command": "codex resume 019c0000-1111-7222-8333-444455556666",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "f6a7b8c9"
+        ],
+        "state": "Idle",
+        "outcome": null,
+        "git": null,
+        "command": "claude --resume f6a7b8c9-11111111-2222-4333-8444-555500000006",
+        "ended": "",
+        "drift": "10m ago"
+      },
+      {
+        "key": [
+          "claude",
+          "a1b2c3d4"
+        ],
+        "state": "Working",
+        "outcome": null,
+        "git": null,
+        "command": "claude --resume a1b2c3d4-11111111-2222-4333-8444-555500000001",
+        "ended": "",
+        "drift": null
+      }
+    ],
+    "history": [
+      {
+        "key": [
+          "claude",
+          "b8c9d0e1"
+        ],
+        "state": "Ended",
+        "outcome": "Session ended with uncommitted work",
+        "git": "2 changed entries",
+        "command": "claude --resume b8c9d0e1-11111111-2222-4333-8444-555500000008",
+        "ended": "ended 1h 8m ago",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "a7b8c9d0"
+        ],
+        "state": "Ended",
+        "outcome": "Session ended; git state clean",
+        "git": "Git state reported clean",
+        "command": "claude --resume a7b8c9d0-11111111-2222-4333-8444-555500000007",
+        "ended": "ended 1h 6m ago",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "e5f6a7b8"
+        ],
+        "state": "Ended",
+        "outcome": "Session ended; git state clean",
+        "git": "Git state reported clean",
+        "command": "claude --resume e5f6a7b8-11111111-2222-4333-8444-555500000005",
+        "ended": "ended 30m ago",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "d0e1f2a3"
+        ],
+        "state": "Idle",
+        "outcome": null,
+        "git": null,
+        "command": "",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "d4e5f6a7"
+        ],
+        "state": "Idle",
+        "outcome": "Stop observed with uncommitted work",
+        "git": "3 changed entries",
+        "command": "claude --resume d4e5f6a7-11111111-2222-4333-8444-555500000004",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "codex",
+          "019c0000-1111-7222-8333-444455557777"
+        ],
+        "state": "Idle",
+        "outcome": null,
+        "git": null,
+        "command": "",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "gemini",
+          "gem-0001"
+        ],
+        "state": "Idle",
+        "outcome": null,
+        "git": null,
+        "command": "",
+        "ended": "",
+        "drift": null
+      },
+      {
+        "key": [
+          "claude",
+          "c9d0e1f2"
+        ],
+        "state": "Idle",
+        "outcome": "Turn stop in Claude Code's transcript; git state not measured",
+        "git": "Git state was not measured",
+        "command": "claude --resume c9d0e1f2-11111111-2222-4333-8444-555500000009",
+        "ended": "",
+        "drift": null
+      }
+    ],
+    "waiting": [
+      [
+        "claude",
+        "b2c3d4e5"
+      ],
+      [
+        "ask",
+        "ask-fixture-2"
+      ],
+      [
+        "claude",
+        "a7b8c9d0"
+      ],
+      [
+        "claude",
+        "c3d4e5f6"
+      ],
+      [
+        "codex",
+        "019c0000-1111-7222-8333-444455556666"
+      ]
+    ],
+    "coverage": "12 of 13 sessions report block state · 1 unknown · ends unobservable",
+    "unreported": [
+      "Gemini CLI: Harness does not report blocks"
+    ]
+  }
+}

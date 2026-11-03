@@ -243,11 +243,18 @@ def build_parser() -> argparse.ArgumentParser:
     # would otherwise be read as a development ticket path instead of an unknown option.
     parser = argparse.ArgumentParser(description=DESCRIPTION, allow_abbrev=False)
     for operation in terminal_client.OPERATIONS:
-        parser.add_argument(
-            operation.flag,
-            action="store_true",
-            help=operation.help,
-        )
+        if operation.choices:
+            parser.add_argument(
+                operation.flag,
+                nargs="?",
+                # Not a string: argparse checks a string `const` against `choices` and refuses it.
+                const=True,
+                choices=operation.choices,
+                metavar=operation.choices[0],
+                help=operation.help,
+            )
+        else:
+            parser.add_argument(operation.flag, action="store_true", help=operation.help)
     for option in terminal_client.OPTIONS:
         parser.add_argument(option.flag, metavar=option.metavar, default=None, help=option.help)
     parser.add_argument("--port", type=lifecycle.tcp_port, default=4553)
@@ -897,6 +904,21 @@ def run_one_shot(
     return None
 
 
+def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:
+    """The operations the terminal client owns, when `args` named one; None to carry on.
+
+    `--sessions` beside other options honors only `--port`, and only when it was typed:
+    `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
+    client's discovery of a dashboard on another port.
+    """
+    if args.version:
+        return terminal_client.print_version()
+    if args.sessions:
+        typed = any(a == "--port" or a.startswith("--port=") for a in argv)
+        return terminal_client.run_sessions(args.sessions, port=args.port if typed else None)
+    return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse, assemble, and run. Returns an exit code.
 
@@ -907,8 +929,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     lifecycle.unignore_sigterm()
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.version:
-        return terminal_client.print_version()
+    answered = run_client_operation(args, sys.argv[1:] if argv is None else argv)
+    if answered is not None:
+        return answered
     refuse_footer_with_other_options(parser, args)
     # Sampled before the combination check: the start stamp names this process,
     # and must not shift depending on which validation ran first.
