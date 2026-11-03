@@ -52,13 +52,16 @@ stages:
       label: merged
 ---
 
-# Burn down the Compass Actions Front and Center roadmap
+# Burn down the Compass roadmap
 
 One roadmap issue at a time, from picked to merged, with the Linear records left true afterwards.
 
-The project is **Cargento: Actions Front and Center** in Linear (team `DRC`):
-<https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview>. Each
-issue on that board is one entity here. The workflow runs until the board is empty.
+The default project is **Cargento: Compass in the Terminal** in Linear (team `DRC`):
+<https://linear.app/recce/project/cargento-compass-in-the-terminal-404cbf9cbce6/overview>. The
+earlier project, **Cargento: Actions Front and Center**
+(<https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview>), is
+complete, and a milestone may belong to either. Each issue on the chosen board is one entity here.
+The workflow runs until the board is empty.
 
 This workflow does not invent its own picking rules, its own build discipline, or its own
 reconcile list. Those already exist and are owned elsewhere: the `burndown` skill owns planning and

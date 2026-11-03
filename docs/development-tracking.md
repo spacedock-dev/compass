@@ -5,7 +5,10 @@ This file owns the roadmap labels and move taxonomy. It is a development record,
 Promise row and the Linear project overview carry the same five promises. The in-repository check
 allows the board's initial capital where the map continues a lowercase sentence; the tracker copy
 is checked by hand. Build order and issue state live in the
-[Cargento: Actions Front and Center project](https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview).
+[Cargento: Compass in the Terminal project](https://linear.app/recce/project/cargento-compass-in-the-terminal-404cbf9cbce6/overview).
+Its predecessor,
+[Cargento: Actions Front and Center](https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview),
+is complete, and a milestone may belong to either.
 
 Internal labels belong here, in development records and in PR traceability. User-facing docs and
 release notes describe behavior without tracker names, issue keys or tracker links, under

@@ -1,6 +1,6 @@
 ---
 name: burndown
-description: Use when burning down a milestone of the Compass Actions Front and Center project to completion, planning how to group and stack its issues, or closing out a single DRC issue.
+description: Use when burning down a milestone of a Compass roadmap project in Linear (Compass in the Terminal by default) to completion, planning how to group and stack its issues, or closing out a single DRC issue.
 ---
 
 # burndown
@@ -9,9 +9,12 @@ Take one milestone, group its issues by the functionality they change, build eac
 of a GitHub stack or as an independent pull request, land them, reconcile every issue, and repeat
 until the milestone is closed.
 
-The project is Compass's roadmap in Linear (team `DRC`). Linear still names it **Cargento: Actions
-Front and Center**, from before the product was renamed:
-<https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview>.
+The default project is **Cargento: Compass in the Terminal** in Linear (team `DRC`):
+<https://linear.app/recce/project/cargento-compass-in-the-terminal-404cbf9cbce6/overview>. The
+earlier project, **Cargento: Actions Front and Center**, is complete
+(<https://linear.app/recce/project/cargento-actions-front-and-center-eed1852b11e6/overview>); name it
+with `--project` only to read or reopen a milestone left there. Both belong to team `DRC`, and a
+milestone belongs to one of them.
 Invoke the required supporting skills inside the current workflow. Delegating work to a subagent is
 normal here and is covered by the parallelism rules below.
 
@@ -32,10 +35,14 @@ its stage `model:` fields govern, and step 2's model question is not asked.
 - `burndown DRC-####`: work that one issue, inside its milestone's plan, as a group of one if it
   groups with nothing. The run ends once that group has landed and been reconciled. An issue with no
   milestone is planned as a milestone of one: no Verification issue, no milestone description.
+- `--project "<project name>"`: the Linear project the milestone belongs to. Without it the skill
+  uses the default above. Every `burndown "<milestone name>"` form takes it, and a milestone name that
+  exists in both projects is ambiguous: stop and ask which. `burndown DRC-####` ignores it, since an
+  issue names its own project.
 - `--models recommended`, or `--models plan=<model>:<effort>,build=…,review=…`: answer step 2's
   model questions in the invocation. A stage the flag leaves out is still asked.
 
-The milestone name is resolved against the project with the Linear milestone lookup. Do not hand a
+The milestone name is resolved against the chosen project with the Linear milestone lookup. Do not hand a
 milestone name to `linear-deep-dive`: its parser treats a string without a team prefix as a project
 search.
 
@@ -101,7 +108,7 @@ server and subagent still alive. Check background work in the same turn you repo
 Step 1 reads. It writes nothing to Linear or git: what it finds that needs a write goes into the plan
 as a **repair**, done after approval and never under `--plan`.
 
-1. Resolve the milestone. Fetch the project's issues ordered by `createdAt`, page until
+1. Resolve the milestone. Fetch the chosen project's issues ordered by `createdAt`, page until
    `hasNextPage` is false, and keep those whose `projectMilestone` is this one. The default
    `updatedAt` order shifts under your own writes.
 2. Read the team's workflow states with their types once (the Linear status list). Classify issues
