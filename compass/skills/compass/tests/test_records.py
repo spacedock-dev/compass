@@ -1613,6 +1613,49 @@ class AHostileScrubFailsClosedTest(unittest.TestCase):
         )
         self.assertEqual(40, records._TRIE_DEPTH_MAX)
 
+    def test_values_with_too_many_distinct_first_characters_are_withheld(self) -> None:
+        # The compiled root has one branch per distinct first character and every candidate
+        # position tries them all, so the scan costs text x first characters: 4,096 CJK-led
+        # values took 2.4 s over 120,000 characters of CJK text. Past the cap nothing compiles.
+        cap = records._ROOT_FANOUT_MAX
+        values = [chr(0x4E00 + i) + "abc" for i in range(cap + 1)]
+        with _counted_compiles() as sources:
+            result = records.scrub(f"saw {values[0]} ok", values)
+        self.assertEqual([], sources)
+        self.assertEqual(records.Scrubbed(records.SECRET_MARKER, False), result)
+
+    def test_values_at_the_first_character_cap_are_searched_and_gated(self) -> None:
+        # One first character short of the cap: the shell-quoted forms lead with `'`.
+        cap = records._ROOT_FANOUT_MAX
+        values = [chr(0x4E00 + i) + "abc" for i in range(cap - 1)]
+        text = "密码 " + " ".join(values[::7]) + " 密码"
+        expected = "密码 " + " ".join([records.SECRET_MARKER] * len(values[::7])) + " 密码"
+        self.assertEqual(records.Scrubbed(expected, True), records.scrub(text, values))
+        # Every start pattern asks for a first character before it tries the root, so a position
+        # that cannot begin a value costs one set test, not one trial per branch.
+        patterns = records._scrub_patterns(tuple(sorted(records._spellings(values[0]))), False)
+        assert patterns is not None
+        for starts in (patterns.single_starts, patterns.flag_starts, patterns.run_starts):
+            self.assertIn("(?=[", starts.pattern)
+
+    def test_the_first_character_cap_leaves_the_ordinary_press_alone(self) -> None:
+        # Every printable ASCII character leads a value, with the quote forms: 95 distinct.
+        values = [chr(code) + "FakeSecret99" for code in range(0x21, 0x7F)]
+        self.assertLess(
+            len({spelling[0] for v in values for spelling in records._spellings(v)}),
+            records._ROOT_FANOUT_MAX,
+        )
+        self.assertTrue(records.scrub("ran FakeSecret99 ok", values).complete)
+
+    def test_a_marker_substring_value_compiles_no_more_than_any_other(self) -> None:
+        # A value inside the marker once forced a second, uncounted compile of the same set.
+        with _counted_compiles() as control:
+            records.scrub("ran with FakeValue99 ok", ["FakeValue99", "FakeOther88"])
+        with _counted_compiles() as marked:
+            records.scrub("ran with FakeValue99 ok", ["FakeValue99", "REDACTED"])
+        self.assertGreater(len(control), 0)
+        self.assertEqual(len(control), len(marked))
+
     def test_a_tail_chain_of_four_values_hides_every_one(self) -> None:
         values = ["FakeV01x", "FakeV02x", "FakeV03x", "FakeV04x"]
         result = records.scrub("auth " + ":".join(values) + " failed", values)

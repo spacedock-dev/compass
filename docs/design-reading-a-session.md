@@ -4121,8 +4121,14 @@ The scrub above failed open at four edges. Each now hides the value or withholds
   32-character values, so that press keeps every value) replaces the character budget. The press counts
   each value's mass, keeps the newest that fit, and drops a value heavier than the whole budget alone,
   where it used to evict every older value first. The count bound of 4,096 stays beside it.
+- **First-character fan-out.** The compiled root has one branch per distinct first character, and every
+  position the before-boundary admits tries them all, which non-ASCII text makes every position:
+  4,096 CJK-led values cost 2.4 s over 120,000 characters, 16,384 cost 18 s. Each start pattern now asks
+  for a first character before the root, and `records._ROOT_FANOUT_MAX` (128: all 95 printable ASCII
+  characters, the shell-quote form's `'` and room for accented and CJK values) withholds a set past it.
+  The worst admitted case, 127 first characters over 1.6 MB of text, costs 1.3 s.
 - **Fail closed.** `records.scrub` returns the text and whether it is complete. A set heavier than the
-  budget, a prefix chain deeper than forty (which used to fall back to a flat alternation, 54 s on
+  budget, one with more than `_ROOT_FANOUT_MAX` first characters, a prefix chain deeper than forty (which used to fall back to a flat alternation, 54 s on
   50,000 quotes), or a text still changing on the fourth pass compiles or returns nothing: the text is the
   bare marker and `complete` is false, so a caller that ignores the flag still shows nothing.
   An explanation stores `reading.SCRUB_WITHHELD_DETAIL`, and an output tail becomes
