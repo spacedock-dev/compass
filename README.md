@@ -35,6 +35,18 @@ This repo contains one plugin, `compass`, the agent cartography dashboard skill.
 
 ---
 
+## Upgrading from before 2.0
+
+Before 2.0, `--unasked-readings` checked only Codex sessions, and it waited for a Codex permission first. Since 2.0 it also checks Claude Code sessions, and those checks need no separate permission. If you started Compass with the flag before 2.0, Claude Code sessions are now included.
+
+Each Claude Code check sends the goal you typed, your messages in that session, and any check or command that failed, with its exit status and the end of its output. It does not send the agent's replies or the checks that passed. Compass runs the Claude Code CLI on your machine, so the words reach Anthropic under your own Claude Code sign-in and count against your capacity. [SECURITY.md](SECURITY.md#unasked-readings) states the exact limits, and [MANUAL.md](MANUAL.md#model-use-and-quota) owns the flag.
+
+The flag is still off by default. Pause model calls in the page, or start Compass with `--no-observer-model`, to stop checks.
+
+Compass also keeps session summaries in `compass-summaries.json`, in its home folder (`COMPASS_HOME`, or `.compass` in your home directory). A file this build cannot read, such as one an unreleased build wrote, reads as unavailable, and saves never overwrite it. To remove it, stop the dashboard and run `--forget`. That also deletes your observation history, recorded session ends and all stored summaries, and it pauses model calls and turns summaries off, so read its row in [MANUAL.md](MANUAL.md#history-and-annotations) first.
+
+---
+
 ## 1. How to set up
 
 ### Prerequisites
