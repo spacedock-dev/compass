@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2249299,
+    "bytes": 2250783,
     "file": "react.html",
-    "sha256": "5f6d091b51d0ebadd765303c7a57aa3df2d06e49fdac528adefe2c6b1c426b4f"
+    "sha256": "184415932a70eb079c97cd2e7dd055877130f609c7ad9ef8ccdb354aaf0e5405"
   },
   "format": 1,
   "frontend": "react",
@@ -435,7 +435,7 @@
       },
       {
         "file": "frontend/src/controls/focusLane.ts",
-        "sha256": "4a392ce0be1b818ca4e3cf4b483b47e77800374579fe7c6b8f2abafc1c724400"
+        "sha256": "54e97d0961fefccf98dec2236e2e23741399214fccffb601bfe41f3beb04c522"
       },
       {
         "file": "frontend/src/controls/gallery.tsx",
@@ -643,7 +643,7 @@
       },
       {
         "file": "frontend/src/drift/actions.ts",
-        "sha256": "4da8fad3b2e02f65e01ee6d4d3d3fbe46eee7ca512d79239cb142d87c0a06fbc"
+        "sha256": "49eb77b3bf89e8a790dcd71da09b2c5384a3e2a37390617e9d67f6b45ad36fc0"
       },
       {
         "file": "frontend/src/drift/ciRead.ts",
@@ -735,7 +735,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "97e8e5d883e8aa583b612d23dc76484949aaddd123ac96dfbb6b1c9f519c5a95"
+        "sha256": "3a91a78cad24df0184807296a5d08519f9c0bdaa53a5d734aa6b343f3aa3d60f"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -859,7 +859,7 @@
       },
       {
         "file": "frontend/src/intent/held.ts",
-        "sha256": "88113fa7da8ef8c7357716854825885859b214acb727a589fb020b348a1154dc"
+        "sha256": "c5b85bc784aeaa1eeb118be3acb6331046698f5d224de132e5279d945653585e"
       },
       {
         "file": "frontend/src/intent/index.ts",
@@ -895,7 +895,7 @@
       },
       {
         "file": "frontend/src/intent/save.ts",
-        "sha256": "2c6e484eeb9475b0e53762e24b91a09f16804f88787b76368150d3c086a34c18"
+        "sha256": "753548e04f616c35169d8514c92eac5a7920d8edf61059de789e2199b346cf4e"
       },
       {
         "file": "frontend/src/intent/sentences.ts",
