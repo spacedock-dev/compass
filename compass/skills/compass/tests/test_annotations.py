@@ -2853,6 +2853,8 @@ class IntentRevisionTest(unittest.TestCase):
         self.assertNotIn("intent_revision", self.application.collect(show_all=False))
 
     def test_collection_does_not_read_either_store_again_for_the_token(self) -> None:
+        # A store on disk: a collection over a home with none reads nothing at all.
+        self.assertEqual(annotation_store.OUTCOME_STORED, self._annotate())
         with (
             # The file read itself: `refresh` reads it through `_read_store`,
             # which also says whether it could be read.

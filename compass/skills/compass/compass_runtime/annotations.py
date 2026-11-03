@@ -638,6 +638,21 @@ def store_path(config: RuntimeConfig) -> str:
 # `unwritable`. A write holds the lock for one read, one fsync and one rename,
 # so anything near this is a stuck holder rather than a queue.
 _STORE_LOCK_WAIT_SECONDS = 10.0
+# How long a collection's `refresh` waits for the same locks before keeping the
+# copy it has. Long enough to outlast a write in progress, short because the
+# board must not stall behind a stuck holder (`_locked_store`'s measured stall);
+# giving up costs one collection a copy that is one save old.
+_REFRESH_LOCK_WAIT_SECONDS = 0.25
+# What `_store_locks` yields when this process's own writer lock stayed held
+# past the wait: a save here was queued behind one that is still waiting.
+_QUEUED = "queued"
+
+# Why `fresh` has no store to give, spelled for the reading route's reply.
+# Busy: another write held the store past the wait, so the words are there and
+# unreadable for now. Unavailable: the lock file refuses this user, or the file
+# cannot be read whole.
+FRESH_BUSY = "annotation-store-busy"
+FRESH_UNAVAILABLE = "annotation-store-unavailable"
 
 
 def lock_path(config: RuntimeConfig) -> str:
@@ -679,10 +694,56 @@ def _writing() -> set[str]:
 
 
 @contextlib.contextmanager
+def _store_locks(
+    config: RuntimeConfig,
+    state: RuntimeState | None,
+    *,
+    wait: float,
+    make_home: bool,
+) -> Iterator[str]:
+    """The three locks `_locked_store` describes, in its order, on one `wait` deadline.
+
+    Yields the OS lock's answer from `held_file_lock`, or `_QUEUED` when this
+    process's writer lock stayed held. `annotation_lock` is held under every
+    answer but `_QUEUED` and `LOCK_BUSY`, which hold nothing the caller may
+    read under.
+    """
+    path = store_path(config)
+    writing = _writing()
+    if path in writing:
+        msg = f"already writing the annotation store {path}; a writer called a writer"
+        raise RuntimeError(msg)
+    deadline = time.monotonic() + wait
+    writer = _writer_lock(path)
+    if not writer.acquire(timeout=wait):
+        yield _QUEUED
+        return
+    writing.add(path)
+    try:
+        if make_home:
+            # The lock file sits in the state home, which the first save creates.
+            with contextlib.suppress(OSError):
+                os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+        with runtime_io.held_file_lock(
+            lock_path(config), wait=max(0.0, deadline - time.monotonic())
+        ) as held:
+            if held == runtime_io.LOCK_BUSY or state is None:
+                yield held
+            else:
+                with state.annotation_lock:
+                    yield held
+    finally:
+        writing.discard(path)
+        writer.release()
+
+
+@contextlib.contextmanager
 def _locked_store(
     config: RuntimeConfig,
     state: RuntimeState | None,
     diagnostic_sink: Callable[[str], None],
+    *,
+    why: list[str] | None = None,
 ) -> Iterator[_Store | None]:
     """One write's read, check and rename, exclusive across dashboards (DRC-4661).
 
@@ -707,7 +768,8 @@ def _locked_store(
     `annotation_lock` comes last, because the first version held it through
     the wait and stalled `refresh` and `active` behind every queued save:
     measured, three saves answered at 10, 20 and 30 s while the board stalled
-    30 s. Now each waiting save costs at most one wait and readers none.
+    30 s. Now each waiting save costs at most one wait, and a collection's
+    `refresh`, which takes the same three locks, at most its own short one.
 
     Yields the store as read under the lock, so no writer can check a copy
     read outside it, or None, and the caller then writes nothing, when another
@@ -719,55 +781,37 @@ def _locked_store(
     mutator keeps the words for this run and answers `unwritable` without
     writing (DRC-4533): the write's own makedirs could otherwise succeed where
     the lock open failed, and write without the lock.
+
+    `why`, when given, gets `FRESH_BUSY` or `FRESH_UNAVAILABLE` for a None.
     """
     path = store_path(config)
-    writing = _writing()
-    if path in writing:
-        msg = f"already writing the annotation store {path}; a writer called a writer"
-        raise RuntimeError(msg)
-    deadline = time.monotonic() + _STORE_LOCK_WAIT_SECONDS
-    writer = _writer_lock(path)
-    with contextlib.ExitStack() as stack:
-        if not writer.acquire(timeout=_STORE_LOCK_WAIT_SECONDS):
-            runtime_io.diag(
+    wait = _STORE_LOCK_WAIT_SECONDS
+    with _store_locks(config, state, wait=wait, make_home=True) as held:
+        if held == _QUEUED:
+            said = (
                 f"Compass: an earlier save to the annotation store {path} was still "
-                f"waiting after {_STORE_LOCK_WAIT_SECONDS:g}s; nothing was saved",
-                diagnostic_sink,
+                f"waiting after {wait:g}s; nothing was saved"
             )
-            yield None
-            return
-        stack.callback(writer.release)
-        writing.add(path)
-        stack.callback(writing.discard, path)
-        # The lock file sits in the state home, which the first save creates.
-        with contextlib.suppress(OSError):
-            os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        held = stack.enter_context(
-            runtime_io.held_file_lock(lock_path(config), wait=max(0.0, deadline - time.monotonic()))
-        )
-        if held == runtime_io.LOCK_BUSY:
-            runtime_io.diag(
-                f"Compass: another dashboard held the annotation store "
-                f"{path} for {_STORE_LOCK_WAIT_SECONDS:g}s; "
-                "nothing was saved",
-                diagnostic_sink,
+        elif held == runtime_io.LOCK_BUSY:
+            said = (
+                f"Compass: another dashboard held the annotation store {path} for {wait:g}s; "
+                "nothing was saved"
             )
-            yield None
-            return
-        if held == runtime_io.LOCK_DENIED:
-            runtime_io.diag(
+        elif held == runtime_io.LOCK_DENIED:
+            said = (
                 f"Compass: could not open or lock {lock_path(config)}; "
-                "nothing was saved to the annotation store",
-                diagnostic_sink,
+                "nothing was saved to the annotation store"
             )
-            yield None
+        else:
+            if held == runtime_io.LOCK_UNSUPPORTED:
+                _name_unlockable(config, diagnostic_sink)
+            store = _read_store(config)
+            yield store._replace(writable=False) if held == runtime_io.LOCK_UNCREATABLE else store
             return
-        if held == runtime_io.LOCK_UNSUPPORTED:
-            _name_unlockable(config, diagnostic_sink)
-        if state is not None:
-            stack.enter_context(state.annotation_lock)
-        store = _read_store(config)
-        yield store._replace(writable=False) if held == runtime_io.LOCK_UNCREATABLE else store
+        runtime_io.diag(said, diagnostic_sink)
+        if why is not None:
+            why.append(FRESH_UNAVAILABLE if held == runtime_io.LOCK_DENIED else FRESH_BUSY)
+        yield None
 
 
 def _name_unlockable(config: RuntimeConfig, diagnostic_sink: Callable[[str], None]) -> None:
@@ -1808,9 +1852,13 @@ def _unwritten(store: _Store | None, key: tuple[str, str]) -> str:
 
 
 def _cache(state: RuntimeState, entries: tuple[Annotation, ...]) -> None:
-    """Set this process's copy from a read made under the store's lock, the caller holding it."""
+    """Set this process's copy from a read made under the store's lock, the caller holding it.
+
+    Every caller read the file whole, so the board's unreadable-store notice
+    comes down with it rather than waiting for the next collection.
+    """
     state.annotations = _stored(entries)
-    state.annotation_generation += 1
+    state.annotations_trusted = True
 
 
 def refresh(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...]:
@@ -1820,39 +1868,72 @@ def refresh(config: RuntimeConfig, state: RuntimeState) -> tuple[Annotation, ...
     made in one is picked up by the other on its next collection. Whether the
     file could be read whole is kept beside it, for `store_notice`.
 
-    Read outside every lock, so a save that commits during the read is newer
-    than it: the copy is then left as that save set it, and returned, rather
-    than overwritten with the older read (the a11y lens's Keep over a draft,
-    where the press after the adoption found no entry).
+    Read under the writers' locks. Windows refuses a rename onto a file another
+    handle has open, so a read made outside them held its handle across the
+    other dashboard's write and could fail that save; and a save here could
+    commit between the read and the copy, which an older version answered by
+    keeping the save's copy and returning early, leaving the store notice one
+    collection stale. When the locks stay held past `_REFRESH_LOCK_WAIT_SECONDS`
+    a write is in progress or stuck, and the copy this process has is kept
+    rather than read under it: the next collection reads again.
     """
+    if not config.annotations_enabled:
+        with state.annotation_lock:
+            state.annotations = ()
+            state.annotations_trusted = True
+        return ()
+    # No file, so no handle to hold open, and a collection on a home that never
+    # saved makes no lock file there (`--diagnose` writes nothing). Checked
+    # again under `annotation_lock`, which a save here holds from its read
+    # through its rename, so a first save cannot be emptied by this answer.
     with state.annotation_lock:
-        generation = state.annotation_generation
-    store = _read_store(config) if config.annotations_enabled else _Store((), (), trusted=True)
-    with state.annotation_lock:
-        if state.annotation_generation != generation and state.annotations is not None:
-            return cast("tuple[Annotation, ...]", state.annotations)
+        if not os.path.lexists(store_path(config)):
+            state.annotations = ()
+            state.annotations_trusted = True
+            return ()
+    with _store_locks(config, state, wait=_REFRESH_LOCK_WAIT_SECONDS, make_home=False) as held:
+        if held in (_QUEUED, runtime_io.LOCK_BUSY):
+            with state.annotation_lock:
+                return cast("tuple[Annotation, ...]", state.annotations or ())
+        # Every other answer holds `annotation_lock` and this process's writer
+        # lock. Without the OS lock (a filesystem that cannot lock, a lock file
+        # that cannot be made or opened) the read is the one it always was:
+        # this process's own saves cannot run beside it either.
+        store = _read_store(config)
         state.annotations = _stored(store.entries)
         state.annotations_trusted = store.trusted
-    return store.entries
+        return store.entries
+
+
+class Fresh(NamedTuple):
+    """`fresh`'s answer: the entries, or None and why there are none."""
+
+    entries: tuple[Annotation, ...] | None
+    refusal: str = ""
 
 
 def fresh(
     config: RuntimeConfig,
     state: RuntimeState,
     diagnostic_sink: Callable[[str], None] = print,
-) -> tuple[Annotation, ...] | None:
-    """The store as it is on disk now, read under its lock, or None when it cannot be.
+) -> Fresh:
+    """The store as it is on disk now, read under its lock, or why it cannot be.
 
     For a press about to hand an entry to the model: this process's copy
     misses a save another dashboard made since the last collection, and the
     file read under the lock cannot be a write half done (wire review F3).
-    None when the lock stayed busy or the file cannot be trusted.
+    No entries when the lock stayed busy (`FRESH_BUSY`), or the lock file
+    refuses this user or the file cannot be trusted (`FRESH_UNAVAILABLE`), so
+    the press can say which rather than that no session has words.
     """
-    with _locked_store(config, state, diagnostic_sink) as store:
-        if store is None or not store.trusted:
-            return None
+    why: list[str] = []
+    with _locked_store(config, state, diagnostic_sink, why=why) as store:
+        if store is None:
+            return Fresh(None, why[0] if why else FRESH_BUSY)
+        if not store.trusted:
+            return Fresh(None, FRESH_UNAVAILABLE)
         _cache(state, store.entries)
-        return store.entries
+        return Fresh(store.entries)
 
 
 def store_notice(state: RuntimeState) -> str:
@@ -2962,6 +3043,7 @@ def clear(
     now: float | None = None,
     diagnostic_sink: Callable[[str], None] = print,
     receipt: dict[str, int] | None = None,
+    expected_revision: Any = None,
 ) -> str:
     """Forget one session's words entirely. Returns an `OUTCOMES` token.
 
@@ -2987,13 +3069,26 @@ def clear(
     file under the lock and set only once the write landed (DRC-4939). The caller decides what
     else to take with the words from it, never from `active`, whose cached copy a save in
     another tab can outrun: a discard decided on that copy left the summary standing under
-    words that had gone. A save that lands first is a revision this call takes too; one that
-    lands after is a new revision over the record.
+    words that had gone. A save that lands after is a new revision over the record.
+
+    `expected_revision`, when sent, names the latest revision the page drew and is checked
+    under the lock, as `settle` checks it: a save another tab or dashboard made since is newer
+    words this reader never saw, so the discard is refused and takes nothing. Sent as anything
+    but an int it is refused. Not sent, a save that lands first is a revision this call takes too,
+    which is what an older page that names none always did. A session with no live revisions
+    has nothing newer to protect, so the check does not apply to it.
     """
     if not config.annotations_enabled:
         return OUTCOME_REFUSED
     key = _key(harness, sid)
-    if not key[0] or not key[1]:
+    if (
+        not key[0]
+        or not key[1]
+        or (
+            expected_revision is not None
+            and (isinstance(expected_revision, bool) or not isinstance(expected_revision, int))
+        )
+    ):
         return OUTCOME_REFUSED
     stamp = time.time() if now is None else now
     with _locked_store(config, state, diagnostic_sink) as store:
@@ -3010,6 +3105,11 @@ def clear(
             # Already recorded, and the stamp does not move: the record says
             # when the words went, and a second press deleted nothing.
             kept = [*others, existing]
+        elif expected_revision is not None and expected_revision != existing["revisions"][-1]["n"]:
+            # The newer words go into this process's copy, so the reply's
+            # revision is the one that refused this press and not the one it drew.
+            _cache(state, current)
+            return OUTCOME_REFUSED
         else:
             removed = len(existing["revisions"])
             record: Annotation = {

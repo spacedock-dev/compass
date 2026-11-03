@@ -2360,6 +2360,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 sid,
                 diagnostic_sink=application.diagnostic_sink,
                 receipt=counted,
+                # Checked when sent, as Keep's is: a discard from a page drawn
+                # before another tab's or dashboard's save is refused rather
+                # than taking words its reader never saw.
+                expected_revision=payload.get("expected_revision"),
             )
             withdrew = _withdraw_raises(application, outcome, harness, sid)
             # Only words that were really discarded take the summary with them. A clear over
@@ -2734,17 +2738,31 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # From disk under the store's lock, not this process's copy, which
         # misses a save another dashboard made since its last collection
         # (wire review F3).
-        entries = annotation_store.fresh(
+        read = annotation_store.fresh(
             application.config, application.state, application.diagnostic_sink
         )
-        if entries is None:
-            self._reject(503)
+        if read.entries is None:
+            self._store_unreadable(read.refusal)
             return False
-        if expected == _latest_revision(annotation_store.find(entries, harness, sid)):
+        if expected == _latest_revision(annotation_store.find(read.entries, harness, sid)):
             self._press_revision = expected
             return True
         self._revision_changed()
         return False
+
+    def _store_unreadable(self, reason: str) -> None:
+        """503 for a press the annotation store could not be read for, saying why.
+
+        Never the 200 "no annotated session by that name" a busy lock used to
+        get: the session may have words that another dashboard's write is
+        holding for now (`annotations.FRESH_BUSY`), or the store cannot be read
+        (`annotations.FRESH_UNAVAILABLE`). Nothing was started or spent.
+        """
+        self._send(
+            self._reading_json({"ok": False, "produced": False, "reason": reason}),
+            "application/json",
+            503,
+        )
 
     def _revision_changed(self) -> None:
         self._send(
@@ -3706,8 +3724,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # cache can miss this press's own adoption, when a collection that read
         # the store before it assigned its copy after (the a11y lens's Keep over
         # a draft), and a save another dashboard made since the check.
-        entries = annotation_store.fresh(config, state, application.diagnostic_sink)
-        entry = annotation_store.find(entries or (), harness, sid)
+        read = annotation_store.fresh(config, state, application.diagnostic_sink)
+        if read.entries is None:
+            self._store_unreadable(read.refusal)
+            return
+        entry = annotation_store.find(read.entries, harness, sid)
         if not rows or entry is None:
             self._send(
                 self._reading_json(
