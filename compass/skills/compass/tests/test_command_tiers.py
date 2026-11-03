@@ -796,7 +796,10 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         self.session = Transcript(self.cwd)
         self.session.prompt("Add retry with backoff to the webhook handler.")
         polls = [f"gh pr checks {number}" for number in range(1, count + 1)]
-        polls.insert(count // 2, "export GH_REPO=other/old")
+        # The export sits after the first poll, not in the middle: only the first
+        # TOOL_REPORT_MAX_ENTRIES polls are published, so a later export leaves every published
+        # poll before it and none after it.
+        polls.insert(1, "export GH_REPO=other/old")
         self.session.bash(" && ".join(polls), "all pass", is_error=False)
         self.session.save(self.path)
         made = 0
@@ -830,11 +833,13 @@ class ACiPollReadsTheSessionFoldersRepository(ClaudeChecksTestCase):
         large, found = self.calls_made_reading(2 * count)
         self.assertGreater(small, count)
         self.assertLess(large, 2.5 * small, (small, large))
-        self.assertGreater(len(found), 0)
-        for text, poll in found.items():
-            number = int(text.rsplit(" ", 1)[1])
-            if number > count:
-                self.assert_unbound(poll)
+        # The first poll runs before the export and is bound; every later published poll runs
+        # after it and is not. Both sides must be present, or the comparison proves nothing.
+        self.assert_counts(found["gh pr checks 1"])
+        later = [poll for text, poll in found.items() if text != "gh pr checks 1"]
+        self.assertGreater(len(later), 0)
+        for poll in later:
+            self.assert_unbound(poll)
 
     def test_a_run_view_url_binds_by_the_repository_it_names(self) -> None:
         self.goal_texts = ()
