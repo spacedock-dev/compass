@@ -37,6 +37,8 @@ import {
   PROVIDER_CHANGED,
   RESULT_MARK_UNSAVED,
   PAGE_OUTDATED,
+  STORE_BUSY_PRESS,
+  STORE_UNREADABLE_PRESS,
 } from './sentences';
 import type { DriftCtx } from './state';
 import { pressLine } from './route';
@@ -191,6 +193,24 @@ export async function askForReading(
       /* The server's route for this harness now. Kept before the refresh so the sentence below and the
          disclosure it points at agree at once. */
       showRoute(ctx, String(session['harness'] || ''), answer['route']);
+    }
+    if (!reply.ok) {
+      /* The store refused before anything started: a named cause, not a lost answer. Any other refusal falls
+         through to the generic sentence below. */
+      const cause = {
+        'annotation-store-busy': STORE_BUSY_PRESS,
+        'annotation-store-unavailable': STORE_UNREADABLE_PRESS,
+      }[String(answer?.['reason'])];
+      if (cause) {
+        /* Not `refusal`: ReadingControl drops a refusal whose words are not the board's own reason as stale,
+           which erased this sentence on the render after it. An answered message is drawn in the card's
+           polite live region (`role="status"`) and kept until the next press. */
+        note.message = cause;
+        /* An unreadable store is one the board has not necessarily said yet, and the sentence points at the
+           card's notice, so the board is read now rather than at the next poll. */
+        if (cause === STORE_UNREADABLE_PRESS) await refresh(intent);
+        return;
+      }
     }
     if (status === 409 && isRecord(answer?.['job'])) {
       /* Another tab, or an earlier press, already started one: show it, then take the board's word for

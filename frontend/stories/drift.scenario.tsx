@@ -163,6 +163,13 @@ export interface Scenario {
   readonly directionText?: string;
   /** Every `POST /api/correction` body the page sent, for a story about what the request carries. */
   readonly correctionPosts?: Record<string, unknown>[];
+  /** Answers `POST /api/reading` with a 503 and this body, as a store that cannot take the press does, and
+      publishes `after` on every board read from then on, as the server would once it has noticed. */
+  readonly readingStoreRefusal?: {
+    readonly body: Record<string, unknown>;
+    readonly after?: Record<string, unknown>;
+    posts: number;
+  };
   /** Filled in on mount: the browser's Back, which a story cannot press through the page's own links. */
   readonly nav?: { back?: () => void; go?: (fragment: string) => void };
   /** Filled in on mount: one more board read, over the scenario as the story has since changed it. */
@@ -256,6 +263,8 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     if (ciPosts) ciPosts.length = 0;
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
+    let afterRefusal: Record<string, unknown> = {};
+    if (scenario.readingStoreRefusal) scenario.readingStoreRefusal.posts = 0;
     const shell = createShell({
       env,
       router: createRouter(history.env),
@@ -266,6 +275,11 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       reducedMotion: () => true,
       ...(scenario.clipboard ? { clipboard: () => ({ writeText: async () => undefined }) } : {}),
       fetch: async (url, init) => {
+        if (url.startsWith('/api/reading') && scenario.readingStoreRefusal) {
+          scenario.readingStoreRefusal.posts += 1;
+          afterRefusal = scenario.readingStoreRefusal.after ?? {};
+          return new Response(JSON.stringify(scenario.readingStoreRefusal.body), { status: 503 });
+        }
         if (url.startsWith('/api/reading') && ciPosts) {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
           if (typeof body['ci_read'] === 'string') {
@@ -349,6 +363,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
               [harness]: { ...(scenario.route ?? healthyRoute(harness)), ci_read: ciRead },
             },
             ...(scenario.payload ?? {}),
+            ...afterRefusal,
             reading,
             ...(job ? { reading_jobs: { [`${harness}:s1`]: job } } : {}),
             sessions: [

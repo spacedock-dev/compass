@@ -81,3 +81,48 @@ describe('the cue lane', () => {
     expect(held.stampOf('a')).toBe(0);
   });
 });
+
+describe('the revision a discard was armed against', () => {
+  it('stands only while the discard is armed', () => {
+    const { held } = setup();
+    expect(held.armedRevision('d')).toBeUndefined();
+    held.mark('d', 'discard-armed');
+    held.recordArmedRevision('d', 2);
+    expect(held.armedRevision('d')).toBe(2);
+  });
+
+  it('does not survive the arm being dropped', () => {
+    const { held } = setup();
+    held.mark('d', 'discard-armed');
+    held.recordArmedRevision('d', 2);
+    held.drop('d');
+    held.mark('d', 'discard-armed');
+    expect(held.armedRevision('d')).toBeUndefined();
+  });
+
+  it('does not survive the arm lapsing', () => {
+    const { held, clock } = setup();
+    held.mark('d', 'discard-armed');
+    held.recordArmedRevision('d', 2);
+    clock.advance(30_000);
+    held.mark('d', 'discard-armed');
+    expect(held.armedRevision('d')).toBeUndefined();
+  });
+
+  it('does not survive the confirm press, however the discard comes out', () => {
+    const { held } = setup();
+    held.mark('d', 'discard-armed');
+    held.recordArmedRevision('d', 2);
+    held.spendArmedRevision('d');
+    held.mark('d', 'discard-armed');
+    expect(held.armedRevision('d')).toBeUndefined();
+  });
+
+  it('does not stand under a mark that replaced the arm', () => {
+    const { held } = setup();
+    held.mark('d', 'discard-armed');
+    held.recordArmedRevision('d', 2);
+    held.mark('d', 'discard-stored');
+    expect(held.armedRevision('d')).toBeUndefined();
+  });
+});

@@ -545,3 +545,142 @@ describe('Discard everything', () => {
     expect(document.body.textContent).toContain('Reading the annotation store.');
   });
 });
+
+/* The two presses of a discard are the reader's reading of what is stored and the reader's agreement to
+   delete it. What they read is what the second press names, whatever a refresh brought between them. */
+describe('Discard everything names the words the reader was shown when they armed it', () => {
+  const NEWER = 'Newer words from the other tab';
+
+  it('sends the revision shown at the first press when a refresh brings another tab’s words before the second', async () => {
+    const page: ReturnType<typeof mount> = mount({
+      '/api/annotate': (request) => {
+        const body = request.body as Record<string, unknown>;
+        if (body['expected_revision'] === 2) {
+          page.state.data = withSentences(board({}, { goal: NEWER, revision: 3 }));
+          return json({
+            ok: true,
+            outcome: 'refused',
+            persisted: false,
+            revision: 3,
+            withdrew: true,
+          });
+        }
+        page.state.data = withSentences(board({}, { discarded: true }));
+        return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true, removed: 2 });
+      },
+    });
+    await settle(page);
+    await armed(page);
+    // Another tab saved revision 3; the poll draws it while the warning stands.
+    await page.poll(withSentences(board({}, { goal: NEWER, revision: 3 })));
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(page.allPosts()).toHaveLength(1);
+    expect(page.allPosts()[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      clear: true,
+      expected_revision: 2,
+    });
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
+    expect(goalBox().value).toBe(NEWER);
+  });
+
+  it('names the newer revision when the reader arms again after the refresh', async () => {
+    const page = mount({
+      '/api/annotate': () => json({ ok: true, outcome: 'stored', persisted: true, withdrew: true }),
+    });
+    await settle(page);
+    await armed(page);
+    fireEvent.keyDown(discard() as Element, { key: 'Escape' });
+    await page.settle();
+    await page.poll(withSentences(board({}, { goal: NEWER, revision: 3 })));
+    await press(discard());
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+    await settle(page);
+    expect(page.allPosts()[0]?.body).toMatchObject({ clear: true, expected_revision: 3 });
+  });
+});
+
+/* A refused discard removes the Confirm control the reader was on, and the menu that held the other copy is
+   closed, so focus has nowhere to stay. It goes to More, where the words are managed, and only when the
+   reader has not already gone somewhere else. */
+describe('after a discard that left the words standing', () => {
+  const more = () =>
+    document.querySelector<HTMLElement>('[aria-label="More about these words"]') as HTMLElement;
+  const REFUSED = () => json({ ok: true, outcome: 'refused', persisted: false, withdrew: true });
+  const confirmAfterDwell = async (page: ReturnType<typeof mount>) => {
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    await press(discard());
+  };
+
+  it('puts focus on More when the reader is still where the Confirm control was', async () => {
+    const page = mount({ '/api/annotate': REFUSED });
+    await confirmAfterDwell(page);
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
+    expect(more()).not.toBeNull();
+    expect(document.activeElement).toBe(more());
+  });
+
+  it('puts focus on More when the reader had focused the Confirm control itself', async () => {
+    const page = mount({ '/api/annotate': REFUSED });
+    await settle(page);
+    await armed(page);
+    await act(async () => {
+      page.clock.advance(1_300);
+    });
+    (discard() as HTMLElement).focus();
+    await press(discard());
+    await settle(page);
+    expect(document.activeElement).toBe(more());
+  });
+
+  it('leaves focus in the goal box when the reader moved there while the store held the request', async () => {
+    const page = mount({ '/api/annotate': () => 'hold' });
+    await confirmAfterDwell(page);
+    goalBox().focus();
+    expect(document.activeElement).toBe(goalBox());
+    await page.release('/api/annotate', REFUSED());
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.refused);
+    expect(document.activeElement).toBe(goalBox());
+  });
+
+  it('asks for no focus on the page a refusal found the reader had left, so returning moves nothing', async () => {
+    const page = mount({ '/api/annotate': () => 'hold' });
+    await confirmAfterDwell(page);
+    await page.go('#n=sessions');
+    await page.release('/api/annotate', REFUSED());
+    await settle(page);
+    // The reader comes back long after, to a card nobody asked to move focus into.
+    await page.advance(40_000);
+    await page.go('#n=session:alpha%2Fapp:claude:s1');
+    await settle(page);
+    expect(more()).not.toBeNull();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('keeps focus where a discard that took the words has always put it', async () => {
+    const page = mount({
+      '/api/annotate': () => {
+        page.state.data = withSentences(board({}, { discarded: true }));
+        return json({ ok: true, outcome: 'stored', persisted: true, withdrew: true, removed: 2 });
+      },
+    });
+    await confirmAfterDwell(page);
+    await settle(page);
+    expect(text('.next-cockpit-held-discard .next-cockpit-held-cue')).toBe(SENTENCES.stored);
+    expect(document.activeElement).not.toBe(more());
+  });
+});

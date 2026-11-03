@@ -64,6 +64,8 @@ export function createFocusLane() {
       };
     },
     focus,
+    /** The control registered under a key, or undefined where none is drawn. */
+    element: (key: string): HTMLElement | undefined => entries.get(key)?.element,
     size: (): number => entries.size,
   };
 }

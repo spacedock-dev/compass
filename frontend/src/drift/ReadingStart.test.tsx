@@ -120,6 +120,50 @@ describe('Analyze starts only on a press', () => {
   });
 });
 
+describe('a store that cannot take the press says so, and does not say the answer was lost', () => {
+  const BUSY =
+    'Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.';
+  const UNREADABLE =
+    'Compass could not read the file that holds what you typed, so nothing was started or spent. The notice on the card says how to repair it.';
+  it.each([
+    ['annotation-store-busy', BUSY],
+    ['annotation-store-unavailable', UNREADABLE],
+  ])('names the cause when the store answers %s', async (reason, sentence) => {
+    const page = mountDrift({
+      routes: { '/api/reading': () => json({ ok: false, reason }, 503) },
+    });
+    await page.settle();
+    await page.settle();
+    const boardReads = () =>
+      page.state.requests.filter((request) => request.path === '/api/data').length;
+    const before = boardReads();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(readingPosts(page)).toHaveLength(1);
+    // An unreadable store points at the card's notice, so the board is read at once to show it.
+    expect(boardReads() > before).toBe(reason === 'annotation-store-unavailable');
+    const text = textOf('.next-session-drift-check');
+    expect(text).toContain(sentence);
+    expect(text).not.toContain('Could not confirm the reading');
+    // The sentence sits in a polite live region, the way the press's other answers do.
+    const said = [...document.querySelectorAll('.next-session-drift-check [role=status]')].map(
+      (node) => node.textContent,
+    );
+    expect(said).toContain(sentence);
+  });
+
+  it('keeps the generic sentence for any other refusal the page cannot read', async () => {
+    const page = mountDrift({
+      routes: { '/api/reading': () => json({ ok: false, reason: 'something-new' }, 503) },
+    });
+    await page.settle();
+    await page.settle();
+    await press(byAction('reading-ask'));
+    await page.settle();
+    expect(textOf('.next-session-drift-check')).toContain('Could not confirm the reading');
+  });
+});
+
 describe('a refusal is a state', () => {
   it('stops being said the moment the reader does what it asks', async () => {
     const page = mountDrift({ payload: { reading_check: 'failed' } });
