@@ -44,7 +44,8 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         ├── compass_runtime/       # importable dashboard runtime package
         │                           # per-module map: docs/design-runtime-architecture.md
         │   ├── entry.py            # what server.py runs: terminal_client's short operations, else cli.main
-        │   ├── terminal_client.py  # stdlib-only client for the loopback API; imports no runtime module
+        │   ├── terminal_client.py  # stdlib-only client for the loopback API; imports only terminal_sessions
+        │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
         │   ├── collectors/         # one harness collector per file, one per supported harness
         │   └── web/                # the built React page, its integrity metadata and licenses, vendored
         │                           # terminal assets, fonts and the page loader (`page.py`)

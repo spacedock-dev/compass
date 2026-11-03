@@ -56,6 +56,7 @@ from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
 from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
+from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
 from compass_runtime import observation as observation_module  # noqa: E402 - skill runtime path
@@ -66,6 +67,7 @@ from compass_runtime import reading_route as runtime_reading_route  # noqa: E402
 from compass_runtime import records as runtime_records  # noqa: E402 - skill runtime path
 from compass_runtime import tripwires as runtime_tripwires  # noqa: E402 - runtime path
 from compass_runtime.aggregate import Application, HarnessSpec  # noqa: E402 - skill runtime path
+from compass_runtime.asks import PendingAsk  # noqa: E402 - skill runtime path
 from compass_runtime.config import build_runtime_config  # noqa: E402 - skill runtime path
 from compass_runtime.http_api import CompassHTTPServer  # noqa: E402 - skill runtime path
 from compass_runtime.sessions import base_session  # noqa: E402 - skill runtime path
@@ -239,7 +241,7 @@ class Scratch:
 class Rig:
     """A real application and server, with synthetic rows and everything else inert."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - one keyword per thing a scenario varies
         self,
         scratch: Scratch,
         name: str,
@@ -250,6 +252,7 @@ class Rig:
         unavailable: tuple[str, ...] = (),
         with_focus: bool = False,
         blocked_state: bool = False,
+        harness_specs: tuple[tuple[str, str, dict[str, Any]], ...] | None = None,
         **config_changes: Any,
     ) -> None:
         self.dir = scratch.subdir(name)
@@ -293,8 +296,9 @@ class Rig:
         self.config = dataclasses.replace(config, **config_changes)
         self.state = build_runtime_state(self.config, started=started)
         specs = tuple(
-            HarnessSpec(key, label, lambda *_: True, self._collector(key))
-            for key, label in (("claude", "Claude Code"), ("codex", "Codex"))
+            HarnessSpec(key, label, lambda *_: True, self._collector(key), **flags_for)
+            for key, label, flags_for in harness_specs
+            or (("claude", "Claude Code", {}), ("codex", "Codex", {}))
         )
         self.application = Application(
             self.config,
@@ -762,6 +766,227 @@ def data_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             get("/api/data"),
             "The same board from a restarted server: a new start stamp in the revision header "
             "and a different build id, with the counter back at 1.",
+        )
+    finally:
+        rig.close()
+
+
+def session_states_rows() -> dict[str, list[dict[str, Any]]]:
+    """Every state the terminal listing and the board's two groups have to agree about.
+
+    Each row is named for the case it holds. The ask-owning and waiting rows are Claude Code's and
+    Codex's, the two harnesses that report waits; the Gemini row stands for one that does not.
+    """
+    uuid_tail = "11111111-2222-4333-8444-5555"
+    return {
+        "claude": [
+            synthetic_row(
+                "claude",
+                "a1b2c3d4",
+                "alpha-app",
+                title="Wire the parser",
+                state="working",
+                resume_id=f"a1b2c3d4-{uuid_tail}00000001",
+            ),
+            synthetic_row(
+                "claude",
+                "b2c3d4e5",
+                "alpha-app",
+                title="Choose the retry plan",
+                state="needs_input",
+                state_detail="waiting on a permission prompt",
+                blocked_since=NOW - 300,
+                resume_id=f"b2c3d4e5-{uuid_tail}00000002",
+            ),
+            synthetic_row(
+                "claude",
+                "c3d4e5f6",
+                "beta-api",
+                title="Review the schema",
+                state="needs_input",
+                state_detail="waiting on a permission prompt",
+                blocked_since=NOW - 3700,
+                wait_unconfirmed=True,
+                resume_id=f"c3d4e5f6-{uuid_tail}00000003",
+            ),
+            synthetic_row(
+                "claude",
+                "d4e5f6a7",
+                "beta-api",
+                title="Stopped with uncommitted work",
+                age=500.0,
+                finished_at=NOW - 500,
+                dirty=True,
+                changed=3,
+                resume_id=f"d4e5f6a7-{uuid_tail}00000004",
+            ),
+            synthetic_row(
+                "claude",
+                "e5f6a7b8",
+                "beta-api",
+                title="Ended clean",
+                state="working",
+                age=2000.0,
+                ended_at=NOW - 1800,
+                dirty=False,
+                changed=0,
+                resume_id=f"e5f6a7b8-{uuid_tail}00000005",
+            ),
+            synthetic_row(
+                "claude",
+                "f6a7b8c9",
+                "gamma",
+                title="Idle with a recorded departure",
+                age=4000.0,
+                resume_id=f"f6a7b8c9-{uuid_tail}00000006",
+            ),
+            synthetic_row(
+                "claude",
+                "a7b8c9d0",
+                "gamma",
+                title="Ended while it still asked for input",
+                state="needs_input",
+                age=5000.0,
+                blocked_since=NOW - 5000,
+                ended_at=NOW - 4000,
+                dirty=False,
+                changed=0,
+                resume_id=f"a7b8c9d0-{uuid_tail}00000007",
+            ),
+            synthetic_row(
+                "claude",
+                "b8c9d0e1",
+                "gamma",
+                title="Ended dirty while it asked for input",
+                state="needs_input",
+                age=5200.0,
+                blocked_since=NOW - 5200,
+                ended_at=NOW - 4100,
+                dirty=True,
+                changed=2,
+                resume_id=f"b8c9d0e1-{uuid_tail}00000008",
+            ),
+            synthetic_row(
+                "claude",
+                "c9d0e1f2",
+                "delta",
+                title="Stopped in the transcript only",
+                age=6000.0,
+                turn_end_at=NOW - 6000,
+                resume_id=f"c9d0e1f2-{uuid_tail}00000009",
+            ),
+            synthetic_row(
+                "claude", "d0e1f2a3", "delta", title="Idle and recent", age=60.0, resume_id=None
+            ),
+        ],
+        "codex": [
+            synthetic_row(
+                "codex",
+                "019c0000-1111-7222-8333-444455556666",
+                "epsilon",
+                title="Document the endpoint",
+                state="needs_input",
+                state_detail="approval needed",
+                blocked_since=NOW - 120,
+                resume_id="019c0000-1111-7222-8333-444455556666",
+            ),
+            synthetic_row(
+                "codex",
+                "019c0000-1111-7222-8333-444455557777",
+                "epsilon",
+                title="A token that starts with a dash",
+                age=900.0,
+                resume_id="-dangerous-token",
+            ),
+        ],
+        "gemini": [
+            synthetic_row(
+                "gemini",
+                "gem-0001",
+                "zeta",
+                title="A harness that publishes no waits",
+                age=1200.0,
+                resume_id="gem-0001",
+            ),
+        ],
+    }
+
+
+def register_session_asks(rig: Rig) -> None:
+    """Two exact requests in the real registry: one an owner holds, one nobody owns."""
+    for ask_id, session_id, project, question, options in (
+        (
+            "ask-fixture-1",
+            "b2c3d4e5",
+            "alpha-app",
+            "Approve the retry plan?",
+            ("Yes, run it", "No, stop"),
+        ),
+        (
+            "ask-fixture-2",
+            "no-such-session",
+            "unknown",
+            "Which environment should this deploy to?",
+            (),
+        ),
+    ):
+        ask = PendingAsk(
+            harness="claude",
+            session_id=session_id,
+            project=project,
+            question=question,
+            options=options,
+            created=NOW - 240,
+        )
+        # The registry mints a random id, which would make the recording differ on every run.
+        ask.id = ask_id
+        rig.state.asks.register(ask, limit=8, deadline=3600.0, retention=60.0)
+    # A raise the unasked lane recorded, written through the store's own writer: the row's
+    # `departures` list is derived from the store on every collection, so a synthetic row cannot
+    # carry one itself.
+    runtime_departures.record(
+        rig.config,
+        [
+            {
+                "harness": "claude",
+                "sid": "f6a7b8c9",
+                "at": NOW - 600,
+                "constraint": "goal",
+                "clause": "Keep the change to the parser",
+                "reading": "The session began editing the lexer.",
+                "evidence": "Edit of lexer.py at the third step.",
+                "revision": 1,
+                "cutoff": NOW - 600,
+                "cutoff_text": "Read 12 messages.",
+                "withdrawn": False,
+            }
+        ],
+    )
+
+
+def session_states_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    rig = Rig(
+        scratch,
+        "data-session-states",
+        rows=session_states_rows(),
+        ask_enabled=True,
+        harness_specs=(
+            ("claude", "Claude Code", {"reports_needs_input": True}),
+            ("codex", "Codex", {"reports_needs_input": True}),
+            ("gemini", "Gemini CLI", {}),
+        ),
+    )
+    try:
+        register_session_asks(rig)
+        recorder.capture(
+            rig,
+            "data-session-states",
+            get("/api/data"),
+            "Every state the Sessions screen and the terminal listing must agree on: a working "
+            "row, a held exact request, a wait with no request and one unconfirmed, a stop with "
+            "uncommitted work, two ends, a recorded departure, a stop only the transcript "
+            "carries, an ownerless request, a Codex id the re-entry rule refuses and a harness "
+            "that reports no waits.",
         )
     finally:
         rig.close()
@@ -1591,6 +1816,7 @@ def unsupported_record_scenario(recorder: Recorder, scratch: Scratch) -> None:
 
 SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
     data_scenarios,
+    session_states_scenario,
     stream_scenarios,
     context_scenarios,
     unsupported_record_scenario,

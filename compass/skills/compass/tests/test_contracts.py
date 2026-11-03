@@ -1206,7 +1206,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # must not load it (R-1). The walk counts that edge, so it is listed.
         "compass_runtime.entry": {"compass_runtime.cli", "compass_runtime.terminal_client"},
         # Standard library only, so a short command answers before any collector is imported.
-        "compass_runtime.terminal_client": set(),
+        # `--sessions` prints through `terminal_sessions`, which is the one rule for what waits on the
+        # reader and imports nothing from the runtime either.
+        "compass_runtime.terminal_client": {"compass_runtime.terminal_sessions"},
+        "compass_runtime.terminal_sessions": set(),
         # One small file per Claude session for the status line, written through the owner-only
         # writer. A leaf over `io`, so the module that owns collection never imports it.
         "compass_runtime.footer_lines": {"compass_runtime.io"},

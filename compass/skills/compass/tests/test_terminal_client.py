@@ -152,6 +152,35 @@ class OperationTableTest(unittest.TestCase):
         self.assertFalse(terminal_client.handles(["--stop"]))
 
 
+class SessionsOperationTest(unittest.TestCase):
+    def test_sessions_takes_an_optional_waiting_value_in_the_parser(self) -> None:
+        parser = cli.build_parser()
+
+        self.assertIs(True, parser.parse_args(["--sessions"]).sessions)
+        self.assertEqual("waiting", parser.parse_args(["--sessions", "waiting"]).sessions)
+        self.assertEqual("waiting", parser.parse_args(["--sessions=waiting"]).sessions)
+        self.assertFalse(parser.parse_args([]).sessions)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            parser.parse_args(["--sessions", "bogus"])
+        self.assertEqual(2, refused.exception.code)
+
+    def test_the_client_claims_a_lone_sessions_in_its_three_spellings_and_nothing_else(
+        self,
+    ) -> None:
+        for argv in (["--sessions"], ["--sessions", "waiting"], ["--sessions=waiting"]):
+            with self.subTest(argv=argv):
+                self.assertTrue(terminal_client.handles(argv))
+        for argv in (
+            ["--sessions", "bogus"],
+            ["--sessions=bogus"],
+            ["--sessions", "--port", "4581"],
+            ["--sessions", "waiting", "extra"],
+            ["--sessions", "--sessions"],
+        ):
+            with self.subTest(argv=argv):
+                self.assertFalse(terminal_client.handles(argv))
+
+
 class ReleaseVersionTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -621,6 +650,183 @@ class SessionTest(unittest.TestCase):
         self.assertLessEqual(stream.tell(), terminal_client.STDIN_CAP_CHARS + 1)
 
 
+def data_reply(body: object) -> dict[str, tuple[int, dict[str, str], bytes]]:
+    raw = body if isinstance(body, bytes) else json.dumps(body).encode()
+    return {"/api/data": (200, {"Content-Type": "application/json"}, raw)}
+
+
+BOARD = {
+    "generated": 1000.0,
+    "ask": False,
+    "annotate": False,
+    "harnesses": [{"key": "claude", "label": "Claude Code", "reports_needs_input": True}],
+    "sessions": [
+        {
+            "harness": "claude",
+            "sid": "a1b2c3d4",
+            "project": "alpha",
+            "title": "Wire the parser",
+            "state": "working",
+            "last_activity": 990.0,
+            "resume_id": "a1b2c3d4-0000-4000-8000-000000000000",
+        }
+    ],
+}
+
+
+class SessionsCommandTest(HomeCase):
+    def run_sessions(
+        self,
+        mode: str | None = None,
+        *,
+        port: int | None = None,
+        environ: dict[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        env = {"COMPASS_HOME": self.home, **(environ or {})}
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = terminal_client.run_sessions(mode, port=port, environ=env)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_with_no_dashboard_the_shared_sentence_goes_to_stderr_and_the_exit_is_one(self) -> None:
+        code, out, err = self.run_sessions()
+
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_client.sentence("not_running") + "\n", err)
+
+    def test_a_board_is_read_from_the_dashboard_and_printed_to_stdout(self) -> None:
+        with FakeDashboard(answers=data_reply(BOARD)) as fake:
+            code, out, err = self.run_sessions(port=fake.port)
+
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn("Wire the parser", out)
+        self.assertEqual([("GET", "/api/health"), ("GET", "/api/data")], fake.requests)
+
+    def test_the_read_never_asks_for_usage_or_the_wider_window(self) -> None:
+        with FakeDashboard(answers=data_reply(BOARD)) as fake:
+            self.run_sessions(port=fake.port)
+
+        self.assertEqual([], [path for _, path in fake.requests if "?" in path])
+
+    def test_a_board_larger_than_the_old_reply_cap_still_reads(self) -> None:
+        padded = {**BOARD, "history": {"pad": "x" * (terminal_client.REPLY_CAP_BYTES + 100_000)}}
+        with FakeDashboard(answers=data_reply(padded)) as fake:
+            code, out, _ = self.run_sessions(port=fake.port)
+
+        self.assertEqual(0, code)
+        self.assertIn("Wire the parser", out)
+
+    def test_a_board_over_the_bound_is_one_sentence_and_exit_one(self) -> None:
+        padded = {**BOARD, "history": {"pad": "x" * 2_000}}
+        with (
+            mock.patch.object(terminal_client, "DATA_CAP_BYTES", 1_000),
+            FakeDashboard(answers=data_reply(padded)) as fake,
+        ):
+            code, out, err = self.run_sessions(port=fake.port)
+
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+
+    def test_a_refusal_or_a_body_that_is_no_board_is_one_sentence_and_exit_one(self) -> None:
+        replies = {
+            "a 500": (500, {}, b"{}"),
+            "html": (200, {"Content-Type": "text/html"}, b"<html></html>"),
+            "a list": (200, {}, b"[]"),
+            "no sessions list": (200, {}, b'{"sessions": 3}'),
+        }
+        for name, reply in replies.items():
+            with self.subTest(name), FakeDashboard(answers={"/api/data": reply}) as fake:
+                code, out, err = self.run_sessions(port=fake.port)
+
+            self.assertEqual((1, ""), (code, out))
+            self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+
+    def test_a_dashboard_that_dies_between_the_probe_and_the_read_is_one_sentence(self) -> None:
+        with (
+            FakeDashboard() as fake,
+            mock.patch.object(
+                terminal_client, "get", side_effect=terminal_client.DashboardUnreachable("gone")
+            ),
+        ):
+            code, out, err = self.run_sessions(port=fake.port)
+
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+
+    def test_the_cli_path_renders_from_the_named_port_and_starts_nothing(self) -> None:
+        with (
+            FakeDashboard(answers=data_reply(BOARD)) as fake,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": self.home}),
+            mock.patch.object(lifecycle, "serve") as serve,
+        ):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = cli.main(["--sessions", "--port", str(fake.port)])
+
+        self.assertEqual(0, code)
+        serve.assert_not_called()
+        self.assertIn("Wire the parser", out.getvalue())
+
+    def test_a_port_that_was_not_typed_leaves_discovery_on(self) -> None:
+        with (
+            mock.patch.object(terminal_client, "run_sessions", return_value=0) as run,
+        ):
+            cli.main(["--sessions", "waiting"])
+            cli.main(["--sessions", "--port", "4581"])
+
+        self.assertEqual(
+            [mock.call("waiting", port=None), mock.call(True, port=4581)], run.call_args_list
+        )
+
+    def test_the_caller_is_left_out_of_the_waiting_list_by_its_full_session_id(self) -> None:
+        waiting = {
+            **BOARD,
+            "sessions": [
+                {**BOARD["sessions"][0], "state": "needs_input", "blocked_since": 900.0},  # type: ignore[index]
+                {
+                    "harness": "claude",
+                    "sid": "ffffffff",
+                    "project": "beta",
+                    "title": "Another waiter",
+                    "state": "needs_input",
+                    "blocked_since": 800.0,
+                },
+            ],
+        }
+        with FakeDashboard(answers=data_reply(waiting)) as fake:
+            _, out, _ = self.run_sessions(
+                "waiting",
+                port=fake.port,
+                environ={"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"},
+            )
+
+        self.assertIn("Another waiter", out)
+        self.assertNotIn("Wire the parser", out)
+
+    def test_a_lone_sessions_never_loads_the_dashboard_modules(self) -> None:
+        program = (
+            "import sys\n"
+            f"sys.path.insert(0, {str(SERVER_PATH.parent)!r})\n"
+            "from compass_runtime import entry, terminal_client\n"
+            f"terminal_client.DEFAULT_PORT = {closed_port()}\n"
+            "code = entry.main(['--sessions'])\n"
+            "print(code, [m for m in sys.modules if m in "
+            "('compass_runtime.cli', 'compass_runtime.http_api', 'compass_runtime.aggregate')])\n"
+        )
+        with tempfile.TemporaryDirectory() as home:
+            done = subprocess.run(
+                [sys.executable, "-c", program],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+                env={**os.environ, "COMPASS_HOME": home},
+            )
+
+        self.assertEqual("1 []\n", done.stdout)
+        self.assertEqual(terminal_client.sentence("not_running") + "\n", done.stderr)
+
+
 class WordingTest(unittest.TestCase):
     def test_every_sentence_is_one_line_and_every_placeholder_is_filled(self) -> None:
         for key in terminal_client.SENTENCES:
@@ -648,6 +854,10 @@ class WordingTest(unittest.TestCase):
         self.assertEqual(
             "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
             terminal_client.sentence("no_session"),
+        )
+        self.assertEqual(
+            "Compass answered, but its session list could not be read.",
+            terminal_client.sentence("unreadable_reply"),
         )
         self.assertEqual(
             "The running dashboard is version 0.9.0 and this is version 1.0.0, so nothing was sent. "
