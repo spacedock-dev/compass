@@ -2381,6 +2381,9 @@ def scrub(text: str, values: Iterable[str], *, prose: bool = False) -> Scrubbed:
     a word character still does. The output tail keeps `.`, `/`, `@`, `+` and `-` inside a word
     because a filename ends in `.py`.
 
+    A value of `_LONG_SPELLING_MIN` characters or more is found by `_LongIndex`, so one very long
+    value costs work linear in the text, not text times its length.
+
     It fails closed. A set of values too heavy to compile (`SCRUB_SPELLING_MASS_MAX`), values
     that each extend the last past `_TRIE_DEPTH_MAX`, a text that holds nearly every stand-in, or
     a text that still changes on the last of `_SCRUB_PASSES` is not searched or not finished, and
