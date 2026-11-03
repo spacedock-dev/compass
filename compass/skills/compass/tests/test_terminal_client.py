@@ -1,0 +1,642 @@
+"""The terminal client: one stdlib-only way for a short command to reach the dashboard."""
+
+from __future__ import annotations
+
+import builtins
+import contextlib
+import http.client
+import io
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Self
+from unittest import mock
+
+from compass_runtime import cli, entry, lifecycle, terminal_client
+
+from . import support
+from .support import SERVER_PATH
+
+MANIFEST = SERVER_PATH.parents[2] / ".claude-plugin" / "plugin.json"
+HEAVY = ("compass_runtime.cli", "compass_runtime.http_api", "compass_runtime.aggregate")
+
+
+class FakeDashboard:
+    """A loopback listener that answers `/api/health` and counts every request it receives.
+
+    `version=None` leaves the key out, as an older dashboard does. `answers` maps a path to a
+    `(status, headers, body)` for anything else, so a redirect or a refusal can be staged.
+    """
+
+    def __init__(
+        self,
+        *,
+        version: str | None = "1.0.0",
+        answers: dict[str, tuple[int, dict[str, str], bytes]] | None = None,
+        health: dict[str, object] | None = None,
+    ) -> None:
+        self.requests: list[tuple[str, str]] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args: object) -> None:
+                return
+
+            def _answer(self) -> None:
+                outer.requests.append((self.command, self.path))
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                status, headers, body = (
+                    200,
+                    {"Content-Type": "application/json"},
+                    json.dumps(outer.health_body()).encode(),
+                )
+                if self.path != "/api/health":
+                    status, headers, body = (outer.answers or {}).get(self.path, (404, {}, b"{}"))
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = _answer  # noqa: N815
+
+        self.answers = answers
+        self._version = version
+        self._health = health
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_port
+
+    def health_body(self) -> dict[str, object]:
+        if self._health is not None:
+            return self._health
+        body: dict[str, object] = {"ok": True, "pid": 4242, "port": self.port, "started": 100.0}
+        if self._version is not None:
+            body["version"] = self._version
+        return body
+
+    def posts(self) -> list[tuple[str, str]]:
+        return [seen for seen in self.requests if seen[0] == "POST"]
+
+    def __enter__(self) -> Self:
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def run_entry(*argv: str) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = entry.main(list(argv))
+    return code, out.getvalue(), err.getvalue()
+
+
+class LightPathTest(unittest.TestCase):
+    def test_version_through_server_py_never_imports_the_cli(self) -> None:
+        done = subprocess.run(
+            [sys.executable, "-X", "importtime", str(SERVER_PATH), "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+
+        expected = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
+        self.assertEqual((0, f"{expected}\n"), (done.returncode, done.stdout))
+        loaded = [name for name in HEAVY if f" {name}\n" in done.stderr]
+        self.assertEqual([], loaded)
+
+    def test_anything_but_a_bare_version_is_handed_to_the_cli_untouched(self) -> None:
+        for argv in (["--version", "--bogus"], ["--status"], ["--help"], []):
+            with self.subTest(argv=argv), mock.patch.object(cli, "main", return_value=7) as main:
+                code = entry.main(argv)
+
+            self.assertEqual(7, code)
+            main.assert_called_once_with(argv)
+
+    def test_a_bare_version_is_answered_without_calling_the_cli(self) -> None:
+        with mock.patch.object(cli, "main") as main:
+            code, out, _ = run_entry("--version")
+
+        self.assertEqual(0, code)
+        main.assert_not_called()
+        self.assertTrue(out.strip())
+
+
+class OperationTableTest(unittest.TestCase):
+    def test_every_operation_the_client_owns_is_in_the_parser_with_its_help(self) -> None:
+        actions = {
+            option: action
+            for action in cli.build_parser()._actions
+            for option in action.option_strings
+        }
+
+        for operation in terminal_client.OPERATIONS:
+            with self.subTest(flag=operation.flag):
+                self.assertEqual(operation.help, actions[operation.flag].help)
+
+    def test_the_client_claims_only_flags_it_owns(self) -> None:
+        flags = {operation.flag for operation in terminal_client.OPERATIONS}
+
+        self.assertTrue(all(terminal_client.handles([flag]) for flag in flags))
+        self.assertFalse(terminal_client.handles(["--stop"]))
+
+
+class ReleaseVersionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def stamp(self, text: str | None) -> Path:
+        path = self.root / "stamp"
+        if text is not None:
+            path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_a_binary_stamp_wins_over_the_manifest(self) -> None:
+        with mock.patch.object(terminal_client, "BUNDLED_VERSION_PATH", self.stamp("9.8.7\n")):
+            self.assertEqual("9.8.7", terminal_client.release_version())
+
+    def test_without_a_stamp_the_manifest_names_the_version(self) -> None:
+        expected = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
+        with mock.patch.object(terminal_client, "BUNDLED_VERSION_PATH", self.stamp(None)):
+            self.assertEqual(expected, terminal_client.release_version())
+
+    def test_the_cli_prints_the_version_the_client_resolves(self) -> None:
+        out = io.StringIO()
+        with (
+            mock.patch.object(terminal_client, "BUNDLED_VERSION_PATH", self.stamp("4.5.6")),
+            contextlib.redirect_stdout(out),
+        ):
+            code = cli.main(["--version", "--status"])
+
+        self.assertEqual((0, "4.5.6\n"), (code, out.getvalue()))
+
+
+class PublishedVersionTest(unittest.TestCase):
+    def test_health_names_the_release_the_dashboard_runs(self) -> None:
+        with support.config_patch(release_version="7.7.7"):
+            httpd = support.make_server()
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+        self.addCleanup(conn.close)
+
+        conn.request("GET", "/api/health")
+        health = json.loads(conn.getresponse().read())
+
+        self.assertEqual("7.7.7", health["version"])
+        self.assertTrue(health["ok"])
+
+    def test_the_state_file_names_the_release_the_dashboard_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = support.make_config(
+                state_dir=Path(tmp), state_home=tmp, release_version="7.7.7"
+            )
+
+            lifecycle.write_state(config, 4553, started=1.0, diagnostic_sink=lambda _m: None)
+
+            written = json.loads(Path(lifecycle.state_path(config, 4553)).read_text())
+        self.assertEqual("7.7.7", written["version"])
+
+    def test_a_health_answer_without_a_version_still_counts_as_a_dashboard(self) -> None:
+        with FakeDashboard(version=None) as fake:
+            kind, answered = lifecycle.probe_port(fake.port)
+
+        self.assertEqual("compass", kind)
+        self.assertNotIn("version", answered or {})
+
+
+def closed_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+class HomeCase(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = tmp.name
+        # The real default is where an operator's own dashboard may be listening.
+        patch = mock.patch.object(terminal_client, "DEFAULT_PORT", closed_port())
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def state_file(self, name: str, body: str = "{}", mtime: float | None = None) -> str:
+        path = os.path.join(self.home, name)
+        Path(path).write_text(body, encoding="utf-8")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+
+class StateHomeTest(unittest.TestCase):
+    def test_a_nonblank_compass_home_wins_over_the_default(self) -> None:
+        self.assertEqual("/x/y", terminal_client.state_home({"COMPASS_HOME": "/x/y"}))
+
+    def test_a_blank_compass_home_falls_back_to_the_default(self) -> None:
+        home = terminal_client.state_home({"COMPASS_HOME": "  "})
+
+        self.assertEqual(".compass", os.path.basename(home))
+
+
+class DiscoveryTest(HomeCase):
+    def test_ports_come_from_state_file_names_newest_first(self) -> None:
+        self.state_file("compass-5000.json", mtime=100)
+        self.state_file("compass-6000.json", mtime=300)
+        self.state_file("compass-7000.json", mtime=200)
+
+        self.assertEqual([6000, 7000, 5000], terminal_client.published_ports(self.home))
+
+    def test_no_state_file_is_ever_opened(self) -> None:
+        self.state_file("compass-5000.json", '{"capabilities": {"claude": "secret"}}')
+        opened: list[str] = []
+        real_open, real_os_open = builtins.open, os.open
+
+        def spy_open(file: object, *args: object, **kwargs: object) -> object:
+            opened.append(str(file))
+            return real_open(file, *args, **kwargs)  # type: ignore[call-overload]
+
+        def spy_os_open(path: object, *args: object, **kwargs: object) -> int:
+            opened.append(str(path))
+            return real_os_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            mock.patch.object(builtins, "open", spy_open),
+            mock.patch.object(os, "open", spy_os_open),
+        ):
+            terminal_client.published_ports(self.home)
+            terminal_client.find_dashboard(self.home, timeout=0.2)
+
+        self.assertEqual([], [path for path in opened if "compass-" in path])
+
+    def test_names_that_are_not_a_plain_port_file_are_ignored(self) -> None:
+        for name in (
+            "compass-0.json",
+            "compass-65536.json",
+            "compass-099.json",
+            "compass-80.json.tmp",
+            "compass-80.log",
+            "compass-abc.json",
+            "xcompass-80.json",
+            "compass--1.json",
+        ):
+            self.state_file(name)
+        os.mkdir(os.path.join(self.home, "compass-81.json"))
+        target = self.state_file("target")
+        os.symlink(target, os.path.join(self.home, "compass-82.json"))
+
+        self.assertEqual([], terminal_client.published_ports(self.home))
+
+    def test_a_missing_home_has_no_ports(self) -> None:
+        self.assertEqual([], terminal_client.published_ports(os.path.join(self.home, "none")))
+
+    def test_the_candidate_list_ends_with_the_default_and_is_bounded(self) -> None:
+        for index in range(12):
+            self.state_file(f"compass-{5000 + index}.json", mtime=float(index))
+
+        candidates = terminal_client.candidate_ports(self.home)
+
+        self.assertEqual(terminal_client.MAX_CANDIDATES, len(candidates))
+        self.assertEqual(5011, candidates[0])
+        self.assertEqual(terminal_client.DEFAULT_PORT, candidates[-1])
+
+    def test_an_explicit_port_is_the_only_candidate(self) -> None:
+        self.state_file("compass-5000.json")
+
+        self.assertEqual((6000,), terminal_client.candidate_ports(self.home, port=6000))
+
+    def test_the_dashboard_answering_on_a_published_port_is_found(self) -> None:
+        with FakeDashboard(version="3.2.1") as fake:
+            self.state_file(f"compass-{fake.port}.json")
+
+            found = terminal_client.find_dashboard(self.home, timeout=2)
+
+        assert found is not None
+        self.assertEqual((fake.port, "3.2.1"), (found.port, found.version))
+
+    def test_a_stale_state_file_over_a_closed_port_finds_nothing(self) -> None:
+        self.state_file(f"compass-{closed_port()}.json")
+
+        self.assertIsNone(terminal_client.find_dashboard(self.home, port=None, timeout=0.5))
+
+    def test_something_else_answering_health_is_not_a_dashboard(self) -> None:
+        for health in ({"ok": False}, {"ok": True, "pid": 1, "port": 1, "started": 1.0}, [1]):
+            with self.subTest(health=health), FakeDashboard(health=health) as fake:  # type: ignore[arg-type]
+                found = terminal_client.find_dashboard(self.home, port=fake.port, timeout=2)
+
+            self.assertIsNone(found)
+
+    def test_a_dashboard_without_a_version_is_found_with_none(self) -> None:
+        with FakeDashboard(version=None) as fake:
+            found = terminal_client.find_dashboard(self.home, port=fake.port, timeout=2)
+
+        assert found is not None
+        self.assertIsNone(found.version)
+
+
+class RequestPathTest(unittest.TestCase):
+    def test_a_get_returns_the_status_and_the_parsed_body(self) -> None:
+        with FakeDashboard(answers={"/api/x": (200, {}, b'{"a": 1}')}) as fake:
+            reply = terminal_client.get(fake.port, "/api/x")
+
+        self.assertEqual((200, {"a": 1}), (reply.status, reply.data))
+
+    def test_a_post_sends_json_and_the_headers_it_is_given(self) -> None:
+        with FakeDashboard(answers={"/api/x": (200, {}, b"{}")}) as fake:
+            reply = terminal_client.post(fake.port, "/api/x", {"k": "v"}, headers={"X-Test": "1"})
+
+        self.assertEqual(200, reply.status)
+        self.assertEqual([("POST", "/api/x")], fake.posts())
+
+    def test_a_redirect_is_returned_and_never_followed(self) -> None:
+        answers = {"/api/x": (307, {"Location": "/api/elsewhere"}, b"")}
+        with FakeDashboard(answers=answers) as fake:
+            reply = terminal_client.get(fake.port, "/api/x")
+
+        self.assertEqual(307, reply.status)
+        self.assertEqual([("GET", "/api/x")], fake.requests)
+
+    def test_a_proxy_in_the_environment_is_never_contacted(self) -> None:
+        with FakeDashboard() as proxy, FakeDashboard(answers={"/api/x": (200, {}, b"{}")}) as fake:
+            env = {
+                "HTTP_PROXY": f"http://127.0.0.1:{proxy.port}",
+                "http_proxy": f"http://127.0.0.1:{proxy.port}",
+                "ALL_PROXY": f"http://127.0.0.1:{proxy.port}",
+            }
+            with mock.patch.dict(os.environ, env):
+                reply = terminal_client.get(fake.port, "/api/x")
+
+        self.assertEqual(200, reply.status)
+        self.assertEqual([], proxy.requests)
+
+    def test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting(self) -> None:
+        for bad in ("80", "80@evil.example", 0, 65536, -1, True, 80.0):
+            with (
+                self.subTest(port=bad),
+                mock.patch.object(socket, "create_connection") as connect,
+                self.assertRaises(ValueError),
+            ):
+                terminal_client.get(bad, "/api/x")  # type: ignore[arg-type]
+
+            connect.assert_not_called()
+
+    def test_a_path_that_could_split_the_request_is_refused(self) -> None:
+        for bad in ("api/x", "/api/x HTTP/1.1\r\nHost: evil", "/a b", "//evil.example/x", ""):
+            with self.subTest(path=bad), self.assertRaises(ValueError):
+                terminal_client.get(4553, bad)
+
+    def test_a_closed_port_raises_one_named_error(self) -> None:
+        with self.assertRaises(terminal_client.DashboardUnreachable):
+            terminal_client.get(closed_port(), "/api/x")
+
+    def test_a_reply_is_read_to_a_bound(self) -> None:
+        huge = b"[" + b"0," * 2048 + b"0]"
+        with (
+            mock.patch.object(terminal_client, "REPLY_CAP_BYTES", 1024),
+            FakeDashboard(answers={"/api/x": (200, {}, huge)}) as fake,
+        ):
+            reply = terminal_client.get(fake.port, "/api/x")
+
+        self.assertIsNone(reply.data)
+
+
+class VersionGuardTest(unittest.TestCase):
+    def found(self, version: str | None) -> terminal_client.Dashboard:
+        return terminal_client.Dashboard(port=4553, pid=1, started=1.0, version=version)
+
+    def test_the_same_version_raises_no_sentence(self) -> None:
+        self.assertIsNone(terminal_client.version_guard(self.found("1.2.3"), "1.2.3"))
+
+    def test_another_version_names_both_and_the_two_commands(self) -> None:
+        sentence = terminal_client.version_guard(self.found("1.2.2"), "1.2.3")
+
+        assert sentence is not None
+        for part in ("1.2.2", "1.2.3", terminal_client.STOP_COMMAND, terminal_client.START_COMMAND):
+            self.assertIn(part, sentence)
+        self.assertNotIn("\n", sentence)
+
+    def test_a_dashboard_that_reports_no_version_counts_as_another(self) -> None:
+        self.assertIsNotNone(terminal_client.version_guard(self.found(None), "1.2.3"))
+
+    def test_the_restart_commands_use_only_the_documented_options(self) -> None:
+        self.assertTrue(terminal_client.STOP_COMMAND.endswith("--stop"))
+        self.assertTrue(terminal_client.START_COMMAND.endswith("--daemon"))
+
+
+class MissingDashboardTest(HomeCase):
+    def test_a_read_with_no_dashboard_says_so_once_and_names_the_start_command(self) -> None:
+        port = closed_port()
+        started: list[int] = []
+
+        result = terminal_client.ensure_dashboard(
+            self.home, port=port, spend=False, own_version="1.0.0", start=started.append
+        )
+
+        assert isinstance(result, terminal_client.Refusal)
+        self.assertEqual(1, result.code)
+        self.assertIn(terminal_client.START_COMMAND, result.message)
+        self.assertNotIn("\n", result.message)
+        self.assertEqual([], started)
+
+    def test_a_spend_with_no_dashboard_starts_one_and_says_so(self) -> None:
+        said: list[str] = []
+        calls: list[int] = []
+
+        with FakeDashboard() as fake:
+
+            def start(requested: int) -> None:
+                calls.append(requested)
+                # the daemon the start command launches would now be listening
+                self.state_file(f"compass-{fake.port}.json")
+
+            result = terminal_client.ensure_dashboard(
+                self.home,
+                port=None,
+                spend=True,
+                own_version="1.0.0",
+                start=start,
+                say=said.append,
+            )
+
+        assert isinstance(result, terminal_client.Dashboard)
+        self.assertEqual([terminal_client.DEFAULT_PORT], calls)
+        self.assertEqual([terminal_client.sentence("starting")], said)
+
+    def test_a_start_that_leaves_nothing_listening_is_refused_with_one_sentence(self) -> None:
+        result = terminal_client.ensure_dashboard(
+            self.home,
+            port=closed_port(),
+            spend=True,
+            own_version="1.0.0",
+            start=lambda _p: None,
+            say=lambda _m: None,
+        )
+
+        assert isinstance(result, terminal_client.Refusal)
+        self.assertEqual(terminal_client.sentence("start_failed"), result.message)
+
+    def test_a_spend_against_another_version_sends_nothing_and_refuses(self) -> None:
+        with FakeDashboard(version="0.0.1") as fake:
+            result = terminal_client.ensure_dashboard(
+                self.home, port=fake.port, spend=True, own_version="1.0.0", start=lambda _p: None
+            )
+
+        assert isinstance(result, terminal_client.Refusal)
+        self.assertIn("0.0.1", result.message)
+        self.assertEqual([], fake.posts())
+
+    def test_a_read_against_another_version_is_still_served(self) -> None:
+        with FakeDashboard(version="0.0.1") as fake:
+            result = terminal_client.ensure_dashboard(
+                self.home, port=fake.port, spend=False, own_version="1.0.0", start=lambda _p: None
+            )
+
+        self.assertIsInstance(result, terminal_client.Dashboard)
+
+    def test_the_start_command_runs_the_launcher_with_daemon_on_the_port(self) -> None:
+        with mock.patch.object(subprocess, "run") as run:
+            terminal_client.start_daemon(4999)
+
+        argv = run.call_args.args[0]
+        self.assertEqual(sys.executable, argv[0])
+        self.assertEqual(["--daemon", "--port", "4999"], argv[-3:])
+        self.assertTrue(argv[1].endswith("launch.py") and argv[2].endswith("server.py"))
+
+
+class SessionTest(unittest.TestCase):
+    def test_the_flag_wins_over_the_status_line_and_the_environment(self) -> None:
+        env = {"CLAUDE_CODE_SESSION_ID": "env-id"}
+        stdin = io.StringIO('{"session_id": "line-id"}')
+
+        got = terminal_client.resolve_session("codex:abc", env, stdin)
+
+        self.assertEqual(terminal_client.Session("codex", "abc", "flag"), got)
+
+    def test_the_status_line_wins_over_the_environment(self) -> None:
+        env = {"CLAUDE_CODE_SESSION_ID": "env-id"}
+        stdin = io.StringIO('{"session_id": "line-id", "other": 1}')
+
+        got = terminal_client.resolve_session(None, env, stdin)
+
+        self.assertEqual(terminal_client.Session("claude", "line-id", "status line"), got)
+
+    def test_the_environment_names_a_claude_session(self) -> None:
+        got = terminal_client.resolve_session(None, {"CLAUDE_CODE_SESSION_ID": "env-id"}, None)
+
+        self.assertEqual(terminal_client.Session("claude", "env-id", "environment"), got)
+
+    def test_with_nothing_it_says_it_cannot_tell_and_never_guesses_from_the_directory(self) -> None:
+        with mock.patch.object(os, "getcwd", side_effect=AssertionError("read the cwd")):
+            got = terminal_client.resolve_session(None, {}, None)
+
+        self.assertEqual(terminal_client.Unresolved(terminal_client.sentence("no_session")), got)
+
+    def test_a_malformed_flag_is_refused_and_not_replaced_by_the_environment(self) -> None:
+        env = {"CLAUDE_CODE_SESSION_ID": "env-id"}
+        for bad in (
+            "claude",
+            ":abc",
+            "claude:",
+            "Claude:abc",
+            "claude:a b",
+            "claude:a\x00b",
+            "claude:" + "x" * 201,
+            "",
+        ):
+            with self.subTest(flag=bad):
+                got = terminal_client.resolve_session(bad, env, None)
+
+                self.assertEqual(
+                    terminal_client.Unresolved(terminal_client.sentence("bad_session_flag")), got
+                )
+
+    def test_a_status_line_that_is_not_usable_falls_through(self) -> None:
+        env = {"CLAUDE_CODE_SESSION_ID": "env-id"}
+        for text in (
+            "",
+            "not json",
+            "[1]",
+            '{"session_id": 5}',
+            '{"session_id": ""}',
+            "x" * 70_000,
+        ):
+            with self.subTest(text=text[:20]):
+                got = terminal_client.resolve_session(None, env, io.StringIO(text))
+
+                assert isinstance(got, terminal_client.Session)
+                self.assertEqual("environment", got.source)
+
+    def test_a_terminal_on_stdin_is_never_read(self) -> None:
+        class Tty(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+            def read(self, *_a: object) -> str:
+                raise AssertionError("read a terminal")
+
+        got = terminal_client.resolve_session(None, {"CLAUDE_CODE_SESSION_ID": "e"}, Tty())
+
+        self.assertEqual("environment", got.source)  # type: ignore[union-attr]
+
+    def test_the_status_line_is_read_to_a_bound(self) -> None:
+        stream = io.StringIO('{"session_id": "a"}' + " " * 200_000)
+
+        terminal_client.resolve_session(None, {}, stream)
+
+        self.assertLessEqual(stream.tell(), terminal_client.STDIN_CAP_CHARS + 1)
+
+
+class WordingTest(unittest.TestCase):
+    def test_every_sentence_is_one_line_and_every_placeholder_is_filled(self) -> None:
+        for key in terminal_client.SENTENCES:
+            with self.subTest(key=key):
+                text = terminal_client.sentence(
+                    key, own="1.0.0", theirs="0.9.0", stop="S", start="T"
+                )
+
+                self.assertNotIn("\n", text)
+                self.assertNotIn("{", text)
+
+    def test_the_sentences_a_reader_sees_are_pinned(self) -> None:
+        self.assertEqual(
+            "Compass is not running. Start it with `spacedock compass --daemon`.",
+            terminal_client.sentence("not_running"),
+        )
+        self.assertEqual(
+            "Compass was not running, so this started it as `--daemon` does.",
+            terminal_client.sentence("starting"),
+        )
+        self.assertEqual(
+            "Compass could not start the dashboard. Start it with `spacedock compass --daemon`.",
+            terminal_client.sentence("start_failed"),
+        )
+        self.assertEqual(
+            "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
+            terminal_client.sentence("no_session"),
+        )
+        self.assertEqual(
+            "The running dashboard is version 0.9.0 and this is version 1.0.0, so nothing was sent. "
+            "Stop it with `spacedock compass --stop` and start it again with "
+            "`spacedock compass --daemon`.",
+            terminal_client.sentence("version_mismatch", own="1.0.0", theirs="0.9.0"),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

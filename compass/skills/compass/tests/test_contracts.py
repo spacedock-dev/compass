@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
-from compass_runtime import aggregate, cli, http_api, notifications, observation, records
+from compass_runtime import aggregate, entry, http_api, notifications, observation, records
 from compass_runtime import io as runtime_io
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime import transcripts as runtime_transcripts
@@ -633,16 +633,16 @@ class ApplicationIsolationTest(unittest.TestCase):
 class LauncherContractTest(unittest.TestCase):
     """server.py is the stable entry point and owns nothing else."""
 
-    def test_the_launcher_is_only_a_call_into_the_cli(self) -> None:
+    def test_the_launcher_is_only_a_call_into_the_entry(self) -> None:
         # This file is what users and every harness manifest point at, so its
         # shape is a contract: one import, one call, no re-exports.
         source = SERVER_PATH.read_text(encoding="utf-8")
         tree = ast.parse(source)
         imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom | ast.Import)]
-        self.assertEqual(1, len(imports), "the launcher imports more than the CLI")
+        self.assertEqual(1, len(imports), "the launcher imports more than the entry")
         only = imports[0]
         assert isinstance(only, ast.ImportFrom)
-        self.assertEqual("compass_runtime.cli", only.module)
+        self.assertEqual("compass_runtime.entry", only.module)
         self.assertEqual(["main"], [alias.name for alias in only.names])
         # No definitions and no assignments that could re-export a symbol,
         # anywhere in the tree rather than only at the top level: `if True:` with
@@ -651,9 +651,9 @@ class LauncherContractTest(unittest.TestCase):
         offenders = [type(n).__name__ for n in ast.walk(tree) if isinstance(n, banned)]
         self.assertEqual([], offenders, "the launcher defines or assigns something")
 
-    def test_running_the_launcher_calls_the_cli_exactly_once(self) -> None:
+    def test_running_the_launcher_calls_the_entry_exactly_once(self) -> None:
         # runpy executes the real file under __main__, which is the only way to
-        # prove the `if __name__` guard wires through to cli.main and that the
+        # prove the `if __name__` guard wires through to entry.main and that the
         # exit code is the one main returned.
         calls: list[object] = []
 
@@ -662,7 +662,7 @@ class LauncherContractTest(unittest.TestCase):
             return 7
 
         with (
-            mock.patch.object(cli, "main", fake_main),
+            mock.patch.object(entry, "main", fake_main),
             self.assertRaises(SystemExit) as caught,
         ):
             runpy.run_path(str(SERVER_PATH), run_name="__main__")
@@ -1194,9 +1194,16 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.notifications",
             "compass_runtime.observation",
             "compass_runtime.state",
+            # The version the CLI prints and publishes is the client's.
+            "compass_runtime.terminal_client",
             "compass_runtime.unasked",
             "compass_runtime.web",
         },
+        # What `server.py` runs. `cli` is a function-local import by design: a short operation
+        # must not load it (R-1). The walk counts that edge, so it is listed.
+        "compass_runtime.entry": {"compass_runtime.cli", "compass_runtime.terminal_client"},
+        # Standard library only, so a short command answers before any collector is imported.
+        "compass_runtime.terminal_client": set(),
         # Outstanding asks and their one-slot answer mailboxes. Imports no
         # runtime module, for the reason `stream` does not: that is what lets
         # `state` own the registry while `http_api` and `aggregate` serve from it

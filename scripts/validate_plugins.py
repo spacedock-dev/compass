@@ -403,7 +403,7 @@ UniqueKeyLoader.add_constructor(
 
 
 # Every file the shipped dashboard needs at runtime, relative to the plugin root.
-# The launcher imports compass_runtime.cli, which reaches all of these, so any
+# The launcher imports compass_runtime.entry, which reaches all of these, so any
 # one of them missing from an installed copy is a dashboard that cannot start.
 # A packaging step that copies "the skill" without walking subpackages, or an
 # archive that drops a frontend asset, both fail here with the exact path.
@@ -431,6 +431,10 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/mcp_server.py",
     "skills/compass/compass_runtime/__init__.py",
     "skills/compass/compass_runtime/cli.py",
+    # `server.py` imports `entry`, which hands a short operation to `terminal_client` and imports
+    # `cli` only for everything else. Both ship or `server.py` cannot start at all.
+    "skills/compass/compass_runtime/entry.py",
+    "skills/compass/compass_runtime/terminal_client.py",
     "skills/compass/compass_runtime/config.py",
     "skills/compass/compass_runtime/frontend_dev.py",
     "skills/compass/compass_runtime/state.py",

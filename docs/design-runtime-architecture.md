@@ -39,7 +39,7 @@ process lifecycle and the frontend loader has no seams. Three specific costs mad
 #!/usr/bin/env python3
 """Launch the Compass dashboard."""
 
-from compass_runtime.cli import main
+from compass_runtime.entry import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
@@ -47,7 +47,23 @@ if __name__ == "__main__":
 
 One import, one call, no re-exports. `LauncherContractTest` parses this file with `ast` and rejects
 any `def`, `class` or assignment, and `runpy` executes it under `__main__` to prove the guard reaches
-`cli.main` and exits with what it returned.
+`entry.main` and exits with what it returned.
+
+The launcher once imported `cli` directly. `cli` loads the collectors, `http_api` and `aggregate` at
+import, which is about 170 ms of a 200 ms `--version` here, and a short terminal command should not
+pay for a dashboard it never starts. So `entry.main` asks `terminal_client.handles` first and imports
+`cli` inside the function only when the client does not own the command. Both new modules import
+nothing from the runtime, and `RuntimeImportGraphTest` holds that (it counts the function-local `cli`
+import, so the edge is listed). `launch.py` stays out of it: it must parse on Python 3.6, hooks and
+the MCP server share it, and `compass-gemini` and `compass-droid` carry byte-identical copies.
+Making `cli`'s own imports lazy was rejected, because tests patch `cli.http_api` and its neighbours
+and the change would touch every caller.
+
+The client owns a command only when it is the whole argument list: today that is a lone `--version`.
+`--version` beside another option, `--help` and everything else go to `cli` untouched, so argparse
+still judges combinations and usage errors as before. An option the client owns is declared once, in
+`terminal_client.OPERATIONS`, and `cli.build_parser` registers each from that table, so `--help`
+and the `MANUAL.md` option inventory stay authoritative.
 
 Everything else lives in one file per responsibility:
 
@@ -117,7 +133,9 @@ quoting before anything is matched or masked, and the bounded `spacedock status 
 | `diagnostics.py` | Store-path reporting for `--diagnose`. |
 | `http_api.py` | The loopback server, request dispatch, the project-context model-call gate, optional vendored-asset routes, and network helpers. On a focused `/api/project-context` it attaches the outline and plan from `session_outline` and the stored summary from `summary_store`, and the three summary POST routes hand starts, cancels, deletes and the summary switch to `summary_jobs`. `POST /api/goal/find` collects the reader's prompts and runs `goal_find` over the reading route's guarded model on the request thread. It reads the departure store directly on one route, `/api/annotations`, because the Intent log serves sessions that have left the board and the polled payload holds only the ones still on it. |
 | `lifecycle.py` | State file, port probes, status, stop, and daemon detach. The Windows respawn argv forwards every `--no-*` switch the parser put in the namespace, derived rather than listed ([D-2](design-daemon.md#d-2-windows-re-spawns-instead-of-forking-and-waits-to-be-sure)). `serve` also records what a stopped dashboard left spent (`reading_jobs.recover` and `summary_jobs.recover`) before serving, and kills every supervised group (`supervise.kill_all`) first on the way out. |
-| `cli.py` | Argument parsing, runtime assembly, and the three serve branches. |
+| `entry.py` | What `server.py` runs: a short operation the terminal client owns, else `cli.main`, imported on that branch only. |
+| `terminal_client.py` | The terminal's one client for the loopback API, standard library only and importing no runtime module. It finds the dashboard from state file names and their mtimes (never opening one, because the file holds the event-ingress tokens) and `/api/health`; makes loopback requests with `http.client` against the literal `127.0.0.1`, which reads no proxy variable and follows no redirect; names the session from `--session`, a status line's stdin, then `CLAUDE_CODE_SESSION_ID`, and never from the working directory; refuses to spend against a dashboard of another release, naming both versions and the restart commands; applies the missing-dashboard rule (a read says Compass is not running, a spend starts a daemon as `--daemon` does and says so); and holds the terminal's wording in one table. `release_version` lives here and `--version` is its first operation. It sends no POST yet: `post` waits for the first operation that spends. |
+| `cli.py` | Argument parsing, runtime assembly, and the three serve branches. It passes the release version down as data (`RuntimeConfig.release_version`), so `/api/health` and the state file report it without `http_api` importing the client. |
 | `frontend_dev.py` | Contributor-only immutable development manifest, owned Vite challenge verification, fixture-root containment and development document assembly. A standard-library leaf used by configuration and CLI assembly; it imports no application or request-dispatch module. Production pages never use its module URLs. |
 | `web/page.py` | Package-relative asset loading, the font table the build reads, strict React artifact/integrity/license verification and content identity. Startup passes verified pre-capability bytes into `Application`, which publishes their digest as the board's `build` (prefixed `react-`). |
 

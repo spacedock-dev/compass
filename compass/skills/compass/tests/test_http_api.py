@@ -2732,7 +2732,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                         None,
                         200,
                         "application/json",
-                        {"ok", "pid", "port", "started"},
+                        {"ok", "pid", "port", "started", "version"},
                     ),
                     (
                         "POST",

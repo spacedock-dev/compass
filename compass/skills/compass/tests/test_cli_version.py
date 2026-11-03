@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from compass_runtime import cli
+from compass_runtime import cli, terminal_client
 
 from .support import SERVER_PATH
 
@@ -41,13 +41,17 @@ class VersionFlagTest(unittest.TestCase):
     def test_it_prints_the_manifest_version_alone_on_one_line(self) -> None:
         expected = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
 
-        with mock.patch.object(cli, "BUNDLED_VERSION_PATH", self.stamp_at("none", None)):
+        with mock.patch.object(
+            terminal_client, "BUNDLED_VERSION_PATH", self.stamp_at("none", None)
+        ):
             code, out, err = run_main("--version")
 
         self.assertEqual((0, f"{expected}\n", ""), (code, out, err))
 
     def test_a_binary_prints_its_stamp_not_the_manifest_of_the_tree_it_was_built_from(self) -> None:
-        with mock.patch.object(cli, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "9.8.7\n")):
+        with mock.patch.object(
+            terminal_client, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "9.8.7\n")
+        ):
             code, out, _ = run_main("--version")
 
         self.assertEqual((0, "9.8.7\n"), (code, out))
@@ -55,7 +59,9 @@ class VersionFlagTest(unittest.TestCase):
     def test_an_empty_stamp_falls_back_to_the_manifest(self) -> None:
         expected = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
 
-        with mock.patch.object(cli, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "\n")):
+        with mock.patch.object(
+            terminal_client, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "\n")
+        ):
             code, out, _ = run_main("--version")
 
         self.assertEqual((0, f"{expected}\n"), (code, out))
@@ -64,8 +70,10 @@ class VersionFlagTest(unittest.TestCase):
         for manifest in (self.stamp_at("missing.json", None), self.stamp_at("bad.json", "{")):
             with (
                 self.subTest(manifest=manifest.name),
-                mock.patch.object(cli, "BUNDLED_VERSION_PATH", self.stamp_at("none", None)),
-                mock.patch.object(cli, "PLUGIN_MANIFEST_PATH", manifest),
+                mock.patch.object(
+                    terminal_client, "BUNDLED_VERSION_PATH", self.stamp_at("none", None)
+                ),
+                mock.patch.object(terminal_client, "PLUGIN_MANIFEST_PATH", manifest),
             ):
                 code, out, err = run_main("--version")
 
@@ -73,7 +81,9 @@ class VersionFlagTest(unittest.TestCase):
             self.assertIn("does not record its version", err)
 
     def test_it_answers_before_the_operation_flags_are_checked_against_each_other(self) -> None:
-        with mock.patch.object(cli, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "1.2.3\n")):
+        with mock.patch.object(
+            terminal_client, "BUNDLED_VERSION_PATH", self.stamp_at("stamp", "1.2.3\n")
+        ):
             code, out, _ = run_main("--version", "--daemon", "--status")
 
         self.assertEqual((0, "1.2.3\n"), (code, out))
