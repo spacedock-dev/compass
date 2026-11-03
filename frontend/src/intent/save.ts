@@ -33,6 +33,8 @@ import {
   type DraftInput,
 } from './derive';
 import { promptCandidate, sessionGoalCandidate } from '../sessions/intent';
+import { requestFocus } from '../drift/focus';
+import { driftCtxFor } from '../drift/state';
 import { intentLogFor } from './logContext';
 import {
   ADOPT_CHANGED,
@@ -467,6 +469,11 @@ export function pressDiscard(ctx: Ctx, row: Row, detail: number): void {
        again, and a press too soon after the arm to have read it is the double-click that used to confirm in
        one gesture, so it buys another dwell rather than the write. */
     markAndSay(ctx, key, 'discard-armed');
+    /* The words the reader is shown as they arm are the ones the second press may delete. */
+    ctx.held.recordArmedRevision(
+      key,
+      nextNumber(readInput(ctx, identity, row)?.annotation?.['revision']) || 0,
+    );
     ctx.held.requestFocus(key);
     return;
   }
@@ -491,15 +498,36 @@ const DISCARD_LANDED: ReadonlySet<string> = new Set([
   'discard-summary_unknown',
 ]);
 
+/* A discard that left the words standing removed the Confirm control the reader was on, and the other copy of it sits in the closed More menu, so focus fell to the page. It goes to the More trigger, where
+   the words are managed, and only where nobody has taken it elsewhere. The reply can come up to ten seconds
+   after the press (the store waits on a busy writer), so the reader may by then be in the goal box, and an
+   unconditional ask took focus out of it. The ask goes through the Drift page's own gate, which registers
+   nothing once the page has been left: a request set after the reply was still waiting when the reader
+   came back and moved focus, with a scroll, into a card they had not touched
+   ([the focus rows](../../../docs/design-reader-state.md)). */
+function focusMoreIfStillAdrift(ctx: Ctx, row: Row, key: string): void {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  /* The Confirm control counts too: jsdom has unmounted it by now, but in Chromium it can still hold focus
+     when the reply is handled, and the story for a refused discard fails without this clause. */
+  const confirm = ctx.shell.controls.focusLane.element(key);
+  const parked = !active || active === document.body || active === confirm;
+  if (parked) requestFocus(driftCtxFor(ctx.shell), `intent-menu:${compatSessKey(row)}`);
+}
+
 async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity): Promise<void> {
   const key = discardKey(row);
   const press = pendingStart(ctx, key, 'Discarding…', 'Discarding.');
   if (!press) return;
   ctx.held.notify();
-  /* The latest revision this page has drawn, as a typed save names it: words another tab or dashboard saved
-     that this page has not drawn yet are newer than what this press asked to discard, so the store refuses it
-     rather than taking them. */
-  const drawn = nextNumber(readInput(ctx, identity, row)?.annotation?.['revision']) || 0;
+  /* The revision the reader was shown when they armed this discard, as a typed save names the one its boxes
+     were drawn against: words another tab or dashboard saved since are newer than what the reader agreed to
+     delete, so the store refuses it rather than taking them. A board a refresh brought between the two
+     presses is not what they read. Without a recorded arm (none stood), the latest revision drawn. */
+  const armedAt = ctx.held.armedRevision(key);
+  ctx.held.spendArmedRevision(key);
+  const drawn =
+    armedAt ?? (nextNumber(readInput(ctx, identity, row)?.annotation?.['revision']) || 0);
+  let stands = false;
   try {
     const reply = answered(
       await ctx.shell.runtime.client.postAnnotate(
@@ -510,6 +538,7 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     if (reply.kind === 'lost') {
       /* No answer: disarmed, said as unknown, and never re-armed on its own, so a second press is the
          reader's after the refresh shows what stands. */
+      stands = true;
       markAndSay(ctx, key, 'discard-unconfirmed');
       await refresh(ctx);
       return;
@@ -576,6 +605,7 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
           : result === 'discard-stored'
             ? (summaryKind[summarySuffix] ?? result)
             : result;
+    stands = !DISCARD_LANDED.has(kind) && kind !== 'discard-nothing';
     if (DISCARD_LANDED.has(kind)) {
       // The independent log may already hold these words, even if the next dashboard fetch fails.
       intentLogFor(ctx.shell).invalidate();
@@ -592,10 +622,12 @@ async function discardAnnotation(ctx: Ctx, row: Row, identity: SessionIdentity):
     await refresh(ctx);
   } catch {
     // Nothing was deleted that this page can see, which is what the refusal sentence says. No retry.
+    stands = true;
     markAndSay(ctx, key, 'discard-refused');
   } finally {
     pendingEnd(ctx, key, press);
-    ctx.held.requestFocus(key);
+    if (stands) focusMoreIfStillAdrift(ctx, row, key);
+    else ctx.held.requestFocus(key);
   }
 }
 

@@ -1402,6 +1402,27 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "The revision a discard was armed against",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/IntentDiscard.test.tsx",
+        "frontend/src/intent/held.test.ts",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "The confirm press names the revision the reader was shown when they armed the discard, never one a refresh drew since; the record goes with the arm.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "Focus after a discard that left the words standing",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/intent/IntentDiscard.test.tsx",
+        "frontend/stories/IntentCard.stories.tsx"
+      ],
+      "contract": "Focus moves to the More trigger only while the reader is still on the page body or the vanished Confirm control and the session page is mounted; a reader who moved on keeps focus, and a page that was left is asked for nothing.",
+      "disposition": "store-held"
+    },
+    {
       "name": "A direction action's refusal",
       "owner": "DRC-4825",
       "oracles": [

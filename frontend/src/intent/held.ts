@@ -159,6 +159,11 @@ export function createHeld(deps: HeldDeps) {
   /* When each standing mark was stamped. The keyed lane stores the kind alone, and the discard's dwell is
      measured from the press that armed it. */
   const stamps = new Map<string, number>();
+  /* The revision of the words the reader was shown when they ARMED a discard, by the discard's key. The
+     confirm press sends it, not whatever revision a refresh has since brought, so words another tab saved
+     between the two presses are refused rather than deleted unseen. Only an armed discard has one: it goes
+     with the arm, whether the arm is dropped, lapses, is evicted or is spent by the confirm. */
+  const armedRevisions = new Map<string, number>();
   /* The focus a press asks for once its panel has drawn: the new empty line, the field Escape came from. */
   let focusName: string | null = null;
   let version = 0;
@@ -178,6 +183,9 @@ export function createHeld(deps: HeldDeps) {
   cues.subscribe(() => {
     for (const key of [...marks.keys()]) {
       if (cues.read(key) === undefined) dropGuard(key);
+    }
+    for (const key of [...armedRevisions.keys()]) {
+      if (cues.read(key) !== 'discard-armed') armedRevisions.delete(key);
     }
     notify();
   });
@@ -252,6 +260,20 @@ export function createHeld(deps: HeldDeps) {
     drop(key: string): void {
       cues.forget(key);
       dropGuard(key);
+      armedRevisions.delete(key);
+    },
+
+    /** Records the revision shown at the arm. Called with the arm's mark, and again on a re-arm. */
+    recordArmedRevision(key: string, revision: number): void {
+      armedRevisions.set(key, revision);
+    },
+    /** The revision shown at the standing arm, or undefined when nothing is armed. */
+    armedRevision(key: string): number | undefined {
+      return cues.read(key) === 'discard-armed' ? armedRevisions.get(key) : undefined;
+    },
+    /** Spent: the confirm press has been made, whatever it comes to. */
+    spendArmedRevision(key: string): void {
+      armedRevisions.delete(key);
     },
 
     /* Arms the lane's expiry timer, so a mark that lapses is dropped with its repeat guard and the panel is

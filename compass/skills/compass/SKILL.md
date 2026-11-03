@@ -344,9 +344,9 @@ saved from a view of an older revision (the page sends it with both and keeps wh
 a seventh line or a line over 240 characters is refused rather than clipped. `"read_from_now": true` beside them, or beside `adopt`, opens a new reading window as a first save does; without it a save over saved words keeps the window it had. It writes a numbered revision; an earlier revision is never edited, so anything citing
 revision 1 still means what it meant. Send `{"clear": true}` to forget a session's words entirely
 (beside `expected_revision`, a discard naming an older revision than the stored one is refused
-and takes nothing; the page's Discard everything sends the latest revision the page has drawn when
-Confirm discard is pressed, so words another tab or dashboard saved after this page last drew stay,
-but once a refresh has drawn them here, Confirm discard takes them too),
+and takes nothing; the page's Discard everything sends the revision it had drawn when the discard
+was armed, so words another tab or dashboard saved after the warning was shown stay, even once a
+refresh has drawn them here),
 or `settle_through` with a timestamp to mark the directions given up to that moment as settled
 against the current baseline. The reply says what happened: `persisted` is whether the words are
 on disk, and `outcome` is which of six things the store did — `stored` (a new revision),

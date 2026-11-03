@@ -710,6 +710,14 @@ export const MODEL_PAUSE_EXPLANATION =
   'Compass stops sending session text to Claude Code or Codex, so it uses none of your tokens, and stays paused until you resume.';
 export const READINGS_OFF = 'Model calls are paused. Nothing is sent until you resume.';
 export const PAGE_OUTDATED = 'Reload this page before resuming model calls. Nothing was sent.';
+/* The store of what the reader typed could not take a press: another writer held it past the wait, or its
+   file could not be used (unreadable, or its lock refused this user). Nothing was started or spent, so neither
+   sentence carries the "not retried" hedge a lost answer needs. The second says "use" and points nowhere:
+   the card's notice (`annotate_unreadable`) exists only for an unreadable file, not for a refused lock. */
+export const STORE_BUSY_PRESS =
+  'Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.';
+export const STORE_UNREADABLE_PRESS =
+  'Compass could not use the file that holds what you typed, so nothing was started or spent.';
 export const NOTICE_SENT = 'This request sends:';
 /* The re-run control in the Drift card's header, from the first reading on: Check again over a reading that
    new work or a changed intent left behind, Analyze again over a current one. */

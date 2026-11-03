@@ -1600,19 +1600,160 @@ export const ADiscardFromAStaleTabTakesNothingNewer: Story = {
   },
 };
 
+const ARMED_SESSION = {
+  annotation_goal: 'Keep the parser small and pure',
+  annotation_goal_why: '',
+  annotation_revision: 2,
+  annotation_revision_count: 2,
+  annotation_at: 1_760_000_500,
+  annotation_goal_saved_at: 1_760_000_500,
+};
+
+/* The two presses of a discard: what the reader was shown when they armed it is what the second press names.
+   Another tab saves revision 3 while the warning stands and a refresh draws it; the confirm still names
+   revision 2, so the server refuses. The server below takes any other discard, so a page that named the
+   refreshed revision would delete words the reader never saw. */
+export const ADiscardNamesTheWordsShownWhenItWasArmed: Story = {
+  args: {
+    setup: {
+      session: ARMED_SESSION,
+      onAnnotate: async (body) => {
+        const update = (
+          window as unknown as {
+            __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+          }
+        ).__updateIntentSession;
+        const shown = body['clear'] === true && body['expected_revision'] === 2;
+        await update(
+          shown
+            ? {}
+            : {
+                annotation_goal: '',
+                annotation_goal_why: 'Discarded with everything else you asked of this session.',
+                annotation_revision: 0,
+                annotation_revision_count: 0,
+                annotation_discarded_at: 1_760_001_000,
+              },
+        );
+        return new Response(
+          JSON.stringify(
+            shown
+              ? { ok: true, outcome: 'refused', persisted: false, revision: 3, withdrew: true }
+              : { ok: true, outcome: 'stored', persisted: true, withdrew: true, removed: 3 },
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const { card } = await armDiscard(canvasElement);
+    await (
+      window as unknown as {
+        __updateIntentSession: (patch: Record<string, unknown>) => Promise<void>;
+      }
+    ).__updateIntentSession({
+      annotation_goal: 'Keep the parser small, pure and streaming',
+      annotation_revision: 3,
+      annotation_revision_count: 3,
+      annotation_at: 1_760_000_800,
+      annotation_goal_saved_at: 1_760_000_800,
+    });
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(
+      await within(canvasElement).findByRole('button', { name: 'Confirm discard' }),
+    );
+    const said = await waitFor(() => {
+      const node = card.querySelector<HTMLElement>(
+        '.next-cockpit-held-discard .next-cockpit-held-cue',
+      );
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(said).toHaveTextContent('Could not discard.');
+    await expect(within(card).getByRole('textbox', { name: 'Goal' })).toHaveValue(
+      'Keep the parser small, pure and streaming',
+    );
+    await expect(canvasElement.textContent).not.toContain('Discarded. Everything you asked');
+  },
+};
+
+/* A discard that left the words standing removed the control the reader was on. Focus goes to More, where
+   the words are managed, when the reader is still where that control was. */
+const refusedDiscard = async () =>
+  new Response(JSON.stringify({ ok: true, outcome: 'refused', persisted: false, withdrew: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+export const AfterARefusedDiscardFocusIsOnMore: Story = {
+  args: { setup: { session: ARMED_SESSION, onAnnotate: refusedDiscard } },
+  play: async ({ canvasElement }) => {
+    const { card, confirm } = await armDiscard(canvasElement);
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(confirm);
+    await waitFor(() =>
+      expect(
+        card.querySelector('.next-cockpit-held-discard .next-cockpit-held-cue'),
+      ).toHaveTextContent('Could not discard.'),
+    );
+    const more = within(card).getByRole('button', { name: 'More about these words' });
+    await waitFor(() => expect(more).toHaveFocus());
+  },
+};
+
+/* The store can hold the reply for up to ten seconds. A reader who has gone to the goal box in that time is
+   typing there, and the refusal arriving must not take their focus. */
+export const ARefusalDoesNotTakeFocusFromTheGoalBox: Story = {
+  args: {
+    setup: {
+      session: ARMED_SESSION,
+      onAnnotate: async () => {
+        await new Promise<void>((resolve) => {
+          (window as unknown as { __releaseDiscard?: () => void }).__releaseDiscard = resolve;
+        });
+        return refusedDiscard();
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const { card, confirm } = await armDiscard(canvasElement);
+    (window as unknown as { __advanceIntentClock: (ms: number) => void }).__advanceIntentClock(
+      1_300,
+    );
+    await userEvent.click(confirm);
+    const goal = within(card).getByRole('textbox', { name: 'Goal' });
+    await userEvent.click(goal);
+    await expect(goal).toHaveFocus();
+    await waitFor(() =>
+      expect(
+        (window as unknown as { __releaseDiscard?: () => void }).__releaseDiscard,
+      ).toBeDefined(),
+    );
+    (window as unknown as { __releaseDiscard: () => void }).__releaseDiscard();
+    await waitFor(() =>
+      expect(
+        card.querySelector('.next-cockpit-held-discard .next-cockpit-held-cue'),
+      ).toHaveTextContent('Could not discard.'),
+    );
+    /* The sentence is drawn before the press's refresh ends and its focus is asked for, so a check made at
+       once would pass over a page that takes focus a moment later. */
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await expect(goal).toHaveFocus();
+    await expect(
+      within(card).getByRole('button', { name: 'More about these words' }),
+    ).not.toHaveFocus();
+  },
+};
+
 /* An armed Discard everything is the card's own, not the menu's: the warning and Confirm discard are drawn
    whether or not More is open, stay where they were drawn through a board refresh and the passing of time, and
    leave only when confirmed, kept or lapsed. */
-const ARMED_SETUP: CardSetup = {
-  session: {
-    annotation_goal: 'Keep the parser small and pure',
-    annotation_goal_why: '',
-    annotation_revision: 2,
-    annotation_revision_count: 2,
-    annotation_at: 1_760_000_500,
-    annotation_goal_saved_at: 1_760_000_500,
-  },
-};
+const ARMED_SETUP: CardSetup = { session: ARMED_SESSION };
 
 async function armDiscard(canvasElement: HTMLElement) {
   const page = within(canvasElement);
