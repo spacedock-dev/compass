@@ -18,13 +18,13 @@ from unittest import mock
 
 from compass_runtime import (
     analyze_diagnostics,
-    annotations,
     observer,
     reading,
     reading_route,
     settings,
     supervise,
 )
+from compass_runtime import annotations as annotation_store
 from compass_runtime import reading_long_control as control
 from compass_runtime import reading_long_inspection as inspection
 from compass_runtime import reading_long_jobs as jobs
@@ -117,7 +117,9 @@ class LongExecutionTest(unittest.TestCase):
         with self.assertRaises(policy.RefusedError):
             self.call(self.guard(), cap=9)
         self.proof(0, invoked=False)
-        self.assertEqual([], markers.load(self.config, self.active.job.id)["passes"])
+        marker = markers.load(self.config, self.active.job.id)
+        assert marker is not None
+        self.assertEqual([], marker["passes"])
 
     def test_codex_fallback_uses_real_adapter_and_cannot_reuse_runner_permission(self) -> None:
         patcher = mock.patch.object(
@@ -147,8 +149,9 @@ class LongExecutionTest(unittest.TestCase):
             call_timeout_ms=180_000,
             clock=lambda: self.fixture.clock[0],
         )
+        assert prepared is not None
         reading.end_job(self.config, self.fixture.key)
-        self.active = control.admit(
+        active = control.admit(
             self.config,
             self.fixture.key,
             provider="codex",
@@ -157,6 +160,8 @@ class LongExecutionTest(unittest.TestCase):
             permission=self.fixture.permission,
             now=100,
         )
+        assert active is not None
+        self.active = active
         self.fixture.context = self.fixture.module.Context(self.active, route, self.fixture.scope)
         guard = self.guard()
         self.assertIsInstance(guard.model, reading.CodexReadingModel)
@@ -183,7 +188,7 @@ class LongExecutionTest(unittest.TestCase):
 
     def test_target_edit_before_reservation_is_unspent(self) -> None:
         guard = self.guard()
-        annotations.annotate(
+        annotation_store.annotate(
             self.config, self.fixture.state, "claude", self.fixture.sid, goal="Changed", now=101
         )
         with self.assertRaises(policy.RefusedError):
@@ -193,7 +198,7 @@ class LongExecutionTest(unittest.TestCase):
     def test_clear_after_charge_prevents_adapter_entry(self) -> None:
         def reserved() -> None:
             self.reserved.append(True)
-            annotations.clear(self.config, self.fixture.state, "claude", self.fixture.sid)
+            annotation_store.clear(self.config, self.fixture.state, "claude", self.fixture.sid)
 
         with self.assertRaises(policy.RefusedError):
             self.call(self.guard(on_reserved=reserved))

@@ -6,13 +6,14 @@ import hashlib
 import json
 import unittest
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import (
     analyze_capacity,
     analyze_diagnostics,
     reading,
+    reading_long_markers,
     reading_map_call,
     reading_pass_types,
     reading_passes,
@@ -23,6 +24,9 @@ from . import test_reading_long_markers as marker_tests
 from .test_agent_words import _agent
 from .test_reading_long_jobs import binding
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 class MapInvocationTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -31,7 +35,8 @@ class MapInvocationTest(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.config = self.fixture.config
-        self.markers = self.fixture.module()
+        self.markers = reading_long_markers
+        assert self.fixture.permission is not None
         self.binding = binding()
         self.binding["plan"]["limits"].update(
             prompt_bytes=4_096, input_bytes=16_384, reply_bytes=8_192, output_bytes=32_768
@@ -42,9 +47,12 @@ class MapInvocationTest(unittest.TestCase):
             call_timeout_ms=200,
             clock=lambda: 0.0,
         )
-        self.owner = self.markers.begin(
+        assert prepared is not None
+        owner = reading_long_markers.begin(
             self.config, permission=self.fixture.permission, job=prepared, now=100
         )
+        assert owner is not None
+        self.owner = owner
         self.calls: list[tuple[str, int]] = []
         self.requests: list[tuple[str, int]] = []
         self.snapshots: list[dict[str, Any]] = []
@@ -65,7 +73,7 @@ class MapInvocationTest(unittest.TestCase):
             raise self.failure
         return self.raw, self.status
 
-    def reserve(self, prompt: str, output_cap_bytes: int):
+    def reserve(self, prompt: str, output_cap_bytes: int) -> reading_long_markers.Permit:
         self.requests.append((prompt, output_cap_bytes))
         self.assertEqual(8_192, output_cap_bytes)
         request = self.fixture.request(self.owner)
@@ -75,7 +83,7 @@ class MapInvocationTest(unittest.TestCase):
         )
         return self.markers.reserve(self.config, self.owner, request=request, now=100)
 
-    def guard(self):
+    def guard(self) -> reading_policy.GuardedModel:
         return reading_policy.GuardedModel(
             self.config,
             self.transport,
@@ -87,7 +95,7 @@ class MapInvocationTest(unittest.TestCase):
             ),
         )
 
-    def originals(self, *, long: bool = False):
+    def originals(self, *, long: bool = False) -> list[reading_passes.Original]:
         result = []
         for identity, at in (("second", 120.0), ("first", 110.0)):
             words = f"Original {identity} 界🙂. " * (300 if long else 1)
@@ -97,7 +105,9 @@ class MapInvocationTest(unittest.TestCase):
             result.append(reading_passes.Original(row, words))
         return result
 
-    def invoke(self, *, max_bytes: int = 4_096, long: bool = False, **changes):
+    def invoke(
+        self, *, max_bytes: int = 4_096, long: bool = False, **changes: Any
+    ) -> reading_map_call.Invocation:
         return self.module.invoke(
             self.originals(long=long),
             goal="The exact frozen goal.",
@@ -115,7 +125,7 @@ class MapInvocationTest(unittest.TestCase):
         clock = [0.0]
         planner = reading_passes.plan_packets
 
-        def plan(*args, **kwargs):
+        def plan(*args: Any, **kwargs: Any) -> reading_passes.PacketPlan:
             self.assertEqual(1, len(self.snapshots))
             self.assertIsNone(self.snapshots[0]["prepared"])
             result = planner(*args, **kwargs)
@@ -130,6 +140,9 @@ class MapInvocationTest(unittest.TestCase):
         ):
             result = self.invoke()
         self.assertEqual("mapped", result.state)
+        assert result.plan is not None
+        assert result.reply is not None
+        assert result.diagnostic is not None
         self.assertEqual(1, len(self.calls))
         self.assertEqual(self.requests, self.calls)
         self.assertEqual(1, self.fixture.spends())
@@ -154,9 +167,10 @@ class MapInvocationTest(unittest.TestCase):
         )[1]
         self.assertEqual(len(rows.encode()), counts["serialized_message_bytes"])
         self.assertEqual(
-            sum(len(o.words) for o in self.originals()), counts["expanded_message_characters"]
+            sum(len(cast("str", o.words)) for o in self.originals()),
+            counts["expanded_message_characters"],
         )
-        observations = []
+        observations: list[dict[str, Any]] | None = []
         for index, diagnostic in enumerate(self.snapshots):
             observations = reading_pass_types.update_observations(
                 observations,
@@ -164,6 +178,7 @@ class MapInvocationTest(unittest.TestCase):
                 plan=self.binding["plan"],
                 ended=index == 2,
             )
+        assert observations is not None
         self.assertEqual(1, len(observations))
         marker = self.fixture.loaded(self.owner)
         self.assertEqual("active", marker["state"])
@@ -174,6 +189,8 @@ class MapInvocationTest(unittest.TestCase):
         self,
     ) -> None:
         result = self.invoke(max_bytes=50)
+        assert result.plan is not None
+        assert result.diagnostic is not None
         self.assertEqual("local-unfit", result.state)
         self.assertEqual("prompt-unfit", result.reason)
         self.assertEqual(["second", "first"], [r.fact_id for r in result.plan.uncovered_primary])
@@ -188,6 +205,7 @@ class MapInvocationTest(unittest.TestCase):
     def test_a_charged_transport_failure_is_not_retried_or_parsed(self) -> None:
         self.status = "error"
         result = self.invoke()
+        assert result.diagnostic is not None
         self.assertEqual("model-failed", result.state)
         self.assertEqual("error", result.reason)
         self.assertIsNone(result.reply)
@@ -198,7 +216,7 @@ class MapInvocationTest(unittest.TestCase):
     def test_post_charge_marker_failure_keeps_the_charge_without_adapter_entry(self) -> None:
         writer = self.markers._write
 
-        def write(path, marker):
+        def write(path: Path, marker: dict[str, Any]) -> None:
             if marker["passes"][-1]["state"] == "charged":
                 raise OSError("private failure detail")
             return writer(path, marker)
@@ -206,6 +224,7 @@ class MapInvocationTest(unittest.TestCase):
         with mock.patch.object(self.markers, "_write", side_effect=write):
             result = self.invoke()
         self.assertEqual("refused", result.state)
+        assert result.diagnostic is not None
         self.assertEqual(1, self.fixture.spends())
         self.assertEqual([], self.calls)
         self.assertEqual(1, len(self.requests))
@@ -220,6 +239,7 @@ class MapInvocationTest(unittest.TestCase):
     ) -> None:
         self.failure = OSError("private transport detail")
         result = self.invoke()
+        assert result.diagnostic is not None
         self.assertEqual(("model-failed", "error"), (result.state, result.reason))
         self.assertEqual(1, len(self.calls))
         self.assertEqual(1, self.fixture.spends())
@@ -232,6 +252,7 @@ class MapInvocationTest(unittest.TestCase):
         self.status = "context-config"
         self.raw = ""
         result = self.invoke()
+        assert result.diagnostic is not None
         self.assertEqual("model-failed", result.state)
         self.assertEqual("context-config-after-reserve", result.reason)
         self.assertEqual(1, self.fixture.spends())
@@ -243,6 +264,8 @@ class MapInvocationTest(unittest.TestCase):
     def test_corrupt_map_reply_is_failed_coverage_after_one_successful_transport(self) -> None:
         self.raw = '{"version":1,"candidates":[{"fact_id":"injected"}]}'
         result = self.invoke()
+        assert result.reply is not None
+        assert result.diagnostic is not None
         self.assertEqual("parse-failed", result.state)
         self.assertFalse(result.reply.usable)
         self.assertEqual((), result.reply.candidates)
@@ -253,6 +276,9 @@ class MapInvocationTest(unittest.TestCase):
     def test_valid_empty_hypotheses_do_not_complete_uncovered_primary_ranges(self) -> None:
         self.raw = '{"version":1,"candidates":[]}'
         result = self.invoke(long=True)
+        assert result.plan is not None
+        assert result.reply is not None
+        assert result.diagnostic is not None
         self.assertEqual("mapped", result.state)
         self.assertEqual((), result.reply.candidates)
         self.assertEqual("pass-limit", result.plan.reason)

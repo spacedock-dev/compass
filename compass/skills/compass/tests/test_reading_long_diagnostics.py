@@ -58,7 +58,7 @@ class LongDiagnosticsTest(unittest.TestCase):
 
     def test_reconciliation_merge_only_accepts_one_reserved_final_position(self) -> None:
         module = self.module()
-        final = {
+        final: dict[str, Any] = {
             "observation": {**observation(), "ordinal": 17, "kind": "reconciliation"},
             "ended": True,
         }

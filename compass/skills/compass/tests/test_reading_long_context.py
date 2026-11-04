@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from compass_runtime import annotations as annotation_store
 from compass_runtime import (
-    annotations,
     claude_settings,
     observer,
     reading,
@@ -56,13 +56,15 @@ class ActiveContextTest(unittest.TestCase):
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
-        annotations.annotate(
+        annotation_store.annotate(
             self.config, self.state, "claude", self.sid, goal="Retain words", now=100
         )
-        self.target = annotations.capture_long_target(self.config, self.state, "claude", self.sid)
-        assert self.target is not None
-        self.permission = policy.capture_long_permission(self.config, now=100)
-        assert self.permission is not None
+        target = annotation_store.capture_long_target(self.config, self.state, "claude", self.sid)
+        assert target is not None
+        self.target = target
+        permission = policy.capture_long_permission(self.config, now=100)
+        assert permission is not None
+        self.permission = permission
         self.route = self.module.describe(self.config, "claude")
         self.assertIsNotNone(self.route)
         self.scope = "a" * 64
@@ -87,7 +89,7 @@ class ActiveContextTest(unittest.TestCase):
             clock=lambda: self.clock[0],
         )
         assert prepared is not None
-        self.active = control.admit(
+        active = control.admit(
             self.config,
             self.key,
             provider="claude",
@@ -96,7 +98,8 @@ class ActiveContextTest(unittest.TestCase):
             permission=self.permission,
             now=100,
         )
-        assert self.active is not None
+        assert active is not None
+        self.active = active
         self.addCleanup(reading.end_job, self.config, self.key)
         self.context = self.module.Context(self.active, self.route, self.scope)
 
@@ -114,7 +117,7 @@ class ActiveContextTest(unittest.TestCase):
         with (
             mock.patch.object(policy, "capture_long_permission", side_effect=AssertionError),
             mock.patch.object(policy, "register_long_job", side_effect=AssertionError),
-            mock.patch.object(annotations, "capture_long_target", side_effect=AssertionError),
+            mock.patch.object(annotation_store, "capture_long_target", side_effect=AssertionError),
             mock.patch.object(markers, "begin", side_effect=AssertionError),
         ):
             self.assertEqual("", self.check())
@@ -123,18 +126,22 @@ class ActiveContextTest(unittest.TestCase):
             path: path.read_bytes() for path in self.config.state_dir.rglob("*") if path.is_file()
         }
         self.assertEqual(before, after)
-        self.assertEqual([], markers.load(self.config, self.active.job.id)["passes"])
+        marker = markers.load(self.config, self.active.job.id)
+        assert marker is not None
+        self.assertEqual([], marker["passes"])
 
     def test_target_revision_change_refuses_old_context(self) -> None:
-        annotations.annotate(self.config, self.state, "claude", self.sid, goal="Changed", now=101)
+        annotation_store.annotate(
+            self.config, self.state, "claude", self.sid, goal="Changed", now=101
+        )
         self.assertEqual("intent-changed", self.check())
 
     def test_clear_recreate_at_same_clock_does_not_alias(self) -> None:
-        annotations.clear(self.config, self.state, "claude", self.sid)
-        annotations.annotate(
+        annotation_store.clear(self.config, self.state, "claude", self.sid)
+        annotation_store.annotate(
             self.config, self.state, "claude", self.sid, goal="Retain words", now=100
         )
-        target = annotations.capture_long_target(self.config, self.state, "claude", self.sid)
+        target = annotation_store.capture_long_target(self.config, self.state, "claude", self.sid)
         assert target is not None
         self.assertGreater(target.revision, self.target.revision)
         self.assertNotEqual(self.target.incarnation, target.incarnation)
@@ -142,11 +149,11 @@ class ActiveContextTest(unittest.TestCase):
 
     def test_physically_recreated_annotation_store_cannot_refresh_target(self) -> None:
         self.fixture.path.unlink()
-        annotations.annotate(
+        annotation_store.annotate(
             self.config, self.state, "claude", self.sid, goal="Retain words", now=100
         )
         self.assertEqual("intent-changed", self.check())
-        entry = annotations.find(annotations.load(self.config), "claude", self.sid)
+        entry = annotation_store.find(annotation_store.load(self.config), "claude", self.sid)
         assert entry is not None
         self.assertEqual(self.target.revision, entry["revisions"][-1]["n"])
         self.assertNotIn("long_incarnation", entry)

@@ -7,13 +7,14 @@ import json
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from compass_runtime import (
     analyze_capacity,
     analyze_diagnostics,
     reading,
+    reading_long_markers,
     reading_map_call,
     reading_map_series,
     reading_passes,
@@ -24,6 +25,9 @@ from . import test_reading_long_markers as marker_tests
 from .test_agent_words import _agent
 from .test_reading_long_jobs import binding
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 class MapSeriesTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -31,31 +35,35 @@ class MapSeriesTest(unittest.TestCase):
         self.fixture = marker_tests.LongMarkerTest()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
-        self.markers = self.fixture.module()
+        self.markers = reading_long_markers
         self.calls: list[tuple[int, str, int]] = []
         self.factories: list[int] = []
         self.responses: dict[int, tuple[str, str]] = {}
         self.events: list[dict[str, Any]] = []
         self.refuse = 0
-        self.stop = None
-        self.fail_settlement = None
+        self.stop: str | None = None
+        self.fail_settlement: str | None = None
         self.declared = binding()["plan"]
         self.declared["limits"].update(
             prompt_bytes=2400, input_bytes=9600, reply_bytes=8192, output_bytes=32768
         )
 
-    def begin(self):
+    def begin(self) -> None:
+        assert self.fixture.permission is not None
         prepared = reading_policy.prepare_long_job(
             permission=self.fixture.permission,
             binding=binding(plan=self.declared),
             call_timeout_ms=200,
             clock=lambda: 0.0,
         )
-        self.owner = self.markers.begin(
+        assert prepared is not None
+        owner = reading_long_markers.begin(
             self.fixture.config, permission=self.fixture.permission, job=prepared, now=100
         )
+        assert owner is not None
+        self.owner = owner
 
-    def originals(self, count=3):
+    def originals(self, count: int = 3) -> list[reading_passes.Original]:
         # Each complete row exactly fills one packet, so another row cannot start in it.
         originals = []
         for ordinal in range(1, count + 1):
@@ -76,22 +84,25 @@ class MapSeriesTest(unittest.TestCase):
                     max_bytes=10000,
                     model=lambda *_a, **_k: ('{"version":1,"candidates":[]}', "ok"),
                 )
+                assert probe.plan is not None
                 used = len(probe.plan.packets[0].prompt.encode())
                 original = replace(
-                    original, words=words + "x" * (len(original.words) - len(words) + 2400 - used)
+                    original,
+                    words=words
+                    + "x" * (len(cast("str", original.words)) - len(words) + 2400 - used),
                 )
             originals.append(original)
         return originals
 
-    def candidate(self, ordinal, kind="supports"):
+    def candidate(self, ordinal: int, kind: str = "supports") -> dict[str, Any]:
         return {"clause": "line_1", "kind": kind, "cites": [1], "detail": f"Observation {ordinal}."}
 
-    def model_for(self, ordinal):
+    def model_for(self, ordinal: int) -> reading_policy.GuardedModel:
         self.factories.append(ordinal)
         if ordinal == self.refuse:
             reading_policy.set_consent(self.fixture.config, False, now=100)
 
-        def reserve(prompt, cap):
+        def reserve(prompt: str, cap: int) -> reading_long_markers.Permit:
             self.assertEqual(8192, cap)
             request = self.fixture.request(self.owner, ordinal)
             request.update(
@@ -100,9 +111,11 @@ class MapSeriesTest(unittest.TestCase):
                 prompt_bytes=len(prompt.encode()),
                 prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
             )
-            return self.markers.reserve(self.fixture.config, self.owner, request=request, now=100)
+            return reading_long_markers.reserve(
+                self.fixture.config, self.owner, request=request, now=100
+            )
 
-        def transport(prompt, *, output_cap_bytes):
+        def transport(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             self.calls.append((ordinal, prompt, output_cap_bytes))
             return self.responses.get(
                 ordinal,
@@ -128,7 +141,7 @@ class MapSeriesTest(unittest.TestCase):
             admit_prompt=analyze_capacity.Admission("codex", "unknown", "", requested_maximum=2400),
         )
 
-    def observe(self, event):
+    def observe(self, event: dict[str, Any]) -> bool:
         self.events.append(event)
         observation = event["observation"]
         if event["ended"] and self.fail_settlement:
@@ -141,7 +154,9 @@ class MapSeriesTest(unittest.TestCase):
             return method(self.fixture.config, self.owner, observation=observation, now=100)
         return True  # Preparation/uncharged refusal remains staged outside marker slots.
 
-    def run_series(self, originals=None):
+    def run_series(
+        self, originals: Sequence[reading_passes.Original] | None = None
+    ) -> reading_map_series.Series:
         self.begin()
         return self.module.run(
             self.originals() if originals is None else originals,
@@ -154,7 +169,7 @@ class MapSeriesTest(unittest.TestCase):
             on_observation=self.observe,
         )
 
-    def test_three_passes_keep_decisive_middle_original_and_exact_frozen_intent(self):
+    def test_three_passes_keep_decisive_middle_original_and_exact_frozen_intent(self) -> None:
         planner = reading_passes.plan_packets
         originals = self.originals()
         with mock.patch.object(reading_passes, "plan_packets", wraps=planner) as plans:
@@ -188,7 +203,7 @@ class MapSeriesTest(unittest.TestCase):
             self.assertIn("Frozen line.", prompt)
             self.assertEqual(original.row["id"], observed.packet.primary[0].fact_id)
             self.assertEqual(
-                (0, len(original.words)),
+                (0, len(cast("str", original.words))),
                 (observed.packet.primary[0].start, observed.packet.primary[0].end),
             )
             self.assertEqual(3, len(observed.snapshots))
@@ -199,7 +214,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertTrue(all(slot["ended"] for slot in result.observations))
         self.assertEqual("active", self.fixture.loaded(self.owner)["state"])
 
-    def test_failed_middle_slot_does_not_retry_or_hide_later_original(self):
+    def test_failed_middle_slot_does_not_retry_or_hide_later_original(self) -> None:
         self.responses[2] = ("", "error")
         result = self.run_series()
         self.assertEqual([1, 2, 3], self.factories)
@@ -211,7 +226,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertEqual("model-failed", result.passes[1].state)
         self.assertEqual(3, self.fixture.spends())
 
-    def test_malformed_middle_slot_is_unresolved_even_when_later_reply_is_usable(self):
+    def test_malformed_middle_slot_is_unresolved_even_when_later_reply_is_usable(self) -> None:
         self.responses[2] = ('{"version":1,"candidates":[{"fact_id":"foreign"}]}', "ok")
         result = self.run_series()
         self.assertEqual("parse-failed", result.passes[1].state)
@@ -219,7 +234,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertEqual((2,), result.index.unresolved_ordinals)
         self.assertEqual(["a02"], [s.fact_id for s in result.failed_primary])
 
-    def test_last_uncharged_refusal_has_its_own_diagnostic_after_earlier_charges(self):
+    def test_last_uncharged_refusal_has_its_own_diagnostic_after_earlier_charges(self) -> None:
         self.refuse = 3
         result = self.run_series()
         self.assertEqual(2, self.fixture.spends())
@@ -229,22 +244,26 @@ class MapSeriesTest(unittest.TestCase):
         self.assertTrue(result.passes[0].snapshots[-1]["input"]["attempt_reserved"])
         self.assertEqual((3,), result.index.unresolved_ordinals)
 
-    def test_cancellation_between_calls_keeps_preplanned_uninvoked_ranges(self):
+    def test_cancellation_between_calls_keeps_preplanned_uninvoked_ranges(self) -> None:
         factory = self.model_for
 
-        def model_for(ordinal):
+        def model_for(ordinal: int) -> reading_policy.GuardedModel:
             model = factory(ordinal)
             self.stop = "cancelled"
             return model
 
-        self.model_for = model_for
+        patcher = mock.patch.object(self, "model_for", model_for)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         result = self.run_series()
         self.assertEqual([1], self.factories)
         self.assertEqual("cancelled", result.reason)
         self.assertEqual(["a02", "a03"], [s.fact_id for s in result.unassigned_primary])
         self.assertEqual(1, self.fixture.spends())
 
-    def test_end_observation_failure_stops_before_next_slot_and_keeps_charge_unresolved(self):
+    def test_end_observation_failure_stops_before_next_slot_and_keeps_charge_unresolved(
+        self,
+    ) -> None:
         self.fail_settlement = "false"
         result = self.run_series()
         self.assertEqual("persistence-unresolved", result.reason)
@@ -258,7 +277,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertTrue(result.passes[0].snapshots[-1]["input"]["attempt_reserved"])
         self.assertEqual("charged", self.fixture.loaded(self.owner)["passes"][0]["state"])
 
-    def test_end_observation_exception_is_closed_and_never_retried(self):
+    def test_end_observation_exception_is_closed_and_never_retried(self) -> None:
         self.fail_settlement = "raises"
         result = self.run_series()
         self.assertEqual("persistence-unresolved", result.reason)
@@ -267,7 +286,9 @@ class MapSeriesTest(unittest.TestCase):
         self.assertNotIn("private persistence detail", repr(result))
         self.assertEqual((1,), result.index.unresolved_ordinals)
 
-    def test_sixteen_evidence_positions_keep_the_seventeenth_final_slot_and_remaining_range(self):
+    def test_sixteen_evidence_positions_keep_the_seventeenth_final_slot_and_remaining_range(
+        self,
+    ) -> None:
         self.declared.update(max_evidence_passes=16, max_calls=17)
         self.declared["limits"].update(input_bytes=17 * 2400, output_bytes=17 * 8192)
         result = self.run_series(self.originals(17))
@@ -278,7 +299,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertEqual(["a17"], [s.fact_id for s in result.unassigned_primary])
         self.assertEqual(16, len(result.index.entries))
 
-    def test_input_allocation_keeps_the_full_final_prompt_before_partial_evidence_fit(self):
+    def test_input_allocation_keeps_the_full_final_prompt_before_partial_evidence_fit(self) -> None:
         self.declared["limits"]["input_bytes"] = 2400 + 4200
         result = self.run_series()
         self.assertLessEqual(result.plan.transmitted_bytes, 4200)
@@ -288,7 +309,7 @@ class MapSeriesTest(unittest.TestCase):
         self.assertTrue(result.unassigned_primary)
         self.assertEqual(2400, result.final_slot.prompt_bytes)
 
-    def test_reply_allocation_keeps_the_final_reply_without_relabeling_its_position(self):
+    def test_reply_allocation_keeps_the_final_reply_without_relabeling_its_position(self) -> None:
         self.declared["limits"]["output_bytes"] = 2 * 8192
         result = self.run_series()
         self.assertEqual([1], self.factories)
@@ -296,7 +317,9 @@ class MapSeriesTest(unittest.TestCase):
         self.assertEqual(8192, result.final_slot.reply_bytes)
         self.assertEqual(["a02", "a03"], [s.fact_id for s in result.unassigned_primary])
 
-    def test_index_overflow_retains_earlier_contradictions_and_marks_overflow_pass_unresolved(self):
+    def test_index_overflow_retains_earlier_contradictions_and_marks_overflow_pass_unresolved(
+        self,
+    ) -> None:
         self.declared.update(max_evidence_passes=5, max_calls=6)
         self.declared["limits"].update(input_bytes=6 * 2400, output_bytes=6 * 8192)
         for ordinal in range(1, 6):
@@ -323,27 +346,29 @@ class MapSeriesTest(unittest.TestCase):
         self.assertEqual(["a05"], [s.fact_id for s in result.failed_primary])
         self.assertEqual("unresolved", result.reason)
 
-    def test_preparation_times_include_owned_prefix_but_never_prior_model_latency(self):
+    def test_preparation_times_include_owned_prefix_but_never_prior_model_latency(self) -> None:
         clock = [0.0]
         prefix = reading_map_call.protocol_prefix
         packet = reading_passes._packet
         factory = self.model_for
 
-        def make_prefix(*args, **kwargs):
+        def make_prefix(*args: Any, **kwargs: Any) -> str:
             self.assertTrue(self.events)
             clock[0] += 0.025
             return prefix(*args, **kwargs)
 
-        def make_packet(*args, **kwargs):
+        def make_packet(*args: Any, **kwargs: Any) -> reading_passes.EvidencePacket:
             clock[0] += 0.001
             return packet(*args, **kwargs)
 
-        def model_for(ordinal):
+        def model_for(ordinal: int) -> reading_policy.GuardedModel:
             model = factory(ordinal)
             clock[0] += 100
             return model
 
-        self.model_for = model_for
+        patcher = mock.patch.object(self, "model_for", model_for)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         originals = self.originals()
         with (
             mock.patch.object(
@@ -358,16 +383,18 @@ class MapSeriesTest(unittest.TestCase):
         self.assertTrue(all(0 < value < 25 for value in elapsed[1:]))
         self.assertTrue(all(value < 100 for value in elapsed))
 
-    def _factory_failure_after_one_pass(self, failure, expected):
+    def _factory_failure_after_one_pass(self, failure: Exception, expected: str) -> None:
         factory = self.model_for
 
-        def model_for(ordinal):
+        def model_for(ordinal: int) -> reading_policy.GuardedModel:
             if ordinal == 2:
                 self.factories.append(ordinal)
                 raise failure
             return factory(ordinal)
 
-        self.model_for = model_for
+        patcher = mock.patch.object(self, "model_for", model_for)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         result = self.run_series()
         self.assertEqual(expected, result.reason)
         self.assertEqual([1, 2], self.factories)
@@ -389,10 +416,14 @@ class MapSeriesTest(unittest.TestCase):
         self.assertNotIn("private factory detail", repr(result))
         self.assertEqual(1, len(self.fixture.loaded(self.owner)["passes"]))
 
-    def test_factory_exception_keeps_completed_pass_and_never_invoked_ranges(self):
+    def test_factory_exception_keeps_completed_pass_and_never_invoked_ranges(self) -> None:
         self._factory_failure_after_one_pass(OSError("private factory detail"), "factory-failed")
 
-    def test_factory_refusal_keeps_completed_pass_without_a_called_observation(self):
+    def test_factory_refusal_keeps_completed_pass_without_a_called_observation(self) -> None:
+        # Deliberately incomplete status: only the refusal reason is consumed by this boundary.
         self._factory_failure_after_one_pass(
-            reading_policy.RefusedError({"reason": "private factory detail"}), "factory-refused"
+            reading_policy.RefusedError(
+                cast("reading_policy.Status", {"reason": "private factory detail"})
+            ),
+            "factory-refused",
         )

@@ -70,6 +70,7 @@ class LongRecoveryTest(unittest.TestCase):
         self.assertTrue(item.changed)
         self.assertEqual(inspection.Totals(0, 0, 0), item.inspected.exact)
         stored = markers.load(self.config, self.fixture.job_id)
+        assert stored is not None
         self.assertEqual("interrupted", stored["state"])
         self.assertEqual(101, stored["terminal_at"])
         before = self.path.read_bytes()
@@ -139,7 +140,9 @@ class LongRecoveryTest(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: self.recover(), range(2)))
         self.assertEqual(1, sum(item.changed for result in results for item in result.items))
-        self.assertEqual("interrupted", markers.load(self.config, self.fixture.job_id)["state"])
+        stored = markers.load(self.config, self.fixture.job_id)
+        assert stored is not None
+        self.assertEqual("interrupted", stored["state"])
         self.assertEqual(0, self.item().inspected.exact.calls)
 
     def test_before_charge_crash_recovers_exact_zero_from_ledger(self) -> None:
@@ -172,7 +175,9 @@ class LongRecoveryTest(unittest.TestCase):
         ):
             self.fixture.reserve()
         self.pid(424242)
-        self.assertIsNone(markers.load(self.config, self.fixture.job_id)["passes"][0]["charged"])
+        stored = markers.load(self.config, self.fixture.job_id)
+        assert stored is not None
+        self.assertIsNone(stored["passes"][0]["charged"])
         policy.set_consent(self.config, False, now=100)
         item = self.item()
         self.assertEqual(1, item.inspected.exact.calls)
@@ -261,4 +266,6 @@ class LongRecoveryTest(unittest.TestCase):
             item = self.item()
         self.assertFalse(item.changed)
         self.assertIsNone(item.outcome)
-        self.assertEqual("active", markers.load(self.config, self.fixture.job_id)["state"])
+        stored = markers.load(self.config, self.fixture.job_id)
+        assert stored is not None
+        self.assertEqual("active", stored["state"])

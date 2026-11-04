@@ -6,7 +6,7 @@ import json
 import re
 import unittest
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from compass_runtime import project_context, reading, reading_passes
 from compass_runtime.config import build_runtime_config
@@ -14,7 +14,7 @@ from compass_runtime.config import build_runtime_config
 from .test_agent_words import _agent, _person
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
 
 
 class OrdinaryMessagePacketsTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class OrdinaryMessagePacketsTest(unittest.TestCase):
             read_agent_words=True,
         )[0]
         self.goal = 'Review "parser" without changing its behavior. 界🙂'
-        self.lines = ("Explain the result.", "Keep every quoted \\ path intact.")
+        self.lines: tuple[str, ...] = ("Explain the result.", "Keep every quoted \\ path intact.")
 
     def prepare(
         self, words: str, *, max_bytes: int = 800, final_state: str | None = None
@@ -143,9 +143,11 @@ class OrdinaryMessagePacketsTest(unittest.TestCase):
     def test_empty_words_and_invalid_bounds_refuse_without_yielding_a_header(self) -> None:
         with self.assertRaises(ValueError):
             list(self.prepare(""))
+
+        # Deliberately violate the typed API to exercise its runtime boundary.
         for cap in (0, -1, True, 1.5):
             with self.subTest(cap=cap), self.assertRaises(ValueError):
-                list(self.prepare("words", max_bytes=cap))
+                list(self.prepare("words", max_bytes=cast("int", cap)))
 
     def test_a_named_strict_final_never_enters_the_ordinary_fragment_path(self) -> None:
         for state in ("whole", "unfit", "unavailable"):
@@ -159,12 +161,16 @@ class OrdinaryMessagePacketsTest(unittest.TestCase):
 
 
 class OrderedPacketPlanTest(unittest.TestCase):
-    def original(self, fact_id: str, words: str, *, person: bool = False):
+    def original(
+        self, fact_id: str, words: str, *, person: bool = False
+    ) -> reading_passes.Original:
         fact = (_person if person else _agent)(fact_id, 110.0, words)
         row = reading.build_ledger([fact], "claude", "s1", read_agent_words=True)[0]
         return reading_passes.Original(row, words)
 
-    def plan(self, originals, **kwargs):
+    def plan(
+        self, originals: Sequence[reading_passes.Original], **kwargs: Any
+    ) -> reading_passes.PacketPlan:
         return reading_passes.plan_packets(
             originals,
             goal="Keep the saved parser goal.",
@@ -195,7 +201,8 @@ class OrderedPacketPlanTest(unittest.TestCase):
             self.assertEqual(original.words, json.loads(selected["agent_words"]))
         self.assertEqual(len(wire.encode()), result.transmitted_bytes)
         self.assertEqual(
-            sum(len(original.words) for original in originals), result.covered_characters
+            sum(len(cast("str", original.words)) for original in originals),
+            result.covered_characters,
         )
 
     def test_split_primary_ranges_join_once_and_overlap_keeps_one_menu_identity(self) -> None:
@@ -206,7 +213,9 @@ class OrderedPacketPlanTest(unittest.TestCase):
         result = self.plan(originals, overlap_chars=13)
         self.assertEqual("complete", result.reason)
         self.assertGreater(len(result.packets), 2)
-        primary = {original.row["id"]: [] for original in originals}
+        primary: dict[str, list[tuple[int | None, int | None]]] = {
+            original.row["id"]: [] for original in originals
+        }
         transmitted_characters = 0
         for packet in result.packets:
             self.assertLessEqual(len(packet.prompt.encode()), 1_100)
@@ -226,10 +235,13 @@ class OrderedPacketPlanTest(unittest.TestCase):
             end = 0
             for start, following in primary[original.row["id"]]:
                 self.assertEqual(end, start)
+                assert start is not None and following is not None
                 self.assertGreater(following, start)
                 end = following
-            self.assertEqual(len(original.words), end)
-        self.assertEqual(sum(len(o.words) for o in originals), result.covered_characters)
+            self.assertEqual(len(cast("str", original.words)), end)
+        self.assertEqual(
+            sum(len(cast("str", o.words)) for o in originals), result.covered_characters
+        )
         self.assertGreater(transmitted_characters, result.covered_characters)
         self.assertEqual(
             sum(len(p.prompt.encode()) for p in result.packets), result.transmitted_bytes
@@ -245,7 +257,7 @@ class OrderedPacketPlanTest(unittest.TestCase):
         result = self.plan([correction, work], boundary_context=("correction",), overlap_chars=8)
         self.assertEqual("complete", result.reason)
         self.assertGreater(len(result.packets), 1)
-        assigned_correction = []
+        assigned_correction: list[reading_passes.EvidenceRange] = []
         for packet in result.packets:
             self.assertEqual(1, sum(r["id"] == "correction" for r in packet.selection.entries))
             self.assertIn(correction.words, packet.prompt)
@@ -254,7 +266,10 @@ class OrderedPacketPlanTest(unittest.TestCase):
                 span for span in packet.primary if span.fact_id == "correction"
             )
         self.assertEqual(1, len(assigned_correction))
-        self.assertEqual(len(correction.words) + len(work.words), result.covered_characters)
+        self.assertEqual(
+            len(cast("str", correction.words)) + len(cast("str", work.words)),
+            result.covered_characters,
+        )
 
     def test_pass_cap_returns_the_exact_uncovered_primary_suffix(self) -> None:
         originals = [
@@ -268,8 +283,8 @@ class OrderedPacketPlanTest(unittest.TestCase):
         self.assertEqual("first", assigned.fact_id)
         self.assertEqual(
             [
-                ("first", assigned.end, len(originals[0].words)),
-                ("second", 0, len(originals[1].words)),
+                ("first", assigned.end, len(cast("str", originals[0].words))),
+                ("second", 0, len(cast("str", originals[1].words))),
             ],
             [(r.fact_id, r.start, r.end) for r in result.uncovered_primary],
         )

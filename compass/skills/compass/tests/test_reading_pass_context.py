@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import FrozenInstanceError, replace
+from typing import Any
 
 from compass_runtime import (
     reading,
@@ -23,7 +24,7 @@ GOAL = "The exact frozen goal."
 LINES = ("The exact saved outcome line.",)
 
 
-def metadata():
+def metadata() -> dict[str, Any]:
     return {
         "revision": {"number": 7, "at": 100.0},
         "provenance": {
@@ -61,19 +62,21 @@ def metadata():
 
 
 class FrozenPassContextTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.module = reading_pass_context
 
-    def context(self, value=None):
+    def context(self, value: dict[str, Any] | None = None) -> reading_pass_context.Frozen:
         return self.module.freeze(GOAL, LINES, metadata() if value is None else value)
 
-    def original(self, words="An original."):
+    def original(self, words: str = "An original.") -> reading_passes.Original:
         row = reading.build_ledger(
             [_agent("original", 110.0, words)], "claude", "s1", read_agent_words=True
         )[0]
         return reading_passes.Original(row, words)
 
-    def packet(self, context=None):
+    def packet(
+        self, context: reading_pass_context.Frozen | None = None
+    ) -> reading_passes.EvidencePacket:
         return reading_passes.plan_packets(
             [self.original()],
             goal=GOAL,
@@ -84,7 +87,7 @@ class FrozenPassContextTest(unittest.TestCase):
             frozen_context=context or self.context(),
         ).packets[0]
 
-    def test_context_is_closed_immutable_and_independent_from_caller_mutation(self):
+    def test_context_is_closed_immutable_and_independent_from_caller_mutation(self) -> None:
         supplied = metadata()
         context = self.context(supplied)
         supplied["revision"]["number"] = 99
@@ -93,9 +96,11 @@ class FrozenPassContextTest(unittest.TestCase):
         decoded["safety"]["unread_checks"].clear()
         self.assertEqual([["check", 150.0]], context.value()["safety"]["unread_checks"])
         with self.assertRaises(FrozenInstanceError):
-            context.encoded = "changed"
+            context.__setattr__("encoded", "changed")
 
-    def test_unknown_fields_bool_counts_bad_times_foreign_clauses_and_oversized_lists_refuse(self):
+    def test_unknown_fields_bool_counts_bad_times_foreign_clauses_and_oversized_lists_refuse(
+        self,
+    ) -> None:
         variants = []
         for key, value in (("number", True), ("at", float("nan"))):
             bad = metadata()
@@ -119,11 +124,13 @@ class FrozenPassContextTest(unittest.TestCase):
         bad = metadata()
         bad["assessment"] = {"result": "consistent"}
         variants.append(bad)
-        for value in variants:
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                self.context(value)
+        for variant in variants:
+            with self.subTest(value=variant), self.assertRaises(ValueError):
+                self.context(variant)
 
-    def test_every_planned_map_packet_contains_the_same_intent_context_before_byte_fit(self):
+    def test_every_planned_map_packet_contains_the_same_intent_context_before_byte_fit(
+        self,
+    ) -> None:
         context = self.context()
         plan = reading_passes.plan_packets(
             [self.original("界🙂" * 3000)],
@@ -147,7 +154,7 @@ class FrozenPassContextTest(unittest.TestCase):
                 ).usable
             )
 
-    def test_stale_missing_or_mismatched_metadata_cannot_bind_map_reply(self):
+    def test_stale_missing_or_mismatched_metadata_cannot_bind_map_reply(self) -> None:
         packet = self.packet()
         other = metadata()
         other["revision"]["number"] = 8
@@ -172,7 +179,9 @@ class FrozenPassContextTest(unittest.TestCase):
                 frozen_context=self.context(),
             )
 
-    def test_real_guard_local_overflow_from_context_has_no_charge_and_success_binds_context(self):
+    def test_real_guard_local_overflow_from_context_has_no_charge_and_success_binds_context(
+        self,
+    ) -> None:
         fixture = call_tests.MapInvocationTest()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -183,9 +192,12 @@ class FrozenPassContextTest(unittest.TestCase):
         result = fixture.invoke(frozen_context=self.context())
         self.assertEqual("mapped", result.state)
         self.assertEqual(1, fixture.fixture.spends())
+        assert result.plan is not None
         self.assertEqual(self.context(), result.plan.packets[0].frozen_context)
 
-    def test_series_and_reconciliation_share_identical_context_and_refuse_changed_scope(self):
+    def test_series_and_reconciliation_share_identical_context_and_refuse_changed_scope(
+        self,
+    ) -> None:
         person = _person("direction", 100, "Keep the saved instruction.")
         row = reading.build_ledger([person], "claude", "s1")[0]
         originals = [reading_passes.Original(row, person[reading.WORDS_FIELD]), self.original()]
@@ -229,6 +241,7 @@ class FrozenPassContextTest(unittest.TestCase):
             final=None,
         )
         self.assertIsNotNone(result.packet)
+        assert result.packet is not None
         self.assertEqual(series.frozen_context, result.packet.frozen_context)
         self.assertIn('"requested_at": 80.0', result.packet.prompt)
         self.assertIn("source-incomplete", result.unresolved)
@@ -255,7 +268,7 @@ class FrozenPassContextTest(unittest.TestCase):
         self.assertIsNone(changed.packet)
         self.assertIn("invalid", changed.reason)
 
-    def test_context_change_after_valid_empty_map_cannot_rebind_final_packet(self):
+    def test_context_change_after_valid_empty_map_cannot_rebind_final_packet(self) -> None:
         packet = self.packet()
         declared = reading_map_series.Series(
             "passes-ended",

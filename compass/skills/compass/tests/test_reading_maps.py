@@ -5,22 +5,34 @@ from __future__ import annotations
 import json
 import unittest
 from dataclasses import FrozenInstanceError, replace
+from typing import TYPE_CHECKING, Any
 
 from compass_runtime import reading, reading_maps, reading_passes
 
 from .test_agent_words import _agent, _check, _person
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 
 class MapReplyTest(unittest.TestCase):
     def setUp(self) -> None:
         self.maps = reading_maps
 
-    def original(self, identity: str, words: str, *, person: bool = False):
+    def original(
+        self, identity: str, words: str, *, person: bool = False
+    ) -> reading_passes.Original:
         fact = (_person if person else _agent)(identity, 110.0, words)
         row = reading.build_ledger([fact], "claude", "s1", read_agent_words=True)[0]
         return reading_passes.Original(row, words)
 
-    def packets(self, originals, *, context=(), max_bytes=3_000):
+    def packets(
+        self,
+        originals: Sequence[reading_passes.Original],
+        *,
+        context: Sequence[str] = (),
+        max_bytes: int = 3_000,
+    ) -> tuple[reading_passes.EvidencePacket, ...]:
         return reading_passes.plan_packets(
             originals,
             goal="Keep the saved goal.",
@@ -32,8 +44,10 @@ class MapReplyTest(unittest.TestCase):
             overlap_chars=10,
         ).packets
 
-    def reply(self, *, cites=(1,), detail="An observation.", **changes):
-        candidate = {
+    def reply(
+        self, *, cites: Iterable[int] = (1,), detail: str = "An observation.", **changes: Any
+    ) -> str:
+        candidate: dict[str, Any] = {
             "clause": "line_1",
             "kind": "uncertain",
             "cites": list(cites),
@@ -42,7 +56,9 @@ class MapReplyTest(unittest.TestCase):
         candidate.update(changes)
         return json.dumps({"version": 1, "candidates": [candidate]})
 
-    def parse(self, raw, packet, **kwargs):
+    def parse(
+        self, raw: str, packet: reading_passes.EvidencePacket, **kwargs: Any
+    ) -> reading_maps.MapReply:
         return self.maps.parse_reply(raw, packet, clauses=("goal", "line_1"), **kwargs)
 
     def test_citation_uses_the_actual_swapped_menu_not_source_or_timestamp_order(self) -> None:
@@ -79,6 +95,7 @@ class MapReplyTest(unittest.TestCase):
         self.assertEqual(packet.context[0], context.context[0])
         primary = next(span for span in packet.primary if span.fact_id == "work")
         overlap = next(span for span in packet.context if span.fact_id == "work")
+        assert primary.start is not None
         self.assertGreater(primary.start, 0)
         self.assertEqual((overlap.start, primary.end), (work.span.start, work.span.end))
         self.assertEqual((primary,), work.primary)
@@ -152,6 +169,7 @@ class MapReplyTest(unittest.TestCase):
     def test_bad_duplicate_disjoint_or_unprinted_packet_mapping_is_unusable(self) -> None:
         packet = self.packets([self.original("one", "An original long enough.")])[0]
         span = packet.primary[0]
+        assert span.total is not None
         altered = (
             replace(
                 packet, selection=replace(packet.selection, entries=packet.selection.entries * 2)
@@ -187,9 +205,9 @@ class MapReplyTest(unittest.TestCase):
         packet.selection.entries[0]["id"] = "later-mutation"
         self.assertEqual("one", candidate.cites[0].span.fact_id)
         with self.assertRaises(FrozenInstanceError):
-            candidate.detail = "changed"
+            candidate.__setattr__("detail", "changed")
         with self.assertRaises(FrozenInstanceError):
-            candidate.cites[0].span.start = 100
+            candidate.cites[0].span.__setattr__("start", 100)
 
     def test_unknown_frozen_clause_context_and_incomplete_scrub_cannot_be_usable(self) -> None:
         packet = self.packets([self.original("one", "Original.")])[0]
