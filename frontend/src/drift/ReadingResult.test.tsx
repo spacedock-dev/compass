@@ -67,6 +67,10 @@ describe('a stored reading', () => {
     await page.settle();
     const result = document.querySelector('[data-next-result]') as HTMLElement;
     expect(result).not.toBeNull();
+    expect(textOf('[data-next-reading-allowance]')).toContain(
+      'Next Analyze prompt: Allowance unknown.',
+    );
+    expect(result.textContent).not.toContain('Next Analyze prompt');
     // The answer is said once, in the verdict sentence under the card's heading.
     expect(textOf('[data-next-drift-verdict]')).toContain('1 departure');
     expect(document.querySelector('[data-next-result-heading]')).toBeNull();

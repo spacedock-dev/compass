@@ -1,4 +1,5 @@
-import type { PromptCapacityPreview, SettingLimit, SettingsBody } from '../api/types';
+import type { SettingLimit, SettingsBody } from '../api/types';
+import { capacityPreview } from '../api/promptCapacity';
 
 /* What the Settings screen says about each limit, and the unit a reader types it in. The bounds and
    defaults are never here: they arrive with every answer, so a server that moves one moves the screen. A
@@ -124,75 +125,6 @@ function isLimit(value: unknown): value is SettingLimit {
     typeof limit['key'] === 'string' &&
     ['default', 'minimum', 'maximum'].every((name) => Number.isSafeInteger(limit[name]))
   );
-}
-
-const CAPACITY_FIELDS = [
-  'kind',
-  'policy',
-  'maximum_prompt_bytes',
-  'window_tokens',
-  'window_source',
-  'generation_reserve_tokens',
-  'cli_reserve_tokens',
-  'estimated_system_tokens',
-  'estimate_method',
-  'fit_verified',
-  'policy_verified',
-  'configuration_reason',
-  'reason',
-  'can_lower_prompt_setting',
-];
-const CAPACITY_REASONS = [
-  'estimated',
-  'context-config',
-  'context-no-room',
-  'context-dynamic',
-  'context-compaction',
-  'context-fallback',
-  'unavailable',
-];
-const CONFIGURATION_REASONS = [
-  '',
-  'context-config',
-  'dynamic-policy',
-  'compaction-policy-conflict',
-  'fallback-policy-conflict',
-];
-
-const nonnegativeCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-const oneOf = (value: unknown, choices: readonly string[]): boolean =>
-  typeof value === 'string' && choices.includes(value);
-
-/* Optional previews fail independently: an old server or one malformed route must not make the
-   stored settings unusable. Accept only the closed estimate shape, never an input/fit receipt. */
-function capacityPreview(value: unknown): PromptCapacityPreview | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  const preview = value as Record<string, unknown>;
-  if (
-    Object.keys(preview).length !== CAPACITY_FIELDS.length ||
-    !CAPACITY_FIELDS.every((key) => Object.hasOwn(preview, key)) ||
-    preview['kind'] !== 'capacity-preview' ||
-    preview['policy'] !== 'analyze-context-v1' ||
-    preview['fit_verified'] !== false ||
-    preview['policy_verified'] !== false ||
-    typeof preview['can_lower_prompt_setting'] !== 'boolean' ||
-    ![
-      'maximum_prompt_bytes',
-      'generation_reserve_tokens',
-      'cli_reserve_tokens',
-      'estimated_system_tokens',
-    ].every((key) => nonnegativeCount(preview[key])) ||
-    !(preview['window_tokens'] === null || nonnegativeCount(preview['window_tokens'])) ||
-    !oneOf(preview['window_source'], ['documented', 'configured', 'unknown']) ||
-    !oneOf(preview['estimate_method'], ['utf8-bytes-div-3', 'legacy-byte-cap']) ||
-    !oneOf(preview['reason'], CAPACITY_REASONS) ||
-    !oneOf(preview['configuration_reason'], CONFIGURATION_REASONS) ||
-    (preview['reason'] === 'estimated' && preview['configuration_reason'] !== '') ||
-    (preview['reason'] === 'estimated') !== Number(preview['maximum_prompt_bytes']) > 0
-  )
-    return null;
-  return preview as unknown as PromptCapacityPreview;
 }
 
 /** An answer the screen can draw from, or null: a body missing either half is not one. */

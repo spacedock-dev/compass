@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ApiClient } from '../api/client';
-import type { ApiResult, PromptCapacityPreview, SettingsBody } from '../api/types';
+import type { ApiResult, SettingsBody } from '../api/types';
+import { allowanceText } from '../api/promptCapacity';
 import { useShell } from '../shell/context';
 import { Alert } from '../ui/alert';
 import { Button } from '../ui/button';
@@ -9,7 +10,6 @@ import { Label } from '../ui/label';
 import {
   changedValues,
   fieldsOf,
-  formatAmount,
   parseDraft,
   rangeText,
   settingsBody,
@@ -66,32 +66,6 @@ function redraw(
     next[field.key] = sent.has(field.key) || untouched ? textOf(field.value) : draft;
   }
   return next;
-}
-
-function allowanceText(preview: PromptCapacityPreview | null | undefined): string {
-  if (!preview) return 'Allowance unknown. This server did not provide a usable estimate.';
-  switch (preview.reason) {
-    case 'estimated': {
-      const bytes = preview.maximum_prompt_bytes;
-      const amount =
-        bytes < 1024
-          ? `${formatAmount(bytes)} ${bytes === 1 ? 'byte' : 'bytes'}`
-          : `${formatAmount(bytes / 1024)} KB`;
-      return `Estimated allowance: ${amount}.`;
-    }
-    case 'context-no-room':
-      return 'The current context configuration leaves no room for this reading. Choose a larger context window.';
-    case 'context-dynamic':
-      return 'This route’s policy can change when it starts, so its allowance cannot be established. Check its managed settings or choose another route.';
-    case 'context-config':
-      return 'The route’s context settings could not be checked. Check the managed settings before trying Analyze.';
-    case 'context-compaction':
-      return 'Managed settings conflict with keeping compaction off for Analyze. Ask your administrator to resolve the conflict.';
-    case 'context-fallback':
-      return 'Managed settings conflict with keeping automatic model switching off for Analyze. Ask your administrator to resolve the conflict.';
-    case 'unavailable':
-      return 'Allowance unknown. No reading route is selected.';
-  }
 }
 
 function PromptAllowances({
