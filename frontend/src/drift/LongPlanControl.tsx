@@ -95,7 +95,7 @@ function PlanDetails({ preview }: { readonly preview: LongPlanDescriptor }) {
         </>
       ) : null}
       <p>
-        Current shared allowance: {allowance.remaining ?? 'Unknown'} calls available of{' '}
+        Shared allowance at preview time: {allowance.remaining ?? 'Unknown'} calls available of{' '}
         {allowance.limit} over {amount(allowance.window_seconds / 3600, 'hours')}. Calls are not
         reserved; this is not a guarantee that the whole plan can run.
       </p>

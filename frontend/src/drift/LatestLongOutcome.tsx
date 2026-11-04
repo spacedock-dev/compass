@@ -14,7 +14,7 @@ export function LatestLongOutcome() {
     <div data-next-long-outcome="">
       {model.job?.['mode'] === 'long' ? (
         <p className="next-cockpit-reading-why">
-          Current long analysis is still running; these are saved measurements.
+          Current long analysis is unfinished; these are saved measurements.
         </p>
       ) : null}
       <p className="next-cockpit-reading-why">

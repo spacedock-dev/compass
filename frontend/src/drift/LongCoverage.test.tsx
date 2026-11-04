@@ -71,9 +71,25 @@ describe('a person reading saved long coverage and limits', () => {
     expect(text()).not.toMatch(/0 of 0|0 failed|0 bytes/);
     expect(textOf('[data-next-long-outcome]')).toContain('Last saved long outcome:');
     expect(textOf('[data-next-long-outcome]')).toContain(
-      'Current long analysis is still running; these are saved measurements.',
+      'Current long analysis is unfinished; these are saved measurements.',
     );
     expect(textOf('[data-next-long-progress]')).toContain('Collecting source');
+    await page.poll({
+      ...driftBoard({
+        session: session(LONG_DIAGNOSTIC),
+        payload: {
+          reading_jobs: {
+            'claude:s1': { ...LONG_JOB, started_at: 2000, blocked_reason: 'cleanup-unresolved' },
+          },
+        },
+      }),
+      generated: 2050,
+    });
+    expect(textOf('[data-next-long-outcome]')).toContain(
+      'Current long analysis is unfinished; these are saved measurements.',
+    );
+    expect(textOf('[data-next-long-outcome]')).not.toContain('still running');
+    expect(textOf('[data-next-long-progress]')).toContain('It may still be running.');
     await page.poll({
       ...driftBoard({
         session: session(LONG_DIAGNOSTIC),

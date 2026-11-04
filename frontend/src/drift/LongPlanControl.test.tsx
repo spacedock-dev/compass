@@ -2,7 +2,7 @@ import { act, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_FRAGMENT } from '../sample/ids';
 import { LONG_PLAN } from '../../test/longPlan';
-import { json, mountDrift, press, readingPosts, ROUTE, driftBoard } from './testing';
+import { json, mountDrift, press, readingPosts, ROUTE, driftBoard, POLICY } from './testing';
 
 const gets = (page: ReturnType<typeof mountDrift>) =>
   page.state.requests.filter((r) => r.path === '/api/reading-long-plan');
@@ -22,6 +22,24 @@ async function opened(over: Record<string, unknown> = {}, reply = { ok: true, pr
 }
 
 describe('explicit long preview and Start', () => {
+  it('labels the retained allowance as the preview snapshot after the live allowance changes', async () => {
+    const page = await opened();
+    await page.poll(
+      driftBoard({
+        payload: {
+          reading: { ...POLICY, used: 2, remaining: 98 },
+          reading_routes: { claude: { ...ROUTE, ci_read: 'on' } },
+        },
+      }),
+    );
+    expect(
+      screen.getByText(/Shared allowance at preview time: 99 calls available of 100/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Current shared allowance:/)).toBeNull();
+    expect(gets(page)).toHaveLength(1);
+    expect(readingPosts(page)).toEqual([]);
+  });
+
   it('expands once with GET only and renders server limits and unknown estimates honestly', async () => {
     const page = await opened({
       source: { ...LONG_PLAN.source, parent_bytes: null, observed_at: null },

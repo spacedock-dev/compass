@@ -77,15 +77,22 @@ export const UnknownSavedCoverageWhileNewJobRuns: Story = {
       session: session(LONG_DIAGNOSTIC),
       facts,
       reading,
-      payload: { reading_jobs: { 'claude:s1': { ...LONG_JOB, started_at: 2000 } } },
+      payload: {
+        reading_jobs: {
+          'claude:s1': { ...LONG_JOB, started_at: 2000, blocked_reason: 'cleanup-unresolved' },
+        },
+      },
     },
   },
   play: async ({ canvasElement }) => {
     const root = await within(canvasElement).findByRole('region', { name: 'Drift' });
-    await expect(await within(root).findByText('Collecting source')).toBeVisible();
+    await expect(
+      await within(root).findByText(/Compass could not confirm that the analysis process ended/),
+    ).toBeVisible();
+    await expect(root.textContent).not.toContain('Current long analysis is still running');
     await expect(root).toHaveTextContent('Last saved long outcome:');
     await expect(root).toHaveTextContent(
-      'Current long analysis is still running; these are saved measurements.',
+      'Current long analysis is unfinished; these are saved measurements.',
     );
     const saved = root.querySelector('[data-next-long-coverage]');
     await expect(saved).toHaveTextContent('Stop or limit reason: unknown.');

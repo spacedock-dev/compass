@@ -14,6 +14,38 @@ async function open(page: ReturnType<typeof mountDrift>) {
   await page.settle();
 }
 describe('explicit unfinished history inspector', () => {
+  for (const accounting of ['exact', 'minimum']) {
+    it.each([0, 1, 2])(
+      `uses the recorded call count's singular or plural for ${accounting} accounting: %i`,
+      async (calls) => {
+        const totals = { ...HISTORY_ITEM.minimum, calls };
+        const item = {
+          ...HISTORY_ITEM,
+          accounting,
+          exact: accounting === 'exact' ? totals : null,
+          minimum: totals,
+        };
+        const page = mountDrift({
+          routes: {
+            [GET]: () =>
+              json({
+                ok: true,
+                long_history: {
+                  ...LONG_HISTORY,
+                  items: [item],
+                  incomplete: accounting !== 'exact',
+                },
+              }),
+          },
+        });
+        await open(page);
+        const caption = `${accounting === 'exact' ? 'Exact recorded accounting: ' : 'Minimum recorded accounting: at least '}${calls} ${calls === 1 ? 'call' : 'calls'};`;
+        expect(screen.getByText((text) => text.startsWith(caption))).toBeTruthy();
+        expect(page.posts(POST)).toBe(0);
+      },
+    );
+  }
+
   it('stays cold across polling and reads only on opening or Refresh, even Paused and after Clear', async () => {
     const page = mountDrift({
       payload: { reading: { ...POLICY, off: true, remaining: 0 } },

@@ -26,8 +26,8 @@ function Accounting({ item }: { readonly item: HistoryItem }) {
       {item.accounting === 'exact'
         ? 'Exact recorded accounting: '
         : 'Minimum recorded accounting: at least '}
-      {number(totals.calls)} calls; {number(totals.prompt_bytes)} reserved prompt bytes;{' '}
-      {number(totals.reply_bytes)} reserved reply bytes.
+      {number(totals.calls)} {totals.calls === 1 ? 'call' : 'calls'}; {number(totals.prompt_bytes)}{' '}
+      reserved prompt bytes; {number(totals.reply_bytes)} reserved reply bytes.
     </p>
   );
 }
