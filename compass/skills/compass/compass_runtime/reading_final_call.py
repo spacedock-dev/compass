@@ -233,6 +233,18 @@ class Result:
     observations: tuple[dict[str, Any], ...]
 
 
+@dataclass(frozen=True)
+class Preparation:
+    """Actual private copies and packet retained while a final invocation runs."""
+
+    inputs: Inputs
+    originals: Sequence[reading_passes.Original]
+    floor: reading.Selection
+    packet: reading_passes.EvidencePacket | None
+    observations: Sequence[dict[str, Any]]
+    snapshots: Sequence[dict[str, Any]]
+
+
 class _Measurements:
     def __init__(
         self,
@@ -380,7 +392,7 @@ def _qualified_partial(
     }
 
 
-def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persistence gates
+def run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - ordered prepare/call/persistence gates
     originals: Sequence[reading_passes.Original],
     series: reading_map_series.Series,
     *,
@@ -393,6 +405,7 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     detail_cap_chars: int,
     goal_cap_chars: int | None = None,
     on_observation: Callable[[dict[str, Any]], bool] | None = None,
+    on_prepared: Callable[[Preparation], bool] | None = None,
 ) -> Result:
     """Build the reserved exact final packet and call once, without publishing an assessment.
 
@@ -400,6 +413,8 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     pass on ended=True; no event settles the whole job. Source/map/proof gaps return
     criteria=None. Omitted already-mapped final agent context permits only guarded
     local structural departures, with all other clauses explicitly unable to tell.
+    on_prepared receives actual copied preparation roots exactly once, including
+    local refusal paths. It must accept explicitly before any model factory runs.
     """
     declared = reading_pass_types.validate_plan(plan)
     slot = series.final_slot
@@ -417,10 +432,35 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     measures = _Measurements(declared, series.observations, on_observation)
     started = measures.capture.start()
     built: reading_reconcile_packet.Reconciliation | None = None
+    preparation_accepted: bool | None = None
+
+    def prepared() -> bool:
+        nonlocal preparation_accepted
+        if preparation_accepted is None:
+            try:
+                preparation_accepted = (
+                    on_prepared is None
+                    or on_prepared(
+                        Preparation(
+                            inputs,
+                            originals,
+                            scope_floor,
+                            built.packet if built else None,
+                            measures.observations,
+                            measures.snapshots,
+                        )
+                    )
+                    is True
+                )
+            except Exception:  # noqa: BLE001 - preparation failure cannot launch a final call
+                preparation_accepted = False
+        return preparation_accepted
 
     def result(
         state: str, reason: str, criteria: dict[str, reading.Criterion] | None = None
     ) -> Result:
+        if not prepared():
+            state, reason, criteria = "local-unfit", "preparation-unresolved", None
         return Result(
             state,
             reason,
@@ -432,8 +472,8 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
             tuple(measures.observations),
         )
 
-    inputs, originals, scope_floor = deepcopy((inputs, originals, scope_floor))
     try:
+        inputs, originals, scope_floor = deepcopy((inputs, originals, scope_floor))
         context = _bind(inputs, series, scope_floor)
         if {row["id"] for row in scope_floor.entries} != {o.row["id"] for o in originals}:
             return result("local-unfit", "original-unavailable")
@@ -449,7 +489,7 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
             scope_floor=scope_floor,
             final=final,
         )
-    except (ValueError, TypeError, KeyError, AttributeError):
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
         return result("local-unfit", "invalid-context")
     if built.packet is None:
         return result("local-unfit", built.reason)
@@ -469,6 +509,8 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     stopped = _stopped(stop_reason)
     if stopped is not None:
         return result(stopped, stopped)
+    if not prepared():
+        return result("local-unfit", "preparation-unresolved")
     model, failure = reading_map_series._construct_model(model_for, slot.ordinal)  # noqa: SLF001
     if model is None:
         return result(failure, failure)

@@ -49,6 +49,7 @@ class Mapped:
     source_current: Callable[[], bool]
     snapshot: reading_source_collect.Snapshot
     budget: reading_preparation.Budget | None
+    job_id: str
 
 
 class _Source:
@@ -63,22 +64,25 @@ class _Source:
         self.config, self.context, self.snapshot = config, context, collection.snapshot
         self.final_required = (collection.final or {}).get("outcome") == "whole"
         self.reason = ""
+        self.checkpoint = reading_long_context.Checkpoint(config, context)
 
     def current(self) -> str:
         if self.reason:
             return self.reason
-        reason = reading_long_context.check(self.config, self.context)
+        self.checkpoint(force=True)
+        reason = self.checkpoint.reason
         if not reason:
-            checked = reading_source_collect.revalidate(
-                self.snapshot, cancelled=lambda: reading.job_cancelled(self.context.active.job)
-            )
-            if checked.snapshot is None:
+            checked = reading_source_collect.revalidate(self.snapshot, cancelled=self.checkpoint)
+            if self.checkpoint.reason:
+                reason = self.checkpoint.reason
+            elif checked.snapshot is None:
                 reason = "source-changed"
             elif self.final_required and not checked.final_valid:
                 reason = "source-final-changed"
             else:
                 self.snapshot = checked.snapshot
-                reason = reading_long_context.check(self.config, self.context)
+                self.checkpoint(force=True)
+                reason = self.checkpoint.reason
         self.reason = reason
         return reason
 
@@ -362,6 +366,7 @@ def run_maps(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered fail-closed wor
             source.short_current,
             collection.snapshot,
             None,
+            context.active.job.id,
         )
     passes = _Passes(config, context, source, budget, clock, runner, binary_resolver)
     ci = None
@@ -413,7 +418,7 @@ def run_maps(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered fail-closed wor
                 {
                     "harness": route.harness,
                     "provider": route.provider,
-                    "destination": route.destination,
+                    "destination": route.tool_destination,
                     "label": context.active.job.label,
                     "ci_read": route.ci_read,
                 },
@@ -458,4 +463,5 @@ def run_maps(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered fail-closed wor
         source.short_current,
         source.snapshot,
         budget,
+        context.active.job.id,
     )

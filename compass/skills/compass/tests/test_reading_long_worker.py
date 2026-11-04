@@ -23,6 +23,7 @@ from compass_runtime import (
     reading_long_markers,
     reading_long_plan,
     reading_long_worker,
+    reading_native,
     reading_policy,
     reading_preparation,
     reading_route,
@@ -523,3 +524,60 @@ class GuardedNativeWorkerTest(unittest.TestCase):
         self.assertEqual("withheld", result.state)
         self.assertEqual("ci-read", result.reason)
         self.assertEqual([], self.calls)
+
+    def _tool_destination(self, destination: str) -> None:
+        resolve = reading_route.resolve
+        prepare = reading_native.prepare
+        prepared: list[reading_native.Preparation] = []
+
+        def capture(*args: Any, **kwargs: Any) -> reading_native.Preparation:
+            value = prepare(*args, **kwargs)
+            prepared.append(value)
+            return value
+
+        def route(*args: Any, **kwargs: Any) -> reading_route.Route:
+            result = resolve(*args, **kwargs)
+            result["destination"] = destination
+            return result
+
+        with (
+            mock.patch.object(reading_route, "resolve", side_effect=route),
+            mock.patch.object(reading_native, "prepare", side_effect=capture),
+        ):
+            self.make_case()
+            result = self.run_worker()
+        self.assertEqual("mapped" if destination else "withheld", result.state)
+        actual = prepared[0].prepared
+        assert actual is not None and actual.inputs.tool_output is not None
+        self.assertEqual("Anthropic", self.context.route.destination)
+        self.assertEqual(destination, self.context.route.tool_destination)
+        self.assertEqual(destination, actual.inputs.tool_output.destination)
+        if not destination:
+            self.assertEqual({}, actual.inputs.tool_output.tails)
+            self.assertEqual("scope-checks-unread", result.reason)
+            self.assertEqual([], self.calls)
+
+    def test_tool_output_uses_its_distinct_frozen_destination(self) -> None:
+        self._tool_destination("Tool proxy")
+
+    def test_empty_tool_destination_does_not_send_tails_via_words_destination(self) -> None:
+        self._tool_destination("")
+
+    def test_revalidation_poll_detects_pause_and_preserves_its_real_cause(self) -> None:
+        self.make_case()
+        revalidate = reading_source_collect.revalidate
+
+        def pause(
+            snapshot: reading_source_collect.Snapshot, **kwargs: Any
+        ) -> reading_source_collect.Revalidation:
+            reading_policy.set_consent(self.config, False, now=self.now)
+            self.env.clock[0] += 0.3
+            self.assertTrue(kwargs["cancelled"]())
+            return revalidate(snapshot, **kwargs)
+
+        with mock.patch.object(reading_source_collect, "revalidate", side_effect=pause):
+            result = self.run_worker()
+        self.assertEqual("permission-changed", result.reason)
+        self.assertEqual([], self.calls)
+        self.assertEqual([], self.ci_calls)
+        self.assertFalse(reading.job_cancelled(self.active.job))
