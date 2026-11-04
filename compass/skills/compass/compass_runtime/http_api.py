@@ -967,6 +967,8 @@ def _press_content(harness: str) -> int:
     return (
         reading_policy.CONTENT_VERSION
         if harness in runtime_project_context.AGENT_MESSAGE_HARNESSES
+        else reading_policy.REQUESTED_WORDS_CONTENT_VERSION
+        if harness == "codex"
         else reading_policy.WORDS_CONTENT_VERSION
     )
 
@@ -4003,6 +4005,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     )
                     if row.get("harness") in {"claude", "codex"}
                     else None
+                ),
+                message_source_lookup=(
+                    lambda wanted, cap: runtime_project_context.transcript_message_words(
+                        application.config,
+                        transcript,
+                        str(row.get("harness")),
+                        str(row.get("sid")),
+                        wanted,
+                        max_bytes=cap,
+                        expected_stamp=press_stamp,
+                    )
                 ),
                 # The newest recorded final reply, read whole from the source version stamped
                 # above, before the context read: a file that moved since is refused there.

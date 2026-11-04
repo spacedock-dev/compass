@@ -9821,6 +9821,84 @@ def transcript_window_words(
     return [fact for key, (_, fact) in found.items() if key not in ambiguous]
 
 
+def transcript_message_words(  # noqa: C901, PLR0912 - source identity and retention guards
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    wanted: Sequence[Mapping[str, Any]],
+    *,
+    max_bytes: int,
+    expected_stamp: tuple[int, int, int, int] | None,
+) -> list[dict[str, Any]]:
+    """Request-private selected message text. No cache, published field or new fact identity.
+
+    Complete bounded records are masked before any byte cut. Retention is at most the caller's
+    allowance; reader messages take precedence, newest first within each authorship class.
+    A raw-content conflict removes a candidate even if its masked words happen to agree.
+    """
+    if harness not in {"claude", "codex"} or expected_stamp is None or max_bytes <= 0:
+        return []
+    before = transcript_stamp(path)
+    if before != expected_stamp:
+        return []
+    ordered = sorted(
+        (row for row in wanted if row.get("type") in {"user_message", "agent_message"}),
+        key=lambda row: (row.get("type") != "user_message", -float(row.get("at") or 0)),
+    )
+    priorities = {(row.get("id"), row.get("at")): n for n, row in enumerate(ordered)}
+    found: dict[tuple[Any, Any], dict[str, Any]] = {}
+    signatures: dict[tuple[Any, Any], str] = {}
+    ambiguous: set[tuple[Any, Any]] = set()
+    deadline = time.monotonic() + config.direction_scan_max_seconds
+    try:
+        for raw in runtime_io.reverse_lines(
+            config, path, end_pos=before[2], max_bytes=SEMANTIC_BACKFILL_MAX_BYTES
+        ):
+            if time.monotonic() >= deadline:
+                break
+            record = _json_dict(raw)
+            if record is None:
+                continue
+            shape = {"message": record.get("payload")} if harness == "codex" else record
+            if _message_text_chars(shape) > PRESS_TEXT_MAX_CHARS:
+                continue
+            event = _instruction_event(config, record, harness, sid)
+            kind, fact_type = "steer", "user_message"
+            if event is None:
+                event = _agent_message_event(config, record, harness, sid)
+                kind, fact_type = "agent_say", "agent_message"
+            if event is None:
+                continue
+            fact = _semantic_fact_from_event(event, kind, fact_type, "")
+            key = (fact["fact_id"], fact["at"])
+            if key not in priorities or key in ambiguous:
+                continue
+            signature = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+            if key in signatures:
+                if signatures[key] != signature:
+                    ambiguous.add(key)
+                    found.pop(key, None)
+                continue
+            signatures[key] = signature
+            words = whole_message_words(config, record, harness, len(raw))
+            total = len(words)
+            words = words.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
+            found[key] = {"id": key[0], "at": key[1], "words": words, "total": total}
+            left = max_bytes
+            for held in sorted(found, key=priorities.__getitem__):
+                text = found[held]["words"]
+                encoded = text.encode("utf-8")
+                if len(encoded) > left:
+                    found[held]["words"] = encoded[:left].decode("utf-8", "ignore")
+                left -= len(found[held]["words"].encode("utf-8"))
+    except OSError:
+        return []
+    if transcript_stamp(path) != before:
+        return []
+    return [found[key] for key in sorted(found, key=priorities.__getitem__) if found[key]["words"]]
+
+
 def _final_signature(record: dict[str, Any]) -> bytes:
     """A pre-mask fingerprint of every field that decides whether a reply is final.
 

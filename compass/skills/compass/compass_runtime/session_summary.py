@@ -222,7 +222,9 @@ def _message_text(entry: SourceEntry) -> tuple[str, str]:
     return label, _clean(words)
 
 
-def _fragments(entry: SourceEntry, number: int, config: RuntimeConfig) -> Iterator[_Line]:
+def _fragments(
+    entry: SourceEntry, number: int, config: RuntimeConfig, start_at: int = 0
+) -> Iterator[_Line]:
     """Mask one complete message, then yield byte-bounded, contiguous source ranges."""
     cap = config.session_summary_window_bytes
     if entry.kind not in {"person", "agent", "relayed"}:
@@ -235,7 +237,9 @@ def _fragments(entry: SourceEntry, number: int, config: RuntimeConfig) -> Iterat
             label = "wrote"
             text = _clip(_clean(entry.path or entry.title), config.session_summary_path_chars)
         prefix = f"[{number}] {label}: "
-        yield _Line(number, entry, label, prefix + _byte_clip(text, cap - len(prefix.encode()) - 1) + "\n")
+        yield _Line(
+            number, entry, label, prefix + _byte_clip(text, cap - len(prefix.encode()) - 1) + "\n"
+        )
         return
     label, words = _message_text(entry)
     total = len(words)
@@ -243,16 +247,19 @@ def _fragments(entry: SourceEntry, number: int, config: RuntimeConfig) -> Iterat
     # Short whole messages retain the compact row. Newlines and Unicode separators have
     # already been folded. A fragment is quoted independently only after whole-text masking.
     whole = f"[{number}] {label}: {words}\n"
-    if len(whole.encode()) <= cap:
+    if start_at == 0 and len(whole.encode()) <= cap:
         yield _Line(number, entry, label, whole, 0, total, total, digest)
         return
-    start = 0
+    start = start_at
     while start < total:
-        def render(end: int) -> str:
+
+        def render(end: int, start: int = start) -> str:
             return (
                 f"[{number}] {label} (characters {start}-{end} of {total}): "
-                + json.dumps(words[start:end], ensure_ascii=False) + "\n"
+                + json.dumps(words[start:end], ensure_ascii=False)
+                + "\n"
             )
+
         lo, hi = start, min(total, start + cap)
         while lo < hi:
             mid = (lo + hi + 1) // 2
@@ -300,25 +307,32 @@ def _span(lines: Sequence[_Line]) -> dict[str, int]:
     first, last = lines[0], lines[-1]
     return {
         "text_version": TEXT_VERSION,
-        "first_offset": first.start, "first_total": first.total,
-        "last_offset": last.end, "last_total": last.total,
+        "first_offset": first.start,
+        "first_total": first.total,
+        "last_offset": last.end,
+        "last_total": last.total,
     }
 
 
 def _range_fingerprint(lines: Sequence[_Line]) -> str:
-    pairs = list(dict.fromkeys((line.entry.fact_id, line.entry.fingerprint, line.digest) for line in lines))
-    return hashlib.sha256(json.dumps([pairs, _span(lines)], separators=(",", ":")).encode()).hexdigest()[:32]
+    pairs = list(
+        dict.fromkeys((line.entry.fact_id, line.entry.fingerprint, line.digest) for line in lines)
+    )
+    return hashlib.sha256(
+        json.dumps([pairs, _span(lines)], separators=(",", ":")).encode()
+    ).hexdigest()[:32]
 
 
 def _prepare(
-    entries: Sequence[SourceEntry], config: RuntimeConfig, offset: int = 0
+    entries: Sequence[SourceEntry], config: RuntimeConfig, offset: int = 0, start_at: int = 0
 ) -> tuple[tuple[_Line, ...], list[tuple[_Line, ...]], Block | None]:
     """Keep only the bounded newest windows; discarded text is never copied into the plan."""
     kept: deque[tuple[_Line, ...]] = deque()
     omitted: list[_Line] = []
     fragments = (
-        fragment for n, entry in enumerate(entries, offset + 1)
-        for fragment in _fragments(entry, n, config)
+        fragment
+        for n, entry in enumerate(entries, offset + 1)
+        for fragment in _fragments(entry, n, config, start_at if n == offset + 1 else 0)
     )
     for window in _windows(fragments, config.session_summary_window_bytes):
         kept.append(window)
@@ -330,7 +344,52 @@ def _prepare(
                 else:
                     omitted.append(empty)
     windows = list(kept)
-    return tuple(line for window in windows for line in window), windows, _block(omitted, "before_window") if omitted else None
+    return (
+        tuple(line for window in windows for line in window),
+        windows,
+        _block(omitted, "before_window") if omitted else None,
+    )
+
+
+def _range_metadata(entries: Sequence[SourceEntry], block: Block) -> tuple[_Line, ...]:
+    """Reconstruct a stored range without retaining source words in the block."""
+    span = block.span
+    if span is None or span.get("text_version") != TEXT_VERSION:
+        return ()
+    found: list[_Line] = []
+    active = False
+    for number, entry in enumerate(entries, 1):
+        if entry.fact_id == block.first:
+            active = True
+        if not active:
+            continue
+        if entry.kind in {"person", "agent", "relayed"}:
+            label, words = _message_text(entry)
+            total, digest = len(words), hashlib.sha256(words.encode()).hexdigest()
+        else:
+            label, total, digest = "", 1, ""
+        start = span["first_offset"] if entry.fact_id == block.first else 0
+        end = span["last_offset"] if entry.fact_id == block.last else total
+        if not 0 <= start <= end <= total or (total and start == end):
+            return ()
+        if entry.fact_id == block.first and span["first_total"] != total:
+            return ()
+        if entry.fact_id == block.last and span["last_total"] != total:
+            return ()
+        found.append(_Line(number, entry, label, "", start, end, total, digest))
+        if entry.fact_id == block.last:
+            return tuple(found)
+    return ()
+
+
+def _inside(line: _Line, block: Block, positions: dict[str, int]) -> bool:
+    first, last = positions.get(block.first, -1), positions.get(block.last, -1)
+    span = block.span
+    return (
+        first <= line.number <= last
+        and (not span or line.number != first or line.start >= span["first_offset"])
+        and (not span or line.number != last or line.end <= span["last_offset"])
+    )
 
 
 def _fingerprint(entries: Sequence[SourceEntry]) -> str:
@@ -1762,7 +1821,13 @@ def _lede_lines(
         for bullet in p.bullets
         for fact_id in bullet.cites
     }
-    candidates = [line for line in lines if line.entry.fact_id in cited]
+    positions = {line.entry.fact_id: line.number for line in lines}
+    candidates = [
+        line
+        for line in lines
+        if line.entry.fact_id in cited
+        and any(not block.reason and _inside(line, block, positions) for block in blocks)
+    ]
     ordered = [line for line in candidates if line.label == "asked"] + [
         line for line in candidates if line.label != "asked"
     ]
@@ -1851,7 +1916,7 @@ def _bound(
     retained: int,
     reserve: int = 0,
 ) -> Summary:
-    by_id = {line.entry.fact_id: i for i, line in enumerate(lines)}
+    positions = {line.entry.fact_id: line.number for line in lines}
     blocks = list(summary.blocks)
     dropped: list[Block] = []
     result = summary
@@ -1859,7 +1924,7 @@ def _bound(
         _json_bytes(result) + reserve > config.session_summary_max_bytes and len(blocks) > retained
     ):
         dropped.insert(0, blocks.pop())
-        span = lines[by_id[dropped[0].first] : by_id[dropped[-1].last] + 1]
+        span = [line for line in lines if any(_inside(line, block, positions) for block in dropped)]
         gap = _block(span, "bytes")
         result = replace(
             summary,
@@ -1897,13 +1962,14 @@ def _publish_part(
         job.on_part(_bound(summary, lines, job.config, retained), part, parts)
 
 
-def _produce(
+def _produce(  # noqa: PLR0911 - each refusal precedes a producer call
     entries: Sequence[SourceEntry],
     coverage: SourceCoverage,
     harness: str,
     job: _Job,
     prior: Summary | None = None,
     offset: int = 0,
+    start_at: int = 0,
 ) -> Summary:
     config = job.config
     if harness != "claude":
@@ -1912,7 +1978,7 @@ def _produce(
     if config.session_summary_window_bytes < prefix_bytes or config.session_summary_max_windows < 1:
         return Summary("refused", "invalid_bounds", harness)
     try:
-        lines, windows, prefix = _prepare(entries, config, offset)
+        lines, windows, prefix = _prepare(entries, config, offset, start_at)
     except ValueError:
         return Summary("refused", "invalid_bounds", harness)
     if not lines:
@@ -2074,23 +2140,34 @@ def _affected(
     positions = {e.fact_id: n for n, e in enumerate(entries)}
     affected: list[int] = []
     late = False
-    expected: int | None = 0
+    expected: tuple[int, int] | None = (0, 0)
     for n, block in enumerate(prior.blocks):
         first, last = positions.get(block.first), positions.get(block.last)
-        if first is None or last is None:
+        span = block.span
+        if first is None or last is None or span is None:
             affected.append(n)
             expected = None
             continue
-        span = entries[first : last + 1]
-        if expected is not None and first != expected:
+        start = (first, span["first_offset"])
+        if expected is not None and start != expected:
             late = True
             affected.append(n)
-        elif len(span) != block.entries or (
-            _fingerprint(span) != block.fingerprint
-            and not (open_tail and n == len(prior.blocks) - 1)
-        ):
-            affected.append(n)
-        expected = last + 1
+        else:
+            lines = _range_metadata(entries[first : last + 1], block)
+            if (
+                not lines
+                or len(lines) != block.entries
+                or (
+                    _range_fingerprint(lines) != block.fingerprint
+                    and not (open_tail and n == len(prior.blocks) - 1)
+                )
+            ):
+                affected.append(n)
+        expected = (
+            (last + 1, 0)
+            if span["last_offset"] == span["last_total"]
+            else (last, span["last_offset"])
+        )
     return tuple(affected), late
 
 
@@ -2108,6 +2185,25 @@ def _tail_result(prior: Summary, entries: Sequence[SourceEntry], change: SourceC
         reason == "check_result" and first <= positions.get(fact_id, -1) <= last
         for fact_id, reason in change.changed
     )
+
+
+def _resume(
+    prior: Summary, entries: Sequence[SourceEntry], change: SourceChange
+) -> tuple[Summary, int, int, bool]:
+    """The same boundary drives preview and execution; only a terminal unread suffix retries."""
+    blocks = prior.blocks[:-1] if _tail_result(prior, entries, change) else prior.blocks
+    retry = len(blocks) != len(prior.blocks)
+    while blocks and blocks[-1].reason in {"stopped", "ceiling", "no_output", "refused"}:
+        blocks, retry = blocks[:-1], True
+    base = replace(prior, blocks=blocks) if retry else prior
+    if not blocks:
+        return base, 0, 0, retry
+    last = blocks[-1]
+    index = next((n for n, entry in enumerate(entries) if entry.fact_id == last.last), -1)
+    span = last.span
+    if span and span["last_offset"] < span["last_total"]:
+        return base, index, span["last_offset"], retry
+    return base, index + 1, 0, retry
 
 
 def update(
@@ -2135,14 +2231,9 @@ def update(
             spend=Spend(),
             coverage=coverage,
         )
-    if change.kind == "unchanged":
+    base, offset, start_at, retry = _resume(prior, entries, change)
+    if change.kind == "unchanged" and not retry:
         return prior
-    tail = _tail_result(prior, entries, change)
-    base = replace(prior, blocks=prior.blocks[:-1]) if tail else prior
-    offset = next(
-        (n + 1 for n, e in enumerate(entries) if base.blocks and e.fact_id == base.blocks[-1].last),
-        0,
-    )
     return _produce(
         entries[offset:],
         coverage,
@@ -2150,6 +2241,7 @@ def update(
         _Job(config, model, clock, clock(), on_part=on_part),
         base,
         offset,
+        start_at,
     )
 
 
@@ -2174,8 +2266,12 @@ def change_report(
     hard = change.kind in {"truncated", "replaced"} or (
         change.kind == "changed_earlier" and not tail
     )
+    legacy = any(block.span is None for block in prior.blocks)
+    retry = _resume(prior, entries, change)[3] if not affected else False
     reason = (
-        change.kind
+        "legacy_text"
+        if legacy
+        else change.kind
         if hard
         else "late_evidence"
         if late
@@ -2190,8 +2286,12 @@ def change_report(
         "reason": reason,
         "affected_blocks": sorted(set(affected) | set(named)),
         "new_entries": len(change.appended),
-        "appendable": reason is None and change.kind != "unchanged",
-        "action": "summarize_again" if reason else None if change.kind == "unchanged" else "update",
+        "appendable": reason is None and (change.kind != "unchanged" or retry),
+        "action": "summarize_again"
+        if reason
+        else "update"
+        if retry or change.kind != "unchanged"
+        else None,
     }
 
 
@@ -2204,25 +2304,12 @@ def plan(
     change: SourceChange | None = None,
 ) -> dict[str, Any]:
     """The producer's conservative admission plan, before a job can spend."""
-    offset = 0
+    offset, start_at = 0, 0
     if prior is not None and change is not None:
         report = change_report(prior, entries, change)
         if report["action"] == "summarize_again":
             return {"reason": report["reason"], "state": "source_changed"}
-        base = (
-            replace(prior, blocks=prior.blocks[:-1])
-            if _tail_result(prior, entries, change)
-            else prior
-        )
-        offset = next(
-            (
-                n + 1
-                for n, e in enumerate(entries)
-                if base.blocks and e.fact_id == base.blocks[-1].last
-            ),
-            0,
-        )
-        prior = base
+        prior, offset, start_at, _retry = _resume(prior, entries, change)
     reason = "harness_not_supported" if harness != "claude" else None
     if (
         config.session_summary_window_bytes < len(f"[{len(entries)}] relayed: \n".encode())
@@ -2230,7 +2317,11 @@ def plan(
     ):
         reason = "invalid_bounds"
     try:
-        lines, windows, _prefix = _prepare(entries[offset:], config, offset) if reason is None else ((), [], None)
+        lines, windows, _prefix = (
+            _prepare(entries[offset:], config, offset, start_at)
+            if reason is None
+            else ((), [], None)
+        )
     except ValueError:
         lines, windows, reason = (), [], "invalid_bounds"
     if lines and prior is not None and not _room_for_update(prior, lines, config):

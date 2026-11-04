@@ -59,7 +59,9 @@ DESTINATION_MOVED = "destination-changed"
 # ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
 # routes and the unasked lane retain epoch 1. Reader-started calls renew the notice when
 # the epoch changes; Codex unasked calls retain the explicit coverage boundary.
-CONTENT_VERSION = 4
+CONTENT_VERSION = 6
+# Wider requested person messages renew consent without widening the unasked lane.
+REQUESTED_WORDS_CONTENT_VERSION = 5
 WORDS_CONTENT_VERSION = 1
 NOTICE_KINDS = ("reading", "goal", "summary", "monitor")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."

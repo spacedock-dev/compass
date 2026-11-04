@@ -548,7 +548,11 @@ def _base_parts(
     return [
         (
             f"Sent: your goal and a bounded set of the session's entries, with {messages} "
-            f"up to {_WORDS_CAP:,} characters each{outcome}."
+            + (
+                f"as whole messages or measured excerpts within your prompt budget{outcome}."
+                if harness in {"claude", "codex"}
+                else f"up to {_WORDS_CAP:,} characters each{outcome}."
+            )
         ),
         *([final] if final else []),
         *([tool_output] if tool_output else []),

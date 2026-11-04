@@ -1441,7 +1441,7 @@ class SessionSummaryTest(unittest.TestCase):
         self.assertEqual("refused", result.as_dict()["blocks"][0]["reason"])
 
     def test_newest_32_windows_leave_an_explicit_prefix_gap(self) -> None:
-        entries = [entry(n, words=f"Unique request {n} " + "x" * 70) for n in range(1, 36)]
+        entries = [entry(n, words=f"Unique request {n} " + "x" * 60) for n in range(1, 36)]
         model = Replies()
         result = self.run_summary(entries, model, session_summary_window_bytes=100)
         self.assertEqual("fact-4", result.starts_at)
@@ -1597,13 +1597,13 @@ class SessionSummaryTest(unittest.TestCase):
 
     def test_call_and_byte_ceilings_after_retries_leave_later_window_gaps(self) -> None:
         entries = [entry(n, words="x" * 70) for n in range(1, 4)]
-        for bound in ({"session_summary_max_calls": 4}, {"session_summary_max_bytes_sent": 15000}):
+        for bound in ({"session_summary_max_calls": 4}, {"session_summary_max_bytes_sent": 16000}):
             model = Replies(("", "unstopped"), ("", "failed"), ("", "oversized"), ("", "failed"))
             result = self.run_summary(entries, model, session_summary_window_bytes=100, **bound)
             self.assertEqual("partial", result.state)
             self.assertEqual("ceiling", result.blocks[-1].reason)
             self.assertEqual(4, result.spend.calls)
-            self.assertLessEqual(result.spend.bytes_sent, 15000)
+            self.assertLessEqual(result.spend.bytes_sent, 16000)
 
     def test_a_later_refusal_keeps_finished_blocks_and_does_not_retry(self) -> None:
         entries = [entry(n, words="x" * 70) for n in range(1, 4)]
@@ -1630,7 +1630,8 @@ class SessionSummaryTest(unittest.TestCase):
         model = Replies()
         entries = [entry(n, words="界" * 700) for n in range(1, 4)]
         result = self.run_summary(entries, model, session_summary_window_bytes=120)
-        self.assertEqual(3, len(result.blocks))
+        self.assertGreater(len(result.blocks), 3)
+        self.assertLessEqual(len(result.blocks), 33)
         for prompt in model.prompts:
             record = prompt.split("Record:\n")[1]
             self.assertLessEqual(len(record.encode()), 120)

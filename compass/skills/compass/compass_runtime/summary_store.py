@@ -51,6 +51,13 @@ _BLOCK_FIELDS = {
     "last": str,
     "entries": int,
     "fingerprint": str,
+    "span?": {
+        "text_version": int,
+        "first_offset": int,
+        "first_total": int,
+        "last_offset": int,
+        "last_total": int,
+    },
     "cut?": {"phases": int, "reply": bool},
     "withheld_phases?": {"shape_fault": int},
 }
@@ -195,6 +202,7 @@ def _decode_summary(value: dict[str, Any]) -> session_summary.Summary:
                 cut.get("phases", 0),
                 block.get("withheld_phases", {}).get("shape_fault", 0),
                 cut.get("reply", False),
+                block.get("span"),
             )
         )
     lede = value["lede"]
