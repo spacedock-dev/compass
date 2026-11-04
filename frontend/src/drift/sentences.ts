@@ -153,6 +153,27 @@ export const LONG_RECONCILIATION_COVERAGE =
 export const LONG_INTERRUPTED =
   'Compass stopped before this analysis outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry.';
 export const LONG_INTERRUPTED_OLDER = 'Earlier reading, saved before the interrupted analysis.';
+export const LONG_INCOMPLETE =
+  'Long analysis could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.';
+export const LONG_WITHHELD = {
+  'long-incomplete': LONG_INCOMPLETE,
+  'long-interrupted': LONG_INTERRUPTED,
+} as const;
+export const LONG_LATEST_OLDER = 'Earlier reading, saved before the latest long analysis.';
+export const LONG_STAGE = {
+  source: 'Long analysis: collecting source.',
+  evidence: 'Long analysis: reading evidence.',
+  reconciliation: 'Long analysis: final comparison.',
+  publication: 'Long analysis: saving outcome.',
+} as const;
+export const LONG_OUTCOME = {
+  pending: 'Long analysis has no saved outcome yet.',
+  completed: 'Long analysis saved a result. Its findings apply only to the work it could assess.',
+  partial: 'Long analysis saved a partial result. Some saved work could not be assessed.',
+  withheld: 'Long analysis did not produce a new result.',
+  cancelled: 'The long analysis was cancelled. No new result is shown.',
+  interrupted: LONG_INTERRUPTED,
+} as const;
 
 export const STORED_WHY: Readonly<Record<string, string>> = {
   'not-asked': NOT_ASKED,

@@ -31,6 +31,7 @@ import {
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
   LONG_INTERRUPTED,
+  LONG_INCOMPLETE,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
@@ -58,7 +59,7 @@ export function ReadingCount({ count }: { readonly count: number }) {
   );
 }
 
-/* The pending-direction layout deliberately adds only the new long interruption account. */
+/* Pending directions retain the exact long interruption/incomplete accounts; ordinary outcomes keep their layout. */
 export function ReadingOutcome({
   longOnly = false,
   unless = '',
@@ -69,7 +70,8 @@ export function ReadingOutcome({
   const { model } = useDrift();
   const stored = String(model.annotation?.['reading_withheld'] || '');
   const long = stored === LONG_INTERRUPTED;
-  if (!stored || stored === unless || (longOnly && !long)) return null;
+  if (!stored || stored === unless || (longOnly && !long && stored !== LONG_INCOMPLETE))
+    return null;
   const age = withheldAge(model.annotation, model.generated);
   return (
     <p

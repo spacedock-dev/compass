@@ -1,3 +1,5 @@
+import { olderThanLongAttempt } from './longOutcome';
+import { LONG_LATEST_OLDER } from './sentences';
 import { SampleBeside } from '../sample/SampleMark';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
@@ -790,6 +792,7 @@ export function ReadingResult({
     interruptedAt !== null &&
     priorReadAt !== null &&
     interruptedAt > priorReadAt;
+  const olderLong = olderThanLongAttempt(model.session, raw);
   const idle = idleLine(shape, raw);
   /* From the reading rather than from the live row. A reading describes the moment it was taken. */
   const arrived = arrivedLine(annotation, entries);
@@ -826,9 +829,9 @@ export function ReadingResult({
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
       {question}
-      {olderInterrupted ? (
+      {olderLong || olderInterrupted ? (
         <p className="next-cockpit-reading-why" data-next-long-older>
-          {LONG_INTERRUPTED_OLDER}
+          {olderLong ? LONG_LATEST_OLDER : LONG_INTERRUPTED_OLDER}
         </p>
       ) : null}
       {/* A marked reading's verdicts stay readable and are set aside: dimmed, never hidden, under the one

@@ -1,3 +1,4 @@
+import { LatestLongOutcome } from './LatestLongOutcome';
 import { LongPlanControl } from './LongPlanControl';
 import type { ReactNode } from 'react';
 import { UnaskedPermission } from './UnaskedPermission';
@@ -188,6 +189,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     <div className="contents" data-next-drift-body>
       <UnaskedPermission key={key} payload={payload} session={session} />
       {readable && job ? null : answer}
+      <LatestLongOutcome />
       <ReadingAllowance route={model.route} />
       <LongPlanControl key={`long:${model.key}`} board={board} />
       {area}
