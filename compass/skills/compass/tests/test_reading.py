@@ -839,8 +839,10 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                 self.assertIn(expected, reading.WHY_TOKENS)
                 seen.add(expected)
         self.assertEqual(4, len(seen))
-        self.assertEqual(19, len(reading.WHY_TOKENS))
+        self.assertEqual(20, len(reading.WHY_TOKENS))
         self.assertIn(reading.WHY_STANDS, reading.WHY_TOKENS)
+        # Final reconciliation may lack whole agent prose even when every map succeeded.
+        self.assertIn(reading.WHY_LONG_RECONCILIATION_COVERAGE, reading.WHY_TOKENS)
 
 
 class WhoseWordAReadingIsWillingToTake(unittest.TestCase):

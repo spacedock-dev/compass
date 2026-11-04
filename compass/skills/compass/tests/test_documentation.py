@@ -1806,8 +1806,8 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # pattern once let two of them through uncounted (review, 2026-09-24).
         # Either quote, since a single-quoted read is the same read.
         # `pop`, `setdefault`, a default and spaced arguments too (`INPUT_READS`).
-        # The two `analyze_diagnostics` matches read its closed measurement metadata
-        # section, not a tool input payload. Count them explicitly, as the output
+        # Diagnostic owners read closed measurement metadata, not a tool input
+        # payload. Count them explicitly, as the output
         # inventory does for unrelated `output` keys, so another read still fails.
         self.assertEqual(
             {
@@ -1815,11 +1815,20 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
                 "claude_data.py": 1,
                 "codex.py": 1,
                 "project_context.py": 6,
+                "reading_long_coordinator.py": 1,
+                "reading_long_diagnostics.py": 3,
+                "reading_long_reconcile.py": 4,
+                "reading_long_worker.py": 3,
                 "transcripts.py": 2,
             },
             self.counted(self.INPUT_READS),
         )
         self.assertIn("eleven expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn(
+            "Long coordinator, worker, reconciliation and diagnostic `input` fields are closed "
+            "call measurements, not tool payloads.",
+            self.FLAT,
+        )
         for named in (
             "`claude_data.input_summary`",
             "`transcripts.codex_plan`",
@@ -1852,10 +1861,16 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             {
                 "claude_data.py": 1,
                 "project_context.py": 12,
+                "reading_ci_acquire.py": 2,
                 "session_source.py": 1,
                 "spacedock.py": 5,
             },
             self.counted(self.CODEX_READS),
+        )
+        self.assertIn(
+            "`reading_ci_acquire` handles stdout/stderr streams of Compass's supervised CI "
+            "commands; the existing `ci_read` owner parses those responses.",
+            self.FLAT,
         )
         # A patch's `content` and `unified_diff` are file content, which DEC-23 item 5 never reads.
         for path in sorted(self.RUNTIME.rglob("*.py")):
@@ -1883,10 +1898,14 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
                 "pi.py": 1,
                 "project_context.py": 1,
                 "reading.py": 1,
+                "reading_final_call.py": 1,
                 "spacedock.py": 2,
                 "transcripts.py": 2,
             },
             found,
+        )
+        self.assertIn(
+            "`reading_final_call` reads the saved revision's legacy `output` line.", self.FLAT
         )
         self.assertIn("Codex's own line saying a command is still running", self.FLAT)
 
@@ -2385,18 +2404,23 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
             'path.startswith("/api/events/")' in do_post
         )
         gated = len(re.findall(r"\bcoordinator\.(?:focus_)?authorized\(", source))
-        self.assertEqual(23, routes)
+        self.assertEqual(24, routes)
         self.assertEqual(2, gated)
-        self.assertIn("Writing is the twenty-three POST routes", self.FLAT)
-        self.assertIn("There is nothing to authenticate with on twenty-one of them", self.FLAT)
+        self.assertIn("Writing is the twenty-four POST routes", self.FLAT)
+        self.assertIn("There is nothing to authenticate with on twenty-two of them", self.FLAT)
         self.assertIn("Two carry a capability and they are not worth the same.", self.FLAT)
 
     def test_the_copied_correction_route_is_named_counted_and_its_residual_stated(self) -> None:
         # DRC-4678: the thirteenth mutating endpoint and the sixth disk writer, the
         # local-process residual, where the digests live and what clears them, and the
         # exemption of a reader's edits inside a copied correction from the floor.
-        self.assertIn("Seventeen endpoints mutate", self.FLAT)
-        self.assertIn("Ten write to disk.", self.FLAT)
+        # Named roles retain the security facts without the obsolete mutating/disk
+        # totals, which already omitted settings before long discard was added.
+        self.assertIn(
+            "`POST /api/reading-long-discard` retires a verified-dead terminal job's "
+            "superseded recovery marker without stopping a model or refunding calls.",
+            self.FLAT,
+        )
         self.assertIn("`POST /api/correction/copied`", self.FLAT)
         self.assertIn("`compass-copied-corrections.json`", self.FLAT)
         self.assertIn(

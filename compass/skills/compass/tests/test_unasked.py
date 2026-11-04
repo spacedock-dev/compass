@@ -1492,6 +1492,9 @@ class TheGuardedReadingCallersKnowTheClaudeCodeProducerTest(unittest.TestCase):
                 "compass/skills/compass/compass_runtime/reading.py",
                 "compass/skills/compass/compass_runtime/http_api.py",
                 "compass/skills/compass/compass_runtime/unasked.py",
+                # An explicit long press creates registered per-call Guards under
+                # its captured permission and allowance, not the unasked opt-in.
+                "compass/skills/compass/compass_runtime/reading_long_execution.py",
                 self.SCORER,
             },
             self._users("ClaudeReadingModel"),

@@ -7,6 +7,7 @@ import dataclasses
 import importlib
 import importlib.util
 import json
+import threading
 import unittest
 from typing import Any
 from unittest import mock
@@ -20,6 +21,7 @@ from compass_runtime import (
     reading_long_inspection,
     reading_long_jobs,
     reading_long_markers,
+    supervise,
 )
 from compass_runtime import reading_policy as policy
 
@@ -34,6 +36,9 @@ class Crash(BaseException):
 
 class WithheldFinalizationTest(unittest.TestCase):
     def setUp(self) -> None:
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.fixture = target_tests.LongTargetTest()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
@@ -104,11 +109,8 @@ class WithheldFinalizationTest(unittest.TestCase):
             prompt_bytes=10,
             destination_sha256=header["destination_sha256"],
         )
-        self.assertTrue(
-            reading_long_markers.reserve(
-                self.config, self.active.owner, request=req, now=100
-            ).launch
-        )
+        permit = reading_long_markers.reserve(self.config, self.active.owner, request=req, now=100)
+        self.assertTrue(permit.launch, permit)
         self.assertTrue(
             reading_long_markers.settle(
                 self.config,
@@ -293,3 +295,19 @@ class WithheldFinalizationTest(unittest.TestCase):
         self.assertFalse(self.finalize(active=active).acknowledged)
         self.assertEqual(before, self.fixture.path.read_bytes())
         self.assertIsNotNone(reading_long_markers.load(self.config, active.job.id))
+
+
+class ReservationFixtureIsolationTest(unittest.TestCase):
+    def test_fresh_fixture_does_not_inherit_or_clear_a_closed_worker_supervisor(self) -> None:
+        outer = threading.Event()
+        outer.set()
+        with mock.patch.object(supervise, "_SHUTDOWN", outer):
+            fixture = WithheldFinalizationTest()
+            try:
+                fixture.setUp()
+                self.assertFalse(supervise.closed())
+                fixture.reserve()
+            finally:
+                fixture.doCleanups()
+            self.assertIs(outer, supervise._SHUTDOWN)
+            self.assertTrue(supervise.closed())
