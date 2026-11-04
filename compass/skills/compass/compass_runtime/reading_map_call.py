@@ -6,7 +6,14 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import analyze_diagnostics, reading, reading_maps, reading_passes, reading_policy
+from . import (
+    analyze_diagnostics,
+    reading,
+    reading_maps,
+    reading_pass_context,
+    reading_passes,
+    reading_policy,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
@@ -25,6 +32,10 @@ Use the range roles to distinguish primary evidence from repeated boundary conte
 detail is a plain string of at most 400 characters explaining the cited observation.
 Propose at most 16 candidates; the entire JSON reply must fit 8192 UTF-8 bytes.
 An empty candidate list means only that no usable hypotheses were proposed, not goal success.
+Frozen context fixes revision, provenance, request ages, window, settlements and global safety.
+Null metadata is unknown. Global failures and unread work prevent local reassurance.
+Metadata IDs are not menu citations.
+Supplied evidence order is physical; timestamps need not increase.
 Allowed clauses: """
 
 
@@ -49,6 +60,7 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
     masked_values: Collection[str] = (),
     scrub_partial: bool = False,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+    frozen_context: reading_pass_context.Frozen | None = None,
 ) -> Invocation:
     """Build at most one exact packet, call once and bind private hypotheses to originals.
 
@@ -78,6 +90,7 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
             max_bytes=max_bytes,
             max_passes=1,
             boundary_context=boundary_context,
+            frozen_context=frozen_context,
         )
     except ValueError:
         return result("local-unfit", "invalid-input")

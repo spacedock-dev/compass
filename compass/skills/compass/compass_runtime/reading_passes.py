@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from . import reading
+from . import reading, reading_pass_context
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -142,6 +142,7 @@ class EvidencePacket:
     selection: reading.Selection
     primary: tuple[EvidenceRange, ...]
     context: tuple[EvidenceRange, ...]
+    frozen_context: reading_pass_context.Frozen | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +216,7 @@ def _packet(
     lines: tuple[str, ...],
     *,
     measure: bool = False,
+    frozen_context: reading_pass_context.Frozen | None = None,
 ) -> EvidencePacket:
     combined = _union((*context, *primary))
     identities = sorted(combined, key=lambda key: sources[key][0])
@@ -235,6 +237,7 @@ def _packet(
         selection,
         tuple(primary),
         tuple(context),
+        frozen_context,
     )
 
 
@@ -373,6 +376,7 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
     overlap_chars: int = 0,
     total_bytes: int | None = None,
     on_preparation: Callable[[int, EvidencePacket | None], None] | None = None,
+    frozen_context: reading_pass_context.Frozen | None = None,
 ) -> PacketPlan:
     """Pack caller-ordered originals, stopping at the first uncovered primary range.
 
@@ -401,7 +405,9 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
     header = (
         protocol_prefix
         + FROZEN_INTENT_BOUNDARY
-        + json.dumps({"goal": goal, "lines": frozen_lines}, ensure_ascii=False)
+        + json.dumps(
+            reading_pass_context.intent(goal, frozen_lines, frozen_context), ensure_ascii=False
+        )
         + EVIDENCE_BOUNDARY
     )
     try:
@@ -449,7 +455,15 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
         if not primary:
             reason = _unfit_reason(held, cap, max_bytes)
             break
-        packet = _packet(sources, primary, held, header, frozen_lines, measure=True)
+        packet = _packet(
+            sources,
+            primary,
+            held,
+            header,
+            frozen_lines,
+            measure=True,
+            frozen_context=frozen_context,
+        )
         packets.append(packet)
         transmitted += len(packet.prompt.encode())
         _observe_preparation(on_preparation, ordinal, packet)

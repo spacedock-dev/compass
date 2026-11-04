@@ -8,7 +8,14 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from . import reading, reading_map_call, reading_map_series, reading_maps, reading_passes
+from . import (
+    reading,
+    reading_map_call,
+    reading_map_series,
+    reading_maps,
+    reading_pass_context,
+    reading_passes,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -91,6 +98,11 @@ def _candidates(
     passes = {passed.ordinal: passed for passed in series.passes}
     if len(passes) != len(series.passes):
         raise ValueError("Duplicate pass position")
+    if any(
+        packet.frozen_context != series.frozen_context
+        for packet in (*series.plan.packets, *(passed.packet for passed in series.passes))
+    ):
+        raise ValueError("Pass context differs from frozen series")
     spans: dict[str, list[reading_passes.EvidenceRange]] = {}
     for indexed in series.index.entries:
         passed = passes.get(indexed.ordinal)
@@ -102,9 +114,13 @@ def _candidates(
         ):
             raise ValueError("Candidate has no usable originating pass")
         packet, candidate = passed.packet, indexed.candidate
+        if packet.frozen_context != series.frozen_context:
+            raise ValueError("Map packet belongs to different frozen context")
         intent = (
             reading_passes.FROZEN_INTENT_BOUNDARY
-            + json.dumps({"goal": goal, "lines": lines}, ensure_ascii=False)
+            + json.dumps(
+                reading_pass_context.intent(goal, lines, series.frozen_context), ensure_ascii=False
+            )
             + reading_passes.EVIDENCE_BOUNDARY
         )
         suffix = reading_passes.render_packet_evidence(
@@ -298,6 +314,37 @@ def _validate_scope(
         raise ValueError("Invalid final allocation")
 
 
+def _context_scope(
+    context: reading_pass_context.Frozen | None,
+    goal: str,
+    lines: tuple[str, ...],
+    scope: str,
+    floor: reading.Selection,
+) -> None:
+    reading_pass_context.intent(goal, lines, context)
+    if context is not None and context.value()["window"]["scope"] != scope:
+        raise ValueError("Reconciliation scope differs from frozen map context")
+    if context is not None:
+        reading_pass_context.require_safety(context, floor)
+
+
+def _context_gaps(context: reading_pass_context.Frozen | None) -> tuple[str, ...]:
+    if context is None:
+        return ("frozen-context-unavailable",)
+    value = context.value()
+    safety = value["safety"]
+    return (
+        *(("source-incomplete",) if safety["source_complete"] is not True else ()),
+        *("frozen-" + gap for gap in safety["gaps"]),
+        *(
+            ("adopted-goal-unavailable",)
+            if value["provenance"]["goal_source"] != "typed"
+            and value["provenance"]["goal_status"] != "whole"
+            else ()
+        ),
+    )
+
+
 def build(
     originals: Sequence[reading_passes.Original],
     series: reading_map_series.Series,
@@ -322,6 +369,7 @@ def build(
     frozen_lines = tuple(lines)
     try:
         _validate_scope(goal, frozen_lines, scope, series.final_slot)
+        _context_scope(series.frozen_context, goal, frozen_lines, scope, scope_floor)
         held = _originals(originals)
         cited = _candidates(series, held, goal, frozen_lines)
     except _UnavailableError:
@@ -330,6 +378,7 @@ def build(
         )
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
         return Reconciliation("invalid-candidates", None, (*unresolved, "invalid-candidates"), None)
+    unresolved.extend(_context_gaps(series.frozen_context))
     try:
         final_id, final_state, gap = _final(held, final)
         if gap:
@@ -380,10 +429,14 @@ def _render(
         + "Untrusted map hypotheses (not evidence):\n"
         + json.dumps(navigation, ensure_ascii=False)
         + reading_passes.FROZEN_INTENT_BOUNDARY
-        + json.dumps({"goal": goal, "lines": lines}, ensure_ascii=False)
+        + json.dumps(
+            reading_pass_context.intent(goal, lines, series.frozen_context), ensure_ascii=False
+        )
         + reading_passes.EVIDENCE_BOUNDARY
     )
-    packet = reading_passes._packet(sources, spans, (), header, lines, measure=True)  # noqa: SLF001
+    packet = reading_passes._packet(  # noqa: SLF001
+        sources, spans, (), header, lines, measure=True, frozen_context=series.frozen_context
+    )
     return packet, navigation
 
 

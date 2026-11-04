@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from . import reading, reading_passes, records
+from . import reading, reading_pass_context, reading_passes, records
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -150,12 +150,16 @@ def _bindings(packet: reading_passes.EvidencePacket) -> dict[int, BoundCitation]
     return (
         bound
         if packet.prompt.endswith("\n" + suffix)
-        and _intent_matches(packet.prompt[: -len(suffix)], packet.selection.lines)
+        and _intent_matches(
+            packet.prompt[: -len(suffix)], packet.selection.lines, packet.frozen_context
+        )
         else None
     )
 
 
-def _intent_matches(header: str, lines: Sequence[str]) -> bool:
+def _intent_matches(
+    header: str, lines: Sequence[str], context: reading_pass_context.Frozen | None
+) -> bool:
     # Work backwards from the actual evidence suffix. Examples in the protocol prefix
     # cannot replace this adjacent header, and newlines inside JSON values are escaped.
     if not header.endswith(reading_passes.EVIDENCE_BOUNDARY):
@@ -167,7 +171,7 @@ def _intent_matches(header: str, lines: Sequence[str]) -> bool:
     value = json.loads(raw, object_pairs_hook=_object)
     if (
         not isinstance(value, dict)
-        or set(value) != {"goal", "lines"}
+        or set(value) != ({"goal", "lines"} if context is None else {"goal", "lines", "context"})
         or not isinstance(value["goal"], str)
         or not isinstance(value["lines"], list)
         or any(not isinstance(line, str) for line in value["lines"])
@@ -175,7 +179,9 @@ def _intent_matches(header: str, lines: Sequence[str]) -> bool:
         return False
     for text in (value["goal"], *value["lines"]):
         text.encode("utf-8")
-    return tuple(value["lines"]) == tuple(lines)
+    expected = reading_pass_context.intent(value["goal"], lines, context)
+    expected["lines"] = list(lines)
+    return value == expected
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

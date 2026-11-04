@@ -11,6 +11,7 @@ from . import (
     reading,
     reading_map_call,
     reading_maps,
+    reading_pass_context,
     reading_pass_types,
     reading_passes,
     reading_policy,
@@ -75,6 +76,7 @@ class Series:
     failed_primary: tuple[reading_passes.EvidenceRange, ...]
     observations: tuple[dict[str, Any], ...]
     final_slot: FinalSlot
+    frozen_context: reading_pass_context.Frozen | None = None
 
 
 class _Measurements:
@@ -156,6 +158,7 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     masked_values: Collection[str] = (),
     scrub_partial: bool = False,
     on_observation: Callable[[dict[str, Any]], bool] | None = None,
+    frozen_context: reading_pass_context.Frozen | None = None,
 ) -> Series:
     """Plan once, then call each evidence position at most once without automatic resume.
 
@@ -192,6 +195,7 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
         overlap_chars=overlap_chars,
         total_bytes=max(0, limits["input_bytes"] - final_slot.prompt_bytes) if slots else 0,
         on_preparation=measurements.prepare,
+        frozen_context=frozen_context,
     )
     index = CandidateIndex()
     passes: list[EvidencePass] = []
@@ -244,4 +248,5 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
         tuple(failed),
         tuple(measurements.observations),
         final_slot,
+        frozen_context,
     )
