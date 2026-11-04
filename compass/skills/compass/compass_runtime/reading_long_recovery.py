@@ -305,3 +305,73 @@ def publish_terminal(  # noqa: C901, PLR0911 - independent death proofs and orde
     )
     complete = released in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED)
     return Finalized(True, True, complete, "" if complete else "receipt-unresolved")
+
+
+def discard_terminal(  # noqa: C901, PLR0911 - explicit discard gates, never inferred from refusal
+    config: RuntimeConfig,
+    state: RuntimeState,
+    *,
+    job_id: str,
+    now: float,
+    alive: Callable[[int], bool | None],
+    process_exists: Callable[[int], bool | None],
+    startup_before_jobs: bool = False,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> Finalized:
+    """Explicitly discard only a verified-dead terminal job's superseded target.
+
+    No outcome or counter is written. Exact historical accounting must remain
+    available. Marker -> annotation locks keep positive supersession proof held
+    through exact marker retirement. Bare Clear lacks incarnation proof and stays
+    unresolved; absence, generic refusal and unknown never authorize retirement.
+    """
+    if type(now) not in (int, float) or not 0 < now < 2**53 or not math.isfinite(now):
+        return Finalized(reason="clock-invalid")
+    acknowledged = False
+    try:
+        previous = _snapshot(config, job_id)
+        if previous is None:
+            return Finalized(reason="marker-unavailable")
+        with markers.publication_lock(config):
+            marker = _snapshot(config, job_id)
+            if marker is None or marker != previous or marker["state"] == "active":
+                return Finalized(reason="marker-changed")
+            if _current(config, job_id):
+                return Finalized(reason="owner-current")
+            owner = _owner(marker["pid"], alive, process_exists, startup_before_jobs)
+            if owner != "dead" or _current(config, job_id) or _snapshot(config, job_id) != marker:
+                return Finalized(reason="owner-unresolved")
+            inspected = inspection.inspect(config, job_id, now=now)
+            if inspected.exact is None:
+                return Finalized(reason="accounting-unknown")
+            publication = marker["header"].get("publication")
+            if publication is None:
+                return Finalized(reason="publication-unattributed")
+            with annotation_store.long_target_invalidated(
+                config,
+                state,
+                publication["harness"],
+                publication["sid"],
+                target=annotation_store.LongTarget(
+                    publication["incarnation"], publication["revision"]
+                ),
+                diagnostic_sink=diagnostic_sink,
+            ) as invalidated:
+                if invalidated is not True or _current(config, job_id):
+                    return Finalized(reason="discard-unproved")
+                acknowledged = True
+                if not inspection._retire_locked(  # noqa: SLF001 - both proof and marker barriers held
+                    config, inspected, acknowledged=True, now=now
+                ):
+                    return Finalized(acknowledged=True, reason="retirement-unresolved")
+    except Exception:  # noqa: BLE001 - failed proof or retirement never fabricates completion
+        return Finalized(acknowledged=acknowledged, reason="discard-unavailable")
+    released = reading_long_cleanup.release_receipt(
+        config,
+        state,
+        job_id=job_id,
+        header=marker["header"],
+        diagnostic_sink=diagnostic_sink,
+    )
+    complete = released in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED)
+    return Finalized(True, True, complete, "" if complete else "receipt-unresolved")

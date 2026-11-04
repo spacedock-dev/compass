@@ -2332,6 +2332,50 @@ def long_receipt_acknowledged(
         )
 
 
+@contextlib.contextmanager
+def long_target_invalidated(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: str,
+    sid: str,
+    *,
+    target: LongTarget,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> Iterator[bool]:
+    """Hold positive target-supersession proof through explicit marker retirement.
+
+    Caller holds the marker publication barrier before entering. No entry is
+    created, migrated or written. Missing/Clear/malformed identities are unknown;
+    only a different valid incarnation or strictly newer same-incarnation revision
+    proves supersession. This proof permits neither publication nor execution.
+    """
+    key = _key(harness, sid)
+    if (
+        not config.annotations_enabled
+        or not all(key)
+        or key != (harness, sid)
+        or type(target) is not LongTarget
+        or _long_incarnation(target.incarnation) is None
+        or type(target.revision) is not int
+        or not 0 < target.revision < 2**53
+    ):
+        yield False
+        return
+    with _locked_store(config, state, diagnostic_sink) as store:
+        if store is None or not store.trusted or _held(store, key):
+            yield False
+            return
+        entry = find(store.entries, *key)
+        if entry is None or is_discarded(entry):
+            yield False
+            return
+        incarnation = _long_incarnation(entry.get("long_incarnation"))
+        yield bool(
+            incarnation is not None
+            and (incarnation != target.incarnation or entry["revisions"][-1]["n"] > target.revision)
+        )
+
+
 def release_long_receipt(
     config: RuntimeConfig,
     state: RuntimeState,
