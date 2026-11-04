@@ -51,6 +51,30 @@ describe('a disclosure keeps its open state by key, not by node', () => {
     vi.unstubAllGlobals();
   });
 
+  it('calls the opening handler only for a reader opening, never restoration or external writes', () => {
+    const onOpenPress = vi.fn();
+    const node = (
+      <Disclosure
+        disclosureKey={key('explicit')}
+        summary="Explicit read"
+        onOpenPress={onOpenPress}
+        openByDefault
+      >
+        Body
+      </Disclosure>
+    );
+    const { view, kit, rerender } = mount(node);
+    expect(onOpenPress).not.toHaveBeenCalled();
+    act(() => kit.controls.disclosures.set(key('explicit'), false));
+    act(() => kit.controls.disclosures.set(key('explicit'), true));
+    rerender(node);
+    expect(onOpenPress).not.toHaveBeenCalled();
+    fireEvent.click(view.getByText('Explicit read'));
+    expect(onOpenPress).not.toHaveBeenCalled();
+    fireEvent.click(view.getByText('Explicit read'));
+    expect(onOpenPress).toHaveBeenCalledTimes(1);
+  });
+
   it('follows a store write made outside React, without remounting', async () => {
     const { view, kit, rerender } = mount(
       <Disclosure disclosureKey={key('plan')} summary="Project plan">

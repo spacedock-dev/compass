@@ -1,3 +1,4 @@
+import { LongHistoryControl } from './LongHistoryControl';
 import { LatestLongOutcome } from './LatestLongOutcome';
 import { LongPlanControl } from './LongPlanControl';
 import type { ReactNode } from 'react';
@@ -192,6 +193,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <LatestLongOutcome />
       <ReadingAllowance route={model.route} />
       <LongPlanControl key={`long:${model.key}`} board={board} />
+      <LongHistoryControl key={`long-history:${model.key}`} />
       {area}
       <ReadingSection />
     </div>

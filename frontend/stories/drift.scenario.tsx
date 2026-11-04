@@ -132,6 +132,12 @@ export const leaseScenario = (state: Record<string, unknown> = leaseState()): Le
 });
 
 export interface Scenario {
+  readonly longHistory?: {
+    readonly value: unknown;
+    gets: number;
+    readonly posts: Record<string, unknown>[];
+    readonly discard: { readonly body: unknown; readonly status: number };
+  };
   readonly longPlan?: { readonly descriptor: unknown; gets: number };
   readonly reading?: ReadingScenario;
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
@@ -265,6 +271,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
     if (scenario.longPlan) scenario.longPlan.gets = 0;
+    if (scenario.longHistory) {
+      scenario.longHistory.gets = 0;
+      scenario.longHistory.posts.length = 0;
+    }
     let afterRefusal: Record<string, unknown> = {};
     if (scenario.readingStoreRefusal) scenario.readingStoreRefusal.posts = 0;
     const shell = createShell({
@@ -277,6 +287,17 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       reducedMotion: () => true,
       ...(scenario.clipboard ? { clipboard: () => ({ writeText: async () => undefined }) } : {}),
       fetch: async (url, init) => {
+        if (url.startsWith('/api/reading-long-history')) {
+          if (scenario.longHistory) scenario.longHistory.gets += 1;
+          return json({ ok: true, long_history: scenario.longHistory?.value ?? null });
+        }
+        if (url.startsWith('/api/reading-long-discard')) {
+          const fixture = scenario.longHistory;
+          fixture?.posts.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+          return new Response(JSON.stringify(fixture?.discard.body ?? { ok: false }), {
+            status: fixture?.discard.status ?? 503,
+          });
+        }
         if (url.startsWith('/api/reading-long-plan')) {
           if (scenario.longPlan) scenario.longPlan.gets += 1;
           return json({ ok: true, long_plan: scenario.longPlan?.descriptor ?? null });
