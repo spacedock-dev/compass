@@ -349,7 +349,7 @@ class LongMarkerTest(unittest.TestCase):
         self.assertEqual(1, sum(result.launch for result in results))
         self.assertEqual(1, self.spends())
 
-    def test_size_and_count_bounds_keep_unresolved_records_and_retire_only_settled_terminal(
+    def test_size_and_count_bounds_never_retire_unacknowledged_records(
         self,
     ) -> None:
         module = self.module()
@@ -366,11 +366,11 @@ class LongMarkerTest(unittest.TestCase):
                 self.reserve(unresolved)
             module.seal(self.config, unresolved, state="failed", now=100)
             self.assertIsNone(self.begin())
-            fresh = self.begin(now=100 + module.RETIRE_AFTER_SEC + 1)
-            self.assertIsNotNone(fresh)
-            self.assertFalse(self.path(completed).exists())
+            fresh = self.begin(now=100 + policy.JOB_LEDGER_SEC + 1)
+            self.assertIsNone(fresh)
+            self.assertTrue(self.path(completed).exists())
             self.assertTrue(self.path(unresolved).exists())
-        owner = fresh
+        owner = self.begin()
         before = self.spends()
         with mock.patch.object(module, "MAX_MARKER_BYTES", len(self.path(owner).read_bytes()) + 1):
             self.assertFalse(
@@ -378,7 +378,7 @@ class LongMarkerTest(unittest.TestCase):
                     self.config,
                     owner,
                     request=self.request(owner),
-                    now=100 + module.RETIRE_AFTER_SEC + 1,
+                    now=100,
                 ).launch
             )
         self.assertEqual(before, self.spends())

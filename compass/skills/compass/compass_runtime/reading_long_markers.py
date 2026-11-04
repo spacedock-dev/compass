@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 MARKER_DIR = "reading-long-jobs"
 MAX_MARKER_BYTES = 131_072
 MAX_MARKERS = 128
-RETIRE_AFTER_SEC = reading_policy.JOB_LEDGER_SEC
 LOCK_WAIT_SEC = 10.0
 _LOCK = threading.Lock()
 _PROCESS = object()
@@ -150,7 +149,7 @@ def load(config: RuntimeConfig, job_id: str) -> dict[str, Any] | None:
         return None
 
 
-def _sync_directory(path: Path) -> None:
+def sync_directory(path: Path) -> None:
     if hasattr(os, "O_DIRECTORY"):
         fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
         try:
@@ -177,14 +176,14 @@ def _write(path: Path, marker: dict[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         # A failed directory sync still withholds execution even after rename.
-        _sync_directory(path.parent)
+        sync_directory(path.parent)
     finally:
         with contextlib.suppress(OSError):
             temporary.unlink()
 
 
 @contextlib.contextmanager
-def _locked(config: RuntimeConfig) -> Iterator[Path]:
+def publication_lock(config: RuntimeConfig) -> Iterator[Path]:
     deadline = time.monotonic() + LOCK_WAIT_SEC
     if not _LOCK.acquire(timeout=LOCK_WAIT_SEC):
         raise OSError("Marker writer busy")
@@ -199,34 +198,20 @@ def _locked(config: RuntimeConfig) -> Iterator[Path]:
             if root.is_symlink():
                 raise OSError("Marker directory is a symlink")
             runtime_io.ensure_owner_dir(str(root))
-            _sync_directory(config.state_dir)
+            sync_directory(config.state_dir)
             yield root
     finally:
         _LOCK.release()
 
 
-def _room(root: Path, now: float) -> bool:
-    paths = []
+def _room(root: Path) -> bool:
+    count = 0
     with os.scandir(root) as entries:
-        for entry in entries:
-            paths.append(root / entry.name)
-            if len(paths) > MAX_MARKERS:
+        for _entry in entries:
+            count += 1
+            if count >= MAX_MARKERS:
                 return False
-    kept = len(paths)
-    for path in paths:
-        marker = _read(path)
-        if (
-            marker is not None
-            and marker["state"] in _TERMINAL
-            and marker["terminal_at"] <= now - RETIRE_AFTER_SEC
-            and all(
-                slot["state"] == "settled" and slot["charged"] is True for slot in marker["passes"]
-            )
-        ):
-            path.unlink()
-            _sync_directory(root)
-            kept -= 1
-    return kept < MAX_MARKERS
+    return True
 
 
 def begin(
@@ -240,9 +225,9 @@ def begin(
     if header is None or not _moment(now):
         return None
     try:
-        with _locked(config) as root:
+        with publication_lock(config) as root:
             path = marker_path(config, job.job_id)
-            if path.exists() or not _room(root, now):
+            if path.exists() or not _room(root):
                 return None
             registered = reading_policy.register_long_job(
                 config, permission=permission, job=job, now=now
@@ -306,7 +291,7 @@ def reserve(config: RuntimeConfig, owner: MarkerOwner, *, request: Any, now: flo
     charged: bool | None = None
     fresh = False
     try:
-        with _locked(config):
+        with publication_lock(config):
             marker = _owned(config, owner)
             if marker is None or not _moment(now):
                 return Permit(reason="marker-unavailable")
@@ -357,7 +342,7 @@ def _observe(
     config: RuntimeConfig, owner: MarkerOwner, observation: Any, now: float, *, ended: bool
 ) -> bool:
     try:
-        with _locked(config):
+        with publication_lock(config):
             marker = _owned(config, owner)
             if marker is None or marker["state"] != "active" or not _moment(now):
                 return False
@@ -402,7 +387,7 @@ def seal(config: RuntimeConfig, owner: MarkerOwner, *, state: str, now: float) -
     if state not in _TERMINAL or not _moment(now):
         return False
     try:
-        with _locked(config):
+        with publication_lock(config):
             marker = _owned(config, owner)
             if marker is None or marker["state"] != "active":
                 return False

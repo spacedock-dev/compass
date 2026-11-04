@@ -1434,6 +1434,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.analyze_diagnostics": set(),
         "compass_runtime.reading_pass_types": {"compass_runtime.analyze_diagnostics"},
         "compass_runtime.reading_long_jobs": {"compass_runtime.reading_pass_types"},
+        "compass_runtime.reading_long_inspection": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.reading_long_jobs",
+            "compass_runtime.reading_long_markers",
+            "compass_runtime.reading_policy",
+        },
         "compass_runtime.reading_long_markers": {
             "compass_runtime.config",
             "compass_runtime.io",
