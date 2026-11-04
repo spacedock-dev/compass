@@ -29,6 +29,7 @@ import {
   RERUN_STALE,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
+  LONG_INTERRUPTED,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
@@ -53,6 +54,29 @@ export function ReadingCount({ count }: { readonly count: number }) {
   if (count < 1) return null;
   return (
     <p className="next-cockpit-reading-count">{`${String(count)} drift check${count === 1 ? '' : 's'} requested`}</p>
+  );
+}
+
+/* The pending-direction layout deliberately adds only the new long interruption account. */
+export function ReadingOutcome({
+  longOnly = false,
+  unless = '',
+}: {
+  readonly longOnly?: boolean;
+  readonly unless?: string;
+}) {
+  const { model } = useDrift();
+  const stored = String(model.annotation?.['reading_withheld'] || '');
+  const long = stored === LONG_INTERRUPTED;
+  if (!stored || stored === unless || (longOnly && !long)) return null;
+  const age = withheldAge(model.annotation, model.generated);
+  return (
+    <p
+      className="next-cockpit-reading-why next-cockpit-reading-outcome"
+      {...(long ? { 'data-next-long-interrupted': '' } : {})}
+    >
+      {`${age ? `Last analysis, ${age}: ` : 'Last analysis: '}${stored}`}
+    </p>
   );
 }
 
@@ -357,14 +381,7 @@ export function ReadingControl({
   /* What the last press came to when it was withheld, from the store, so a reload and another tab say the same.
      Not announced here: the job's end already said it once through the persistent region. Left out when the
      inert line above already carries the same sentence. */
-  const stored = String(annotation?.['reading_withheld'] || '');
-  const age = withheldAge(annotation, model.generated);
-  const outcome =
-    stored && !(inert && String(pressed?.['sentence'] || '') === stored) ? (
-      <p className="next-cockpit-reading-why next-cockpit-reading-outcome">
-        {`${age ? `Last analysis, ${age}: ` : 'Last analysis: '}${stored}`}
-      </p>
-    ) : null;
+  const outcome = <ReadingOutcome unless={inert ? String(pressed?.['sentence'] || '') : ''} />;
   /* Every account of a press -- why it cannot run, what the last one came to, what this tab's press was
      answered with -- sits directly under the button's row, before the hint and the disclosure. */
   const accounts = (

@@ -25,6 +25,7 @@ import {
   REFUSED_ID,
   JobBox,
   ReadingNotice,
+  ReadingOutcome,
   ReadingsOffAsk,
   WhatIsSent,
   type SteerSlot,
@@ -248,21 +249,24 @@ function QuestionWithAnalysis({
       }
       before={job ? <JobBox job={job} running={running} again={kept} /> : null}
       after={
-        off ? (
-          <ReadingsOffAsk refusedId={!edited} />
-        ) : (
-          <>
-            <ReadingNotice />
-            {board.changed ? (
-              <p className="next-cockpit-reading-why next-cockpit-reading-change">
-                {board.changed}
-              </p>
-            ) : null}
-            {analyze && disclosure && !kept ? <WhatIsSent /> : null}
-            {annotation ? <ReadingCount count={count} /> : null}
-            {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
-          </>
-        )
+        <>
+          <ReadingOutcome longOnly />
+          {off ? (
+            <ReadingsOffAsk refusedId={!edited} />
+          ) : (
+            <>
+              <ReadingNotice />
+              {board.changed ? (
+                <p className="next-cockpit-reading-why next-cockpit-reading-change">
+                  {board.changed}
+                </p>
+              ) : null}
+              {analyze && disclosure && !kept ? <WhatIsSent /> : null}
+              {annotation ? <ReadingCount count={count} /> : null}
+              {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
+            </>
+          )}
+        </>
       }
     />
   );
