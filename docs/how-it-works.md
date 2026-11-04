@@ -65,7 +65,9 @@ Each session's page has three cards, one under another:
 - What the session has done: Compass's own outline of a Claude Code or Codex session, built without a
   model. On Claude Code it adds a model-written summary: an opening paragraph, then phases that start
   closed and open when you press them. A phase holding evidence of drift, or failed test runs, says so
-  on its heading.
+  on its heading. Long messages can span several parts; a citation still opens the original entry.
+  The card says when parts remain unread, and Update summary can continue an interrupted message.
+  Older summaries made from excerpts offer Summarize again.
 - Drift: the check described above, and what became of anything it raised.
 
 On a Claude Code session, the Drift card also has a Live monitor switch. With it on, Compass asks

@@ -2877,6 +2877,32 @@ older build can still write its original three-field schema; its version-3 write
 authorize this build at 4. The words-only tier stays 1, including the 2026-10-03
 grandfathering ruling. This repair adds no content class and establishes no model accuracy.
 
+### Amended 2026-11-04: selected messages can send wider text
+
+A reader-requested Claude Code or Codex reading recovers text only for the rows the existing
+priority and byte selection admitted. The private lookup holds at most twice the prompt allowance,
+reads the latest 32 MiB under the direction-read clock, and refuses individual messages above
+256 Ki characters. It joins the original fact id and timestamp under the collection's source
+stamp and rejects conflicting raw duplicates. No row or citation identity is added.
+
+Mask each complete admitted message before cutting it or rendering slash-command arguments;
+rendering first would erase line breaks needed to recognize wrapped credentials. Queued human
+messages use their typing timestamp for oversized-duplicate refusal, as their fact identity does.
+Reader messages still take their half
+first, failed checks keep their priority, and the strict newest-final path retains first claim on
+the agent's quarter. Other agent text, including a prefix installed in the first allocation, can
+use remaining room; only its growth over the already serialized row consumes that room. A partial row labels its character
+range and total; the selection passed to the resolver carries only the text actually sent.
+Unknown source lengths and incomplete ranges cannot satisfy the all-agent-words negative-evidence
+floor. The page's cutoff says when messages were read only in part.
+
+Shared 1,000-character fields, history, public page data and unasked readings stay bounded as
+before. Requested person-message content uses epoch 5; requested agent-message content uses
+epoch 6. Both renew the notice or legacy explicit Allow; the unasked tier stays 1. The whole-final
+proof remains stricter than ordinary fragment recovery and is not inferred from that recovery.
+Expanding shared fields was rejected because it would send wider text through unrelated callers.
+This change establishes source coverage, not the accuracy of a model's assessment.
+
 ## DEC-23: a Claude Code session's record of its checks may show the work
 
 Decided 2026-09-24 (DRC-4674). DRC-4676 builds the record and keeps it off every model prompt.

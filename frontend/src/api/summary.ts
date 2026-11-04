@@ -142,7 +142,15 @@ export interface SummaryPhase {
   readonly bulletsCut: number;
 }
 
+export interface SummarySpan {
+  readonly firstOffset: number;
+  readonly firstTotal: number;
+  readonly lastOffset: number;
+  readonly lastTotal: number;
+}
+
 export interface SummaryBlock {
+  readonly span?: SummarySpan | null;
   readonly first: string;
   readonly last: string;
   readonly entries: number;
@@ -240,6 +248,29 @@ function phase(row: Raw): SummaryPhase {
   };
 }
 
+function span(value: unknown): SummarySpan | null {
+  const raw = record(value);
+  if (
+    !raw ||
+    !['text_version', 'first_offset', 'first_total', 'last_offset', 'last_total'].every(
+      (key) =>
+        typeof raw[key] === 'number' && Number.isSafeInteger(raw[key]) && Number(raw[key]) >= 0,
+    )
+  )
+    return null;
+  if (
+    Number(raw['first_offset']) > Number(raw['first_total']) ||
+    Number(raw['last_offset']) > Number(raw['last_total'])
+  )
+    return null;
+  return {
+    firstOffset: count(raw['first_offset']),
+    firstTotal: count(raw['first_total']),
+    lastOffset: count(raw['last_offset']),
+    lastTotal: count(raw['last_total']),
+  };
+}
+
 function block(row: Raw): SummaryBlock | null {
   const first = text(row['first']);
   const last = text(row['last']);
@@ -250,6 +281,7 @@ function block(row: Raw): SummaryBlock | null {
     first,
     last,
     entries: count(row['entries']),
+    span: span(row['span']),
     gap,
     phases: gap ? [] : list(row['phases']).map(phase),
     withheldPhases: count(record(row['withheld_phases'])?.['shape_fault']),

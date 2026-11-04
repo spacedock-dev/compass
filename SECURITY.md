@@ -1510,6 +1510,19 @@ a file changed since collection. A missing or unverifiable source keeps its list
 no fact id, stores no words and does not run for an unasked reading. The history and listing bounds
 still hold; this is not a whole-transcript evidence ledger. Other harnesses keep their existing
 in-tail words.
+
+Since 2026-11-04 a Claude Code or Codex reader-requested Analyze call can recover wider text for
+already selected messages. The lookup reads the latest 32 MiB of the same parent transcript under
+the direction-read clock, rejects individual messages above 256 Ki characters, and retains at most
+twice the prompt byte budget across all candidates. It verifies the source stamp before and after
+and rejects conflicting raw records for the same fact and time, using typing time for queued
+human messages. Complete admitted text is masked before slash-command rendering can fold raw line
+breaks, and before retention or transmission cuts. A transmitted fragment carries its actual character range;
+unknown or incomplete text cannot establish that every agent word was read. The reader's half,
+failed-check selection and the newest-final whole-reply priority remain in force. No wider words
+enter history, caches, board responses or unasked readings. The requested person-message tier is
+now 5 and the tier including agent messages is 6; prior notices and Allows do not cover them.
+The earlier 1,000-character limits below still describe shared fields and other harnesses.
 Since 2026-10-21 the reader's own messages include two Claude Code records that carry no user turn: a
 message the reader sent while the agent worked, and the reader's answer to the agent's multiple-choice
 question ([the amendment](docs/design-reading-a-session.md#amended-2026-10-21-a-message-sent-mid-turn-and-an-answer-to-the-agents-question-are-the-readers-words)).
@@ -1621,8 +1634,9 @@ memory-only scan of the complete file, only when it is at most 32 MiB. A larger 
 prove an earlier conflicting duplicate is absent and keeps its excerpt with a cutoff note.
 A reply that does not fit, a source that moved, a
 duplicate or same-time record that disagrees, or a record the source cannot prove final keeps the
-excerpt, and the reading's cutoff says so. The agent's other messages keep their 1,000
-characters, no shell output or tool result is added, the consent tier does not widen, and the
+excerpt, and the reading's cutoff says so. Other selected messages now use the bounded wider-text
+lookup above; their shared fields keep the 1,000-character bound. No shell output or tool result
+is added by message recovery, and the
 words are neither stored, cached, logged nor published. This changed what a message sent and
 raised `reading_policy.CONTENT_VERSION` to 3; a changed tier now renews the notice.
 
@@ -1886,10 +1900,11 @@ by the OS (`score_abstention.py --probe-argv`, below):
 
 The prompt itself can still name paths. Under the tool-output ruling a check's command line and its
 redacted output tail are sent as the session recorded them, and a reader's own messages and, since
-2026-10-03, the agent's own messages are sent whole up to 1,000 characters each where the prompt
-has room (Observer model calls), except its newest recorded final reply, which since 2026-10-05
-goes in full up to 16,384 characters, redacted, so a home path or user name the session typed or
-printed reaches Anthropic that way.
+2026-10-03, the agent's own messages are sent where the prompt has room (Observer model calls).
+Reader-requested Claude Code and Codex readings now use the bounded wider-message lookup above;
+other paths keep their existing excerpts. The newest recorded final reply still goes only as a
+whole row up to 16,384 characters. Redaction can leave a home path or user name the session typed
+or printed, so that information can reach Anthropic.
 
 Because the working directory is sent, the process runs in a fresh owner-only (0700) empty
 directory made outside the state directory, whose path carries the account's home and so the user
@@ -2684,8 +2699,9 @@ Opening a stored summary makes no summary call or charge.
   the person's words, the agent's words where the harness record admits them (Claude Code only
   today), and the checks and files the record shows. Everything goes through
   `records.redact_secrets` first and the byte bound second, as every harness invocation does. No saved intent is needed or sent. The producer sends
-  exactly these carriers, each redacted before it is clipped: the person's words and text relayed
-  in a person turn, at most 1,200 characters per entry; the agent's words, at most 700; a check's
+  exactly these carriers, each masked before any cut: the person's words, text relayed
+  in a person turn and the agent's words, whole where they fit or split into bounded fragments
+  across windows; a check's
   masked title, at most 220, with the source's result token (`failed`, `passed` or
   `not-recorded`); a written file's display path, at most 220; earlier phase titles the model
   wrote for this same summary, as context only, within one sixteenth of a window; and, for the
@@ -2695,12 +2711,15 @@ Opening a stored summary makes no summary call or charge.
   owns the exact shape.
 - To whom. The provider and destination the notice names, invoked as the operator's own harness,
   under the bounds above. Summaries have a grant of their own, bound to provider, destination and
-  content tier, separate from Analyze's; turning summaries off leaves Analyze as it was. Consent,
+  content tier, separate from Analyze's; turning summaries off leaves Analyze as it was. The wider
+  message text renews the summary notice at content tier 2. Consent,
   destination and the tool-output grant are checked again before every part of a multi-part
   summary, so a revoke stops the job at the next part.
 - When. A finished session is summarized when the reader opens it, unless summaries are turned
   off, and later opens read the store without a call. A running session updates only on Update
-  summary, reading only new entries. There is no interval. These are reader-requested calls, not
+  summary, reading new entries or resuming an interrupted message at its first unread character.
+  Old summaries made from clipped excerpts remain readable and require Summarize again to cover
+  their remainder. There is no interval. These are reader-requested calls, not
   unasked ones.
 - Ceilings. Each summary has whole-job ceilings on calls, bytes sent and seconds, and summaries have
   a rolling cap of their own, so a summary cannot spend Analyze's 100 attempts in 24 hours. The

@@ -534,9 +534,10 @@ number-to-fact-id map. Stored citations contain fact ids only. Each menu line is
 | Check | `ran`, followed by its masked title and `result as the tool reported: failed`, `passed` or `not-recorded`. |
 | File write | `wrote`, followed by the display path. |
 
-Every text is redacted before clipping or entering a prompt, and whitespace is collapsed so an
-entry occupies one line. The measured clips are 1,200 characters for person-turn words, 700 for
-agent words, 220 for check titles and 220 for paths. A check's outcome is the source's result token
+Every admitted message is masked as complete prose and normalized to one line before any cut.
+Short messages occupy one menu line. A message longer than a window continues as JSON-quoted
+fragments labeled with character ranges in that canonical text. Every fragment keeps the original
+entry number and fact-id citation. Check titles and paths retain their 220-character clips. A check's outcome is the source's result token
 only. The measurement recommended an exit status plus a short output prefix, but this source
 admits no tool output. An output prefix waits on a source change and the tool-output grant; the
 producer must not infer or read one itself.
@@ -544,9 +545,14 @@ producer must not infer or read one itself.
 Windows are contiguous and hold at most `session_summary_window_bytes` UTF-8 bytes of menu text,
 including line endings. When another line would overflow, cut before the last `asked` line whose
 start lies in the back half of the current window, if one exists; otherwise cut at the overflow.
-Relayed text does not open that cut. A line too large for a window is clipped to fit, preserving
-its number and label. Keep at most the newest 32 windows, state the first kept fact id in
-`starts_at`, and represent the prefix with a `before_window` gap pointing to the outline.
+Relayed text does not open that cut. Fragment boundaries count the serialized UTF-8 bytes,
+including quotes, escaped characters and range labels. Keep at most the newest 32 windows in a
+streaming buffer; discarded windows retain only coverage metadata. Output-byte reductions merge
+that complete metadata envelope, including omitted prefixes and resumed offsets, rather than
+reconstructing it from retained text. If the envelope itself cannot fit, production refuses. State the first kept fact id
+in `starts_at`, and represent the prefix with a `before_window` gap pointing to the outline.
+A cut can fall inside an entry. The page says when fragments remain unread; citations still open
+the original entry. The lede sees only fragment ranges whose window calls succeeded.
 
 Window calls run oldest first. The prompt names the part and its entry range, explains the menu,
 and asks for titled phases of cited bullets in order, written for a person coming back to the
@@ -1185,8 +1191,6 @@ All tunable bounds are declared once in `config.py` and carried by `RuntimeConfi
 | `session_summary_bullet_chars` | 200 | The measured prompt's bullet width. |
 | `session_summary_lede_chars` | 400 | A short lede without another window of prose. |
 | `session_summary_max_bytes` | 524,288 | 32 windows × 4 phases × 6 bullets × 200 characters plus eight ordinary fact ids and JSON overhead fits in 512 KiB at ordinary text widths. A 256 KiB bound would cut that shape even in ASCII; wider text and ids still hit the byte bound. |
-| `session_summary_person_chars` | 1,200 | The measurement's clip for person-turn words, asked or relayed. |
-| `session_summary_agent_chars` | 700 | The measurement's clip for the agent's words. |
 | `session_summary_check_chars` | 220 | The measurement's clip for a masked check title. |
 | `session_summary_path_chars` | 220 | The measurement's clip for a display path. |
 | `session_summary_attempts_per_part` | 2 | One retry for an empty reply; the focused plan's call bound counts both attempts. |
@@ -1247,7 +1251,12 @@ with tuple collections. `as_dict()` returns a fresh plain JSON-compatible tree. 
 prior object), `reason`, `harness`, `starts_at`, `lede`, `lede_reason`, `blocks`, `spend`,
 `coverage`, `change` and `affected_blocks`. A lede holds text and fact-id citations, or a withheld
 marker and citations. Every block holds `first`, `last`, `entries` and a 32-hex SHA-256
-fingerprint over the span's ordered `(fact_id, fingerprint)` pairs, plus either phases or a gap.
+fingerprint over its ordered original fact ids, source fingerprints, complete canonical-text
+digests and range endpoints, plus either phases or a gap. New blocks also hold a word-free `span`:
+`text_version`, `first_offset`, `first_total`, `last_offset`, `last_total`. Offsets are half-open
+character ranges in masked, normalized text; the version and full-text digest bind that coordinate
+system. Nonmessage entries occupy one atom. The entry count counts distinct facts within a block,
+so blocks on either side of a fragment boundary can name the same fact.
 A phase has a title or withheld-title marker and bullets. Each bullet has text or a withheld
 marker, kind, fact-id citations and `kind_overridden`, with cut metadata when applicable. No
 source `words` or menu-number citation survives in this result. `partial` names gaps, incomplete
@@ -1272,10 +1281,14 @@ new span and one smallest phase fit within `session_summary_max_bytes`. Prior bl
 whole and accumulate across updates, so without this check a long-running session would spend
 calls on blocks that can only become one `bytes` gap. When they do not fit, the update returns
 `refused`, reason `output_bound_full`, the prior blocks and lede and no spend; the caller runs a
-fresh summary instead. It never guesses from a missing span. An unchanged source returns the prior
-object with no call. An append summarizes only entries after the prior last block's last fact,
-preserves prior blocks by identity, appends new blocks and asks for one new lede under fresh job
-ceilings. Gap spans also mark the previous job's examined frontier. To keep the update's promise
+fresh summary instead. It never guesses from a missing span. A complete unchanged source returns
+the prior object with no call. An explicit Update retries terminal stopped, ceiling, empty-output
+or refused ranges from their first unread character, even when the source is unchanged. Successful
+blocks retain their identity. Appended entries follow that remainder under fresh job ceilings.
+The preview, change report and producer use one resume planner. Other gaps still mark the previous
+job's examined frontier. Legacy blocks without a span remain readable, but their old clipped text
+cannot prove whole-message coverage: they offer Summarize again instead of skipping the remainder.
+A changed canonical text or text version also requires a fresh summary. To keep the update's promise
 that no earlier entry text is resent, its new lede reads only newly cited entries. The caller
 receives that limited new lede, not a rewritten account of the whole earlier session. When the
 new lede fails, the prior lede is kept rather than lost.
@@ -1890,10 +1903,10 @@ the paths of files written. Titles of earlier parts go along as context, and the
 cites are sent again for its opening line. Everything is redacted first. No command, file or other
 tool output is sent." The usability review read "lede" and "the source admits none" as jargon, and
 read "No command output" as leaving file reads and fetched pages open, so the sentence names every
-tool kind. The sample
-session's fixture carries this wording since it was captured again on 2026-10-20, because it is
-rebuilt from a real server reading and never edited by hand; `test_sample_session_files` fails when
-the two differ.
+tool kind. The sample session's fixture carried that wording after its 2026-10-20 capture.
+On 2026-11-04 its disclosure was refreshed from the current live-generated HTTP response for the
+same destination; the stored model answers and record were preserved. `test_sample_session_files`
+requires the disclosure to match the server's current words.
 
 An independent stored off is honoured through restart and upgrade. While the master is not paused, grant presses answer
 `{"ok":true,"summaries": <the board summaries block>}` with 200 (503 on store failure), including

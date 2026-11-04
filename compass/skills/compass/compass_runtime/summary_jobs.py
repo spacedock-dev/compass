@@ -46,7 +46,7 @@ ACTIVE = {"running", "stopping"}
 # (docs/design-session-summary.md#job-and-grant-contract).
 PRODUCER_STOPS = {"daily-cap", "model-unavailable", "stopping"}
 # A summary disclosure must not renew Analyze's notice when its content changes.
-CONTENT_VERSION = 1
+CONTENT_VERSION = 2
 # Looked up at each job start, so a test can run the whole-job ceiling on a fake clock.
 _monotonic = time.monotonic
 
@@ -154,6 +154,7 @@ def disclosure(destination: str) -> str:
         "the agent's replies, check names with their result (failed, passed or not "
         "recorded), and the paths of files written. Titles of earlier parts go along as "
         "context, and the entries a summary cites are sent again for its opening line. "
+        "Long messages can continue across parts within the job limits. "
         "Everything is redacted first. No command, file or other tool output is sent. "
         "Turn off summaries stops these calls; Turn summaries on restores them."
     )

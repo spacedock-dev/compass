@@ -916,7 +916,10 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
 
     def test_a_press_needs_the_agent_words_version_only_on_claude_code(self) -> None:
         self.assertEqual(reading_policy.CONTENT_VERSION, http_api._press_content("claude"))
-        for harness in ("codex", "pi", "antigravity"):
+        self.assertEqual(
+            reading_policy.REQUESTED_WORDS_CONTENT_VERSION, http_api._press_content("codex")
+        )
+        for harness in ("pi", "antigravity"):
             with self.subTest(harness=harness):
                 self.assertEqual(
                     reading_policy.WORDS_CONTENT_VERSION, http_api._press_content(harness)

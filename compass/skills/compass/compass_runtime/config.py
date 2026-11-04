@@ -308,8 +308,6 @@ class RuntimeConfig:
     session_summary_max_bytes: int
     # The entry clips the measurement used, not source admission limits; redaction precedes
     # every clip (docs/design-session-summary.md#measurement-and-ceilings).
-    session_summary_person_chars: int
-    session_summary_agent_chars: int
     session_summary_check_chars: int
     session_summary_path_chars: int
     # One retry for an empty reply; the focused plan's upper bound counts both attempts.
@@ -972,8 +970,6 @@ def build_runtime_config(
         session_summary_bullet_chars=SESSION_SUMMARY_BULLET_CHARS,
         session_summary_lede_chars=SESSION_SUMMARY_LEDE_CHARS,
         session_summary_max_bytes=SESSION_SUMMARY_MAX_BYTES,
-        session_summary_person_chars=1_200,
-        session_summary_agent_chars=700,
         session_summary_check_chars=220,
         session_summary_path_chars=220,
         session_summary_attempts_per_part=2,

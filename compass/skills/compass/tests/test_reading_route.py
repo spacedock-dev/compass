@@ -976,7 +976,11 @@ class TheDisclosureIsAShortListThatKeepsEveryFact(unittest.TestCase):
                 for fact in (
                     "your goal",
                     "bounded set",
-                    f"{messages} up to {cap} each",
+                    (
+                        f"{messages}, whole or partial, within the prompt budget"
+                        if harness in {"claude", "codex"}
+                        else f"{messages} up to {cap} each"
+                    ),
                     "credential shapes redacted",
                     f"To: {route['vendor']}, off this machine",
                     f"your {label} CLI and its sign-in",

@@ -645,8 +645,10 @@ def whole_message_words(
     """Source words use the same parser and slash-command normalization, without a prompt cap."""
     message = observer.parse_reader_record(record, cap=cap)
     text = str(message["text"]) if message else ""
-    command = transcripts.command_direction(config, text) if harness == "claude" else None
-    return records.safe_text(" ".join(records.mask_prose(command or text).split()), cap)
+    # Rendering a slash command folds line breaks. Preserve them until the raw-prose
+    # masker has removed split credentials; both summary and requested reading use this text.
+    masked = _masked_window_words(config, text, harness)
+    return records.safe_text(" ".join(masked.split()), cap)
 
 
 def _agent_message_event(
@@ -9819,6 +9821,99 @@ def transcript_window_words(
     if transcript_stamp(path) != before:
         return []
     return [fact for key, (_, fact) in found.items() if key not in ambiguous]
+
+
+def transcript_message_words(  # noqa: C901, PLR0912 - source identity and retention guards
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    wanted: Sequence[Mapping[str, Any]],
+    *,
+    max_bytes: int,
+    expected_stamp: tuple[int, int, int, int] | None,
+) -> list[dict[str, Any]]:
+    """Request-private selected message text. No cache, published field or new fact identity.
+
+    Complete bounded records are masked before any byte cut. Retention is at most the caller's
+    allowance; reader messages take precedence, newest first within each authorship class.
+    A raw-content conflict removes a candidate even if its masked words happen to agree.
+    """
+    if harness not in {"claude", "codex"} or expected_stamp is None or max_bytes <= 0:
+        return []
+    before = transcript_stamp(path)
+    if before != expected_stamp:
+        return []
+    ordered = sorted(
+        (row for row in wanted if row.get("type") in {"user_message", "agent_message"}),
+        key=lambda row: (row.get("type") != "user_message", -float(row.get("at") or 0)),
+    )
+    priorities = {(row.get("id"), row.get("at")): n for n, row in enumerate(ordered)}
+    found: dict[tuple[Any, Any], dict[str, Any]] = {}
+    signatures: dict[tuple[Any, Any], str] = {}
+    ambiguous: set[tuple[Any, Any]] = set()
+    deadline = time.monotonic() + config.direction_scan_max_seconds
+    try:
+        for raw in runtime_io.reverse_lines(
+            config, path, end_pos=before[2], max_bytes=SEMANTIC_BACKFILL_MAX_BYTES
+        ):
+            if time.monotonic() >= deadline:
+                break
+            record = _json_dict(raw)
+            if record is None:
+                continue
+            shape = {"message": record.get("payload")} if harness == "codex" else record
+            if _message_text_chars(shape) > PRESS_TEXT_MAX_CHARS:
+                # Its identity cannot be recovered under the admission bound. Do not let an
+                # older duplicate at this instant stand as proof of the complete message.
+                at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
+                for key in priorities:
+                    if key[1] == at:
+                        ambiguous.add(key)
+                        found.pop(key, None)
+                continue
+            event = _instruction_event(config, record, harness, sid)
+            kind, fact_type = "steer", "user_message"
+            if event is None:
+                event = _agent_message_event(config, record, harness, sid)
+                kind, fact_type = "agent_say", "agent_message"
+            if event is None:
+                continue
+            fact = _semantic_fact_from_event(event, kind, fact_type, "")
+            key = (fact["fact_id"], fact["at"])
+            if key not in priorities or key in ambiguous:
+                continue
+            signature = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+            if key in signatures:
+                if signatures[key] != signature:
+                    ambiguous.add(key)
+                    found.pop(key, None)
+                continue
+            signatures[key] = signature
+            words = whole_message_words(config, record, harness, len(raw))
+            total = len(words)
+            words = words.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
+            found[key] = {"id": key[0], "at": key[1], "words": words, "total": total}
+            _bound_message_words(found, priorities, max_bytes)
+    except OSError:
+        return []
+    if transcript_stamp(path) != before:
+        return []
+    return [found[key] for key in sorted(found, key=priorities.__getitem__) if found[key]["words"]]
+
+
+def _bound_message_words(
+    found: dict[tuple[Any, Any], dict[str, Any]],
+    priorities: dict[tuple[Any, Any], int],
+    max_bytes: int,
+) -> None:
+    """A newly found reader message can displace retained lower-priority prose."""
+    left = max_bytes
+    for key in sorted(found, key=priorities.__getitem__):
+        encoded = found[key]["words"].encode("utf-8")
+        if len(encoded) > left:
+            found[key]["words"] = encoded[:left].decode("utf-8", "ignore")
+        left -= len(found[key]["words"].encode("utf-8"))
 
 
 def _final_signature(record: dict[str, Any]) -> bytes:

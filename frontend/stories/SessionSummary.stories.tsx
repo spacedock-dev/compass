@@ -169,6 +169,117 @@ export const Ready: Story = {
   },
 };
 
+export const FragmentedMessageCoverage: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        state: 'partial',
+        reason: 'stopped',
+        blocks: [
+          {
+            ...block('a1', 'a1', 1, [
+              {
+                title: 'Reading the audit',
+                bullets: [bullet('The agent said it read the parser.', 'said', ['a1'])],
+              },
+            ]),
+            span: {
+              text_version: 1,
+              first_offset: 0,
+              first_total: 4000,
+              last_offset: 1800,
+              last_total: 4000,
+            },
+          },
+          {
+            ...gap('a1', 'a1', 1, 'stopped'),
+            span: {
+              text_version: 1,
+              first_offset: 1800,
+              first_total: 4000,
+              last_offset: 4000,
+              last_total: 4000,
+            },
+          },
+        ],
+        out_of_date: {
+          kind: 'unchanged',
+          reason: null,
+          action: 'update',
+          new_entries: 0,
+          affected_blocks: [],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(summary).toHaveTextContent(
+      'Long messages were split into fragments. Some fragments were not summarized; citations still open the original entries.',
+    );
+    await expect(region).toHaveTextContent(
+      'Some message text remains unread. Update summary continues from where it stopped.',
+    );
+    await expect(within(region).getByRole('button', { name: 'Update summary' })).toBeVisible();
+    await openPhases(summary);
+    const cite = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
+    await expect(cite).not.toBeNull();
+    if (cite) await seeInContext(cite);
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'a1')));
+  },
+};
+
+export const LegacyMessageExcerpts: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        out_of_date: {
+          kind: 'unchanged',
+          reason: 'legacy_text',
+          action: 'summarize_again',
+          new_entries: 0,
+          affected_blocks: [0, 1],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await summaryOf(region);
+    await expect(region).toHaveTextContent(
+      'This saved summary used message excerpts; full message coverage was not recorded.',
+    );
+    await expect(within(region).getByRole('button', { name: 'Summarize again' })).toBeVisible();
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
+export const WiderMessageDisclosure: Story = {
+  render: () => (
+    <SummaryPage
+      ended={false}
+      summary={ABSENT}
+      grant={grant({
+        notice_due: true,
+        disclosure:
+          'Sends your messages and the agent’s replies to Anthropic, at most 16 KiB at a time. Long messages can continue across parts within the job limits. Everything is redacted first.',
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await userEvent.click(
+      await within(region).findByRole('button', { name: 'What is sent to Claude Code' }),
+    );
+    await expect(document.body).toHaveTextContent(
+      'Long messages can continue across parts within the job limits.',
+    );
+    await expect(summaryPosts()).toHaveLength(0);
+    await userEvent.keyboard('{Escape}');
+  },
+};
+
 /* A model-written line that already names its subject takes no kind prefix, and the person is "you". These four
    are the lines a freshly written summary drew as "The agent said: The agent read ...", "The agent said: The agent
    opened ...", "You said: The person redirected ..." and "You said: The person chose ...". */
@@ -802,7 +913,7 @@ export const Partial: Story = {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await waitFor(() =>
-      expect(summary.querySelector('[data-next-summary-note]')).toHaveTextContent(
+      expect(within(summary).getByText(/^This summary starts at #3/)).toHaveTextContent(
         'This summary starts at #3, not at the session’s first entry.',
       ),
     );

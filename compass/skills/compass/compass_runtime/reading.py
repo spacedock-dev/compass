@@ -52,7 +52,7 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
 from . import ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 
     # Given the selected agent rows' identities, names the newest recorded final reply.
     FinalLookup = Callable[[Sequence[Mapping[str, Any]]], Mapping[str, Any]]
+    MessageLookup = Callable[[Sequence[Mapping[str, Any]], int], Sequence[Mapping[str, Any]]]
 
 # Rule 1: three results per constraint, and the set is closed. These are
 # the rendered sentences, not tokens -- the model never emits one.
@@ -1182,6 +1183,9 @@ class LedgerEntry(TypedDict):
     # `AGENT_WORDS_SHARE_DIVISOR`'s share. Absent on every other row.
     agent_words: NotRequired[str]
     agent_excerpt: NotRequired[str]
+    words_excerpt: NotRequired[str]
+    text_read: NotRequired[int]
+    text_total: NotRequired[int]
     # Whether this entry demonstrates work on its session's harness, stamped by
     # `build_ledger` from `WORK_EVIDENCE_BY_HARNESS`.
     work: NotRequired[bool]
@@ -2700,6 +2704,15 @@ def cutoff_text(
         omissions.append(
             f"{unread_checks} check{'s' if unread_checks != 1 else ''} had no room in the prompt"
         )
+    partial_messages = sum(
+        row.get("text_total", 0) < 0 or row.get("text_read", 0) < row.get("text_total", 0)
+        for row in selected
+    )
+    if partial_messages:
+        omissions.append(
+            f"{partial_messages} message{'s' if partial_messages != 1 else ''} "
+            f"{'were' if partial_messages != 1 else 'was'} read only in part"
+        )
     commands = _commands_note(measured)
     if not omissions:
         return opening + commands
@@ -3048,7 +3061,8 @@ def _anchored(ledger: Sequence[LedgerEntry], sizes: Sequence[int], share: int) -
 def _row_body(row: LedgerEntry) -> str:
     """A row's text read whole: a reader's message as typed, the agent's quoted as data."""
     if row.get("words"):
-        return row["words"]
+        note = f" ({row['words_excerpt']})" if row.get("words_excerpt") else ""
+        return note + row["words"]
     if row.get("agent_words"):
         excerpt = f" ({row['agent_excerpt']})" if row.get("agent_excerpt") else ""
         return f"quoted, untrusted{excerpt}: {row['agent_words']}"
@@ -3193,7 +3207,93 @@ def _wider_goal(
     )
 
 
-def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement share the budget
+def _wider_messages(
+    rows: Sequence[LedgerEntry], lookup: MessageLookup | None, budget: int
+) -> dict[int, LedgerEntry]:
+    if lookup is None:
+        return {}
+    identities = {(row["id"], row["at"]): row for row in rows}
+    result: dict[int, LedgerEntry] = {}
+    left = budget * 2
+    for item in lookup(
+        [
+            {"id": row["id"], "at": row["at"], "type": row["type"], "author": row["author"]}
+            for row in rows
+        ],
+        left,
+    ):
+        row = identities.get((str(item.get("id")), _number(item.get("at")) or 0))
+        words, total = item.get("words"), item.get("total")
+        if (
+            row is None
+            or not isinstance(words, str)
+            or type(total) is not int
+            or not 0 < len(words) <= total
+        ):
+            continue
+        # Defence in depth: mask the returned complete admitted text before a transmission cut.
+        text = _field_text(_menu_field(records.mask_prose(words)), len(words)).strip()
+        size = len(text.encode("utf-8"))
+        if not text or size > left:
+            continue
+        left -= size
+        replacement = row.copy()
+        replacement["text_total"] = total
+        replacement["text_read"] = len(text)
+        field: Literal["words", "agent_words"] = (
+            "words" if row["type"] == "user_message" else "agent_words"
+        )
+        if field == "agent_words" and row["author"] != AUTHOR_AGENT:
+            continue
+        if field == "words" and row["author"] != AUTHOR_PERSON:
+            continue
+        replacement[field] = (
+            json.dumps(text, ensure_ascii=False) if field == "agent_words" else text
+        )
+        excerpt: Literal["agent_excerpt", "words_excerpt"] = (
+            "agent_excerpt" if field == "agent_words" else "words_excerpt"
+        )
+        replacement.pop(excerpt, None)
+        if len(text) < total:
+            replacement[excerpt] = f"characters 0-{len(text)} of {total}"
+        result[id(row)] = replacement
+    return result
+
+
+def _fit_message(row: LedgerEntry, *, width: int, limit: int) -> LedgerEntry | None:
+    """Fit an already-masked candidate; serialized quotes and range labels count too."""
+    if len(_menu_row(10**width - 1, row, whole=True).encode()) <= limit:
+        return row
+    field: Literal["agent_words", "words"] = "agent_words" if row.get("agent_words") else "words"
+    if "text_total" not in row:
+        return None
+    words = json.loads(row[field]) if field == "agent_words" else row.get(field, "")
+    if not isinstance(words, str):
+        return None
+    lo, hi = 0, len(words)
+
+    def clipped(end: int) -> LedgerEntry:
+        result = row.copy()
+        result[field] = (
+            json.dumps(words[:end], ensure_ascii=False) if field == "agent_words" else words[:end]
+        )
+        excerpt: Literal["agent_excerpt", "words_excerpt"] = (
+            "agent_excerpt" if field == "agent_words" else "words_excerpt"
+        )
+        result[excerpt] = f"characters 0-{end} of {row['text_total']}"
+        result["text_read"] = end
+        return result
+
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(_menu_row(10**width - 1, clipped(mid), whole=True).encode()) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return clipped(lo) if lo else None
+
+
+def _read_whole(  # noqa: C901, PLR0912 - reader-first lanes and one selected replacement share the budget
     chosen: Sequence[LedgerEntry],
     sizes: Mapping[int, int],
     *,
@@ -3202,6 +3302,7 @@ def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement
     shares: tuple[int, int],
     skip: str,
     final: Mapping[int, LedgerEntry] | None = None,
+    wider: Mapping[int, LedgerEntry] | None = None,
 ) -> tuple[set[int], dict[int, LedgerEntry]]:
     """Which chosen rows go whole, as `id`s, and which of them print a restored row.
 
@@ -3233,26 +3334,49 @@ def _read_whole(  # noqa: C901 - reader-first lanes and one selected replacement
                 whole.add(id(row))
                 restored[id(row)] = replacement
         for row in sorted(
-            (row for row in chosen if row.get(field_name)), key=lambda row: -row["at"]
+            (row for row in chosen if row.get(field_name) or (wider and id(row) in wider)),
+            key=lambda row: -row["at"],
         ):
             if (skip and row["id"] == skip) or id(row) in whole:
                 continue
-            size = len(_menu_row(10**width - 1, row, whole=True).encode("utf-8", "replace"))
+            candidate = wider.get(id(row), row) if wider else row
+            if not candidate.get(field_name):
+                continue
+            fitted = _fit_message(candidate, width=width, limit=min(left, room + sizes[id(row)]))
+            if fitted is None:
+                continue
+            size = len(_menu_row(10**width - 1, fitted, whole=True).encode("utf-8", "replace"))
             grows = size - sizes[id(row)]
             if left >= size and room >= grows:
                 left -= size
                 room -= grows
                 whole.add(id(row))
+                if fitted is not row:
+                    restored[id(row)] = fitted
     # The reader's half has already been offered, and no entry is removed.
     # Unused room may now carry more agent excerpts, newest first.
     for row in sorted(chosen, key=lambda row: -row["at"]):
-        if id(row) in whole or not row.get("agent_words"):
+        current = restored.get(id(row), row)
+        if not row.get("agent_words") or (id(row) in whole and not current.get("agent_excerpt")):
             continue
-        size = len(_menu_row(10**width - 1, row, whole=True).encode("utf-8", "replace"))
-        grows = size - sizes[id(row)]
+        candidate = wider.get(id(row), row) if wider else row
+        # A measured prefix already spent bytes in the first allocation. Enlarge it using
+        # only the growth over that exact row; `whole` still means its words are transmitted.
+        current_size = (
+            len(_menu_row(10**width - 1, current, whole=True).encode("utf-8", "replace"))
+            if id(row) in whole
+            else sizes[id(row)]
+        )
+        fitted = _fit_message(candidate, width=width, limit=room + current_size)
+        if fitted is None:
+            continue
+        size = len(_menu_row(10**width - 1, fitted, whole=True).encode("utf-8", "replace"))
+        grows = size - current_size
         if room >= grows:
             room -= grows
             whole.add(id(row))
+            if fitted is not row:
+                restored[id(row)] = fitted
     return whole, restored
 
 
@@ -3332,7 +3456,7 @@ def _newest_final(  # noqa: C901, PLR0911 - one guard per selected source/word b
     return row, replacement, "whole"
 
 
-def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
+def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one byte ledger
     ledger: Sequence[LedgerEntry],
     *,
     goal: str,
@@ -3342,6 +3466,7 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
     goal_fact: str = "",
     scope: str = SCOPE_LAST_TURN,
     final_lookup: FinalLookup | None = None,
+    message_lookup: MessageLookup | None = None,
     failures_only: bool = False,
 ) -> tuple[str, Selection]:
     """The prompt, and exactly the entries it carried.
@@ -3502,14 +3627,18 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
     final_row, final_swap, final_state = _newest_final(
         [citable[i] for i in chosen], final_lookup, share=agent_share
     )
+    wider_messages = _wider_messages([citable[i] for i in chosen], message_lookup, budget)
+    if final_row is not None:
+        wider_messages.pop(id(final_row), None)
     whole, restored = _read_whole(
         [citable[i] for i in chosen],
         {id(citable[i]): sizes[i] for i in chosen},
         width=width,
         room=budget - used,
         shares=(words_share, agent_share),
-        skip=goal_fact if goal_read != goal_text else "",
+        skip=goal_fact if goal_read != goal_text and message_lookup is None else "",
         final={id(final_row): final_swap} if final_row is not None and final_swap else None,
+        wider=wider_messages,
     )
     if final_state == "whole" and id(final_row) not in restored:
         final_state = "unfit"
@@ -3533,8 +3662,16 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
         for index, row in enumerate(selected, start=1)
     )
     taken = {id(row) for row in selected}
+    printed = (
+        _printed_messages(selected, whole, restored, wider_messages) if message_lookup else selected
+    )
+    source_known = message_lookup is None or all(
+        id(row) in wider_messages or (row is final_row and id(row) in restored)
+        for row in citable
+        if row["type"] == AGENT_MESSAGE_TYPE
+    )
     return header + body, Selection(
-        selected,
+        printed,
         unread_failures=tuple(entry for entry in failures if id(entry) not in taken),
         unread_checks=tuple(entry for entry in checks if id(entry) not in taken),
         asked_output=posed,
@@ -3542,8 +3679,33 @@ def build_prompt(  # noqa: PLR0913 (each is one keyword its caller names)
         asked_claims=asked_claims,
         goal_whole=goal_read != goal_text,
         newest_final=final_state,
-        agent_words_whole=_agents_read_whole(citable, whole, restored),
+        agent_words_whole=source_known and _agents_read_whole(citable, whole, restored),
     )
+
+
+def _printed_messages(
+    selected: Sequence[LedgerEntry],
+    whole: set[int],
+    restored: Mapping[int, LedgerEntry],
+    wider: Mapping[int, LedgerEntry],
+) -> tuple[LedgerEntry, ...]:
+    """Return only the words and coverage the serialized prompt actually contains."""
+    printed: list[LedgerEntry] = []
+    for row in selected:
+        if row["type"] not in {"user_message", AGENT_MESSAGE_TYPE}:
+            printed.append(row)
+            continue
+        projected = restored.get(id(row), row).copy()
+        if id(row) not in whole:
+            projected.pop("words", None)
+            projected.pop("agent_words", None)
+            projected["text_read"] = 0
+            candidate = wider.get(id(row))
+            projected["text_total"] = candidate.get("text_total", -1) if candidate else -1
+        elif id(row) not in wider and id(row) not in restored:
+            projected["text_read"], projected["text_total"] = 0, -1
+        printed.append(projected)
+    return tuple(printed)
 
 
 def _agents_read_whole(
@@ -6775,6 +6937,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     record_coverage_lookup: Callable[[], Mapping[str, Any]] | None = None,
     command_counts_lookup: Callable[[], Mapping[str, Any]] | None = None,
     final_source_lookup: FinalLookup | None = None,
+    message_source_lookup: MessageLookup | None = None,
     settled_through: Any = None,
     open_call_lookup: Callable[[], float | None] | None = None,
     failures_only: bool = False,
@@ -6900,6 +7063,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         goal_fact=source[0] if source else "",
         scope=scope,
         final_lookup=final_source_lookup if read_agent_words else None,
+        message_lookup=message_source_lookup,
         # The rule says the ledger lists failures only, which is true of a lane that admitted
         # tool reports; on a route that sent none (Codex) no failed entry exists to qualify.
         failures_only=failures_only and admitted,
