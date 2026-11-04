@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from compass_runtime import project_context, reading, reading_passes
 from compass_runtime.config import build_runtime_config
 
-from .test_agent_words import _agent
+from .test_agent_words import _agent, _person
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -156,3 +156,183 @@ class OrdinaryMessagePacketsTest(unittest.TestCase):
         self.row = {**self.row, "type": "user_message", "author": "person"}
         with self.assertRaises(ValueError):
             list(self.prepare("person words"))
+
+
+class OrderedPacketPlanTest(unittest.TestCase):
+    def original(self, fact_id: str, words: str, *, person: bool = False):
+        fact = (_person if person else _agent)(fact_id, 110.0, words)
+        row = reading.build_ledger([fact], "claude", "s1", read_agent_words=True)[0]
+        return reading_passes.Original(row, words)
+
+    def plan(self, originals, **kwargs):
+        return reading_passes.plan_packets(
+            originals,
+            goal="Keep the saved parser goal.",
+            lines=("Explain the check result.",),
+            protocol_prefix="Caller protocol: inspect these originals only.\n",
+            max_bytes=kwargs.pop("max_bytes", 1_100),
+            max_passes=kwargs.pop("max_passes", 16),
+            **kwargs,
+        )
+
+    def test_two_originals_pack_under_the_actual_numbered_menu_in_caller_order(self) -> None:
+        originals = [
+            self.original("first", "First words."),
+            self.original("second", "Second words."),
+        ]
+        originals[1].row["at"] = 90.0
+        result = self.plan(originals)
+        self.assertEqual("complete", result.reason)
+        self.assertEqual((), result.uncovered_primary)
+        self.assertEqual(1, len(result.packets))
+        packet = result.packets[0]
+        self.assertEqual(["first", "second"], [row["id"] for row in packet.selection.entries])
+        wire = packet.prompt.encode("utf-8", "replace").decode("utf-8")
+        for index, original in enumerate(originals, 1):
+            self.assertIn(f"[{index}] agent_message", wire)
+            selected = packet.selection.by_index()[index]
+            self.assertIn(selected["agent_words"], wire)
+            self.assertEqual(original.words, json.loads(selected["agent_words"]))
+        self.assertEqual(len(wire.encode()), result.transmitted_bytes)
+        self.assertEqual(
+            sum(len(original.words) for original in originals), result.covered_characters
+        )
+
+    def test_split_primary_ranges_join_once_and_overlap_keeps_one_menu_identity(self) -> None:
+        originals = [
+            self.original("first", '界🙂 "one" \\ ' * 80),
+            self.original("second", "second original " * 40),
+        ]
+        result = self.plan(originals, overlap_chars=13)
+        self.assertEqual("complete", result.reason)
+        self.assertGreater(len(result.packets), 2)
+        primary = {original.row["id"]: [] for original in originals}
+        transmitted_characters = 0
+        for packet in result.packets:
+            self.assertLessEqual(len(packet.prompt.encode()), 1_100)
+            ids = [row["id"] for row in packet.selection.entries]
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertFalse(packet.selection.agent_words_whole)
+            self.assertIsNone(packet.selection.newest_final)
+            for span in packet.primary:
+                primary[span.fact_id].append((span.start, span.end))
+            wire = packet.prompt.encode("utf-8", "replace").decode("utf-8")
+            for index, row in packet.selection.by_index().items():
+                sent_row = wire.split(f"\n[{index}] ", 1)[1].split("\n", 1)[0]
+                sent_words = json.loads(sent_row.split("quoted, untrusted", 1)[1].split(": ", 1)[1])
+                self.assertEqual(json.loads(row["agent_words"]), sent_words)
+                transmitted_characters += len(sent_words)
+        for original in originals:
+            end = 0
+            for start, following in primary[original.row["id"]]:
+                self.assertEqual(end, start)
+                self.assertGreater(following, start)
+                end = following
+            self.assertEqual(len(original.words), end)
+        self.assertEqual(sum(len(o.words) for o in originals), result.covered_characters)
+        self.assertGreater(transmitted_characters, result.covered_characters)
+        self.assertEqual(
+            sum(len(p.prompt.encode()) for p in result.packets), result.transmitted_bytes
+        )
+
+    def test_adjacent_original_correction_is_required_context_without_duplicate_numbering(
+        self,
+    ) -> None:
+        correction = self.original(
+            "correction", "Correction: keep the parser public API.", person=True
+        )
+        work = self.original("work", "Read the recorded work carefully. " * 80)
+        result = self.plan([correction, work], boundary_context=("correction",), overlap_chars=8)
+        self.assertEqual("complete", result.reason)
+        self.assertGreater(len(result.packets), 1)
+        assigned_correction = []
+        for packet in result.packets:
+            self.assertEqual(1, sum(r["id"] == "correction" for r in packet.selection.entries))
+            self.assertIn(correction.words, packet.prompt)
+            self.assertIn("correction", [span.fact_id for span in packet.context])
+            assigned_correction.extend(
+                span for span in packet.primary if span.fact_id == "correction"
+            )
+        self.assertEqual(1, len(assigned_correction))
+        self.assertEqual(len(correction.words) + len(work.words), result.covered_characters)
+
+    def test_pass_cap_returns_the_exact_uncovered_primary_suffix(self) -> None:
+        originals = [
+            self.original("first", "first " * 200),
+            self.original("second", "second " * 200),
+        ]
+        result = self.plan(originals, max_passes=1, overlap_chars=10)
+        self.assertEqual("pass-limit", result.reason)
+        self.assertEqual(1, len(result.packets))
+        assigned = result.packets[0].primary[-1]
+        self.assertEqual("first", assigned.fact_id)
+        self.assertEqual(
+            [
+                ("first", assigned.end, len(originals[0].words)),
+                ("second", 0, len(originals[1].words)),
+            ],
+            [(r.fact_id, r.start, r.end) for r in result.uncovered_primary],
+        )
+
+    def test_required_context_that_does_not_fit_is_not_clipped_or_discarded(self) -> None:
+        originals = [
+            self.original("correction", "The complete correction must stay. " * 100, person=True),
+            self.original("work", "Small work."),
+        ]
+        result = self.plan(originals, boundary_context=("correction",))
+        self.assertEqual("context-unfit", result.reason)
+        self.assertEqual((), result.packets)
+        self.assertEqual(["correction", "work"], [r.fact_id for r in result.uncovered_primary])
+        self.assertEqual(0, result.transmitted_bytes)
+        self.assertEqual(0, result.covered_characters)
+
+    def test_first_unfit_atomic_row_stops_before_a_smaller_later_original(self) -> None:
+        message = self.original("later", "Small later original.")
+        atomic = reading_passes.Original(
+            {
+                "id": "check",
+                "at": 100.0,
+                "type": "tool_report",
+                "by": "agent",
+                "author": "agent",
+                "source": "recorded check",
+                "summary": "An intact admitted check " * 100,
+                "work": True,
+                "subject": "check",
+                "result": "failed",
+            }
+        )
+        result = self.plan([atomic, message])
+        self.assertEqual("prompt-unfit", result.reason)
+        self.assertEqual((), result.packets)
+        self.assertEqual(["check", "later"], [r.fact_id for r in result.uncovered_primary])
+        self.assertIsNone(result.uncovered_primary[0].start)
+        self.assertIsNone(result.uncovered_primary[0].end)
+
+    def test_protocol_prefix_is_counted_before_evidence_allocation(self) -> None:
+        original = self.original("one", "A short original.")
+        packet = self.plan([original]).packets[0]
+        exact = len(packet.prompt.encode())
+        self.assertEqual("complete", self.plan([original], max_bytes=exact).reason)
+        result = reading_passes.plan_packets(
+            [original],
+            goal="Keep the saved parser goal.",
+            lines=("Explain the check result.",),
+            protocol_prefix="Required protocol " * 100,
+            max_bytes=exact,
+            max_passes=1,
+        )
+        self.assertEqual("prompt-unfit", result.reason)
+        self.assertEqual((), result.packets)
+
+    def test_ambiguous_identity_and_strict_final_or_unencodable_input_refuse(self) -> None:
+        original = self.original("one", "A short original.")
+        with self.assertRaises(ValueError):
+            self.plan([original, original])
+        with self.assertRaises(ValueError):
+            self.plan([reading_passes.Original(original.row, original.words, "unfit")])
+        with self.assertRaises(ValueError):
+            self.plan([original, self.original("late", "bad\ud800words")])
+        for cap in (0, 17, True):
+            with self.subTest(cap=cap), self.assertRaises(ValueError):
+                self.plan([original], max_passes=cap)
