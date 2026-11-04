@@ -51,6 +51,17 @@ export interface ReasonContext {
   readonly largest: LargestRead | null;
 }
 
+const SOURCE_READ_LINES: Readonly<Record<string, string>> = {
+  source_bytes: 'Compass reached its source-reading byte limit. Part of the record remains unread.',
+  source_time: 'Compass reached its source-reading time limit. Part of the record remains unread.',
+  source_memory:
+    'Compass reached its source-reading memory limit. Part of the record remains unread.',
+  source_stalled:
+    'Compass could not advance through the record within a source page. Part of it remains unread.',
+  source_changed:
+    'The record changed while Compass was reading it, so the summary stopped before sending it.',
+};
+
 /* Every reason the grant block, a refused press or a job can carry, in the reader's words. A token the table
    does not hold is said as an unknown stop rather than dropped. */
 export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) => string>> = {
@@ -112,6 +123,9 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
     'The summary reached the largest size it may be saved at, so its newest parts were left out.',
   source_incomplete: () =>
     'Compass could not read the whole record, so the summary does not cover all of it.',
+  ...Object.fromEntries(
+    Object.entries(SOURCE_READ_LINES).map(([reason, line]) => [reason, () => line]),
+  ),
   no_entries: () => 'The part of the record Compass read holds no entries to summarize.',
   ceiling: () =>
     'The summary reached one of its limits on calls, bytes or time, so the parts after it were not read.',
@@ -476,6 +490,16 @@ export function summaryNotes(summary: StoredSummary, startsAt: string): string[]
     );
   if (summary.coverage?.agentReplies === 'not_read')
     notes.push('The agent’s replies were not read for this harness, so the summary has none.');
+  for (const reason of new Set(summary.coverage?.unread ?? [])) {
+    const line = SOURCE_READ_LINES[reason];
+    if (line) notes.push(line);
+    else if (reason === 'oversized_line')
+      notes.push('A record line too large to read was skipped.');
+    else if (reason === 'unreadable_record')
+      notes.push('A record line could not be read and was skipped.');
+    else if (reason === 'unreadable_subagent')
+      notes.push('Part of a subagent’s record could not be read.');
+  }
   return notes;
 }
 

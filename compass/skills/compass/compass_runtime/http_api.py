@@ -40,7 +40,6 @@ from compass_runtime import (
     record_pages,
     records,
     session_outline,
-    session_source,
     settings,
     summary_jobs,
     summary_store,
@@ -4315,13 +4314,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._summary_reply(409, {"ok": False, "reason": "in-flight", "job": running})
             return
         path = runtime_observer.resolve_transcript(config, application.state, harness, sid)
-        page = (
-            session_source.read(config, path, harness, sid)
-            if path
-            else session_source.SourcePage("unavailable", harness, sid)
-        )
-        code, response = summary_jobs.start(
-            application, page, action=payload["action"], origin=payload["origin"]
+        if not path:
+            self._summary_reply(422, {"ok": False, "reason": "source-unavailable"})
+            return
+        code, response = summary_jobs.start_source(
+            application, path, harness, sid, action=payload["action"], origin=payload["origin"]
         )
         self._summary_reply(code, response)
 

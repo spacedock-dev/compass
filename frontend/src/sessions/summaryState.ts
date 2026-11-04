@@ -90,7 +90,7 @@ export function useSummaryState(
     reasons: {
       grant,
       harness: harnessLabel,
-      largest: held.refusal?.largest ?? null,
+      largest: held.refusal?.largest ?? job?.largestRead ?? null,
     },
   };
 }

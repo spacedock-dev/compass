@@ -293,6 +293,9 @@ class RuntimeConfig:
     session_summary_max_calls: int
     session_summary_max_bytes_sent: int
     session_summary_max_seconds: float
+    session_summary_source_max_bytes: int
+    session_summary_source_max_seconds: float
+    session_summary_source_max_memory_bytes: int
     session_summary_call_timeout: float
     session_summary_rolling_cap: int
     session_summary_output_cap_bytes: int
@@ -954,6 +957,11 @@ def build_runtime_config(
         session_summary_max_calls=SESSION_SUMMARY_MAX_CALLS,
         session_summary_max_bytes_sent=SESSION_SUMMARY_MAX_BYTES_SENT,
         session_summary_max_seconds=SESSION_SUMMARY_MAX_SECONDS,
+        # Four full scan pages, independently of the producer's prompt/call ceilings.
+        session_summary_source_max_bytes=256 * 1024 * 1024,
+        session_summary_source_max_seconds=30.0,
+        # Retained Python evidence and continuation state, excluding one bounded read page.
+        session_summary_source_max_memory_bytes=64 * 1024 * 1024,
         session_summary_call_timeout=SESSION_SUMMARY_CALL_TIMEOUT,
         session_summary_rolling_cap=SESSION_SUMMARY_ROLLING_CAP,
         session_summary_output_cap_bytes=SESSION_SUMMARY_OUTPUT_CAP_BYTES,

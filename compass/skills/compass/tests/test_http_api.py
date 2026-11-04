@@ -6636,15 +6636,213 @@ class SummaryJobHTTPTest(unittest.TestCase):
             "session-running", json.loads(self.request_summary()._send.call_args.args[0])["reason"]
         )
 
-    def test_plan_refusal_reports_largest_read_before_first_call(self) -> None:
+    def test_summary_collects_later_pages_and_admitted_subagent_evidence(self) -> None:
+        transcript = Transcript(self.path.parent)
+        for number in range(8):
+            transcript.prompt(f"Audit checkpoint {number}: inspect parser boundary")
+        transcript.save(self.path)
+        child = Transcript(self.path.parent)
+        child.bash("pytest tests/test_child_boundary.py", "1 passed")
+        child.write(str(self.path.parent / "child-boundary.py"))
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        self.application.config = dataclasses.replace(
+            self.config, session_source_page_max_bytes=1_024
+        )
+        model = Replies()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            handler = self.request_summary()
+            self.assertEqual(202, handler._send.call_args.args[2])
+            wait_job(self.application, "claude", "root", timeout=5)
+        prompts = "\n".join(model.prompts)
+        for number in (0, 3, 7):
+            self.assertIn(f"Audit checkpoint {number}", prompts)
+        self.assertIn("tests/test_child_boundary.py", prompts)
+        self.assertIn("child-boundary.py", prompts)
+        saved = self.store.get(self.config, "claude", "root")
+        assert saved is not None
+        self.assertTrue(saved.summary.coverage.complete)
+        self.assertEqual(10, sum(block.entries for block in saved.summary.blocks))
+
+    def test_source_collection_returns_a_cancellable_job_before_read_finishes(self) -> None:
+        entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+        original = session_source.read
+        replies: list[Any] = []
+
+        def held_read(*args: Any, **kwargs: Any) -> Any:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return original(*args, **kwargs)
+
+        def request() -> None:
+            replies.append(self.request_summary())
+            returned.set()
+
+        model = Replies()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(session_source, "read", side_effect=held_read),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            caller = threading.Thread(target=request)
+            caller.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertTrue(returned.wait(1), "start waited for source collection")
+                self.assertTrue(self.jobs.cancel(self.application, "claude", "root"))
+            finally:
+                release.set()
+                caller.join(5)
+                wait_job(self.application, "claude", "root", timeout=5)
+        self.assertEqual(202, replies[0]._send.call_args.args[2])
+        self.assertEqual([], model.prompts)
+        self.assertIsNone(self.store.get(self.config, "claude", "root"))
+        job = self.jobs.published(self.application, "claude", "root")
+        assert job is not None
+        self.assertEqual("cancelled", job["state"])
+
+    def test_background_plan_refusal_reports_largest_read_before_first_call(self) -> None:
         self.application.config = dataclasses.replace(self.config, session_summary_max_calls=1)
         with mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)):
-            answer = json.loads(self.request_summary()._send.call_args.args[0])
-        self.assertEqual("planned_calls", answer["reason"])
-        self.assertEqual(1, answer["largest_read"]["calls"])
+            handler = self.request_summary()
+            self.assertEqual(202, handler._send.call_args.args[2])
+            wait_job(self.application, "claude", "root", timeout=5)
+        job = self.jobs.published(self.application, "claude", "root")
+        assert job is not None
+        self.assertEqual("refused", job["state"])
+        self.assertEqual("planned_calls", job["reason"])
+        self.assertEqual(1, job["largest_read"]["calls"])
         self.assertEqual(
             0, reading_policy.summary_status(self.config, now=self.application.clock())["used"]
         )
+
+    def test_limited_update_keeps_the_saved_summary_and_makes_no_call(self) -> None:
+        self.summarize_to_the_end()
+        before = self.store.get(self.config, "claude", "root")
+        assert before is not None
+        transcript = Transcript(self.path.parent)
+        transcript.prompt("Inspect the parser")
+        for number in range(8):
+            transcript.prompt(f"New request {number}")
+        transcript.save(self.path)
+        self.application.config = dataclasses.replace(
+            self.config, session_source_page_max_bytes=800, session_summary_source_max_bytes=1_000
+        )
+        model = Replies()
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            handler = self.request_summary(action="update", origin="press")
+            self.assertEqual(202, handler._send.call_args.args[2])
+            wait_job(self.application, "claude", "root", timeout=5)
+        after = self.store.get(self.config, "claude", "root")
+        assert after is not None
+        self.assertEqual(before.summary, after.summary)
+        self.assertEqual([], model.prompts)
+        job = self.jobs.published(self.application, "claude", "root")
+        assert job is not None
+        self.assertEqual("source_bytes", job["reason"])
+        self.assertFalse(job["source"]["coverage"]["complete"])
+
+    def test_source_collection_spends_the_existing_whole_job_seconds(self) -> None:
+        now = [time.monotonic()]
+        self.application.config = dataclasses.replace(
+            self.config, session_summary_source_max_seconds=500.0
+        )
+        model = Replies()
+        original = session_source.read
+
+        def slow_read(*args: Any, **kwargs: Any) -> Any:
+            page = original(*args, **kwargs)
+            now[0] += 450.0
+            return page
+
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(session_source, "read", side_effect=slow_read),
+            mock.patch.object(self.jobs, "_monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary()
+            wait_job(self.application, "claude", "root", timeout=5)
+        self.assertEqual([], model.prompts)
+        job = self.jobs.published(self.application, "claude", "root")
+        assert job is not None
+        self.assertEqual("planned_seconds", job["reason"])
+        self.assertIsNotNone(job["largest_read"])
+        self.assertAlmostEqual(150.0, job["largest_read"]["seconds"], delta=1e-6)
+        self.assertEqual(0, job["parts"])
+        self.assertEqual(0, job["attempts"])
+
+    def test_pause_and_summary_off_during_collection_send_nothing(self) -> None:
+        for reason in ("model-calls-paused", "summaries-off"):
+            with self.subTest(reason=reason):
+                reading_policy.set_consent(self.config, True, now=self.application.clock())
+                self.jobs.set_consent(self.application, True)
+                model = Replies()
+                original = session_source.read
+
+                def read_then_stop(
+                    *args: Any, reason: str = reason, original: Any = original, **kwargs: Any
+                ) -> Any:
+                    page = original(*args, **kwargs)
+                    if reason == "model-calls-paused":
+                        reading_policy.set_consent(self.config, False, now=self.application.clock())
+                    else:
+                        self.jobs.set_consent(self.application, False)
+                    return page
+
+                with (
+                    mock.patch.object(
+                        runtime_observer, "resolve_transcript", return_value=str(self.path)
+                    ),
+                    mock.patch.object(session_source, "read", side_effect=read_then_stop),
+                    mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+                ):
+                    self.request_summary()
+                    wait_job(self.application, "claude", "root", timeout=5)
+                self.assertEqual([], model.prompts)
+                self.assertIsNone(self.store.get(self.config, "claude", "root"))
+                job = self.jobs.published(self.application, "claude", "root")
+                assert job is not None
+                self.assertEqual(reason, job["reason"])
+
+    def test_time_spent_planning_still_reports_the_producers_remaining_limits(self) -> None:
+        now = [time.monotonic()]
+        self.application.config = dataclasses.replace(
+            self.config, session_summary_max_seconds=181.0
+        )
+        model = Replies()
+        original = session_summary.plan
+        planned = False
+
+        def plan_then_age(*args: Any, **kwargs: Any) -> Any:
+            nonlocal planned
+            answer = original(*args, **kwargs)
+            if not planned:
+                now[0] += 2.0
+                planned = True
+            return answer
+
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(session_summary, "plan", side_effect=plan_then_age),
+            mock.patch.object(self.jobs, "_monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary()
+            wait_job(self.application, "claude", "root", timeout=5)
+        job = self.jobs.published(self.application, "claude", "root")
+        assert job is not None
+        self.assertEqual("planned_seconds", job["reason"])
+        self.assertAlmostEqual(179.0, job["largest_read"]["seconds"], delta=1e-6)
+        self.assertEqual(0, job["attempts"])
+        self.assertEqual([], model.prompts)
 
     def test_summary_routes_refuse_before_reading_body_or_store(self) -> None:
         for path in ("/api/summary", "/api/summary/cancel", "/api/summary/delete"):

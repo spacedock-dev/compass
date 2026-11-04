@@ -1208,7 +1208,9 @@ spawning, and gives the call the smaller of `session_summary_call_timeout` and t
 
 `session_summary.plan(entries, harness, *, config, prior=None, change=None)` runs that same
 admission without a model and returns `reason`, `parts` (retained windows plus one lede) and
-`largest_read`, so a job refuses before it writes a marker or charges anything. `summarize` and
+`largest_read`. A server job runs this plan after its background source collection, using the
+whole-job seconds still available, before any charge or model call. A plan refusal is a terminal
+job result after the accepted start, with the remaining-time limits in `largest_read`. `summarize` and
 `update` take an optional `on_part(summary, part, parts)` callback, called with part 0 before the
 first call, after every window, and with the final result as part `parts`. The intermediate
 summaries carry the unanswered windows as one `stopped` gap; the final one is offered unless its
@@ -1290,8 +1292,8 @@ calls. Its frozen dataclasses are the contract for the later summary producer:
 | `SourceEntry` | `fact_id`, `fingerprint`, `kind` (`person`, `agent`, `check`, `file`), `actor` (`parent`, `subagent`), `stream`, `at`, masked `title`, optional `result`, display `path`, `folder`, grouping `subject`, and server-only `words`. |
 | `UnreadRegion` | `start_offset`, `end_offset`, `reason`, `stream`. Offsets belong to the named stream, so two transcripts never share a byte coordinate. |
 | `SourceCoverage` | `complete`, `starts_at`, `start_offset`, `end_offset`, `unread`, `agent_replies`, `checks_and_files`, `notes`. |
-| `SourcePage` | `state` (`ok`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, and tuple `notes`. Non-ok pages contain no entries. |
-| `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
+| `SourcePage` | `state` (`ok`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, `bytes_read` including boundary probes, server-only `replacements` pairs of retired and replacement fact-id tuples, and `positions` mapping emitted fact ids to physical line offset, call order and fact order. Non-ok pages contain no entries. |
+| `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs and physical call positions, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
 | `SourceSnapshot` | Parent `(device, inode, size, mtime_ns)` stamp, `end_offset`, `boundary_digest`, accumulated `(fact_id, fingerprint, at)` entries, read-only `subjects` mapping to latest fact and result/write fingerprint, `pending_calls`, continuation `cursor`, `message_ids`, and boundary hashes measured by this read. `verified_boundary` records a continuation's comparison against its previous boundary. `result_calls` names processed `(stream, call id)` result pairs, including a refused call that retracts an earlier unknown run. `snapshot(page)` returns this same value. |
 | `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
 
@@ -1353,7 +1355,8 @@ inputs, not previously emitted message words.
 
 `newest=True` begins at the first line boundary at or after `size - max_bytes`. It names `[0,
 start_offset)` as `before_window`, and `starts_at` names the first emitted fact when coverage is
-partial. Other unread reasons are `bytes`, `time`, `oversized_line`, and `unreadable_subagent`.
+partial. Other unread reasons are `bytes`, `time`, `oversized_line`, `unreadable_record`, and
+`unreadable_subagent`. A malformed JSON line is skipped with `unreadable_record`.
 An oversized message is skipped before masking, as is a line above the line ceiling. Fragments
 crossing page allowances are held only to that ceiling; oversized bytes are discarded while
 hashing continues. A child with no readable allowance names `unreadable_subagent` as well as its
@@ -1392,6 +1395,47 @@ unresolved call whose result lies past the new frontier is carried forward as pe
 row holding a call always classifies, so each page with a call makes progress. An earlier version
 moved the whole stream back to where the page began; because the scan only stops once the deadline
 has passed, that discarded every page holding a call and `page.next` repeated without end.
+
+### Source collection for summaries
+
+A summary start admits its job before reading source text. The worker follows `page.next` through
+the parent and admitted subagent streams without restarting at byte zero. It replaces a pending
+check when its result or command rewrite arrives, including a rewrite with no result yet, and
+removes a retracted or renamed fact. Every carried call retains its physical position even when
+it has emitted no fact, so a later write or newly recognized check precedes intervening messages.
+The collector then merges the accumulated streams using the existing next-entry timestamp rule. Concatenating
+pages would put a child's earlier work after all parent pages; globally sorting would move a
+parent's backward-timestamped message out of its recorded order. Neither is used.
+
+Coverage accumulates independently of the producer's windows. A later read clears only the part
+of a byte/time tail it actually reached. Oversized and malformed lines remain gaps. Unreadable
+child extents remain explicit. Boundary and result-resolution metadata from earlier pages remain
+available to compare an update with its saved source. A stale source stops the job before any
+model call; an incomplete update keeps its existing summary rather than claiming it is unchanged.
+
+| RuntimeConfig field | Default | Bound |
+| -- | --: | -- |
+| `session_summary_source_max_bytes` | 256 MiB | Actual bytes consumed across all pages, including repeated boundary verification. Four full scan-page allowances permit continuation without an unbounded read. |
+| `session_summary_source_max_seconds` | 30 seconds | Collection allowance, inside the existing 600-second whole-job deadline; fifteen ordinary page allowances. |
+| `session_summary_source_max_memory_bytes` | 64 MiB | Retained Python objects: evidence, indexes, boundary metadata, cursor fragments and pending inputs. Shared objects count once. A bounded incoming page and candidate assembly are transient additional allocations; this is not a process RSS limit. |
+
+These are local collection allowances, not measured guarantees that every long session fits.
+The collector checks them on each page and refuses a candidate that exceeds retention, keeping
+the accepted prefix. Each page still shares its byte and time allowance across streams. Boundary
+verification that makes no progress ends with `source_stalled`, rather than repeating forever.
+The cooperative filesystem/parse limit described above still applies.
+
+`source_bytes`, `source_time`, `source_memory` and `source_stalled` name incomplete collection;
+`source_changed` names a mutation that prevents a coherent read. The last accepted coverage stays
+in word-free job metadata. A fresh summary may summarize an accepted prefix under its unchanged
+producer ceilings. Cancel, pause, summaries off, changed grants/destinations and shutdown are
+checked between pages and before any model call. They do not persist source words. An existing
+summary remains stored when collection stops before generation. Restart never resumes collection.
+Progress writes recheck the durable stop under the publication lock, so a second dashboard's
+accepted Cancel, Delete summary or Discard everything cannot be overwritten by stale progress.
+Focused freshness checks still have their own bounded read. They may report that freshness is
+unknown even when the earlier summary job collected its source completely; that does not change
+the saved summary's coverage.
 
 ### Bounds and focused grouping
 
@@ -1818,7 +1862,7 @@ launch a second job. Later opens continue to read `sources.summary` from the foc
 An admitted start/update/rerun answers 202:
 
 ```json
-{"ok":true,"job":{"id":"random-id","state":"running","part":0,"parts":12,"reason":"","finished_parts":[],"attempts":0,"started_at":1900000000.0,"notice":null}}
+{"ok":true,"job":{"id":"random-id","state":"running","part":0,"parts":0,"reason":"","finished_parts":[],"attempts":0,"started_at":1900000000.0,"notice":null,"source":null,"largest_read":null}}
 ```
 
 When a notice is due, `notice` in the job is the record below and the same record also appears as
@@ -1926,7 +1970,10 @@ The summary content tier is 1 and has its own epoch, independent of the reading'
 
 Each row's already-declared `summary.job` and focused `sources.summary.job` is null until this
 process knows a job, then the exact job shape in the 202 example. No prose is added to board rows.
-`part` is the current one-based part, or zero before work; `parts` is the planned retained windows
+`part` is the current one-based part, or zero before work. During collection `parts` is zero and
+the card says `Planning the summary…`, with Cancel available. `source` holds `entries`,
+`bytes_read` and accumulated `coverage`, never source words or cursors. `largest_read` is populated
+when background planning refuses the job, before any charge. After planning, `parts` is the planned retained windows
 plus one lede. `finished_parts` contains one-based parts successfully saved, including a finished
 window represented by a gap. `attempts` counts charged seam attempts, including retries. While a
 part is in flight the page can say `part 3 of 12`. Terminal metadata stays in the runtime's bounded
@@ -1942,7 +1989,9 @@ Job reasons are `""`, `cancelled`, `deleted`, `summaries-off`, `model-calls-paus
 off then on while a reply was in flight), `destination-changed`, `daily-cap`, `run-disabled`,
 `store-unavailable`, `stopping`, `model-unavailable`, `interrupted`, `job-failed`, `store-refused`,
 `store-unwritable`, and producer outcomes `gaps`, `bytes`, `source_incomplete`, `no_entries`,
-`ceiling`, `refused`, `stopped` or `output_bound_too_small`. The job is `cancelled`
+`ceiling`, `refused`, `stopped` or `output_bound_too_small`, collection stops `source_bytes`,
+`source_time`, `source_memory`, `source_stalled`, `source_changed` or `source-unavailable`, and
+background plan refusals such as `planned_calls`, `planned_bytes` and `planned_seconds`. The job is `cancelled`
 for cancel and delete, `refused` for other reasons with no finished parts, and `partial` when
 parts were kept. A recovered marker is always state `interrupted`, preserving its stop reason if
 one was recorded. Stored summary states and gap tokens remain the producer's contract above.

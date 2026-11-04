@@ -24,11 +24,13 @@ from compass_runtime import (
     session_source,
     session_summary,
     summary_jobs,
+    summary_source,
     summary_store,
     supervise,
 )
 
 from .support import make_runtime
+from .test_claude_checks import Transcript
 from .test_session_summary import Replies, entry
 
 if TYPE_CHECKING:
@@ -214,6 +216,73 @@ class SummaryJobTest(_SummaryCase):
         self.assertEqual(202, code, answer)
         wait_job(self.application, "claude", "s1", timeout=5)
         return answer
+
+    def test_another_dashboard_stop_between_collection_check_and_progress_is_preserved(
+        self,
+    ) -> None:
+        path = Path(self.home.name) / "session.jsonl"
+        transcript = Transcript(path.parent)
+        transcript.prompt("Inspect the parser")
+        transcript.save(path)
+        for action, reason in (
+            ("cancel", "cancelled"),
+            ("delete", "deleted"),
+            ("discard", "discarded"),
+        ):
+            with self.subTest(action=action):
+                summary_store.delete(self.config, "claude", "root")
+                _, other_state = make_runtime(
+                    state_home=self.home.name, state_dir=Path(self.home.name)
+                )
+                other = SimpleNamespace(
+                    config=self.config,
+                    state=other_state,
+                    clock=self.application.clock,
+                    collect_json=lambda **_: (0, b"{}"),
+                    diagnostic_sink=lambda _: None,
+                )
+                collect = summary_source.collect
+                durable: list[str] = []
+
+                def interleaved(
+                    *args: Any,
+                    action: str = action,
+                    other: Any = other,
+                    collect: Any = collect,
+                    durable: list[str] = durable,
+                    **kwargs: Any,
+                ) -> Any:
+                    progress = kwargs["progress"]
+
+                    def stop_then_progress(page: session_source.SourcePage, used: int) -> None:
+                        getattr(self.jobs, action)(other, "claude", "root")
+                        marker = self.jobs._marker(self.config, "claude", "root")
+                        durable.append(json.loads(marker.read_text())["reason"])
+                        progress(page, used)
+                        durable.append(json.loads(marker.read_text())["reason"])
+
+                    kwargs["progress"] = stop_then_progress
+                    return collect(*args, **kwargs)
+
+                model = Replies()
+                with (
+                    mock.patch.object(summary_source, "collect", side_effect=interleaved),
+                    mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+                    mock.patch.object(reading_route, "destination", return_value="Anthropic"),
+                ):
+                    code, answer = self.jobs.start_source(
+                        self.application, str(path), "claude", "root", action="start"
+                    )
+                    self.assertEqual(202, code, answer)
+                    wait_job(self.application, "claude", "root", timeout=5)
+                self.assertEqual([reason, reason], durable)
+                self.assertEqual([], model.prompts)
+                self.assertIsNone(summary_store.get(self.config, "claude", "root"))
+                job = self.jobs.published(self.application, "claude", "root")
+                assert job is not None
+                self.assertEqual("cancelled", job["state"])
+                self.assertEqual(reason, job["reason"])
+                self.assertEqual(0, job["attempts"])
 
     def assert_finished_prefix(self, summary: Any) -> None:
         """The first part's phases are kept and every later entry is named as a gap.

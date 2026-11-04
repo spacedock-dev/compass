@@ -81,6 +81,7 @@ export interface SummaryJob {
   readonly reason: string;
   readonly finishedParts: readonly number[];
   readonly notice: Raw | null;
+  readonly largestRead?: LargestRead | null;
 }
 
 export function parseJob(value: unknown): SummaryJob | null {
@@ -97,6 +98,7 @@ export function parseJob(value: unknown): SummaryJob | null {
       ? raw['finished_parts'].filter((n): n is number => typeof n === 'number' && n > 0)
       : [],
     notice: record(raw['notice']),
+    largestRead: parseLargestRead(raw['largest_read']),
   };
 }
 
