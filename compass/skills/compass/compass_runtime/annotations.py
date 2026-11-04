@@ -403,6 +403,7 @@ OUTCOME_STORED = "stored"
 # How many reading-job ids an entry remembers. Only the newest few can still
 # meet a restart marker, since a marker names one job and is gone once recorded.
 RECORDED_JOBS_CAP = 32
+LONG_RECEIPTS_CAP = 128  # Matches the maximum number of unretired long-job markers.
 _JOB_ID = re.compile(r"[0-9a-f]{1,64}")
 OUTCOME_UNCHANGED = "unchanged"
 OUTCOME_REFUSED = "refused"
@@ -584,6 +585,9 @@ class Annotation(TypedDict):
     # Opt-in long-job identity. Missing means legacy; None means malformed,
     # never permission to remint an identity over an unreadable marker.
     long_incarnation: NotRequired[str | None]
+    # Unretired publication acknowledgments, atomically stored with the outcome.
+    # Missing is legacy; None is malformed and refuses further long publication.
+    long_receipts: NotRequired[list[str] | None]
     # The reading jobs whose outcome this entry already holds, newest last, so
     # an outcome written twice for one job (a restart recovering a marker whose
     # write had landed) counts once. Ids only, bounded by `RECORDED_JOBS_CAP`.
@@ -1456,6 +1460,8 @@ def _counters(entry: Annotation, value: dict[str, Any]) -> Annotation:
     """The entry's press count, withheld reason and write time, each read on its own."""
     if "long_incarnation" in value:
         entry["long_incarnation"] = _long_incarnation(value["long_incarnation"])
+    if "long_receipts" in value:
+        entry["long_receipts"] = _long_receipts(value["long_receipts"])
     jobs = value.get("jobs")
     if isinstance(jobs, list):
         kept = [job for job in jobs if isinstance(job, str) and _JOB_ID.fullmatch(job)]
@@ -2195,6 +2201,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     fresh = "assessment" in updated
     for name in (
         "long_incarnation",
+        "long_receipts",
         "settled",
         "assessment",
         "reading_diagnostic",
@@ -2231,6 +2238,33 @@ _UNGUARDED_LONG_TARGET = object()
 
 def _long_incarnation(value: Any) -> str | None:
     return value if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) else None
+
+
+def _long_receipts(value: Any) -> list[str] | None:
+    if (
+        not isinstance(value, list)
+        or len(value) > LONG_RECEIPTS_CAP
+        or any(_long_incarnation(item) is None for item in value)
+        or len(set(value)) != len(value)
+    ):
+        return None
+    return list(value)
+
+
+def _publication_receipts(
+    existing: Annotation, job_id: str, *, long_publication: bool
+) -> list[str] | str | None:
+    if not long_publication:
+        return OUTCOME_UNCHANGED if job_id and job_id in existing.get("jobs", ()) else None
+    receipts = existing.get("long_receipts", [])
+    if receipts is None:
+        return OUTCOME_REFUSED
+    if job_id in receipts:
+        return OUTCOME_UNCHANGED
+    if len(receipts) >= LONG_RECEIPTS_CAP or job_id in existing.get("jobs", ()):
+        # A legacy recent-job match is not a durable publication acknowledgment.
+        return OUTCOME_REFUSED
+    return [*receipts, job_id]
 
 
 def capture_long_target(
@@ -2298,6 +2332,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
+    long_publication: bool = False,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2312,6 +2347,8 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
 
     Supplying `long_target` opts into incarnation/revision validation under
     the publication lock. Explicit None or any malformed target refuses.
+    `long_publication=True` also requires a 32-hex job ID and atomically keeps
+    its unretired receipt; the recent ordinary-job list is not that guarantee.
     """
     return _record(
         config,
@@ -2326,6 +2363,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
         on_a_check=on_a_check,
         analyze_diagnostic=analyze_diagnostic,
         long_target=long_target,
+        long_publication=long_publication,
     )
 
 
@@ -2341,6 +2379,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     job_id: str = "",
     analyze_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
+    long_publication: bool = False,
 ) -> str:
     """Store why there is no reading. Returns an `OUTCOMES` token.
 
@@ -2358,6 +2397,8 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     does not retract it.
 
     `long_target` has the same opt-in, fail-closed meaning as `record_reading`.
+    `long_publication=True` keeps the same durable receipt even when unspent;
+    a zero-spent job is acknowledged without incrementing the job count.
     """
     if reason not in reading.WITHHELD:
         return OUTCOME_REFUSED
@@ -2373,13 +2414,18 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
         job_id=job_id,
         analyze_diagnostic=analyze_diagnostic,
         long_target=long_target,
+        long_publication=long_publication,
     )
 
 
-def _recorded_job(updated: Annotation, existing: Annotation, job_id: str) -> None:
+def _recorded_job(
+    updated: Annotation, existing: Annotation, job_id: str, receipts: list[str] | None
+) -> None:
     """Add this job to the ids the entry remembers, when an outcome names one."""
     if job_id:
         updated["jobs"] = [*existing.get("jobs", ()), job_id][-RECORDED_JOBS_CAP:]
+    if receipts is not None:
+        updated["long_receipts"] = receipts
 
 
 def _with_reading(
@@ -2430,6 +2476,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
+    long_publication: bool = False,
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
@@ -2437,8 +2484,14 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     is `OUTCOME_REFUSED`, like any other request the store will not take.
     """
     checked_diagnostic = analyze_diagnostics.validate(analyze_diagnostic, spent=spent)
-    if not config.annotations_enabled or (
-        analyze_diagnostic is not None and checked_diagnostic is None
+    if (
+        not config.annotations_enabled
+        or (analyze_diagnostic is not None and checked_diagnostic is None)
+        or type(long_publication) is not bool
+        or (
+            long_publication
+            and (_long_incarnation(job_id) is None or long_target is _UNGUARDED_LONG_TARGET)
+        )
     ):
         return OUTCOME_REFUSED
     key = _key(harness, sid)
@@ -2469,14 +2522,15 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
             # sentence and `readings` a count, and hanging either off a record
             # would make it an entry with something in it (DRC-4565).
             return OUTCOME_REFUSED
-        if job_id and job_id in existing.get("jobs", ()):
-            return OUTCOME_UNCHANGED
+        receipts = _publication_receipts(existing, job_id, long_publication=long_publication)
+        if isinstance(receipts, str):
+            return receipts
         updated: Annotation = {
             "harness": existing["harness"],
             "sid": existing["sid"],
             "revisions": existing["revisions"],
         }
-        _recorded_job(updated, existing, job_id)
+        _recorded_job(updated, existing, job_id, receipts)
         stored = True
         if assessment is not None:
             stored = _with_reading(updated, existing, assessment, on_a_check)
