@@ -54,7 +54,7 @@ import unicodedata
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
-from . import ci_read, observer, records, supervise
+from . import analyze_diagnostics, ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
@@ -1296,6 +1296,8 @@ class Selection:
     # `build_prompt` from what it printed, never from the ledger alone:
     # [DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)  # noqa: E501
     agent_words_whole: bool = False
+    # Requested measurement only, from the actual rendering step, never source text.
+    diagnostic: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.asked_output is None:
@@ -3516,6 +3518,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     final_lookup: FinalLookup | None = None,
     message_lookup: MessageLookup | None = None,
     failures_only: bool = False,
+    measure: bool = False,
 ) -> tuple[str, Selection]:
     """The prompt, and exactly the entries it carried.
 
@@ -3620,6 +3623,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         # needs to escape this boundary.
         return "", Selection(
             (),
+            diagnostic=_selection_diagnostic(citable, (), (), expanded=False) if measure else None,
             unread_failures=tuple(failures),
             unread_checks=tuple(checks),
             asked_output=posed,
@@ -3705,10 +3709,11 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
             no_lines=not line_texts,
             failures_only=failures_only,
         )
-    body = "".join(
+    rendered = tuple(
         row_text(index, restored.get(id(row), row), whole=id(row) in whole)
         for index, row in enumerate(selected, start=1)
     )
+    body = "".join(rendered)
     taken = {id(row) for row in selected}
     printed = (
         _printed_messages(selected, whole, restored, wider_messages) if message_lookup else selected
@@ -3720,6 +3725,11 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     )
     return header + body, Selection(
         printed,
+        diagnostic=(
+            _selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
+            if measure
+            else None
+        ),
         unread_failures=tuple(entry for entry in failures if id(entry) not in taken),
         unread_checks=tuple(entry for entry in checks if id(entry) not in taken),
         asked_output=posed,
@@ -3729,6 +3739,48 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         newest_final=final_state,
         agent_words_whole=source_known and _agents_read_whole(citable, whole, restored),
     )
+
+
+def _selection_diagnostic(
+    eligible: Sequence[LedgerEntry],
+    selected: Sequence[LedgerEntry],
+    rendered: Sequence[str],
+    *,
+    expanded: bool,
+) -> dict[str, Any]:
+    """Counts within the eligible ledger, never a whole-source coverage claim.
+
+    Rendered rows include menu labels and escaping. Expansion/source character
+    counts exist only where printed-row metadata measured them; row words can
+    be longer than what was printed and must not be summed as evidence.
+    """
+    message_types = {"user_message", AGENT_MESSAGE_TYPE}
+    messages = [row for row in selected if row["type"] in message_types]
+
+    def characters(key: str) -> int | None:
+        if not expanded:
+            return None
+        total = 0
+        for row in messages:
+            value = row.get(key)
+            if type(value) is not int or value < 0:
+                return None
+            total += value
+        return total
+
+    return {
+        "eligible_entries": len(eligible),
+        "selected_entries": len(selected),
+        "eligible_messages": sum(row["type"] in message_types for row in eligible),
+        "selected_messages": len(messages),
+        "serialized_message_bytes": sum(
+            len(text.encode("utf-8", "replace"))
+            for row, text in zip(selected, rendered, strict=True)
+            if row["type"] in message_types
+        ),
+        "expanded_message_characters": characters("text_read"),
+        "selected_source_characters": characters("text_total"),
+    }
 
 
 def _printed_messages(
@@ -6961,7 +7013,7 @@ def record_withheld(context: Mapping[str, Any], harness: str, sid: str) -> str:
     return ""
 
 
-def produce(  # noqa: C901, PLR0911, PLR0913
+def produce(  # noqa: C901, PLR0911, PLR0913, PLR0915 - ordered gates and measured call seams
     config: RuntimeConfig,
     row: Mapping[str, Any],
     revisions: Sequence[Mapping[str, Any]],
@@ -6991,6 +7043,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     failures_only: bool = False,
     ci: Mapping[str, Any] | Callable[[], Mapping[str, Any] | None] | None = None,
     max_prompt_bytes: int | None = None,
+    on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -7048,6 +7101,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     record that was never read withholds before the ledger, since an empty
     ledger would say it was read and held nothing.
     """
+    capture = analyze_diagnostics.Capture(on_diagnostic)
     goal, lines, scope, withheld = _readable(
         config,
         row,
@@ -7100,6 +7154,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     source_facts = _goal_source_candidates(row, facts, recovered_sources) if adopted else facts
     request_sources = listed_request_sources(facts, recovered_sources)
     source = adopted_prompt(latest, source_facts, harness, sid) if adopted else None
+    construction_started = capture.start()
     prompt, selected = build_prompt(
         ledger,
         goal=goal,
@@ -7115,7 +7170,9 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         # The rule says the ledger lists failures only, which is true of a lane that admitted
         # tool reports; on a route that sent none (Codex) no failed entry exists to qualify.
         failures_only=failures_only and admitted,
+        measure=on_diagnostic is not None,
     )
+    capture.prepared(prompt, selected.diagnostic, construction_started)
     if not selected.entries:
         return None, WITHHELD_LEDGER_EMPTY, False
     # The checks a grant would have sent are read from the facts; admitted, the
@@ -7152,7 +7209,10 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         ),
     }
     coverage.update(_counted(command_counts_lookup))
-    raw, status = model(prompt, output_cap_bytes=REPLY_CAP_BYTES)
+    try:
+        raw, status = model(prompt, output_cap_bytes=REPLY_CAP_BYTES)
+    finally:
+        capture.called(model)
     # A reply that reached the cap is the one a cut can explain. The exec layer
     # decodes with "replace" and strips, so a cut reply can come back a little
     # under the cap: the slack is a run of indentation, not a second budget.

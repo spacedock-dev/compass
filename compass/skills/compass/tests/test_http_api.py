@@ -2999,6 +2999,82 @@ class ReadingRouteTest(unittest.TestCase):
     cannot tell those apart.
     """
 
+    def test_requested_diagnostics_reopen_for_success_admission_failure_and_early_refusal(
+        self,
+    ) -> None:
+        for case in ("success", "admission", "failed", "early", "source-error"):
+            with self.subTest(case=case):
+                config, state = self._runtime()
+                with (
+                    self._counting_model(
+                        installed=("claude",),
+                        harness="claude",
+                        status="failed" if case == "failed" else "ok",
+                    ) as calls,
+                    mock.patch.object(
+                        claude_settings,
+                        "resolve",
+                        return_value=claude_settings.Controls(
+                            deployment="direct",
+                            window_limits=(128_000,) if case == "admission" else (),
+                        ),
+                    ),
+                    mock.patch.object(
+                        runtime_reading,
+                        "record_withheld",
+                        return_value=runtime_reading.WITHHELD_RECORD_UNREAD
+                        if case == "early"
+                        else "",
+                    ),
+                    mock.patch.object(
+                        http_api,
+                        "_command_counts_of",
+                        return_value={},
+                        side_effect=RuntimeError("private source sentinel")
+                        if case == "source-error"
+                        else None,
+                    ),
+                    self._serving(self._app(config, state, "claude")) as port,
+                ):
+                    status, _ = self._post(port, self._claude_press(provider="claude"))
+                    self.assertEqual(202, status)
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                    try:
+                        conn.request("GET", "/api/annotations")
+                        response = conn.getresponse()
+                        self.assertEqual(200, response.status)
+                        served = json.loads(response.read())["annotations"][0]
+                    finally:
+                        conn.close()
+                entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
+                assert entry is not None
+                public = annotation_store.published(entry)
+                self.assertIn("reading_diagnostic", public)
+                measured = public["reading_diagnostic"]
+                self.assertEqual(measured, served["reading_diagnostic"])
+                if case == "early":
+                    self.assertIsNone(measured["prepared"])
+                    self.assertIsNone(measured["selection"])
+                    self.assertIsNone(measured["input"])
+                    self.assertEqual([], calls)
+                elif case == "source-error":
+                    self.assertGreater(measured["prepared"]["prompt_bytes"], 0)
+                    self.assertIsNone(measured["input"])
+                    self.assertIsNone(measured["capacity"])
+                    self.assertEqual(1, measured["selection"]["selected_entries"])
+                    self.assertEqual([], calls)
+                else:
+                    self.assertGreater(measured["prepared"]["prompt_bytes"], 0)
+                    self.assertEqual(1, measured["selection"]["selected_entries"])
+                    self.assertIsNone(measured["selection"]["selected_source_characters"])
+                    self.assertEqual(case != "admission", measured["input"]["attempt_reserved"])
+                    self.assertEqual(case != "admission", measured["input"]["model_invoked"])
+                    if calls:
+                        self.assertEqual(len(calls[0].encode()), measured["input"]["prompt_bytes"])
+                    self.assertFalse(measured["capacity"]["fit_verified"])
+                self.assertNotIn("ship the parser", json.dumps(measured))
+                self.assertNotIn("sentinel", json.dumps(measured))
+
     def test_capacity_changed_during_collection_refuses_before_any_charge(self) -> None:
         config, state = self._runtime()
         controls = [claude_settings.Controls(deployment="direct")]

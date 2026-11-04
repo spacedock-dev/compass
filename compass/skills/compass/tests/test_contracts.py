@@ -1448,6 +1448,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.supervise",
         },
         "compass_runtime.reading": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.observer",
             "compass_runtime.reading_policy",
@@ -1475,6 +1476,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # store and reads the job registry beside the slot in `reading`. The
         # application it runs over is a protocol, so it never imports upward.
         "compass_runtime.reading_jobs": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.annotations",
             "compass_runtime.config",
             "compass_runtime.io",

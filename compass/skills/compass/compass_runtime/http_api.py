@@ -4073,6 +4073,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 # The job's phases, each told where it really begins (DRC-4686).
                 on_phase=hooks.phase,
                 max_prompt_bytes=limits.analyze_prompt_bytes,
+                on_diagnostic=hooks.capture,
                 **self._reading_arguments(
                     row,
                     entry,

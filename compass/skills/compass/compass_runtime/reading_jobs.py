@@ -32,9 +32,9 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from . import analyze_diagnostics, reading, reading_policy, supervise
 from . import annotations as annotation_store
 from . import io as runtime_io
-from . import reading, reading_policy, supervise
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -116,6 +116,11 @@ class Hooks:
         # facts (`reading.lines_on_a_check`): the store keeps fact ids only, and drops an earlier
         # departure on such a line for good.
         self.on_a_check: frozenset[str] = frozenset()
+        self.analyze_diagnostic: dict[str, Any] | None = None
+
+    def capture(self, value: dict[str, Any]) -> None:
+        """Keep only the current producer's validated, word-free measurement."""
+        self.analyze_diagnostic = analyze_diagnostics.validate(value)
 
     def before_reserve(self) -> str:
         """Leave the marker a restart would find, before anything is spent.
@@ -292,7 +297,13 @@ def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], 
         if reading.seal_job(job) and outcome is not None:
             outcome = _cancelled(job, outcome, spent=hooks.spent)
         if outcome is not None:
-            durable = _record(application, job, outcome, on_a_check=hooks.on_a_check)
+            durable = _record(
+                application,
+                job,
+                outcome,
+                on_a_check=hooks.on_a_check,
+                analyze_diagnostic=hooks.analyze_diagnostic,
+            )
     finally:
         # A spend the store would not take keeps its marker: it is then the
         # only record that the attempt was charged, and the next start counts
@@ -379,10 +390,12 @@ def _record(
     outcome: Outcome,
     *,
     on_a_check: frozenset[str] = frozenset(),
+    analyze_diagnostic: dict[str, Any] | None = None,
 ) -> bool:
     """Write the outcome under the job's id. True when the store holds it."""
     assessment, why, spent = outcome
     config, state = application.config, application.state
+    checked = analyze_diagnostics.validate(analyze_diagnostic, spent=spent)
     try:
         if assessment is not None:
             answer = annotation_store.record_reading(
@@ -394,6 +407,7 @@ def _record(
                 diagnostic_sink=application.diagnostic_sink,
                 job_id=job.id,
                 on_a_check=on_a_check,
+                analyze_diagnostic=checked,
             )
         else:
             answer = annotation_store.record_withheld(
@@ -405,6 +419,7 @@ def _record(
                 spent=spent,
                 diagnostic_sink=application.diagnostic_sink,
                 job_id=job.id,
+                analyze_diagnostic=checked,
             )
     except Exception as exc:  # noqa: BLE001 (the slot is freed whatever the store did)
         runtime_io.diag(

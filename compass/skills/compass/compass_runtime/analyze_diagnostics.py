@@ -7,7 +7,11 @@ The store uses this validator on write, load and publication.
 
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 INPUT_OUTCOMES = frozenset(
     {
@@ -56,6 +60,14 @@ _CAPACITY_LABELS = {
         "fallback-policy-conflict",
     },
 }
+_SELECTION_COUNTS = (
+    "eligible_entries",
+    "selected_entries",
+    "eligible_messages",
+    "selected_messages",
+    "serialized_message_bytes",
+)
+_SELECTION_NULLABLE = ("expanded_message_characters", "selected_source_characters")
 
 
 def _count(value: Any) -> bool:
@@ -100,11 +112,49 @@ def _capacity(value: Any) -> bool:
     )
 
 
+def _prepared(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"prompt_bytes", "build_elapsed_ms"}
+        and all(_count(item) for item in value.values())
+    )
+
+
+def _selection(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {*_SELECTION_COUNTS, *_SELECTION_NULLABLE}
+        and all(_count(value[key]) for key in _SELECTION_COUNTS)
+        and all(value[key] is None or _count(value[key]) for key in _SELECTION_NULLABLE)
+        and value["selected_entries"] <= value["eligible_entries"]
+        and value["selected_messages"] <= value["selected_entries"]
+        and value["selected_messages"] <= value["eligible_messages"] <= value["eligible_entries"]
+    )
+
+
+def _construction(value: dict[str, Any]) -> bool:
+    if "prepared" not in value:
+        return True  # Earlier metadata has no preparation measurements.
+    prepared, selection, measured = value["prepared"], value["selection"], value["input"]
+    if prepared is None:
+        return selection is None and measured is None
+    return (
+        _prepared(prepared)
+        and _selection(selection)
+        and selection["serialized_message_bytes"] <= prepared["prompt_bytes"]
+        and (measured is None or measured["prompt_bytes"] == prepared["prompt_bytes"])
+    )
+
+
 def validate(value: Any, *, spent: bool | None = None) -> dict[str, Any] | None:
     """Return an independent closed record, or None for absent/invalid metadata."""
     if (
         not isinstance(value, dict)
-        or set(value) != {"version", "input", "capacity"}
+        or set(value)
+        not in (
+            {"version", "input", "capacity"},
+            {"version", "input", "capacity", "prepared", "selection"},
+        )
         or type(value["version"]) is not int
         or value["version"] != 1
     ):
@@ -120,8 +170,58 @@ def validate(value: Any, *, spent: bool | None = None) -> dict[str, Any] | None:
         or capacity["prompt_bytes"] != measured["prompt_bytes"]
     ):
         return None
+    if not _construction(value):
+        return None
     return {
         "version": 1,
         "input": dict(measured) if measured is not None else None,
         "capacity": dict(capacity) if capacity is not None else None,
+        **{
+            key: dict(value[key]) if value[key] is not None else None
+            for key in ("prepared", "selection")
+            if key in value
+        },
     }
+
+
+class Capture:
+    """One producer invocation; snapshots contain only validated measurements."""
+
+    def __init__(self, sink: Callable[[dict[str, Any]], None] | None) -> None:
+        self.sink = sink
+        self.value: dict[str, Any] = {
+            "version": 1,
+            "input": None,
+            "capacity": None,
+            "prepared": None,
+            "selection": None,
+        }
+        self._publish()
+
+    def _publish(self) -> None:
+        if self.sink is not None and (checked := validate(self.value)) is not None:
+            self.sink(checked)
+
+    def start(self) -> float:
+        return time.monotonic() if self.sink is not None else 0.0
+
+    def prepared(self, prompt: str, selection: dict[str, Any] | None, started: float) -> None:
+        if self.sink is None:
+            return
+        self.value.update(
+            prepared={
+                "prompt_bytes": len(prompt.encode("utf-8", "replace")),
+                "build_elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+            },
+            selection=selection,
+        )
+        self._publish()
+
+    def called(self, model: Any) -> None:
+        if self.sink is None:
+            return
+        self.value.update(
+            input=getattr(model, "analyze_diagnostic", None),
+            capacity=getattr(getattr(model, "admit_prompt", None), "measurement", None),
+        )
+        self._publish()

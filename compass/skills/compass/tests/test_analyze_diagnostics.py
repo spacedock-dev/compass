@@ -8,14 +8,16 @@ import importlib.util
 import inspect
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
-from compass_runtime import analyze_capacity, reading
+from compass_runtime import analyze_capacity, reading, reading_policy, supervise
 from compass_runtime import annotations as annotation_store
 
-from . import test_annotations
+from . import test_annotations, test_reading
 from .support import make_runtime
 
 
@@ -206,3 +208,173 @@ class DiagnosticStoreTest(unittest.TestCase):
             self.record(diagnostic(), why=reading.WITHHELD_MODEL_FAILED),
         )
         self.assertNotIn("readings", self.reopened())
+
+
+class ProducerDiagnosticTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.config, _ = make_runtime(state_dir=Path(directory.name), state_home=directory.name)
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.snapshots: list[dict[str, Any]] = []
+        self.prompts: list[str] = []
+
+    def produce(self, **over: Any) -> Any:
+        self.assertIn("on_diagnostic", inspect.signature(reading.produce).parameters)
+
+        def model(prompt: str, **_kwargs: Any) -> tuple[str, str]:
+            self.prompts.append(prompt)
+            return "{}", "ok"
+
+        guarded = reading_policy.GuardedModel(
+            self.config,
+            model,
+            lambda: 200.0,
+            admit_prompt=analyze_capacity.Admission(
+                "codex", "unknown", "", requested_maximum=524_288
+            ),
+        )
+        arguments: dict[str, Any] = {
+            "now": 200.0,
+            "stamp_text": "fixture",
+            "model": guarded,
+            "read_agent_words": True,
+            "on_diagnostic": self.snapshots.append,
+        }
+        arguments.update(over)
+        return reading.produce(
+            self.config,
+            {"harness": "claude", "sid": "s1", "state": "working"},
+            [{"n": 1, "at": 50.0, "goal": "request"}],
+            [test_reading.WhatOnePressActuallyCostsAndProduces.FACT],
+            **arguments,
+        )
+
+    def test_prepared_bytes_match_actual_call_and_unknown_source_stays_unknown(self) -> None:
+        self.produce()
+        diagnostic = self.snapshots[-1]
+        self.assertEqual(len(self.prompts[0].encode()), diagnostic["prepared"]["prompt_bytes"])
+        self.assertEqual(
+            diagnostic["prepared"]["prompt_bytes"], diagnostic["input"]["prompt_bytes"]
+        )
+        self.assertEqual(1, diagnostic["selection"]["selected_messages"])
+        self.assertIsNone(diagnostic["selection"]["selected_source_characters"])
+        self.assertIsNone(diagnostic["selection"]["expanded_message_characters"])
+        self.assertNotIn("whole", json.dumps(diagnostic))
+        self.assertNotIn("request", json.dumps(diagnostic).replace("requested_maximum", ""))
+
+    def test_postassembly_error_keeps_prepared_measurement_without_invocation(self) -> None:
+        def broken() -> Any:
+            raise RuntimeError("private source sentinel")
+
+        with self.assertRaisesRegex(RuntimeError, "private source sentinel"):
+            self.produce(record_coverage_lookup=broken)
+        diagnostic = self.snapshots[-1]
+        self.assertGreater(diagnostic["prepared"]["prompt_bytes"], 0)
+        self.assertIsNone(diagnostic["input"])
+        self.assertIsNone(diagnostic["capacity"])
+        self.assertEqual([], self.prompts)
+        self.assertNotIn("sentinel", json.dumps(diagnostic))
+
+    def test_reused_sink_early_refusal_resets_prepared_and_model_measurements(self) -> None:
+        self.produce()
+        self.produce(record_withheld=reading.WITHHELD_RECORD_UNREAD)
+        self.assertEqual(
+            {"version": 1, "input": None, "capacity": None, "prepared": None, "selection": None},
+            self.snapshots[-1],
+        )
+
+    def test_serialized_message_bytes_and_partial_characters_come_from_the_printed_row(
+        self,
+    ) -> None:
+        self.assertIn("measure", inspect.signature(reading.build_prompt).parameters)
+        words = '界🙂"\\' * 3000
+        row: reading.LedgerEntry = {
+            "id": "a",
+            "at": 10.0,
+            "type": "agent_message",
+            "by": "agent",
+            "author": "agent",
+            "source": "transcript",
+            "summary": "short",
+            "agent_words": json.dumps("old excerpt"),
+        }
+        prompt, selected = reading.build_prompt(
+            [row],
+            goal="request",
+            max_bytes=16000,
+            measure=True,
+            message_lookup=lambda _wanted, _cap: [
+                {"id": "a", "at": 10.0, "words": words, "total": len(words)}
+            ],
+        )
+        coverage = selected.diagnostic
+        assert coverage is not None
+        self.assertEqual(1, coverage["eligible_messages"])
+        self.assertEqual(1, coverage["selected_messages"])
+        printed = next(line for line in prompt.splitlines(keepends=True) if line.startswith("[1]"))
+        self.assertEqual(len(printed.encode()), coverage["serialized_message_bytes"])
+        self.assertEqual(selected.entries[0]["text_read"], coverage["expanded_message_characters"])
+        self.assertGreater(coverage["expanded_message_characters"], 0)
+        self.assertLess(
+            coverage["expanded_message_characters"], coverage["selected_source_characters"]
+        )
+        self.assertEqual(len(words), coverage["selected_source_characters"])
+        self.assertNotIn("whole", coverage)
+        _, ordinary = reading.build_prompt([row], goal="request", max_bytes=16000)
+        self.assertIsNone(ordinary.diagnostic)
+
+    def test_unselected_rows_do_not_turn_selected_counts_into_whole_source_coverage(self) -> None:
+        rows: list[reading.LedgerEntry] = [
+            {
+                "id": str(index),
+                "at": float(index),
+                "type": "agent_message",
+                "by": "agent",
+                "author": "agent",
+                "source": "transcript",
+                "summary": "x" * 3000,
+                "agent_words": json.dumps("not necessarily printed"),
+            }
+            for index in (1, 2)
+        ]
+        prompt, selected = reading.build_prompt(rows, goal="request", max_bytes=6000, measure=True)
+        coverage = selected.diagnostic
+        assert coverage is not None
+        self.assertEqual(2, coverage["eligible_messages"])
+        self.assertEqual(1, coverage["selected_messages"])
+        self.assertIsNone(coverage["expanded_message_characters"])
+        self.assertIsNone(coverage["selected_source_characters"])
+        printed = next(line for line in prompt.splitlines(keepends=True) if line.startswith("[1]"))
+        self.assertEqual(len(printed.encode()), coverage["serialized_message_bytes"])
+
+    def test_empty_selection_keeps_measured_construction_but_has_no_model_trace(self) -> None:
+        result = self.produce(max_prompt_bytes=1)
+        self.assertIsNone(result[0])
+        diagnostic = self.snapshots[-1]
+        self.assertEqual(0, diagnostic["prepared"]["prompt_bytes"])
+        self.assertEqual(0, diagnostic["selection"]["selected_entries"])
+        self.assertEqual(1, diagnostic["selection"]["eligible_entries"])
+        self.assertIsNone(diagnostic["input"])
+        self.assertEqual([], self.prompts)
+
+    def test_captured_preparation_rejects_word_fields_and_impossible_counts(self) -> None:
+        self.produce()
+        validate = importlib.import_module("compass_runtime.analyze_diagnostics").validate
+        base = self.snapshots[-1]
+        for section, key, value in (
+            ("prepared", "prompt_bytes", True),
+            ("prepared", "build_elapsed_ms", -1),
+            ("prepared", "words", "sentinel"),
+            ("selection", "selected_entries", 2**53),
+            ("selection", "selected_messages", 100),
+            ("selection", "selected_source_characters", -1),
+            ("selection", "serialized_message_bytes", base["prepared"]["prompt_bytes"] + 1),
+            ("selection", "whole", True),
+        ):
+            with self.subTest(section=section, key=key):
+                corrupt = copy.deepcopy(base)
+                corrupt[section][key] = value
+                self.assertIsNone(validate(corrupt))
