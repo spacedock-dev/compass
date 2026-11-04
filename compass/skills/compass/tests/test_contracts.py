@@ -1518,6 +1518,18 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.settings",
             "compass_runtime.supervise",
         },
+        "compass_runtime.reading_long_execution": {
+            "compass_runtime.analyze_capacity",
+            "compass_runtime.config",
+            "compass_runtime.observer",
+            "compass_runtime.reading",
+            "compass_runtime.reading_long_context",
+            "compass_runtime.reading_long_jobs",
+            "compass_runtime.reading_long_markers",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.supervise",
+        },
         "compass_runtime.reading_long_cleanup": {
             "compass_runtime.annotations",
             "compass_runtime.config",

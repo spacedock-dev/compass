@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from . import (
@@ -184,13 +185,31 @@ class ModelCaller(Protocol):
     def __call__(self, recent_text: str, entity_stage: str) -> str | None: ...
 
 
+@dataclass(frozen=True)
+class CheckedRunner:
+    """One explicit final runner check without hiding the supervised output limits."""
+
+    runner: Any
+    before_call: Callable[[], None]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self.before_call()
+        return self.runner(*args, **kwargs)
+
+
+def _supervised_runner(runner: Any) -> bool:
+    return runner is supervise.run or (
+        type(runner) is CheckedRunner and runner.runner is supervise.run
+    )
+
+
 def _spawn_hook(
     on_spawn: Callable[[supervise.Group], None] | None, runner: Any, output_path: str
 ) -> dict[str, Any]:
     # Only what the runner takes, so a runner injected with `subprocess.run`'s
     # signature, as the argv tests do, is still called with keywords it accepts.
     options: dict[str, Any] = {"on_spawn": on_spawn} if on_spawn is not None else {}
-    if runner is supervise.run:
+    if _supervised_runner(runner):
         options["output_limit"] = (output_path, OUTPUT_FILE_LIMIT_BYTES)
     return options
 
@@ -568,7 +587,7 @@ class PreparedClaude:
         exception_kind: str | None = None
         try:
             options = _spawn_hook(self.on_spawn, self.runner, self.output_path)
-            if self.runner is supervise.run and self.error_path:
+            if _supervised_runner(self.runner) and self.error_path:
                 options["output_limits"] = ((self.error_path, OUTPUT_FILE_LIMIT_BYTES),)
             result = self.runner(
                 command,
