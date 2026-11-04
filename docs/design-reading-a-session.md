@@ -9594,6 +9594,11 @@ tell. The owner ruled that a press reads the session whole, within bounds the re
   that route's allowance. Settings GET/POST and requested routes publish policy previews,
   without implying an actual prompt was measured or token fit was verified. An allowance below
   the setting's 16 KiB floor is not a recommendation to save an unrepresentable value.
+- A failed requested Claude CLI call can report the documented `invalid_request_error` and
+  `prompt is too long` wording. Compass labels that bounded error hint as a context limit,
+  keeps the failed attempt counted, and offers a smaller reading or larger route window.
+  It neither retries nor changes the prompt or provider. Successful output is not searched
+  for error prose, and the hint is not a provider receipt or generation stop reason.
 - A check `&&` joins ahead of a later check whose own summary ends the output passed, because the
   later one ran only after the earlier exited 0.
 - Checks separated by `;`, each cut by `tail`, each take their own summary line in order, read only

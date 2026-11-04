@@ -749,7 +749,15 @@ WITHHELD_CONTEXT_DYNAMIC = "context-dynamic"
 WITHHELD_CONTEXT_COMPACTION = "context-compaction"
 WITHHELD_CONTEXT_FALLBACK = "context-fallback"
 WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
+WITHHELD_CONTEXT_LIMIT = "context-limit"
 WITHHELD = {
+    WITHHELD_CONTEXT_LIMIT: (
+        "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
+        "was counted, and no new analysis was saved. Reduce Prompt size in Settings if it is "
+        "above 16 KiB, or choose a route with a larger context window, before trying again. "
+        "Compass did not retry, shrink the prompt or switch "
+        "providers."
+    ),
     WITHHELD_CONTEXT_SMALL_WINDOW: (
         "Nothing was sent to the model, and no Analyze attempt was counted. "
         "This route's allowance is below the smallest Prompt size "
@@ -7358,6 +7366,7 @@ def _left_out(
 
 # The exec statuses that name their own cause, and whether each spent.
 _STATUS_FAILURES = {
+    "context-limit": (WITHHELD_CONTEXT_LIMIT, True),
     "context-small-window": (WITHHELD_CONTEXT_SMALL_WINDOW, False),
     "context-admission": (WITHHELD_CONTEXT_ADMISSION, False),
     "context-config": (WITHHELD_CONTEXT_CONFIG, False),
@@ -7713,9 +7722,9 @@ class ClaudeReadingModel:
         self.diagnostic: dict[str, Any] | None = None
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        """The model's reply and a status of `ok`, `unavailable` or `failed`."""
+        """The reply/status, including an Analyze-only failed-CLI context hint."""
         self.diagnostic = None
-        return observer.claude_exec(
+        raw, status = observer.claude_exec(
             self.config,
             prompt,
             output_cap_bytes=output_cap_bytes,
@@ -7724,6 +7733,19 @@ class ClaudeReadingModel:
             on_spawn=self.on_spawn,
             on_diagnostic=self._diagnosed,
             analyze=self.analyze,
+        )
+        if self.analyze and status == "failed" and self._reported_context_limit():
+            return "", "context-limit"
+        return raw, status
+
+    def _reported_context_limit(self) -> bool:
+        diagnostic = self.diagnostic or {}
+        code = diagnostic.get("returncode")
+        return (
+            diagnostic.get("status") == "failed"
+            and type(code) is int
+            and code != 0
+            and diagnostic.get("reason") == "context-limit"
         )
 
     def provenance(self) -> dict[str, Any]:

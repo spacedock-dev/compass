@@ -591,7 +591,7 @@ class PreparedClaude:
                 self.output.flush()
                 self.error_output.flush()
             for path, candidate in ((self.error_path, "stderr"), (self.output_path, "stdout")):
-                reason = _claude_failure_reason(path)
+                reason = _claude_failure_reason(path, analyze=self.analyze)
                 if reason != "unknown":
                     source = candidate
                     break
@@ -620,7 +620,7 @@ def _claude_exception_category(error: BaseException) -> tuple[str, str]:
     return "failed", "subprocess-error"
 
 
-def _claude_failure_reason(path: str) -> str:
+def _claude_failure_reason(path: str, *, analyze: bool = False) -> str:
     """A closed label from a bounded CLI error prefix, never its original words.
 
     A text match is a hint reported by the CLI, not proof of remote causality.
@@ -632,6 +632,11 @@ def _claude_failure_reason(path: str) -> str:
     except OSError:
         return "unknown"
     lowered = prefix.decode("utf-8", "replace").casefold()
+    # The documented input overflow error, as reported by this failed CLI.
+    # This is a bounded text hint, not an API receipt or a generation stop reason.
+    # https://platform.claude.com/docs/en/build-with-claude/context-windows
+    if analyze and "invalid_request_error" in lowered and "prompt is too long" in lowered:
+        return "context-limit"
     for reason, fragments in (
         ("login-required", ("not logged in", "please run /login", "please log in")),
         ("authentication-rejected", ("invalid api key", "authentication failed")),

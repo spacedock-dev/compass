@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import cli, observer, project_context, records, supervise
+from compass_runtime import claude_settings, cli, observer, project_context, records, supervise
 from compass_runtime import io as runtime_io
 
 from .support import (
@@ -2729,6 +2729,7 @@ class ClaudeDiagnosticTest(unittest.TestCase):
         stderr: bytes = b"",
         code: int = 1,
         raises: BaseException | None = None,
+        analyze: bool = False,
     ) -> tuple[str, str, dict[str, Any]]:
         self.assertIn("on_diagnostic", inspect.signature(observer.claude_exec).parameters)
         events: list[dict[str, Any]] = []
@@ -2744,7 +2745,14 @@ class ClaudeDiagnosticTest(unittest.TestCase):
                     raise raises
                 return subprocess.CompletedProcess(command, code)
 
-            with mock.patch.object(time, "monotonic", side_effect=[10.0, 10.125]):
+            with (
+                mock.patch.object(time, "monotonic", side_effect=[10.0, 10.125]),
+                mock.patch.object(
+                    claude_settings,
+                    "resolve",
+                    return_value=claude_settings.Controls(deployment="direct"),
+                ),
+            ):
                 text, status = observer.claude_exec(
                     config,
                     "PRIVATE PROMPT",
@@ -2752,6 +2760,7 @@ class ClaudeDiagnosticTest(unittest.TestCase):
                     runner=runner,
                     binary_resolver=lambda _name: "/usr/local/bin/claude",
                     on_diagnostic=events.append,
+                    analyze=analyze,
                 )
             self.assertEqual(
                 [], list(Path(root).iterdir()), "private output files survived cleanup"
@@ -2762,6 +2771,40 @@ class ClaudeDiagnosticTest(unittest.TestCase):
         for private in ("PRIVATE", "token-secret", "/Users/alice", "@example"):
             self.assertNotIn(private, encoded)
         return text, status, events[0]
+
+    def test_analyze_nonzero_context_rejection_has_a_closed_hint_from_either_stream(self) -> None:
+        message = b'API Error: 400 {"type":"invalid_request_error","message":"prompt is too long: PRIVATE token-secret"}'
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream):
+                arguments: dict[str, Any] = {stream: message}
+                text, status, event = self._run(analyze=True, **arguments)
+                self.assertEqual(("", "failed"), (text, status))
+                self.assertEqual("context-limit", event["reason"])
+                self.assertEqual(stream, event["reason_source"])
+
+    def test_context_hint_is_analyze_only_nonzero_bounded_and_specific(self) -> None:
+        message = b"invalid_request_error: prompt is too long"
+        # The positive control first makes the new classifier earn the negative cases.
+        self.assertEqual("context-limit", self._run(analyze=True, stderr=message)[2]["reason"])
+        self.assertEqual("unknown", self._run(stderr=message)[2]["reason"])
+        for stream in ("stdout", "stderr"):
+            for content in (
+                b"x" * 8192 + message,
+                b"invalid_request_error: unavailable context",
+                b"prompt is too long",
+                b"context window exceeded",
+            ):
+                with self.subTest(stream=stream, content=content[:60]):
+                    arguments: dict[str, Any] = {stream: content}
+                    self.assertEqual("unknown", self._run(analyze=True, **arguments)[2]["reason"])
+        text, status, event = self._run(analyze=True, stdout=message, stderr=message, code=0)
+        self.assertEqual("ok", status)
+        self.assertTrue(text)
+        self.assertEqual("none", event["reason"])
+        _, _, event = self._run(
+            analyze=True, stderr=message, raises=subprocess.TimeoutExpired("PRIVATE", 180)
+        )
+        self.assertEqual("unknown", event["reason"])
 
     def test_login_error_on_stderr_keeps_actual_exit_code_without_private_text(self) -> None:
         text, status, event = self._run(

@@ -32,6 +32,7 @@ INPUT_OUTCOMES = frozenset(
         "context-compaction",
         "context-fallback",
         "context-config-after-reserve",
+        "context-limit",
     }
 )
 _INPUT_COUNTS = ("prompt_bytes", "elapsed_ms")
