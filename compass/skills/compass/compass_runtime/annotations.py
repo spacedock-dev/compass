@@ -38,6 +38,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
 from compass_runtime import analyze_diagnostics, ci_read, reading, records
@@ -580,6 +581,9 @@ class Annotation(TypedDict):
     harness: str
     sid: str
     revisions: tuple[Revision, ...]
+    # Opt-in long-job identity. Missing means legacy; None means malformed,
+    # never permission to remint an identity over an unreadable marker.
+    long_incarnation: NotRequired[str | None]
     # The reading jobs whose outcome this entry already holds, newest last, so
     # an outcome written twice for one job (a restart recovering a marker whose
     # write had landed) counts once. Ids only, bounded by `RECORDED_JOBS_CAP`.
@@ -1450,6 +1454,8 @@ def _drop_unbound_request_ages(revisions: list[Revision], harness: str, sid: str
 
 def _counters(entry: Annotation, value: dict[str, Any]) -> Annotation:
     """The entry's press count, withheld reason and write time, each read on its own."""
+    if "long_incarnation" in value:
+        entry["long_incarnation"] = _long_incarnation(value["long_incarnation"])
     jobs = value.get("jobs")
     if isinstance(jobs, list):
         kept = [job for job in jobs if isinstance(job, str) and _JOB_ID.fullmatch(job)]
@@ -2188,6 +2194,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     # are the new reading's to decide (`_departures_cleared`), so they do too.
     fresh = "assessment" in updated
     for name in (
+        "long_incarnation",
         "settled",
         "assessment",
         "reading_diagnostic",
@@ -2212,6 +2219,73 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     return updated
 
 
+class LongTarget(NamedTuple):
+    """Private publication identity captured once for a long job, never public payload."""
+
+    incarnation: str
+    revision: int
+
+
+_UNGUARDED_LONG_TARGET = object()
+
+
+def _long_incarnation(value: Any) -> str | None:
+    return value if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) else None
+
+
+def capture_long_target(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: Any,
+    sid: Any,
+    *,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> LongTarget | None:
+    """Bind the current intent under its publication lock; migrate legacy identity only.
+
+    No revision, words or public fields change. A failed capture cannot be
+    replaced with an unguarded publication or recaptured midway through a job.
+    """
+    key = _key(harness, sid)
+    if not config.annotations_enabled or not all(key):
+        return None
+    with _locked_store(config, state, diagnostic_sink) as store:
+        if store is None or not store.trusted or not store.writable or _held(store, key):
+            return None
+        existing = find(store.entries, *key)
+        if existing is None or is_discarded(existing):
+            return None
+        incarnation = existing.get("long_incarnation")
+        if "long_incarnation" not in existing:
+            incarnation = uuid.uuid4().hex
+            updated: Annotation = {**existing, "long_incarnation": incarnation}
+            others = [entry for entry in store.entries if (entry["harness"], entry["sid"]) != key]
+            if (
+                _commit(
+                    config, state, store, key, [*others, updated], diagnostic_sink=diagnostic_sink
+                )
+                != OUTCOME_STORED
+            ):
+                return None
+        if incarnation is None:
+            return None
+        return LongTarget(incarnation, existing["revisions"][-1]["n"])
+
+
+def _long_target_matches(
+    value: Any, entry: Annotation, assessment: reading.Assessment | None
+) -> bool:
+    return (
+        isinstance(value, LongTarget)
+        and _long_incarnation(value.incarnation) is not None
+        and type(value.revision) is int
+        and value.revision > 0
+        and value.incarnation == entry.get("long_incarnation")
+        and value.revision == entry["revisions"][-1]["n"]
+        and (assessment is None or assessment["revision_read"] == value.revision)
+    )
+
+
 def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared write seam)
     config: RuntimeConfig,
     state: RuntimeState,
@@ -2223,6 +2297,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_target: Any = _UNGUARDED_LONG_TARGET,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2234,6 +2309,9 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     `on_a_check` names the lines this reading answers on a check that passed
     (`reading.lines_on_a_check`), which the store cannot tell from the fact ids
     it keeps; an earlier departure on one of them goes for good.
+
+    Supplying `long_target` opts into incarnation/revision validation under
+    the publication lock. Explicit None or any malformed target refuses.
     """
     return _record(
         config,
@@ -2247,6 +2325,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
         job_id=job_id,
         on_a_check=on_a_check,
         analyze_diagnostic=analyze_diagnostic,
+        long_target=long_target,
     )
 
 
@@ -2261,6 +2340,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_target: Any = _UNGUARDED_LONG_TARGET,
 ) -> str:
     """Store why there is no reading. Returns an `OUTCOMES` token.
 
@@ -2276,6 +2356,8 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     A previous reading is NOT cleared. It was true when it was made and it
     still names the revision it read; a later press that could not produce one
     does not retract it.
+
+    `long_target` has the same opt-in, fail-closed meaning as `record_reading`.
     """
     if reason not in reading.WITHHELD:
         return OUTCOME_REFUSED
@@ -2290,6 +2372,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
         analyze_diagnostic=analyze_diagnostic,
+        long_target=long_target,
     )
 
 
@@ -2346,6 +2429,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_target: Any = _UNGUARDED_LONG_TARGET,
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
@@ -2368,7 +2452,14 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
             return OUTCOME_UNWRITABLE if store is None else OUTCOME_UNTRUSTED
         current = store.entries
         existing = find(current, *key)
-        if existing is None or is_discarded(existing):
+        if (
+            existing is None
+            or is_discarded(existing)
+            or (
+                long_target is not _UNGUARDED_LONG_TARGET
+                and not _long_target_matches(long_target, existing, assessment)
+            )
+        ):
             # A reading of nothing is not a reading. There is no baseline to
             # have read, and inventing an entry here would put a row on the
             # board for a session nobody annotated.
