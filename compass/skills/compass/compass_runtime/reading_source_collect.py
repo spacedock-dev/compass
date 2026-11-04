@@ -176,6 +176,40 @@ class Revalidation:
 
 
 @dataclass(frozen=True)
+class RecordPosition:
+    """One verified raw record in frozen parent-first stream order, not clock order."""
+
+    stream: int
+    record: int
+    start_offset: int
+    end_offset: int
+
+
+@dataclass(frozen=True)
+class PhysicalOrigin:
+    """Private canonical association; unknown positions must never use a clock fallback.
+
+    One row per unchanged canonical fact. Known rows sort by stream, start_offset
+    and canonical_index, preserving existing canonical ties within one raw call.
+    No paths, words or native call IDs are carried in this metadata.
+    """
+
+    fact_id: str
+    canonical_index: int
+    position: RecordPosition | None = None
+    reason: str = "missing"
+
+
+_OriginKey = tuple[bool, str, str]  # launch namespace, canonical worker, original call ID
+
+
+def _origin_key(fact: dict[str, Any]) -> _OriginKey:
+    branch = fact.get("branch")
+    record_id = branch.get("record_id") if isinstance(branch, dict) else None
+    return fact.get("subject") == "launch", str(fact.get("worker_kind") or ""), str(record_id or "")
+
+
+@dataclass(frozen=True)
 class Collection:
     evidence: reading_source.CanonicalEvidence | None
     reason: Reason
@@ -190,6 +224,7 @@ class Collection:
     final: dict[str, Any] | None = None
     snapshot: Snapshot | None = None
     ancillary_info: AncillaryInfo = AncillaryInfo()
+    origins: tuple[PhysicalOrigin, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -213,6 +248,8 @@ class _Retained:
     goal_texts: tuple[str, ...] = ()
     ci_records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] = ((), ())
     ci_remotes: tuple[tuple[str, tuple[str, str]], ...] = ()
+    origin_calls: dict[_OriginKey, RecordPosition | None] = field(default_factory=dict)
+    origins: tuple[PhysicalOrigin, ...] | None = None
 
 
 class _StopError(Exception):
@@ -628,6 +665,71 @@ class _Collection:
             self.accept(replace(self.state, words=candidate))
             join = candidate
 
+    def locate_origins(self) -> None:
+        evidence, words = self.state.evidence, self.state.words
+        if evidence is None or words is None:
+            raise _StopError("native_incomplete")
+        # Temporary inventory is bounded by admitted native inputs and wanted
+        # canonical IDs; accept meters it together with raw/projection/word state.
+        self.checkpoint()
+        wanted = {_origin_key(fact) for fact in evidence.facts if fact.get("branch")}
+        self.checkpoint()
+        calls: dict[_OriginKey, RecordPosition | None] = {}
+        for stream, rows in enumerate(self.state.rows):
+            worker = context.SUBAGENT_WORKER if stream else ""
+            launch_stream = f"{worker}:{stream - 1}" if stream else ""
+            for number, row in enumerate(rows):
+                self.checkpoint()
+                native = context._claude_tool_uses([row.value], sidechain=bool(stream))  # noqa: SLF001
+                for _at, _cwd, call_id, _name, _input, _worker in native:
+                    self.checkpoint()
+                    qualified = context._launch_record_id(call_id, launch_stream)  # noqa: SLF001
+                    for key in ((False, worker, call_id), (True, worker, qualified)):
+                        if key in wanted:
+                            calls[key] = (
+                                None
+                                if key in calls
+                                else RecordPosition(
+                                    stream, number, row.start_offset, row.end_offset
+                                )
+                            )
+                self.checkpoint()
+        self.accept(replace(self.state, origin_calls=calls), temporary=wanted)
+        origins = []
+        for index, fact in enumerate(evidence.facts):
+            self.checkpoint()
+            origins.append(self.origin_for(fact, index))
+            self.checkpoint()
+        self.accept(replace(self.state, origins=tuple(origins)), temporary=(wanted, origins))
+
+    def origin_for(self, fact: dict[str, Any], index: int) -> PhysicalOrigin:
+        origin = PhysicalOrigin(fact["fact_id"], index)
+        parent = self.state.inventory.streams[0].cursor.frozen
+        if fact.get("source_session") != {"harness": parent.harness, "sid": parent.sid}:
+            return replace(origin, reason="source")
+        if fact.get("type") in {"user_message", "agent_message"}:
+            return self.message_origin(fact, origin)
+        key = _origin_key(fact)
+        if key not in self.state.origin_calls:
+            return origin
+        position = self.state.origin_calls[key]
+        return replace(origin, position=position, reason="" if position else "ambiguous")
+
+    def message_origin(self, fact: dict[str, Any], origin: PhysicalOrigin) -> PhysicalOrigin:
+        join = self.state.words
+        if join is None:
+            return origin
+        key = fact["fact_id"], fact["at"]
+        if key in join.refused:
+            return replace(origin, reason=join.refused[key])
+        number = join.positions.get(key)
+        if number is None:
+            return origin
+        row = self.state.rows[0][number]
+        return replace(
+            origin, position=RecordPosition(0, number, row.start_offset, row.end_offset), reason=""
+        )
+
     def prepare(self) -> None:
         self.checkpoint()
         self.accept(self.state)
@@ -646,6 +748,7 @@ class _Collection:
             self.materialize()
             self.prove_final()
             self.join_words()
+            self.locate_origins()
             self.checkpoint()
             if self.state.final is not None:
                 parent = self.state.inventory.streams[0].cursor.frozen
@@ -686,6 +789,7 @@ class _Collection:
             self.state.final.result if not reason and self.state.final is not None else None,
             self.state.snapshot if not reason else None,
             self.state.ancillary_info,
+            self.state.origins if not reason else None,
         )
 
 
