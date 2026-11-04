@@ -11,6 +11,7 @@ from dataclasses import replace
 from typing import Any
 
 from compass_runtime import (
+    reading_long_diagnostics,
     reading_long_inspection,
     reading_source_collect,
     reading_source_inventory,
@@ -23,6 +24,107 @@ from .test_reading_pass_types import diagnostic, observation, plan
 
 
 class LongDiagnosticsTest(unittest.TestCase):
+    def test_optional_closed_stop_cause_preserves_old_v1_records(self) -> None:
+        legacy = reading_long_diagnostics.derive(plan=plan(), outcome="withheld")
+        self.assertNotIn("stop_reason", legacy)
+        self.assertEqual(legacy, reading_long_diagnostics.validate(legacy))
+        self.assertIsNone(
+            reading_long_diagnostics.derive(plan=plan(), stop_reason="resource-limit")["complete"]
+        )  # A label alone neither grants nor removes completion proof.
+        categories = (
+            "resource-limit",
+            "source-changed",
+            "source-gap",
+            "evidence-gap",
+            "evidence-pass-failed",
+            "final-context-limited",
+            "final-call-failed",
+            "call-refused",
+            "context-changed",
+            "permission-changed",
+            "cancelled",
+            "shutdown",
+            "job-deadline",
+            "accounting-unresolved",
+            "cleanup-unresolved",
+            "unknown",
+        )
+        for category in categories:
+            with self.subTest(category=category):
+                value = reading_long_diagnostics.derive(
+                    plan=plan(), outcome="withheld", stop_reason=category
+                )
+                self.assertEqual(category, value["stop_reason"])
+                self.assertEqual(value, reading_long_diagnostics.validate(value))
+                self.assertEqual(legacy["complete"], value["complete"])
+        invalid_values: tuple[object, ...] = (
+            None,
+            True,
+            "prepare-time",
+            "PRIVATE model prose",
+            {},
+            [],
+        )
+        for invalid in invalid_values:
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(
+                    reading_long_diagnostics.validate({**legacy, "stop_reason": invalid})
+                )
+
+    def test_stop_cause_uses_exact_known_tokens_and_never_serializes_private_text(self) -> None:
+        cases = {
+            "prepare-time": "resource-limit",
+            "retained-units": "resource-limit",
+            "source_pages": "resource-limit",
+            "source-final-changed": "source-changed",
+            "native_incomplete": "source-gap",
+            "scope-checks-unread": "evidence-gap",
+            "unresolved": "evidence-pass-failed",
+            "final-context-partial": "final-context-limited",
+            "invalid-reply": "unknown",
+            "factory-refused": "call-refused",
+            "intent-changed": "context-changed",
+            "permission-changed": "permission-changed",
+            "cancelled": "cancelled",
+            "closed": "shutdown",
+            "job-deadline": "job-deadline",
+            "persistence-unresolved": "accounting-unresolved",
+            "unstopped": "cleanup-unresolved",
+            "PRIVATE timeout happened at /private/session": "unknown",
+            "PREPARE-TIME": "unknown",
+        }
+        for reason, expected in cases.items():
+            with self.subTest(reason=reason):
+                category = reading_long_diagnostics.stop_reason(reason)
+                self.assertEqual(expected, category)
+                value = reading_long_diagnostics.derive(
+                    plan=plan(), outcome="withheld", stop_reason=category
+                )
+                self.assertNotIn("PRIVATE", json.dumps(value))
+        for success in ("", "ok", "resolved", "complete", "passes-ended"):
+            self.assertIsNone(reading_long_diagnostics.stop_reason(success))
+
+    def test_ambiguous_call_failure_requires_the_actual_call_stage(self) -> None:
+        for reason in (
+            "factory-failed",
+            "error",
+            "timeout",
+            "unavailable",
+            "invalid-reply",
+            "oversized-reply",
+            "oversized",
+        ):
+            with self.subTest(reason=reason):
+                self.assertEqual("unknown", reading_long_diagnostics.stop_reason(reason))
+                self.assertEqual(
+                    "evidence-pass-failed",
+                    reading_long_diagnostics.stop_reason(reason, stage="evidence"),
+                )
+                self.assertEqual(
+                    "final-call-failed",
+                    reading_long_diagnostics.stop_reason(reason, stage="reconciliation"),
+                )
+
     def module(self) -> Any:
         self.assertIsNotNone(
             importlib.util.find_spec("compass_runtime.reading_long_diagnostics"),

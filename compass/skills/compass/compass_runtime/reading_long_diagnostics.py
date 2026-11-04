@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from copy import deepcopy
 from itertools import pairwise
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from . import reading_pass_context, reading_pass_types
 
@@ -23,6 +23,133 @@ if TYPE_CHECKING:
     from .reading_source_inventory import Inventory
 
 MAX_SOURCE_ITEMS = 512
+_STOP_CAUSES = {
+    "resource-limit": {
+        "prepare-time",
+        "retained-bytes",
+        "retained-units",
+        "source-bytes",
+        "source-pages",
+        "source_bytes",
+        "source_pages",
+        "retained_bytes",
+        "retained_units",
+        "time",
+        "canonical_limit",
+        "message_limit",
+        "input-limit",
+        "output-limit",
+        "pass-limit",
+        "context-admission",
+        "context-small-window",
+        "context-no-room",
+        "context-limit",
+    },
+    "source-changed": {"source-changed", "source_changed", "source-final-changed"},
+    "source-gap": {
+        "source_gap",
+        "source-incomplete",
+        "source-unavailable",
+        "native_incomplete",
+        "inventory",
+        "unread",
+        "unfinished_line",
+        "oversized_line",
+        "unreadable_record",
+        "no_progress",
+    },
+    "evidence-gap": {
+        "coverage-incomplete",
+        "scope-checks-unread",
+        "original-unavailable",
+        "message-words-unavailable",
+        "original-order-unavailable",
+        "map-unavailable",
+        "final-unavailable",
+        "adopted-goal-unavailable",
+        "stated-goal-limited",
+        "ci-context-unavailable",
+        "input-unavailable",
+        "ci-read",
+        "context-unavailable",
+    },
+    "evidence-pass-failed": {
+        "unresolved",
+        "map-unresolved",
+        "candidate-overflow",
+        "invalid-candidates",
+    },
+    "final-context-limited": {
+        "final-context-partial",
+        "agent-words-partial",
+        "final-unfit",
+        "prompt-unfit",
+        "context-unfit",
+    },
+    "final-call-failed": set(),
+    "call-refused": {"refused", "factory-refused", "reservation-refused", "daily-cap"},
+    "context-changed": {
+        "context-changed",
+        "intent-changed",
+        "invalid-context",
+        "invalid-original",
+        "invalid-final",
+        "invalid-plan",
+        "context-config",
+        "context-config-after-reserve",
+        "context-dynamic",
+        "context-compaction",
+        "context-fallback",
+    },
+    "permission-changed": {"permission-changed", "model-calls-paused", "paused", "run-disabled"},
+    "cancelled": {"cancelled"},
+    "shutdown": {"closed", "shutdown"},
+    "job-deadline": {"job-deadline", "job-time"},
+    "accounting-unresolved": {
+        "persistence-unresolved",
+        "accounting-unknown",
+        "receipt-unresolved",
+        "retirement-unresolved",
+    },
+    "cleanup-unresolved": {"unstopped", "cleanup-unresolved"},
+    "unknown": set(),
+}
+
+
+_CALL_FAILURES = {
+    "invalid-reply",
+    "oversized-reply",
+    "factory-failed",
+    "error",
+    "timeout",
+    "oversized",
+    "unavailable",
+}
+
+
+def stop_reason(
+    reason: str, *, stage: Literal["evidence", "reconciliation"] | None = None
+) -> str | None:
+    """Categorize only the caller's actual closed cause, never infer it from totals.
+
+    Successful outcomes have no stop cause. Unrecognized text becomes unknown;
+    no substring matching, exception details or model prose enter the envelope.
+    Ambiguous call failures require the caller's actual stage, otherwise unknown.
+    This metadata neither grants nor removes completion/partial qualification.
+    """
+    if reason in {"", "ok", "resolved", "complete", "passes-ended"}:
+        return None
+    if reason in _CALL_FAILURES:
+        return {
+            "evidence": "evidence-pass-failed",
+            "reconciliation": "final-call-failed",
+        }.get(stage or "", "unknown")
+    for category, reasons in _STOP_CAUSES.items():
+        if reason == category or reason in reasons:
+            return category
+    return "unknown"
+
+
 _SOURCE_REASONS = {
     "",
     "inventory",
@@ -358,7 +485,8 @@ def validate(value: Any) -> dict[str, Any] | None:
                 "outcome",
                 "complete",
             }
-            | ({"binding"} if type(value) is dict and "binding" in value else set()),
+            | ({"binding"} if type(value) is dict and "binding" in value else set())
+            | ({"stop_reason"} if type(value) is dict and "stop_reason" in value else set()),
         )
         _require(type(value["version"]) is int and value["version"] == 1)
         _require(value["kind"] == "long-analysis")
@@ -379,6 +507,8 @@ def validate(value: Any) -> dict[str, Any] | None:
             )
             _require(reserved <= value["accounting"]["totals"]["calls"])
         _binding(value.get("binding"))
+        if "stop_reason" in value:
+            _label(value["stop_reason"], set(_STOP_CAUSES))
         _label(
             value["outcome"],
             {"pending", "withheld", "cancelled", "interrupted", "completed", "partial"},
@@ -507,6 +637,7 @@ def derive(  # noqa: PLR0913 - independent optional producer sections and frozen
     reconciliation_observations: list[dict[str, Any]] | None = None,
     outcome: str = "pending",
     binding: dict[str, Any] | None = None,
+    stop_reason: str | None = None,
 ) -> dict[str, Any]:
     """Project actual producer metadata; never serialize a producer's words or paths.
 
@@ -550,6 +681,7 @@ def derive(  # noqa: PLR0913 - independent optional producer sections and frozen
         },
         "outcome": outcome,
         **({"binding": binding} if binding is not None else {}),
+        **({"stop_reason": stop_reason} if stop_reason is not None else {}),
     }
     value["complete"] = _complete(value)
     checked = validate(value)

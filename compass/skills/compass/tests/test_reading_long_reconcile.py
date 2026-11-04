@@ -90,6 +90,7 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         self.assertEqual(7, len(self.f.calls))
         result = self.finish()
         self.assertEqual("partial", result.state)
+        self.assertEqual("final-context-limited", result.diagnostic["stop_reason"])
         assert result.assessment is not None and result.result is not None
         assert result.result.packet is not None and self.mapped.series is not None
         criterion = result.assessment["criteria"]["line_1"]
@@ -128,6 +129,8 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         self.maps(no_pr=True)
         result = self.finish()
         assert result.assessment is not None
+        self.assertEqual("partial", result.state)
+        self.assertEqual("final-context-limited", result.diagnostic["stop_reason"])
         self.assertNotIn("ci", result.assessment)
         self.assertIn("no applicable pull-request binding", result.assessment["cutoff"])
         self.assertEqual([], self.f.ci_calls)
@@ -146,6 +149,7 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         self.f.source.parent.save(self.f.source.path)
         result = self.finish()
         self.assertEqual("source-final-changed", result.reason)
+        self.assertEqual("source-changed", result.diagnostic["stop_reason"])
         self.assertEqual([], self.prompts)
         self.assertIsNone(result.assessment)
 
@@ -206,6 +210,9 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         with mock.patch.object(reading_preparation._Stage, "_retain", exhaust):
             result = self.finish()
         self.assertEqual("prepare-time", result.reason)
+        self.assertEqual("resource-limit", result.diagnostic["stop_reason"])
+        self.assertTrue(result.diagnostic["source"]["source_verified"])
+        self.assertEqual("passes-ended", result.diagnostic["maps"]["reason"])
         self.assertIsNone(result.assessment)
         self.assertEqual([], self.prompts)
         self.assertIsNotNone(result.result)
@@ -241,6 +248,7 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         self.after_reply = cancel
         result = self.finish()
         self.assertEqual("cancelled", result.reason)
+        self.assertEqual("cancelled", result.diagnostic["stop_reason"])
         self.assertIsNone(result.assessment)
         self.assertEqual(2, result.diagnostic["accounting"]["totals"]["calls"])
 
@@ -257,6 +265,38 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         result = self.finish()
         self.assertIsNotNone(result.assessment)
         self.assertLess(result.usage.prepare_ms - self.mapped.usage.prepare_ms, 1000)
+
+    def test_final_reply_with_positive_remaining_job_time_does_not_need_another_timeout(
+        self,
+    ) -> None:
+        self.maps()
+        self.f.env.clock[0] = self.f.plan["limits"]["job_ms"] / 1000 - 190
+
+        def reply() -> None:
+            self.f.env.clock[0] += 150
+
+        self.after_reply = reply
+        result = self.finish()
+        self.assertEqual("partial", result.state)
+        self.assertIsNotNone(result.assessment)
+        self.assertEqual("final-context-partial", result.reason)
+        self.assertEqual(1, len(self.prompts))
+        self.assertEqual("final-context-limited", result.diagnostic["stop_reason"])
+
+    def test_final_reply_beyond_whole_job_deadline_is_still_withheld(self) -> None:
+        self.maps()
+        self.f.env.clock[0] = self.f.plan["limits"]["job_ms"] / 1000 - 190
+
+        def reply() -> None:
+            self.f.env.clock[0] += 191
+
+        self.after_reply = reply
+        result = self.finish()
+        self.assertEqual("withheld", result.state)
+        self.assertIsNone(result.assessment)
+        self.assertEqual("job-deadline", result.reason)
+        self.assertEqual("job-deadline", result.diagnostic["stop_reason"])
+        self.assertEqual(1, len(self.prompts))
 
     def test_wrong_final_menu_reference_cannot_become_local_departure(self) -> None:
         self.maps(large=True)
@@ -284,11 +324,28 @@ class GuardedFinalWorkerTest(unittest.TestCase):
         ):
             result = self.finish()
         self.assertEqual("factory-failed", result.reason)
+        self.assertEqual("final-call-failed", result.diagnostic["stop_reason"])
         self.assertIsNone(result.assessment)
         self.assertIsNotNone(result.prompt_sha256)
         self.assertEqual([], self.prompts)
         self.assertEqual(1, result.diagnostic["accounting"]["totals"]["calls"])
         self.assertNotIn("private constructor", repr(result))
+
+    def test_map_factory_exception_is_not_reported_as_a_final_failure(self) -> None:
+        with mock.patch.object(
+            reading_long_execution, "guard", side_effect=OSError("private map constructor")
+        ):
+            self.maps()
+        self.assertEqual("factory-failed", self.mapped.reason)
+        result = self.finish()
+        self.assertEqual("factory-failed", result.reason)
+        self.assertEqual("evidence-pass-failed", result.diagnostic["stop_reason"])
+        self.assertIsNone(result.assessment)
+        self.assertIsNone(result.result)
+        self.assertIsNone(result.prompt_sha256)
+        self.assertEqual([], self.prompts)
+        self.assertEqual([], self.f.calls)
+        self.assertNotIn("private map constructor", repr(result))
 
     def test_final_quota_refusal_has_no_extra_charge_or_retry(self) -> None:
         self.maps()

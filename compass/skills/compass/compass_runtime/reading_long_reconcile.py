@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from . import (
     reading,
     reading_final_call,
+    reading_long_context,
     reading_long_diagnostics,
     reading_long_execution,
     reading_long_inspection,
@@ -55,6 +56,18 @@ class Finished:
 class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered pass mechanics
     prompt_sha256: str | None = None
     prompt_bytes: int | None = None
+    responded = False
+
+    def stop(self) -> str | None:
+        if not self.responded:
+            return super().stop()
+        reason = reading_long_context.check_after_call(self.config, self.context)
+        self.reason = self.reason or reason
+        if reason == "cancelled":
+            return "cancelled"
+        if reason in {"job-deadline", "job-clock-invalid"}:
+            return "job-deadline"
+        return None  # Other actual causes remain latched; no Assessment can escape them.
 
     def observe(self, event: dict[str, Any]) -> bool:
         self.remember_failure(event["observation"])
@@ -62,6 +75,8 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
             return False
         observation = event["observation"]
         diagnostic = observation["diagnostic"]
+        if diagnostic["input"] is not None:
+            self.responded = True
         if diagnostic["input"] is not None and not self.post_open:
             try:
                 self.post.enter_context(self.budget.stage())
@@ -291,7 +306,7 @@ def finish(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one closed final-call lif
         if final is not None:
             final.close_post()
             reason = reason or final.reason
-    current_reason = source.current()
+    current_reason = source.current(after_call=True)
     reason = reason or current_reason
     if reason:
         assessment = None
@@ -321,6 +336,12 @@ def finish(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one closed final-call lif
         diagnostic.update(
             outcome="cancelled" if reason == "cancelled" else "withheld", complete=False
         )
+    cause = reading_long_diagnostics.stop_reason(
+        reason or (result.reason if result is not None else mapped.reason),
+        stage="reconciliation" if final is not None else "evidence",
+    )
+    if cause is not None:
+        diagnostic["stop_reason"] = cause
     progress = deepcopy(final.progress if final is not None else progress)
     progress["source"].update(bytes_read=usage.source_bytes, pages_read=usage.source_pages)
     return Finished(

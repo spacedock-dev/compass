@@ -66,24 +66,28 @@ class _Source:
         self.final_required = (collection.final or {}).get("outcome") == "whole"
         self.reason = ""
         self.checkpoint = reading_long_context.Checkpoint(config, context)
+        self.after_call_checkpoint = reading_long_context.Checkpoint(
+            config, context, after_call=True
+        )
 
-    def current(self) -> str:
+    def current(self, *, after_call: bool = False) -> str:
         if self.reason:
             return self.reason
-        self.checkpoint(force=True)
-        reason = self.checkpoint.reason
+        checkpoint = self.after_call_checkpoint if after_call else self.checkpoint
+        checkpoint(force=True)
+        reason = checkpoint.reason
         if not reason:
-            checked = reading_source_collect.revalidate(self.snapshot, cancelled=self.checkpoint)
-            if self.checkpoint.reason:
-                reason = self.checkpoint.reason
+            checked = reading_source_collect.revalidate(self.snapshot, cancelled=checkpoint)
+            if checkpoint.reason:
+                reason = checkpoint.reason
             elif checked.snapshot is None:
                 reason = "source-changed"
             elif self.final_required and not checked.final_valid:
                 reason = "source-final-changed"
             else:
                 self.snapshot = checked.snapshot
-                self.checkpoint(force=True)
-                reason = self.checkpoint.reason
+                checkpoint(force=True)
+                reason = checkpoint.reason
         self.reason = reason
         return reason
 

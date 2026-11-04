@@ -34,6 +34,28 @@ from .test_reading_long_reservation import request
 
 
 class ActiveContextTest(unittest.TestCase):
+    def test_post_call_check_does_not_reserve_another_full_timeout(self) -> None:
+        self.clock[0] = 190
+        self.assertEqual("job-deadline", self.module.check(self.config, self.context))
+        self.assertEqual("", self.module.check_after_call(self.config, self.context))
+        before = self.module.Checkpoint(self.config, self.context)
+        after = self.module.Checkpoint(self.config, self.context, after_call=True)
+        self.assertTrue(before(force=True))
+        self.assertFalse(after(force=True))
+        self.clock[0] = 200
+        self.assertEqual("", self.module.check_after_call(self.config, self.context))
+        self.clock[0] = 201
+        self.assertEqual("job-deadline", self.module.check_after_call(self.config, self.context))
+
+    def test_post_call_check_retains_permission_and_active_owner_requirements(self) -> None:
+        self.clock[0] = 190
+        policy.set_consent(self.config, False, now=100)
+        self.assertEqual(
+            "permission-changed", self.module.check_after_call(self.config, self.context)
+        )
+        reading.end_job(self.config, self.key)
+        self.assertEqual("context-changed", self.module.check_after_call(self.config, self.context))
+
     def setUp(self) -> None:
         self.assertIsNotNone(importlib.util.find_spec("compass_runtime.reading_long_context"))
         self.module = importlib.import_module("compass_runtime.reading_long_context")
@@ -210,7 +232,9 @@ class ActiveContextTest(unittest.TestCase):
             self.assertTrue(checkpoint())
             self.assertEqual(2, checked.call_count)
 
-    def test_preparation_checkpoint_sees_cancel_immediately_without_waiting_for_read_interval(self) -> None:
+    def test_preparation_checkpoint_sees_cancel_immediately_without_waiting_for_read_interval(
+        self,
+    ) -> None:
         checkpoint_type = getattr(self.module, "Checkpoint", None)
         self.assertTrue(callable(checkpoint_type))
         assert callable(checkpoint_type)

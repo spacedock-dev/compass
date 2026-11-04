@@ -143,6 +143,20 @@ def check(config: RuntimeConfig, context: Context) -> str:
     These separate reads do not make external settings atomic. The caller must
     check again at its execution boundary; publication keeps its own barriers.
     """
+    return _check(config, context, after_call=False)
+
+
+def check_after_call(config: RuntimeConfig, context: Context) -> str:
+    """Validate the still-active owner after a call, without allocating another call.
+
+    All route, intent, permission and cancellation gates remain. Only the deadline
+    uses actual whole-job elapsed time; this check cannot authorize an invocation.
+    Terminal publication still requires its own sealed/completed owner checks.
+    """
+    return _check(config, context, after_call=True)
+
+
+def _check(config: RuntimeConfig, context: Context, *, after_call: bool) -> str:
     if (
         type(context) is not Context
         or type(context.active) is not control.Active
@@ -163,9 +177,10 @@ def check(config: RuntimeConfig, context: Context) -> str:
         return "intent-changed"
     if reason := policy.long_permission_reason(config, active.owner.permission):
         return reason
-    # Read work can block; shared ownership, Cancel/shutdown and full timeout
-    # fit must still hold after it. Nothing here authorizes a new pass.
-    return _live_reason(config, context) or jobs.deadline_reason(
+    # Read work can block; shared ownership, Cancel/shutdown and the applicable
+    # deadline must still hold afterward. Pre-call checks retain full timeout fit.
+    deadline = _publication_deadline if after_call else jobs.deadline_reason
+    return _live_reason(config, context) or deadline(
         active.owner.live, header["plan"]["limits"]["job_ms"]
     )
 
@@ -177,12 +192,14 @@ class Checkpoint:
     this probe permanently and retains its actual cause; it never fabricates an
     accepted reader Cancel or refreshes captured authority. Filesystem operations
     remain cooperative; force a check at every major preparation boundary.
+    after_call=True is only for post-call verification; it cannot authorize a call.
     """
 
-    def __init__(self, config: RuntimeConfig, context: Context):
+    def __init__(self, config: RuntimeConfig, context: Context, *, after_call: bool = False):
         self.config, self.context = config, context
         self.reason = ""
         self._next: float | None = None
+        self.after_call = after_call
 
     def __call__(self, *, force: bool = False) -> bool:
         if self.reason:
@@ -200,7 +217,8 @@ class Checkpoint:
                 if type(now) not in (int, float) or not math.isfinite(now):
                     self.reason = "job-clock-invalid"
                 elif force or self._next is None or now >= self._next:
-                    self.reason = check(self.config, self.context)
+                    checker = check_after_call if self.after_call else check
+                    self.reason = checker(self.config, self.context)
                     self._next = now + 0.25
             except Exception:  # noqa: BLE001 - failed preparation probes close the source reader
                 self.reason = "context-changed"

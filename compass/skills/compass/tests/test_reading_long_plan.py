@@ -163,7 +163,7 @@ class LongPlanTest(unittest.TestCase):
         self.assertEqual(self.module.build(self.route, self.preferences), first["plan"])
         self.assertEqual("native-actual-io", first["measurements"]["source_bytes"])
         self.assertEqual("retained-object-graph", first["measurements"]["retained_bytes"])
-        self.assertEqual("source-collection-and-revalidation", first["measurements"]["prepare_ms"])
+        self.assertEqual("source-and-analysis-preparation", first["measurements"]["prepare_ms"])
         self.assertEqual("whole-job-elapsed", first["measurements"]["job_ms"])
         wire = json.dumps(first, allow_nan=False)
         self.assertNotIn("PRIVATE GOAL", wire)
