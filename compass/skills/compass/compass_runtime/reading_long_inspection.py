@@ -35,6 +35,8 @@ class Inspection:
     minimum: Totals | None = None
     snapshot: str | None = None
     reason: str = ""
+    # Immutable marker-header association for pure consumers; never execution authority.
+    header_sha256: str | None = None
 
     @property
     def accounting(self) -> str:
@@ -173,7 +175,16 @@ def inspect(config: RuntimeConfig, job_id: str, *, now: float) -> Inspection:
             if exact is not None
             else None
         )
-        return Inspection(job_id, state, unsettled, exact, minimum, snapshot, reason)
+        return Inspection(
+            job_id,
+            state,
+            unsettled,
+            exact,
+            minimum,
+            snapshot,
+            reason,
+            header_sha256=reading_long_jobs.digest(marker["header"]),
+        )
     except (OSError, ValueError, TypeError, RuntimeError, RecursionError, _SQL_ERROR):
         return Inspection(job_id, state, unsettled, reason="ledger-unavailable")
 

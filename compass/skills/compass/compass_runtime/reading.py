@@ -55,7 +55,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
-from . import analyze_diagnostics, ci_read, observer, records, supervise
+from . import analyze_diagnostics, ci_read, observer, reading_long_progress, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
@@ -1480,6 +1480,9 @@ class Job:
     # because the result it would discard is already being stored.
     sealed: bool = False
     notice: reading_policy.Notice | None = None
+    # Encoded private snapshots cannot share mutable dictionaries with a caller.
+    _long_plan: str | None = field(default=None, repr=False)
+    _long_progress: str | None = field(default=None, repr=False)
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1488,7 +1491,7 @@ class Job:
 _JOBS: dict[tuple[str, str], Job] = {}
 
 
-def start_job(
+def _start_job(
     config: RuntimeConfig,
     session_key: str,
     *,
@@ -1496,6 +1499,7 @@ def start_job(
     label: str,
     now: float,
     prepared_job_id: str | None = None,
+    long_plan: str | None = None,
 ) -> Job | None:
     """Take the shared slot, or None when held; optionally use a prepared long ID.
 
@@ -1523,9 +1527,101 @@ def start_job(
             phase=PHASE_PREPARING,
             started_at=now,
             phase_at=now,
+            _long_plan=long_plan,
+            _long_progress=json.dumps(reading_long_progress.initial(json.loads(long_plan)))
+            if long_plan is not None
+            else None,
         )
         _JOBS[key] = job
         return job
+
+
+def start_job(
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str | None = None,
+) -> Job | None:
+    """Take the shared slot. A prepared identity alone conveys no long authority."""
+    return _start_job(
+        config,
+        session_key,
+        provider=provider,
+        label=label,
+        now=now,
+        prepared_job_id=prepared_job_id,
+    )
+
+
+def _start_long_job(
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str,
+    plan: Any,
+) -> Job | None:
+    """Private long-control admission: publish mode and the plan in the first snapshot."""
+    # Copy first, then validate exactly the immutable bytes this slot will retain.
+    encoded = json.dumps(plan)
+    reading_long_progress.initial(json.loads(encoded))
+    return _start_job(
+        config,
+        session_key,
+        provider=provider,
+        label=label,
+        now=now,
+        prepared_job_id=prepared_job_id,
+        long_plan=encoded,
+    )
+
+
+def _long_snapshot(job: Job) -> dict[str, Any]:
+    if job._long_plan is None:  # noqa: SLF001 - this registry owns Job snapshots
+        return {}
+    try:
+        plan = json.loads(job._long_plan)  # noqa: SLF001 - registry-owned snapshot
+        value = json.loads(job._long_progress or "null")  # noqa: SLF001 - registry-owned snapshot
+        checked = reading_long_progress.validate(value, plan=plan)
+    except (ValueError, TypeError, RecursionError):
+        checked = None
+    if checked is None:
+        return {"mode": "long", "plan": None, "progress": None}
+    return {"mode": "long", "plan": plan, "progress": checked}
+
+
+def update_long_progress(
+    config: RuntimeConfig,
+    session_key: str,
+    expected_job: Job,
+    value: Any,
+    *,
+    job_id: str,
+    plan: Any,
+) -> bool:
+    """Replace only the current unsealed owner's closed snapshot; perform no I/O."""
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if (
+            running is not expected_job
+            or running.id != job_id
+            or running.cancelled_at is not None
+            or running.sealed
+        ):
+            return False
+        before = _long_snapshot(running)
+        if before.get("plan") is None or before["plan"] != plan:
+            return False
+        checked = reading_long_progress.validate(value, plan=before["plan"])
+        if checked is None or not reading_long_progress.follows(before["progress"], checked):
+            return False
+        running._long_progress = json.dumps(checked)  # noqa: SLF001 - registry-owned snapshot
+        return True
 
 
 def job(config: RuntimeConfig, session_key: str) -> Job | None:
@@ -1624,6 +1720,7 @@ def published_jobs(config: RuntimeConfig) -> dict[str, dict[str, Any]]:
         return {
             key: {
                 "id": found.id,
+                **_long_snapshot(found),
                 "phase": found.phase,
                 "phase_at": found.phase_at,
                 "started_at": found.started_at,
