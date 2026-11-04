@@ -65,22 +65,16 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
         return Invocation(state, reason, plan, reply, analyze_diagnostics.validate(capture.value))
 
     frozen_lines, frozen_clauses = tuple(lines), tuple(clauses)
-    allowed = reading.constraints_for(frozen_lines, claims=True)
-    if (
-        not isinstance(goal, str)
-        or len(frozen_lines) > reading.MAX_OUTCOME_LINES
-        or any(not isinstance(line, str) for line in frozen_lines)
-        or not 1 <= len(frozen_clauses) <= reading.MAX_OUTCOME_LINES + 2
-        or any(not isinstance(clause, str) or clause not in allowed for clause in frozen_clauses)
-        or len(set(frozen_clauses)) != len(frozen_clauses)
-    ):
+    try:
+        prefix = protocol_prefix(goal, frozen_lines, frozen_clauses)
+    except ValueError:
         return result("local-unfit", "invalid-input")
     try:
         plan = reading_passes.plan_packets(
             originals,
             goal=goal,
             lines=frozen_lines,
-            protocol_prefix=_PROTOCOL + json.dumps(frozen_clauses),
+            protocol_prefix=prefix,
             max_bytes=max_bytes,
             max_passes=1,
             boundary_context=boundary_context,
@@ -91,6 +85,43 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
         return result("local-unfit", plan.reason if plan.uncovered_primary else "no-evidence")
     packet = plan.packets[0]
     capture.prepared(packet.prompt, packet.selection.diagnostic, started)
+    state, reason, reply = call_packet(
+        packet,
+        model=model,
+        clauses=frozen_clauses,
+        capture=capture,
+        masked_values=masked_values,
+        scrub_partial=scrub_partial,
+    )
+    return result(state, reason, reply)
+
+
+def protocol_prefix(goal: str, lines: Sequence[str], clauses: Sequence[str]) -> str:
+    """The complete owned map protocol, validated before allocation or calling."""
+    frozen_lines, frozen_clauses = tuple(lines), tuple(clauses)
+    allowed = reading.constraints_for(frozen_lines, claims=True)
+    if (
+        not isinstance(goal, str)
+        or len(frozen_lines) > reading.MAX_OUTCOME_LINES
+        or any(not isinstance(line, str) for line in frozen_lines)
+        or not 1 <= len(frozen_clauses) <= reading.MAX_OUTCOME_LINES + 2
+        or any(not isinstance(clause, str) or clause not in allowed for clause in frozen_clauses)
+        or len(set(frozen_clauses)) != len(frozen_clauses)
+    ):
+        raise ValueError("Invalid frozen map intent or clauses")
+    return _PROTOCOL + json.dumps(frozen_clauses)
+
+
+def call_packet(
+    packet: reading_passes.EvidencePacket,
+    *,
+    model: Callable[..., tuple[str, str]],
+    clauses: Sequence[str],
+    capture: analyze_diagnostics.Capture,
+    masked_values: Collection[str] = (),
+    scrub_partial: bool = False,
+) -> tuple[str, str, reading_maps.MapReply | None]:
+    """Call an already measured exact packet once; no preparation measurements are invented."""
     refusal = False
     try:
         raw, status = model(packet.prompt, output_cap_bytes=reading.REPLY_CAP_BYTES)
@@ -101,16 +132,18 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
     finally:
         capture.called(model)
     if refusal:
-        return result("refused", "refused")
+        return "refused", "refused", None
     if status != "ok":
-        return result(
-            "model-failed", status if status in analyze_diagnostics.INPUT_OUTCOMES else "error"
+        return (
+            "model-failed",
+            status if status in analyze_diagnostics.INPUT_OUTCOMES else "error",
+            None,
         )
     reply = reading_maps.parse_reply(
         raw,
         packet,
-        clauses=frozen_clauses,
+        clauses=clauses,
         masked_values=masked_values,
         scrub_partial=scrub_partial,
     )
-    return result("mapped" if reply.usable else "parse-failed", reply.reason, reply)
+    return "mapped" if reply.usable else "parse-failed", reply.reason, reply

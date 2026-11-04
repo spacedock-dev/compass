@@ -330,7 +330,38 @@ def _fill_primary(
     return primary, cursor, start
 
 
-def plan_packets(
+def _observe_preparation(
+    observer: Callable[[int, EvidencePacket | None], None] | None,
+    ordinal: int,
+    packet: EvidencePacket | None = None,
+) -> None:
+    if observer is not None:
+        observer(ordinal, packet)
+
+
+def _unfit_reason(context: Sequence[EvidenceRange], cap: int, maximum: int) -> str:
+    if cap < maximum:
+        return "input-limit"
+    return "context-unfit" if context else "prompt-unfit"
+
+
+def _validate_limits(
+    max_bytes: int, max_passes: int, overlap_chars: int, total_bytes: int | None
+) -> None:
+    if (
+        type(max_bytes) is not int
+        or max_bytes <= 0
+        or type(max_passes) is not int
+        or not 1 <= max_passes <= 16
+        or type(overlap_chars) is not int
+        or overlap_chars < 0
+    ):
+        raise ValueError("Positive byte/pass bounds and nonnegative overlap are required")
+    if total_bytes is not None and (type(total_bytes) is not int or total_bytes < 0):
+        raise ValueError("Aggregate packet bytes must be a nonnegative count")
+
+
+def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation observation
     originals: Sequence[Original],
     *,
     goal: str,
@@ -340,6 +371,8 @@ def plan_packets(
     max_passes: int,
     boundary_context: Sequence[str] = (),
     overlap_chars: int = 0,
+    total_bytes: int | None = None,
+    on_preparation: Callable[[int, EvidencePacket | None], None] | None = None,
 ) -> PacketPlan:
     """Pack caller-ordered originals, stopping at the first uncovered primary range.
 
@@ -352,16 +385,13 @@ def plan_packets(
 
     The caller's complete protocol prefix is included before any allocation. The returned
     prompts are final byte-budgeted packets: appending instructions invalidates their fit.
+    An optional total byte cap charges every repeated serialized byte during allocation.
+    Preparation observation receives (ordinal, None) before construction and then the
+    final packet; an unfit position has no final packet. Shared preparation belongs to
+    the first position. These observations establish no transmission or reservation.
     """
-    if (
-        type(max_bytes) is not int
-        or max_bytes <= 0
-        or type(max_passes) is not int
-        or not 1 <= max_passes <= 16
-        or type(overlap_chars) is not int
-        or overlap_chars < 0
-    ):
-        raise ValueError("Positive byte/pass bounds and nonnegative overlap are required")
+    _validate_limits(max_bytes, max_passes, overlap_chars, total_bytes)
+    _observe_preparation(on_preparation, 1)
     sources = _sources(originals)
     ordered = [original for _, original in sources.values()]
     if any(key not in sources for key in boundary_context):
@@ -379,9 +409,13 @@ def plan_packets(
     except UnicodeEncodeError:
         raise ValueError("Protocol and saved intent must be UTF-8 encodable") from None
     packets: list[EvidencePacket] = []
-    cursor = start = 0
+    cursor = start = transmitted = 0
     reason = "complete"
     while cursor < len(ordered) and len(packets) < max_passes:
+        ordinal = len(packets) + 1
+        if packets:
+            _observe_preparation(on_preparation, ordinal)
+        cap = max_bytes if total_bytes is None else min(max_bytes, total_bytes - transmitted)
         context = list(required)
         if (
             packets
@@ -401,19 +435,24 @@ def plan_packets(
         held = tuple(_union(context).values())
 
         def fits(
-            candidate: Sequence[EvidenceRange], held: tuple[EvidenceRange, ...] = held
+            candidate: Sequence[EvidenceRange],
+            held: tuple[EvidenceRange, ...] = held,
+            cap: int = cap,
         ) -> bool:
             prompt = _packet(sources, candidate, held, header, frozen_lines).prompt
-            return len(prompt.encode()) <= max_bytes
+            return len(prompt.encode()) <= cap
 
         if not fits(()):
-            reason = "context-unfit" if held else "prompt-unfit"
+            reason = _unfit_reason(held, cap, max_bytes)
             break
-        primary, cursor, start = _fill_primary(ordered, cursor, start, fits, max_bytes)
+        primary, cursor, start = _fill_primary(ordered, cursor, start, fits, cap)
         if not primary:
-            reason = "context-unfit" if held else "prompt-unfit"
+            reason = _unfit_reason(held, cap, max_bytes)
             break
-        packets.append(_packet(sources, primary, held, header, frozen_lines, measure=True))
+        packet = _packet(sources, primary, held, header, frozen_lines, measure=True)
+        packets.append(packet)
+        transmitted += len(packet.prompt.encode())
+        _observe_preparation(on_preparation, ordinal, packet)
     remaining = tuple(
         _span(original, start if index == cursor else 0)
         for index, original in enumerate(ordered)
