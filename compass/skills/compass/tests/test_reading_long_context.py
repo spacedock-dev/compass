@@ -183,6 +183,14 @@ class ActiveContextTest(unittest.TestCase):
         self.controls = dataclasses.replace(self.controls, window_limits=(100_000,))
         self.assertEqual("context-changed", self.check())
 
+    def test_tool_destination_change_with_unchanged_words_destination_refuses(self) -> None:
+        current = reading_route.resolve("claude", config=self.config)
+        self.assertEqual("", self.check())
+        with mock.patch.object(
+            reading_route, "resolve", return_value={**current, "destination": "another.receiver"}
+        ):
+            self.assertEqual("context-changed", self.check())
+
     def test_shared_slot_foreign_owner_and_terminal_marker_refuse(self) -> None:
         foreign = dataclasses.replace(
             self.active, owner=dataclasses.replace(self.active.owner, owner="f" * 32)

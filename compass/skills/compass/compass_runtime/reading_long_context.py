@@ -23,6 +23,7 @@ class Route:
     provider: str
     model: str
     destination: str
+    tool_destination: str
     content: int
     preferences: settings.Settings
     controls_sha256: str
@@ -50,6 +51,7 @@ def describe(config: RuntimeConfig, harness: str) -> Route | None:
             provider,
             route["model"],
             route["words_destination"],
+            route["destination"],
             policy.CONTENT_VERSION
             if harness == "claude"
             else policy.REQUESTED_WORDS_CONTENT_VERSION,
