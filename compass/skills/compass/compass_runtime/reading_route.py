@@ -14,7 +14,6 @@ See [DEC-21](docs/design-reading-a-session.md#amended-2026-09-23-claude-code-is-
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
 import platform
 import re
@@ -24,7 +23,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from urllib.parse import urlsplit
 
 from . import annotations as annotation_store
-from . import ci_read, observer, records
+from . import ci_read, claude_settings, observer, records
 from . import config as runtime_config
 
 if TYPE_CHECKING:
@@ -125,11 +124,8 @@ TOOL_OUTPUT_TAIL_CHARS = 180
 # codex-cli 0.156.1, rather than recalled: the Windows path is under Program
 # Files, not ProgramData. Windows policy lives in the registry as well, which
 # this build does not read, so no destination is named on Windows at all.
-CLAUDE_MANAGED_DIRS = {
-    "Darwin": "/Library/Application Support/ClaudeCode",
-    "Linux": "/etc/claude-code",
-}
-CLAUDE_MANAGED_PREFERENCES = "com.anthropic.claudecode.plist"
+CLAUDE_MANAGED_DIRS = claude_settings.MANAGED_DIRS
+CLAUDE_MANAGED_PREFERENCES = claude_settings.MANAGED_PREFERENCES
 CODEX_MANAGED_FILES = ("/etc/codex/managed_config.toml", "/etc/codex/config.toml")
 CODEX_MANAGED_PREFERENCES = "com.openai.codex.plist"
 MANAGED_PREFERENCES_DIR = "/Library/Managed Preferences"
@@ -141,90 +137,17 @@ _CLAUDE_CLOUDS = {
 }
 
 
-class _UnnamedError(Exception):
-    """A setting exists that this build cannot read or does not recognise."""
-
-
-def _under(root: Path, path: str) -> Path:
-    return root / path.lstrip("/")
-
-
-def _present(path: Path) -> bool:
-    try:
-        os.lstat(path)
-    except FileNotFoundError:
-        return False
-    except OSError as exc:
-        raise _UnnamedError from exc
-    return True
-
-
-def _env_block(path: Path) -> dict[str, str]:
-    """A settings file's `env` block, {} when absent, refused when unreadable."""
-    if not _present(path):
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, RecursionError) as exc:
-        raise _UnnamedError from exc
-    if not isinstance(data, dict):
-        raise _UnnamedError
-    env = data.get("env", {})
-    if not isinstance(env, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) for key, value in env.items()
-    ):
-        raise _UnnamedError
-    return env
-
-
-def _account(environ: Mapping[str, str]) -> tuple[str, str]:
-    """(home, user) as the CLI finds them: the environment, else the password file.
-
-    Node's `os.homedir()` and `os.userInfo()` fall back to the password entry,
-    so a daemon started without `HOME` or `USER` still has a remote settings
-    file and a per-user profile the CLI reads (review, 2026-09-24).
-    """
-    home, user = environ.get("HOME", ""), environ.get("USER", "")
-    if home and user:
-        return home, user
-    try:
-        import pwd  # noqa: PLC0415 - absent on Windows, which names nothing anyway
-
-        entry = pwd.getpwuid(os.getuid())
-    except (ImportError, KeyError, OSError):
-        return home, user
-    return home or entry.pw_dir, user or entry.pw_name
+# Keep destination's existing env-only interpretation and test seams. The shared
+# reader also exposes top-level fields to Analyze, without applying them here.
+_UnnamedError = claude_settings.SettingsError
+_under = claude_settings.under
+_present = claude_settings.present
+_account = claude_settings.account
 
 
 def _claude_sources(environ: Mapping[str, str], root: Path, system: str) -> list[Mapping[str, str]]:
-    managed = CLAUDE_MANAGED_DIRS.get(system)
-    if managed is None or environ.get("CLAUDE_CODE_MANAGED_SETTINGS_PATH"):
-        raise _UnnamedError
-    base = _under(root, managed)
-    sources: list[Mapping[str, str]] = [environ, _env_block(base / "managed-settings.json")]
-    drop_ins = base / "managed-settings.d"
-    if _present(drop_ins):
-        try:
-            names = sorted(
-                name
-                for name in os.listdir(drop_ins)
-                if name.endswith(".json") and not name.startswith(".")
-            )
-        except OSError as exc:
-            raise _UnnamedError from exc
-        sources.extend(_env_block(drop_ins / name) for name in names)
-    home, user = _account(environ)
-    if not home or not user:
-        # Where the CLI would look cannot be known, so what it reads cannot be.
-        raise _UnnamedError
-    if system == "Darwin" and any(
-        _present(_under(root, f"{MANAGED_PREFERENCES_DIR}/{prefix}{CLAUDE_MANAGED_PREFERENCES}"))
-        for prefix in ("", f"{user}/")
-    ):
-        raise _UnnamedError
-    config_dir = environ.get("CLAUDE_CONFIG_DIR") or f"{home}/.claude"
-    sources.append(_env_block(_under(root, config_dir) / "remote-settings.json"))
-    return sources
+    documents = claude_settings.documents(environ, root, system, account_reader=_account)
+    return [environ, *(source.data.get("env", {}) for source in documents)]
 
 
 # Two settings measured in the 2.1.281 binary that move the API host without a

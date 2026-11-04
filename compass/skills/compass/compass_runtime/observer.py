@@ -29,9 +29,9 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Protocol
 
+from . import claude_settings, reading_policy, records, spacedock, supervise, transcripts
 from . import config as runtime_config
 from . import io as runtime_io
-from . import reading_policy, records, spacedock, supervise, transcripts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -400,7 +400,7 @@ def reading_workdir_root() -> str | None:
     return None
 
 
-def claude_environment(environ: Mapping[str, str]) -> dict[str, str]:
+def claude_environment(environ: Mapping[str, str], *, analyze: bool = False) -> dict[str, str]:
     """The reading call's environment: the daemon's, minus the opener's session.
 
     Public and pure, as `git_status.probe_environment` is, so a test asserts
@@ -417,6 +417,8 @@ def claude_environment(environ: Mapping[str, str]) -> dict[str, str]:
     # up six other hosts per call (telemetry, feature flags); with it, none
     # (review, Sent F3). Forced, so an operator's 0 does not turn it back on.
     env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    if analyze:
+        env["DISABLE_COMPACT"] = "1"
     return env
 
 
@@ -433,6 +435,7 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
     # would stop the 180 s limit following the module value.
     timeout: float | None = None,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
+    analyze: bool = False,
 ) -> tuple[str, str]:
     """One bounded, non-persistent Claude Code call. Returns the output and a status.
 
@@ -469,6 +472,7 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
             on_diagnostic=on_diagnostic,
             system_prompt=system_prompt,
             timeout=timeout,
+            analyze=analyze,
         ) as prepared:
             return prepared(prompt, output_cap_bytes=output_cap_bytes)
     except ClaudePreparationError as error:
@@ -503,6 +507,7 @@ class PreparedClaude:
         on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
         validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
         effort: str = "",
+        analyze: bool = False,
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -520,8 +525,14 @@ class PreparedClaude:
         # keeps the Sonnet floor and `CLAUDE_READING_EFFORT` by passing neither.
         self.validator = validator
         self.effort = effort
+        self.analyze = analyze
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+        environment = claude_environment(os.environ, analyze=self.analyze)
+        # Re-read immediately before launching. This narrows, but cannot remove,
+        # the file-mutation/remote-refresh race inside the external CLI.
+        if self.analyze and claude_settings.resolve(self.model, environ=environment).refusal:
+            return "", "context-config"
         command = [
             self.binary,
             *_claude_reading_argv(
@@ -529,6 +540,7 @@ class PreparedClaude:
                 system_prompt=self.system_prompt,
                 validator=self.validator,
                 effort=self.effort,
+                analyze=self.analyze,
             ),
         ]
         started = time.monotonic()
@@ -545,7 +557,7 @@ class PreparedClaude:
                 cwd=self.workdir,
                 stdout=self.output,
                 stderr=self.error_output,
-                env=claude_environment(os.environ),
+                env=environment,
                 text=True,
                 encoding="utf-8",
                 timeout=OBSERVER_READING_TIMEOUT_SEC if self.timeout is None else self.timeout,
@@ -639,6 +651,7 @@ def _claude_reading_argv(
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
     validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
     effort: str = "",
+    analyze: bool = False,
 ) -> list[str]:
     return [
         "--print",
@@ -664,12 +677,14 @@ def _claude_reading_argv(
         effort or CLAUDE_READING_EFFORT,
         "--system-prompt",
         system_prompt,
+        *(["--settings", '{"switchModelsOnFlag":false}'] if analyze else []),
     ]
 
 
-def claude_reading_provenance(config: RuntimeConfig) -> dict[str, Any]:
+def claude_reading_provenance(config: RuntimeConfig, *, analyze: bool = False) -> dict[str, Any]:
     """Bind the requested model/envelope, without inventing a remote receipt."""
-    argv = _claude_reading_argv(config.claude_reading_model)
+    argv = _claude_reading_argv(config.claude_reading_model, analyze=analyze)
+    envelope: Any = [argv, {"DISABLE_COMPACT": "1"}] if analyze else argv
     return {
         "provider": "claude",
         "selected_model": config.claude_reading_model,
@@ -679,7 +694,7 @@ def claude_reading_provenance(config: RuntimeConfig) -> dict[str, Any]:
         "admission_rank": list(
             runtime_config.claude_reading_model_rank(config.claude_reading_model)
         ),
-        "envelope_digest": hashlib.sha256(json.dumps(argv).encode("utf-8")).hexdigest(),
+        "envelope_digest": hashlib.sha256(json.dumps(envelope).encode("utf-8")).hexdigest(),
     }
 
 
@@ -696,6 +711,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
     model: str | None = None,
     validator: Callable[[str], str] = runtime_config.validate_claude_reading_model,
     effort: str = "",
+    analyze: bool = False,
 ) -> Iterator[PreparedClaude]:
     """Prepare the private cwd and output before qualification spends a call.
 
@@ -715,6 +731,8 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
+        if analyze and claude_settings.resolve(selected_model).refusal:
+            raise ClaudePreparationError("context-config")
         try:
             binary = binary_resolver("claude")
             if not binary or not os.path.isabs(binary):
@@ -750,6 +768,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             on_diagnostic=on_diagnostic,
             validator=validator,
             effort=effort,
+            analyze=analyze,
         )
     finally:
         # Ownership starts at allocation, before a stream or yielded context

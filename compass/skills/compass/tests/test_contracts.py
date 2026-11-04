@@ -1482,7 +1482,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Who reads a session: each provider's gate, then its CLI on PATH. It
         # validates the model floor in `config`, reaches ids in `observer` and never
         # a producer, and uses credential shapes in `records` so no key names a host.
+        "compass_runtime.claude_settings": set(),
         "compass_runtime.reading_route": {
+            "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.annotations",
             "compass_runtime.observer",
@@ -1490,6 +1492,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.ci_read",
         },
         "compass_runtime.observer": {
+            "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.reading_policy",

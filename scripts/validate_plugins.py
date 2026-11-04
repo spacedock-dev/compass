@@ -477,6 +477,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/lifecycle.py",
     "skills/compass/compass_runtime/http_api.py",
     "skills/compass/compass_runtime/observer.py",
+    "skills/compass/compass_runtime/claude_settings.py",
     "skills/compass/compass_runtime/reading.py",
     "skills/compass/compass_runtime/reading_capacity.py",
     "skills/compass/compass_runtime/reading_policy.py",
