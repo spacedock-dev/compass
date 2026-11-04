@@ -1845,6 +1845,9 @@ Requested Analyze additionally sets child `DISABLE_COMPACT=1` and passes inline
 summaries, unasked readings, default offline qualification and the Live monitor keep their existing
 envelopes. The instrumented live-study wrapper binds and forwards the requested Analyze controls;
 an altered invocation inherits neither a previously reviewed study allowance nor an accuracy result.
+The separate native-route verification guard retains its frozen `analyze=False` authority and
+refuses Analyze controls before its own reservation or delegation. Enabling those controls there
+requires separately reviewed authority; this refusal does not refund an outer Analyze attempt.
 Compass checks applicable managed settings before admission and again before launch, refusing
 known conflicting or dynamic policy. Managed controls still take precedence. A missing remote
 cache does not prove that the CLI cannot fetch policy, and a read cannot prevent a later policy

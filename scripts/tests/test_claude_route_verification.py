@@ -431,6 +431,9 @@ class RouteSidecarGuards(unittest.TestCase):
     def test_native_model_and_consent_policy_charge_before_the_real_callback_seam(self) -> None:
         self._exercise_native_job_status("ok")
 
+    def test_analyze_controls_refuse_without_native_charge_before_default_call(self) -> None:
+        self._exercise_native_job_status("ok", check_analyze_refusal=True)
+
     def test_unstopped_native_status_keeps_the_real_job_running_warning(self) -> None:
         self._exercise_native_job_status("unstopped")
 
@@ -474,7 +477,25 @@ class RouteSidecarGuards(unittest.TestCase):
         self.assertEqual(status, settlement["status"])
         self.assertEqual(self.route.sha(b"native test-only reply"), settlement["output_digest"])
 
-    def _exercise_native_job_status(self, status: str, *, source_changed: bool = False) -> None:
+    def _assert_analyze_refused_before_native_charge(
+        self, observer: Any, config: Any, current: Any, sent: list[str]
+    ) -> None:
+        before = self.state.read_bytes()
+        with self.assertRaisesRegex(self.route.RefusalError, "analyze=False"):
+            observer.claude_exec(config, "owned prompt", output_cap_bytes=8192, analyze=True)
+        self.assertEqual(before, self.state.read_bytes())
+        self.assertEqual(0, current.budget_view()["route_attempts"])
+        self.assertEqual([], sent)
+
+    def _assert_native_call_controls(self, kwargs: Any, spawned: Any, supervise: Any) -> None:
+        self.assertIs(supervise.run, kwargs["runner"])
+        self.assertIs(self.route.shutil.which, kwargs["binary_resolver"])
+        self.assertIs(spawned, kwargs["on_spawn"])
+        self.assertIs(False, kwargs["analyze"])
+
+    def _exercise_native_job_status(
+        self, status: str, *, source_changed: bool = False, check_analyze_refusal: bool = False
+    ) -> None:
         from types import SimpleNamespace  # noqa: PLC0415 - owned test-only application
 
         _annotations, observer, reading, policy, _route = self.route._runtime()
@@ -502,9 +523,7 @@ class RouteSidecarGuards(unittest.TestCase):
         def native(config_arg: Any, prompt: str, **kwargs: Any) -> tuple[str, str]:
             self.assertIs(config, config_arg)
             self.assertEqual(1, self.verifier().budget_view()["route_attempts"])
-            self.assertIs(supervise.run, kwargs["runner"])
-            self.assertIs(self.route.shutil.which, kwargs["binary_resolver"])
-            self.assertIs(spawned, kwargs["on_spawn"])
+            self._assert_native_call_controls(kwargs, spawned, supervise)
             sent.append(prompt)
             if source_changed:
                 self.ui_file.write_bytes(b"test-only evidence change during charged native call")
@@ -540,6 +559,10 @@ class RouteSidecarGuards(unittest.TestCase):
                 self.review["profile_digest"] = self.route.profile_binding(self.body)
                 self.handoff.write_text(json.dumps(self.review))
                 current = self.initialize()
+                if check_analyze_refusal:
+                    self._assert_analyze_refused_before_native_charge(
+                        observer, config, current, sent
+                    )
                 policy.set_consent(
                     config,
                     True,
