@@ -19,11 +19,11 @@ import platform
 import re
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from urllib.parse import urlsplit
 
+from . import analyze_capacity, ci_read, claude_settings, observer, records
 from . import annotations as annotation_store
-from . import ci_read, claude_settings, observer, records
 from . import config as runtime_config
 
 if TYPE_CHECKING:
@@ -104,6 +104,8 @@ class Route(TypedDict):
     # `on`, `off` (the page's setting) or `flag-off` (`--no-ci-read`). The unasked lane is
     # never `on`, because no network call happens without a press.
     ci_read: str
+    # Requested Analyze only: a policy preview, never a measured prompt or fit receipt.
+    capacity: NotRequired[dict[str, Any]]
 
 
 # The harnesses whose observed record lists checks (`project_context.
@@ -590,6 +592,35 @@ def _route(
 
 
 def resolve(
+    harness: str,
+    *,
+    binary_resolver: Callable[[str], Any] | None = None,
+    environ: Mapping[str, str] | None = None,
+    root: Path | None = None,
+    config: runtime_config.RuntimeConfig | None = None,
+    unasked: bool = False,
+) -> Route:
+    """Select once, then preview capacity for that actual requested route."""
+    route = _resolve(
+        harness,
+        binary_resolver=binary_resolver,
+        environ=environ,
+        root=root,
+        config=config,
+        unasked=unasked,
+    )
+    if not unasked:
+        route["capacity"] = analyze_capacity.preview(
+            route["provider"],
+            route["model"],
+            observer.CLAUDE_READING_SYSTEM_PROMPT if route["provider"] == CLAUDE else "",
+            environ=environ,
+            root=root,
+        )
+    return route
+
+
+def _resolve(
     harness: str,
     *,
     binary_resolver: Callable[[str], Any] | None = None,

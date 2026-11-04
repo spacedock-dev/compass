@@ -9584,9 +9584,16 @@ checks, scanned 8 MiB of a 17 MB parent and none of its 282 subagent transcripts
 tell. The owner ruled that a press reads the session whole, within bounds the reader sets.
 
 - The bounds are the reader's, on the Settings screen (`settings`): the prompt (512 KiB by
-  default), the messages and checks kept (2,000), the checks and files listed (1,000) and the
+  default, with a stored maximum of 2 MiB), the messages and checks kept (2,000), the checks and
+  files listed (1,000) and the
   transcript bytes scanned for checks, the subagents' included (512 MiB). The old constants are
   the floors, and the project page, the unasked lane and the summaries keep their own.
+- Prompt storage and sending are separate bounds. The actual assembled prompt must pass the
+  selected route's estimated capacity policy before reservation. A route change never clamps
+  the saved preference, and a small actual prompt may pass even when the preference exceeds
+  that route's allowance. Settings GET/POST and requested routes publish policy previews,
+  without implying an actual prompt was measured or token fit was verified. An allowance below
+  the setting's 16 KiB floor is not a recommendation to save an unrepresentable value.
 - A check `&&` joins ahead of a later check whose own summary ends the output passed, because the
   later one ran only after the earlier exited 0.
 - Checks separated by `;`, each cut by `tail`, each take their own summary line in order, read only

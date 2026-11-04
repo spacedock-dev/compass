@@ -1433,6 +1433,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.analyze_capacity": {
             "compass_runtime.claude_settings",
             "compass_runtime.reading_capacity",
+            "compass_runtime.settings",
         },
         # The durable permission and budget: config names its store, io owns
         # optional SQLite loading, and the runner says whether Compass is
@@ -1488,6 +1489,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # a producer, and uses credential shapes in `records` so no key names a host.
         "compass_runtime.claude_settings": set(),
         "compass_runtime.reading_route": {
+            "compass_runtime.analyze_capacity",
             "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.annotations",
@@ -1570,6 +1572,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
             "compass_runtime.analyze_capacity",
+            "compass_runtime.config",
             # Deterministic grouping belongs only to the focused context answer.
             "compass_runtime.session_outline",
             # Stored summaries on the focused answer, and `POST /api/summary/delete`.

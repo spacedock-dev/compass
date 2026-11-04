@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from compass_runtime.aggregate import Application
+    from compass_runtime.config import RuntimeConfig
     from compass_runtime.interaction_prototype import InteractionPrototype
     from compass_runtime.observation import Observation
 
@@ -378,6 +379,21 @@ def _session_context(
 # is a 400 carrying such a route, and its note says to reload.
 # A settings body is a few keys and integers; anything near this is not one.
 SETTINGS_BODY_CAP_BYTES = 1024
+
+
+def published_settings(config: RuntimeConfig, value: settings.Settings) -> dict[str, Any]:
+    """Stored preferences and separate route estimates, identical on GET and POST."""
+    return {
+        **settings.published(value),
+        "capacities": {
+            "claude": analyze_capacity.preview(
+                "claude", config.claude_reading_model, runtime_observer.CLAUDE_READING_SYSTEM_PROMPT
+            ),
+            "codex": analyze_capacity.preview("codex", runtime_observer.OBSERVER_MODEL, ""),
+        },
+    }
+
+
 PAGE_OUTDATED_REASON = "page-outdated"
 PAGE_OUTDATED = (
     "This page is from an older version of Compass, so nothing was sent. Reload the page "
@@ -1867,7 +1883,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not self._local_ok():
             self.send_error(403)
             return
-        published = settings.published(settings.load(self.server.application.config))
+        config = self.server.application.config
+        published = published_settings(config, settings.load(config))
         self._send(json.dumps(published, separators=(",", ":")).encode(), "application/json")
 
     def _annotations(self) -> None:
@@ -2145,7 +2162,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(503, "the settings store could not be written")
             return
         self._send(
-            json.dumps(settings.published(saved), separators=(",", ":")).encode(),
+            json.dumps(published_settings(config, saved), separators=(",", ":")).encode(),
             "application/json",
         )
 

@@ -742,6 +742,7 @@ WITHHELD_CANCELLED = "cancelled"
 WITHHELD_CANCELLED_UNSENT = "cancelled-unsent"
 WITHHELD_OVERSIZED = "oversized"
 WITHHELD_CONTEXT_ADMISSION = "context-admission"
+WITHHELD_CONTEXT_SMALL_WINDOW = "context-small-window"
 WITHHELD_CONTEXT_CONFIG = "context-config"
 WITHHELD_CONTEXT_NO_ROOM = "context-no-room"
 WITHHELD_CONTEXT_DYNAMIC = "context-dynamic"
@@ -749,6 +750,11 @@ WITHHELD_CONTEXT_COMPACTION = "context-compaction"
 WITHHELD_CONTEXT_FALLBACK = "context-fallback"
 WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
 WITHHELD = {
+    WITHHELD_CONTEXT_SMALL_WINDOW: (
+        "Nothing was sent or spent. This route's allowance is below the smallest Prompt size "
+        "setting. A smaller actual reading may fit; choose a larger context window or change "
+        "its context configuration for this reading."
+    ),
     WITHHELD_CONTEXT_ADMISSION: (
         "Nothing was sent or spent. The assembled prompt exceeds this route's estimated "
         "allowance. Lower Prompt size in Settings or choose a route with a larger context window."
@@ -7285,6 +7291,7 @@ def _left_out(
 
 # The exec statuses that name their own cause, and whether each spent.
 _STATUS_FAILURES = {
+    "context-small-window": (WITHHELD_CONTEXT_SMALL_WINDOW, False),
     "context-admission": (WITHHELD_CONTEXT_ADMISSION, False),
     "context-config": (WITHHELD_CONTEXT_CONFIG, False),
     "context-no-room": (WITHHELD_CONTEXT_NO_ROOM, False),

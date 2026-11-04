@@ -55,6 +55,7 @@ sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
 from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
+from compass_runtime import claude_settings as runtime_claude_settings  # noqa: E402 - runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
@@ -1846,7 +1847,19 @@ def guarded() -> Iterator[None]:
 
     for key in GUARD_COUNTS:
         GUARD_COUNTS[key] = 0
+    resolve_controls = runtime_claude_settings.resolve
     with (
+        tempfile.TemporaryDirectory(prefix="compass-capacity-fixture-") as settings_root,
+        mock.patch.object(
+            runtime_claude_settings,
+            "resolve",
+            lambda model, **_: resolve_controls(
+                model,
+                environ={"HOME": "/synthetic/home", "USER": "fixture"},
+                root=Path(settings_root),
+                system="Linux",
+            ),
+        ),
         mock.patch.object(runtime_reading_jobs, "launch", refuse_launch),
         mock.patch.object(subprocess.Popen, "__init__", refuse_spawn),
         mock.patch.object(shutil, "which", lambda _name: None),
@@ -1882,7 +1895,9 @@ def manifest_of(scenarios: dict[str, dict[str, Any]], files: dict[str, bytes]) -
             "their wording differs between Python releases",
             "reading_route": "the CLI lookup is pinned to a present binary, which is a machine "
             "fact; the destination is the route's own resolution against an empty environment "
-            "and no settings files, which is the shipped default and names the vendor",
+            "and no settings files, which is the shipped default and names the vendor; "
+            "capacity controls use the real resolver with a synthetic Linux account and empty "
+            "settings root, independent of the host environment",
             "json_body": "bodies are re-serialised with sorted keys; the wire order is not kept",
         },
         "scenarios": rows,

@@ -3064,7 +3064,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(1, build.call_count)
         self.assertEqual([], calls)
         self.assertEqual(
-            [{"produced": False, "reason": "context-admission", "spent": False}], self.outcomes
+            [{"produced": False, "reason": "context-small-window", "spent": False}], self.outcomes
         )
         self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
