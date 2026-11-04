@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 import sys
+import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, is_dataclass, replace
+from dataclasses import dataclass, field, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,6 +26,7 @@ from . import reading_source_stream as raw_source
 from .config import SESSION_SOURCE_PAGE_MAX_BYTES, SESSION_SOURCE_PAGE_MAX_SECONDS
 
 if TYPE_CHECKING:
+    from _thread import LockType
     from collections.abc import Callable
 
     from .config import RuntimeConfig
@@ -101,6 +104,50 @@ class Usage:
 
 
 @dataclass(frozen=True)
+class VerifiedStream:
+    """Private observed prefix identity, digest and successful verification version."""
+
+    frozen: raw_source.FrozenParent
+    baseline_digest: str
+    stamp: raw_source.Stamp
+
+
+@dataclass
+class _SnapshotAccount:
+    limits: Limits
+    usage: Usage
+    page_bytes: int
+    page_seconds: float
+    final_stamp: raw_source.Stamp
+    # Reserve the original collection high-water graph while its caller may
+    # still hold the returned evidence. Revalidation scratch is metered on top.
+    retained_base_bytes: int = 0
+    retained_base_units: int = 0
+    lock: LockType = field(default_factory=threading.Lock, repr=False, compare=False)
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """Private in-process proof, never a serialized capability or word cache.
+
+    Successors share accounting with their ancestors. Reusing an old handle,
+    including after failure, cannot reset consumed preparation or I/O budgets.
+    """
+
+    streams: tuple[VerifiedStream, ...]
+    account: _SnapshotAccount
+
+
+@dataclass(frozen=True)
+class Revalidation:
+    snapshot: Snapshot | None
+    reason: Reason
+    usage: Usage
+    # Source-version validity only, never a new strict-final or all-agent proof.
+    final_valid: bool
+
+
+@dataclass(frozen=True)
 class Collection:
     evidence: reading_source.CanonicalEvidence | None
     reason: Reason
@@ -113,6 +160,7 @@ class Collection:
     unavailable_streams: tuple[int, ...]
     words: tuple[reading_source_words.MessageWords, ...] | None = None
     final: dict[str, Any] | None = None
+    snapshot: Snapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +178,8 @@ class _Retained:
     words: reading_source_words.Join | None = None
     parent_stamp: raw_source.Stamp | None = None
     final: reading_source_final.Proof | None = None
+    proofs: tuple[VerifiedStream, ...] = ()
+    snapshot: Snapshot | None = None
 
 
 class _StopError(Exception):
@@ -263,6 +313,10 @@ class _Collection:
             if page.state == "verified":
                 if not page.source_complete or self.state.gaps:
                     raise _StopError("source_gap")
+                if page.verified_stamp is None or not cursor.baseline_digest:
+                    raise _StopError("source_gap")
+                proof = VerifiedStream(cursor.frozen, cursor.baseline_digest, page.verified_stamp)
+                self.accept(replace(self.state, proofs=(*self.state.proofs, proof)))
                 self.verified += 1
             elif page.next is None:
                 raise _StopError("no_progress")
@@ -394,13 +448,30 @@ class _Collection:
                 if checked is not self.state.final:
                     self.accept(replace(self.state, final=checked))
             self.checkpoint()
+            account = _SnapshotAccount(
+                self.limits,
+                self.usage,
+                self.page_bytes,
+                self.page_seconds,
+                self.state.proofs[0].stamp,
+            )
+            self.accept(replace(self.state, snapshot=Snapshot(self.state.proofs, account)))
+            account.usage = replace(
+                self.usage, prepare_ms=max(0, (self.clock() - self.started) * 1000)
+            )
+            account.retained_base_bytes = self.usage.retained_bytes
+            account.retained_base_units = self.usage.retained_units
+            self.checkpoint()
         except _StopError as exc:
             reason = exc.reason
         complete = self.verified == len(self.state.inventory.streams) and bool(self.verified)
+        usage = replace(self.usage, prepare_ms=max(0, (self.clock() - self.started) * 1000))
+        if not reason and self.state.snapshot is not None:
+            self.state.snapshot.account.usage = usage
         return Collection(
             self.state.evidence if not reason else None,
             reason,
-            replace(self.usage, prepare_ms=max(0, (self.clock() - self.started) * 1000)),
+            usage,
             complete and self.state.inventory.complete and not self.state.gaps,
             self.verified,
             self.state.gaps,
@@ -408,6 +479,7 @@ class _Collection:
             tuple(range(len(self.state.inventory.streams))) if reason else (),
             self.state.words.results if not reason and self.state.words is not None else None,
             self.state.final.result if not reason and self.state.final is not None else None,
+            self.state.snapshot if not reason else None,
         )
 
 
@@ -445,3 +517,165 @@ def collect(
         clock,
         cancelled,
     ).run()
+
+
+def _snapshot_stamp(proof: VerifiedStream) -> raw_source.Stamp:
+    frozen = proof.frozen
+    raw_source._check_admission(frozen)  # noqa: SLF001
+    info = os.stat(frozen.path, follow_symlinks=frozen.parent_path is None)
+    if not raw_source._owned(info, frozen) or info.st_size < proof.stamp[2]:  # noqa: SLF001
+        raise OSError("verified source replaced or shortened")
+    raw_source._check_admission(frozen)  # noqa: SLF001
+    return raw_source._stamp(info)  # noqa: SLF001
+
+
+class _Revalidation:
+    def __init__(
+        self, snapshot: Snapshot, clock: Callable[[], float], cancelled: Callable[[], bool]
+    ) -> None:
+        self.snapshot, self.account = snapshot, snapshot.account
+        self.clock, self.cancelled = clock, cancelled
+        self.started = clock()
+        self.deadline = (
+            self.started
+            + max(0, self.account.limits.prepare_ms - self.account.usage.prepare_ms) / 1000
+        )
+        self.proofs: tuple[VerifiedStream, ...] = ()
+
+    def checkpoint(self) -> None:
+        if self.cancelled():
+            raise _StopError("cancelled")
+        if self.clock() >= self.deadline:
+            raise _StopError("time")
+
+    def measure(self, temporary: Any = None) -> None:
+        account = self.account
+        # Conservative reservation of the original accepted collection graph,
+        # plus the actual distinct validation objects held during exchange.
+        limits = replace(
+            account.limits,
+            retained_bytes=max(0, account.limits.retained_bytes - account.retained_base_bytes),
+            retained_units=max(0, account.limits.retained_units - account.retained_base_units),
+        )
+        size, units = _measure((self.snapshot, self.proofs, temporary), limits)
+        account.usage = replace(
+            account.usage,
+            retained_bytes=max(account.usage.retained_bytes, account.retained_base_bytes + size),
+            retained_units=max(account.usage.retained_units, account.retained_base_units + units),
+        )
+        self.checkpoint()
+
+    def verify(self, proof: VerifiedStream) -> VerifiedStream:
+        cursor = raw_source.Cursor(
+            proof.frozen,
+            phase="verify",
+            baseline_digest=proof.baseline_digest,
+            line_start=proof.frozen.end_offset,
+        )
+        while True:
+            self.checkpoint()
+            account = self.account
+            remaining_bytes, remaining_pages = _remaining(cursor, account.page_bytes)
+            if remaining_bytes > account.limits.source_bytes - account.usage.source_bytes:
+                raise _StopError("source_bytes")
+            if remaining_pages > account.limits.source_pages - account.usage.source_pages:
+                raise _StopError("source_pages")
+            self.measure(cursor)
+            page = raw_source.read(
+                cursor,
+                max_bytes=min(
+                    account.page_bytes, account.limits.source_bytes - account.usage.source_bytes
+                ),
+                max_seconds=min(account.page_seconds, max(0, self.deadline - self.clock())),
+                clock=self.clock,
+            )
+            account.usage = replace(
+                account.usage,
+                source_bytes=account.usage.source_bytes + page.bytes_read,
+                source_pages=account.usage.source_pages + 1,
+            )
+            self.checkpoint()
+            self.measure((cursor, page))
+            if page.state == "stale":
+                raise _StopError("source_changed")
+            if page.state == "verified":
+                if not page.source_complete or page.verified_stamp is None or page.gaps:
+                    raise _StopError("source_gap")
+                return replace(proof, stamp=page.verified_stamp)
+            if (
+                page.state != "progress"
+                or page.next is None
+                or page.next.offset <= cursor.offset
+                or page.next.phase != "verify"
+                or page.gaps
+            ):
+                raise _StopError("no_progress")
+            cursor = page.next
+
+    def check_versions(self) -> None:
+        # Reobserve after the last stream: narrower races, not an atomic snapshot.
+        for proof in self.proofs:
+            self.checkpoint()
+            if _snapshot_stamp(proof) != proof.stamp:
+                raise _StopError("source_changed")
+            self.checkpoint()
+
+    def run(self) -> Revalidation:
+        reason: Reason = ""
+        updated = None
+        final_valid = False
+        try:
+            self.checkpoint()
+            self.measure()
+            for proof in self.snapshot.streams:
+                self.checkpoint()
+                stamp = _snapshot_stamp(proof)
+                self.checkpoint()
+                checked = proof if stamp == proof.stamp else self.verify(proof)
+                candidate = (*self.proofs, checked)
+                self.measure(candidate)
+                self.proofs = candidate
+            self.check_versions()
+            candidate_snapshot = Snapshot(self.proofs, self.account)
+            self.measure(candidate_snapshot)
+            updated = candidate_snapshot
+            final_valid = self.proofs[0].stamp == self.account.final_stamp
+            self.checkpoint()
+        except OSError:
+            reason = "source_changed"
+        except _StopError as exc:
+            reason = exc.reason
+        self.account.usage = replace(
+            self.account.usage,
+            prepare_ms=self.account.usage.prepare_ms + max(0, (self.clock() - self.started) * 1000),
+        )
+        if not reason and self.account.usage.prepare_ms >= self.account.limits.prepare_ms:
+            reason = "time"
+        return Revalidation(
+            updated if not reason else None, reason, self.account.usage, final_valid and not reason
+        )
+
+
+def revalidate(
+    snapshot: Snapshot,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> Revalidation:
+    """Check the same frozen inventory, charging its original shared allowance.
+
+    Unchanged admitted versions need no content reads. Metadata movement needs
+    one stable old-prefix digest, never a new baseline or three new passes.
+    Preparation time accumulates across calls; time spent between calls belongs
+    to the caller's separate job deadline. No current-final proof survives a
+    parent version change. Concurrent or reentrant calls on one lineage refuse
+    through its shared lock.
+    """
+    if not isinstance(snapshot, Snapshot) or not snapshot.streams:
+        raise ValueError("a verified collection snapshot is required")
+    if not snapshot.account.lock.acquire(blocking=False):
+        raise ValueError("snapshot revalidation is already active")
+    try:
+        return _Revalidation(snapshot, clock, cancelled).run()
+    finally:
+        snapshot.account.lock.release()
