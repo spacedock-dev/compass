@@ -233,16 +233,15 @@ class RestoredAdoptedGoalTest(unittest.TestCase):
         )
         fixture = self.fixture(inputs)
         fixture.row["annotation_assessment"] = {"detail": "STORED_READING_CANARY"}
-        fixture.prepare(single_maps=True)
+        fixture.prepare()
         result = fixture.invoke()
         self.assertIsNone(result.criteria)
         self.assertIsNone(fixture.context.goal_proof)
         self.assertEqual([], fixture.factories)
-        for packet in fixture.series.plan.packets:
-            self.assertNotIn(secret, packet.prompt)
-            self.assertNotIn("STORED_READING_CANARY", packet.prompt)
-            self.assertNotIn("sk-ant-", packet.prompt)
-        self.assertTrue(any("LATE_GOAL" in p.prompt for p in fixture.series.plan.packets))
+        self.assertFalse(fixture.series.plan.packets)
+        self.assertEqual(0, fixture.fixture.fixture.spends())
+        self.assertNotIn(secret, word.words)
+        self.assertNotIn("sk-ant-", word.words)
         self.assertIn("LATE_GOAL", word.words)
 
     def test_complete_unicode_header_byte_overflow_has_no_clipped_goal_fallback(self):

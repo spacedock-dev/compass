@@ -339,6 +339,47 @@ def _resolve(
     ), "ok"
 
 
+def _qualified_partial(
+    criteria: dict[str, reading.Criterion], selection: reading.Selection
+) -> dict[str, reading.Criterion]:
+    """Keep only original-supported local structural departures after existing guards.
+
+    This does not resolve model hypotheses. It narrows the existing full-record resolver's
+    output when mapped agent text could not all fit the final packet. Goal/claims verdicts,
+    absence, reassurance, and departures depending on prose cannot survive this narrowing.
+    """
+    structural = {
+        row["id"]
+        for row in selection.entries
+        if row["type"] in {reading.TOOL_REPORT_TYPE, reading.CI_CHECK_TYPE}
+        and row.get("subject")
+        in {
+            reading.CHECK_SUBJECT,
+            reading.CI_SUBJECT,
+            reading.CI_CHECK_SUBJECT,
+            reading.WRITE_SUBJECT,
+            reading.COMMAND_SUBJECT,
+        }
+    }
+    return {
+        name: criterion
+        if (
+            reading.is_outcome_line(name)
+            and criterion.get("result") == reading.RESULT_DEPARTURE
+            and criterion["cites"]
+            and set(criterion["cites"]) <= structural
+        )
+        else {
+            **criterion,
+            "result": reading.RESULT_UNVERIFIABLE,
+            "cites": (),
+            "detail": "",
+            "why": reading.WHY_LONG_RECONCILIATION_COVERAGE,
+        }
+        for name, criterion in criteria.items()
+    }
+
+
 def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persistence gates
     originals: Sequence[reading_passes.Original],
     series: reading_map_series.Series,
@@ -356,8 +397,9 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     """Build the reserved exact final packet and call once, without publishing an assessment.
 
     The caller stages pre-reservation observations and durably settles an individual
-    pass on ended=True; no event settles the whole job. Gaps return criteria=None even
-    for a valid reply, not a fabricated unreadable-model reason or a global verdict.
+    pass on ended=True; no event settles the whole job. Source/map/proof gaps return
+    criteria=None. Omitted already-mapped final agent context permits only guarded
+    local structural departures, with all other clauses explicitly unable to tell.
     """
     declared = reading_pass_types.validate_plan(plan)
     slot = series.final_slot
@@ -455,6 +497,10 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     criteria, reason = _resolve(raw, packet, inputs, context, detail_cap_chars, goal_cap_chars)
     if criteria is None:
         return result("parse-failed", reason)
+    if set(built.unresolved) == {"agent-words-partial"}:
+        return result(
+            "partial", "final-context-partial", _qualified_partial(criteria, packet.selection)
+        )
     if built.unresolved:
         return result("unresolved", "coverage-incomplete")
     return result("resolved", "ok", criteria)

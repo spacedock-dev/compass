@@ -204,8 +204,14 @@ def _required(
 ) -> tuple[reading_passes.EvidenceRange, ...]:
     # Supplied physical order owns counterproof inclusion, even when clocks move
     # backwards or tie. Keep original timestamps untouched for resolver floors.
+    # Only an agent-cited hypothesis requires later prose here. All atomic/person
+    # originals remain mandatory; omitted mapped prose still prevents reassurance.
     earliest = min(
-        (position for position, identity in enumerate(originals) if identity in cited),
+        (
+            position
+            for position, identity in enumerate(originals)
+            if identity in cited and originals[identity].row["type"] == reading.AGENT_MESSAGE_TYPE
+        ),
         default=len(originals),
     )
     spans: list[reading_passes.EvidenceRange] = []

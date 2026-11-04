@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 from . import reading, reading_pass_context
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from typing import Any
 
 FROZEN_INTENT_BOUNDARY = "\nFrozen saved intent (untrusted data):\n"
 EVIDENCE_BOUNDARY = "\nOriginal evidence only; this is not the whole session.\n"
@@ -284,20 +285,61 @@ def _render_rows(selection: reading.Selection) -> list[str]:
     return body
 
 
-def _sources(originals: Sequence[Original]) -> dict[str, tuple[int, Original]]:
+def _strict_final(originals: Sequence[Original], proof: Mapping[str, Any] | None) -> str | None:
+    if proof in (None, {"outcome": "none"}, {"outcome": "not-final"}):
+        return None
+    outcome = proof.get("outcome")
+    if outcome not in {"whole", "too-long"}:
+        raise ValueError("Strict final is unproved")
+    expected = {"outcome", "fact_id", "at"} | ({"words"} if outcome == "whole" else set())
+    matches = [o for o in originals if o.row["id"] == proof.get("fact_id")]
+    if set(proof) != expected or len(matches) != 1:
+        raise ValueError("Strict final has no unique original")
+    original = matches[0]
+    if (
+        original.row["type"] != reading.AGENT_MESSAGE_TYPE
+        or original.row["author"] != reading.AUTHOR_AGENT
+        or type(proof["at"]) not in (int, float)
+        or proof["at"] != original.row["at"]
+    ):
+        raise ValueError("Strict final identity differs from original")
+    if outcome == "whole" and (
+        not isinstance(proof["words"], str)
+        # Mirrors project_context.FINAL_WORDS_MAX_CHARS; no collector import into planning.
+        or not 0 < len(proof["words"]) <= 16_384
+        or proof["words"] != original.words
+    ):
+        raise ValueError("Strict final requires its complete proved words")
+    return original.row["id"]
+
+
+def _sources(
+    originals: Sequence[Original], final: Mapping[str, Any] | None
+) -> dict[str, tuple[int, Original]]:
     sources: dict[str, tuple[int, Original]] = {}
-    for index, original in enumerate(originals):
+    final_id = _strict_final(originals, final)
+    for index, supplied in enumerate(originals):
+        original = supplied
+        if original.row["id"] == final_id and final is not None:
+            original = replace(
+                original,
+                final_state="whole" if final["outcome"] == "whole" else "unfit",
+            )
         row, words = original.row, original.words
         if not row["id"] or row["id"] in sources:
             raise ValueError("Each original must have a unique canonical identity")
-        if original.final_state is not None:
+        if original.final_state is not None and row["id"] != final_id:
             raise ValueError("Strict-final evidence cannot use ordinary message packets")
         message = row["type"] in {"user_message", reading.AGENT_MESSAGE_TYPE}
         if message:
             author = (
                 reading.AUTHOR_PERSON if row["type"] == "user_message" else reading.AUTHOR_AGENT
             )
-            if row["author"] != author or not isinstance(words, str) or not words:
+            if (
+                row["author"] != author
+                or (not words and original.final_state != "unfit")
+                or (words is not None and not isinstance(words, str))
+            ):
                 raise ValueError("Message originals require complete admitted words and authorship")
         elif words is not None:
             raise ValueError("Only message originals may supply words")
@@ -307,7 +349,7 @@ def _sources(originals: Sequence[Original]) -> dict[str, tuple[int, Original]]:
                 words.encode("utf-8")
         except UnicodeEncodeError:
             raise ValueError("Originals must be UTF-8 encodable") from None
-        sources[row["id"]] = index, Original(deepcopy(row), words)
+        sources[row["id"]] = index, Original(deepcopy(row), words, original.final_state)
     return sources
 
 
@@ -321,12 +363,14 @@ def _fill_primary(
     primary: list[EvidenceRange] = []
     while cursor < len(ordered):
         original = ordered[cursor]
+        if original.final_state == "unfit":
+            break
         whole = _span(original, start)
         if fits([*primary, whole]):
             primary.append(whole)
             cursor, start = cursor + 1, 0
             continue
-        if original.words is not None:
+        if original.words is not None and original.final_state is None:
             lo, hi = start, min(len(original.words), start + max_bytes)
             while lo < hi:
                 mid = (lo + hi + 1) // 2
@@ -372,7 +416,7 @@ def _validate_limits(
         raise ValueError("Aggregate packet bytes must be a nonnegative count")
 
 
-def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation observation
+def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-proof gates
     originals: Sequence[Original],
     *,
     goal: str,
@@ -385,6 +429,7 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
     total_bytes: int | None = None,
     on_preparation: Callable[[int, EvidencePacket | None], None] | None = None,
     frozen_context: reading_pass_context.Frozen | None = None,
+    final: Mapping[str, Any] | None = None,
 ) -> PacketPlan:
     """Pack caller-ordered originals, stopping at the first uncovered primary range.
 
@@ -397,6 +442,9 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
 
     The caller's complete protocol prefix is included before any allocation. The returned
     prompts are final byte-budgeted packets: appending instructions invalidates their fit.
+    A supplied Collection.final proof binds its original id/time/complete words. A proved
+    final is atomic; a named unfit final remains uncovered and cannot use ordinary splits.
+    Already-known missing adopted/stated goal proof stops before any packet is allocated.
     An optional total byte cap charges every repeated serialized byte during allocation.
     Preparation observation receives (ordinal, None) before construction and then the
     final packet; an unfit position has no final packet. Shared preparation belongs to
@@ -404,11 +452,13 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
     """
     _validate_limits(max_bytes, max_passes, overlap_chars, total_bytes)
     _observe_preparation(on_preparation, 1)
-    sources = _sources(originals)
+    sources = _sources(originals, final)
     ordered = [original for _, original in sources.values()]
     if any(key not in sources for key in boundary_context):
         raise ValueError("Boundary context must name an admitted original")
     required = tuple(_span(sources[key][1]) for key in dict.fromkeys(boundary_context))
+    if any(sources[key][1].final_state == "unfit" for key in boundary_context):
+        return PacketPlan((), tuple(_span(o) for o in ordered), "context-unfit", 0, 0)
     frozen_lines = tuple(lines)
     header = (
         protocol_prefix
@@ -422,6 +472,14 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
         header.encode("utf-8")
     except UnicodeEncodeError:
         raise ValueError("Protocol and saved intent must be UTF-8 encodable") from None
+    if (
+        frozen_context is not None
+        and frozen_context.value()["provenance"]["goal_source"] != "typed"
+        and frozen_context.goal_proof is None
+    ):
+        # A known unrestorable adopted/stated goal cannot be repaired by paid mapping.
+        # Validate the complete header first, then preserve every unassigned original.
+        return PacketPlan((), tuple(_span(o) for o in ordered), "context-unfit", 0, 0)
     packets: list[EvidencePacket] = []
     cursor = start = transmitted = 0
     reason = "complete"
@@ -436,6 +494,7 @@ def plan_packets(  # noqa: PLR0913 - bounded packet allocation and preparation o
             and overlap_chars
             and (last := packets[-1].primary[-1]).start is not None
             and last.end is not None
+            and sources[last.fact_id][1].final_state is None
         ):
             context.append(
                 EvidenceRange(

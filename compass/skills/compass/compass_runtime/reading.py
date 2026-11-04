@@ -330,6 +330,9 @@ WHY_RECORDED_WRITE = "recorded-write"
 # drops a passing command from a departure, so the row needs its own token to keep it.
 # [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)  # noqa: E501
 WHY_RECORDED_COMMAND = "recorded-command"
+# The long final packet omitted already-mapped agent context: only guarded local
+# structural departures can stand; other clauses cannot establish reassurance/absence.
+WHY_LONG_RECONCILIATION_COVERAGE = "long-reconciliation-coverage"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
@@ -350,6 +353,7 @@ WHY_TOKENS = (
     WHY_CLAIM_RECORD_UNREAD,
     WHY_RECORDED_WRITE,
     WHY_RECORDED_COMMAND,
+    WHY_LONG_RECONCILIATION_COVERAGE,
 )
 
 # Rule 7 turns on who wrote an evidence entry, so the answer is a closed

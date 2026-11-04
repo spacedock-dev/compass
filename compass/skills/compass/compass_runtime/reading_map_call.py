@@ -16,7 +16,7 @@ from . import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
 
 _PROTOCOL = """Map original evidence against the frozen saved intent below.
@@ -61,6 +61,7 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
     scrub_partial: bool = False,
     on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
     frozen_context: reading_pass_context.Frozen | None = None,
+    final: Mapping[str, Any] | None = None,
 ) -> Invocation:
     """Build at most one exact packet, call once and bind private hypotheses to originals.
 
@@ -93,6 +94,7 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
             max_passes=1,
             boundary_context=boundary_context,
             frozen_context=frozen_context,
+            final=final,
         )
     except ValueError:
         return result("local-unfit", "invalid-input")

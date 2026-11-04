@@ -18,7 +18,7 @@ from . import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
 MAX_INDEX_CANDIDATES = 64
 
@@ -159,6 +159,7 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     scrub_partial: bool = False,
     on_observation: Callable[[dict[str, Any]], bool] | None = None,
     frozen_context: reading_pass_context.Frozen | None = None,
+    final: Mapping[str, Any] | None = None,
 ) -> Series:
     """Plan once, then call each evidence position at most once without automatic resume.
 
@@ -198,6 +199,7 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
         total_bytes=max(0, limits["input_bytes"] - final_slot.prompt_bytes) if slots else 0,
         on_preparation=measurements.prepare,
         frozen_context=frozen_context,
+        final=final,
     )
     index = CandidateIndex()
     passes: list[EvidencePass] = []

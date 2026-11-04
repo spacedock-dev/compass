@@ -646,4 +646,6 @@ class FinalCallTest(unittest.TestCase):
         self.assertIsNone(result.criteria)
         self.assertIn("adopted-goal-unavailable", result.unresolved)
         self.assertEqual([], self.factories)
-        self.assertEqual(1, self.fixture.fixture.spends())
+        self.assertEqual(0, self.fixture.fixture.spends())
+        self.assertFalse(self.series.passes)
+        self.assertTrue(self.series.unassigned_primary)
