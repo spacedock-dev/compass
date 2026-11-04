@@ -50,6 +50,7 @@ class Mapped:
     snapshot: reading_source_collect.Snapshot
     budget: reading_preparation.Budget | None
     job_id: str
+    withheld_reason: str = ""
 
 
 class _Source:
@@ -115,6 +116,21 @@ class _Passes:
         self.reason = ""
         self.post = ExitStack()
         self.post_open = False
+        self.current_model: reading_policy.GuardedModel | None = None
+        self.withheld_reason = ""
+
+    def remember_failure(self, observation: dict[str, Any]) -> None:
+        measured = (observation.get("diagnostic") or {}).get("input")
+        if (
+            not self.withheld_reason
+            and self.current_model is not None
+            and measured is not None
+            and measured["model_invoked"]
+            and measured["outcome"] in ("error", "timeout")
+        ):
+            token = self.current_model.failure_reason()
+            if token in reading.WITHHELD:
+                self.withheld_reason = token
 
     def close_post(self) -> None:
         try:
@@ -152,6 +168,7 @@ class _Passes:
         return True
 
     def observe(self, event: dict[str, Any]) -> bool:
+        self.remember_failure(event["observation"])
         if self.reason:
             return False
         observation = event["observation"]
@@ -221,7 +238,7 @@ class _Passes:
                     self.config, f"{job.harness}:{job.sid}", reading.PHASE_WAITING, now=self.clock()
                 )
 
-        return reading_long_execution.guard(
+        self.current_model = reading_long_execution.guard(
             self.config,
             self.context,
             ordinal,
@@ -232,6 +249,7 @@ class _Passes:
             source_current=lambda: not self.source.current(),
             on_spawn=spawned,
         )
+        return self.current_model
 
     def stop(self) -> str | None:
         if reading.job_cancelled(self.context.active.job):
@@ -306,7 +324,9 @@ def _input_reason(
     if (
         not revisions
         or entry is None
-        or tuple(entry["revisions"]) != tuple(revisions)
+        # Admission retains immutable JSON. Native tuple containers decode as
+        # lists; compare the identical persisted structure, never fresh words.
+        or reading_long_jobs.canonical(entry["revisions"]) != reading_long_jobs.canonical(revisions)
         or (row.get("harness"), row.get("sid"), revisions[-1].get("n"))
         != (publication.get("harness"), publication.get("sid"), publication.get("revision"))
         or tuple(stream.cursor.frozen for stream in inventory.streams)
@@ -464,4 +484,5 @@ def run_maps(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered fail-closed wor
         source.snapshot,
         budget,
         context.active.job.id,
+        passes.withheld_reason,
     )

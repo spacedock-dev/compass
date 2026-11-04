@@ -35,6 +35,8 @@ from compass_runtime import (
     live_monitor,
     notifications,
     quota,
+    reading_long_admission,
+    reading_long_coordinator,
     reading_long_preview,
     reading_policy,
     record_pages,
@@ -2392,6 +2394,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # nothing typed, or over a session already discarded, deleted nothing, and the
             # summary does not depend on saved intent.
             if outcome == annotation_store.OUTCOME_STORED and counted.get("removed_revisions"):
+                reading_long_coordinator.stop(
+                    application, f"{harness}:{sid}", reason="intent-changed"
+                )
                 try:
                     summary = summary_jobs.discard(application, harness, sid)
                 except (OSError, ValueError):
@@ -2598,19 +2603,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if payload.get("mode") == "long":
             preview = reading_long_preview.describe(application, payload["harness"], payload["sid"])
             changed = reading_long_preview.changed(payload, preview)
-            # Temporary admission boundary: replace with the qualified coordinator
-            # before shipping. Never let a long press enter ordinary Analyze.
-            self._send(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "produced": False,
-                        "reason": "plan-changed" if changed else "long-unavailable",
-                    }
-                ).encode(),
-                "application/json",
-                409 if changed else 503,
-            )
+            if changed:
+                self._send(
+                    json.dumps({"ok": False, "produced": False, "reason": "plan-changed"}).encode(),
+                    "application/json",
+                    409,
+                )
+            else:
+                self._long_press_row = reading_long_preview._published(  # noqa: SLF001 - cached metadata only
+                    application, payload["harness"], payload["sid"]
+                )[0]
+                self._reading_press(payload["harness"], payload["sid"], payload)
             return
         if self._reading_setting(payload):
             return
@@ -2660,6 +2663,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _pause_model_calls(self) -> None:
         application = self.server.application
         answer = reading_policy.set_consent(application.config, False, now=application.clock())
+        reading_long_coordinator.stop_all(application)
         # And an unasked check already running (owner, 2026-10-20).
         if application.unasked_lane is not None:
             application.unasked_lane.stop()
@@ -2890,9 +2894,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not all(isinstance(part, str) and part for part in (harness, sid, job_id)):
             self._reject(400)
             return
-        accepted = runtime_reading_jobs.cancel(
-            self.server.application, f"{harness}:{sid}", str(job_id)
+        key = f"{harness}:{sid}"
+        running = runtime_reading.published_jobs(config).get(key, {})
+        cancel = (
+            reading_long_coordinator.cancel
+            if running.get("mode") == "long"
+            else runtime_reading_jobs.cancel
         )
+        accepted = cancel(self.server.application, key, str(job_id))
         self._send(
             json.dumps(
                 {"ok": True, "cancelling": True}
@@ -3263,7 +3272,81 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     422,
                 )
                 return
-        self._send_reading(harness, sid, route, adoption=payload if "adopt" in payload else None)
+        if payload.get("mode") == "long":
+            self._send_long_reading(payload)
+        else:
+            self._send_reading(
+                harness, sid, route, adoption=payload if "adopt" in payload else None
+            )
+
+    def _send_long_reading(self, payload: dict[str, Any]) -> None:
+        application = self.server.application
+        row = self._long_press_row
+        if row is None:
+            self._send(
+                self._reading_json(
+                    {"ok": True, "produced": False, "reason": "no annotated session by that name"}
+                ),
+                "application/json",
+            )
+            return
+
+        def rejected(started: reading_long_admission.Started, reason: str) -> None:
+            reading_long_coordinator.finish_withheld(application, started, reason)
+
+        admitted = reading_long_admission.admit(application, row, payload, on_rejected=rejected)
+        if admitted.started is None:
+            key = f"{payload['harness']}:{payload['sid']}"
+            running = runtime_reading.published_jobs(application.config).get(key)
+            self._send(
+                self._reading_json(
+                    {
+                        "ok": False,
+                        "produced": False,
+                        "reason": "in-flight" if running else admitted.reason,
+                        **({"job": running} if running else {}),
+                    }
+                ),
+                "application/json",
+                409,
+            )
+            return
+        started = admitted.started
+        job, route = started.context.active.job, started.context.route
+        try:
+            notice = reading_policy.note(
+                application.config,
+                kind="reading",
+                provider=route.provider,
+                destination=route.destination,
+                content=route.content,
+                tool_output=route.tool_destination,
+                now=application.clock(),
+            )
+        except reading_policy.RefusedError as error:
+            reading_long_coordinator.finish_withheld(application, started, error.answer["reason"])
+            self._reading_permission_reply(error.answer)
+            return
+        job.notice = notice
+        published = runtime_reading.published_jobs(application.config)[f"{job.harness}:{job.sid}"]
+        try:
+            reading_long_coordinator.launch(application, started)
+        except RuntimeError:
+            if notice is not None:
+                reading_policy.retract(application.config, notice)
+            self._send(
+                self._reading_json({"ok": False, "produced": False, "reason": "no-thread"}),
+                "application/json",
+                503,
+            )
+            return
+        self._send(
+            self._reading_json(
+                {"ok": True, "job": published, **({"notice": notice} if notice else {})}
+            ),
+            "application/json",
+            202,
+        )
 
     def _adopt_prompt(
         self,

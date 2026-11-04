@@ -16,6 +16,7 @@ from compass_runtime import (
     reading,
     reading_long_preview,
     reading_route,
+    reading_source_collect,
     settings,
 )
 from compass_runtime import reading_long_admission as admission
@@ -32,6 +33,40 @@ if TYPE_CHECKING:
 
 
 class LongAdmissionTest(unittest.TestCase):
+    def test_long_stop_latches_before_handover_without_accepting_reader_cancel(self) -> None:
+        started = self.admit().started
+        assert started is not None
+        job = started.context.active.job
+        stop = getattr(reading, "stop_long_job", None)
+        self.assertIsNotNone(stop)
+        assert stop is not None
+        accepted, group = stop(self.config, self.key, job, reason="intent-changed")
+        self.assertTrue(accepted)
+        self.assertIsNone(group)
+        self.assertFalse(reading.job_cancelled(job))
+        self.assertFalse(reading.cancel_job(self.config, self.key, job.id, now=20)[0])
+        self.assertFalse(reading.commit_job(job))
+        self.assertTrue(reading.hand_over(job, object()))
+        self.assertEqual("intent-changed", context.check(self.config, started.context))
+        probe = context.Checkpoint(self.config, started.context)
+        self.assertTrue(probe())
+        self.assertEqual("intent-changed", probe.reason)
+        stop(self.config, self.key, job, reason="permission-changed")
+        self.assertEqual("intent-changed", probe.reason)
+
+    def test_source_collection_counts_coordinator_owned_input_graph_before_body_io(self) -> None:
+        started = self.admit().started
+        assert started is not None
+        result = reading_source_collect.collect(
+            self.config,
+            started.inventory,
+            held_inputs=(started._inputs, started.inputs, "x" * 65536),
+            limits=reading_source_collect.Limits(retained_bytes=4096),
+        )
+        self.assertEqual("retained_bytes", result.reason)
+        self.assertEqual(0, result.usage.source_bytes)
+        self.assertIsNone(result.snapshot)
+
     def setUp(self) -> None:
         self.fixture = http_tests.LongReadingHTTPTest()
         self.fixture.setUp()
@@ -257,3 +292,32 @@ class LongAdmissionTest(unittest.TestCase):
         self.assertEqual("admission-unavailable", result.reason)
         self.assertIsNone(reading.job(self.config, self.key))
         self.assertEqual(0, policy.status(self.config, now=self.app.clock())["used"])
+
+    def test_rejected_owner_callback_runs_before_expected_slot_teardown(self) -> None:
+        real = markers.begin
+        seen: list[admission.Started] = []
+
+        def pause(*args: Any, **kwargs: Any) -> markers.MarkerOwner | None:
+            owner = real(*args, **kwargs)
+            policy.set_consent(self.config, False, now=self.app.clock())
+            return owner
+
+        def rejected(started: admission.Started, reason: str) -> None:
+            self.assertEqual("permission-changed", reason)
+            self.assertIs(started.context.active.job, reading.job(self.config, self.key))
+            marker = markers.load(self.config, started.context.active.job.id)
+            assert marker is not None
+            self.assertEqual("failed", marker["state"])
+            seen.append(started)
+
+        with mock.patch.object(markers, "begin", side_effect=pause):
+            result = admission.admit(
+                self.app,
+                self.fixture.row,
+                self.payload,
+                clock=lambda: self.clock[0],
+                on_rejected=rejected,
+            )
+        self.assertIsNone(result.started)
+        self.assertEqual(1, len(seen))
+        self.assertIsNone(reading.job(self.config, self.key))

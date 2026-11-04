@@ -740,6 +740,7 @@ WITHHELD_NOTHING_TYPED = "nothing-typed"
 WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
 WITHHELD_LONG_INTERRUPTED = "long-interrupted"
+WITHHELD_LONG_INCOMPLETE = "long-incomplete"
 WITHHELD_UNSTOPPED = "unstopped"
 WITHHELD_JOB_UNRECORDED = "job-unrecorded"
 WITHHELD_STOPPING = "stopping"
@@ -930,6 +931,10 @@ WITHHELD = {
     # charged, and a silent loss would leave the count short of the budget.
     WITHHELD_LONG_INTERRUPTED: (
         "Compass stopped before this analysis outcome was saved. No new result is shown. "
+        "Any recorded calls remain counted, and a fresh press is the only retry."
+    ),
+    WITHHELD_LONG_INCOMPLETE: (
+        "Long analysis could not cover the saved work well enough to produce a new result. "
         "Any recorded calls remain counted, and a fresh press is the only retry."
     ),
     WITHHELD_INTERRUPTED: (
@@ -1483,6 +1488,7 @@ class Job:
     # Encoded private snapshots cannot share mutable dictionaries with a caller.
     _long_plan: str | None = field(default=None, repr=False)
     _long_progress: str | None = field(default=None, repr=False)
+    _long_stop: str = field(default="", repr=False)
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1660,7 +1666,9 @@ def cancel_job(
     """
     with _FLIGHT_LOCK:
         running = _JOBS.get((str(config.state_dir), session_key))
-        if running is None or running.id != job_id or running.sealed:
+        if (
+            running is None or running.id != job_id or running.sealed or running._long_stop  # noqa: SLF001 - already invalidated long owner retains its cause
+        ):
             return False, None
         if running.cancelled_at is None:
             running.cancelled_at = now
@@ -1672,7 +1680,7 @@ def hand_over(job: Job, group: Any) -> bool:
     """Give the job its CLI's group. True when a Cancel already asked for it."""
     with _FLIGHT_LOCK:
         job.group = group
-        return job.cancelled_at is not None
+        return job.cancelled_at is not None or bool(job._long_stop)  # noqa: SLF001
 
 
 def commit_job(job: Job) -> bool:
@@ -1682,7 +1690,32 @@ def commit_job(job: Job) -> bool:
     this answer, and spends nothing, or wholly after it, and is charged.
     """
     with _FLIGHT_LOCK:
-        return job.cancelled_at is None
+        return job.cancelled_at is None and not job._long_stop  # noqa: SLF001
+
+
+def stop_long_job(
+    config: RuntimeConfig, session_key: str, expected_job: Job, *, reason: str
+) -> tuple[bool, Any]:
+    """Latch an external long-job invalidation before looking up its process.
+
+    The handover and charge guards see the same latch. This is not an accepted
+    reader Cancel; the original closed cause survives a later Resume.
+    """
+    if reason not in ("intent-changed", "permission-changed"):
+        raise ValueError("Invalid long stop cause")
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if running is not expected_job or running._long_plan is None or running.sealed:  # noqa: SLF001
+            return False, None
+        if not running._long_stop:  # noqa: SLF001
+            running._long_stop = reason  # noqa: SLF001
+        return True, running.group
+
+
+def long_stop_reason(job: Job) -> str:
+    """Return only the private, already-latched cause; perform no external work."""
+    with _FLIGHT_LOCK:
+        return job._long_stop  # noqa: SLF001
 
 
 def job_cancelled(job: Job) -> bool:

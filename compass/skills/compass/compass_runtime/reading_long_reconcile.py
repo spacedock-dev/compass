@@ -49,6 +49,7 @@ class Finished:
     progress: dict[str, Any]
     source_current: Callable[[], bool]
     snapshot: Snapshot
+    withheld_reason: str = ""
 
 
 class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered pass mechanics
@@ -56,6 +57,7 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
     prompt_bytes: int | None = None
 
     def observe(self, event: dict[str, Any]) -> bool:
+        self.remember_failure(event["observation"])
         if self.reason:
             return False
         observation = event["observation"]
@@ -118,7 +120,7 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
                     self.reason = "persistence-unresolved"
                     reading_long_execution._refuse(self.reason)  # noqa: SLF001
 
-        return reading_long_execution.guard(
+        self.current_model = reading_long_execution.guard(
             self.config,
             self.context,
             ordinal,
@@ -128,6 +130,7 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
             on_reserved=reserved,
             source_current=lambda: not self.source.current(),
         )
+        return self.current_model
 
     def invoke(self, mapped: reading_long_worker.Mapped) -> reading_final_call.Result:
         native, series = mapped.prepared, mapped.series
@@ -333,4 +336,5 @@ def finish(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one closed final-call lif
         progress,
         source.short_current,
         source.snapshot,
+        mapped.withheld_reason or (final.withheld_reason if final is not None else ""),
     )

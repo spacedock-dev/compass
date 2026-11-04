@@ -106,7 +106,7 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
     entry_lock = threading.Lock()
 
     def cancelled() -> bool:
-        return reading.job_cancelled(active.job)
+        return not reading.commit_job(active.job)
 
     def reserve(prompt: str, cap: int) -> markers.Permit:
         nonlocal request, authorized

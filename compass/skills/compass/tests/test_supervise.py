@@ -195,6 +195,18 @@ class GroupQuiescenceTest(unittest.TestCase):
             self.assertRaises(supervise.UnstoppedError),
         ):
             group._finish_windows()
+        self.assertFalse(group.cleanup_complete())
+
+    def test_windows_cleanup_fact_requires_successful_job_quiescence(self) -> None:
+        process = cast("subprocess.Popen[Any]", _FakeWindowsProcess(exits=True))
+        group = supervise.Group(process, job=7)
+        self.assertFalse(group.cleanup_complete())
+        with (
+            mock.patch.object(supervise._windows, "terminate", return_value=True),
+            mock.patch.object(supervise._windows, "active", return_value=0),
+        ):
+            group._finish_windows()
+        self.assertTrue(group.cleanup_complete())
 
 
 class SupervisedRunTest(unittest.TestCase):
@@ -238,6 +250,7 @@ class SupervisedRunTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 30, "the timeout did not bound the call")
         self.assertEqual(1, len(seen))
         self.assertFalse(process_alive(seen[0].pid), "the child outlived its timeout")
+        self.assertTrue(seen[0].cleanup_complete(), "a clean timeout must retain cleanup proof")
         self.assertTrue(
             _wait_until(lambda: not process_alive(grandchild)),
             "the grandchild outlived the timeout: only the direct child was killed",

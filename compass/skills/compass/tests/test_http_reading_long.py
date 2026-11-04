@@ -123,7 +123,7 @@ class LongReadingHTTPTest(unittest.TestCase):
                         reading_policy.status(self.config, now=self.app.clock())["off"]
                     )
 
-    def test_valid_long_mode_never_falls_through_ordinary_analyze(self) -> None:
+    def test_long_mode_with_noncanonical_native_identity_never_falls_through_ordinary(self) -> None:
         with (
             mock.patch.object(reading_route, "resolve", return_value=self.route),
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
@@ -135,8 +135,8 @@ class LongReadingHTTPTest(unittest.TestCase):
             payload = self.press()
             payload["plan_binding"] = json.loads(body)["long_plan"]["binding"]
             status, body = self.fixture._post(port, payload)
-        self.assertEqual(503, status, body)
-        self.assertEqual("long-unavailable", json.loads(body)["reason"])
+        self.assertEqual(409, status, body)
+        self.assertEqual("session-changed", json.loads(body)["reason"])
         self.assertEqual([], self.fixture.outcomes)
 
     def test_explicit_empty_tool_destination_preserves_preview_binding_and_long_dispatch(
@@ -148,9 +148,6 @@ class LongReadingHTTPTest(unittest.TestCase):
             mock.patch.object(reading_route, "resolve", return_value=route),
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
             mock.patch.object(self.app, "collect_json", side_effect=AssertionError("collection")),
-            mock.patch.object(
-                reading_policy, "status", side_effect=AssertionError("policy writer")
-            ),
             self.fixture._serving(self.app) as port,
         ):
             status, body = self.get(port)
@@ -160,8 +157,8 @@ class LongReadingHTTPTest(unittest.TestCase):
             self.assertIsNotNone(preview["binding"])
             payload = self.press(plan_binding=preview["binding"], destination="")
             status, body = self.fixture._post(port, payload)
-            self.assertEqual(503, status, body)
-            self.assertEqual("long-unavailable", json.loads(body)["reason"])
+            self.assertEqual(409, status, body)
+            self.assertEqual("session-changed", json.loads(body)["reason"])
             payload["destination"] = "foreign"
             status, body = self.fixture._post(port, payload)
             self.assertEqual(409, status, body)

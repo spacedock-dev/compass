@@ -389,6 +389,7 @@ class Group:
                 self._process.wait(timeout=max(0.0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired as exc:
                 raise UnstoppedError(self._process.pid) from exc
+            self._cleanup_complete = True
 
     def _wait_group(self, deadline: float) -> None:
         while True:
@@ -428,6 +429,7 @@ class Group:
                     raise UnstoppedError(self.pid) from exc
                 if active == 0:
                     self._reaped = True
+                    self._cleanup_complete = True
                     return
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:

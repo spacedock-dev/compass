@@ -261,6 +261,7 @@ class _Retained:
     # snapshot may grow a declaration memo during projection. Charge both.
     supplied_ancillary: Ancillary | None
     rows: tuple[tuple[raw_source.RawRecord, ...], ...]
+    held_inputs: tuple[Any, ...] = ()
     cursor: raw_source.Cursor | None = None
     gaps: tuple[KnownGap, ...] = ()
     scan: context._CheckScan | None = None
@@ -370,13 +371,21 @@ class _Collection:
         ci_remote_limit: int,
         *,
         ci_probe_runner: Callable[..., Any],
+        prepare_started: float | None = None,
     ) -> None:
         self.config, self.state, self.limits = config, state, limits
         self.ci_remote_limit = ci_remote_limit
         self.ci_probe_runner = ci_probe_runner
         self.page_bytes, self.page_seconds = page_bytes, page_seconds
         self.clock, self.cancelled = clock, cancelled
-        self.started = clock()
+        now = clock()
+        if prepare_started is not None and (
+            type(prepare_started) not in (int, float)
+            or not math.isfinite(prepare_started)
+            or prepare_started > now
+        ):
+            raise ValueError("invalid initial preparation time")
+        self.started = now if prepare_started is None else prepare_started
         self.deadline = self.started + limits.prepare_ms / 1000
         self.usage = Usage()
         self.verified = 0
@@ -960,6 +969,8 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
     inventory: inventory_source.Inventory,
     *,
     ancillary: Ancillary | None = None,
+    held_inputs: tuple[Any, ...] = (),
+    prepare_started: float | None = None,
     goal_texts: tuple[str, ...] = (),
     ci_remote_limit: int = 4,
     current_ci_goals: tuple[str, ...] | None = None,
@@ -982,6 +993,10 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
     current_ci_goals separately opts into frozen inputs for a later CI read;
     None requests none. Supply only genuine current goal texts, not goal lines
     or cached readings. Git acquisition is timed/counted, not native byte I/O.
+    held_inputs reserves caller-owned serialized and decoded data retained
+    throughout collection. Do not supply execution contexts or synchronization objects.
+    prepare_started may include already elapsed caller input preparation on the
+    same monotonic clock; it never grants a fresh preparation allowance.
     """
     if current_ci_goals is not None and not isinstance(current_ci_goals, tuple):
         raise TypeError("current CI goals must be a frozen string tuple")
@@ -1002,6 +1017,7 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
             ancillary,
             ancillary,
             tuple(() for _ in inventory.streams),
+            held_inputs=held_inputs,
             ancillary_info=AncillaryInfo(origin="acquired", project_scripts="unavailable")
             if ancillary is None
             else AncillaryInfo(),
@@ -1015,6 +1031,7 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
         cancelled,
         ci_remote_limit,
         ci_probe_runner=ci_probe_runner,
+        prepare_started=prepare_started,
     ).run()
 
 

@@ -183,6 +183,7 @@ def _register(
     *,
     started: float,
     clock: Callable[[], float],
+    on_rejected: Callable[[Started, str], None] | None,
 ) -> Admission:
     config = application.config
     publication = {
@@ -249,7 +250,11 @@ def _register(
         reason = "context-changed"
     if reason:
         markers.seal(config, active.owner, state="failed", now=application.clock())
-        reading.end_job(config, f"claude:{captured.row['sid']}", expected_job=active.job)
+        try:
+            if on_rejected is not None:
+                on_rejected(Started(bound, frozen, private), reason)
+        finally:
+            reading.end_job(config, f"claude:{captured.row['sid']}", expected_job=active.job)
         return Admission(reason=reason, unresolved_job_id=active.job.id)
     return Admission(Started(bound, frozen, private))
 
@@ -260,6 +265,7 @@ def admit(
     payload: dict[str, Any],
     *,
     clock: Callable[[], float] = time.monotonic,
+    on_rejected: Callable[[Started, str], None] | None = None,
 ) -> Admission:
     """Capture a fresh requested shell, never start a worker or fall back to Analyze.
 
@@ -268,6 +274,9 @@ def admit(
     All saved intent, route/settings and policy checks are fresh owner reads.
     Source inventory is metadata only; baseline/content verification remains
     the collector's job. Separate filesystem checks are not globally atomic.
+    on_rejected can finalize a newly registered failed marker while its actual
+    Job still owns the slot; teardown follows even if the callback fails. It
+    must not restart execution or treat changed intent as acknowledged discard.
     """
     try:
         started = clock()
@@ -291,7 +300,9 @@ def admit(
         )
         if not frozen.complete:
             return Admission(reason="source-unavailable")
-        return _register(application, captured, frozen, started=started, clock=clock)
+        return _register(
+            application, captured, frozen, started=started, clock=clock, on_rejected=on_rejected
+        )
     except _RefusedError as exc:
         return Admission(reason=str(exc))
     except (OSError, ValueError, TypeError, KeyError, RecursionError):

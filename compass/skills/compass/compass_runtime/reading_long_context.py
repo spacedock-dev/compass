@@ -130,7 +130,11 @@ def _live_reason(config: RuntimeConfig, context: Context) -> str:
         return "context-changed"
     if supervise.closed():
         return "closed"
-    return "cancelled" if reading.job_cancelled(context.active.job) else ""
+    return (
+        "cancelled"
+        if reading.job_cancelled(context.active.job)
+        else reading.long_stop_reason(context.active.job)
+    )
 
 
 def check(config: RuntimeConfig, context: Context) -> str:
@@ -186,6 +190,8 @@ class Checkpoint:
         job = self.context.active.job
         if reading.job_cancelled(job):
             self.reason = "cancelled"
+        elif reading.long_stop_reason(job):
+            self.reason = reading.long_stop_reason(job)
         elif supervise.closed():
             self.reason = "closed"
         else:
@@ -208,8 +214,13 @@ def _terminal_reason(config: RuntimeConfig, context: Context) -> str:
         return "run-disabled"
     if supervise.closed():
         return "closed"
-    if reading.job_cancelled(context.active.job):
-        return "cancelled"
+    reason = (
+        "cancelled"
+        if reading.job_cancelled(context.active.job)
+        else reading.long_stop_reason(context.active.job)
+    )
+    if reason:
+        return reason
     group = context.active.job.group
     if group is not None and (
         type(group) is not supervise.Group or group.cleanup_complete() is not True
