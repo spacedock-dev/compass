@@ -1849,6 +1849,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Serving records what a stopped dashboard left spent, and shutdown
             # kills every supervised group (DRC-4686, Q2 and Q5).
             "compass_runtime.reading_jobs",
+            "compass_runtime.reading_long_recovery",
+            "compass_runtime.state",
             "compass_runtime.summary_jobs",
             "compass_runtime.supervise",
         },

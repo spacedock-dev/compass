@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
-from compass_runtime import http_api, reading_jobs, summary_jobs, supervise
+from compass_runtime import http_api, reading_jobs, reading_long_recovery, summary_jobs, supervise
 from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
 
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from compass_runtime.config import RuntimeConfig
+    from compass_runtime.state import RuntimeState
 
 _FORK: Callable[[], int] | None = getattr(os, "fork", None)
 _SETSID: Callable[[], int] | None = getattr(os, "setsid", None)
@@ -293,6 +294,74 @@ def pid_exists(pid: int) -> bool:
         winerror = getattr(exc, "winerror", None)
         return exc.errno == errno.EPERM or winerror == 5
     return True
+
+
+def _recovery_process_exists(pid: int) -> bool | None:
+    """Independent read-only death proof; unexpected probe failures are unknown."""
+    if type(pid) is not int or pid <= 0:
+        return None
+    if sys.platform == "win32":
+        # Windows os.kill(pid, 0) may terminate the process: use only waitable
+        # native handles. Missing/inaccessible handles supply no absence proof.
+        try:
+            kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+            kernel.OpenProcess.restype = ctypes.c_void_p
+            kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel.WaitForSingleObject.restype = ctypes.c_uint32
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel.CloseHandle.restype = ctypes.c_int
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE, no mutation rights.
+            if not handle:
+                return None
+            try:
+                waited = kernel.WaitForSingleObject(handle, 0)
+            finally:
+                closed = kernel.CloseHandle(handle)
+        except (OSError, AttributeError, TypeError, ValueError, OverflowError):
+            return None
+        else:
+            if not closed:
+                return None
+            return False if waited == 0 else True if waited == 0x102 else None
+    try:
+        os.kill(pid, 0)
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return False
+        return True if exc.errno == errno.EPERM else None
+    except (ValueError, OverflowError):
+        return None
+    return True
+
+
+def _recover_long_jobs(
+    config: RuntimeConfig, state: RuntimeState, *, now: float
+) -> reading_long_recovery.Recovery:
+    """One serving-process startup pass; never called from poll, Resume or assembly."""
+    alive = functools.partial(dashboard_alive, config)
+    recovered = reading_long_recovery.recover(
+        config,
+        now=now,
+        alive=alive,
+        process_exists=_recovery_process_exists,
+        startup_before_jobs=True,
+    )
+    for item in recovered.items:
+        if item.owner == "dead" and item.outcome is not None and item.inspected.exact is not None:
+            # Publication re-proves death/current ownership; the Item is no claim.
+            # Failures/unknowns remain on disk for a later explicit inspection.
+            with contextlib.suppress(Exception):
+                reading_long_recovery.publish_terminal(
+                    config,
+                    state,
+                    job_id=item.job_id,
+                    now=now,
+                    alive=alive,
+                    process_exists=_recovery_process_exists,
+                    startup_before_jobs=True,
+                )
+    return recovered
 
 
 def dashboard_alive(config: RuntimeConfig, pid: int) -> bool:
@@ -943,7 +1012,7 @@ def _remove_footer_lines(application: object) -> None:
             footer.remove_all()
 
 
-def serve(
+def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lifecycle
     config: RuntimeConfig,
     server: http_api.CompassHTTPServer,
     port: int,
@@ -1004,6 +1073,8 @@ def serve(
                 reading_jobs.recover(served, alive=functools.partial(dashboard_alive, config))
             with contextlib.suppress(Exception):
                 summary_jobs.recover(served, alive=functools.partial(dashboard_alive, config))
+            with contextlib.suppress(Exception):
+                _recover_long_jobs(config, served.state, now=time.time())
         if observation is not None:
             observation.start()
         else:
