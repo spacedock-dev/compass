@@ -171,6 +171,26 @@ class CompletedPublicationTest(unittest.TestCase):
         self.assertFalse(self.path.exists())
         self.assertFalse(self.finalize().acknowledged)
 
+    def test_later_publication_clock_keeps_original_assessment_time_and_one_job(self) -> None:
+        outcome = self.finalize(now=201.125)
+        self.assertTrue(outcome.acknowledged and outcome.retired and outcome.receipt_released)
+        self.assertEqual(201.0, self.entry()["assessment"]["read_at"])
+        self.assertEqual(1, self.entry()["readings"])
+        self.assertEqual(self.diagnostic, self.entry()["long_diagnostic"])
+        self.assertFalse(self.finalize(now=202.0).acknowledged)
+        self.assertEqual(1, self.entry()["readings"])
+
+    def test_read_timestamp_must_be_finite_and_inside_this_jobs_completed_interval(self) -> None:
+        before = self.base.fixture.path.read_bytes()
+        for stamp in (None, True, float("nan"), float("inf"), 99.999, 201.001, 202.0):
+            with self.subTest(stamp=stamp):
+                result = self.finalize(assessment={**self.assessment, "read_at": stamp}, now=202.0)
+                self.assertFalse(result.acknowledged)
+                self.assertEqual("publication-invalid", result.reason)
+                self.assertTrue(self.path.exists())
+                self.assertEqual(before, self.base.fixture.path.read_bytes())
+        self.assertFalse(self.finalize(now=200.999).acknowledged)
+
     def seed_departure(self) -> None:
         previous = copy.deepcopy(self.assessment)
         previous["read_at"] = 150.0

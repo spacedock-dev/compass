@@ -278,7 +278,11 @@ def _qualified(
         or kept["window_start"] != window["start"]
         or kept["scope"] != window["scope"]
         or (window["scope"] == reading.SCOPE_FINAL and kept["ended_at_read"] != window["end"])
-        or kept["read_at"] != now
+        # Reconciliation stamps the assessment before terminalization/publication.
+        # Wall time advances between these stages; keep the original timestamp,
+        # bounded to this immutable job and its actual completion, never the future.
+        or kept["read_at"] is None
+        or not marker["header"]["started_at"] <= kept["read_at"] <= marker["terminal_at"] <= now
     ):
         return None
     return kept, checked

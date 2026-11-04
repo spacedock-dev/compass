@@ -8,8 +8,9 @@ import json
 import subprocess
 import sys
 import threading
+import time
 import unittest
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import (
@@ -33,6 +34,14 @@ from compass_runtime import reading_policy as policy
 
 from . import test_reading_long_admission as admission_tests
 from . import test_reading_long_worker as worker_tests
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def advancing_clock(start: float) -> Callable[[], float]:
+    began = time.monotonic()
+    return lambda: start + time.monotonic() - began
 
 
 class LongCoordinatorTest(unittest.TestCase):
@@ -472,6 +481,14 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertEqual(reading.RESULT_UNVERIFIABLE, assessment["criteria"]["goal"]["result"])
         self.assertEqual(reading.RESULT_DEPARTURE, assessment["criteria"]["line_1"]["result"])
 
+    def test_advancing_real_clock_publishes_after_two_actual_owned_calls(self) -> None:
+        saved = self.actual_case(advancing=True)
+        self.assertIn("assessment", saved)
+        self.assertEqual(1, saved["readings"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("partial", diagnostic["outcome"])
+
     def test_owned_timeout_retains_charge_and_specific_reason_after_proven_cleanup(self) -> None:
         saved = self.actual_case(timed_out=True)
         self.assertNotIn("assessment", saved)
@@ -489,7 +506,7 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.actual_case(unstopped="ci")
 
     def actual_case(
-        self, *, timed_out: bool = False, unstopped: str = ""
+        self, *, timed_out: bool = False, unstopped: str = "", advancing: bool = False
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -521,7 +538,7 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             native_notifier=lambda _: "",
             popup_notifier=lambda _title, _body: None,
             diagnostic_sink=lambda _: None,
-            clock=lambda: fixture.now,
+            clock=advancing_clock(fixture.now) if advancing else lambda: fixture.now,
         )
         popen = subprocess.Popen
         calls: list[list[str]] = []
