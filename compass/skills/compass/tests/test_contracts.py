@@ -1604,6 +1604,24 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_source_collect",
             "compass_runtime.records",
         },
+        "compass_runtime.reading_long_coordinator": {
+            "compass_runtime.aggregate",
+            "compass_runtime.ci_read",
+            "compass_runtime.reading",
+            "compass_runtime.reading_long_admission",
+            "compass_runtime.reading_long_context",
+            "compass_runtime.reading_long_control",
+            "compass_runtime.reading_long_diagnostics",
+            "compass_runtime.reading_long_finalize",
+            "compass_runtime.reading_long_inspection",
+            "compass_runtime.reading_long_jobs",
+            "compass_runtime.reading_long_markers",
+            "compass_runtime.reading_long_reconcile",
+            "compass_runtime.reading_long_worker",
+            "compass_runtime.reading_preparation",
+            "compass_runtime.reading_source_collect",
+            "compass_runtime.supervise",
+        },
         "compass_runtime.reading_long_reconcile": {
             "compass_runtime.config",
             "compass_runtime.reading",
@@ -1890,6 +1908,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.reading_long_admission",
+            "compass_runtime.reading_long_coordinator",
             "compass_runtime.reading_long_preview",
             "compass_runtime.analyze_capacity",
             "compass_runtime.config",
