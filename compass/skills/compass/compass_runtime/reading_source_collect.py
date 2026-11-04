@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -90,7 +91,8 @@ class AncillaryInfo:
     At most one starting cwd is loaded, with the existing project-script file,
     script and five-second git-family caps and reader listing's 64-KiB cap.
     Historical CI freezes at most four remote cwd values, each under the
-    configured git-probe timeout. Supplied ancillary inputs retain no CI binding.
+    configured git-probe timeout. Supplied ancillary inputs do not request CI
+    probing unless current_ci_goals explicitly opts into acquisition.
     """
 
     origin: Literal["supplied", "acquired"] = "supplied"
@@ -102,12 +104,32 @@ class AncillaryInfo:
 
 
 @dataclass(frozen=True)
+class CurrentCiInputs:
+    """Private bounded input to a later authorized CI read, not a CI result.
+
+    The frozen local commit is an acquisition observation, not a claim that
+    Git HEAD remains unchanged. Native stream proofs do not revalidate Git.
+    """
+
+    state: Literal["ready", "unbound", "no-folder", "no-commit", "disabled", "unknown"]
+    goal_texts: tuple[str, ...]
+    links: tuple[tuple[str, int], ...]
+    pushes: tuple[str, ...]
+    folder: str
+    session_head: str
+    remote: tuple[str, str]
+    binding: ci_read.Binding | None
+    caution: bool
+
+
+@dataclass(frozen=True)
 class Ancillary:
     """Caller-owned frozen metadata; declarations must cover the complete corpus.
 
     Explicitly supplied head/declaration acquisition belongs to the caller.
     Omitting Ancillary requests bounded acquisition from retained native rows.
-    Supplied inputs retain absent CI binding; a lazy live _CiBinding would
+    Supplied inputs retain absent CI binding by default; current_ci_goals can
+    explicitly request bounded acquisition. A lazy live _CiBinding would
     perform unaccounted reads and is therefore not an accepted input.
     """
 
@@ -226,6 +248,7 @@ class Collection:
     ancillary_info: AncillaryInfo = AncillaryInfo()
     origins: tuple[PhysicalOrigin, ...] | None = None
     recovered_sources: tuple[Mapping[str, Any], ...] | None = None
+    current_ci: CurrentCiInputs | None = None
 
 
 @dataclass(frozen=True)
@@ -248,10 +271,13 @@ class _Retained:
     ancillary_info: AncillaryInfo = AncillaryInfo()
     goal_texts: tuple[str, ...] = ()
     ci_records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] = ((), ())
+    current_ci_goals: tuple[str, ...] | None = None
+    ci_session_head: str = ""
     ci_remotes: tuple[tuple[str, tuple[str, str]], ...] = ()
     origin_calls: dict[_OriginKey, RecordPosition | None] = field(default_factory=dict)
     origins: tuple[PhysicalOrigin, ...] | None = None
     recovered_sources: tuple[Mapping[str, Any], ...] | None = None
+    current_ci: CurrentCiInputs | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -330,7 +356,7 @@ def _remaining(cursor: raw_source.Cursor, page_bytes: int) -> tuple[int, int]:
 
 
 class _Collection:
-    def __init__(
+    def __init__(  # noqa: PLR0913 - original resource controls plus the injected Git runner
         self,
         config: RuntimeConfig,
         state: _Retained,
@@ -340,9 +366,12 @@ class _Collection:
         clock: Callable[[], float],
         cancelled: Callable[[], bool],
         ci_remote_limit: int,
+        *,
+        ci_probe_runner: Callable[..., Any],
     ) -> None:
         self.config, self.state, self.limits = config, state, limits
         self.ci_remote_limit = ci_remote_limit
+        self.ci_probe_runner = ci_probe_runner
         self.page_bytes, self.page_seconds = page_bytes, page_seconds
         self.clock, self.cancelled = clock, cancelled
         self.started = clock()
@@ -523,6 +552,8 @@ class _Collection:
     def ci_directories(self, scan: context._CheckScan) -> Iterator[str]:
         # Canonical placed poll runs include child polls and shell cd/wrapper
         # rules. Temporary tally scratch is bounded by the admitted native input.
+        if self.state.current_ci_goals is not None:
+            yield scan.session_dir
         tally = context._tally_from_scan(scan)  # noqa: SLF001
         self.checkpoint()
         for history in tally.commands.values():
@@ -552,7 +583,11 @@ class _Collection:
                     directories.append(cwd)
         self.accept(self.state, directories)
         for cwd in directories:
-            self.reserve_time(self.config.git_probe_timeout_sec)
+            # probe_session owns two sequential Git calls (HEAD, then origin).
+            seconds = self.config.git_probe_timeout_sec * (
+                2 if self.state.current_ci_goals is not None else 1
+            )
+            self.reserve_time(seconds)
             before_probe = self.state
             info = replace(
                 self.state.ancillary_info,
@@ -560,15 +595,27 @@ class _Collection:
             )
             try:
                 self.accept(replace(self.state, ancillary_info=info), directories)
-                self.reserve_time(self.config.git_probe_timeout_sec)
+                self.reserve_time(seconds)
             except _StopError:
                 self.state = before_probe
                 raise
-            remote = ci_read.folder_remote(self.config, cwd)
+            session_head = self.state.ci_session_head
+            if self.state.current_ci_goals is None:
+                remote = ci_read.folder_remote(self.config, cwd)
+            else:
+                found = ci_read.probe_session(self.config, cwd, runner=self.probe_git)
+                if cwd == scan.session_dir:
+                    session_head = found.head if found is not None else ""
+                remote = (found.host, found.repository) if found is not None else ("", "")
             self.checkpoint()
             unknown |= not bool(remote[1])
             self.accept(
-                replace(self.state, ci_remotes=(*self.state.ci_remotes, (cwd, remote))), directories
+                replace(
+                    self.state,
+                    ci_remotes=(*self.state.ci_remotes, (cwd, remote)),
+                    ci_session_head=session_head,
+                ),
+                directories,
             )
         if unknown:
             self.accept(
@@ -577,6 +624,58 @@ class _Collection:
                     ancillary_info=replace(self.state.ancillary_info, ci_binding="unknown"),
                 )
             )
+
+    def probe_git(self, *args: Any, **kwargs: Any) -> Any:
+        # The existing owner supplies the unchanged finite timeout for each call.
+        self.reserve_time(self.config.git_probe_timeout_sec)
+        result = self.ci_probe_runner(*args, **kwargs)
+        self.checkpoint()
+        return result
+
+    def freeze_current_ci(self) -> None:
+        goals = self.state.current_ci_goals
+        if goals is None:
+            return
+        self.checkpoint()
+        scan, evidence = self.state.scan, self.state.evidence
+        if scan is None or evidence is None:
+            raise _StopError("native_incomplete")
+        folder = scan.session_dir
+        session_head = self.state.ci_session_head
+        links, pushes = self.state.ci_records
+        remote = dict(self.state.ci_remotes).get(folder, ("", ""))
+        binding = ci_read.bind(goals, links, pushes, remote)
+        state: Literal["ready", "unbound", "no-folder", "no-commit", "disabled", "unknown"]
+        if not self.config.git_probe_enabled:
+            state = "disabled"
+        elif not folder:
+            state = "no-folder"
+        elif folder not in dict(self.state.ci_remotes):
+            state = "unknown"
+        elif not session_head:
+            state = "no-commit"
+        elif binding is None:
+            state = "unbound"
+        else:
+            state = "ready"
+        written = (
+            str(fact.get("summary") or "")
+            for fact in evidence.facts
+            if fact.get("type") == "tool_report" and fact.get("subject") == "write"
+        )
+        inputs = CurrentCiInputs(
+            state,
+            goals,
+            links,
+            pushes,
+            folder,
+            session_head,
+            remote,
+            binding,
+            ci_read.changed_ci_configuration(written),
+        )
+        self.checkpoint()
+        self.accept(replace(self.state, current_ci=inputs))
 
     def admit_messages(self) -> None:
         # All parent rows are verified, but no message projection or redaction
@@ -630,7 +729,7 @@ class _Collection:
             None,
         )
         self.accept(replace(self.state, scan=scan))
-        if self.state.supplied_ancillary is None:
+        if self.state.supplied_ancillary is None or self.state.current_ci_goals is not None:
             scan = self.freeze_ci(scan)
         self.checkpoint()
         frozen = streams[0].cursor.frozen
@@ -785,6 +884,11 @@ class _Collection:
     def prepare(self) -> None:
         self.checkpoint()
         self.accept(self.state)
+        for text in self.state.current_ci_goals or ():
+            self.checkpoint()
+            if not isinstance(text, str):
+                raise TypeError("current CI goals must be a frozen string tuple")
+        self.checkpoint()
         self.accept(replace(self.state, ancillary=copy.deepcopy(self.state.ancillary)))
         if not self.state.inventory.complete or not self.state.inventory.streams:
             raise _StopError("inventory")
@@ -798,6 +902,7 @@ class _Collection:
                 self.read_stream(index)
             self.admit_messages()
             self.materialize()
+            self.freeze_current_ci()
             self.prove_final()
             self.join_words()
             self.locate_origins()
@@ -844,6 +949,7 @@ class _Collection:
             self.state.ancillary_info,
             self.state.origins if not reason else None,
             self.state.recovered_sources if not reason else None,
+            self.state.current_ci if not reason else None,
         )
 
 
@@ -854,6 +960,8 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
     ancillary: Ancillary | None = None,
     goal_texts: tuple[str, ...] = (),
     ci_remote_limit: int = 4,
+    current_ci_goals: tuple[str, ...] | None = None,
+    ci_probe_runner: Callable[..., Any] = subprocess.run,
     limits: Limits = _DEFAULT_LIMITS,
     page_bytes: int = 1024 * 1024,
     page_seconds: float = 0.25,
@@ -869,7 +977,12 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
     native head/rows. Native source_bytes excludes bounded ancillary file/git
     work; ancillary_info records acquisition counts and CI binding availability.
     goal_texts must be genuine caller goal/line inputs, never cached readings.
+    current_ci_goals separately opts into frozen inputs for a later CI read;
+    None requests none. Supply only genuine current goal texts, not goal lines
+    or cached readings. Git acquisition is timed/counted, not native byte I/O.
     """
+    if current_ci_goals is not None and not isinstance(current_ci_goals, tuple):
+        raise TypeError("current CI goals must be a frozen string tuple")
     if type(ci_remote_limit) is not int or not 0 <= ci_remote_limit <= 4:
         raise ValueError("invalid historical CI remote allowance")
     if type(page_bytes) is not int or not 0 < page_bytes <= SESSION_SOURCE_PAGE_MAX_BYTES:
@@ -891,6 +1004,7 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
             if ancillary is None
             else AncillaryInfo(),
             goal_texts=goal_texts,
+            current_ci_goals=current_ci_goals,
         ),
         limits,
         page_bytes,
@@ -898,6 +1012,7 @@ def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
         clock,
         cancelled,
         ci_remote_limit,
+        ci_probe_runner=ci_probe_runner,
     ).run()
 
 
