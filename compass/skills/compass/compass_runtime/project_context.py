@@ -8302,6 +8302,10 @@ def _built_tally(
         goal_texts=goal_texts,
         remotes=remotes,
     )
+    return _tally_from_scan(scan)
+
+
+def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
     return _tally_of(
         scan.parent,
         scan.children,
