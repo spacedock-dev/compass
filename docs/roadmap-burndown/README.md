@@ -578,16 +578,20 @@ declared tolerance or on narrowed AC, require a captain-visible design reset. Cy
 Required, and the reason this workflow exists rather than just the skills it calls. Runs when the
 merge is detected, before the entity is reported closed to the captain.
 
-The six edits live in the `burndown` skill, at its step 6, and not here. This section used to carry
+The six edits live in the `burndown` skill's
+[Linear reconciliation adapter](../../.claude/skills/burndown/references/linear.md#reconcile),
+and not here. This section used to carry
 its own copy, against this document's own lede, and the copy drifted: it kept a dated historical
 section on milestones that `sync-project` removes, it required an "As of" block of derived numbers
 on the project overview that `sync-project` forbids, and its third item was a different instruction
-from the skill's third rather than a reworded one. Read `.claude/skills/burndown/SKILL.md` and do
-what step 6 says. The evidence for why the step is not optional lives with it.
+from the skill's third rather than a reworded one. Follow that adapter's six reconciliation items
+under the [shared landing lifecycle](../../.claude/skills/burndown/references/reconciliation.md).
+The evidence for why the step is not optional lives with the adapter.
 
 What this workflow adds on top is set out at the `merge` stage above and is not the skill's: the
 receipt comment on the Linear issue, and the `reconciled` stamp written before `merge guard`
-archives. One thing step 6.2 needs from here: the milestone write resends the whole description, so
+archives. One thing reconciliation item 2 needs from here: the milestone write resends the whole
+description, so
 the milestone-edit rule in `## Workflow-specific rules` applies to it. Report what the serializer
 moves; do not repair it.
 

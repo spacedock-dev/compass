@@ -1,4 +1,4 @@
 interface:
-  display_name: "Milestone Burndown"
-  short_description: "Burn down a Compass milestone in grouped, stacked PRs"
-  default_prompt: "Use $burndown to plan, build and close the named Compass milestone."
+  display_name: "Issue and Milestone Burndown"
+  short_description: "Plan and land Compass work from GitHub or Linear"
+  default_prompt: "Use $burndown to plan, build and reconcile the given Compass GitHub or Linear issue or milestone."
