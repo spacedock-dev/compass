@@ -1479,9 +1479,25 @@ _JOBS: dict[tuple[str, str], Job] = {}
 
 
 def start_job(
-    config: RuntimeConfig, session_key: str, *, provider: str, label: str, now: float
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str | None = None,
 ) -> Job | None:
-    """Take the slot and register a job for it, or None when the slot is held."""
+    """Take the shared slot, or None when held; optionally use a prepared long ID.
+
+    None keeps ordinary ID minting. A supplied ID identifies the UI job only:
+    it grants no durable registration, live handle, permission, source access,
+    or launch authority. The long-job protocol independently refuses replay.
+    """
+    if prepared_job_id is not None and (
+        not isinstance(prepared_job_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", prepared_job_id) is None
+    ):
+        raise ValueError("Invalid prepared reading job identity")
     key = (str(config.state_dir), session_key)
     harness, _, sid = session_key.partition(":")
     with _FLIGHT_LOCK:
@@ -1489,7 +1505,7 @@ def start_job(
             return None
         _IN_FLIGHT.add(key)
         job = Job(
-            id=secrets.token_hex(8),
+            id=secrets.token_hex(8) if prepared_job_id is None else prepared_job_id,
             harness=harness,
             sid=sid,
             provider=provider,
