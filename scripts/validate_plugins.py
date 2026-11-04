@@ -485,6 +485,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reading_pass_types.py",
     "skills/compass/compass_runtime/reading_passes.py",
     "skills/compass/compass_runtime/reading_source.py",
+    "skills/compass/compass_runtime/reading_source_stream.py",
     "skills/compass/compass_runtime/reading_long_jobs.py",
     "skills/compass/compass_runtime/reading_long_markers.py",
     "skills/compass/compass_runtime/reading_long_inspection.py",
