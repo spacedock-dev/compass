@@ -191,6 +191,35 @@ class ActiveContextTest(unittest.TestCase):
         ):
             self.assertEqual("context-changed", self.check())
 
+    def test_preparation_checkpoint_throttles_owner_reads_but_keeps_first_real_cause(self) -> None:
+        checkpoint_type = getattr(self.module, "Checkpoint", None)
+        self.assertTrue(callable(checkpoint_type))
+        assert callable(checkpoint_type)
+        checkpoint = checkpoint_type(self.config, self.context)
+        with mock.patch.object(self.module, "check", wraps=self.module.check) as checked:
+            self.assertFalse(checkpoint())
+            for _ in range(100):
+                self.assertFalse(checkpoint())
+            self.assertEqual(1, checked.call_count)
+            policy.set_consent(self.config, False, now=100)
+            policy.resume(self.config, now=100)
+            self.clock[0] = 0.3
+            self.assertTrue(checkpoint())
+            self.assertEqual("permission-changed", checkpoint.reason)
+            self.assertFalse(reading.job_cancelled(self.active.job))
+            self.assertTrue(checkpoint())
+            self.assertEqual(2, checked.call_count)
+
+    def test_preparation_checkpoint_sees_cancel_immediately_without_waiting_for_read_interval(self) -> None:
+        checkpoint_type = getattr(self.module, "Checkpoint", None)
+        self.assertTrue(callable(checkpoint_type))
+        assert callable(checkpoint_type)
+        checkpoint = checkpoint_type(self.config, self.context)
+        self.assertFalse(checkpoint())
+        reading.cancel_job(self.config, self.key, self.active.job.id, now=100)
+        self.assertTrue(checkpoint())
+        self.assertEqual("cancelled", checkpoint.reason)
+
     def test_shared_slot_foreign_owner_and_terminal_marker_refuse(self) -> None:
         foreign = dataclasses.replace(
             self.active, owner=dataclasses.replace(self.active.owner, owner="f" * 32)

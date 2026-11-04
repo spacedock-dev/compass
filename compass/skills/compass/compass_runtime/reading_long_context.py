@@ -166,6 +166,41 @@ def check(config: RuntimeConfig, context: Context) -> str:
     )
 
 
+class Checkpoint:
+    """Preparation stop probe: immediate Cancel, throttled current-owner reads.
+
+    Suitable for source page/record loops. A context/permission failure closes
+    this probe permanently and retains its actual cause; it never fabricates an
+    accepted reader Cancel or refreshes captured authority. Filesystem operations
+    remain cooperative; force a check at every major preparation boundary.
+    """
+
+    def __init__(self, config: RuntimeConfig, context: Context):
+        self.config, self.context = config, context
+        self.reason = ""
+        self._next: float | None = None
+
+    def __call__(self, *, force: bool = False) -> bool:
+        if self.reason:
+            return True
+        job = self.context.active.job
+        if reading.job_cancelled(job):
+            self.reason = "cancelled"
+        elif supervise.closed():
+            self.reason = "closed"
+        else:
+            try:
+                now = self.context.active.owner.live.prepared.clock()
+                if type(now) not in (int, float) or not math.isfinite(now):
+                    self.reason = "job-clock-invalid"
+                elif force or self._next is None or now >= self._next:
+                    self.reason = check(self.config, self.context)
+                    self._next = now + 0.25
+            except Exception:  # noqa: BLE001 - failed preparation probes close the source reader
+                self.reason = "context-changed"
+        return bool(self.reason)
+
+
 def _terminal_reason(config: RuntimeConfig, context: Context) -> str:
     if not _current(config, context, terminal=True):
         return "context-changed"
