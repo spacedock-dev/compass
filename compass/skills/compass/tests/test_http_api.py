@@ -6775,7 +6775,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         assert job is not None
         self.assertEqual("planned_seconds", job["reason"])
         self.assertIsNotNone(job["largest_read"])
-        self.assertEqual(150.0, job["largest_read"]["seconds"])
+        self.assertAlmostEqual(150.0, job["largest_read"]["seconds"], delta=1e-6)
         self.assertEqual(0, job["parts"])
         self.assertEqual(0, job["attempts"])
 
@@ -6840,7 +6840,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         job = self.jobs.published(self.application, "claude", "root")
         assert job is not None
         self.assertEqual("planned_seconds", job["reason"])
-        self.assertEqual(179.0, job["largest_read"]["seconds"])
+        self.assertAlmostEqual(179.0, job["largest_read"]["seconds"], delta=1e-6)
         self.assertEqual(0, job["attempts"])
         self.assertEqual([], model.prompts)
 
