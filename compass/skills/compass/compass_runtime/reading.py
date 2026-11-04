@@ -738,6 +738,7 @@ WITHHELD_CLAUDE_OPTION = "claude-option-refused"
 WITHHELD_NOTHING_TYPED = "nothing-typed"
 WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
+WITHHELD_LONG_INTERRUPTED = "long-interrupted"
 WITHHELD_UNSTOPPED = "unstopped"
 WITHHELD_JOB_UNRECORDED = "job-unrecorded"
 WITHHELD_STOPPING = "stopping"
@@ -926,6 +927,10 @@ WITHHELD = {
     # Recorded at the next start for a job whose spend was committed when the
     # dashboard stopped (DRC-4686, Q2). The attempt counts because it was
     # charged, and a silent loss would leave the count short of the budget.
+    WITHHELD_LONG_INTERRUPTED: (
+        "Compass stopped before this analysis outcome was saved. No new result is shown. "
+        "Any recorded calls remain counted, and a fresh press is the only retry."
+    ),
     WITHHELD_INTERRUPTED: (
         "The analysis stopped because Compass stopped before it finished. Nothing was "
         "produced, the attempt still counts, and a fresh press is the only retry."
