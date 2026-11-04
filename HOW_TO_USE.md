@@ -484,6 +484,8 @@ dashboard was started with. Tested: a dashboard started under a scratch `COMPASS
 by a `--stop` issued with no `COMPASS_HOME` at all, and its state file was cleaned up anyway, because
 the process removes its own on the way out.
 
+## Analyze a session
+
 To analyze drift, press **Analyze drift** on the session page. It runs on your press and tells
 you once what is sent and where. With no saved goal, the check adopts the goal drafted from your first
 permitted Claude Code or Codex prompt, or from your latest prompt where no first prompt with a time
@@ -515,6 +517,31 @@ keep its saved answer, so summaries resume exactly as you left them. **Delete su
 says what it removes before the second, and reports the deletion with its time; it removes one
 session's saved summary, but it lasts until that finished session is opened again: opening it makes
 a new summary and sends its text once more, unless summaries are turned off or model calls are paused.
+For a native Claude Code session that needs several prompts, open **Long analysis options**,
+review the route, saved intent and limits, then press **Start long analysis**. Opening the preview
+reads no transcript bodies, fetches no CI checks and reserves no calls. Its source size and
+allowance are estimates; Start checks them again. Ordinary **Analyze drift** remains a separate
+one-call action. Each reserved call in a long analysis counts against the same daily allowance.
+The plan allows at most 16 evidence calls and one final reconciliation call, but progress and
+accounting report what actually ran, not that maximum.
+
+Cancel requests a stop for that job; Pause model calls stops further calls and stays paused until you resume.
+Neither a reload nor a failure starts another analysis. If an attempt is withheld, fails or is
+cancelled, the previous reading stays visible with the latest outcome beside it. A partial
+reading may replace it with supported local departures and Can't tell for the rest; it is not
+an all-clear for the session. Refresh the preview before another explicit Start. The
+[long-analysis limits and data handling](SECURITY.md#long-analysis) describe what may be sent
+more than once and what remains unknown.
+
+Open **Unfinished long analysis records** to inspect this session's recovery metadata, including
+while model calls are paused. **Refresh recovery records** reads it again; neither action starts
+recovery or resumes analysis. A recorded state does not prove whether its process is alive.
+**Check and discard superseded record** asks the server to verify eligibility again. It removes
+only an eligible recovery marker, never stops a model or refunds calls. An unconfirmed response
+stays uncertain and does not retry. **Analysis cleanup unconfirmed** means the long job remains
+blocked, with the previous reading visible; it is not a completed analysis or permission to
+start another one.
+
 Analyze allows 100 attempts in a rolling
 twenty-four hours and says when capacity becomes available again. Codex goal summaries need no
 startup flag: press **Summarize this session** in Console, and the first one shows its own one-time
@@ -528,7 +555,7 @@ number of a pull request the session created and the names of skills it used. Th
 nothing in this release; they will be removed in a later release. Pause model calls or
 `--no-observer-model` stops these calls.
 
-The Live monitor is the one model call that repeats. With its switch on, a Claude Code session page asks
+The Live monitor repeats on a cadence while you view the session. With its switch on, a Claude Code session page asks
 Haiku through your Claude Code about once a minute while the page is open and its tab is visible, and it
 stops when you turn it off, leave, hide the tab for good, or the session ends. After 20 minutes it asks
 whether you still want it, and turns itself off if nobody answers within 10. It uses `claude-haiku-5-5`
