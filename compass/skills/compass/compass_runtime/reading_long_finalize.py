@@ -203,6 +203,24 @@ def _recorded_result(result: reading_final_call.Result, marker: dict[str, Any]) 
     )
 
 
+def _result_outcome(result: reading_final_call.Result) -> str | None:
+    if type(result) is not reading_final_call.Result or result.criteria is None:
+        return None
+    if result.state == "resolved" and result.reason == "ok" and not result.unresolved:
+        return "completed"
+    if (
+        result.state == "partial"
+        and result.reason == "final-context-partial"
+        and result.unresolved == ("agent-words-partial",)
+        and result.packet is not None
+        and result.packet.selection.agent_words_whole is False
+        and result.criteria
+        == reading_final_call._qualified_partial(result.criteria, result.packet.selection)  # noqa: SLF001 - reuse the producer's exact local-only narrowing
+    ):
+        return "partial"
+    return None
+
+
 def _qualified(
     config: RuntimeConfig,
     result: reading_final_call.Result,
@@ -214,12 +232,9 @@ def _qualified(
     now: float,
 ) -> tuple[reading.Assessment, dict[str, Any]] | None:
     """Bind the actual resolved packet and outcome to this frozen registered job."""
+    outcome = _result_outcome(result)
     if (
-        type(result) is not reading_final_call.Result
-        or result.state != "resolved"
-        or result.reason != "ok"
-        or result.criteria is None
-        or result.unresolved
+        outcome is None
         or result.packet is None
         or type(frozen) is not reading_pass_context.Frozen
         or result.packet.frozen_context != frozen
@@ -239,8 +254,11 @@ def _qualified(
     if (
         checked is None
         or kept is None
-        or checked["outcome"] != "completed"
-        or checked["complete"] is False
+        or checked["outcome"] != outcome
+        # A partial label cannot conceal hard source/map gaps. The completed
+        # shape computes those independently of the known final-only gap.
+        or reading_long_diagnostics.validate({**checked, "outcome": "completed", "complete": None})
+        is None
         or checked["plan"] != marker["header"]["plan"]
         or checked.get("binding")
         != reading_long_diagnostics.bind_context(frozen, started_at=marker["header"]["started_at"])
@@ -346,7 +364,7 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
     on_a_check: Collection[str] = (),
     diagnostic_sink: Callable[[str], None] = print,
 ) -> Finalized:
-    """Publish a qualified completed result, or retire an already-acknowledged one.
+    """Publish a qualified completed/partial result, or retire a durable acknowledgment.
 
     Caller performs expensive source revalidation before this method. source_current
     must be a short read-only stamp/version check: no policy/store writes, model work
@@ -387,7 +405,9 @@ def completed(  # noqa: PLR0913, PLR0911 - ordered closed publication gates and 
                 if qualified is None or not callable(source_current):
                     return Finalized(reason="publication-invalid")
                 checked_lines = frozenset(on_a_check)
-                if not checked_lines.issubset(qualified[0]["criteria"]):
+                if not checked_lines.issubset(qualified[0]["criteria"]) or (
+                    qualified[1]["outcome"] == "partial" and checked_lines
+                ):
                     return Finalized(reason="publication-invalid")
                 acknowledged, reason = _write_completed(
                     config,

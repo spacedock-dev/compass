@@ -378,8 +378,13 @@ def validate(value: Any) -> dict[str, Any] | None:
             )
             _require(reserved <= value["accounting"]["totals"]["calls"])
         _binding(value.get("binding"))
-        _label(value["outcome"], {"pending", "withheld", "cancelled", "interrupted", "completed"})
-        _require(value["outcome"] != "completed" or value.get("binding") is not None)
+        _label(
+            value["outcome"],
+            {"pending", "withheld", "cancelled", "interrupted", "completed", "partial"},
+        )
+        _require(
+            value["outcome"] not in {"completed", "partial"} or value.get("binding") is not None
+        )
         _require(value["complete"] is _complete(value))
         return {**deepcopy(value), "plan": plan, "observations": observations}
     except (ValueError, TypeError, KeyError):
