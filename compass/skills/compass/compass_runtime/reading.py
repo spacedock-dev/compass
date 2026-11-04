@@ -751,32 +751,39 @@ WITHHELD_CONTEXT_FALLBACK = "context-fallback"
 WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
 WITHHELD = {
     WITHHELD_CONTEXT_SMALL_WINDOW: (
-        "Nothing was sent or spent. This route's allowance is below the smallest Prompt size "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route's allowance is below the smallest Prompt size "
         "setting. A smaller actual reading may fit; choose a larger context window or change "
         "its context configuration for this reading."
     ),
     WITHHELD_CONTEXT_ADMISSION: (
-        "Nothing was sent or spent. The assembled prompt exceeds this route's estimated "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "The assembled prompt exceeds this route's estimated "
         "allowance. Lower Prompt size in Settings or choose a route with a larger context window."
     ),
     WITHHELD_CONTEXT_CONFIG: (
-        "Nothing was sent or spent. Compass could not read this route's context controls. "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Compass could not read this route's context controls. "
         "Check the Claude managed settings and context configuration before trying again."
     ),
     WITHHELD_CONTEXT_NO_ROOM: (
-        "Nothing was sent or spent. This route's configured context window leaves no room "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route's configured context window leaves no room "
         "after reserved space. Choose a larger window or change its context configuration."
     ),
     WITHHELD_CONTEXT_DYNAMIC: (
-        "Nothing was sent or spent. This route uses managed policy that can change at launch. "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route uses managed policy that can change at launch. "
         "Use a route whose context and model-switching controls Compass can check locally."
     ),
     WITHHELD_CONTEXT_COMPACTION: (
-        "Nothing was sent or spent. Managed settings conflict with Analyze's compaction "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Managed settings conflict with Analyze's compaction "
         "control. Ask your administrator to allow compaction to remain disabled for Analyze."
     ),
     WITHHELD_CONTEXT_FALLBACK: (
-        "Nothing was sent or spent. Managed settings permit automatic model fallback. "
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Managed settings permit automatic model fallback. "
         "Ask your administrator to disable fallback before running Analyze on this route."
     ),
     WITHHELD_CONTEXT_CHANGED: (

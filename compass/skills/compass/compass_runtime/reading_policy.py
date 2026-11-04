@@ -791,6 +791,30 @@ class RefusedError(Exception):
         self.answer = answer
 
 
+# Only these model-seam outcomes may enter an Analyze diagnostic. A provider's
+# unexpected status or an exception's message is never diagnostic content.
+_ANALYZE_OUTCOMES = frozenset(
+    {
+        "ok",
+        "error",
+        "timeout",
+        "unavailable",
+        "closed",
+        "cancelled",
+        "unstopped",
+        "oversized",
+        "context-admission",
+        "context-small-window",
+        "context-config",
+        "context-no-room",
+        "context-dynamic",
+        "context-compaction",
+        "context-fallback",
+        "context-config-after-reserve",
+    }
+)
+
+
 class GuardedModel:
     """Reserve at the actual model seam, after eligibility and evidence checks."""
 
@@ -824,6 +848,8 @@ class GuardedModel:
         self.reserve_with = reserve_with
         self.admit_prompt = admit_prompt
         self.reserved = False
+        self.analyze_diagnostic: dict[str, Any] | None = None
+        self._model_invoked = False
         self.model = model
         self.clock = clock
         self.provider = provider
@@ -900,6 +926,38 @@ class GuardedModel:
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         self.reserved = False
+        self._model_invoked = False
+        self.analyze_diagnostic = None
+        if self.admit_prompt is None or self.unasked:
+            return self._call(prompt, output_cap_bytes=output_cap_bytes)
+        reset = getattr(self.admit_prompt, "reset", None)
+        if callable(reset):
+            reset()
+        started = time.monotonic()
+        outcome = "error"
+        try:
+            raw, status = self._call(prompt, output_cap_bytes=output_cap_bytes)
+        except RefusedError:
+            outcome = "refused"
+            raise
+        else:
+            outcome = status if status in _ANALYZE_OUTCOMES else "error"
+            return raw, status
+        finally:
+            # Input is the already assembled argument, not source transcript
+            # size. Invocation is not proof of transmission or provider use.
+            # Elapsed time covers this seam, including its gates; source
+            # collection happened before entry and is not timed here.
+            self.analyze_diagnostic = {
+                "kind": "actual-input",
+                "prompt_bytes": len(prompt.encode("utf-8", "replace")),
+                "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+                "outcome": outcome,
+                "attempt_reserved": self.reserved,
+                "model_invoked": self._model_invoked,
+            }
+
+    def _call(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         if refusal := self._preflight():
             return "", refusal
         if self.unasked:
@@ -919,6 +977,7 @@ class GuardedModel:
         self.reserved = True
         if self.on_reserved is not None:
             self.on_reserved()
+        self._model_invoked = True
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # A last-moment managed-policy change can stop the child after the
         # reservation. It must not inherit the initial refusal's unspent claim.

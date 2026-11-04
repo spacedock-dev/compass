@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import json
 import tempfile
 import threading
 import unittest
@@ -197,3 +198,124 @@ class AnalyzeAdmissionTest(unittest.TestCase):
             observer.claude_reading_provenance(self.config)["envelope_digest"],
             observer.claude_reading_provenance(self.config, analyze=True)["envelope_digest"],
         )
+
+    def trace(self, guarded: Any) -> dict[str, Any]:
+        value = getattr(guarded, "analyze_diagnostic", None)
+        self.assertIsInstance(value, dict, "each requested invocation needs its own trace")
+        assert isinstance(value, dict)
+        return value
+
+    def test_trace_counts_exact_assembled_bytes_and_elapsed_seam_time(self) -> None:
+        admission = self.module().Admission("codex", "unknown", "", requested_maximum=2_097_152)
+        guarded = self.guard(lambda *_a, **_k: ("private reply", "ok"), admit_prompt=admission)
+        with mock.patch(
+            "compass_runtime.reading_policy.time.monotonic", side_effect=(10.0, 10.125)
+        ):
+            guarded('A"界🙂\\', output_cap_bytes=1)
+        self.assertEqual(
+            {
+                "kind": "actual-input",
+                "prompt_bytes": 10,
+                "elapsed_ms": 125,
+                "outcome": "ok",
+                "attempt_reserved": True,
+                "model_invoked": True,
+            },
+            self.trace(guarded),
+        )
+
+    def test_reused_guard_clears_capacity_before_unavailable_preflight(self) -> None:
+        admission = self.module().Admission("codex", "unknown", "", requested_maximum=2_097_152)
+        model = mock.Mock(return_value=("reply", "ok"))
+        model.available.return_value = True
+        guarded = self.guard(model, admit_prompt=admission)
+        guarded("first private prompt", output_cap_bytes=1)
+        self.assertIsNotNone(admission.measurement)
+        model.available.return_value = False
+        with mock.patch("compass_runtime.reading_policy.time.monotonic", side_effect=(20.0, 20.25)):
+            self.assertEqual(("", "unavailable"), guarded("界🙂", output_cap_bytes=1))
+        self.assertIsNone(admission.measurement, "a preflight refusal cannot retain prior capacity")
+        trace = self.trace(guarded)
+        self.assertEqual(7, trace["prompt_bytes"])
+        self.assertEqual(250, trace["elapsed_ms"])
+        self.assertEqual("unavailable", trace["outcome"])
+        self.assertFalse(trace["attempt_reserved"])
+        self.assertFalse(trace["model_invoked"])
+
+    def test_trace_distinguishes_initial_refusal_from_counted_late_failure(self) -> None:
+        for admit, model_status, outcome, reserved in (
+            ("context-admission", "ok", "context-admission", False),
+            (None, "context-config", "context-config-after-reserve", True),
+            (None, "error", "error", True),
+        ):
+            with self.subTest(outcome=outcome):
+                guarded = self.guard(
+                    lambda *_a, model_status=model_status, **_k: (
+                        "private error sentinel",
+                        model_status,
+                    ),
+                    admit_prompt=lambda _prompt, admit=admit: admit,
+                )
+                guarded("private input sentinel", output_cap_bytes=1)
+                trace = self.trace(guarded)
+                self.assertEqual(outcome, trace["outcome"])
+                self.assertEqual(reserved, trace["attempt_reserved"])
+                self.assertEqual(reserved, trace["model_invoked"])
+                self.assertNotIn("sentinel", json.dumps(trace))
+
+    def test_reused_guard_clears_capacity_before_cancelled_preflight(self) -> None:
+        admission = self.module().Admission("codex", "unknown", "", requested_maximum=2_097_152)
+        cancelled = threading.Event()
+        guarded = self.guard(
+            lambda *_a, **_k: ("reply", "ok"),
+            admit_prompt=admission,
+            cancelled=cancelled.is_set,
+        )
+        guarded("first prompt", output_cap_bytes=1)
+        cancelled.set()
+        self.assertEqual(("", "cancelled"), guarded("second", output_cap_bytes=1))
+        self.assertIsNone(admission.measurement)
+        trace = self.trace(guarded)
+        self.assertEqual(6, trace["prompt_bytes"])
+        self.assertEqual("cancelled", trace["outcome"])
+        self.assertFalse(trace["attempt_reserved"])
+        self.assertFalse(trace["model_invoked"])
+
+    def test_exception_and_unknown_outcomes_never_publish_error_words(self) -> None:
+        for fails_before_reserve in (False, True):
+            with self.subTest(fails_before_reserve=fails_before_reserve):
+                guarded = self.guard(
+                    mock.Mock(side_effect=RuntimeError("secret error sentinel")),
+                    admit_prompt=lambda _prompt: None,
+                    before_reserve=(
+                        mock.Mock(side_effect=RuntimeError("secret marker sentinel"))
+                        if fails_before_reserve
+                        else None
+                    ),
+                )
+                with self.assertRaises(RuntimeError):
+                    guarded("secret input sentinel", output_cap_bytes=1)
+                trace = self.trace(guarded)
+                self.assertEqual("error", trace["outcome"])
+                self.assertEqual(not fails_before_reserve, trace["attempt_reserved"])
+                self.assertEqual(not fails_before_reserve, trace["model_invoked"])
+                self.assertNotIn("sentinel", json.dumps(trace))
+        guarded = self.guard(
+            lambda *_a, **_k: ("", "secret outcome sentinel"), admit_prompt=lambda _p: None
+        )
+        guarded("secret input sentinel", output_cap_bytes=1)
+        self.assertEqual("error", self.trace(guarded)["outcome"])
+
+    def test_pause_refusal_trace_is_unspent_and_default_callers_have_no_trace(self) -> None:
+        model = lambda *_a, **_k: ("reply", "ok")  # noqa: E731
+        ordinary = self.guard(model)
+        ordinary("ordinary", output_cap_bytes=1)
+        self.assertIsNone(getattr(ordinary, "analyze_diagnostic", None))
+        guarded = self.guard(model, admit_prompt=lambda _p: None)
+        reading_policy.set_consent(self.config, False, now=100)
+        with self.assertRaises(reading_policy.RefusedError):
+            guarded("not sent", output_cap_bytes=1)
+        trace = self.trace(guarded)
+        self.assertEqual("refused", trace["outcome"])
+        self.assertFalse(trace["attempt_reserved"])
+        self.assertFalse(trace["model_invoked"])

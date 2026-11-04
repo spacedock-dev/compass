@@ -103,6 +103,10 @@ class Admission:
         self.requested_maximum = requested_maximum
         self.measurement: dict[str, Any] | None = None
 
+    def reset(self) -> None:
+        """A new invocation may stop before admission measures any capacity."""
+        self.measurement = None
+
     def __call__(self, prompt: str) -> str | None:
         capacity, controls = _assess(prompt, self.provider, self.model, self.system_prompt)
         self.measurement = {
