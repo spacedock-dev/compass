@@ -573,6 +573,79 @@ export const Working: Story = {
   },
 };
 
+export const CollectingSourceCanBeCancelled: Story = {
+  render: () => <SummaryPage summary={{ ...ABSENT, job: job({ part: 0, parts: 0 }) }} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const working = await stateOf(region, 'working');
+    await expect(working.querySelector('[data-next-summary-progress]')).toHaveTextContent(
+      'Planning the summary…',
+    );
+    await expect(working).toHaveTextContent(SUMMARY_WORKING_KEEP);
+    await userEvent.click(within(working).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(script.posts).toEqual([
+        { path: '/api/summary/cancel', body: { harness: 'claude', sid: 's1' } },
+      ]),
+    );
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
+export const CollectionLimitKeepsSavedSummary: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        job: job({
+          state: 'refused',
+          reason: 'source_memory',
+          part: 0,
+          parts: 0,
+          finished_parts: [],
+        }),
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(region.querySelector('[data-next-summary-reason]')).toHaveTextContent(
+      'Compass reached its source-reading memory limit. Part of the record remains unread.',
+    );
+    await expect(summary.querySelector('[data-next-summary-lede]')).toHaveTextContent(
+      LEDE.replace(/^The person/, 'You'),
+    );
+    await expect(within(summary).getAllByRole('heading', { level: 3 })).toHaveLength(2);
+    await poll();
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
+export const CollectedSummaryKeepsUnreadLine: Story = {
+  render: () => (
+    <SummaryPage
+      summary={storedSummary({
+        state: 'partial',
+        reason: 'source_incomplete',
+        job: null,
+        coverage: {
+          ...COVERAGE,
+          complete: false,
+          unread: [
+            { start_offset: 100, end_offset: 200, reason: 'unreadable_record', stream: 'parent' },
+          ],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const summary = await summaryOf(await card(canvasElement));
+    await expect(summary).toHaveTextContent('A record line could not be read and was skipped.');
+    await expect(within(summary).getAllByRole('heading', { level: 3 })).toHaveLength(2);
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
 /* A summary still being built by an Update: the saved part stands, and the part not yet read says so. */
 export const WorkingOverASavedSummary: Story = {
   render: () => (

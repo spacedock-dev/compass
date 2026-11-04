@@ -15,7 +15,7 @@ import secrets
 import shutil
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
@@ -26,6 +26,7 @@ from . import (
     reading_route,
     session_source,
     session_summary,
+    summary_source,
     summary_store,
     supervise,
 )
@@ -67,6 +68,8 @@ class Job:
     notice: reading_policy.Notice | None = None
     group: Any = None
     thread: threading.Thread | None = None
+    source: dict[str, Any] | None = None
+    largest_read: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +82,8 @@ class Job:
             "attempts": self.attempts,
             "started_at": self.started_at,
             "notice": self.notice,
+            "source": self.source,
+            "largest_read": self.largest_read,
         }
 
 
@@ -228,7 +233,41 @@ def start(
             prior if action == "update" else None,
             change,
             model,
-            origin,
+            (origin, None),
+        )
+    except (OSError, ValueError):
+        return _refusal("job-unrecorded")
+
+
+def start_source(
+    application: reading_jobs.Application,
+    path: str,
+    harness: str,
+    sid: str,
+    *,
+    action: str,
+    origin: str = "press",
+) -> tuple[int, dict[str, Any]]:
+    """Admit before reading: collection and planning share the cancellable job's lifetime."""
+    config = application.config
+    answer = reading_policy.summary_status(config, now=application.clock())
+    if answer["reason"]:
+        return _refusal(answer["reason"])
+    if harness != "claude":
+        return _refusal("harness_not_supported")
+    prior = summary_store.get(config, harness, sid) if action == "update" else None
+    if action == "update" and prior is None:
+        return _refusal("no-summary")
+    try:
+        return _admit(
+            application,
+            session_source.SourcePage("ok", harness, sid),
+            {"parts": 0},
+            reading_route.destination("claude"),
+            prior,
+            None,
+            None,
+            (origin, path),
         )
     except (OSError, ValueError):
         return _refusal("job-unrecorded")
@@ -262,8 +301,9 @@ def _admit(
     prior: summary_store.StoredSummary | None,
     change: session_source.SourceChange | None,
     model: session_summary.Model | None,
-    origin: str,
+    request: tuple[str, str | None],
 ) -> tuple[int, dict[str, Any]]:
+    origin, path = request
     config = application.config
     with _locked(application):
         moved = _store_moved(config, page, prior, origin)
@@ -311,7 +351,7 @@ def _admit(
         started = job.as_dict()
     thread = threading.Thread(
         target=_run,
-        args=(application, job, page, prior, change, model),
+        args=(application, job, page, prior, change, model, path),
         name=f"compass-summary-{job.id}",
         daemon=True,
     )
@@ -484,6 +524,86 @@ def _save(
     _publish(application)
 
 
+def _collect_source(
+    application: reading_jobs.Application,
+    job: Job,
+    path: str,
+    prior: summary_store.StoredSummary | None,
+    deadline: float,
+    clock: Callable[[], float],
+) -> tuple[session_source.SourcePage, session_source.SourceChange | None, str]:
+    def check() -> str:
+        with _locked(application):
+            return _eligible(application, job) or ("stopping" if supervise.closed() else "")
+
+    def progress(current: session_source.SourcePage, consumed: int) -> None:
+        with _locked(application):
+            # Another dashboard can stop the durable marker after the collector's check.
+            # Read that decision under the same lock as this write, before replacing it.
+            reason = _eligible(application, job)
+            if reason:
+                job.reason, job.state = reason, "stopping"
+                return
+            job.source = {
+                "entries": len(current.entries),
+                "bytes_read": consumed,
+                "coverage": session_summary._coverage(current.coverage),  # noqa: SLF001
+            }
+            _write(application, job)
+        _publish(application)
+
+    page, reason = summary_source.collect(
+        application.config,
+        path,
+        job.harness,
+        job.sid,
+        deadline=deadline,
+        check=check,
+        progress=progress,
+        clock=clock,
+    )
+    change = None
+    with _locked(application):
+        job.source = {
+            **(job.source or {}),
+            "entries": len(page.entries),
+            "bytes_read": page.bytes_read,
+            "coverage": session_summary._coverage(page.coverage),  # noqa: SLF001
+        }
+        barred = _eligible(application, job)
+        if (
+            barred
+            or reason in {"source_changed", "source-unavailable", "stopping"}
+            or page.snapshot is None
+        ):
+            job.reason = barred or reason or "source-unavailable"
+            job.state = (
+                "cancelled" if job.reason in {"cancelled", "deleted", "discarded"} else "refused"
+            )
+            return page, change, reason
+    if prior is not None:
+        # An incomplete reread cannot establish that the saved full source is unchanged.
+        if page.coverage is None or not page.coverage.complete:
+            job.reason, job.state = reason or "source_incomplete", "refused"
+            return page, change, reason
+        change = session_source.compare(prior.snapshot, page)
+    plan = session_summary.plan(
+        page.entries,
+        page.harness,
+        config=replace(
+            application.config, session_summary_max_seconds=max(0.0, deadline - clock())
+        ),
+        prior=prior.summary if prior else None,
+        change=change,
+    )
+    if plan.get("reason"):
+        job.largest_read = plan.get("largest_read")
+        job.reason, job.state = str(plan["reason"]), "refused"
+    else:
+        job.parts = int(plan["parts"])
+    return page, change, reason
+
+
 def _run(
     application: reading_jobs.Application,
     job: Job,
@@ -491,15 +611,31 @@ def _run(
     prior: summary_store.StoredSummary | None,
     change: session_source.SourceChange | None,
     model: session_summary.Model | None,
+    path: str | None = None,
 ) -> None:
-    if page.coverage is None:
-        return
     clock = _monotonic
     # Taken before the producer reads its own start, so this deadline is never the later one.
     deadline = clock() + application.config.session_summary_max_seconds
     try:
+        source_reason = ""
+        if path is not None:
+            page, change, source_reason = _collect_source(
+                application,
+                job,
+                path,
+                prior,
+                deadline,
+                clock,
+            )
+            if job.state != "running":
+                return
+        if page.coverage is None:
+            job.reason, job.state = "source-unavailable", "refused"
+            return
         arguments: dict[str, Any] = {
-            "config": application.config,
+            "config": replace(
+                application.config, session_summary_max_seconds=max(0.0, deadline - clock())
+            ),
             "model": GuardedSummaryModel(
                 application,
                 job,
@@ -520,8 +656,17 @@ def _run(
             result = session_summary.summarize(
                 page.entries, page.coverage, page.harness, **arguments
             )
+        if result.reason in {"planned_calls", "planned_bytes", "planned_seconds"}:
+            # Planning itself can consume the last seconds that made the earlier plan fit.
+            job.largest_read = session_summary.plan(
+                page.entries,
+                page.harness,
+                config=arguments["config"],
+                prior=prior.summary if prior else None,
+                change=change,
+            ).get("largest_read")
         with _locked(application):
-            job.reason = _eligible(application, job) or result.reason or ""
+            job.reason = _eligible(application, job) or source_reason or result.reason or ""
             job.state = (
                 "cancelled"
                 if job.reason in {"cancelled", "deleted", "discarded"}
@@ -685,6 +830,8 @@ def recover(application: reading_jobs.Application, *, alive: Callable[[int], boo
                         reading_policy.summary_receipts(application.config, marker["id"]) or 0,
                     ),
                     notice=marker["notice"],
+                    source=marker.get("source"),
+                    largest_read=marker.get("largest_read"),
                 )
                 _remember(application, job)
                 path.unlink()

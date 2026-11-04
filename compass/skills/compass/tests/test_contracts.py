@@ -1566,8 +1566,6 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.summary_store",
             # Summary consent, start, cancel and delete routes, and the job on the focused answer.
             "compass_runtime.summary_jobs",
-            # The summary start route reads the source page the job summarizes.
-            "compass_runtime.session_source",
             "compass_runtime.settings",
             # Each message's fixed number on the record pages and the focused context (DRC-4897).
             "compass_runtime.entry_numbers",
@@ -1758,8 +1756,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.session_source",
             "compass_runtime.session_summary",
             "compass_runtime.state",
+            "compass_runtime.summary_source",
             "compass_runtime.summary_store",
             "compass_runtime.supervise",
+        },
+        # A summary job's bounded collector owns no store or model. Its inputs and
+        # cancellation/publication callbacks come from the job that runs it.
+        "compass_runtime.summary_source": {
+            "compass_runtime.config",
+            "compass_runtime.session_source",
         },
         # Grouping resolves one transcript and keeps only built outlines in the state leaf. It
         # calls the producer's pure plan for the focused plan, never its model seam.

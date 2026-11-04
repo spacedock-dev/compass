@@ -2710,6 +2710,16 @@ Opening a stored summary makes no summary call or charge.
   idempotent receipt in `summary_spends`; failed and timed-out attempts stay charged. Analyze's
   ledger is untouched. Cancel keeps finished parts; an interrupted job reports them at restart
   without resuming. Jobs outlive the page that started them.
+- Source collection. The job reads successive bounded pages in the background, with cumulative
+  allowances of 256 MiB scanned, 30 seconds and 64 MiB of retained Python evidence and cursor
+  state. A bounded incoming page and its candidate assembly need transient memory in addition;
+  the retention allowance is not a process RSS limit. Collection consumes the same 600-second
+  whole-job lifetime. It checks cancellation and model-call off switches between pages, keeps
+  permanent unread regions, and reports exhaustion separately from the producer's limits.
+  Source words, partial-line bytes and pending tool inputs stay in memory; progress markers hold
+  counts and coverage only. A detected source change during collection stops before a model call.
+  An incomplete update leaves the saved summary intact. The [collection contract](docs/design-session-summary.md#source-collection-for-summaries)
+  owns the continuation and memory-accounting details.
 - Timeout. Every call has a 180-second subprocess timeout (`session_summary_call_timeout`). No call
   starts unless its full timeout fits inside the remaining whole-job seconds.
 - Off switch. Turn off summaries, one press from the notice and the card, stops every summary call

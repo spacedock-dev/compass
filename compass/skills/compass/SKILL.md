@@ -142,7 +142,10 @@ call; other harnesses keep no record it can page through and say so. On Claude C
 model-written summary in phases, each line citing the entries it rests on: a finished session is
 summarized when you open it, once Compass has observed its end (without one the card offers
 `Summarize` instead), a running one on `Summarize` or `Update summary`, and a stored summary
-opens without a call. `Delete summary` removes it after a second press, says what it removes before that press, and reports the deletion; and a line that claims in its own voice that the
+opens without a call. Source collection continues through bounded pages in the background; `Planning the summary…`
+keeps `Cancel` available. Collection limits and unread regions remain explicit, separately from
+the model's window and call limits; an incomplete update keeps the saved summary.
+`Delete summary` removes it after a second press, says what it removes before that press, and reports the deletion; and a line that claims in its own voice that the
 work is done is withheld. **Full activity** closes the page, collapsed until you open it: the agent's current
 activity, the session's numbered entries, the recorded request, tasks, subagents, token
 measurements and how the session landed. On a harness other than Claude Code or Pi the Drift section says "Compass

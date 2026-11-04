@@ -82,6 +82,8 @@ class PendingCall:
     name: str
     input_json: str
     fact_ids: tuple[str, ...] = ()
+    # Physical line offset and call order within that line, even before a fact is emitted.
+    position: tuple[int, int] = (-1, 0)
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,11 @@ class SourcePage:
     next: SourceCursor | None = None
     snapshot: SourceSnapshot | None = None
     notes: tuple[str, ...] = ()
+    bytes_read: int = 0
+    # An unresolved call can be renamed or retracted by a later result/hook rewrite.
+    replacements: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = ()
+    # Fact id -> (physical line offset, call order, fact order); server-only, not identity.
+    positions: tuple[tuple[str, tuple[int, int, int]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -207,6 +214,7 @@ class _Budget:
     deadline: float
     # Scanning stops here so classifying what was scanned can finish by `deadline`.
     scan_deadline: float
+    used: int = 0
 
     @property
     def reason(self) -> str | None:
@@ -217,6 +225,7 @@ class _Budget:
     def line(self, source: BinaryIO, count: int) -> bytes:
         raw = source.readline(min(count, max(0, self.remaining)))
         self.remaining -= len(raw)
+        self.used += len(raw)
         return raw
 
 
@@ -236,6 +245,8 @@ class _StreamRead:
     unread: list[UnreadRegion] = field(default_factory=list)
     boundaries: list[tuple[int, str]] = field(default_factory=list)
     verified: tuple[int, str] | None = None
+    replacements: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
+    fact_positions: dict[str, tuple[int, int, int]] = field(default_factory=dict)
 
 
 def _verify(source: BinaryIO, old: StreamCursor, budget: _Budget) -> str | None:
@@ -354,6 +365,14 @@ def _take(
     try:
         record = json.loads(raw)
     except (ValueError, RecursionError):
+        read.unread.append(
+            UnreadRegion(
+                read.cursor.line_start,
+                read.cursor.end_offset,
+                "unreadable_record",
+                read.cursor.stream,
+            )
+        )
         return
     if not isinstance(record, dict):
         return
@@ -374,6 +393,7 @@ def _take(
         if entry is not None:
             read.messages.append(entry)
             read.message_order[entry.fact_id] = len(read.rows) - 1
+            read.fact_positions[entry.fact_id] = (before.line_start, -1, 0)
 
 
 def _consume(
@@ -486,6 +506,7 @@ def _window_start(source: BinaryIO, read: _StreamRead, budget: _Budget) -> None:
     if start:
         source.seek(start - 1)
         budget.remaining -= 1
+        budget.used += 1
         if source.read(1) != b"\n":
             source.seek(start)
             while budget.reason is None:
@@ -520,10 +541,13 @@ def _pending_calls(rows: list[dict[str, Any]], stream: str) -> list[PendingCall]
     ]
 
 
-def _rows_of(rows: list[dict[str, Any]], sidechain: bool) -> tuple[dict[str, int], dict[str, int]]:
-    """The first row holding each call, and the first row holding each call's result."""
+def _rows_of(
+    rows: list[dict[str, Any]], sidechain: bool
+) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+    """The first call/result rows and each call's last command-rewrite row."""
     calls: dict[str, int] = {}
     results: dict[str, int] = {}
+    rewrites: dict[str, int] = {}
     for index, row in enumerate(rows):
         for _at, _cwd, call_id, _name, _input, _worker in context._claude_tool_uses(  # noqa: SLF001
             [row], sidechain=sidechain
@@ -531,7 +555,8 @@ def _rows_of(rows: list[dict[str, Any]], sidechain: bool) -> tuple[dict[str, int
             calls.setdefault(call_id, index)
         for call_id in context._tool_result_blocks([row], sidechain=sidechain):  # noqa: SLF001
             results.setdefault(call_id, index)
-    return calls, results
+        rewrites.update((call_id, index) for call_id in context._hook_rewritten_commands([row]))  # noqa: SLF001
+    return calls, results, rewrites
 
 
 def _cut(read: _StreamRead, row: int) -> None:
@@ -661,6 +686,7 @@ def _tools(
     sidechain = stream != "parent"
     results = context._tool_result_blocks(read.rows, sidechain=sidechain)  # noqa: SLF001
     calls = {call.call_id: call for call in previous if call.stream == stream}
+    carried = dict(calls)
     # A hook's rewrite arrives after the call it rewrites, so on a later page than a carried call.
     rewrites = context._hook_rewritten_commands(read.rows)  # noqa: SLF001
     # The carried call's facts were published from the typed command, and a rewrite can change the
@@ -676,13 +702,22 @@ def _tools(
             calls[call_id] = replace(
                 call, input_json=json.dumps({**input_data, "command": rewrites[call_id]})
             )
-    calls.update({call.call_id: call for call in _pending_calls(read.rows, stream)})
-    positions, result_rows = _rows_of(read.rows, sidechain)
+    positions, result_rows, rewrite_rows = _rows_of(read.rows, sidechain)
+    calls.update(
+        {
+            call.call_id: replace(
+                call, position=(read.row_cursors[positions[call.call_id]].line_start, number)
+            )
+            for number, call in enumerate(_pending_calls(read.rows, stream))
+        }
+    )
     pending: list[PendingCall] = []
     entries: list[SourceEntry] = []
     groups: dict[int, list[PendingCall]] = {}
     for call in calls.values():
-        row = positions.get(call.call_id, result_rows.get(call.call_id))
+        row = positions.get(
+            call.call_id, result_rows.get(call.call_id, rewrite_rows.get(call.call_id))
+        )
         if row is None:
             pending.append(call)
         else:
@@ -697,7 +732,7 @@ def _tools(
             cut = row
             _cut(read, row)
             pending.extend(
-                call
+                carried.get(call.call_id, call)
                 for later in ordered[number:]
                 for call in groups[later]
                 if call.call_id not in positions
@@ -710,6 +745,13 @@ def _tools(
                     read, call, results, positions.get(call.call_id, -1), sid, session_dir, declared
                 )
             )
+            read.replacements.append(
+                (call.fact_ids, tuple(e.fact_id for e in entries[first_entry:]))
+            )
+            read.fact_positions.update(
+                (entry.fact_id, (*call.position, index))
+                for index, entry in enumerate(entries[first_entry:])
+            )
             if call.call_id not in results:
                 pending.append(
                     replace(call, fact_ids=tuple(e.fact_id for e in entries[first_entry:]))
@@ -718,7 +760,11 @@ def _tools(
         dict.fromkeys(
             (
                 *(call_id for call_id in results if result_rows.get(call_id, 0) < cut),
-                *(call_id for call_id in rewritten if call_id not in results),
+                *(
+                    call_id
+                    for call_id in rewritten
+                    if call_id not in results and rewrite_rows[call_id] < cut
+                ),
             )
         )
     )
@@ -809,11 +855,14 @@ def read(
             config, path, "parent", harness, sid, budget, old.get("parent"), newest=newest
         )
         children, unread = _read_children(config, path, harness, sid, budget, old, newest=newest)
-        return _finish(config, path, harness, sid, [parent, *children], unread, after, budget)
+        return replace(
+            _finish(config, path, harness, sid, [parent, *children], unread, after, budget),
+            bytes_read=budget.used,
+        )
     except _SourceChangedError as error:
-        return _stale(path, harness, sid, error)
+        return replace(_stale(path, harness, sid, error), bytes_read=budget.used)
     except OSError:
-        return SourcePage("stale" if after else "unavailable", harness, sid)
+        return SourcePage("stale" if after else "unavailable", harness, sid, bytes_read=budget.used)
 
 
 def _read_children(
@@ -908,6 +957,8 @@ def _finish(
         else:
             groups.append(tools)
     retained_streams = {stream.cursor.stream for stream in streams}
+    if after and any(stream.stream not in retained_streams for stream in after.streams):
+        raise _SourceChangedError
     pending.extend(
         call for call in (after.pending if after else ()) if call.stream not in retained_streams
     )
@@ -950,6 +1001,7 @@ def _finish(
             (stream.cursor.stream, call_id) for stream in streams for call_id in stream.result_calls
         ),
     )
+    entry_ids = {entry.fact_id for entry in entries}
     return SourcePage(
         "ok",
         harness,
@@ -958,6 +1010,18 @@ def _finish(
         coverage,
         metadata.cursor if continuation else None,
         metadata,
+        replacements=tuple(
+            replacement
+            for stream in streams
+            for replacement in stream.replacements
+            if replacement[0]
+        ),
+        positions=tuple(
+            (fact_id, position)
+            for stream in streams
+            for fact_id, position in stream.fact_positions.items()
+            if fact_id in entry_ids
+        ),
     )
 
 
