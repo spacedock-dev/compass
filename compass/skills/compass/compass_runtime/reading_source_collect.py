@@ -64,17 +64,19 @@ class Limits:
 
     The 256-MiB retained graph admits raw and parsed native corpora beyond 64 MiB
     together with their private proof/word state. It does not cap process RSS.
+    retained_units counts Python graph objects, not canonical evidence facts;
+    its finite ceiling also admits ordinary dense check histories.
     Callers may supply smaller ceilings; the other resource bounds are unchanged.
     """
 
     source_bytes: int = 256 * 1024 * 1024
     prepare_ms: int = 60_000
     retained_bytes: int = 256 * 1024 * 1024
-    retained_units: int = 65_536
+    retained_units: int = 1_048_576
     source_pages: int = 512
 
     def __post_init__(self) -> None:
-        maxima = (256 * 1024 * 1024, 60_000, 256 * 1024 * 1024, 65_536, 512)
+        maxima = (256 * 1024 * 1024, 60_000, 256 * 1024 * 1024, 1_048_576, 512)
         for value, maximum in zip(vars(self).values(), maxima, strict=True):
             if type(value) is not int or not 0 <= value <= maximum:
                 raise ValueError("invalid collection allowance")

@@ -17,7 +17,7 @@ from compass_runtime import reading_source_inventory as inventory_source
 from compass_runtime import reading_source_stream as raw_source
 
 from . import test_reading_source as source_tests
-from .test_claude_checks import SHORT, Transcript, hook_stdout
+from .test_claude_checks import SHORT, SID, Transcript, hook_stdout
 
 
 class BoundedReadingCollectionFixture(source_tests.CompleteReadingSourceFixture):
@@ -343,7 +343,7 @@ class BoundedReadingCollectionTest(BoundedReadingCollectionFixture):
         self.assertGreater(result.usage.retained_bytes, 32 * 1024 * 1024)
         self.assertLessEqual(result.usage.retained_bytes, 256 * 1024 * 1024)
         self.assertLessEqual(result.usage.source_bytes, 256 * 1024 * 1024)
-        self.assertLessEqual(result.usage.retained_units, 65_536)
+        self.assertLessEqual(result.usage.retained_units, collector.Limits().retained_units)
         self.assertLessEqual(result.usage.source_pages, 512)
         self.assertEqual("scan-limit", result.final["outcome"])
         del result
@@ -359,3 +359,80 @@ class BoundedReadingCollectionTest(BoundedReadingCollectionFixture):
         self.assertLessEqual(lower.usage.retained_bytes, 32 * 1024 * 1024)
         with self.assertRaises(ValueError):
             module.Limits(retained_bytes=256 * 1024 * 1024 + 1)
+
+    def test_default_object_headroom_keeps_dense_middle_check_and_genuine_final(self) -> None:
+        self.path = self.root / (SID + ".jsonl")
+        for count in (1000, 3000):
+            with self.subTest(checks=count):
+                parent = Transcript(self.root)
+                parent.prompt("Audit every original check and preserve the middle failure.")
+                decisive = ""
+                for index in range(count):
+                    failed = index == count // 2
+                    call = parent.bash(
+                        f"pytest tests/dense_{index}.py",
+                        "1 failed" if failed else "1 passed",
+                        is_error=failed,
+                    )
+                    if failed:
+                        decisive = call
+                final_words = "The recorded checks are ready to inspect."
+                final = parent._entry("assistant", [{"type": "text", "text": final_words}])
+                final["message"]["stop_reason"] = "end_turn"
+                parent.save(self.path)
+                frozen = self.inventory()
+                # Actual numeric defaults; isolate admission from host speed.
+                # The owned dense calibration separately measures a real clock.
+                result = collector.collect(
+                    self.config,
+                    frozen,
+                    ancillary=collector.Ancillary(str(self.root)),
+                    clock=lambda: 0.0,
+                )
+                self.assertEqual("", result.reason)
+                self.assertTrue(result.source_verified)
+                assert result.evidence is not None
+                checks = [fact for fact in result.evidence.facts if fact.get("subject") == "check"]
+                self.assertEqual(count, len(checks))
+                self.assertEqual(count + 2, len(result.evidence.facts))
+                self.assertEqual(
+                    count + 2, len({fact["fact_id"] for fact in result.evidence.facts})
+                )
+                middle = next(fact for fact in checks if fact["branch"]["record_id"] == decisive)
+                self.assertEqual("failed", middle["result"])
+                self.assertEqual({"harness": "claude", "sid": SHORT}, middle["source_session"])
+                self.assertEqual("exact", middle["evidence"]["confidence"])
+                assert result.final is not None
+                self.assertEqual(
+                    ("whole", final_words), (result.final["outcome"], result.final["words"])
+                )
+                self.assertIn(
+                    result.final["fact_id"], {fact["fact_id"] for fact in result.evidence.facts}
+                )
+                self.assertEqual(3 * self.path.stat().st_size, result.usage.source_bytes)
+                self.assertGreater(result.usage.retained_units, 65_536)
+                limits = collector.Limits()
+                self.assertLessEqual(result.usage.retained_units, limits.retained_units)
+                self.assertLessEqual(result.usage.retained_bytes, limits.retained_bytes)
+                if count == 1000:
+                    limited = collector.collect(
+                        self.config,
+                        frozen,
+                        ancillary=collector.Ancillary(str(self.root)),
+                        limits=replace(limits, retained_units=65_536),
+                        clock=lambda: 0.0,
+                    )
+                    self.assertEqual("retained_units", limited.reason)
+                    self.assertIsNone(limited.evidence)
+                    self.assertIsNone(limited.final)
+                    self.assertIsNone(limited.snapshot)
+
+    def test_object_ceiling_remains_finite_and_other_resource_defaults_are_unchanged(self) -> None:
+        limits = collector.Limits()
+        self.assertEqual(1_048_576, limits.retained_units)
+        self.assertEqual(
+            (256 * 1024 * 1024, 256 * 1024 * 1024, 60_000, 512),
+            (limits.retained_bytes, limits.source_bytes, limits.prepare_ms, limits.source_pages),
+        )
+        with self.assertRaises(ValueError):
+            replace(limits, retained_units=limits.retained_units + 1)
