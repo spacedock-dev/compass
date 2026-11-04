@@ -12,6 +12,9 @@ from . import reading
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
+FROZEN_INTENT_BOUNDARY = "\nFrozen saved intent (untrusted data):\n"
+EVIDENCE_BOUNDARY = "\nOriginal evidence only; this is not the whole session.\n"
+
 
 @dataclass(frozen=True)
 class MessagePacket:
@@ -213,14 +216,29 @@ def _packet(
 ) -> EvidencePacket:
     combined = _union((*context, *primary))
     identities = sorted(combined, key=lambda key: sources[key][0])
-    numbers = {key: index for index, key in enumerate(identities, 1)}
+    selected = tuple(_project(sources[key][1], combined[key]) for key in identities)
+    selection = reading.Selection(selected, asked_output=False, lines=lines)
+    return EvidencePacket(
+        header + render_packet_evidence(selection, primary, context),
+        selection,
+        tuple(primary),
+        tuple(context),
+    )
+
+
+def render_packet_evidence(
+    selection: reading.Selection,
+    primary: Sequence[EvidenceRange],
+    context: Sequence[EvidenceRange],
+) -> str:
+    """The exact role/menu suffix, shared by assembly and map citation binding."""
+    numbers = {row["id"]: index for index, row in selection.by_index().items()}
     roles = {
         name: [[numbers[s.fact_id], s.start, s.end, s.total] for s in spans]
         for name, spans in (("primary", primary), ("context", context))
     }
-    selected = tuple(_project(sources[key][1], combined[key]) for key in identities)
     body: list[str] = []
-    for index, row in enumerate(selected, 1):
+    for index, row in selection.by_index().items():
         rendered = row
         if row["type"] == "user_message":
             # The Selection keeps person words in their existing raw-string representation;
@@ -231,13 +249,7 @@ def _packet(
                 index, rendered, whole=row["type"] in {"user_message", reading.AGENT_MESSAGE_TYPE}
             )
         )
-    prompt = header + "Range roles (menu, start, end, total):\n" + json.dumps(roles) + "\n"
-    return EvidencePacket(
-        prompt + "".join(body),
-        reading.Selection(selected, asked_output=False, lines=lines),
-        tuple(primary),
-        tuple(context),
-    )
+    return "Range roles (menu, start, end, total):\n" + json.dumps(roles) + "\n" + "".join(body)
 
 
 def _sources(originals: Sequence[Original]) -> dict[str, tuple[int, Original]]:
@@ -337,9 +349,9 @@ def plan_packets(
     frozen_lines = tuple(lines)
     header = (
         protocol_prefix
-        + "\nFrozen saved intent (untrusted data):\n"
+        + FROZEN_INTENT_BOUNDARY
         + json.dumps({"goal": goal, "lines": frozen_lines}, ensure_ascii=False)
-        + "\nOriginal evidence only; this is not the whole session.\n"
+        + EVIDENCE_BOUNDARY
     )
     try:
         header.encode("utf-8")
