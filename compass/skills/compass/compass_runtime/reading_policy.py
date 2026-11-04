@@ -289,6 +289,7 @@ def _reserve_pass(
     now: float,
     request: dict[str, Any],
     live: reading_long_jobs.LiveJob | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> LongReservation:
     since = _pass_ledger(db, now)
     if live is not None:
@@ -340,7 +341,7 @@ def _reserve_pass(
     )
     # The receipt and spend commit together under the existing supervision
     # admission barrier. Shutdown rolls back both; replay never reaches it.
-    charged = _commit_charge(db, answer, now, "", live=live, job_ms=job_ms)
+    charged = _commit_charge(db, answer, now, "", live=live, job_ms=job_ms, cancelled=cancelled)
     return (
         LongReservation("refused", charged)
         if charged["reason"]
@@ -408,7 +409,7 @@ def _register_job(
     return LongRegistration(outcome, {**answer, "reason": outcome})
 
 
-def _long_operation(
+def _long_operation(  # noqa: PLR0913 - cancellation joins the existing atomic reservation boundary
     db: Any,
     answer: Status,
     now: float,
@@ -417,6 +418,8 @@ def _long_operation(
     captured: LongPermission | None,
     request: dict[str, Any] | None,
     job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None,
+    *,
+    cancelled: Callable[[], bool] | None,
 ) -> LongRegistration | LongReservation:
     if not _valid_long_permission(captured) or permission != captured:
         answer["reason"] = answer["reason"] or "permission-changed"
@@ -429,7 +432,7 @@ def _long_operation(
             return _register_job(db, answer, now, job)
         if request is not None:
             live = job if isinstance(job, reading_long_jobs.LiveJob) else None
-            return _reserve_pass(db, answer, now, request, live)
+            return _reserve_pass(db, answer, now, request, live, cancelled)
     db.execute("COMMIT")
     return (
         LongRegistration("refused", answer)
@@ -774,6 +777,7 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
     long_permission: LongPermission | None = None,
     long_request: dict[str, Any] | None = None,
     long_job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[Status, Notice | None, LongPermission | LongReservation | LongRegistration | None]:
     if not math.isfinite(now) or now <= 0:
         return _answer(reason="store-unavailable"), None, None
@@ -891,7 +895,15 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
         recorded = _store_notice(db, answer, operation)
         if operation in ("reserve-long-pass", "register-long-job", "reserve-registered-pass"):
             result = _long_operation(
-                db, answer, now, operation, permission, long_permission, long_request, long_job
+                db,
+                answer,
+                now,
+                operation,
+                permission,
+                long_permission,
+                long_request,
+                long_job,
+                cancelled=cancelled,
             )
             return result.status, None, result
         if (
@@ -915,6 +927,7 @@ def _commit_charge(
     *,
     live: reading_long_jobs.LiveJob | None = None,
     job_ms: int = 0,
+    cancelled: Callable[[], bool] | None = None,
 ) -> Status:
     """Insert the charge and its job, and commit, unless the runner has shut.
 
@@ -929,6 +942,9 @@ def _commit_charge(
         if live is not None and (reason := reading_long_jobs.deadline_reason(live, job_ms)):
             db.execute("ROLLBACK")
             return {**answer, "reason": reason}
+        if cancelled is not None and cancelled():
+            db.execute("ROLLBACK")
+            return {**answer, "reason": "cancelled"}
         db.execute("INSERT INTO spends VALUES (?)", (now,))
         if job_id:
             db.execute("INSERT OR IGNORE INTO spend_jobs VALUES (?, ?)", (job_id, now))
@@ -1238,12 +1254,22 @@ def register_long_job(
 
 
 def reserve_registered_pass(
-    config: RuntimeConfig, *, permission: LongPermission, job: Any, request: Any, now: float
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    job: Any,
+    request: Any,
+    now: float,
+    cancelled: Callable[[], bool] | None = None,
 ) -> LongReservation:
     """Admit one registered slot with aggregate allocations and a live final deadline check.
 
     Only use the handle returned by fresh registration. A stored header or a
     newly prepared replay is not a new monotonic window and cannot launch.
+    The optional cancellation callback runs once at fresh charge admission,
+    after SQLite and supervision lock waits. It must be a fast in-memory flag
+    read: no disk I/O, annotation/file locks, or model work. A later cancellation
+    cannot refund a committed charge; the caller still owns pre-spawn checks.
     """
     if reading_long_jobs.live_header(job) is None:
         return LongReservation("refused", _answer(reason="invalid-live-job"))
@@ -1262,6 +1288,7 @@ def reserve_registered_pass(
             long_permission=permission,
             long_request=checked,
             long_job=job,
+            cancelled=cancelled,
         )
         return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):

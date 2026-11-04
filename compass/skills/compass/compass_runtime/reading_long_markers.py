@@ -17,7 +17,7 @@ from . import io as runtime_io
 from . import reading_long_jobs, reading_pass_types, reading_policy, supervise
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
     from .config import RuntimeConfig
@@ -287,7 +287,15 @@ def _request_to_mark(
     return checked, None
 
 
-def reserve(config: RuntimeConfig, owner: MarkerOwner, *, request: Any, now: float) -> Permit:
+def reserve(
+    config: RuntimeConfig,
+    owner: MarkerOwner,
+    *,
+    request: Any,
+    now: float,
+    cancelled: Callable[[], bool] | None = None,
+) -> Permit:
+    """Write pending before admission; cancellation is the policy's in-memory commit check."""
     charged: bool | None = None
     fresh = False
     try:
@@ -315,7 +323,12 @@ def reserve(config: RuntimeConfig, owner: MarkerOwner, *, request: Any, now: flo
             path = marker_path(config, marker["job_id"])
             _write(path, marker)
             result = reading_policy.reserve_registered_pass(
-                config, permission=owner.permission, job=owner.live, request=checked, now=now
+                config,
+                permission=owner.permission,
+                job=owner.live,
+                request=checked,
+                now=now,
+                cancelled=cancelled,
             )
             charged, fresh = result.charged, result.launch
             if charged is True:
