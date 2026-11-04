@@ -1600,6 +1600,22 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_passes",
             "compass_runtime.reading_source_collect",
         },
+        "compass_runtime.reading_ci_acquire": {
+            "compass_runtime.ci_read",
+            "compass_runtime.config",
+            "compass_runtime.git_status",
+            "compass_runtime.reading_preparation",
+            "compass_runtime.reading_source_collect",
+            "compass_runtime.supervise",
+        },
+        "compass_runtime.reading_long_preview": {
+            "compass_runtime.aggregate",
+            "compass_runtime.annotations",
+            "compass_runtime.observer",
+            "compass_runtime.reading_long_plan",
+            "compass_runtime.reading_route",
+            "compass_runtime.settings",
+        },
         "compass_runtime.reading_long_plan": {
             "compass_runtime.ci_read",
             "compass_runtime.reading",
@@ -1805,6 +1821,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.reading_long_preview",
             "compass_runtime.analyze_capacity",
             "compass_runtime.config",
             # Deterministic grouping belongs only to the focused context answer.

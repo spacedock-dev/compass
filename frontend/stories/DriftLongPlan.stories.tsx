@@ -24,6 +24,8 @@ export const ExplicitPreviewThenOneStart: Story = {
     await expect(reading.posts).toHaveLength(0);
     await expect(root).toHaveTextContent('not process RSS');
     await expect(root).toHaveTextContent('not a guarantee');
+    await expect(root).toHaveTextContent('17 model calls total');
+    await expect(root).toHaveTextContent('GitHub checks: enabled');
     start.focus();
     await userEvent.keyboard('{Enter}');
     await expect(reading.posts).toHaveLength(1);

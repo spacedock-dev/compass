@@ -30,7 +30,8 @@ describe('explicit long preview and Start', () => {
     expect(readingPosts(page)).toEqual([]);
     expect(screen.getByText(/Parent file extent: Unknown/)).toBeTruthy();
     expect(screen.getByText(/retained object graph.*not.*RSS/i)).toBeTruthy();
-    expect(screen.getByText(/16 evidence.*1 reconciliation.*17/)).toBeTruthy();
+    expect(screen.getByText(/16 evidence.*1 reconciliation.*17 model calls/)).toBeTruthy();
+    expect(screen.getByText(/GitHub checks: enabled/)).toBeTruthy();
     expect(screen.getByText(/not reserved.*not a guarantee/)).toBeTruthy();
   });
   it('posts the drawn binding exactly once through existing reading safeguards', async () => {

@@ -36,6 +36,17 @@ function PlanDetails({ preview }: { readonly preview: LongPlanDescriptor }) {
         {route?.destination || 'No destination reported'}.
       </p>
       <p>
+        GitHub checks:{' '}
+        {route?.ci_read === 'on'
+          ? 'enabled'
+          : route?.ci_read === 'off'
+            ? 'disabled'
+            : route?.ci_read === 'flag-off'
+              ? 'disabled for this dashboard'
+              : 'Unknown'}
+        . Opening this preview does not fetch checks.
+      </p>
+      <p>
         Saved intent revision: {intent.revision ?? 'Unknown'}. Read work from:{' '}
         {date(intent.start_at)}.
       </p>
@@ -53,7 +64,7 @@ function PlanDetails({ preview }: { readonly preview: LongPlanDescriptor }) {
         <>
           <p>
             At most {plan.max_evidence_passes} evidence calls + {plan.max_reconciliation_passes}{' '}
-            reconciliation call ({plan.max_calls} calls total), sharing the ordinary daily
+            reconciliation call ({plan.max_calls} model calls total), sharing the ordinary daily
             allowance.
           </p>
           <p>

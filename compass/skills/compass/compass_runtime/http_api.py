@@ -35,6 +35,7 @@ from compass_runtime import (
     live_monitor,
     notifications,
     quota,
+    reading_long_preview,
     reading_policy,
     record_pages,
     records,
@@ -1402,6 +1403,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/observe": self._observe,
             "/api/project-context": self._project_context,
             "/api/session-record": self._session_record,
+            "/api/reading-long-plan": self._reading_long_plan,
         }.get(url.path)
         if with_url is not None:
             with_url(url)
@@ -2531,6 +2533,25 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return status
         return None
 
+    def _reading_long_plan(self, url: ParseResult) -> None:
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        query = parse_qs(url.query, keep_blank_values=True)
+        if (
+            set(query) != {"harness", "sid"}
+            or any(len(values) != 1 for values in query.values())
+            or not reading_long_preview.identity(query["harness"][0], query["sid"][0])
+        ):
+            self._reject(400)
+            return
+        application = self.server.application
+        if not application.config.annotations_enabled:
+            self._reject(503)
+            return
+        preview = reading_long_preview.describe(application, query["harness"][0], query["sid"][0])
+        self._send(json.dumps({"ok": True, "long_plan": preview}).encode(), "application/json")
+
     def _reading(self) -> None:
         """Read one session against the words typed against it.
 
@@ -2560,12 +2581,36 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
+        self._reading_dispatch(payload)
+
+    def _reading_dispatch(self, payload: dict[str, Any]) -> None:
+        application = self.server.application
+        if not reading_long_preview.valid_ingress(payload):
+            self._reject(400)
+            return
         refusal = self._reading_refusal(
             payload,
             off=payload.get("consent") in ("off", "on") or payload.get("ci_read") in ("off", "on"),
         )
         if refusal is not None:
             self._reject(refusal)
+            return
+        if payload.get("mode") == "long":
+            preview = reading_long_preview.describe(application, payload["harness"], payload["sid"])
+            changed = reading_long_preview.changed(payload, preview)
+            # Temporary admission boundary: replace with the qualified coordinator
+            # before shipping. Never let a long press enter ordinary Analyze.
+            self._send(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "produced": False,
+                        "reason": "plan-changed" if changed else "long-unavailable",
+                    }
+                ).encode(),
+                "application/json",
+                409 if changed else 503,
+            )
             return
         if self._reading_setting(payload):
             return
