@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -17,9 +16,9 @@ from . import test_reading_source as source_tests
 from .test_claude_checks import SHORT, Transcript
 
 
-class CompleteCanonicalProjectionTest(unittest.TestCase):
+class CompleteCanonicalProjectionTest(source_tests.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        source_tests.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         parent = Transcript(self.root)
         parent.prompt("Check every parent and delegated change.")
         self.parent_failures = set()
@@ -49,7 +48,7 @@ class CompleteCanonicalProjectionTest(unittest.TestCase):
         # checks, one parent file + 13 child files. Not a displayed-list count.
         self.eligible = 46
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         frozen = inventory_source.freeze(
             str(self.path),
             "claude",
@@ -82,6 +81,7 @@ class CompleteCanonicalProjectionTest(unittest.TestCase):
         self.assertEqual("", result.reason)
         self.assertTrue(result.source_verified)
         self.assertIsNotNone(result.evidence)
+        assert result.evidence is not None
         self.assertEqual(self.eligible + 1, len(result.evidence.facts))
         self.assertEqual(full.facts, result.evidence.facts)
         self.assertEqual(full.press, result.evidence.press)
@@ -116,7 +116,7 @@ class CompleteCanonicalProjectionTest(unittest.TestCase):
         )
         output = source_tests.CompleteReadingSourceTest.output(result.evidence.press)
         expected_output = source_tests.CompleteReadingSourceTest.output(full.press)
-        options = {
+        options: source_tests.LedgerOptions = {
             "tool_output": output.tails,
             "changed_after": output.changed_after,
             "read_incomplete": output.read_incomplete,
@@ -170,6 +170,7 @@ class CompleteCanonicalProjectionTest(unittest.TestCase):
 
         with mock.patch.object(collector._Collection, "accept", measure_projection):
             full = self.collect()
+        assert full.evidence is not None
         self.assertEqual(self.eligible + 1, len(full.evidence.facts))
         self.assertGreater(projected_bytes, 0)
         # Calibrate this phase, not later word/origin/request-proof retention.

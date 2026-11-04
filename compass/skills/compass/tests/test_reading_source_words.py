@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -17,13 +16,13 @@ from . import test_reading_source as source_tests
 from .test_claude_checks import SHORT, SID, Transcript
 
 
-class VerifiedOrdinaryWordsTest(unittest.TestCase):
+class VerifiedOrdinaryWordsTest(source_tests.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        source_tests.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         self.child_path.unlink()
         self.parent = Transcript(self.root)
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         self.parent.save(self.path)
         inventory = inventory_source.freeze(
             str(self.path),
@@ -42,7 +41,8 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         self.assertTrue(hasattr(result, "words"), "verified parent word join is not implemented")
         return result
 
-    def oracle(self, result: Any) -> list[dict[str, Any]]:
+    def oracle(self, result: collector.Collection) -> list[dict[str, Any]]:
+        assert result.evidence is not None
         return context.transcript_message_words(
             self.config,
             str(self.path),
@@ -54,7 +54,8 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         )
 
     @staticmethod
-    def recovered(result: Any) -> list[dict[str, Any]]:
+    def recovered(result: collector.Collection) -> list[dict[str, Any]]:
+        assert result.words is not None
         return [
             {"id": row.fact_id, "at": row.at, "words": row.words, "total": row.total}
             for row in result.words
@@ -82,6 +83,7 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
             result = self.collect(page_bytes=512)
         self.assertEqual("", result.reason)
         self.assertEqual(self.oracle(result), self.recovered(result))
+        assert result.words is not None
         words = " ".join(row.words or "" for row in result.words)
         self.assertIn("LATE_PERSON 界🙂", words)
         self.assertIn("LATE_AGENT_MIDDLE", words)
@@ -91,11 +93,13 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         self.assertNotIn("\ufffd", words)
         self.assertEqual(3 * self.path.stat().st_size, result.usage.source_bytes)
         for row in result.words:
+            assert result.evidence is not None
             fact = next(f for f in result.evidence.facts if f["fact_id"] == row.fact_id)
             self.assertEqual(fact["at"], row.at)
             self.assertEqual(fact["source_session"], {"harness": row.harness, "sid": row.sid})
             self.assertEqual(fact["evidence"]["source"], row.source)
             self.assertEqual("native", row.binding)
+            assert row.words is not None
             self.assertEqual(len(row.words), row.total)
 
     def test_raw_conflict_is_refused_even_when_masking_would_make_words_equal(self) -> None:
@@ -121,6 +125,7 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         ):
             result = self.collect()
         self.assertEqual([], self.oracle(result))
+        assert result.words is not None
         self.assertEqual(1, len(result.words))
         self.assertEqual(
             ("unavailable", "conflict", None),
@@ -133,12 +138,14 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         self.parent.rows.append(copy.deepcopy(self.parent.rows[0]))
         result = self.collect()
         self.assertEqual(self.oracle(result), self.recovered(result))
+        assert result.words is not None
         self.assertEqual(1, len(result.words))
         self.assertEqual("parent_file", result.words[0].binding)
+        assert result.words[0].words is not None
         self.assertIn("LATE_PARENT_FILE", result.words[0].words)
 
     def test_oversized_queued_duplicate_refuses_at_typing_time_in_both_orders(self) -> None:
-        short = {
+        short: dict[str, Any] = {
             "type": "attachment",
             "sessionId": SID,
             "timestamp": "2026-11-04T00:03:00Z",
@@ -152,7 +159,9 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         }
         self.parent.rows = [short]
         bounded = self.collect()
+        assert bounded.words is not None
         self.assertEqual(1793750401.0, bounded.words[0].at)
+        assert bounded.evidence is not None
         wanted = reading.build_ledger(
             bounded.evidence.facts, "claude", SHORT, read_agent_words=True
         )
@@ -203,6 +212,7 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
         child.prompt("CHILD_FILE_WORDS")
         child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
         result = self.collect()
+        assert result.words is not None
         self.assertEqual(
             ["Native parent words."], [row.words for row in result.words if row.state == "whole"]
         )
@@ -216,6 +226,8 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
             "assistant", [{"type": "text", "text": "I reviewed. " + "agent " * 2000 + "LATE_AGENT"}]
         )
         full = self.collect()
+        assert full.words is not None
+        assert full.words[-1].words is not None
         allowance = full.usage.retained_bytes - len(full.words[-1].words) // 2
         original = context.whole_message_words
         with mock.patch.object(context, "whole_message_words", wraps=original) as whole:
@@ -262,6 +274,7 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
                 ),
             ):
                 result = self.collect()
+            assert result.words is not None
             self.assertEqual(
                 (state, reason, None),
                 (result.words[0].state, result.words[0].reason, result.words[0].words),

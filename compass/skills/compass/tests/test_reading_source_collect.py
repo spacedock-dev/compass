@@ -6,13 +6,13 @@ import importlib
 import importlib.util
 import json
 import math
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
 
 from compass_runtime import project_context as context
 from compass_runtime import reading, reading_source
+from compass_runtime import reading_source_collect as collector
 from compass_runtime import reading_source_inventory as inventory_source
 from compass_runtime import reading_source_stream as raw_source
 
@@ -20,9 +20,9 @@ from . import test_reading_source as source_tests
 from .test_claude_checks import SHORT, Transcript, hook_stdout
 
 
-class BoundedReadingCollectionTest(unittest.TestCase):
+class BoundedReadingCollectionFixture(source_tests.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        source_tests.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
 
     def module(self) -> Any:
         self.assertIsNotNone(
@@ -31,7 +31,7 @@ class BoundedReadingCollectionTest(unittest.TestCase):
         )
         return importlib.import_module("compass_runtime.reading_source_collect")
 
-    def inventory(self, **options: Any) -> Any:
+    def inventory(self, **options: Any) -> inventory_source.Inventory:
         return inventory_source.freeze(
             str(self.path),
             "claude",
@@ -41,9 +41,15 @@ class BoundedReadingCollectionTest(unittest.TestCase):
             max_seconds=1,
         )
 
-    def collect(self, *, inventory: Any = None, limits: Any = None, **options: Any) -> Any:
+    def collect(
+        self,
+        *,
+        inventory: inventory_source.Inventory | None = None,
+        limits: collector.Limits | None = None,
+        **options: Any,
+    ) -> collector.Collection:
         module = self.module()
-        return module.collect(
+        return collector.collect(
             self.config,
             inventory or self.inventory(),
             ancillary=module.Ancillary(self.scan.session_dir, self.scan.declared),
@@ -52,6 +58,8 @@ class BoundedReadingCollectionTest(unittest.TestCase):
             **options,
         )
 
+
+class BoundedReadingCollectionTest(BoundedReadingCollectionFixture):
     def test_tiny_pages_preserve_combined_history_and_exact_rich_oracle(self) -> None:
         parent = Transcript(self.root)
         parent.prompt("Update the widget and check delegated work.")
@@ -65,17 +73,18 @@ class BoundedReadingCollectionTest(unittest.TestCase):
         parent.result(rewrite, "2 failed", is_error=False)
         parent.save(self.path)
         self.scan = context._live_check_scan(self.config, str(self.path))
-        expected, press = source_tests.CompleteReadingSourceTest.expected(self)
+        expected, press = self.expected()
         result = self.collect()
         self.assertEqual("", result.reason)
         self.assertTrue(result.source_verified)
         self.assertIsNotNone(result.evidence)
+        assert result.evidence is not None
         self.assertEqual(expected, result.evidence.facts)
         self.assertEqual(press, result.evidence.press)
         output = source_tests.CompleteReadingSourceTest.output(press)
         actual = source_tests.CompleteReadingSourceTest.output(result.evidence.press)
         self.assertEqual(output, actual)
-        options = {
+        options: source_tests.LedgerOptions = {
             "tool_output": output.tails,
             "changed_after": output.changed_after,
             "read_incomplete": output.read_incomplete,

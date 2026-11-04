@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -16,9 +15,9 @@ from . import test_reading_source as sources
 from .test_claude_checks import REMOTE, SHORT, Transcript
 
 
-class FrozenCiBindingTest(unittest.TestCase):
+class FrozenCiBindingTest(sources.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        sources.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         self.parent = Transcript(self.root)
         self.parent.prompt("Check the original pull request.")
         self.parent.rows.append({"type": "pr-link", "prRepository": REMOTE[1], "prNumber": 7})
@@ -58,7 +57,7 @@ class FrozenCiBindingTest(unittest.TestCase):
             row["isSidechain"] = True
         child.save(self.child_path)
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         frozen = inventory.freeze(
             str(self.path), "claude", SHORT, max_entries=100, max_streams=10, max_seconds=1
         )
@@ -95,6 +94,7 @@ class FrozenCiBindingTest(unittest.TestCase):
         ):
             result = self.collect(page_bytes=127)
         self.assertEqual("", result.reason)
+        assert result.evidence is not None
         self.assertEqual(expected.facts, result.evidence.facts)
         self.assertEqual(expected.press, result.evidence.press)
         for call in (self.bound, self.branch, self.child_poll, self.created_poll):
@@ -199,6 +199,7 @@ class FrozenCiBindingTest(unittest.TestCase):
             expected = reading_source.from_complete_scan(self.config, scan, "claude", SHORT)
             with mock.patch.object(ci_read, "scan_records", side_effect=AssertionError("reread")):
                 result = self.collect()
+        assert result.evidence is not None
         self.assertEqual(expected.facts, result.evidence.facts)
         self.assertEqual(expected.press, result.evidence.press)
         self.assertTrue(self.fact(result, self.bound)["cannot_fail"])

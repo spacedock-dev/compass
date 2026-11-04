@@ -14,17 +14,19 @@ import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import (
     analyze_capacity,
-    annotations,
     reading,
+    reading_long_plan,
     reading_pass_types,
     reading_policy,
     reading_route,
     settings,
 )
+from compass_runtime import annotations as annotations_store
 from compass_runtime import reading_long_control as control
 from compass_runtime import reading_long_markers as markers
 from compass_runtime import reading_source_collect as source
@@ -46,7 +48,7 @@ class LongPlanTest(unittest.TestCase):
                 binary_resolver=lambda _name: "/fixture/cli",
             )
         self.row = {"harness": "claude", "sid": "abc123ab", "activity": "working"}
-        self.entry = {
+        self.entry: dict[str, Any] = {
             "harness": "claude",
             "sid": "abc123ab",
             "revisions": [
@@ -64,8 +66,8 @@ class LongPlanTest(unittest.TestCase):
             "claude", "abc123ab", "native-claude", 12345, 300.0
         )
 
-    def describe(self, **changes):
-        arguments = {
+    def describe(self, **changes: Any) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
             "row": self.row,
             "entry": self.entry,
             "route": self.route,
@@ -75,7 +77,7 @@ class LongPlanTest(unittest.TestCase):
             "now": 400.0,
             "settle_sec": 10.0,
         }
-        return self.module.describe(**(arguments | changes))
+        return reading_long_plan.describe(**(arguments | changes))
 
     def test_actual_plan_uses_source_owner_reply_owner_and_saved_route_minimum(self) -> None:
         plan = self.module.build(self.route, self.preferences)
@@ -126,7 +128,9 @@ class LongPlanTest(unittest.TestCase):
                 side_effect=AssertionError("permission capture"),
             ),
             mock.patch.object(
-                annotations, "capture_long_target", side_effect=AssertionError("annotation write")
+                annotations_store,
+                "capture_long_target",
+                side_effect=AssertionError("annotation write"),
             ),
             mock.patch.object(markers, "begin", side_effect=AssertionError("marker write")),
             mock.patch.object(control, "admit", side_effect=AssertionError("slot claim")),
@@ -171,7 +175,7 @@ class LongPlanTest(unittest.TestCase):
             ("words_destination", "Private gateway"),
             ("provider", "codex"),
         ):
-            changed = copy.deepcopy(self.route)
+            changed: dict[str, Any] = copy.deepcopy(dict(self.route))
             changed[key] = value
             self.assertNotEqual(original["binding"], self.describe(route=changed)["binding"])
         changed_entry = copy.deepcopy(self.entry)
@@ -270,8 +274,9 @@ class LongPlanTest(unittest.TestCase):
     def test_invalid_settings_and_estimate_numbers_never_escape_closed_descriptor(self) -> None:
         for value in (True, 0, -1, float("nan"), float("inf"), 2**53):
             with self.subTest(value=value):
+                # Deliberately bypass the Settings annotation to exercise malformed input.
                 result = self.describe(
-                    preferences=self.preferences._replace(analyze_prompt_bytes=value)
+                    preferences=self.preferences._replace(analyze_prompt_bytes=cast("int", value))
                 )
                 self.assertIsNone(result["plan"])
                 self.assertIsNone(result["prompt"]["saved_ceiling_bytes"])

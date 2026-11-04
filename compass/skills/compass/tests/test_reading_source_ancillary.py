@@ -20,9 +20,9 @@ from .test_claude_checks import SHORT, Transcript
 
 
 @unittest.skipIf(scripts.GIT is None, "git is not on PATH")
-class CollectedDeclarationTest(unittest.TestCase):
+class CollectedDeclarationTest(source_tests.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        source_tests.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         project_scripts.reset()
         self.addCleanup(project_scripts.reset)
         self.project = self.root / "project"
@@ -43,7 +43,7 @@ class CollectedDeclarationTest(unittest.TestCase):
         self.parent.save(self.path)
         self.config = replace(self.config, git_probe_enabled=True)
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         frozen = inventory.freeze(
             str(self.path), "claude", SHORT, max_entries=100, max_streams=10, max_seconds=1
         )
@@ -72,6 +72,7 @@ class CollectedDeclarationTest(unittest.TestCase):
         ):
             result = self.collect(page_bytes=127)
         self.assertEqual("", result.reason)
+        assert result.evidence is not None
         self.assertEqual(expected.facts, result.evidence.facts)
         self.assertEqual(expected.press, result.evidence.press)
         self.assertEqual(1, project.call_count)
@@ -109,6 +110,7 @@ class CollectedDeclarationTest(unittest.TestCase):
         result = self.collect(page_bytes=127)
         self.assertEqual("", result.reason)
         for call in (self.custom, self.listed):
+            assert result.evidence is not None
             fact = next(
                 f for f in result.evidence.facts if f.get("branch", {}).get("record_id") == call
             )
@@ -129,6 +131,7 @@ class CollectedDeclarationTest(unittest.TestCase):
                     result = self.collect()
                 self.assertEqual("", result.reason)
                 self.assertEqual(int(enabled), load.call_count)
+                assert result.evidence is not None
                 custom = next(
                     f
                     for f in result.evidence.facts

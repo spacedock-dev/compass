@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -24,13 +23,13 @@ from . import test_reading_source as sources
 from .test_claude_checks import SHORT, Transcript
 
 
-class EarlyMessageAdmissionTest(unittest.TestCase):
+class EarlyMessageAdmissionTest(sources.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        sources.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         self.child_path.unlink()
         self.parent = Transcript(self.root)
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         self.parent.save(self.path)
         frozen = inventory.freeze(
             str(self.path), "claude", SHORT, max_entries=100, max_streams=10, max_seconds=1
@@ -105,10 +104,16 @@ class EarlyMessageAdmissionTest(unittest.TestCase):
         ):
             result = self.collect()
         self.assertEqual("", result.reason)
+        assert result.evidence is not None
         self.assertEqual(expected.facts, result.evidence.facts)
         self.assertEqual(expected.press, result.evidence.press)
+        assert result.words is not None
         self.assertTrue(all(row.state == "whole" for row in result.words))
-        self.assertEqual(context.PRESS_TEXT_MAX_CHARS, max(row.total for row in result.words))
+        totals = []
+        for row in result.words:
+            assert row.total is not None
+            totals.append(row.total)
+        self.assertEqual(context.PRESS_TEXT_MAX_CHARS, max(totals))
 
     def test_oversized_excluded_shapes_and_child_prose_do_not_become_messages(self) -> None:
         large = "IGNORED" * (context.PRESS_TEXT_MAX_CHARS // 7 + 1)
@@ -148,6 +153,7 @@ class EarlyMessageAdmissionTest(unittest.TestCase):
         ):
             result = self.collect()
         self.assertEqual("", result.reason)
+        assert result.evidence is not None
         messages = [
             f for f in result.evidence.facts if f["type"] in ("user_message", "agent_message")
         ]
@@ -155,7 +161,7 @@ class EarlyMessageAdmissionTest(unittest.TestCase):
         self.assertNotIn("IGNORED", str(result.words))
 
     def test_queued_human_direction_and_slash_arguments_are_raw_admission_candidates(self) -> None:
-        queued = {
+        queued: dict[str, Any] = {
             "type": "attachment",
             "timestamp": "2026-11-04T00:03:00Z",
             "attachment": {

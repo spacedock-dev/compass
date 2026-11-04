@@ -6,10 +6,9 @@ import hashlib
 import math
 import os
 import threading
-import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 from compass_runtime import reading_source_collect as collector
@@ -18,13 +17,8 @@ from compass_runtime import reading_source_stream as raw_source
 from . import test_reading_source_collect as collection_tests
 
 
-class SourceSnapshotTest(unittest.TestCase):
-    setUp = collection_tests.BoundedReadingCollectionTest.setUp
-    module = collection_tests.BoundedReadingCollectionTest.module
-    inventory = collection_tests.BoundedReadingCollectionTest.inventory
-    collect = collection_tests.BoundedReadingCollectionTest.collect
-
-    def snapshot(self, **options: Any) -> Any:
+class SourceSnapshotTest(collection_tests.BoundedReadingCollectionFixture):
+    def snapshot(self, **options: Any) -> collector.Collection:
         result = self.collect(clock=lambda: 0.0, **options)
         self.assertEqual("", result.reason)
         self.assertIsNotNone(getattr(result, "snapshot", None), "verified handles are missing")
@@ -36,6 +30,7 @@ class SourceSnapshotTest(unittest.TestCase):
 
     def test_measured_handles_and_unchanged_stamps_need_no_content_io(self) -> None:
         result = self.snapshot()
+        assert result.snapshot is not None
         handles = result.snapshot.streams
         self.assertEqual(2, len(handles))
         for handle in handles:
@@ -55,6 +50,7 @@ class SourceSnapshotTest(unittest.TestCase):
 
     def test_append_checks_only_old_prefix_once_and_invalidates_final(self) -> None:
         result = self.snapshot()
+        assert result.snapshot is not None
         previous = result.snapshot.streams[0]
         self.append()
         real_read = raw_source.read
@@ -73,6 +69,7 @@ class SourceSnapshotTest(unittest.TestCase):
             previous.frozen.end_offset, checked.usage.source_bytes - result.usage.source_bytes
         )
         self.assertEqual(math.ceil(previous.frozen.end_offset / 127), len(phases))
+        assert checked.snapshot is not None
         self.assertEqual(previous.frozen, checked.snapshot.streams[0].frozen)
         self.assertEqual(previous.baseline_digest, checked.snapshot.streams[0].baseline_digest)
         self.assertNotEqual(previous.stamp, checked.snapshot.streams[0].stamp)
@@ -105,6 +102,7 @@ class SourceSnapshotTest(unittest.TestCase):
                     os.utime(self.path, ns=(before.st_atime_ns, before.st_mtime_ns))
                     if movement == "append_rewrite":
                         self.append()
+                assert result.snapshot is not None
                 checked = collector.revalidate(result.snapshot, clock=lambda: 0.0)
                 self.assertEqual("source_changed", checked.reason)
                 self.assertIsNone(checked.snapshot)
@@ -128,6 +126,7 @@ class SourceSnapshotTest(unittest.TestCase):
                 with mock.patch.object(
                     raw_source, "read", side_effect=AssertionError("unreserved")
                 ):
+                    assert result.snapshot is not None
                     checked = collector.revalidate(result.snapshot, clock=lambda: 0.0)
                 self.assertEqual(reason, checked.reason)
                 self.assertIsNone(checked.snapshot)
@@ -147,6 +146,7 @@ class SourceSnapshotTest(unittest.TestCase):
             return page
 
         with mock.patch.object(raw_source, "read", side_effect=read):
+            assert result.snapshot is not None
             checked = collector.revalidate(
                 result.snapshot, clock=lambda: 0.0, cancelled=lambda: stopped
             )
@@ -173,6 +173,7 @@ class SourceSnapshotTest(unittest.TestCase):
             return page
 
         with mock.patch.object(raw_source, "read", side_effect=read):
+            assert result.snapshot is not None
             checked = collector.revalidate(result.snapshot, clock=lambda: now)
         self.assertEqual("time", checked.reason)
         self.assertGreaterEqual(checked.usage.prepare_ms, 11)
@@ -185,6 +186,7 @@ class SourceSnapshotTest(unittest.TestCase):
         with mock.patch.object(
             raw_source, "read", return_value=raw_source.Page("limited", "verify")
         ) as read:
+            assert result.snapshot is not None
             checked = collector.revalidate(result.snapshot, clock=lambda: 0.0)
         self.assertEqual("no_progress", checked.reason)
         self.assertEqual(1, read.call_count)
@@ -196,11 +198,13 @@ class SourceSnapshotTest(unittest.TestCase):
         self.assertEqual("source_gap", result.reason)
         self.assertIsNone(getattr(result, "snapshot", None))
         with self.assertRaises(ValueError):
-            collector.revalidate(None)
+            # Exercise the public guard against a deliberately absent proof handle.
+            collector.revalidate(cast("collector.Snapshot", None))
 
     def test_child_append_keeps_parent_final_version_but_late_parent_movement_refuses(self) -> None:
         result = self.snapshot()
         self.append(self.child_path)
+        assert result.snapshot is not None
         checked = collector.revalidate(result.snapshot, clock=lambda: 0.0)
         self.assertEqual("", checked.reason)
         self.assertTrue(checked.final_valid)
@@ -221,6 +225,7 @@ class SourceSnapshotTest(unittest.TestCase):
             return page
 
         with mock.patch.object(raw_source, "read", side_effect=read):
+            assert checked.snapshot is not None
             refused = collector.revalidate(checked.snapshot, clock=lambda: 0.0)
         self.assertEqual("source_changed", refused.reason)
         self.assertIsNone(refused.snapshot)
@@ -233,6 +238,7 @@ class SourceSnapshotTest(unittest.TestCase):
         limits = replace(collector.Limits(), retained_bytes=full.usage.retained_bytes + 1024)
         result = self.snapshot(limits=limits)
         with mock.patch.object(raw_source, "read", side_effect=AssertionError("retained refusal")):
+            assert result.snapshot is not None
             checked = collector.revalidate(result.snapshot, clock=lambda: 0.0)
         self.assertEqual("retained_bytes", checked.reason)
         self.assertIsNone(checked.snapshot)
@@ -248,6 +254,7 @@ class SourceSnapshotTest(unittest.TestCase):
         def read(cursor: Any, **options: Any) -> Any:
             if not entered.is_set():
                 with self.assertRaisesRegex(ValueError, "already active"):
+                    assert result.snapshot is not None
                     collector.revalidate(result.snapshot, clock=lambda: 0.0)
                 entered.set()
                 if not release.wait(timeout=5):
@@ -258,6 +265,7 @@ class SourceSnapshotTest(unittest.TestCase):
             ThreadPoolExecutor(max_workers=1) as pool,
             mock.patch.object(raw_source, "read", side_effect=read),
         ):
+            assert result.snapshot is not None
             pending = pool.submit(collector.revalidate, result.snapshot, clock=lambda: 0.0)
             try:
                 self.assertTrue(entered.wait(timeout=5))
@@ -272,6 +280,7 @@ class SourceSnapshotTest(unittest.TestCase):
             checked.usage.source_bytes,
         )
         # Entry is released after success, and the successor shares the account.
+        assert checked.snapshot is not None
         again = collector.revalidate(checked.snapshot, clock=lambda: 0.0)
         self.assertEqual("", again.reason)
         self.assertEqual(checked.usage.source_bytes, again.usage.source_bytes)

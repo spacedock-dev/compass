@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import json
-import unittest
 from typing import Any
 from unittest import mock
 
@@ -17,9 +16,9 @@ from . import test_reading_source as source_tests
 from .test_claude_checks import SHORT, SID, Transcript
 
 
-class RetainedStrictFinalTest(unittest.TestCase):
+class RetainedStrictFinalTest(source_tests.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        source_tests.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         self.child_path.unlink()
         self.path = self.root / (SID + ".jsonl")
         self.parent = Transcript(self.root)
@@ -30,13 +29,15 @@ class RetainedStrictFinalTest(unittest.TestCase):
         row["message"]["stop_reason"] = stop
         return row
 
-    def freeze(self) -> Any:
+    def freeze(self) -> inventory_source.Inventory:
         self.parent.save(self.path)
         return inventory_source.freeze(
             str(self.path), "claude", SHORT, max_entries=100, max_streams=10, max_seconds=1
         )
 
-    def collect(self, inventory: Any = None, **kwargs: Any) -> Any:
+    def collect(
+        self, inventory: inventory_source.Inventory | None = None, **kwargs: Any
+    ) -> collector.Collection:
         result = collector.collect(
             self.config,
             inventory or self.freeze(),
@@ -46,7 +47,8 @@ class RetainedStrictFinalTest(unittest.TestCase):
         self.assertTrue(hasattr(result, "final"), "retained strict-final proof is not implemented")
         return result
 
-    def oracle(self, result: Any) -> dict[str, Any]:
+    def oracle(self, result: collector.Collection) -> dict[str, Any]:
+        assert result.evidence is not None
         wanted = reading.build_ledger(result.evidence.facts, "claude", SHORT, read_agent_words=True)
         return context.transcript_newest_final_words(
             self.config,
@@ -65,8 +67,10 @@ class RetainedStrictFinalTest(unittest.TestCase):
         ):
             result = self.collect(page_bytes=193)
         self.assertEqual(self.oracle(result), result.final)
+        assert result.final is not None
         self.assertEqual("whole", result.final["outcome"])
         self.assertIn("WHOLE_FINAL_END", result.final["words"])
+        assert result.evidence is not None
         fact = next(f for f in result.evidence.facts if f["fact_id"] == result.final["fact_id"])
         self.assertEqual(fact["at"], result.final["at"])
         self.assertEqual(3 * self.path.stat().st_size, result.usage.source_bytes)
@@ -94,6 +98,7 @@ class RetainedStrictFinalTest(unittest.TestCase):
                     self.parent.rows.append(other)
                 result = self.collect()
                 self.assertEqual(self.oracle(result), result.final)
+                assert result.final is not None
                 self.assertEqual(
                     "ambiguous" if case == "tied" else "unproven", result.final["outcome"]
                 )
@@ -112,7 +117,9 @@ class RetainedStrictFinalTest(unittest.TestCase):
         with mock.patch.object(context, "whole_message_words", side_effect=only_person):
             result = self.collect()
         self.assertEqual(self.oracle(result), result.final)
+        assert result.final is not None
         self.assertEqual("too-long", result.final["outcome"])
+        assert result.words is not None
         word = next(row for row in result.words if row.fact_id == result.final["fact_id"])
         self.assertEqual(
             ("unavailable", "final_unfit", None, None),
@@ -131,6 +138,7 @@ class RetainedStrictFinalTest(unittest.TestCase):
             with self.subTest(bound=bound), mock.patch.object(context, bound, 0):
                 result = self.collect()
                 self.assertEqual(self.oracle(result), result.final)
+                assert result.final is not None
                 self.assertEqual(
                     "oversized" if "RECORD" in bound else "scan-limit", result.final["outcome"]
                 )
@@ -138,6 +146,7 @@ class RetainedStrictFinalTest(unittest.TestCase):
         self.parent.rows[-1]["padding"] = "x" * context.FINAL_WORDS_RECORD_MAX_BYTES
         result = self.collect()
         self.assertEqual(self.oracle(result), result.final)
+        assert result.final is not None
         self.assertEqual("oversized", result.final["outcome"])
 
     def test_append_outside_snapshot_keeps_ordinary_words_but_withholds_strict_final(self) -> None:
@@ -148,6 +157,7 @@ class RetainedStrictFinalTest(unittest.TestCase):
         result = self.collect(inventory)
         self.assertEqual({"outcome": "source-moved"}, result.final)
         self.assertTrue(result.source_verified)
+        assert result.words is not None
         self.assertTrue(
             any(
                 row.state == "whole" and row.words == "Finished the frozen work."
@@ -181,6 +191,7 @@ class RetainedStrictFinalTest(unittest.TestCase):
         self.say(words)
         result = self.collect()
         self.assertEqual(self.oracle(result), result.final)
+        assert result.final is not None
         self.assertEqual("whole", result.final["outcome"])
         self.assertEqual(words, result.final["words"])
 
@@ -236,4 +247,5 @@ class RetainedStrictFinalTest(unittest.TestCase):
             result = self.collect()
         self.assertEqual({"outcome": "source-moved"}, result.final)
         self.assertTrue(result.source_verified)
+        assert result.words is not None
         self.assertTrue(any(word.state == "whole" for word in result.words))

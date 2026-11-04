@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import os
-import unittest
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -18,13 +17,13 @@ from . import test_reading_source as sources
 from .test_claude_checks import SHORT, Transcript
 
 
-class PhysicalOriginsTest(unittest.TestCase):
+class PhysicalOriginsTest(sources.CompleteReadingSourceFixture):
     def setUp(self) -> None:
-        sources.CompleteReadingSourceTest.setUp(self)
+        super().setUp()
         self.child_path.unlink()
         self.parent = Transcript(self.root)
 
-    def collect(self, **options: Any) -> Any:
+    def collect(self, **options: Any) -> collector.Collection:
         self.parent.save(self.path)
         frozen = inventory.freeze(
             str(self.path), "claude", SHORT, max_entries=100, max_streams=10, max_seconds=1
@@ -104,11 +103,13 @@ class PhysicalOriginsTest(unittest.TestCase):
         segmented = self.parent.bash("pytest tests/other.py && ruff check .", "all pass")
         result = self.collect(page_bytes=127)
         self.placed(result)
+        assert result.evidence is not None
         check = next(
             f for f in result.evidence.facts if f.get("branch", {}).get("record_id") == selected
         )
         self.assertEqual(2, len(check["runs"]))
         self.assertNotEqual(first, selected)
+        assert result.origins is not None
         origin = next(o for o in result.origins if o.fact_id == check["fact_id"])
         self.assert_position(origin, self.path, 0, selected_record)
         segments = [
@@ -168,10 +169,12 @@ class PhysicalOriginsTest(unittest.TestCase):
             child_paths.append(path)
         result = self.collect()
         placed = self.placed(result)
+        assert result.origins is not None
         self.assertEqual(len(result.origins), len(placed))
         self.assertEqual(
             sorted(o.position.stream for o in placed), [o.position.stream for o in placed]
         )
+        assert result.evidence is not None
         subjects = {fact.get("subject") for fact in result.evidence.facts}
         self.assertTrue({"skill", "write", "command", "launch", "pr", "check"} <= subjects)
         for origin in placed:
@@ -204,12 +207,16 @@ class PhysicalOriginsTest(unittest.TestCase):
         placed = self.placed(result)
         self.assertEqual(1, len(placed))
         self.assert_position(placed[0], self.path, 0, 1)
+        assert result.evidence is not None
+        assert result.words is not None
         self.assertEqual(result.words[0].at, result.evidence.facts[0]["at"])
         self.parent.rows[0]["attachment"]["prompt"] += ' password="FIRST"'
         self.parent.rows[1]["attachment"]["prompt"] += ' password="OTHER"'
         result = self.collect()
         self.assertEqual([], self.placed(result))
+        assert result.words is not None
         self.assertEqual("conflict", result.words[0].reason)
+        assert result.origins is not None
         self.assertEqual("conflict", result.origins[0].reason)
         self.assertIsNone(result.origins[0].position)
 
@@ -220,6 +227,7 @@ class PhysicalOriginsTest(unittest.TestCase):
         foreign["sessionId"] = "foreign"
         result = self.collect()
         self.assertEqual([], self.placed(result))
+        assert result.origins is not None
         self.assertEqual({"ambiguous", "source"}, {o.reason for o in result.origins})
         # Missing native association cannot be repaired using the same timestamp/title.
         original = reading_source.from_complete_scan
@@ -233,6 +241,7 @@ class PhysicalOriginsTest(unittest.TestCase):
 
         with mock.patch.object(reading_source, "from_complete_scan", side_effect=missing):
             result = self.collect()
+        assert result.origins is not None
         self.assertIn("missing", {o.reason for o in result.origins})
         self.assertTrue(all(o.position is None for o in result.origins))
 
@@ -242,6 +251,7 @@ class PhysicalOriginsTest(unittest.TestCase):
             self.parent.bash(f"pytest tests/{number}.py", "1 passed")
         full = self.collect()
         self.placed(full)
+        assert full.snapshot is not None
         self.assertEqual(full.usage, full.snapshot.account.usage)
         self.assertEqual(full.usage.retained_bytes, full.snapshot.account.retained_base_bytes)
         limits = replace(collector.Limits(), retained_bytes=full.usage.retained_bytes // 2)

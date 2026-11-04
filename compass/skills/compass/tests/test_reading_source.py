@@ -10,17 +10,27 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from unittest import mock
 
+from compass_runtime import ci_read, reading, reading_route, reading_source
 from compass_runtime import project_context as context
-from compass_runtime import reading, reading_route
 from compass_runtime.config import build_runtime_config
 
 from .test_claude_checks import SHORT, Transcript
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
-class CompleteReadingSourceTest(unittest.TestCase):
+
+class LedgerOptions(TypedDict):
+    tool_output: Mapping[str, str]
+    changed_after: frozenset[tuple[str, str]]
+    read_incomplete: frozenset[tuple[str, str]]
+    read_agent_words: bool
+
+
+class CompleteReadingSourceFixture(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -56,7 +66,8 @@ class CompleteReadingSourceTest(unittest.TestCase):
             importlib.util.find_spec("compass_runtime.reading_source"),
             "the complete-scan canonical adapter is not implemented",
         )
-        return importlib.import_module("compass_runtime.reading_source")
+        importlib.import_module("compass_runtime.reading_source")
+        return reading_source
 
     def expected(self) -> tuple[tuple[dict[str, Any], ...], context.PressChecks]:
         with context.shared_tallies():
@@ -86,16 +97,16 @@ class CompleteReadingSourceTest(unittest.TestCase):
             quotable=press.quotable,
         )
 
-    def assert_parity(self) -> Any:
-        adapter = self.adapter()
-        result = adapter.from_complete_scan(self.config, self.scan, "claude", SHORT)
+    def assert_parity(self) -> reading_source.CanonicalEvidence:
+        self.adapter()
+        result = reading_source.from_complete_scan(self.config, self.scan, "claude", SHORT)
         expected, press = self.expected()
         self.assertEqual(expected, result.facts)
         self.assertEqual(press, result.press)
         self.assertEqual(len(result.facts), len({fact["fact_id"] for fact in result.facts}))
         expected_output, actual_output = self.output(press), self.output(result.press)
         self.assertEqual(expected_output, actual_output)
-        options = {
+        options: LedgerOptions = {
             "tool_output": actual_output.tails,
             "changed_after": actual_output.changed_after,
             "read_incomplete": actual_output.read_incomplete,
@@ -112,6 +123,8 @@ class CompleteReadingSourceTest(unittest.TestCase):
 
         return result
 
+
+class CompleteReadingSourceTest(CompleteReadingSourceFixture):
     def test_parent_and_admitted_child_keep_rich_facts_and_reading_guards(self) -> None:
         result = self.assert_parity()
         child = next(
@@ -180,7 +193,7 @@ class CompleteReadingSourceTest(unittest.TestCase):
         parent.prompt("Update the widget.")
         return parent
 
-    def project(self, parent: Transcript) -> Any:
+    def project(self, parent: Transcript) -> reading_source.CanonicalEvidence:
         parent.save(self.path)
         self.scan = context._live_check_scan(
             self.config, str(self.path), goal_texts=self.goal_texts
@@ -188,7 +201,7 @@ class CompleteReadingSourceTest(unittest.TestCase):
         return self.assert_parity()
 
     @staticmethod
-    def checks(result: Any) -> list[dict[str, Any]]:
+    def checks(result: reading_source.CanonicalEvidence) -> list[dict[str, Any]]:
         return [fact for fact in result.facts if fact.get("subject") == "check"]
 
     def test_later_write_ages_the_same_passing_check_in_facts_and_recorded_work(self) -> None:
@@ -390,7 +403,7 @@ class CompleteReadingSourceTest(unittest.TestCase):
         bound = parent.bash("gh pr checks 7", "all pass")
         unbound = parent.bash("gh pr checks 99", "all pass")
         with mock.patch.object(
-            context.ci_read, "folder_remote", return_value=("github.com", "example/widgets")
+            ci_read, "folder_remote", return_value=("github.com", "example/widgets")
         ):
             result = self.project(parent)
         polls = {

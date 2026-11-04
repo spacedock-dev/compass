@@ -53,7 +53,7 @@ class FrozenSourceInventoryTest(unittest.TestCase):
 
     @staticmethod
     def read_all(cursor: raw_source.Cursor) -> tuple[list[dict[str, Any]], raw_source.Page]:
-        rows = []
+        rows: list[dict[str, Any]] = []
         for _ in range(200):
             page = raw_source.read(cursor, max_bytes=31, max_seconds=1)
             rows.extend(record.value for record in page.records)

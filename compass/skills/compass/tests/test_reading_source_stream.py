@@ -265,7 +265,7 @@ class FrozenParentSourceTest(unittest.TestCase):
         actual = []
 
         class CountedFile(io.FileIO):
-            def read(self, size: int = -1) -> bytes:
+            def read(self, size: int | None = -1) -> bytes:
                 requests.append(size)
                 result = super().read(size)
                 actual.append(len(result))
@@ -286,7 +286,7 @@ class FrozenParentSourceTest(unittest.TestCase):
         self.assertEqual(3 * len(raw), sum(actual))
         self.assertEqual(sum(actual), sum(page.bytes_read for page in pages))
         self.assertLessEqual(len(requests), 3 * ((len(raw) + 65535) // 65536))
-        self.assertTrue(all(0 < size <= 65536 for size in requests))
+        self.assertTrue(all(size is not None and 0 < size <= 65536 for size in requests))
 
     def test_short_reads_and_fragment_replay_preserve_crlf_and_utf8_bytes(self) -> None:
         raw = '{"text":"漢字"}\r\n'.encode() + b'{\r"text":"next"}\n'
@@ -295,8 +295,8 @@ class FrozenParentSourceTest(unittest.TestCase):
         original_digest = cursor.digest.hexdigest()
 
         class ShortFile(io.FileIO):
-            def read(self, size: int = -1) -> bytes:
-                return super().read(min(size, 2))
+            def read(self, size: int | None = -1) -> bytes:
+                return super().read(min(size, 2) if size is not None else 2)
 
         def opened(path: str, **_options: Any) -> Any:
             return ShortFile(path, "rb")
