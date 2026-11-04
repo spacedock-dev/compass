@@ -178,6 +178,35 @@ def inspect(config: RuntimeConfig, job_id: str, *, now: float) -> Inspection:
         return Inspection(job_id, state, unsettled, reason="ledger-unavailable")
 
 
+def _retirable(inspected: Inspection, acknowledged: bool) -> bool:
+    return (
+        acknowledged is True
+        and type(inspected) is Inspection
+        and inspected.exact is not None
+        and inspected.snapshot is not None
+        and inspected.marker_state not in (None, "active")
+    )
+
+
+def _retire_locked(
+    config: RuntimeConfig, inspected: Inspection, *, acknowledged: bool, now: float
+) -> bool:
+    """Retire an unchanged snapshot; caller MUST hold the marker publication barrier."""
+    if not _retirable(inspected, acknowledged):
+        return False
+    current = inspect(config, inspected.job_id, now=now)
+    if (
+        current.exact is None
+        or current.marker_state in (None, "active")
+        or current.snapshot != inspected.snapshot
+    ):
+        return False
+    path = reading_long_markers.marker_path(config, inspected.job_id)
+    path.unlink()
+    reading_long_markers.sync_directory(path.parent)
+    return True
+
+
 def retire(config: RuntimeConfig, inspected: Inspection, *, acknowledged: bool, now: float) -> bool:
     """Explicit final-publication/discard acknowledgment, never a read-side cleanup.
 
@@ -185,25 +214,10 @@ def retire(config: RuntimeConfig, inspected: Inspection, *, acknowledged: bool, 
     accounting alone do not establish owner death, successful execution or
     publication; an active record is never eligible.
     """
-    if (
-        acknowledged is not True
-        or type(inspected) is not Inspection
-        or inspected.exact is None
-        or inspected.snapshot is None
-        or inspected.marker_state in (None, "active")
-    ):
+    if not _retirable(inspected, acknowledged):
         return False
     try:
-        with reading_long_markers.publication_lock(config) as root:
-            current = inspect(config, inspected.job_id, now=now)
-            if (
-                current.exact is None
-                or current.marker_state in (None, "active")
-                or current.snapshot != inspected.snapshot
-            ):
-                return False
-            reading_long_markers.marker_path(config, inspected.job_id).unlink()
-            reading_long_markers.sync_directory(root)
-            return True
+        with reading_long_markers.publication_lock(config):
+            return _retire_locked(config, inspected, acknowledged=acknowledged, now=now)
     except (OSError, ValueError, TypeError):
         return False
