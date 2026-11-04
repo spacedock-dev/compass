@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from . import reading
@@ -213,11 +213,23 @@ def _packet(
     context: Sequence[EvidenceRange],
     header: str,
     lines: tuple[str, ...],
+    *,
+    measure: bool = False,
 ) -> EvidencePacket:
     combined = _union((*context, *primary))
     identities = sorted(combined, key=lambda key: sources[key][0])
     selected = tuple(_project(sources[key][1], combined[key]) for key in identities)
     selection = reading.Selection(selected, asked_output=False, lines=lines)
+    if measure:
+        selection = replace(
+            selection,
+            diagnostic=reading.selection_diagnostic(
+                [original.row for _, original in sources.values()],
+                selected,
+                _render_rows(selection),
+                expanded=True,
+            ),
+        )
     return EvidencePacket(
         header + render_packet_evidence(selection, primary, context),
         selection,
@@ -237,6 +249,15 @@ def render_packet_evidence(
         name: [[numbers[s.fact_id], s.start, s.end, s.total] for s in spans]
         for name, spans in (("primary", primary), ("context", context))
     }
+    return (
+        "Range roles (menu, start, end, total):\n"
+        + json.dumps(roles)
+        + "\n"
+        + "".join(_render_rows(selection))
+    )
+
+
+def _render_rows(selection: reading.Selection) -> list[str]:
     body: list[str] = []
     for index, row in selection.by_index().items():
         rendered = row
@@ -249,7 +270,7 @@ def render_packet_evidence(
                 index, rendered, whole=row["type"] in {"user_message", reading.AGENT_MESSAGE_TYPE}
             )
         )
-    return "Range roles (menu, start, end, total):\n" + json.dumps(roles) + "\n" + "".join(body)
+    return body
 
 
 def _sources(originals: Sequence[Original]) -> dict[str, tuple[int, Original]]:
@@ -392,7 +413,7 @@ def plan_packets(
         if not primary:
             reason = "context-unfit" if held else "prompt-unfit"
             break
-        packets.append(_packet(sources, primary, held, header, frozen_lines))
+        packets.append(_packet(sources, primary, held, header, frozen_lines, measure=True))
     remaining = tuple(
         _span(original, start if index == cursor else 0)
         for index, original in enumerate(ordered)

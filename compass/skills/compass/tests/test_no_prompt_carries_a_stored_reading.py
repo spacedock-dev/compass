@@ -8,7 +8,7 @@ through each builder that reaches a model and asserts neither marker appears in 
 
 Builders covered: `reading.produce` (asked and unasked, which share `build_prompt`),
 `session_summary` (window and lede), `goal_find.build_prompt`, `live_monitor.build_prompt` and
-`observer.CodexGoalModel`. The completeness guard at the end fails when a new module starts a
+`observer.CodexGoalModel`, plus the supplied-model `reading_map_call.invoke`. The completeness guard at the end fails when a new module starts a
 model call, so the next caller is added here rather than missed.
 
 Deliberately not covered:
@@ -42,6 +42,8 @@ from compass_runtime import (
     live_monitor,
     observer,
     reading,
+    reading_map_call,
+    reading_passes,
     session_source,
     session_summary,
 )
@@ -257,9 +259,34 @@ class WhenAReaderHasAStoredReadingAndEarlierDepartures(_Seeded):
         self.assertEqual(1, len(capture.prompts))
         _assert_clean(self, capture.prompts, "the unasked check")
 
-    # The four builders below never receive the row, the entry or the `annotation_*` fields. They
+    # The five builders below never receive the row, the entry or the `annotation_*` fields. They
     # take text, facts or entries only, so these tests pass by construction. They are not coverage
     # of the store; the feeders that would hand them stored text are outside this test.
+
+    def test_one_map_invocation_sends_only_saved_intent_and_admitted_originals(self) -> None:
+        capture = _Capture()
+        facts = self.facts()
+        words = {
+            fact["fact_id"]: fact.get(reading.WORDS_FIELD, fact.get(reading.AGENT_WORDS_FIELD))
+            for fact in facts
+        }
+        originals = tuple(
+            reading_passes.Original(row, words[row["id"]])
+            for row in reading.build_ledger(facts, "claude", "s1", read_agent_words=True)
+        )
+        latest = self.entry["revisions"][-1]
+        lines = reading.outcome_lines(latest)
+        reading_map_call.invoke(
+            originals,
+            goal=latest["goal"],
+            lines=lines,
+            clauses=reading.constraints_for(lines),
+            max_bytes=8_192,
+            model=capture,
+        )
+        self.assertEqual(1, len(capture.prompts))
+        self.assertIn(GOAL, capture.prompts[0])
+        _assert_clean(self, capture.prompts, "one map invocation")
 
     def test_find_goal_sends_neither(self) -> None:
         prompts = goal_find.prompts_from_facts(

@@ -3659,7 +3659,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         # needs to escape this boundary.
         return "", Selection(
             (),
-            diagnostic=_selection_diagnostic(citable, (), (), expanded=False) if measure else None,
+            diagnostic=selection_diagnostic(citable, (), (), expanded=False) if measure else None,
             unread_failures=tuple(failures),
             unread_checks=tuple(checks),
             asked_output=posed,
@@ -3762,7 +3762,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     return header + body, Selection(
         printed,
         diagnostic=(
-            _selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
+            selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
             if measure
             else None
         ),
@@ -3777,7 +3777,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     )
 
 
-def _selection_diagnostic(
+def selection_diagnostic(
     eligible: Sequence[LedgerEntry],
     selected: Sequence[LedgerEntry],
     rendered: Sequence[str],
