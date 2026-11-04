@@ -11,6 +11,8 @@ import contextlib
 import math
 import os
 import time
+import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from . import analyze_diagnostics, supervise
@@ -66,6 +68,49 @@ REQUESTED_WORDS_CONTENT_VERSION = 5
 WORDS_CONTENT_VERSION = 1
 NOTICE_KINDS = ("reading", "goal", "summary", "monitor")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."
+
+
+@dataclass(frozen=True)
+class LongPermission:
+    """A long job's permission snapshot, independent of content and Summary epochs."""
+
+    lineage: str
+    epoch: int
+
+
+def _valid_long_permission(value: Any) -> bool:
+    return (
+        type(value) is LongPermission
+        and isinstance(value.lineage, str)
+        and len(value.lineage) == 32
+        and all(char in "0123456789abcdef" for char in value.lineage)
+        and type(value.epoch) is int
+        and 0 <= value.epoch < 2**63
+    )
+
+
+def _long_permission_schema(db: Any) -> LongPermission:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS long_permission "
+        "(id INTEGER PRIMARY KEY CHECK(id=1), lineage TEXT NOT NULL, epoch INTEGER NOT NULL)"
+    )
+    db.execute("INSERT OR IGNORE INTO long_permission VALUES (1, ?, 0)", (uuid.uuid4().hex,))
+    for table in ("permission", "provider_permission"):
+        for event in ("INSERT", "UPDATE"):
+            # These fire in older builds too. As with `_off`, a zero beside an
+            # Allow is not a global pause; Summary's own switch is independent.
+            db.execute(
+                f"CREATE TRIGGER IF NOT EXISTS long_permission_off_{table}_{event.lower()} "  # noqa: S608 - fixed identifiers
+                f"AFTER {event} ON {table} WHEN NEW.allowed = 0 "
+                "AND NOT EXISTS (SELECT 1 FROM permission WHERE allowed = 1) "
+                "AND NOT EXISTS (SELECT 1 FROM provider_permission WHERE allowed = 1) "
+                "BEGIN UPDATE long_permission SET epoch = epoch + 1 WHERE id = 1; END"
+            )
+    row = db.execute("SELECT lineage, epoch FROM long_permission WHERE id=1").fetchone()
+    token = LongPermission(*row)
+    if not _valid_long_permission(token):
+        raise ValueError("Invalid long-reading permission lineage")
+    return token
 
 
 class Notice(TypedDict):
@@ -432,7 +477,7 @@ def _change_permissions(
         # the legacy row's write above fires, as for an older build's off.
 
 
-def _transaction(
+def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same reservation transaction
     config: RuntimeConfig,
     now: float,
     operation: str | Notice,
@@ -441,9 +486,11 @@ def _transaction(
     job_id: str = "",
     today: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
-) -> tuple[Status, Notice | None]:
+    *,
+    long_permission: LongPermission | None = None,
+) -> tuple[Status, Notice | None, LongPermission | None]:
     if not math.isfinite(now) or now <= 0:
-        return _answer(reason="store-unavailable"), None
+        return _answer(reason="store-unavailable"), None, None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
     with contextlib.closing(_connect(config, wait)) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -520,6 +567,9 @@ def _transaction(
                 "DELETE FROM permission_disclosure; END"
             )
         _notice_schema(db)
+        permission = (
+            _long_permission_schema(db) if operation in ("capture-long", "reserve-long") else None
+        )
         allowed = _allowed(db)
         db.execute("DELETE FROM spends WHERE at <= ?", (now - DAY_SEC,))
         db.execute("DELETE FROM spend_jobs WHERE at <= ?", (now - JOB_LEDGER_SEC,))
@@ -544,10 +594,17 @@ def _transaction(
             notices=_notices(db),
         )
         recorded = _store_notice(db, answer, operation)
-        if operation == "reserve" and not answer["reason"]:
-            return _commit_charge(db, answer, now, job_id), None
+        if (
+            operation == "reserve-long"
+            and not answer["reason"]
+            and (not _valid_long_permission(long_permission) or permission != long_permission)
+        ):
+            answer["reason"] = "permission-changed"
+        if operation in ("reserve", "reserve-long") and not answer["reason"]:
+            return _commit_charge(db, answer, now, job_id), None, None
         db.execute("COMMIT")
-        return answer, recorded
+        captured = permission if operation == "capture-long" and not answer["reason"] else None
+        return answer, recorded, captured
 
 
 def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
@@ -738,6 +795,45 @@ def reserve(
     if config.model_calls_disabled:
         return status(config, now=now, provider=provider, destinations=today, content=content)
     return _run(config, now, "reserve", provider, job_id=job_id, today=today, content=content)
+
+
+def capture_long_permission(config: RuntimeConfig, *, now: float) -> LongPermission | None:
+    """Capture once at long-job start; failure is not permission to use ordinary reserve."""
+    if config.model_calls_disabled:
+        return None
+    try:
+        return _transaction(config, now, "capture-long", LEGACY_PROVIDER)[2]
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return None
+
+
+def reserve_long(
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    now: float,
+    provider: str = LEGACY_PROVIDER,
+    job_id: str = "",
+    destination: str = "",
+    content: int = CONTENT_VERSION,
+) -> Status:
+    """Charge only while the captured permission still holds under the SQLite write lock."""
+    today = {provider: destination}
+    if config.model_calls_disabled:
+        return status(config, now=now, provider=provider, destinations=today, content=content)
+    try:
+        return _transaction(
+            config,
+            now,
+            "reserve-long",
+            provider,
+            job_id=job_id,
+            today=today,
+            content=content,
+            long_permission=permission,
+        )[0]
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _answer(reason="store-unavailable")
 
 
 def charged(config: RuntimeConfig, job_id: str, *, started_at: Any, now: float) -> bool | None:
@@ -986,11 +1082,10 @@ def note(
         at=now,
     )
     try:
-        answer, recorded = (
-            _summary_transaction(config, now, notice)
-            if kind == "summary"
-            else _transaction(config, now, notice, provider)
-        )
+        if kind == "summary":
+            answer, recorded = _summary_transaction(config, now, notice)
+        else:
+            answer, recorded, _ = _transaction(config, now, notice, provider)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         raise RefusedError(_answer(reason="store-unavailable")) from None
     if answer["reason"] == "store-unavailable":
