@@ -8,12 +8,13 @@ See [DEC-21](docs/design-reading-a-session.md#dec-21-a-reading-works-the-first-t
 from __future__ import annotations
 
 import contextlib
+import json
 import math
 import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
 from . import analyze_diagnostics, supervise
 from . import io as runtime_io
@@ -94,7 +95,10 @@ def _long_permission_schema(db: Any) -> LongPermission:
         "CREATE TABLE IF NOT EXISTS long_permission "
         "(id INTEGER PRIMARY KEY CHECK(id=1), lineage TEXT NOT NULL, epoch INTEGER NOT NULL)"
     )
-    db.execute("INSERT OR IGNORE INTO long_permission VALUES (1, ?, 0)", (uuid.uuid4().hex,))
+    db.execute(
+        "INSERT OR IGNORE INTO long_permission (id, lineage, epoch) VALUES (1, ?, 0)",
+        (uuid.uuid4().hex,),
+    )
     for table in ("permission", "provider_permission"):
         for event in ("INSERT", "UPDATE"):
             # These fire in older builds too. As with `_off`, a zero beside an
@@ -152,6 +156,158 @@ class Status(TypedDict):
 
 
 PERMISSION_TABLES = frozenset({"permission", "provider_permission"})
+
+
+@dataclass(frozen=True)
+class LongReservation:
+    """Only a fresh reservation authorizes launch; charge evidence is True or unknown."""
+
+    outcome: str
+    status: Status
+    charged: bool | None = None
+
+    @property
+    def launch(self) -> bool:
+        return self.outcome == "reserved"
+
+
+_PASS_REQUEST_FIELDS = frozenset(
+    {
+        "version",
+        "job_id",
+        "started_at",
+        "ordinal",
+        "kind",
+        "max_evidence_passes",
+        "plan_sha256",
+        "prompt_sha256",
+        "prompt_bytes",
+        "destination_sha256",
+        "provider",
+        "content",
+    }
+)
+
+
+def _hex(value: Any, size: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == size
+        and all(c in "0123456789abcdef" for c in value)
+    )
+
+
+def _pass_request(value: Any, now: float) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != _PASS_REQUEST_FIELDS:
+        return None
+    if (
+        any(
+            type(value[key]) is not int
+            for key in (
+                "version",
+                "ordinal",
+                "max_evidence_passes",
+                "prompt_bytes",
+                "content",
+            )
+        )
+        or value["version"] != 1
+        or not 1 <= value["max_evidence_passes"] <= 16
+        or not 1 <= value["ordinal"] <= value["max_evidence_passes"] + 1
+        or not 0 < value["prompt_bytes"] < 2**53
+        or value["content"] not in (REQUESTED_WORDS_CONTENT_VERSION, CONTENT_VERSION)
+        or value["provider"] not in PROVIDERS
+        or not _hex(value["job_id"], 32)
+        or not all(
+            _hex(value[key], 64)
+            for key in (
+                "plan_sha256",
+                "prompt_sha256",
+                "destination_sha256",
+            )
+        )
+        or type(value["started_at"]) not in (int, float)
+        or not math.isfinite(value["started_at"])
+        or not 0 < value["started_at"] <= now
+    ):
+        return None
+    kind = "reconciliation" if value["ordinal"] == value["max_evidence_passes"] + 1 else "evidence"
+    return dict(value) if value["kind"] == kind else None
+
+
+def _pass_ledger(db: Any, now: float) -> float:
+    """Keep absence conservative after pruning, SQL deletion or a missing table."""
+    columns = {row[1] for row in db.execute("PRAGMA table_info(long_permission)")}
+    if "pass_ledger_since" not in columns:
+        db.execute("ALTER TABLE long_permission ADD COLUMN pass_ledger_since REAL")
+    since = db.execute("SELECT pass_ledger_since FROM long_permission WHERE id=1").fetchone()[0]
+    if since is None:
+        # Not IF NOT EXISTS: an orphaned ledger is uncertainty, not a new ledger.
+        db.execute(
+            "CREATE TABLE long_pass_reservations (job TEXT NOT NULL, ordinal INTEGER NOT NULL, "
+            "binding TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(job, ordinal))"
+        )
+        db.execute("UPDATE long_permission SET pass_ledger_since=0 WHERE id=1")
+    elif type(since) not in (int, float) or not math.isfinite(since) or since < 0:
+        raise ValueError("Invalid long-pass ledger watermark")
+    # A direct DELETE, including a prune, loses charge evidence. Fence starts
+    # at or before that receipt, even when clocks/timestamps are equal.
+    db.execute(
+        "CREATE TRIGGER IF NOT EXISTS long_pass_deleted AFTER DELETE ON long_pass_reservations "
+        "BEGIN UPDATE long_permission SET pass_ledger_since=max(pass_ledger_since, OLD.at) "
+        "WHERE id=1; END"
+    )
+    db.execute("DELETE FROM long_pass_reservations WHERE at <= ?", (now - JOB_LEDGER_SEC,))
+    db.execute(
+        "UPDATE long_permission SET pass_ledger_since=max(pass_ledger_since, ?) WHERE id=1",
+        (now - JOB_LEDGER_SEC,),
+    )
+    return float(
+        db.execute("SELECT pass_ledger_since FROM long_permission WHERE id=1").fetchone()[0]
+    )
+
+
+def _reserve_pass(db: Any, answer: Status, now: float, request: dict[str, Any]) -> LongReservation:
+    since = _pass_ledger(db, now)
+    row = db.execute(
+        "SELECT binding, at FROM long_pass_reservations WHERE job=? AND ordinal=?",
+        (request["job_id"], request["ordinal"]),
+    ).fetchone()
+    binding = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    if row is not None:
+        # A corrupt row is not authoritative charge evidence for either binding.
+        stored = _pass_request(json.loads(row[0]), now)
+        if (
+            stored is None
+            or type(row[1]) not in (int, float)
+            or not math.isfinite(row[1])
+            or row[1] <= 0
+        ):
+            raise ValueError("Invalid long-pass receipt")
+        same = stored == request
+        reason = "already-reserved" if same else "reservation-conflict"
+        db.execute("COMMIT")
+        return LongReservation(
+            "already-reserved" if same else "conflict", {**answer, "reason": reason}, True
+        )
+    if request["started_at"] <= since:
+        db.execute("COMMIT")
+        return LongReservation("unknown", {**answer, "reason": "pass-ledger-unknown"})
+    if answer["reason"]:
+        db.execute("COMMIT")
+        return LongReservation("refused", answer)
+    db.execute(
+        "INSERT INTO long_pass_reservations VALUES (?, ?, ?, ?)",
+        (request["job_id"], request["ordinal"], binding, now),
+    )
+    # The receipt and spend commit together under the existing supervision
+    # admission barrier. Shutdown rolls back both; replay never reaches it.
+    charged = _commit_charge(db, answer, now, "")
+    return (
+        LongReservation("refused", charged)
+        if charged["reason"]
+        else LongReservation("reserved", charged, True)
+    )
 
 
 def store_path(config: RuntimeConfig) -> Path:
@@ -488,7 +644,8 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
     content: int = CONTENT_VERSION,
     *,
     long_permission: LongPermission | None = None,
-) -> tuple[Status, Notice | None, LongPermission | None]:
+    long_request: dict[str, Any] | None = None,
+) -> tuple[Status, Notice | None, LongPermission | LongReservation | None]:
     if not math.isfinite(now) or now <= 0:
         return _answer(reason="store-unavailable"), None, None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
@@ -568,7 +725,9 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
             )
         _notice_schema(db)
         permission = (
-            _long_permission_schema(db) if operation in ("capture-long", "reserve-long") else None
+            _long_permission_schema(db)
+            if operation in ("capture-long", "reserve-long", "reserve-long-pass")
+            else None
         )
         allowed = _allowed(db)
         db.execute("DELETE FROM spends WHERE at <= ?", (now - DAY_SEC,))
@@ -594,6 +753,12 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
             notices=_notices(db),
         )
         recorded = _store_notice(db, answer, operation)
+        if operation == "reserve-long-pass":
+            if not _valid_long_permission(long_permission) or permission != long_permission:
+                answer["reason"] = answer["reason"] or "permission-changed"
+            elif not answer["off"] and long_request is not None:
+                result = _reserve_pass(db, answer, now, long_request)
+                return result.status, None, result
         if (
             operation == "reserve-long"
             and not answer["reason"]
@@ -802,7 +967,9 @@ def capture_long_permission(config: RuntimeConfig, *, now: float) -> LongPermiss
     if config.model_calls_disabled:
         return None
     try:
-        return _transaction(config, now, "capture-long", LEGACY_PROVIDER)[2]
+        return cast(
+            "LongPermission | None", _transaction(config, now, "capture-long", LEGACY_PROVIDER)[2]
+        )
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return None
 
@@ -834,6 +1001,40 @@ def reserve_long(
         )[0]
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         return _answer(reason="store-unavailable")
+
+
+def reserve_long_pass(
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    request: Any,
+    now: float,
+) -> LongReservation:
+    """Atomically reserve a composite slot once; identical replay never authorizes launch.
+
+    The caller owns the frozen job start, actual final prompt/destination/plan
+    hashes and counts. They are binding metadata, not permission or evidence
+    that those inputs were checked. Never change a start to reuse a lost key.
+    There is no negative historical charge claim: absent evidence is unknown.
+    """
+    checked = _pass_request(request, now)
+    if checked is None:
+        return LongReservation("refused", _answer(reason="invalid-long-request"))
+    if config.model_calls_disabled:
+        return LongReservation("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "reserve-long-pass",
+            checked["provider"],
+            content=checked["content"],
+            long_permission=permission,
+            long_request=checked,
+        )
+        return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongReservation("unknown", _answer(reason="store-unavailable"))
 
 
 def charged(config: RuntimeConfig, job_id: str, *, started_at: Any, now: float) -> bool | None:
