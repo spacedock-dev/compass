@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from . import (
+    ci_read,
     copied_corrections,
     reading,
     reading_final_call,
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 
     from .config import RuntimeConfig
     from .project_context import PressChecks
+    from .reading_ci_acquire import Result as CiResult
     from .reading_map_series import Series
     from .reading_pass_context import Frozen
     from .reading_source_collect import AncillaryInfo, Collection, Usage
@@ -45,6 +47,8 @@ class Prepared:
     usage: Usage
     ancillary: AncillaryInfo
     ci_read: str
+    ci_record: Mapping[str, Any] | None = None
+    ci_unbound: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,26 @@ class CallPreparation:
     reason: str
 
 
+def ci_not_applicable(collection: Collection, result: CiResult | None) -> bool:
+    """An owner-checked absent binding is different from missing CI context.
+
+    Keep the setting on and retain the unavailable/no-record result. This proves
+    only that the frozen current inputs selected no PR, not that any CI was read.
+    """
+    inputs = collection.current_ci
+    return bool(
+        inputs is not None
+        and result is not None
+        and result.inputs is inputs
+        and inputs.state == "unbound"
+        and inputs.binding is None
+        and result.state == "unavailable"
+        and result.reason == "input-unavailable"
+        and result.record_json is None
+        and (result.ci_calls, result.git_calls, result.spawned) == (0, 0, 0)
+    )
+
+
 def prepare_calls(  # noqa: PLR0913 - same frozen preparation inputs plus the existing job plan
     config: RuntimeConfig,
     row: Mapping[str, Any],
@@ -75,6 +99,7 @@ def prepare_calls(  # noqa: PLR0913 - same frozen preparation inputs plus the ex
     settled_through: float | None = None,
     open_call_at: float | None = None,
     recovered_sources: Sequence[Mapping[str, Any]] | None = None,
+    ci_result: CiResult | None = None,
 ) -> CallPreparation:
     """Meter preparation and prove the mandatory final byte floor before any map call.
 
@@ -104,6 +129,7 @@ def prepare_calls(  # noqa: PLR0913 - same frozen preparation inputs plus the ex
                 settled_through=settled_through,
                 open_call_at=open_call_at,
                 recovered_sources=recovered_sources,
+                ci_result=ci_result,
             )
             stage.keep(prepared)
         if prepared.prepared is None:
@@ -237,6 +263,7 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     settled_through: float | None = None,
     open_call_at: float | None = None,
     recovered_sources: Sequence[Mapping[str, Any]] | None = None,
+    ci_result: CiResult | None = None,
 ) -> Preparation:
     """Prepare retained source data only; the caller owns grants and source revalidation.
 
@@ -297,6 +324,27 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     facts = copied_corrections.mark({"semantic": {"facts": facts}}, [frozen_row])["semantic"][
         "facts"
     ]
+    native_facts = tuple(facts)
+    ci_record = ci_result.value() if ci_result is not None else None
+    ci_unbound = ci_not_applicable(collection, ci_result)
+    if ci_result is not None and (
+        route["ci_read"] != "on"
+        or ci_result.inputs is not collection.current_ci
+        or (
+            not ci_unbound
+            and (
+                ci_result.state != "complete"
+                or ci_result.reason
+                or ci_read.validate(ci_record) is None
+                or (ci_record or {}).get("error")
+            )
+        )
+    ):
+        return finish("ci-context-unavailable")
+    ci_facts = ci_read.facts(ci_record, str(row["harness"]), str(row["sid"]))
+    if {fact["fact_id"] for fact in ci_facts} & {fact["fact_id"] for fact in facts}:
+        return finish("invalid-context")
+    facts.extend(ci_facts)
     output = deepcopy(_output(collection.evidence.press, route))
     inputs = reading_final_call.Inputs(
         frozen_row,
@@ -331,11 +379,27 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         return finish(withheld)
     try:
         floor = reading_final_call.scope_floor(inputs, scope=scope)
-        originals = _ordered(inputs, floor, collection.origins, collection.final)
+        ci_ids = {fact["fact_id"] for fact in ci_facts}
+        native_floor = replace(
+            floor, entries=tuple(r for r in floor.entries if r["id"] not in ci_ids)
+        )
+        originals = _ordered(
+            replace(inputs, facts=native_facts), native_floor, collection.origins, collection.final
+        )
+        # Fresh remote observations follow the native physical corpus in acquisition
+        # order. Their owner read_at remains intact; they have no native file position.
+        ci_rows = {row["id"]: row for row in floor.entries if row["id"] in ci_ids}
+        originals += tuple(
+            passes.Original(ci_rows[fact["fact_id"]])
+            for fact in ci_facts
+            if fact["fact_id"] in ci_rows
+        )
         passes._strict_final(originals, collection.final)  # noqa: SLF001 - same proof binding as maps
         gaps = (
             ("context",)
             if route["ci_read"] == "on"
+            and ci_record is None
+            and not ci_unbound
             and collection.ancillary_info.ci_binding in {"available", "unknown", "disabled"}
             else ()
         )
@@ -373,6 +437,8 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
             collection.usage,
             collection.ancillary_info,
             route["ci_read"],
+            ci_record,
+            ci_unbound,
         ),
     )
 
@@ -459,11 +525,14 @@ def assessment(
         superseded=prepared.superseded,
         outside_window=reading._failures_left_out(prepared.uncut, prepared.floor.entries),  # noqa: SLF001
     )
-    cutoff += (
-        " Pull-request CI was not read (disabled)."
-        if prepared.ci_read != "on"
-        else " Pull-request CI was not read; no independent CI result is included."
-    )
+    if prepared.ci_record is None:
+        cutoff += (
+            " Pull-request CI was not read (disabled)."
+            if prepared.ci_read != "on"
+            else " Pull-request CI was not read; no applicable pull-request binding was found."
+            if prepared.ci_unbound
+            else " Pull-request CI was not read; no independent CI result is included."
+        )
     value: reading.Assessment = {
         "revision_read": revision["n"],
         "revision_read_at": records.norm_epoch(revision.get("at")) or None,
@@ -481,5 +550,7 @@ def assessment(
     if revision.get("goal_source") in reading.PROMPT_SOURCES:
         value["goal_source"] = str(revision["goal_source"])
         value["goal_source_at"] = reading.baseline_at(revision)
+    if prepared.ci_record is not None:
+        value["ci"] = deepcopy(dict(prepared.ci_record))
     reading._attach_verdict_check(value, row, facts, output)  # noqa: SLF001
     return value

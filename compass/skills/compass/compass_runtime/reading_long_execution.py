@@ -63,7 +63,7 @@ def _require_slot(
         _refuse("context-changed")
 
 
-def guard(  # noqa: C901 - bounded per-slot callbacks share the fresh permit and one runner entry
+def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh permit and one runner entry
     config: RuntimeConfig,
     context: context_gate.Context,
     ordinal: int,
@@ -72,17 +72,26 @@ def guard(  # noqa: C901 - bounded per-slot callbacks share the fresh permit and
     runner: Any = supervise.run,
     binary_resolver: Any = shutil.which,
     on_reserved: Callable[[], None] | None = None,
+    source_current: Callable[[], bool] | None = None,
+    on_spawn: Callable[[], None] | None = None,
 ) -> policy.GuardedModel:
-    """Build one slot's Guard; no charge, source read or launch occurs at construction.
+    """Build one slot's Guard; construction checks gates without charging or launching.
 
     Only a fresh durable marker permit can reach the runner once. Gate reads
     are separate snapshots, not atomic external settings; supervised handover
     still closes the Cancel window after process spawn.
+    An optional source gate may revalidate the caller's frozen source at construction,
+    reservation, post-charge and runner entry. on_spawn follows supervised handover.
     """
 
     def current() -> None:
         if reason := context_gate.check(config, context):
             _refuse(reason)
+        if source_current is not None:
+            if source_current() is not True:
+                _refuse("context-changed")
+            if reason := context_gate.check(config, context):
+                _refuse(reason)
 
     current()
     active, route = context.active, context.route
@@ -127,6 +136,8 @@ def guard(  # noqa: C901 - bounded per-slot callbacks share the fresh permit and
     def spawned(group: supervise.Group) -> None:
         if reading.hand_over(active.job, group):
             group.cancel()
+        elif on_spawn is not None:
+            on_spawn()
 
     checked_runner = observer.CheckedRunner(runner, before_runner)
     model = (

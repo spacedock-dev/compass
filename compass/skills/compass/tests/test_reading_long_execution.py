@@ -352,3 +352,38 @@ class LongExecutionTest(unittest.TestCase):
         group.cancel.assert_called_once()
         group.close.assert_called_once()
         self.proof(1, invoked=True)
+
+    def test_source_gate_rechecks_after_charge_before_adapter_entry(self) -> None:
+        checks: list[bool] = []
+        valid = [True]
+
+        def current() -> bool:
+            checks.append(valid[0])
+            return valid[0]
+
+        def reserved() -> None:
+            self.reserved.append(True)
+            valid[0] = False
+
+        guard = self.guard(source_current=current, on_reserved=reserved)
+        with self.assertRaises(policy.RefusedError):
+            self.call(guard)
+        self.proof(1, invoked=False)
+        self.assertEqual([], self.calls)
+        self.assertEqual([True, True, False], checks)
+
+    def test_spawn_notification_is_only_after_actual_handover(self) -> None:
+        spawned: list[bool] = []
+        group = mock.Mock()
+
+        def runner(command: Any, **kwargs: Any) -> Any:
+            self.assertEqual([], spawned)
+            kwargs["on_spawn"](group)
+            return self.runner(command, **kwargs)
+
+        self.assertEqual(
+            ("reply", "ok"),
+            self.call(self.guard(runner=runner, on_spawn=lambda: spawned.append(True))),
+        )
+        self.assertEqual([True], spawned)
+        self.assertIs(group, self.active.job.group)
