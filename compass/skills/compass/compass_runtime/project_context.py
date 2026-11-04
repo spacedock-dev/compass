@@ -8064,11 +8064,35 @@ def _declared_scripts(
         loaded = project_scripts.load(began_in, start) if start is not None else None
         if loaded is not None and not loaded.files:
             loaded = None
-    listed = frozenset(
-        words
-        for entry in reader_checks.for_project(config, began_in, listed_entry_refusal)
-        if (words := _listed_words(entry))
+    return _declared_from_inputs(
+        began_in,
+        parent,
+        children,
+        loaded,
+        reader_checks.for_project(config, began_in, listed_entry_refusal),
+        prior_writes=prior_writes,
+        calls=calls,
     )
+
+
+def _declared_from_inputs(
+    began_in: str,
+    parent: list[dict[str, Any]],
+    children: Sequence[list[dict[str, Any]]],
+    loaded: project_scripts.Declarations | None,
+    entries: Sequence[str],
+    *,
+    prior_writes: frozenset[str] = frozenset(),
+    calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
+) -> project_scripts.Declarations | None:
+    """Apply whole-corpus withdrawals to acquired metadata, without source/git reads.
+
+    Checkout-root resolution is bounded filesystem metadata; acquisition of the
+    declaration bodies and reader listing belongs to the caller.
+    """
+    if loaded is not None and not loaded.files:
+        loaded = None
+    listed = frozenset(words for entry in entries if (words := _listed_words(entry)))
     scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
     written = (
         _written_declaring_files(parent, children, also=scripts, listed=listed, calls=calls)

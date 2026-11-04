@@ -20,7 +20,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from . import io as runtime_io
 from . import project_context as context
-from . import reading_source, reading_source_final, reading_source_words
+from . import (
+    project_scripts,
+    reader_checks,
+    reading_source,
+    reading_source_final,
+    reading_source_words,
+)
 from . import reading_source_inventory as inventory_source
 from . import reading_source_stream as raw_source
 from .config import SESSION_SOURCE_PAGE_MAX_BYTES, SESSION_SOURCE_PAGE_MAX_SECONDS
@@ -75,11 +81,28 @@ _DEFAULT_LIMITS = Limits()
 
 
 @dataclass(frozen=True)
+class AncillaryInfo:
+    """Private acquisition status/counts, not measured git/kernel byte I/O.
+
+    At most one starting cwd is loaded, with the existing project-script file,
+    script and five-second git-family caps and reader listing's 64-KiB cap.
+    CI remains explicitly unavailable until the frozen-binding leaf.
+    """
+
+    origin: Literal["supplied", "acquired"] = "supplied"
+    project_scripts: Literal["supplied", "available", "unavailable", "disabled"] = "supplied"
+    ci_binding: Literal["unavailable"] = "unavailable"
+    project_loads: int = 0
+    reader_loads: int = 0
+
+
+@dataclass(frozen=True)
 class Ancillary:
     """Caller-owned frozen metadata; declarations must cover the complete corpus.
 
-    Head/declaration acquisition belongs to the caller's separate accounting.
-    CI binding is explicitly absent in this first leaf; a lazy live _CiBinding
+    Explicitly supplied head/declaration acquisition belongs to the caller.
+    Omitting Ancillary requests bounded acquisition from retained native rows.
+    CI binding is explicitly absent in this leaf; a lazy live _CiBinding
     would perform unaccounted reads and is therefore not an accepted input.
     """
 
@@ -161,15 +184,16 @@ class Collection:
     words: tuple[reading_source_words.MessageWords, ...] | None = None
     final: dict[str, Any] | None = None
     snapshot: Snapshot | None = None
+    ancillary_info: AncillaryInfo = AncillaryInfo()
 
 
 @dataclass(frozen=True)
 class _Retained:
     inventory: inventory_source.Inventory
-    ancillary: Ancillary
+    ancillary: Ancillary | None
     # The collect call still holds its caller-supplied input while the owned
     # snapshot may grow a declaration memo during projection. Charge both.
-    supplied_ancillary: Ancillary
+    supplied_ancillary: Ancillary | None
     rows: tuple[tuple[raw_source.RawRecord, ...], ...]
     cursor: raw_source.Cursor | None = None
     gaps: tuple[KnownGap, ...] = ()
@@ -180,6 +204,7 @@ class _Retained:
     final: reading_source_final.Proof | None = None
     proofs: tuple[VerifiedStream, ...] = ()
     snapshot: Snapshot | None = None
+    ancillary_info: AncillaryInfo = AncillaryInfo()
 
 
 class _StopError(Exception):
@@ -321,6 +346,68 @@ class _Collection:
             elif page.next is None:
                 raise _StopError("no_progress")
 
+    def reserve_time(self, seconds: float) -> None:
+        self.checkpoint()
+        if self.deadline - self.clock() < seconds:
+            raise _StopError("time")
+
+    def acquire_ancillary(
+        self, parent: list[dict[str, Any]], children: list[list[dict[str, Any]]]
+    ) -> None:
+        self.checkpoint()
+        # The whole verified native parent is in physical order: no clipped-tail
+        # fallback or head reread is needed to recover its first cwd/stamp.
+        began_in = next(
+            (row["cwd"] for row in parent if isinstance(row.get("cwd"), str) and row["cwd"]), ""
+        )
+        if not os.path.isabs(began_in) or "\x00" in began_in:
+            began_in = ""
+        start = context._oldest_at(parent)  # noqa: SLF001
+        info = replace(
+            self.state.ancillary_info,
+            project_scripts="unavailable" if self.config.git_probe_enabled else "disabled",
+        )
+        self.accept(replace(self.state, ancillary_info=info, ancillary=Ancillary(began_in)))
+        loaded = None
+        if self.config.git_probe_enabled and began_in and start is not None:
+            self.checkpoint()
+            # Reserve the entire existing git-family timeout before invoking it.
+            # Cache hits may be cheaper; they do not justify a smaller reservation.
+            self.reserve_time(project_scripts.GIT_TIMEOUT_SEC)
+            before_load = self.state
+            info = replace(info, project_loads=1)
+            try:
+                self.accept(replace(self.state, ancillary_info=info))
+                self.reserve_time(project_scripts.GIT_TIMEOUT_SEC)
+            except _StopError:
+                # No acquisition started: restore the already measured old graph.
+                self.state = before_load
+                raise
+            loaded = project_scripts.load(began_in, start)
+            self.checkpoint()
+            self.accept(replace(self.state, ancillary=Ancillary(began_in, loaded)))
+            # The shared project cache must not receive projection memo mutations.
+            loaded = copy.deepcopy(loaded)
+            info = replace(
+                info, project_scripts="available" if loaded and loaded.files else "unavailable"
+            )
+            self.accept(
+                replace(self.state, ancillary=Ancillary(began_in, loaded), ancillary_info=info)
+            )
+        entries: tuple[str, ...] = ()
+        if began_in:
+            self.checkpoint()
+            info = replace(info, reader_loads=1)
+            self.accept(replace(self.state, ancillary_info=info))
+            entries = reader_checks.for_project(self.config, began_in, context.listed_entry_refusal)
+            self.checkpoint()
+            self.accept(self.state, entries)
+        declared = context._declared_from_inputs(  # noqa: SLF001
+            began_in, parent, children, loaded, entries
+        )
+        self.checkpoint()
+        self.accept(replace(self.state, ancillary=Ancillary(began_in, declared)), entries)
+
     def materialize(self) -> None:
         self.checkpoint()
         streams = self.state.inventory.streams
@@ -343,7 +430,11 @@ class _Collection:
             )
             for stream, native in zip(streams, rows, strict=True)
         )
+        if self.state.ancillary is None:
+            self.acquire_ancillary(parent, children)
         ancillary = self.state.ancillary
+        if ancillary is None:
+            raise _StopError("native_incomplete")
         scan = context._CheckScan(  # noqa: SLF001
             parent,
             children,
@@ -480,6 +571,7 @@ class _Collection:
             self.state.words.results if not reason and self.state.words is not None else None,
             self.state.final.result if not reason and self.state.final is not None else None,
             self.state.snapshot if not reason else None,
+            self.state.ancillary_info,
         )
 
 
@@ -487,7 +579,7 @@ def collect(
     config: RuntimeConfig,
     inventory: inventory_source.Inventory,
     *,
-    ancillary: Ancillary,
+    ancillary: Ancillary | None = None,
     limits: Limits = _DEFAULT_LIMITS,
     page_bytes: int = 1024 * 1024,
     page_seconds: float = 0.25,
@@ -499,6 +591,9 @@ def collect(
     Reserve all three passes before I/O and recheck remaining page reservations
     after each slice. Known raw gaps survive; unknown inventory remains unknown.
     Words exist only in this call's private native state and returned evidence.
+    Without supplied ancillary inputs, declaration acquisition uses only retained
+    native head/rows. Native source_bytes excludes bounded ancillary file/git
+    work; ancillary_info records acquisition counts and unavailable CI binding.
     """
     if type(page_bytes) is not int or not 0 < page_bytes <= SESSION_SOURCE_PAGE_MAX_BYTES:
         raise ValueError("invalid collection page bytes")
@@ -510,7 +605,15 @@ def collect(
         raise ValueError("invalid collection page seconds")
     return _Collection(
         config,
-        _Retained(inventory, ancillary, ancillary, tuple(() for _ in inventory.streams)),
+        _Retained(
+            inventory,
+            ancillary,
+            ancillary,
+            tuple(() for _ in inventory.streams),
+            ancillary_info=AncillaryInfo(origin="acquired", project_scripts="unavailable")
+            if ancillary is None
+            else AncillaryInfo(),
+        ),
         limits,
         page_bytes,
         page_seconds,

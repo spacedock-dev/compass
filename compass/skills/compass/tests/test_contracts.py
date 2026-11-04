@@ -1507,6 +1507,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_source",
             "compass_runtime.reading_source_inventory",
             "compass_runtime.reading_source_stream",
+            "compass_runtime.reader_checks",
         },
         "compass_runtime.reading_source_inventory": {
             "compass_runtime.config",
