@@ -9827,6 +9827,23 @@ def transcript_window_words(
     return [fact for key, (_, fact) in found.items() if key not in ambiguous]
 
 
+def _ordinary_word_fact(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, sid: str
+) -> dict[str, Any] | None:
+    """The existing ordinary lookup's canonical identity, after raw-text admission."""
+    event = _instruction_event(config, record, harness, sid)
+    kind, fact_type = "steer", "user_message"
+    if event is None:
+        event = _agent_message_event(config, record, harness, sid)
+        kind, fact_type = "agent_say", "agent_message"
+    return _semantic_fact_from_event(event, kind, fact_type, "") if event is not None else None
+
+
+def _ordinary_word_signature(record: dict[str, Any]) -> str:
+    """Compare complete raw records, never their possibly equal masked text."""
+    return hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+
+
 def transcript_message_words(  # noqa: C901, PLR0912 - source identity and retention guards
     config: RuntimeConfig,
     path: str,
@@ -9876,18 +9893,13 @@ def transcript_message_words(  # noqa: C901, PLR0912 - source identity and reten
                         ambiguous.add(key)
                         found.pop(key, None)
                 continue
-            event = _instruction_event(config, record, harness, sid)
-            kind, fact_type = "steer", "user_message"
-            if event is None:
-                event = _agent_message_event(config, record, harness, sid)
-                kind, fact_type = "agent_say", "agent_message"
-            if event is None:
+            fact = _ordinary_word_fact(config, record, harness, sid)
+            if fact is None:
                 continue
-            fact = _semantic_fact_from_event(event, kind, fact_type, "")
             key = (fact["fact_id"], fact["at"])
             if key not in priorities or key in ambiguous:
                 continue
-            signature = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+            signature = _ordinary_word_signature(record)
             if key in signatures:
                 if signatures[key] != signature:
                     ambiguous.add(key)

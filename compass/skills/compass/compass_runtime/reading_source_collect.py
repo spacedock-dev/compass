@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from . import io as runtime_io
 from . import project_context as context
-from . import reading_source
+from . import reading_source, reading_source_words
 from . import reading_source_inventory as inventory_source
 from . import reading_source_stream as raw_source
 from .config import SESSION_SOURCE_PAGE_MAX_BYTES, SESSION_SOURCE_PAGE_MAX_SECONDS
@@ -103,6 +103,7 @@ class Collection:
     inventory_gaps: tuple[inventory_source.InventoryGap, ...]
     # Whole streams are unavailable if any input/projection cannot be admitted.
     unavailable_streams: tuple[int, ...]
+    words: tuple[reading_source_words.MessageWords, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ class _Retained:
     gaps: tuple[KnownGap, ...] = ()
     scan: context._CheckScan | None = None
     evidence: reading_source.CanonicalEvidence | None = None
+    words: reading_source_words.Join | None = None
 
 
 class _StopError(Exception):
@@ -291,6 +293,32 @@ class _Collection:
         self.checkpoint()
         self.accept(replace(self.state, evidence=evidence))
 
+    def join_words(self) -> None:
+        self.checkpoint()
+        evidence = self.state.evidence
+        if evidence is None:
+            raise _StopError("native_incomplete")
+        parent = self.state.inventory.streams[0].cursor.frozen
+        join = reading_source_words.Join.begin(evidence.facts, parent)
+        self.accept(replace(self.state, words=join))
+        rows = self.state.rows[0]
+        # G2 observes newest physical records first; queued messages still bind
+        # their own typing time rather than the absorption time.
+        for position in reversed(range(len(rows))):
+            self.checkpoint()
+            candidate = join.observe(self.config, rows[position], position)
+            self.checkpoint()
+            # Ignored rows and identical duplicates retain exactly the same
+            # join. Rewalking the whole corpus for them makes this pass quadratic.
+            if candidate is not join:
+                self.accept(replace(self.state, words=candidate))
+                join = candidate
+        for key in join.identities:
+            self.checkpoint()
+            candidate = join.materialize(self.config, key, rows)
+            self.accept(replace(self.state, words=candidate))
+            join = candidate
+
     def prepare(self) -> None:
         self.checkpoint()
         self.accept(self.state)
@@ -306,6 +334,7 @@ class _Collection:
             for index in range(len(self.state.inventory.streams)):
                 self.read_stream(index)
             self.materialize()
+            self.join_words()
             self.checkpoint()
         except _StopError as exc:
             reason = exc.reason
@@ -319,6 +348,7 @@ class _Collection:
             self.state.gaps,
             self.state.inventory.gaps,
             tuple(range(len(self.state.inventory.streams))) if reason else (),
+            self.state.words.results if not reason and self.state.words is not None else None,
         )
 
 
