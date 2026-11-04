@@ -1432,6 +1432,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Pure byte/estimated-context policy; no route discovery or execution.
         "compass_runtime.reading_capacity": set(),
         "compass_runtime.analyze_diagnostics": set(),
+        "compass_runtime.reading_pass_types": {"compass_runtime.analyze_diagnostics"},
         "compass_runtime.analyze_capacity": {
             "compass_runtime.claude_settings",
             "compass_runtime.reading_capacity",
