@@ -1,3 +1,4 @@
+import { LongProgress } from './LongProgress';
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { useEffect, type ReactNode } from 'react';
@@ -192,23 +193,27 @@ export function JobBox({
           }}
         />
       </div>
-      <ol className="next-cockpit-reading-steps">
-        {steps.map((step, index) => {
-          const state = at < 0 || index > at ? 'todo' : index < at ? 'done' : 'active';
-          return (
-            <li
-              // The steps are the server's, in its order, with no ids of their own.
-              key={index}
-              className="next-cockpit-reading-step"
-              data-state={state}
-              {...(state === 'active' ? { 'aria-current': 'step' as const } : {})}
-            >
-              <span className="next-cockpit-reading-step-mark" aria-hidden="true" />
-              <span>{String((step as Row | null)?.['text'] || '')}</span>
-            </li>
-          );
-        })}
-      </ol>
+      {job['mode'] === 'long' ? (
+        <LongProgress job={job} />
+      ) : (
+        <ol className="next-cockpit-reading-steps">
+          {steps.map((step, index) => {
+            const state = at < 0 || index > at ? 'todo' : index < at ? 'done' : 'active';
+            return (
+              <li
+                // The steps are the server's, in its order, with no ids of their own.
+                key={index}
+                className="next-cockpit-reading-step"
+                data-state={state}
+                {...(state === 'active' ? { 'aria-current': 'step' as const } : {})}
+              >
+                <span className="next-cockpit-reading-step-mark" aria-hidden="true" />
+                <span>{String((step as Row | null)?.['text'] || '')}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
       <p className="next-cockpit-reading-job-note">{running ? JOB_NOTE_SO_FAR : JOB_NOTE}</p>
       {mine?.failed && !finishing ? (
         <p className="next-cockpit-reading-why">{CANCEL_FAILED}</p>

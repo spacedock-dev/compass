@@ -104,6 +104,32 @@ const optionalCount = (value: unknown): boolean => value === null || count(value
 const oneOf = (value: unknown, allowed: readonly string[]): boolean =>
   typeof value === 'string' && allowed.includes(value);
 
+/** The same closed declaration used by native long Job progress and pre-start previews. */
+export type LongResourcePlan = NonNullable<LongPlanDescriptor['plan']>;
+export function longResourcePlan(value: unknown): LongResourcePlan | null {
+  const plan = value;
+  if (
+    !keys(plan, [
+      'version',
+      'mode',
+      'max_evidence_passes',
+      'max_reconciliation_passes',
+      'max_calls',
+      'limits',
+    ]) ||
+    plan['version'] !== 1 ||
+    plan['mode'] !== 'long' ||
+    !positive(plan['max_evidence_passes']) ||
+    plan['max_evidence_passes'] > 16 ||
+    plan['max_reconciliation_passes'] !== 1 ||
+    plan['max_calls'] !== plan['max_evidence_passes'] + 1 ||
+    !keys(plan['limits'], LIMITS) ||
+    !Object.values(plan['limits']).every(positive)
+  )
+    return null;
+  return JSON.parse(JSON.stringify(plan)) as LongResourcePlan;
+}
+
 export function longPlan(value: unknown): LongPlanDescriptor | null {
   if (
     !keys(value, [
@@ -223,26 +249,7 @@ export function longPlan(value: unknown): LongPlanDescriptor | null {
   )
     return null;
   const plan = value['plan'];
-  if (
-    plan !== null &&
-    (!keys(plan, [
-      'version',
-      'mode',
-      'max_evidence_passes',
-      'max_reconciliation_passes',
-      'max_calls',
-      'limits',
-    ]) ||
-      plan['version'] !== 1 ||
-      plan['mode'] !== 'long' ||
-      !positive(plan['max_evidence_passes']) ||
-      plan['max_evidence_passes'] > 16 ||
-      plan['max_reconciliation_passes'] !== 1 ||
-      plan['max_calls'] !== plan['max_evidence_passes'] + 1 ||
-      !keys(plan['limits'], LIMITS) ||
-      !Object.values(plan['limits']).every(positive))
-  )
-    return null;
+  if (plan !== null && longResourcePlan(plan) === null) return null;
   const prompt = value['prompt'];
   if (
     !keys(prompt, ['saved_ceiling_bytes', 'route_ceiling_bytes', 'fit_verified']) ||
