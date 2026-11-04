@@ -7,22 +7,30 @@ import hashlib
 import json
 import re
 import unittest
+from typing import TYPE_CHECKING, Any
 
 from compass_runtime import (
     analyze_capacity,
     reading,
     reading_final_call,
+    reading_long_markers,
     reading_map_series,
     reading_passes,
     reading_policy,
+    reading_source_collect,
 )
 
 from . import test_reading_map_series as series_tests
 from . import test_reading_source_final as source_tests
+from .test_claude_checks import SHORT
+from .test_reading_source import CompleteReadingSourceTest
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class UsefulLongReconciliationTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.source = source_tests.RetainedStrictFinalTest()
         self.source.setUp()
         self.addCleanup(self.source.doCleanups)
@@ -37,13 +45,13 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             output_bytes=17 * 8192,
         )
         self.marker.begin()
-        self.calls = []
-        self.failed_map = None
+        self.calls: list[tuple[int, str, int]] = []
+        self.failed_map: int | None = None
         self.fail_middle = False
         self.always_consistent = False
         self.agent_hypothesis = False
 
-    def collect_large(self, *, repair=False, write=False):
+    def collect_large(self, *, repair: bool = False, write: bool = False) -> None:
         for index in range(24):
             self.source.say(f"Context {index:02}. " + "x" * (128 * 1024 - 15), "tool_use")
             if index == 12:
@@ -55,21 +63,28 @@ class UsefulLongReconciliationTest(unittest.TestCase):
         self.source.say(
             "Correction: earlier claims of completion are withdrawn. Check the recorded retry results."
         )
-        collection = self.source.collect()
+        collection: reading_source_collect.Collection = self.source.collect()
+        assert collection.evidence is not None
+        assert collection.words is not None
+        assert collection.final is not None
         self.assertGreater(self.source.path.stat().st_size, 3 * 1024 * 1024)
         self.assertTrue(collection.source_verified)
         self.assertEqual("", collection.reason)
         self.assertEqual("whole", collection.final["outcome"])
         self.assertLess(len(collection.final["words"]), 16384)
-        self.assertTrue(all(w.total < 256 * 1024 for w in collection.words if w.state == "whole"))
-        facts = collection.evidence.facts
-        output = source_tests.source_tests.CompleteReadingSourceTest.output(
-            collection.evidence.press
+        self.assertTrue(
+            all(
+                w.total is not None and w.total < 256 * 1024
+                for w in collection.words
+                if w.state == "whole"
+            )
         )
+        facts = collection.evidence.facts
+        output = CompleteReadingSourceTest.output(collection.evidence.press)
         self.inputs = reading_final_call.Inputs(
             {
                 "harness": "claude",
-                "sid": source_tests.SHORT,
+                "sid": SHORT,
                 "state": "idle",
                 "annotation_assessment": {"detail": "STORED_READING_CANARY"},
                 "ended_at": max(f["at"] for f in facts) + 10,
@@ -114,8 +129,8 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             o.row["id"] for o in self.originals if o.row.get("subject") == reading.CHECK_SUBJECT
         )
 
-    def model_for(self, ordinal):
-        def reserve(prompt, cap):
+    def model_for(self, ordinal: int) -> reading_policy.GuardedModel:
+        def reserve(prompt: str, cap: int) -> reading_long_markers.Permit:
             self.assertEqual(8192, cap)
             request = self.marker.fixture.request(self.marker.owner, ordinal)
             request.update(
@@ -128,7 +143,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
                 self.marker.fixture.config, self.marker.owner, request=request, now=100
             )
 
-        def transport(prompt, *, output_cap_bytes):
+        def transport(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             self.calls.append((ordinal, prompt, output_cap_bytes))
             match = re.search(r"^\[(\d+)\] tool_report.*tests/retry\.py", prompt, re.MULTILINE)
             cites = [int(match[1])] if match else []
@@ -150,6 +165,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             if self.agent_hypothesis and ordinal == 1:
                 agent = re.search(r"^\[(\d+)\] agent_message", prompt, re.MULTILINE)
                 self.assertIsNotNone(agent)
+                assert agent is not None
                 cites = [int(agent[1])]
             return json.dumps(
                 {
@@ -178,7 +194,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             ),
         )
 
-    def run_maps(self):
+    def run_maps(self) -> reading_map_series.Series:
         return reading_map_series.run(
             self.originals,
             goal=self.inputs.revision["goal"],
@@ -192,7 +208,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             final=self.final,
         )
 
-    def invoke(self, series):
+    def invoke(self, series: reading_map_series.Series) -> reading_final_call.Result:
         return reading_final_call.run(
             self.originals,
             series,
@@ -208,7 +224,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
 
     def test_three_megabyte_actual_plan_retains_middle_check_departure_without_global_reassurance(
         self,
-    ):
+    ) -> None:
         self.collect_large()
         series = self.run_maps()
         self.assertGreater(len(series.passes), 1)
@@ -230,8 +246,10 @@ class UsefulLongReconciliationTest(unittest.TestCase):
         )
         result = self.invoke(series)
         self.assertEqual("partial", result.state)
+        assert result.criteria is not None
         self.assertEqual(reading.RESULT_DEPARTURE, result.criteria["line_1"]["result"])
         self.assertEqual((self.middle,), result.criteria["line_1"]["cites"])
+        assert result.packet is not None
         self.assertFalse(result.packet.selection.agent_words_whole)
         self.assertNotIn("STORED_READING_CANARY", result.packet.prompt)
         for name in ("goal", "line_2", "claims"):
@@ -240,11 +258,14 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             self.assertEqual((), result.criteria[name]["cites"])
         self.assertEqual(len(series.passes) + 1, self.marker.fixture.spends())
 
-    def test_failed_middle_map_keeps_later_evidence_but_withholds_always_consistent_final(self):
+    def test_failed_middle_map_keeps_later_evidence_but_withholds_always_consistent_final(
+        self,
+    ) -> None:
         self.collect_large()
         self.fail_middle = self.always_consistent = True
         series = self.run_maps()
         self.assertTrue(series.failed_primary)
+        assert self.failed_map is not None
         self.assertGreater(len(series.passes), self.failed_map)
         self.assertEqual("mapped", series.passes[-1].state)
         result = self.invoke(series)
@@ -253,12 +274,13 @@ class UsefulLongReconciliationTest(unittest.TestCase):
         self.assertIn("map-unresolved", result.unresolved)
         self.assertEqual(len(series.passes) + 1, self.marker.fixture.spends())
 
-    def test_repaired_check_and_later_write_do_not_preserve_stale_middle_departure(self):
+    def test_repaired_check_and_later_write_do_not_preserve_stale_middle_departure(self) -> None:
         self.collect_large(repair=True, write=True)
         series = self.run_maps()
         self.assertFalse(series.failed_primary or series.unassigned_primary)
         result = self.invoke(series)
         self.assertEqual("partial", result.state)
+        assert result.packet is not None
         self.assertTrue(
             any(
                 row.get("stale")
@@ -266,13 +288,14 @@ class UsefulLongReconciliationTest(unittest.TestCase):
                 if row.get("subject") == reading.CHECK_SUBJECT
             )
         )
+        assert result.criteria is not None
         self.assertEqual(reading.RESULT_UNVERIFIABLE, result.criteria["line_1"]["result"])
         self.assertEqual((), result.criteria["line_1"]["cites"])
         self.assertTrue(
             all(c["result"] != reading.RESULT_CONSISTENT for c in result.criteria.values())
         )
 
-    def test_agent_hypothesis_requires_unfit_later_original_retraction_context(self):
+    def test_agent_hypothesis_requires_unfit_later_original_retraction_context(self) -> None:
         self.collect_large()
         self.agent_hypothesis = True
         series = self.run_maps()
@@ -284,20 +307,25 @@ class UsefulLongReconciliationTest(unittest.TestCase):
         self.assertNotIn(17, [ordinal for ordinal, _prompt, _cap in self.calls])
         self.assertEqual(len(series.passes), self.marker.fixture.spends())
 
-    def test_strict_final_never_splits_or_uses_named_unfit_fallback(self):
+    def test_strict_final_never_splits_or_uses_named_unfit_fallback(self) -> None:
         self.source.say("Final words. " + "x" * 500)
-        collection = self.source.collect()
+        collection: reading_source_collect.Collection = self.source.collect()
+        assert collection.evidence is not None
+        assert collection.words is not None
+        assert collection.final is not None
         proof = collection.final
         row = next(
             row
             for row in reading.build_ledger(
-                collection.evidence.facts, "claude", source_tests.SHORT, read_agent_words=True
+                collection.evidence.facts, "claude", SHORT, read_agent_words=True
             )
             if row["id"] == proof["fact_id"]
         )
         original = reading_passes.Original(row, proof["words"], "whole")
 
-        def plan(max_bytes, final=proof):
+        def plan(
+            max_bytes: int, final: Mapping[str, Any] | None = proof
+        ) -> reading_passes.PacketPlan:
             return reading_passes.plan_packets(
                 [original],
                 goal="Goal",
