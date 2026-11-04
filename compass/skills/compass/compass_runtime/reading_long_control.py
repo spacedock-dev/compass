@@ -42,6 +42,9 @@ def admit(
         or (header["lineage"], header["epoch"]) != (permission.lineage, permission.epoch)
     ):
         return None
+    publication = header.get("publication")
+    if publication is not None and session_key != f"{publication['harness']}:{publication['sid']}":
+        return None
     ui_job = reading.start_job(
         config, session_key, provider=provider, label=label, now=now, prepared_job_id=job.job_id
     )

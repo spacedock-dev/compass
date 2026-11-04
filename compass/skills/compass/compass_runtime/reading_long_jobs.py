@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import reading_pass_types
+from . import events, reading_pass_types
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -44,10 +44,34 @@ def _hex(value: Any, size: int) -> bool:
     )
 
 
+def _publication(value: Any) -> dict[str, Any] | None:
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"harness", "sid", "incarnation", "revision"}
+        or not isinstance(value["harness"], str)
+        or not isinstance(value["sid"], str)
+        # Match annotations.KEY_CAP_CHARS without importing its store upward.
+        or not 0 < len(value["sid"]) <= 64
+        or events.normalize_session_id(value["harness"], value["sid"]) != value["sid"]
+        or not _hex(value["incarnation"], 32)
+        or type(value["revision"]) is not int
+        or not 0 < value["revision"] < 2**53
+    ):
+        return None
+    return dict(value)
+
+
+def publication_digest(value: Any) -> str | None:
+    """Canonical target binding for validated routing identity; grants no authority."""
+    checked = _publication(value)
+    return digest(checked) if checked is not None else None
+
+
 def _binding(value: Any) -> dict[str, Any] | None:
-    if not isinstance(value, dict) or set(value) != _FIELDS:
+    if not isinstance(value, dict) or set(value) - {"publication"} != _FIELDS:
         return None
     plan = reading_pass_types.validate_plan(value["plan"])
+    publication = _publication(value.get("publication"))
     if (
         plan is None
         or type(value["started_at"]) not in (int, float)
@@ -60,9 +84,18 @@ def _binding(value: Any) -> dict[str, Any] | None:
             _hex(value[field], 64)
             for field in ("scope_sha256", "target_sha256", "destination_sha256")
         )
+        or (
+            value.get("publication") is not None
+            and (publication is None or publication_digest(publication) != value["target_sha256"])
+        )
     ):
         return None
-    return {**value, "started_at": float(value["started_at"]), "plan": plan}
+    return {
+        **value,
+        "started_at": float(value["started_at"]),
+        "plan": plan,
+        **({"publication": publication} if "publication" in value else {}),
+    }
 
 
 @dataclass(frozen=True)
@@ -121,14 +154,19 @@ def validate_header(value: Any, job_id: Any) -> dict[str, Any] | None:
     """Copy stored word-free identity metadata; never construct live authority."""
     if (
         not isinstance(value, dict)
-        or set(value) != _FIELDS | {"version", "nonce", "lineage", "epoch"}
+        or set(value) - {"publication"} != _FIELDS | {"version", "nonce", "lineage", "epoch"}
         or type(value["version"]) is not int
         or value["version"] != 1
         or not _hex(value["nonce"], 32)
         or not _hex(value["lineage"], 32)
         or type(value["epoch"]) is not int
         or not 0 <= value["epoch"] < 2**63
-        or (checked := _binding({key: value[key] for key in _FIELDS})) is None
+        or (
+            checked := _binding(
+                {key: value[key] for key in _FIELDS | {"publication"} if key in value}
+            )
+        )
+        is None
         or digest(value)[:32] != job_id
     ):
         return None
