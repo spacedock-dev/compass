@@ -1,0 +1,199 @@
+"""Requested Analyze admits the actual prompt before any durable reservation."""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import inspect
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+from typing import Any
+from unittest import mock
+
+from compass_runtime import claude_settings, observer, reading, reading_policy, supervise
+
+from .support import make_runtime
+
+
+class AnalyzeAdmissionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.config, _ = make_runtime(state_dir=Path(directory.name), state_home=directory.name)
+        patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def guard(self, model: Any, **kwargs: Any) -> Any:
+        self.assertIn("admit_prompt", inspect.signature(reading_policy.GuardedModel).parameters)
+        return reading_policy.GuardedModel(self.config, model, lambda: 100.0, **kwargs)
+
+    def module(self) -> Any:
+        self.assertIsNotNone(importlib.util.find_spec("compass_runtime.analyze_capacity"))
+        return importlib.import_module("compass_runtime.analyze_capacity")
+
+    def test_actual_prompt_refusal_precedes_marker_reservation_and_spawn(self) -> None:
+        model = mock.Mock(return_value=("reply", "ok"))
+        model.available = mock.Mock(return_value=True)
+        marker, reserved = mock.Mock(), mock.Mock()
+        admission = mock.Mock(return_value="context-admission")
+        guarded = self.guard(
+            model, admit_prompt=admission, before_reserve=marker, on_reserved=reserved
+        )
+        with mock.patch.object(reading_policy, "reserve") as reserve:
+            self.assertEqual(
+                ("", "context-admission"), guarded("assembled 界🙂", output_cap_bytes=1)
+            )
+        admission.assert_called_once_with("assembled 界🙂")
+        marker.assert_not_called()
+        reserve.assert_not_called()
+        reserved.assert_not_called()
+        model.assert_not_called()
+        self.assertFalse(guarded.reserved)
+
+    def test_admitted_call_keeps_the_existing_marker_charge_spawn_order(self) -> None:
+        order: list[str] = []
+
+        def model(*_args: Any, **_kwargs: Any) -> tuple[str, str]:
+            order.append("model")
+            return "reply", "ok"
+
+        guarded = self.guard(
+            model,
+            admit_prompt=lambda _prompt: order.append("admit"),
+            before_reserve=lambda: order.append("marker"),
+            on_reserved=lambda: order.append("reserved"),
+        )
+        self.assertEqual(("reply", "ok"), guarded("small", output_cap_bytes=1))
+        self.assertEqual(["admit", "marker", "reserved", "model"], order)
+        self.assertTrue(guarded.reserved)
+
+    def test_pause_cancel_shutdown_and_moved_destination_outrank_capacity(self) -> None:
+        for gate in ("pause", "cancel", "shutdown", "destination"):
+            with self.subTest(gate=gate):
+                admission = mock.Mock(return_value="context-admission")
+                model = mock.Mock(return_value=("reply", "ok"))
+                model.available = mock.Mock(return_value=True)
+                guarded = self.guard(
+                    model,
+                    admit_prompt=admission,
+                    cancelled=lambda gate=gate: gate == "cancel",
+                    destination="before",
+                    resolve_destination=lambda gate=gate: (
+                        "after" if gate == "destination" else "before"
+                    ),
+                )
+                if gate == "pause":
+                    reading_policy.set_consent(self.config, False, now=100)
+                if gate == "shutdown":
+                    supervise._SHUTDOWN.set()
+                if gate in {"pause", "destination"}:
+                    with self.assertRaises(reading_policy.RefusedError):
+                        guarded("large", output_cap_bytes=1)
+                else:
+                    self.assertEqual(
+                        "cancelled" if gate == "cancel" else "closed",
+                        guarded("large", output_cap_bytes=1)[1],
+                    )
+                admission.assert_not_called()
+                model.assert_not_called()
+                reading_policy.resume(self.config, now=100)
+                supervise._SHUTDOWN.clear()
+
+    def test_policy_failure_after_reservation_has_a_different_spend_status(self) -> None:
+        guarded = self.guard(
+            lambda *_a, **_k: ("", "context-config"), admit_prompt=lambda _prompt: None
+        )
+        result = guarded("small", output_cap_bytes=1)
+        self.assertEqual(("", "context-config-after-reserve"), result)
+        self.assertTrue(guarded.reserved)
+        late = reading._call_failed(guarded, result[1])
+        initial = reading._call_failed(guarded, "context-config")
+        assert late is not None and initial is not None
+        self.assertTrue(late[1])
+        self.assertFalse(initial[1])
+
+    def test_cancellation_during_admission_never_reaches_the_marker(self) -> None:
+        cancelled = threading.Event()
+        marker = mock.Mock()
+
+        def admit(_prompt: str) -> None:
+            cancelled.set()
+
+        guarded = self.guard(
+            mock.Mock(), admit_prompt=admit, cancelled=cancelled.is_set, before_reserve=marker
+        )
+        self.assertEqual(("", "cancelled"), guarded("small", output_cap_bytes=1))
+        marker.assert_not_called()
+        self.assertFalse(guarded.reserved)
+
+    def test_high_requested_maximum_is_independent_of_a_small_actual_prompt(self) -> None:
+        admission = self.module().Admission("codex", "unknown", "", requested_maximum=2_097_152)
+        self.assertIsNone(admission("small 界🙂"))
+        self.assertEqual(13, admission.measurement["prompt_bytes"])
+        self.assertFalse(admission.measurement["fit_verified"])
+        self.assertEqual("context-admission", admission("x" * 524_289))
+        self.assertEqual(2_097_152, admission.measurement["requested_maximum"])
+
+    def test_capacity_rechecks_reduced_dynamic_and_empty_windows_at_the_call(self) -> None:
+        module = self.module()
+        admission = module.Admission(
+            "claude", "claude-sonnet-5-5", "system", requested_maximum=2_097_152
+        )
+        for controls, expected in (
+            (
+                claude_settings.Controls(deployment="direct", window_limits=(200_000,)),
+                "context-admission",
+            ),
+            (
+                claude_settings.Controls(deployment="direct", window_limits=(128_000,)),
+                "context-no-room",
+            ),
+            (claude_settings.Controls(refusal="dynamic-policy"), "context-dynamic"),
+            (claude_settings.Controls(refusal="fallback-policy-conflict"), "context-fallback"),
+            (claude_settings.Controls(refusal="context-config"), "context-config"),
+        ):
+            with (
+                self.subTest(expected=expected),
+                mock.patch.object(claude_settings, "resolve", return_value=controls),
+            ):
+                self.assertEqual(expected, admission("x" * 200_000))
+                self.assertFalse(admission.measurement["fit_verified"])
+        with mock.patch.object(
+            claude_settings, "resolve", return_value=claude_settings.Controls(deployment="direct")
+        ):
+            self.assertIsNone(admission("x" * 200_000))
+
+    def test_default_and_unasked_guards_do_not_apply_analyze_admission(self) -> None:
+        admission = mock.Mock(return_value="context-admission")
+
+        def model(*_args: Any, **_kwargs: Any) -> tuple[str, str]:
+            return "reply", "ok"
+
+        self.assertEqual(("reply", "ok"), self.guard(model)("small", output_cap_bytes=1))
+        with mock.patch.object(reading_policy, "unasked_status", return_value={"reason": ""}):
+            guarded = self.guard(model, admit_prompt=admission, unasked=True)
+            self.assertEqual(("reply", "ok"), guarded("small", output_cap_bytes=1))
+        admission.assert_not_called()
+
+    def test_model_and_provenance_use_the_same_explicit_analyze_option(self) -> None:
+        self.assertIn("analyze", inspect.signature(reading.ClaudeReadingModel).parameters)
+        for analyze in (False, True):
+            with (
+                self.subTest(analyze=analyze),
+                mock.patch.object(observer, "claude_exec", return_value=("{}", "ok")) as execute,
+            ):
+                model = reading.ClaudeReadingModel(self.config, analyze=analyze)
+                self.assertEqual(("{}", "ok"), model("unchanged", output_cap_bytes=1))
+                self.assertEqual(analyze, execute.call_args.kwargs["analyze"])
+                provenance = model.provenance()
+                self.assertEqual(
+                    observer.claude_reading_provenance(self.config, analyze=analyze), provenance
+                )
+                self.assertIsNone(provenance["resolved_model"])
+        self.assertNotEqual(
+            observer.claude_reading_provenance(self.config)["envelope_digest"],
+            observer.claude_reading_provenance(self.config, analyze=True)["envelope_digest"],
+        )

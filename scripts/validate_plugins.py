@@ -480,6 +480,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/claude_settings.py",
     "skills/compass/compass_runtime/reading.py",
     "skills/compass/compass_runtime/reading_capacity.py",
+    "skills/compass/compass_runtime/analyze_capacity.py",
     "skills/compass/compass_runtime/reading_policy.py",
     "skills/compass/compass_runtime/reading_route.py",
     "skills/compass/compass_runtime/levels.py",

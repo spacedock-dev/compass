@@ -809,6 +809,7 @@ class GuardedModel:
         content: int = CONTENT_VERSION,
         unasked: bool = False,
         reserve_with: Callable[..., Status] | None = None,
+        admit_prompt: Callable[[str], str | None] | None = None,
     ) -> None:
         if reserve_with is not None and before_reserve is not None:
             # `before_reserve` returns the job id the charge is recorded under, and a ledger of
@@ -821,6 +822,8 @@ class GuardedModel:
         # A ledger of its own for a caller that must not spend Analyze's budget: the Live monitor
         # charges `reserve_monitor` here, at the same seam and in the same order.
         self.reserve_with = reserve_with
+        self.admit_prompt = admit_prompt
+        self.reserved = False
         self.model = model
         self.clock = clock
         self.provider = provider
@@ -862,19 +865,43 @@ class GuardedModel:
             content=self.content,
         )
 
-    def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+    def _preflight(self) -> str | None:
         available = getattr(self.model, "available", None)
         if available is not None and not available():
-            return "", "unavailable"
+            return "unavailable"
         if supervise.closed():
-            # Compass is stopping and the call could never be sent, so it is
-            # refused before the reservation rather than charged (verify N4).
-            return "", "closed"
+            return "closed"
         if self.cancelled is not None and self.cancelled():
-            return "", "cancelled"
+            return "cancelled"
         if self.resolve_destination is not None and self.resolve_destination() != self.destination:
-            # The press-time notice cannot cover a destination that moved mid-job.
             raise RefusedError(_answer(reason=DESTINATION_MOVED))
+        return None
+
+    def _admission(self, prompt: str) -> str | None:
+        if self.admit_prompt is None:
+            return None
+        # Pause/consent precede capacity work. The reservation transaction
+        # authoritatively checks them again before committing a charge.
+        answer = status(
+            self.config,
+            now=self.clock(),
+            provider=self.provider,
+            destinations={self.provider: self.destination},
+            content=self.content,
+        )
+        if answer["reason"]:
+            raise RefusedError(answer)
+        refusal = self.admit_prompt(prompt)
+        if refusal is not None:
+            return refusal
+        # Configuration reads can take time. Recheck the live gates before
+        # reaching either the job marker or the reservation.
+        return self._preflight()
+
+    def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+        self.reserved = False
+        if refusal := self._preflight():
+            return "", refusal
         if self.unasked:
             answer = unasked_status(
                 self.config, now=self.clock(), provider=self.provider, destination=self.destination
@@ -882,16 +909,22 @@ class GuardedModel:
             if answer["reason"]:
                 raise RefusedError(answer)
             return self.model(prompt, output_cap_bytes=output_cap_bytes)
+        if refusal := self._admission(prompt):
+            return "", refusal
         answer = self._reserve()
         if answer["reason"] == "stopping":
-            # The shutdown reached the reservation before its commit, so the
-            # call is the stop the early look above would have refused.
             return "", "closed"
         if answer["reason"]:
             raise RefusedError(answer)
+        self.reserved = True
         if self.on_reserved is not None:
             self.on_reserved()
-        return self.model(prompt, output_cap_bytes=output_cap_bytes)
+        raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
+        # A last-moment managed-policy change can stop the child after the
+        # reservation. It must not inherit the initial refusal's unspent claim.
+        if outcome == "context-config":
+            outcome = "context-config-after-reserve"
+        return raw, outcome
 
 
 def note(

@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 from compass_runtime import (
     aggregate,
+    claude_settings,
     cli,
     departures,
     http_api,
@@ -2997,6 +2998,97 @@ class ReadingRouteTest(unittest.TestCase):
     spending the reader's own capacity has not held, and a status code alone
     cannot tell those apart.
     """
+
+    def test_capacity_changed_during_collection_refuses_before_any_charge(self) -> None:
+        config, state = self._runtime()
+        controls = [claude_settings.Controls(deployment="direct")]
+
+        def collected() -> None:
+            controls[0] = claude_settings.Controls(deployment="direct", window_limits=(128_000,))
+
+        with (
+            self._counting_model(
+                installed=("claude",), harness="claude", on_collect=collected
+            ) as calls,
+            mock.patch.object(
+                claude_settings, "resolve", side_effect=lambda *_a, **_kw: controls[0]
+            ),
+            self._serving(self._app(config, state, "claude")) as port,
+        ):
+            status, _body = self._post(port, self._claude_press(provider="claude"))
+            self.assertEqual(202, status)
+        self.assertEqual([], calls)
+        self.assertEqual(
+            [{"produced": False, "reason": "context-no-room", "spent": False}], self.outcomes
+        )
+        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
+
+    def test_requested_claude_reading_reopens_after_its_analyze_envelope_changes(self) -> None:
+        config, state = self._runtime()
+        with (
+            self._counting_model(installed=("claude",), harness="claude") as calls,
+            mock.patch.object(
+                claude_settings,
+                "resolve",
+                return_value=claude_settings.Controls(deployment="direct"),
+            ),
+            self._serving(self._app(config, state, "claude")) as port,
+        ):
+            status, _body = self._post(port, self._claude_press(provider="claude"))
+            self.assertEqual(202, status)
+        self.assertEqual(1, len(calls))
+        entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
+        assert entry is not None
+        self.assertEqual(entry["assessment"], annotation_store.published(entry)["assessment"])
+        self.assertEqual("", annotation_store.published(entry)["reading_withheld"])
+        self.assertEqual(1, annotation_store.published(entry)["reading_count"])
+
+    def test_actual_assembled_prompt_is_refused_without_rebuilding_to_fit(self) -> None:
+        config, state = self._runtime()
+        with (
+            self._counting_model(installed=("claude",), harness="claude") as calls,
+            mock.patch.object(
+                claude_settings,
+                "resolve",
+                return_value=claude_settings.Controls(
+                    deployment="direct", window_limits=(145_000,)
+                ),
+            ),
+            mock.patch.object(
+                runtime_reading, "build_prompt", wraps=runtime_reading.build_prompt
+            ) as build,
+            self._serving(self._app(config, state, "claude")) as port,
+        ):
+            status, _body = self._post(port, self._claude_press(provider="claude"))
+            self.assertEqual(202, status)
+        self.assertEqual(1, build.call_count)
+        self.assertEqual([], calls)
+        self.assertEqual(
+            [{"produced": False, "reason": "context-admission", "spent": False}], self.outcomes
+        )
+        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
+
+    def test_configuration_failure_after_charge_is_recorded_as_a_counted_attempt(self) -> None:
+        config, state = self._runtime()
+        with (
+            self._counting_model(
+                installed=("claude",), harness="claude", status="context-config"
+            ) as calls,
+            mock.patch.object(
+                claude_settings,
+                "resolve",
+                return_value=claude_settings.Controls(deployment="direct"),
+            ),
+            self._serving(self._app(config, state, "claude")) as port,
+        ):
+            status, _body = self._post(port, self._claude_press(provider="claude"))
+            self.assertEqual(202, status)
+        self.assertEqual(1, len(calls))
+        self.assertEqual(
+            [{"produced": False, "reason": "context-config-after-reserve", "spent": True}],
+            self.outcomes,
+        )
+        self.assertEqual(1, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
     def _runtime(self, **changes: Any) -> Any:
         home = tempfile.mkdtemp()

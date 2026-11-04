@@ -19,9 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import ParseResult, parse_qs, urlparse
 
-from compass_runtime import annotations as annotation_store
-from compass_runtime import asks as runtime_asks
 from compass_runtime import (
+    analyze_capacity,
     ci_read,
     copied_corrections,
     correction,
@@ -45,6 +44,8 @@ from compass_runtime import (
     summary_store,
     tripwires,
 )
+from compass_runtime import annotations as annotation_store
+from compass_runtime import asks as runtime_asks
 from compass_runtime import events as runtime_events
 from compass_runtime import io as runtime_io
 from compass_runtime import observer as runtime_observer
@@ -4056,7 +4057,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 on_phase=hooks.phase,
                 max_prompt_bytes=limits.analyze_prompt_bytes,
                 **self._reading_arguments(
-                    row, entry, route, hooks, limits.analyze_scan_megabytes * 1024 * 1024
+                    row,
+                    entry,
+                    route,
+                    hooks,
+                    limits.analyze_scan_megabytes * 1024 * 1024,
+                    limits.analyze_prompt_bytes,
                 ),
             )
             assessment = outcome[0]
@@ -4080,6 +4086,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         route: runtime_reading_route.Route,
         hooks: runtime_reading_jobs.Hooks,
         scan_bytes: int | None = None,
+        prompt_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Everything `produce` takes beyond the record, from the route that ran."""
         application = self.server.application
@@ -4149,11 +4156,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             ),
             "model": reading_policy.GuardedModel(
                 application.config,
-                (
-                    runtime_reading.ClaudeReadingModel
-                    if route["provider"] == runtime_reading_route.CLAUDE
-                    else runtime_reading.CodexReadingModel
-                )(application.config, on_spawn=hooks.spawned),
+                runtime_reading.ClaudeReadingModel(
+                    application.config, on_spawn=hooks.spawned, analyze=True
+                )
+                if route["provider"] == runtime_reading_route.CLAUDE
+                else runtime_reading.CodexReadingModel(application.config, on_spawn=hooks.spawned),
                 application.clock,
                 provider=route["provider"],
                 destination=route["words_destination"],
@@ -4164,6 +4171,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 before_reserve=hooks.before_reserve,
                 cancelled=hooks.cancelled,
                 content=_press_content(route["harness"]),
+                admit_prompt=analyze_capacity.Admission(
+                    route["provider"],
+                    route["model"],
+                    runtime_observer.CLAUDE_READING_SYSTEM_PROMPT
+                    if route["provider"] == runtime_reading_route.CLAUDE
+                    else "",
+                    requested_maximum=prompt_bytes
+                    if prompt_bytes is not None
+                    else settings.DEFAULTS.analyze_prompt_bytes,
+                ),
             ),
         }
 

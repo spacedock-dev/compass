@@ -1430,6 +1430,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # Pure byte/estimated-context policy; no route discovery or execution.
         "compass_runtime.reading_capacity": set(),
+        "compass_runtime.analyze_capacity": {
+            "compass_runtime.claude_settings",
+            "compass_runtime.reading_capacity",
+        },
         # The durable permission and budget: config names its store, io owns
         # optional SQLite loading, and the runner says whether Compass is
         # stopping. It reaches no session or model producer.
@@ -1565,6 +1569,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.analyze_capacity",
             # Deterministic grouping belongs only to the focused context answer.
             "compass_runtime.session_outline",
             # Stored summaries on the focused answer, and `POST /api/summary/delete`.

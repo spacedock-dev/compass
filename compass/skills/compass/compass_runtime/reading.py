@@ -741,7 +741,42 @@ WITHHELD_UNSTORED = "unstored"
 WITHHELD_CANCELLED = "cancelled"
 WITHHELD_CANCELLED_UNSENT = "cancelled-unsent"
 WITHHELD_OVERSIZED = "oversized"
+WITHHELD_CONTEXT_ADMISSION = "context-admission"
+WITHHELD_CONTEXT_CONFIG = "context-config"
+WITHHELD_CONTEXT_NO_ROOM = "context-no-room"
+WITHHELD_CONTEXT_DYNAMIC = "context-dynamic"
+WITHHELD_CONTEXT_COMPACTION = "context-compaction"
+WITHHELD_CONTEXT_FALLBACK = "context-fallback"
+WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
 WITHHELD = {
+    WITHHELD_CONTEXT_ADMISSION: (
+        "Nothing was sent or spent. The assembled prompt exceeds this route's estimated "
+        "allowance. Lower Prompt size in Settings or choose a route with a larger context window."
+    ),
+    WITHHELD_CONTEXT_CONFIG: (
+        "Nothing was sent or spent. Compass could not read this route's context controls. "
+        "Check the Claude managed settings and context configuration before trying again."
+    ),
+    WITHHELD_CONTEXT_NO_ROOM: (
+        "Nothing was sent or spent. This route's configured context window leaves no room "
+        "after reserved space. Choose a larger window or change its context configuration."
+    ),
+    WITHHELD_CONTEXT_DYNAMIC: (
+        "Nothing was sent or spent. This route uses managed policy that can change at launch. "
+        "Use a route whose context and model-switching controls Compass can check locally."
+    ),
+    WITHHELD_CONTEXT_COMPACTION: (
+        "Nothing was sent or spent. Managed settings conflict with Analyze's compaction "
+        "control. Ask your administrator to allow compaction to remain disabled for Analyze."
+    ),
+    WITHHELD_CONTEXT_FALLBACK: (
+        "Nothing was sent or spent. Managed settings permit automatic model fallback. "
+        "Ask your administrator to disable fallback before running Analyze on this route."
+    ),
+    WITHHELD_CONTEXT_CHANGED: (
+        "The attempt was counted, but the model did not start because its configuration "
+        "could not pass the final check. Check the Claude managed settings before trying again."
+    ),
     WITHHELD_TURN_STOP: (
         "A turn stop was observed and no session end was, so there is no end for a "
         "reading to rest on. Nothing partial is offered instead."
@@ -7250,6 +7285,13 @@ def _left_out(
 
 # The exec statuses that name their own cause, and whether each spent.
 _STATUS_FAILURES = {
+    "context-admission": (WITHHELD_CONTEXT_ADMISSION, False),
+    "context-config": (WITHHELD_CONTEXT_CONFIG, False),
+    "context-no-room": (WITHHELD_CONTEXT_NO_ROOM, False),
+    "context-dynamic": (WITHHELD_CONTEXT_DYNAMIC, False),
+    "context-compaction": (WITHHELD_CONTEXT_COMPACTION, False),
+    "context-fallback": (WITHHELD_CONTEXT_FALLBACK, False),
+    "context-config-after-reserve": (WITHHELD_CONTEXT_CHANGED, True),
     "unstopped": (WITHHELD_UNSTOPPED, True),
     "oversized": (WITHHELD_OVERSIZED, True),
     "closed": (WITHHELD_STOPPING, False),
@@ -7584,8 +7626,10 @@ class ClaudeReadingModel:
         runner: Any = supervise.run,
         binary_resolver: Any = shutil.which,
         on_spawn: Callable[[supervise.Group], None] | None = None,
+        analyze: bool = False,
     ) -> None:
         self.config = config
+        self.analyze = analyze
         self.runner = runner
         self.binary_resolver = binary_resolver
         # A reading job's seam: told the moment the CLI exists, which is when
@@ -7605,7 +7649,12 @@ class ClaudeReadingModel:
             binary_resolver=self.binary_resolver,
             on_spawn=self.on_spawn,
             on_diagnostic=self._diagnosed,
+            analyze=self.analyze,
         )
+
+    def provenance(self) -> dict[str, Any]:
+        """Describe this invocation's requested envelope, not a remote receipt."""
+        return observer.claude_reading_provenance(self.config, analyze=self.analyze)
 
     def _diagnosed(self, diagnostic: dict[str, Any]) -> None:
         self.diagnostic = diagnostic
