@@ -1,3 +1,4 @@
+import { longCleanupUnresolved } from '../api/longProgress';
 import { LongProgress } from './LongProgress';
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
@@ -163,6 +164,7 @@ export function JobBox({
   const held = ctx.drift.cancels.get(key);
   const mine = held && held.job === job['id'] ? held : null;
   const finishing = job['cancelling'] === true || Boolean(mine?.pending);
+  const blocked = longCleanupUnresolved(job);
   return (
     <Card
       variant="reading-job"
@@ -179,12 +181,12 @@ export function JobBox({
           tabIndex={-1}
           data-next-focus={`reading:${key}`}
         >
-          {again ? JOB_TITLE_AGAIN : JOB_TITLE}
+          {blocked ? 'Analysis cleanup unconfirmed' : again ? JOB_TITLE_AGAIN : JOB_TITLE}
         </span>
         <ActionButton
           weight="secondary"
           label="Cancel"
-          busyLabel="Cancelling…"
+          busyLabel={blocked ? 'Cancel requested…' : 'Cancelling…'}
           pendingKey={`reading-cancel:${key}`}
           inert={finishing}
           action="reading-cancel"
@@ -216,7 +218,9 @@ export function JobBox({
           })}
         </ol>
       )}
-      <p className="next-cockpit-reading-job-note">{running ? JOB_NOTE_SO_FAR : JOB_NOTE}</p>
+      {!blocked ? (
+        <p className="next-cockpit-reading-job-note">{running ? JOB_NOTE_SO_FAR : JOB_NOTE}</p>
+      ) : null}
       {mine?.failed && !finishing ? (
         <p className="next-cockpit-reading-why">{CANCEL_FAILED}</p>
       ) : null}

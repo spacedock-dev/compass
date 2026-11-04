@@ -1,12 +1,12 @@
 import { nextNumber } from '../api/bootstrap';
-import { longJobProgress } from '../api/longProgress';
+import { longJobProgress, longCleanupUnresolved } from '../api/longProgress';
 import { sessionLongDiagnostic, longOutcomeSentence, hasBoundLongReading } from './longOutcome';
 import { compatSessKey } from '../api/identity';
 import { annotationOf } from '../intent/annotation';
 import { announce } from '../intent/context';
 import { isRecord, type Row } from '../observed';
 import { REGION_IDS } from '../shell/announcer';
-import { JOB_TITLE, READING_FINISHED, LONG_STAGE } from './sentences';
+import { JOB_TITLE, READING_FINISHED, LONG_STAGE, LONG_CLEANUP_UNRESOLVED } from './sentences';
 import type { DriftCtx, JobSeen } from './state';
 
 /* How an analysis ended, said once. A withheld, cancelled or interrupted end is the server's own
@@ -88,7 +88,12 @@ export function trackJobs(ctx: DriftCtx, payload: Row, drawn: ReadonlySet<string
   /* Emptying a region is silent, so a stale "Analyzing drift" is taken back without a second announcement. */
   const clearTitle = () => {
     const region = typeof document === 'undefined' ? null : document.getElementById(REGION_IDS.cue);
-    if (region && [JOB_TITLE, ...Object.values(LONG_STAGE)].includes(region.textContent ?? ''))
+    if (
+      region &&
+      [JOB_TITLE, LONG_CLEANUP_UNRESOLVED, ...Object.values(LONG_STAGE)].includes(
+        region.textContent ?? '',
+      )
+    )
       region.textContent = '';
   };
   const say = (key: string, sentence: string) => {
@@ -123,7 +128,11 @@ export function trackJobs(ctx: DriftCtx, payload: Row, drawn: ReadonlySet<string
     const isDrawn = drawn.has(job['id']);
     if (seen) {
       const progress = seen.long ? longJobProgress(job) : null;
-      if (seen.long && progress) {
+      if (seen.long && longCleanupUnresolved(job) && !seen.long.blocked) {
+        if (seen.drawn && isDrawn) say(`job:${seen.id}:blocked`, LONG_CLEANUP_UNRESOLVED);
+        seen.long.blocked = true;
+      }
+      if (seen.long && progress && !seen.long.blocked) {
         const order = Object.keys(LONG_STAGE);
         if (order.indexOf(progress.stage) > order.indexOf(seen.long.stage ?? '')) {
           if (seen.drawn && isDrawn && seen.long.stage !== null)
@@ -144,6 +153,7 @@ export function trackJobs(ctx: DriftCtx, payload: Row, drawn: ReadonlySet<string
             long: {
               startedAt: nextNumber(job['started_at']),
               stage: longJobProgress(job)?.stage ?? null,
+              blocked: longCleanupUnresolved(job),
               diagnostic: JSON.stringify(sessionLongDiagnostic(row)),
               withheld: JSON.stringify([
                 row['annotation_reading_withheld'],
@@ -153,7 +163,8 @@ export function trackJobs(ctx: DriftCtx, payload: Row, drawn: ReadonlySet<string
           }
         : {}),
     });
-    if (primed && isDrawn) say(`job:${job['id']}`, JOB_TITLE);
+    if (primed && isDrawn)
+      say(`job:${job['id']}`, longCleanupUnresolved(job) ? LONG_CLEANUP_UNRESOLVED : JOB_TITLE);
   }
   return finished;
 }

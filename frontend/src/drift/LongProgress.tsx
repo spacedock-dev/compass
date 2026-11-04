@@ -1,4 +1,9 @@
-import { longJobProgress, type LongProgress as Progress } from '../api/longProgress';
+import { LONG_CLEANUP_UNRESOLVED } from './sentences';
+import {
+  longJobProgress,
+  longCleanupUnresolved,
+  type LongProgress as Progress,
+} from '../api/longProgress';
 import type { Row } from '../observed';
 
 const number = (value: number) => value.toLocaleString('en-US');
@@ -20,10 +25,11 @@ function stage(progress: Progress): string {
 /** No effect or live region: polling supplies snapshots; announcements have a separate owner. */
 export function LongProgress({ job }: { readonly job: Row }) {
   const progress = longJobProgress(job);
+  const blocked = longCleanupUnresolved(job);
   if (progress === null)
     return (
       <p className="next-cockpit-reading-job-note" data-next-long-progress="">
-        Long analysis progress is unavailable.
+        {blocked ? LONG_CLEANUP_UNRESOLVED : 'Long analysis progress is unavailable.'}
       </p>
     );
   const { source, evidence, accounting } = progress;
@@ -31,7 +37,7 @@ export function LongProgress({ job }: { readonly job: Row }) {
   return (
     <div data-next-long-progress="">
       <p className="next-cockpit-reading-job-note">
-        <strong>{stage(progress)}</strong>
+        <strong>{blocked ? LONG_CLEANUP_UNRESOLVED : stage(progress)}</strong>
       </p>
       <p className="next-cockpit-reading-job-note">
         {source.streams_verified === null

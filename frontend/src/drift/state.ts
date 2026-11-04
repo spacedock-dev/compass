@@ -82,6 +82,7 @@ export interface JobSeen {
     readonly diagnostic: string;
     readonly withheld: string;
     stage: string | null;
+    blocked: boolean;
   };
 }
 

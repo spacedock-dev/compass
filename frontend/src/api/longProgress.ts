@@ -113,3 +113,8 @@ export function longJobProgress(job: unknown): LongProgress | null {
     return null;
   return JSON.parse(JSON.stringify(value)) as LongProgress;
 }
+
+/** Closed optional Job metadata, independent of progress v1 and never an ordinary-job claim. */
+export function longCleanupUnresolved(job: unknown): boolean {
+  return object(job) && job['mode'] === 'long' && job['blocked_reason'] === 'cleanup-unresolved';
+}

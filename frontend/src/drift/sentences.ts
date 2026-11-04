@@ -761,3 +761,6 @@ export const noticeDestination = (destination: string): string =>
   `Words go to: ${destination || 'destination not published'}`;
 export const noticeToolOutput = (destination: string): string =>
   `Tool output goes to: ${destination}`;
+
+export const LONG_CLEANUP_UNRESOLVED =
+  'Compass could not confirm that the analysis process ended. It may still be running. No new result was saved. Recorded calls remain counted.';
