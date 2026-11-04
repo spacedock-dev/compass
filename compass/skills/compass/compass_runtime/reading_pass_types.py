@@ -64,3 +64,46 @@ def validate_pass(value: Any, *, plan: Any) -> dict[str, Any] | None:
     if value["diagnostic"] is not None and diagnostic is None:
         return None
     return {**value, "diagnostic": diagnostic}
+
+
+def update_observations(
+    current: Any, observation: Any, *, plan: Any, ended: Any
+) -> list[dict[str, Any]] | None:
+    """Replace an open slot, or append a new one, without altering caller data.
+
+    The caller marks an invocation ended; diagnostics cannot establish that it
+    ended, parsed successfully or covered its evidence. Ended slots are sealed.
+    """
+    checked_plan = validate_plan(plan)
+    incoming = validate_pass(observation, plan=checked_plan)
+    if (
+        incoming is None
+        or checked_plan is None
+        or type(ended) is not bool
+        or not isinstance(current, list)
+        or len(current) > checked_plan["max_calls"]
+    ):
+        return None
+    result: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    replacement = {"observation": incoming, "ended": ended}
+    for slot in current:
+        if (
+            not isinstance(slot, dict)
+            or set(slot) != {"observation", "ended"}
+            or type(slot["ended"]) is not bool
+        ):
+            return None
+        checked = validate_pass(slot["observation"], plan=checked_plan)
+        if checked is None or checked["ordinal"] in seen:
+            return None
+        seen.add(checked["ordinal"])
+        if checked["ordinal"] == incoming["ordinal"]:
+            if slot["ended"]:
+                return None
+            result.append(replacement)
+        else:
+            result.append({"observation": checked, "ended": slot["ended"]})
+    if incoming["ordinal"] not in seen:
+        result.append(replacement)
+    return result

@@ -6,6 +6,7 @@ import copy
 import importlib
 import importlib.util
 import unittest
+from types import SimpleNamespace
 from typing import Any
 
 from compass_runtime import analyze_diagnostics
@@ -316,3 +317,172 @@ class PassValidationTest(unittest.TestCase):
                 self.assertIsNone(validate(invalid, plan=plan()))
                 self.assertIsNone(validate(observation(), plan=invalid))
         self.assertIsNone(validate(observation(), plan={**plan(), "max_calls": 18}))
+
+
+class ObservationUpdateTest(unittest.TestCase):
+    def updater(self) -> Any:
+        module = importlib.import_module("compass_runtime.reading_pass_types")
+        self.assertTrue(callable(getattr(module, "update_observations", None)))
+        return module.update_observations
+
+    def test_real_capture_emissions_replace_one_slot_and_leave_a_prior_charge_intact(self) -> None:
+        update = self.updater()
+        snapshots: list[dict[str, Any]] = []
+        capture = analyze_diagnostics.Capture(snapshots.append)
+        capture.prepared("abcdefghij", diagnostic()["selection"], capture.start())
+        capture.called(
+            SimpleNamespace(
+                analyze_diagnostic=diagnostic()["input"],
+                admit_prompt=SimpleNamespace(measurement=diagnostic()["capacity"]),
+            )
+        )
+        self.assertEqual(3, len(snapshots))
+        current: Any = []
+        for index, snapshot in enumerate(snapshots):
+            value = {**observation(), "diagnostic": snapshot}
+            current = update(current, value, plan=plan(), ended=index == 2)
+            self.assertEqual([{"observation": value, "ended": index == 2}], current)
+        charged = copy.deepcopy(current[0])
+        self.assertEqual(
+            "context-config-after-reserve", charged["observation"]["diagnostic"]["input"]["outcome"]
+        )
+        self.assertTrue(charged["observation"]["diagnostic"]["capacity"]["allowed"])
+
+        later: list[dict[str, Any]] = []
+        second = analyze_diagnostics.Capture(later.append)
+        second.prepared("abcdefghij", diagnostic()["selection"], second.start())
+        second.called(
+            SimpleNamespace(
+                analyze_diagnostic={
+                    **diagnostic()["input"],
+                    "outcome": "refused",
+                    "attempt_reserved": False,
+                    "model_invoked": False,
+                },
+                admit_prompt=SimpleNamespace(measurement=None),
+            )
+        )
+        self.assertEqual(3, len(later))
+        for index, snapshot in enumerate(later):
+            value = {**observation(), "ordinal": 2, "diagnostic": snapshot}
+            current = update(current, value, plan=plan(), ended=index == 2)
+            self.assertEqual([charged, {"observation": value, "ended": index == 2}], current)
+            self.assertIsNone(current[1]["observation"]["diagnostic"]["capacity"])
+        self.assertFalse(current[1]["observation"]["diagnostic"]["input"]["attempt_reserved"])
+
+    def test_ended_is_explicit_even_for_unknown_and_charged_observations(self) -> None:
+        update = self.updater()
+        value = {**observation(), "diagnostic": None}
+        unknown = update([], value, plan=plan(), ended=True)
+        self.assertEqual([{"observation": value, "ended": True}], unknown)
+        self.assertIsNone(update(unknown, observation(), plan=plan(), ended=False))
+        self.assertIsNone(update(unknown, value, plan=plan(), ended=True))
+        charged = update([], observation(), plan=plan(), ended=False)
+        replacement = copy.deepcopy(observation())
+        replacement["diagnostic"]["input"]["outcome"] = "ok"
+        ended = update(charged, replacement, plan=plan(), ended=True)
+        self.assertEqual([{"observation": replacement, "ended": True}], ended)
+        self.assertIsNone(update(ended, replacement, plan=plan(), ended=True))
+        self.assertIsNone(update(ended, observation(), plan=plan(), ended=False))
+
+    def test_zero_measurement_is_not_replaced_with_unknown(self) -> None:
+        update = self.updater()
+        zero = diagnostic()
+        zero.update(input=None, capacity=None)
+        zero["prepared"]["prompt_bytes"] = 0
+        zero["selection"]["serialized_message_bytes"] = 0
+        value = {**observation(), "diagnostic": zero}
+        checked = update([], value, plan=plan(), ended=True)
+        self.assertEqual([{"observation": value, "ended": True}], checked)
+        self.assertEqual(0, checked[0]["observation"]["diagnostic"]["prepared"]["prompt_bytes"])
+        self.assertIsNone(checked[0]["observation"]["diagnostic"]["input"])
+
+    def test_updates_copy_prior_slots_and_new_observations_without_mutating_inputs(self) -> None:
+        update = self.updater()
+        previous: list[dict[str, Any]] = [{"observation": observation(), "ended": True}]
+        new = {**observation(), "ordinal": 2}
+        checked = update(previous, new, plan=plan(), ended=False)
+        pristine = copy.deepcopy(checked)
+        previous[0]["observation"]["diagnostic"]["input"]["prompt_bytes"] = 99
+        new["diagnostic"]["capacity"]["prompt_bytes"] = 99
+        self.assertEqual(pristine, checked)
+        checked[0]["observation"]["diagnostic"]["selection"]["selected_entries"] = 0
+        checked[1]["observation"]["diagnostic"]["prepared"]["prompt_bytes"] = 0
+        self.assertEqual(
+            1, previous[0]["observation"]["diagnostic"]["selection"]["selected_entries"]
+        )
+        self.assertEqual(10, new["diagnostic"]["prepared"]["prompt_bytes"])
+        before = [{"observation": observation(), "ended": False}]
+        copied_before = copy.deepcopy(before)
+        update(before, {**observation(), "diagnostic": None}, plan=plan(), ended=True)
+        self.assertEqual(copied_before, before)
+
+    def test_full_plan_accepts_its_last_slot_but_not_a_seventeenth_evidence_or_eighteenth_slot(
+        self,
+    ) -> None:
+        update = self.updater()
+        current: Any = []
+        for ordinal in range(1, 17):
+            value = {**observation(), "ordinal": ordinal}
+            current = update(current, value, plan=plan(), ended=True)
+        self.assertEqual(16, len(current))
+        self.assertIsNone(
+            update(current, {**observation(), "ordinal": 17}, plan=plan(), ended=True)
+        )
+        final = {**observation(), "ordinal": 17, "kind": "reconciliation"}
+        full = update(current, final, plan=plan(), ended=False)
+        self.assertEqual(17, len(full))
+        self.assertEqual(full[:16], current)
+        self.assertIsNotNone(update(full, final, plan=plan(), ended=True))
+        self.assertIsNone(update(full, {**final, "ordinal": 18}, plan=plan(), ended=True))
+        sparse = update([], final, plan=plan(), ended=True)
+        self.assertEqual([{"observation": final, "ended": True}], sparse)
+        small = {**plan(), "max_evidence_passes": 1, "max_calls": 2}
+        self.assertIsNone(update([], final, plan=small, ended=True))
+
+    def test_duplicate_foreign_or_malformed_existing_slots_reject_without_repair(self) -> None:
+        update = self.updater()
+        existing: dict[str, Any] = {"observation": observation(), "ended": False}
+        foreign = {"observation": {**observation(), "ordinal": 18}, "ended": False}
+        malformed = copy.deepcopy(existing)
+        malformed["observation"]["diagnostic"]["input"]["words"] = "private sentinel"
+        current: Any
+        for current in (
+            None,
+            {},
+            [existing, existing],
+            [foreign],
+            [malformed],
+            [{**existing, "ended": 1}],
+            [{**existing, "words": "private sentinel"}],
+            [{"observation": observation()}],
+            [existing] * 18,
+            [None],
+        ):
+            with self.subTest(current=current):
+                before = copy.deepcopy(current)
+                self.assertIsNone(update(current, observation(), plan=plan(), ended=True))
+                self.assertEqual(before, current)
+
+    def test_invalid_incoming_observation_flag_or_plan_leaves_existing_slots_unchanged(
+        self,
+    ) -> None:
+        update = self.updater()
+        current = [{"observation": observation(), "ended": False}]
+        before = copy.deepcopy(current)
+        invalid: Any
+        for invalid in (
+            None,
+            {},
+            {**observation(), "diagnostic": {}},
+            {**observation(), "ordinal": 18},
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(update(current, invalid, plan=plan(), ended=True))
+        for invalid in (None, 0, 1, "true", []):
+            with self.subTest(ended=invalid):
+                self.assertIsNone(update(current, observation(), plan=plan(), ended=invalid))
+        self.assertIsNone(
+            update(current, observation(), plan={**plan(), "max_calls": 18}, ended=True)
+        )
+        self.assertEqual(before, current)
