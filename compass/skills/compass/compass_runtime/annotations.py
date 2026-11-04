@@ -39,6 +39,7 @@ import re
 import threading
 import time
 import uuid
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
 from compass_runtime import analyze_diagnostics, ci_read, reading, reading_long_diagnostics, records
@@ -2434,6 +2435,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
+    long_publish_guard: Callable[[Annotation], bool] | None = None,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2453,6 +2455,10 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     Optional `long_diagnostic` requires that receipt path and exact accounting
     matching this attempted job. A kept ordinary outcome clears old long metrics;
     a late assessment that is not kept preserves the standing diagnostics.
+    `long_publish_guard`, only with long_publication, receives an independent
+    current entry under the annotation lock, before any write or replay answer.
+    It must be a short read-only check returning exactly True; no nested writers,
+    policy writes, source scans or model work. Exceptions refuse the new outcome.
     """
     return _record(
         config,
@@ -2469,6 +2475,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
         long_diagnostic=long_diagnostic,
         long_target=long_target,
         long_publication=long_publication,
+        long_publish_guard=long_publish_guard,
     )
 
 
@@ -2486,6 +2493,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
+    long_publish_guard: Callable[[Annotation], bool] | None = None,
 ) -> str:
     """Store why there is no reading. Returns an `OUTCOMES` token.
 
@@ -2508,6 +2516,9 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     Optional `long_diagnostic` is separate from the one-invocation measurement;
     its exact receipt-derived attempted_job must agree with `spent`. Unknown or
     minimum accounting cannot be acknowledged here. None clears old long metrics.
+    `long_publish_guard` has record_reading's post-lock contract. An eventual
+    cleanup-only replay owner must inspect a durable receipt separately; a
+    refused new-publication guard is not an acknowledgment or discard decision.
     """
     if reason not in reading.WITHHELD:
         return OUTCOME_REFUSED
@@ -2525,6 +2536,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
         long_diagnostic=long_diagnostic,
         long_target=long_target,
         long_publication=long_publication,
+        long_publish_guard=long_publish_guard,
     )
 
 
@@ -2572,6 +2584,15 @@ def _with_reading(
     return True
 
 
+def _long_publish_allowed(guard: Callable[[Annotation], bool] | None, existing: Annotation) -> bool:
+    if guard is None:
+        return True
+    try:
+        return guard(deepcopy(existing)) is True
+    except Exception:  # noqa: BLE001 - unknown eligibility cannot acknowledge a long result
+        return False
+
+
 def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     config: RuntimeConfig,
     state: RuntimeState,
@@ -2588,6 +2609,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
+    long_publish_guard: Callable[[Annotation], bool] | None = None,
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
@@ -2608,6 +2630,10 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
                 or checked_long["accounting"]["state"] != "exact"
                 or checked_long["accounting"]["attempted_job"] != int(spent)
             )
+        )
+        or (
+            long_publish_guard is not None
+            and (not long_publication or not callable(long_publish_guard))
         )
         or type(long_publication) is not bool
         or (
@@ -2634,6 +2660,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
                 long_target is not _UNGUARDED_LONG_TARGET
                 and not _long_target_matches(long_target, existing, assessment)
             )
+            or not _long_publish_allowed(long_publish_guard, existing)
         ):
             # A reading of nothing is not a reading. There is no baseline to
             # have read, and inventing an entry here would put a row on the

@@ -14,7 +14,7 @@ from copy import deepcopy
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
-from . import reading_pass_types
+from . import reading_pass_context, reading_pass_types
 
 if TYPE_CHECKING:
     from .reading_long_inspection import Inspection
@@ -98,6 +98,70 @@ def _label(value: Any, labels: set[str], *, nullable: bool = False) -> None:
 
 def _items(value: Any) -> None:
     _require(type(value) is list and len(value) <= MAX_SOURCE_ITEMS)
+
+
+def _moment(value: Any, *, nullable: bool = False) -> None:
+    _require(
+        (nullable and value is None)
+        or (type(value) in (int, float) and math.isfinite(value) and 0 <= value < 2**53)
+    )
+
+
+def _binding(value: Any) -> None:
+    if value is None:
+        return
+    _object(
+        value,
+        {
+            "revision",
+            "revision_at",
+            "window_start",
+            "window_end",
+            "scope",
+            "end_kind",
+            "open_call_at",
+            "job_started_at",
+        },
+    )
+    _count(value["revision"])
+    _require(value["revision"] > 0)
+    for key in ("revision_at", "window_start", "window_end", "open_call_at", "job_started_at"):
+        _moment(value[key], nullable=key in {"window_end", "open_call_at"})
+    _require(value["revision_at"] > 0 and value["job_started_at"] > 0)
+    _require(value["window_start"] <= value["revision_at"])
+    _label(value["scope"], {"final", "last-turn", "mid-flight"})
+    _label(
+        value["end_kind"], {"session-end", "turn-stop", "running", "unobservable", "idle-unknown"}
+    )
+    _require(value["window_end"] is None or value["window_end"] >= value["window_start"])
+    if value["scope"] != "mid-flight" or value["end_kind"] != "running":
+        _require(value["open_call_at"] is None)
+
+
+def bind_context(context: reading_pass_context.Frozen, *, started_at: float) -> dict[str, Any]:
+    """Copy only frozen revision/window scalars, never provenance IDs or user words.
+
+    This projection grants no qualification: a publication owner must separately
+    validate the complete Frozen against the locked annotation and resolved packet.
+    """
+    _require(type(context) is reading_pass_context.Frozen)
+    try:
+        value = context.value()
+        revision, window = value["revision"], value["window"]
+        binding = {
+            "revision": revision["number"],
+            "revision_at": revision["at"],
+            "window_start": window["start"],
+            "window_end": window["end"],
+            "scope": window["scope"],
+            "end_kind": window["end_kind"],
+            "open_call_at": window["open_call_at"],
+            "job_started_at": started_at,
+        }
+        _binding(binding)
+    except (KeyError, TypeError, AttributeError):
+        raise ValueError("Invalid diagnostic context binding") from None
+    return binding
 
 
 def _observations(value: Any, plan: dict[str, Any]) -> list[dict[str, Any]] | None:
@@ -253,7 +317,7 @@ def _accounting(value: Any, plan: dict[str, Any]) -> None:
 
 
 def _complete(value: dict[str, Any]) -> bool | None:
-    if value["outcome"] != "pending":
+    if value["outcome"] not in {"pending", "completed"}:
         return False
     source = value["source"]
     if source is not None and (
@@ -291,7 +355,8 @@ def validate(value: Any) -> dict[str, Any] | None:
                 "accounting",
                 "outcome",
                 "complete",
-            },
+            }
+            | ({"binding"} if type(value) is dict and "binding" in value else set()),
         )
         _require(type(value["version"]) is int and value["version"] == 1)
         _require(value["kind"] == "long-analysis")
@@ -311,7 +376,9 @@ def validate(value: Any) -> dict[str, Any] | None:
                 and slot["observation"]["diagnostic"]["input"]["attempt_reserved"]
             )
             _require(reserved <= value["accounting"]["totals"]["calls"])
-        _label(value["outcome"], {"pending", "withheld", "cancelled", "interrupted"})
+        _binding(value.get("binding"))
+        _label(value["outcome"], {"pending", "withheld", "cancelled", "interrupted", "completed"})
+        _require(value["outcome"] != "completed" or value.get("binding") is not None)
         _require(value["complete"] is _complete(value))
         return {**deepcopy(value), "plan": plan, "observations": observations}
     except (ValueError, TypeError, KeyError):
@@ -422,7 +489,7 @@ def _map_metrics(series: Series) -> dict[str, Any]:
     }
 
 
-def derive(
+def derive(  # noqa: PLR0913 - independent optional producer sections and frozen outcome binding
     *,
     plan: dict[str, Any],
     inventory: Inventory | None = None,
@@ -432,6 +499,7 @@ def derive(
     observations: list[dict[str, Any]] | None = None,
     reconciliation_observations: list[dict[str, Any]] | None = None,
     outcome: str = "pending",
+    binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project actual producer metadata; never serialize a producer's words or paths.
 
@@ -474,6 +542,7 @@ def derive(
             "attempted_job": _attempted_job(state, counted),
         },
         "outcome": outcome,
+        **({"binding": binding} if binding is not None else {}),
     }
     value["complete"] = _complete(value)
     checked = validate(value)

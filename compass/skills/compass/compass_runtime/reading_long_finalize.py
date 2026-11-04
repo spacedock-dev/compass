@@ -69,7 +69,7 @@ def _measurement_matches(
             "prompt_bytes": totals.prompt_bytes,
             "reply_bytes": totals.reply_bytes,
         }
-        and checked["outcome"] != "pending"
+        and checked["outcome"] in {"withheld", "cancelled", "interrupted"}
     )
 
 
