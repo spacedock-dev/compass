@@ -489,6 +489,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reading_map_series.py",
     "skills/compass/compass_runtime/reading_source.py",
     "skills/compass/compass_runtime/reading_source_collect.py",
+    "skills/compass/compass_runtime/reading_source_final.py",
     "skills/compass/compass_runtime/reading_source_inventory.py",
     "skills/compass/compass_runtime/reading_source_stream.py",
     "skills/compass/compass_runtime/reading_source_words.py",

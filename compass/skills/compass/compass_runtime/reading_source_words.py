@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 Key = tuple[str, float]
 Binding = Literal["native", "parent_file"]
-Refusal = Literal["source", "admission", "conflict", "empty"]
+Refusal = Literal["source", "admission", "conflict", "empty", "final_unfit"]
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,9 @@ class MessageWords:
     sid: str
     source: str
     state: Literal["whole", "unknown", "unavailable"] = "unknown"
-    reason: Literal["missing", "", "source", "admission", "conflict", "empty"] = "missing"
+    reason: Literal["missing", "", "source", "admission", "conflict", "empty", "final_unfit"] = (
+        "missing"
+    )
     binding: Binding | None = None
     words: str | None = None
     total: int | None = None
@@ -48,7 +50,13 @@ class Join:
     results: tuple[MessageWords, ...] = ()
 
     @classmethod
-    def begin(cls, facts: tuple[dict[str, Any], ...], parent: raw_source.FrozenParent) -> Join:
+    def begin(
+        cls,
+        facts: tuple[dict[str, Any], ...],
+        parent: raw_source.FrozenParent,
+        *,
+        unfit_final: Key | None = None,
+    ) -> Join:
         ordered = sorted(
             (fact for fact in facts if fact.get("type") in {"user_message", "agent_message"}),
             key=lambda fact: (fact["type"] != "user_message", -float(fact.get("at") or 0)),
@@ -69,6 +77,8 @@ class Join:
             identities.setdefault(key, identity)
             if session != {"harness": parent.harness, "sid": parent.sid}:
                 refused[key] = "source"
+            if key == unfit_final:
+                refused[key] = "final_unfit"
         return cls(parent, identities, refused=refused)
 
     def _binding(self, record: dict[str, Any]) -> Binding | None:

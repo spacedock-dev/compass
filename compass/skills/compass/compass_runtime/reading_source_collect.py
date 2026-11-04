@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from . import io as runtime_io
 from . import project_context as context
-from . import reading_source, reading_source_words
+from . import reading_source, reading_source_final, reading_source_words
 from . import reading_source_inventory as inventory_source
 from . import reading_source_stream as raw_source
 from .config import SESSION_SOURCE_PAGE_MAX_BYTES, SESSION_SOURCE_PAGE_MAX_SECONDS
@@ -104,6 +104,7 @@ class Collection:
     # Whole streams are unavailable if any input/projection cannot be admitted.
     unavailable_streams: tuple[int, ...]
     words: tuple[reading_source_words.MessageWords, ...] | None = None
+    final: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,8 @@ class _Retained:
     scan: context._CheckScan | None = None
     evidence: reading_source.CanonicalEvidence | None = None
     words: reading_source_words.Join | None = None
+    parent_stamp: raw_source.Stamp | None = None
+    final: reading_source_final.Proof | None = None
 
 
 class _StopError(Exception):
@@ -240,7 +243,14 @@ class _Collection:
                 raise _StopError("no_progress")
             rows = list(self.state.rows)
             rows[index] = (*rows[index], *page.records)
-            candidate = replace(self.state, rows=tuple(rows), cursor=page.next)
+            candidate = replace(
+                self.state,
+                rows=tuple(rows),
+                cursor=page.next,
+                parent_stamp=page.verified_stamp
+                if index == 0 and page.state == "verified"
+                else self.state.parent_stamp,
+            )
             self.accept(candidate, page)
             if page.state == "verified":
                 if not page.source_complete or self.state.gaps:
@@ -293,13 +303,33 @@ class _Collection:
         self.checkpoint()
         self.accept(replace(self.state, evidence=evidence))
 
+    def prove_final(self) -> None:
+        self.checkpoint()
+        evidence = self.state.evidence
+        if evidence is None:
+            raise _StopError("native_incomplete")
+        parent = self.state.inventory.streams[0].cursor.frozen
+        proof = reading_source_final.build(
+            self.config,
+            parent,
+            self.state.rows[0],
+            evidence.facts,
+            stamp=self.state.parent_stamp,
+            checkpoint=self.checkpoint,
+        )
+        self.accept(replace(self.state, final=proof))
+
     def join_words(self) -> None:
         self.checkpoint()
         evidence = self.state.evidence
         if evidence is None:
             raise _StopError("native_incomplete")
         parent = self.state.inventory.streams[0].cursor.frozen
-        join = reading_source_words.Join.begin(evidence.facts, parent)
+        join = reading_source_words.Join.begin(
+            evidence.facts,
+            parent,
+            unfit_final=self.state.final.unfit if self.state.final is not None else None,
+        )
         self.accept(replace(self.state, words=join))
         rows = self.state.rows[0]
         # G2 observes newest physical records first; queued messages still bind
@@ -334,7 +364,14 @@ class _Collection:
             for index in range(len(self.state.inventory.streams)):
                 self.read_stream(index)
             self.materialize()
+            self.prove_final()
             self.join_words()
+            self.checkpoint()
+            if self.state.final is not None:
+                parent = self.state.inventory.streams[0].cursor.frozen
+                checked = self.state.final.recheck(parent)
+                if checked is not self.state.final:
+                    self.accept(replace(self.state, final=checked))
             self.checkpoint()
         except _StopError as exc:
             reason = exc.reason
@@ -349,6 +386,7 @@ class _Collection:
             self.state.inventory.gaps,
             tuple(range(len(self.state.inventory.streams))) if reason else (),
             self.state.words.results if not reason and self.state.words is not None else None,
+            self.state.final.result if not reason and self.state.final is not None else None,
         )
 
 

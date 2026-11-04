@@ -1466,7 +1466,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_source_stream",
             "compass_runtime.records",
         },
+        "compass_runtime.reading_source_final": {
+            "compass_runtime.config",
+            "compass_runtime.project_context",
+            "compass_runtime.reading_source_stream",
+        },
         "compass_runtime.reading_source_collect": {
+            "compass_runtime.reading_source_final",
             "compass_runtime.reading_source_words",
             "compass_runtime.config",
             "compass_runtime.io",

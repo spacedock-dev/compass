@@ -90,6 +90,7 @@ class Page:
     next: Cursor | None = None
     reason: Literal["", "bytes", "time", "source_changed"] = ""
     source_complete: bool = False
+    verified_stamp: Stamp | None = None
 
 
 def _stamp(info: os.stat_result) -> Stamp:
@@ -332,6 +333,7 @@ def read(
                     cursor.phase,
                     budget.spent,
                     source_complete=not cursor.has_gaps,
+                    verified_stamp=cursor.phase_stamp,
                 )
             return Page(
                 "progress",
