@@ -1591,14 +1591,17 @@ def seal_job(job: Job) -> bool:
         return job.cancelled_at is not None
 
 
-def end_job(config: RuntimeConfig, session_key: str) -> None:
+def end_job(config: RuntimeConfig, session_key: str, *, expected_job: Job | None = None) -> None:
     """Remove the job, then give the slot back, as one step.
 
     The caller ends a job only after the CLI is reaped and its files removed,
     which `supervise.run` guarantees by returning only then.
+    Supplying an expected job leaves any replacement slot untouched.
     """
     key = (str(config.state_dir), session_key)
     with _FLIGHT_LOCK:
+        if expected_job is not None and _JOBS.get(key) is not expected_job:
+            return
         _JOBS.pop(key, None)
         _IN_FLIGHT.discard(key)
 
