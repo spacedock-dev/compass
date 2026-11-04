@@ -5895,6 +5895,15 @@ _CODEX_EDGES = _Edges(
 )
 
 
+class ToolReportLimitError(ValueError):
+    """A complete canonical listing cannot fit its caller's finite allowance."""
+
+    def __init__(self, eligible: int, limit: int) -> None:
+        super().__init__("complete canonical projection exceeds its allowance")
+        self.eligible = eligible
+        self.limit = limit
+
+
 class _Listing(NamedTuple):
     """What `_ToolReportTally.listing` chose: the rows a page lists, and every check, file and
     launch's first time, which fixes its position whether or not the listing keeps it."""
@@ -6836,18 +6845,33 @@ class _ToolReportTally:
         return max(times) if times else None
 
     def entries(
-        self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
+        self,
+        sid: str,
+        index: Any = None,
+        cap: int = TOOL_REPORT_MAX_ENTRIES,
+        *,
+        require_complete: bool = False,
     ) -> list[dict[str, Any]]:
         # Without a message index no position is published, and the live replay lists at every
         # step of its window, so the positions are not counted for it.
-        listing = self.listing(cap, positions=index is not None)
+        listing = self.listing(cap, positions=index is not None, require_complete=require_complete)
         return _assemble_entries(self.edges.harness, sid, index, listing)
 
-    def listing(self, cap: int = TOOL_REPORT_MAX_ENTRIES, *, positions: bool = True) -> _Listing:
+    def listing(
+        self,
+        cap: int = TOOL_REPORT_MAX_ENTRIES,
+        *,
+        positions: bool = True,
+        require_complete: bool = False,
+    ) -> _Listing:
         """The listed rows and, unless `positions` is off, the fixed positions, once per tally: it
-        adds to `scan`."""
+        adds to `scan`. Complete mode refuses before ranked display truncation."""
+        if require_complete and (type(cap) is not int or cap < 0):
+            raise ValueError("invalid complete listing allowance")
         histories = self._histories()
         candidates = self._ranked(histories)
+        if require_complete and len(candidates) > cap:
+            raise ToolReportLimitError(len(candidates), cap)
         last_pass_at = self._last_pass_at()
         for entry in candidates:
             if entry["subject"] == "check":

@@ -30,12 +30,15 @@ def from_complete_scan(
     *,
     index: Any = None,
     listed_cap: int = context.TOOL_REPORT_MAX_ENTRIES,
+    require_complete: bool = False,
 ) -> CanonicalEvidence:
     """Project a caller-owned native scan; reject a known incomplete read.
 
     Admission and bounds belong to the scan's producer. Its complete byte reads
     do not prove strict newest-final identity or the absence of malformed records.
-    The listing cap remains the canonical listing cap, not a coverage claim.
+    The default listing cap remains a display bound, not a coverage claim.
+    Opt-in require_complete refuses when all eligible canonical tool candidates
+    cannot fit the caller's finite allowance, before any ranked rows are dropped.
     """
     if harness != "claude" or not sid.strip():
         raise ValueError("complete source projection requires a Claude session")
@@ -57,7 +60,7 @@ def from_complete_scan(
     lines = [raw.decode("utf-8", "replace") for raw in parent.lines]
     facts = context._user_message_facts(config, lines, sid, float("inf"))  # noqa: SLF001
     events = context._agent_message_lines(config, lines, harness, sid)  # noqa: SLF001
-    events.extend(tally.entries(sid, index, cap=listed_cap))
+    events.extend(tally.entries(sid, index, cap=listed_cap, require_complete=require_complete))
     for event in events:
         kind = str(event["kind"])
         work_item, *_ = context._semantic_work_identity(event, kind)  # noqa: SLF001

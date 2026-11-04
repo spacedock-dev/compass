@@ -42,6 +42,7 @@ Reason = Literal[
     "source_changed",
     "source_gap",
     "native_incomplete",
+    "canonical_limit",
 ]
 
 
@@ -306,7 +307,20 @@ class _Collection:
         self.accept(replace(self.state, scan=scan))
         self.checkpoint()
         frozen = streams[0].cursor.frozen
-        evidence = reading_source.from_complete_scan(self.config, scan, frozen.harness, frozen.sid)
+        # Every projected candidate needs at least one new retained object.
+        # This is only a necessary ceiling; the full graph is measured below.
+        allowance = max(0, self.limits.retained_units - self.usage.retained_units)
+        try:
+            evidence = reading_source.from_complete_scan(
+                self.config,
+                scan,
+                frozen.harness,
+                frozen.sid,
+                listed_cap=allowance,
+                require_complete=True,
+            )
+        except context.ToolReportLimitError as exc:
+            raise _StopError("canonical_limit") from exc
         self.checkpoint()
         self.accept(replace(self.state, evidence=evidence))
 
