@@ -1842,7 +1842,9 @@ The argv, every flag checked against `claude --help` on 2.1.280, run without a s
 
 Requested Analyze additionally sets child `DISABLE_COMPACT=1` and passes inline
 `--settings '{"switchModelsOnFlag":false}'`. These controls belong only to that call path;
-summaries, unasked readings, qualification and the Live monitor keep their existing envelopes.
+summaries, unasked readings, default offline qualification and the Live monitor keep their existing
+envelopes. The instrumented live-study wrapper binds and forwards the requested Analyze controls;
+an altered invocation inherits neither a previously reviewed study allowance nor an accuracy result.
 Compass checks applicable managed settings before admission and again before launch, refusing
 known conflicting or dynamic policy. Managed controls still take precedence. A missing remote
 cache does not prove that the CLI cannot fetch policy, and a read cannot prevent a later policy
