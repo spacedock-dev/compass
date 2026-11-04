@@ -363,7 +363,7 @@ class TheHttpPressAsksForItsOwnWindow(PressReachTestCase):
                 {"harness": "claude", "sid": checks.SHORT, "state": "working"},
                 {"revisions": [{"n": 1, "at": 50.0, "goal": "Keep retry", "output": "Done"}]},
                 {},
-                SimpleNamespace(phase=None),
+                SimpleNamespace(phase=None, capture=lambda _value: None),
             )
         return got, asked
 

@@ -361,7 +361,13 @@ class RestoredCommandsKeepTheirOriginalFraming(window_cases.ThePressRecoversOnly
                     mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
                 ):
                     compose: Any = http_api._RequestHandler._compose_reading
-                    compose(handler, row, {"revisions": revisions}, {}, SimpleNamespace(phase=None))
+                    compose(
+                        handler,
+                        row,
+                        {"revisions": revisions},
+                        {},
+                        SimpleNamespace(phase=None, capture=lambda _value: None),
+                    )
                 reading.produce(
                     self.config,
                     row,
