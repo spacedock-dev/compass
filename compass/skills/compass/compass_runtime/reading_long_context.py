@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
@@ -94,16 +95,20 @@ class Context:
     scope_sha256: str
 
 
-def _current(config: RuntimeConfig, context: Context) -> bool:
+def _current(config: RuntimeConfig, context: Context, *, terminal: bool = False) -> bool:
     active, route = context.active, context.route
     marker = markers._owned(config, active.owner)  # noqa: SLF001 - shared current-process owner check
-    if marker is None or marker["state"] != "active" or type(active.job) is not reading.Job:
+    if (
+        marker is None
+        or marker["state"] != ("completed" if terminal else "active")
+        or type(active.job) is not reading.Job
+    ):
         return False
     header = marker["header"]
     publication = header.get("publication")
     return bool(
         publication is not None
-        and not active.job.sealed
+        and (active.job.sealed is True if terminal else not active.job.sealed)
         and (active.job.harness, active.job.sid) == (publication["harness"], publication["sid"])
         and route.harness == publication["harness"]
         and active.job.id == marker["job_id"]
@@ -157,3 +162,76 @@ def check(config: RuntimeConfig, context: Context) -> str:
     return _live_reason(config, context) or jobs.deadline_reason(
         active.owner.live, header["plan"]["limits"]["job_ms"]
     )
+
+
+def _terminal_reason(config: RuntimeConfig, context: Context) -> str:
+    if not _current(config, context, terminal=True):
+        return "context-changed"
+    if config.model_calls_disabled:
+        return "run-disabled"
+    if supervise.closed():
+        return "closed"
+    if reading.job_cancelled(context.active.job):
+        return "cancelled"
+    group = context.active.job.group
+    if group is not None and (
+        type(group) is not supervise.Group or group.cleanup_complete() is not True
+    ):
+        return "unstopped"
+    return ""
+
+
+def _publication_deadline(live: jobs.LiveJob, job_ms: int) -> str:
+    prepared = live.prepared
+    now, start = prepared.clock(), prepared.started_monotonic
+    if (
+        type(now) not in (int, float)
+        or not math.isfinite(now)
+        or type(start) not in (int, float)
+        or not math.isfinite(start)
+        or now < start
+    ):
+        return "job-clock-invalid"
+    return "job-deadline" if (now - start) * 1000 > job_ms else ""
+
+
+def check_publication(config: RuntimeConfig, context: Context) -> str:
+    """Read terminal context; this is not permission or a publication transaction.
+
+    The caller must already have sealed the current UI job through seal_job's
+    accepted-Cancel boundary and completed its owned marker. No state is changed
+    here. Native groups must have the supervisor's successful cleanup fact; we
+    never poll, reap or signal them. The elapsed whole-job deadline applies,
+    without allocating time for a new invocation.
+
+    Final publication must hold marker barrier -> long_publication_permission
+    SQL fence -> annotation lock. Permission is deliberately checked by that
+    held fence, not a separate read here. Source validation/stamp checking and
+    result qualification remain the caller's responsibility. Route/settings
+    reads are separate filesystem snapshots, not an atomic external-settings lock.
+    """
+    try:
+        if (
+            type(context) is not Context
+            or type(context.active) is not control.Active
+            or type(context.route) is not Route
+        ):
+            return "context-changed"
+        if reason := _terminal_reason(config, context):
+            return reason
+        header = jobs.live_header(context.active.owner.live)
+        if header is None or describe(config, context.route.harness) != context.route:
+            return "context-changed"
+        publication = header["publication"]
+        target = annotation_store.LongTarget(publication["incarnation"], publication["revision"])
+        if not annotation_store.long_target_current(
+            config, publication["harness"], publication["sid"], target
+        ):
+            return "intent-changed"
+        # Reads can wait. Recheck current ownership/Cancel/cleanup and elapsed
+        # deadline after them; no new-call timeout is needed to store a result.
+        return _terminal_reason(config, context) or _publication_deadline(
+            context.active.owner.live, header["plan"]["limits"]["job_ms"]
+        )
+    except Exception:  # noqa: BLE001 - failed terminal probes cannot certify publication
+        return "context-changed"
