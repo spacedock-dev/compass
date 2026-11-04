@@ -1,4 +1,4 @@
-"""Bounded private collection of a small, fully verified native Claude corpus.
+"""Bounded private collection of a fully verified native Claude corpus.
 
 No provisional rows escape this module. Retained-object accounting includes raw
 and parsed rows, cursors, containers, ancillary inputs and projection copies.
@@ -47,14 +47,21 @@ Reason = Literal[
 
 @dataclass(frozen=True)
 class Limits:
+    """Collector defaults/maxima, not an implicit long-reading plan declaration.
+
+    The 256-MiB retained graph admits raw and parsed native corpora beyond 64 MiB
+    together with their private proof/word state. It does not cap process RSS.
+    Callers may supply smaller ceilings; the other resource bounds are unchanged.
+    """
+
     source_bytes: int = 256 * 1024 * 1024
     prepare_ms: int = 60_000
-    retained_bytes: int = 32 * 1024 * 1024
+    retained_bytes: int = 256 * 1024 * 1024
     retained_units: int = 65_536
     source_pages: int = 512
 
     def __post_init__(self) -> None:
-        maxima = (256 * 1024 * 1024, 60_000, 32 * 1024 * 1024, 65_536, 512)
+        maxima = (256 * 1024 * 1024, 60_000, 256 * 1024 * 1024, 65_536, 512)
         for value, maximum in zip(vars(self).values(), maxima, strict=True):
             if type(value) is not int or not 0 <= value <= maximum:
                 raise ValueError("invalid collection allowance")

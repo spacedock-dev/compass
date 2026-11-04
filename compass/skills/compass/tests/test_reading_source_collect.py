@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import math
 import unittest
 from dataclasses import replace
@@ -286,3 +287,66 @@ class BoundedReadingCollectionTest(unittest.TestCase):
         self.assertTrue(result.source_verified)
         self.assertEqual("native_incomplete", result.reason)
         self.assertIsNone(result.evidence)
+
+    def test_default_resource_limits_reach_a_native_check_beyond_64_mib(self) -> None:
+        module = self.module()
+        padding = (
+            json.dumps(
+                {
+                    "type": "progress",
+                    "data": {"type": "synthetic-padding", "padding": "x" * (8 * 1024 * 1024)},
+                }
+            ).encode()
+            + b"\n"
+        )
+        with self.path.open("ab") as source:
+            for _ in range(9):
+                source.write(padding)
+            decisive_offset = source.tell()
+            late = Transcript(self.root)
+            late.calls, late.seconds = 100, 100
+            call = late.bash("pytest tests/test_beyond64.py", "1 failed", is_error=True)
+            for row in late.rows:
+                source.write((json.dumps(row) + "\n").encode())
+        del padding
+        self.assertGreater(decisive_offset, 64 * 1024 * 1024)
+        frozen = self.inventory()
+        ancillary = module.Ancillary(self.scan.session_dir, self.scan.declared)
+        # Real default Limits and page caps, with host speed removed from this
+        # numeric-admission regression. Dedicated deadline tests exercise the
+        # unchanged 60-second ceiling; the owned calibration uses a real clock.
+        result = module.collect(self.config, frozen, ancillary=ancillary, clock=lambda: 0.0)
+        self.assertEqual("", result.reason)
+        self.assertTrue(result.source_verified)
+        self.assertIsNotNone(result.evidence)
+        check = next(
+            fact
+            for fact in result.evidence.facts
+            if fact.get("branch", {}).get("record_id") == call
+        )
+        self.assertEqual("failed", check["result"])
+        self.assertEqual({"harness": "claude", "sid": SHORT}, check["source_session"])
+        self.assertEqual("exact", check["evidence"]["confidence"])
+        self.assertEqual(
+            3 * sum(stream.cursor.frozen.end_offset for stream in frozen.streams),
+            result.usage.source_bytes,
+        )
+        self.assertGreater(result.usage.retained_bytes, 32 * 1024 * 1024)
+        self.assertLessEqual(result.usage.retained_bytes, 256 * 1024 * 1024)
+        self.assertLessEqual(result.usage.source_bytes, 256 * 1024 * 1024)
+        self.assertLessEqual(result.usage.retained_units, 65_536)
+        self.assertLessEqual(result.usage.source_pages, 512)
+        self.assertEqual("scan-limit", result.final["outcome"])
+        del result
+        lower = module.collect(
+            self.config,
+            frozen,
+            ancillary=ancillary,
+            limits=replace(module.Limits(), retained_bytes=32 * 1024 * 1024),
+            clock=lambda: 0.0,
+        )
+        self.assertEqual("retained_bytes", lower.reason)
+        self.assertIsNone(lower.evidence)
+        self.assertLessEqual(lower.usage.retained_bytes, 32 * 1024 * 1024)
+        with self.assertRaises(ValueError):
+            module.Limits(retained_bytes=256 * 1024 * 1024 + 1)
