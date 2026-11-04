@@ -51,6 +51,7 @@ import shutil
 import threading
 import time
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
@@ -58,7 +59,7 @@ from . import analyze_diagnostics, ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 
     from . import reading_policy
     from .config import RuntimeConfig
@@ -1837,7 +1838,7 @@ def _request_identity(fact: Mapping[str, Any]) -> tuple[str, str, float] | None:
     at = valid_prompt_time(fact.get("at"))
     if (
         fact.get("type") != "user_message"
-        or not isinstance(source, dict)
+        or not isinstance(source, Mapping)
         or not isinstance(source.get("harness"), str)
         or not isinstance(source.get("sid"), str)
         or at is None

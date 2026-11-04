@@ -157,11 +157,24 @@ class CompleteCanonicalProjectionTest(unittest.TestCase):
         self.assertEqual(self.eligible + 1, len(full.facts))
 
     def test_projected_graph_budget_refuses_all_evidence_after_verified_read(self) -> None:
-        full = self.collect()
+        projected_bytes = 0
+        accept = collector._Collection.accept
+
+        def measure_projection(owner: Any, candidate: Any, temporary: Any = None) -> None:
+            nonlocal projected_bytes
+            if candidate.evidence is not None and owner.state.evidence is None:
+                projected_bytes, _units = collector._measure(
+                    (owner.state, candidate, temporary), owner.limits
+                )
+            accept(owner, candidate, temporary)
+
+        with mock.patch.object(collector._Collection, "accept", measure_projection):
+            full = self.collect()
         self.assertEqual(self.eligible + 1, len(full.evidence.facts))
-        # Remove the shallow fact dictionaries' measured footprint from the
-        # successful job's headroom: the native corpus still fits, projection does not.
-        limit = full.usage.retained_bytes - sum(sys.getsizeof(fact) for fact in full.evidence.facts)
+        self.assertGreater(projected_bytes, 0)
+        # Calibrate this phase, not later word/origin/request-proof retention.
+        # Native inputs still fit; the shallow projected fact dictionaries do not.
+        limit = projected_bytes - sum(sys.getsizeof(fact) for fact in full.evidence.facts)
         del full
         with (
             mock.patch.object(

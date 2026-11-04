@@ -225,6 +225,7 @@ class Collection:
     snapshot: Snapshot | None = None
     ancillary_info: AncillaryInfo = AncillaryInfo()
     origins: tuple[PhysicalOrigin, ...] | None = None
+    recovered_sources: tuple[Mapping[str, Any], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,37 @@ class _Retained:
     ci_remotes: tuple[tuple[str, tuple[str, str]], ...] = ()
     origin_calls: dict[_OriginKey, RecordPosition | None] = field(default_factory=dict)
     origins: tuple[PhysicalOrigin, ...] | None = None
+    recovered_sources: tuple[Mapping[str, Any], ...] | None = None
+
+
+@dataclass(frozen=True, eq=False)
+class _RequestProof(Mapping[str, Any]):
+    """Recursively immutable mapping; native/final input snapshots can copy it safely."""
+
+    _data: Mapping[str, Any]
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __deepcopy__(self, _memo: dict[int, Any]) -> _RequestProof:
+        return self
+
+
+def _freeze_request_proof(value: Any) -> Any:
+    """Own a deeply immutable copy of the existing JSON-shaped source proof."""
+    if isinstance(value, dict):
+        return _RequestProof(
+            MappingProxyType({key: _freeze_request_proof(item) for key, item in value.items()})
+        )
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze_request_proof(item) for item in value)
+    return value
 
 
 class _StopError(Exception):
@@ -730,6 +762,26 @@ class _Collection:
             origin, position=RecordPosition(0, number, row.start_offset, row.end_offset), reason=""
         )
 
+    def recover_requests(self) -> None:
+        self.checkpoint()
+        parent = self.state.inventory.streams[0].cursor.frozen
+
+        def read(consume: Callable[[bytes], None]) -> None:
+            # Match the existing bounded reader's newest physical record first.
+            # The owner handles line separators, raw digests, caps and ambiguity.
+            for row in reversed(self.state.rows[0]):
+                self.checkpoint()
+                consume(row.raw)
+                self.checkpoint()
+
+        facts = context._transcript_user_scan(  # noqa: SLF001
+            self.config, b"", parent.harness, parent.sid, goal_choices=False, read=read
+        )
+        self.checkpoint()
+        frozen = tuple(_freeze_request_proof(fact) for fact in facts)
+        self.checkpoint()
+        self.accept(replace(self.state, recovered_sources=frozen), temporary=facts)
+
     def prepare(self) -> None:
         self.checkpoint()
         self.accept(self.state)
@@ -749,6 +801,7 @@ class _Collection:
             self.prove_final()
             self.join_words()
             self.locate_origins()
+            self.recover_requests()
             self.checkpoint()
             if self.state.final is not None:
                 parent = self.state.inventory.streams[0].cursor.frozen
@@ -790,6 +843,7 @@ class _Collection:
             self.state.snapshot if not reason else None,
             self.state.ancillary_info,
             self.state.origins if not reason else None,
+            self.state.recovered_sources if not reason else None,
         )
 
 
