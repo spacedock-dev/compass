@@ -1,3 +1,4 @@
+import { LongCoverage } from './LongCoverage';
 import { useDrift } from './context';
 import { longOutcomeSentence, sessionLongDiagnostic } from './longOutcome';
 
@@ -11,14 +12,23 @@ export function LatestLongOutcome() {
   const number = (value: number) => value.toLocaleString('en-US');
   return (
     <div data-next-long-outcome="">
+      {model.job?.['mode'] === 'long' ? (
+        <p className="next-cockpit-reading-why">
+          Current long analysis is still running; these are saved measurements.
+        </p>
+      ) : null}
       <p className="next-cockpit-reading-why">
-        Latest long analysis: {longOutcomeSentence(diagnostic)}
+        {diagnostic.outcome === 'pending'
+          ? 'Last saved long analysis status'
+          : 'Last saved long outcome'}
+        : {longOutcomeSentence(diagnostic)}
       </p>
       <p className="next-cockpit-reading-job-note">
         {accounting.totals === null
           ? 'Reserved call accounting is unknown.'
           : `Calls reserved: ${prefix}${number(accounting.totals.calls)}. Assembled input reserved: ${prefix}${number(accounting.totals.prompt_bytes)} bytes. Reply space reserved: ${prefix}${number(accounting.totals.reply_bytes)} bytes.`}
       </p>
+      <LongCoverage value={model.session['annotation_long_diagnostic']} />
     </div>
   );
 }

@@ -29,6 +29,10 @@ describe('explicit long preview and Start', () => {
     expect(gets(page)).toHaveLength(1);
     expect(readingPosts(page)).toEqual([]);
     expect(screen.getByText(/Parent file extent: Unknown/)).toBeTruthy();
+    expect(screen.getByText(/Source and analysis preparation: 60 seconds maximum/)).toBeTruthy();
+    expect(
+      screen.getByText(/source collection, CI checks.*model waits are excluded/i),
+    ).toBeTruthy();
     expect(screen.getByText(/retained object graph.*not.*RSS/i)).toBeTruthy();
     expect(screen.getByText(/16 evidence.*1 reconciliation.*17 model calls/)).toBeTruthy();
     expect(screen.getByText(/GitHub checks: enabled/)).toBeTruthy();

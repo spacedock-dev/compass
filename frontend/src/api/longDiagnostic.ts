@@ -1,10 +1,31 @@
 import { longResourcePlan } from './longPlan';
 import type { LongProgress } from './longProgress';
 
+export const LONG_STOP_REASONS = [
+  'resource-limit',
+  'source-changed',
+  'source-gap',
+  'evidence-gap',
+  'evidence-pass-failed',
+  'final-context-limited',
+  'final-call-failed',
+  'call-refused',
+  'context-changed',
+  'permission-changed',
+  'cancelled',
+  'shutdown',
+  'job-deadline',
+  'accounting-unresolved',
+  'cleanup-unresolved',
+  'unknown',
+] as const;
+export type LongStopReason = (typeof LONG_STOP_REASONS)[number];
+
 /** Display projection only. Backend validation owns the unrendered source/maps/observations. */
 export interface LongDiagnostic {
   readonly outcome: 'pending' | 'completed' | 'partial' | 'withheld' | 'cancelled' | 'interrupted';
   readonly complete: false | null;
+  readonly stop_reason?: LongStopReason;
   readonly accounting: LongProgress['accounting'] & { readonly attempted_job: number | null };
   readonly binding: {
     readonly revision: number;
@@ -84,7 +105,13 @@ export function longDiagnostic(value: unknown): LongDiagnostic | null {
     'complete',
   ];
   if (
-    !(keys(value, fields) || keys(value, [...fields, 'binding'])) ||
+    !(
+      keys(value, fields) ||
+      keys(value, [...fields, 'binding']) ||
+      keys(value, [...fields, 'stop_reason']) ||
+      keys(value, [...fields, 'binding', 'stop_reason'])
+    ) ||
+    (Object.hasOwn(value, 'stop_reason') && !oneOf(value['stop_reason'], LONG_STOP_REASONS)) ||
     value['version'] !== 1 ||
     value['kind'] !== 'long-analysis' ||
     !oneOf(value['outcome'], [
@@ -130,6 +157,7 @@ export function longDiagnostic(value: unknown): LongDiagnostic | null {
     JSON.stringify({
       outcome: value['outcome'],
       complete: value['complete'],
+      ...(Object.hasOwn(value, 'stop_reason') ? { stop_reason: value['stop_reason'] } : {}),
       accounting,
       binding: value['binding'] ?? null,
     }),

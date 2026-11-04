@@ -73,7 +73,7 @@ const MEASUREMENTS = {
   reply_bytes: 'captured-reply-allocation',
   source_bytes: 'native-actual-io',
   retained_bytes: 'retained-object-graph',
-  prepare_ms: 'source-collection-and-revalidation',
+  prepare_ms: 'source-and-analysis-preparation',
   job_ms: 'whole-job-elapsed',
 };
 const LIMITS = [

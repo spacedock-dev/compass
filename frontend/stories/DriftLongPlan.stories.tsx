@@ -23,6 +23,8 @@ export const ExplicitPreviewThenOneStart: Story = {
     await expect(preview.gets).toBe(1);
     await expect(reading.posts).toHaveLength(0);
     await expect(root).toHaveTextContent('not process RSS');
+    await expect(root).toHaveTextContent('Source and analysis preparation: 60 seconds maximum.');
+    await expect(root).toHaveTextContent('model waits are excluded');
     await expect(root).toHaveTextContent('not a guarantee');
     await expect(root).toHaveTextContent('17 model calls total');
     await expect(root).toHaveTextContent('GitHub checks: enabled');

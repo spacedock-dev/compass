@@ -87,8 +87,10 @@ function PlanDetails({ preview }: { readonly preview: LongPlanDescriptor }) {
             {amount(plan.limits.retained_units, 'units')} maximum, not process RSS.
           </p>
           <p>
-            Source collection and revalidation: {amount(plan.limits.prepare_ms / 1000, 'seconds')}.
-            Whole job: {amount(plan.limits.job_ms / 1000, 'seconds')} maximum.
+            Source and analysis preparation: {amount(plan.limits.prepare_ms / 1000, 'seconds')}{' '}
+            maximum. Covers source collection, CI checks, and preparing and processing analysis;
+            model waits are excluded. Whole job: {amount(plan.limits.job_ms / 1000, 'seconds')}{' '}
+            maximum.
           </p>
         </>
       ) : null}

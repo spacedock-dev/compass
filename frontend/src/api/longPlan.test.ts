@@ -4,6 +4,23 @@ import { longPlan, readingLongPlan } from './longPlan';
 import { createApiClient } from './client';
 
 describe('closed advisory long plan', () => {
+  it('requires the current source-and-analysis preparation measurement meaning', () => {
+    expect(
+      longPlan({
+        ...LONG_PLAN,
+        measurements: { ...LONG_PLAN.measurements, prepare_ms: 'source-and-analysis-preparation' },
+      }),
+    ).not.toBeNull();
+    expect(
+      longPlan({
+        ...LONG_PLAN,
+        measurements: {
+          ...LONG_PLAN.measurements,
+          prepare_ms: 'source-collection-and-revalidation',
+        },
+      }),
+    ).toBeNull();
+  });
   it('requires the exact successful envelope', () => {
     expect(readingLongPlan({ ok: true, long_plan: LONG_PLAN })).toEqual(LONG_PLAN);
     for (const value of [
