@@ -1428,6 +1428,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.sessions",
             "compass_runtime.state",
         },
+        # Pure byte/estimated-context policy; no route discovery or execution.
+        "compass_runtime.reading_capacity": set(),
         # The durable permission and budget: config names its store, io owns
         # optional SQLite loading, and the runner says whether Compass is
         # stopping. It reaches no session or model producer.
