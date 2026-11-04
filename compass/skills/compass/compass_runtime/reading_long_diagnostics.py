@@ -430,6 +430,7 @@ def derive(
     series: Series | None = None,
     inspected: Inspection | None = None,
     observations: list[dict[str, Any]] | None = None,
+    reconciliation_observations: list[dict[str, Any]] | None = None,
     outcome: str = "pending",
 ) -> dict[str, Any]:
     """Project actual producer metadata; never serialize a producer's words or paths.
@@ -442,6 +443,13 @@ def derive(
     _require(series is None or observations is None)
     if series is not None:
         _require(series.final_slot.ordinal == plan.get("max_calls"))
+    combined = list(series.observations) if series is not None else observations
+    if reconciliation_observations is not None:
+        final = _observations(reconciliation_observations, plan)
+        _require(final is not None and len(final) <= 1)
+        if final is not None:
+            _require(all(slot["observation"]["kind"] == "reconciliation" for slot in final))
+            combined = [*(combined or ()), *final]
     state = inspected.accounting if inspected else "unknown"
     totals = (inspected.exact or inspected.minimum) if inspected else None
     counted = (
@@ -459,7 +467,7 @@ def derive(
         "plan": plan,
         "source": _source_metrics(inventory, collection) if inventory is not None else None,
         "maps": _map_metrics(series) if series is not None else None,
-        "observations": list(series.observations) if series is not None else observations,
+        "observations": combined,
         "accounting": {
             "state": state,
             "totals": counted,

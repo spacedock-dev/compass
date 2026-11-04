@@ -217,8 +217,8 @@ def intent(goal: str, lines: Sequence[str], context: Frozen | None = None) -> di
     return value
 
 
-def require_safety(context: Frozen, floor: reading.Selection) -> None:
-    """The final caller cannot silently weaken the safety floor carried by every map."""
+def safety_floor(floor: reading.Selection) -> dict[str, Any]:
+    """Copy the existing full-scope Selection's safety metadata, without inferring coverage."""
     rows = {
         row["id"]: row for row in (*floor.entries, *floor.unread_checks, *floor.unread_failures)
     }
@@ -255,6 +255,12 @@ def require_safety(context: Frozen, floor: reading.Selection) -> None:
         ],
         writes=refs([row for row in rows.values() if row.get("subject") == reading.WRITE_SUBJECT]),
     )
+    return expected
+
+
+def require_safety(context: Frozen, floor: reading.Selection) -> None:
+    """The final caller cannot silently weaken the safety floor carried by every map."""
+    expected = safety_floor(floor)
     actual = context.value()["safety"]
     if any(actual[key] != value for key, value in expected.items()):
         raise ValueError("Final safety floor differs from frozen map context")

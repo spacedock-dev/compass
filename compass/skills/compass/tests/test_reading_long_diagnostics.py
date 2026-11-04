@@ -56,6 +56,26 @@ class LongDiagnosticsTest(unittest.TestCase):
         self.assertEqual(value, module.validate(value))
         self.assertIsNone(module.validate(diagnostic()))
 
+    def test_reconciliation_merge_only_accepts_one_reserved_final_position(self) -> None:
+        module = self.module()
+        final = {
+            "observation": {**observation(), "ordinal": 17, "kind": "reconciliation"},
+            "ended": True,
+        }
+        for slots in (
+            [final, final],
+            [{"observation": {**final["observation"], "ordinal": 16}, "ended": True}],
+            [{"observation": {**final["observation"], "kind": "evidence"}, "ended": True}],
+            [{"observation": observation(), "ended": True}],
+        ):
+            with self.subTest(slots=slots), self.assertRaises(ValueError):
+                module.derive(plan=plan(), reconciliation_observations=slots)
+        with self.assertRaises(ValueError):
+            module.derive(plan=plan(), observations=[final], reconciliation_observations=[final])
+        self.assertEqual(
+            [final], module.derive(plan=plan(), reconciliation_observations=[final])["observations"]
+        )
+
     def test_observation_copy_bounds_nested_validation_and_no_complete_assertion(self) -> None:
         module = self.module()
         slots: list[dict[str, Any]] = [{"observation": observation(), "ended": True}]
