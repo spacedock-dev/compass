@@ -37,6 +37,7 @@ _SOURCE_REASONS = {
     "source_gap",
     "native_incomplete",
     "canonical_limit",
+    "message_limit",
 }
 _MAP_REASONS = {
     "input-limit",
