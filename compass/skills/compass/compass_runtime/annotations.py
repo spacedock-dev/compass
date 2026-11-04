@@ -2267,6 +2267,60 @@ def _publication_receipts(
     return [*receipts, job_id]
 
 
+def release_long_receipt(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: str,
+    sid: str,
+    *,
+    job_id: str,
+    incarnation: str,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> str:
+    """Remove one retired job's private receipt without changing its public outcome.
+
+    The cleanup owner must hold the marker publication barrier and prove marker
+    absence before calling. All long publication must take that barrier before
+    this annotation lock and reread the marker; an earlier snapshot is not enough.
+    Revision may advance, but a recreated annotation never inherits cleanup.
+    """
+    key = _key(harness, sid)
+    if (
+        not config.annotations_enabled
+        or not all(key)
+        or key != (harness, sid)
+        or _long_incarnation(job_id) is None
+        or _long_incarnation(incarnation) is None
+    ):
+        return OUTCOME_REFUSED
+    with _locked_store(config, state, diagnostic_sink) as store:
+        if store is None or not store.trusted:
+            return OUTCOME_UNWRITABLE if store is None else OUTCOME_UNTRUSTED
+        existing = find(store.entries, *key)
+        if (
+            existing is None
+            or is_discarded(existing)
+            or _held(store, key)
+            or existing.get("long_incarnation") != incarnation
+            or (receipts := existing.get("long_receipts", [])) is None
+        ):
+            return OUTCOME_REFUSED
+        if job_id not in receipts:
+            return OUTCOME_UNCHANGED
+        updated: Annotation = {
+            **existing,
+            "long_receipts": [receipt for receipt in receipts if receipt != job_id],
+        }
+        return _commit(
+            config,
+            state,
+            store,
+            key,
+            [updated if entry is existing else entry for entry in store.entries],
+            diagnostic_sink=diagnostic_sink,
+        )
+
+
 def capture_long_target(
     config: RuntimeConfig,
     state: RuntimeState,
