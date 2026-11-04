@@ -1359,6 +1359,11 @@ class PromptPermit(Protocol):
     def reason(self) -> str: ...
 
 
+_INVOKE_REFUSALS = frozenset(
+    {"intent-changed", "permission-changed", "job-deadline", "job-clock-invalid"}
+)
+
+
 class GuardedModel:
     """Reserve at the actual model seam, after eligibility and evidence checks."""
 
@@ -1379,7 +1384,10 @@ class GuardedModel:
         reserve_with: Callable[..., Status] | None = None,
         admit_prompt: Callable[[str], str | None] | None = None,
         reserve_prompt: Callable[[str, int], PromptPermit] | None = None,
+        before_invoke: Callable[[], str | None] | None = None,
     ) -> None:
+        if before_invoke is not None and reserve_prompt is None:
+            raise ValueError("Before-invoke checks require prompt-aware reservation")
         if reserve_prompt is not None and (
             reserve_with is not None or before_reserve is not None or unasked
         ):
@@ -1396,6 +1404,9 @@ class GuardedModel:
         # charges `reserve_monitor` here, at the same seam and in the same order.
         self.reserve_with = reserve_with
         self.reserve_prompt = reserve_prompt
+        # A current-context/deadline refusal after a fresh charge, not authority.
+        # Exceptions preserve the charge and never enter the model adapter.
+        self.before_invoke = before_invoke
         self.admit_prompt = admit_prompt
         self.reserved = False
         self.analyze_diagnostic: dict[str, Any] | None = None
@@ -1542,6 +1553,8 @@ class GuardedModel:
             return "", refusal
         if refusal := self._reserve_call(prompt, output_cap_bytes):
             return "", refusal
+        if self.reserve_prompt is not None and (refusal := self._before_invoke()):
+            return "", refusal
         self._model_invoked = True
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # A last-moment managed-policy change can stop the child after the
@@ -1549,6 +1562,21 @@ class GuardedModel:
         if outcome == "context-config":
             outcome = "context-config-after-reserve"
         return raw, outcome
+
+    def _before_invoke(self) -> str | None:
+        """Recheck after reservation callbacks; this is adapter entry, not child spawn."""
+        if refusal := self._preflight():
+            return refusal
+        if self.before_invoke is not None:
+            reason = self.before_invoke()
+            if reason is not None:
+                if not isinstance(reason, str) or reason not in _INVOKE_REFUSALS:
+                    raise ValueError("Invalid before-invoke refusal")
+                raise RefusedError(_answer(reason=reason))
+            # Context checks can block. A Cancel or destination change during
+            # them still prevents entry, without undoing the committed charge.
+            return self._preflight()
+        return None
 
 
 def note(
