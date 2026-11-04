@@ -1,4 +1,4 @@
-"""Private, resumable observations of one frozen Claude parent prefix.
+"""Private, resumable observations of one frozen native Claude prefix.
 
 The endpoint is frozen by stat; its baseline is established by a later bounded
 digest pass, not an atomic filesystem snapshot. Rows remain unverified until
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 from . import io as runtime_io
-from . import record_pages
+from . import project_context, record_pages
 from .config import (
     SESSION_SOURCE_LINE_MAX_BYTES,
     SESSION_SOURCE_PAGE_MAX_BYTES,
@@ -43,6 +43,8 @@ class FrozenParent:
     inode: int
     end_offset: int
     line_max_bytes: int
+    modified: float = 0
+    parent_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +109,13 @@ def freeze(
     if type(line_max_bytes) is not int or not 0 < line_max_bytes <= SESSION_SOURCE_LINE_MAX_BYTES:
         raise ValueError("invalid raw line bound")
     path = os.path.abspath(path)
-    info = os.stat(path)
+    return _freeze(path, harness, sid, line_max_bytes, None)
+
+
+def _freeze(
+    path: str, harness: str, sid: str, line_max_bytes: int, parent_path: str | None
+) -> Cursor:
+    info = os.stat(path, follow_symlinks=parent_path is None)
     if not stat.S_ISREG(info.st_mode):
         raise OSError("source is not a regular file")
     return Cursor(
@@ -120,8 +128,30 @@ def freeze(
             info.st_ino,
             info.st_size,
             line_max_bytes,
+            info.st_mtime,
+            parent_path,
         )
     )
+
+
+def freeze_child(parent: Cursor, path: str) -> Cursor:
+    """Freeze an admitted native child without following its final link."""
+    frozen = parent.frozen
+    path = os.path.abspath(path)
+    if frozen.parent_path is not None or not project_context._admitted_subagent_path(  # noqa: SLF001
+        frozen.path, path
+    ):
+        raise ValueError("source is not an admitted native child")
+    child = _freeze(path, frozen.harness, frozen.sid, frozen.line_max_bytes, frozen.path)
+    _check_admission(child.frozen)
+    return child
+
+
+def _check_admission(frozen: FrozenParent) -> None:
+    if frozen.parent_path is not None and not project_context._admitted_subagent_path(  # noqa: SLF001
+        frozen.parent_path, frozen.path
+    ):
+        raise OSError("native child path is no longer admitted")
 
 
 def _owned(info: os.stat_result, frozen: FrozenParent) -> bool:
@@ -233,12 +263,14 @@ def _checked_page(
     clock: Callable[[], float],
 ) -> tuple[Cursor, list[RawRecord], list[Gap]]:
     frozen = cursor.frozen
-    info = os.stat(frozen.path)
+    _check_admission(frozen)
+    follow_links = frozen.parent_path is None
+    info = os.stat(frozen.path, follow_symlinks=follow_links)
     if not _owned(info, frozen):
         raise OSError("frozen source replaced or truncated")
     # The unbuffered scan opener charges actual content reads without hidden
     # prefetch. Claude's parent follows links, as its existing source reader does.
-    with runtime_io._open_scan_binary(frozen.path, follow_links=True) as source:  # noqa: SLF001
+    with runtime_io._open_scan_binary(frozen.path, follow_links=follow_links) as source:  # noqa: SLF001
         before = os.fstat(source.fileno())
         stamp = _stamp(before)
         if not _owned(before, frozen) or stamp != _stamp(info):
@@ -248,7 +280,11 @@ def _checked_page(
                 raise OSError("source moved during digest pass")
             cursor = replace(cursor, phase_stamp=stamp)
         cursor, rows, gaps = _consume(source, cursor, budget, deadline, clock)
-        if _stamp(os.fstat(source.fileno())) != stamp or _stamp(os.stat(frozen.path)) != stamp:
+        _check_admission(frozen)
+        if (
+            _stamp(os.fstat(source.fileno())) != stamp
+            or _stamp(os.stat(frozen.path, follow_symlinks=follow_links)) != stamp
+        ):
             raise OSError("source moved during page read")
     return cursor, rows, gaps
 
