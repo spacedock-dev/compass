@@ -171,7 +171,15 @@ def _intent_matches(
     value = json.loads(raw, object_pairs_hook=_object)
     if (
         not isinstance(value, dict)
-        or set(value) != ({"goal", "lines"} if context is None else {"goal", "lines", "context"})
+        or set(value)
+        != (
+            ({"goal", "lines"} if context is None else {"goal", "lines", "context"})
+            | (
+                {"restored_goal"}
+                if context is not None and context.goal_proof is not None
+                else set()
+            )
+        )
         or not isinstance(value["goal"], str)
         or not isinstance(value["lines"], list)
         or any(not isinstance(line, str) for line in value["lines"])

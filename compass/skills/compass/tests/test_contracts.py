@@ -1434,7 +1434,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reading_capacity": set(),
         "compass_runtime.analyze_diagnostics": set(),
         "compass_runtime.reading_pass_types": {"compass_runtime.analyze_diagnostics"},
-        "compass_runtime.reading_pass_context": {"compass_runtime.reading"},
+        "compass_runtime.reading_pass_context": {
+            "compass_runtime.reading",
+            "compass_runtime.reading_goal_proof",
+        },
+        "compass_runtime.reading_goal_proof": {
+            "compass_runtime.reading",
+            "compass_runtime.records",
+            "compass_runtime.reading_source_words",
+        },
         "compass_runtime.reading_passes": {
             "compass_runtime.reading",
             "compass_runtime.reading_pass_context",
@@ -1450,6 +1458,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reading_final_call": {
             "compass_runtime.analyze_diagnostics",
             "compass_runtime.reading",
+            "compass_runtime.reading_goal_proof",
+            "compass_runtime.reading_source_words",
             "compass_runtime.reading_map_series",
             "compass_runtime.reading_pass_context",
             "compass_runtime.reading_pass_types",

@@ -177,7 +177,9 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     measurements = _Measurements(declared, on_observation)
     measurements.prepare(1, None)
     frozen_lines, frozen_clauses = tuple(lines), tuple(clauses)
-    prefix = reading_map_call.protocol_prefix(goal, frozen_lines, frozen_clauses)
+    prefix = reading_map_call.protocol_prefix(
+        goal, frozen_lines, frozen_clauses
+    ) + reading_pass_context.goal_rule(frozen_context)
     limits = declared["limits"]
     final_slot = FinalSlot(declared["max_calls"], limits["prompt_bytes"], limits["reply_bytes"])
     slots = min(

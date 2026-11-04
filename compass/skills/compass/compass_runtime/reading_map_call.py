@@ -78,7 +78,9 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
 
     frozen_lines, frozen_clauses = tuple(lines), tuple(clauses)
     try:
-        prefix = protocol_prefix(goal, frozen_lines, frozen_clauses)
+        prefix = protocol_prefix(
+            goal, frozen_lines, frozen_clauses
+        ) + reading_pass_context.goal_rule(frozen_context)
     except ValueError:
         return result("local-unfit", "invalid-input")
     try:

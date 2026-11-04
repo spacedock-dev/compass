@@ -221,7 +221,15 @@ def _packet(
     combined = _union((*context, *primary))
     identities = sorted(combined, key=lambda key: sources[key][0])
     selected = tuple(_project(sources[key][1], combined[key]) for key in identities)
-    selection = reading.Selection(selected, asked_output=False, lines=lines)
+    proof = frozen_context.goal_proof if frozen_context is not None else None
+    whole_goal = proof is not None and header.endswith(
+        FROZEN_INTENT_BOUNDARY
+        + json.dumps(
+            reading_pass_context.intent(proof.saved_goal, lines, frozen_context), ensure_ascii=False
+        )
+        + EVIDENCE_BOUNDARY
+    )
+    selection = reading.Selection(selected, asked_output=False, lines=lines, goal_whole=whole_goal)
     if measure:
         selection = replace(
             selection,

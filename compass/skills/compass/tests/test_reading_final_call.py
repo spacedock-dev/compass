@@ -54,6 +54,7 @@ class FinalCallTest(unittest.TestCase):
         self.open_call_at = None
         self.scope = reading.SCOPE_FINAL
         self.goal_status = None
+        self.message_words = ()
         self.facts = [
             _person("rule", 100, "The tests pass"),
             _check(fact_id="middle", at=110, result="passed"),
@@ -75,6 +76,7 @@ class FinalCallTest(unittest.TestCase):
             self.recovered,
             self.settled_through,
             self.open_call_at,
+            self.message_words,
         )
         self.floor = self.module.scope_floor(self.inputs, scope=self.scope)
         ledger = self.floor.entries
@@ -82,6 +84,7 @@ class FinalCallTest(unittest.TestCase):
             f["fact_id"]: f.get(reading.WORDS_FIELD, f.get(reading.AGENT_WORDS_FIELD))
             for f in self.facts
         }
+        words.update({w.fact_id: w.words for w in self.message_words if w.state == "whole"})
         self.originals = [reading_passes.Original(row, words[row["id"]]) for row in ledger]
         self.context = self.module.freeze_context(
             self.inputs,

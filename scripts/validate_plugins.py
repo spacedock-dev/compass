@@ -485,6 +485,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reading_pass_types.py",
     "skills/compass/compass_runtime/reading_passes.py",
     "skills/compass/compass_runtime/reading_pass_context.py",
+    "skills/compass/compass_runtime/reading_goal_proof.py",
     "skills/compass/compass_runtime/reading_maps.py",
     "skills/compass/compass_runtime/reading_map_call.py",
     "skills/compass/compass_runtime/reading_map_series.py",

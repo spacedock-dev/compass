@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import reading
+from . import reading, reading_goal_proof
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -19,9 +19,20 @@ _SECTIONS = {"revision", "provenance", "window", "settlement", "safety"}
 _GAPS = {"source", "words", "context", "candidates", "adopted-goal"}
 
 
+def goal_rule(context: Frozen | None) -> str:
+    """The owned protocol extension, present before fit only for restored goal headers."""
+    return (
+        "\nWhen restored_goal is present, evaluate its complete words as the saved goal's source. "
+        "goal remains the saved label for that same clause.\n"
+        if context is not None and context.goal_proof is not None
+        else ""
+    )
+
+
 @dataclass(frozen=True)
 class Frozen:
     encoded: str
+    goal_proof: reading_goal_proof.Proof | None = None
 
     def value(self) -> dict[str, Any]:
         """Return an independent copy; the canonical representation is immutable."""
@@ -150,7 +161,13 @@ def _safety(value: Any) -> bool:
     )
 
 
-def freeze(goal: str, lines: Sequence[str], metadata: Any) -> Frozen:
+def freeze(
+    goal: str,
+    lines: Sequence[str],
+    metadata: Any,
+    *,
+    goal_proof: reading_goal_proof.Proof | None = None,
+) -> Frozen:
     """Validate/copy metadata already derived by the existing reading-policy owners.
 
     None request times and source completeness stay unknown. Never infer provenance,
@@ -177,6 +194,10 @@ def freeze(goal: str, lines: Sequence[str], metadata: Any) -> Frozen:
         )
         if not valid:
             raise ValueError("Invalid frozen reading context")
+        if goal_proof is not None:
+            if type(goal_proof) is not reading_goal_proof.Proof:
+                raise ValueError("Invalid restored goal proof")
+            goal_proof.header(goal, metadata["provenance"])
         intent = json.dumps({"goal": goal, "lines": tuple(lines)}, ensure_ascii=False).encode(
             "utf-8"
         )
@@ -194,7 +215,7 @@ def freeze(goal: str, lines: Sequence[str], metadata: Any) -> Frozen:
             raise ValueError("Frozen reading context exceeds its bound")
     except (TypeError, KeyError, UnicodeError, RecursionError):
         raise ValueError("Invalid frozen reading context") from None
-    return Frozen(encoded)
+    return Frozen(encoded, goal_proof)
 
 
 def intent(goal: str, lines: Sequence[str], context: Frozen | None = None) -> dict[str, Any]:
@@ -209,11 +230,13 @@ def intent(goal: str, lines: Sequence[str], context: Frozen | None = None) -> di
         metadata = {
             key: item for key, item in supplied.items() if key not in {"version", "intent_sha256"}
         }
-        if freeze(goal, lines, metadata) != context:
+        if freeze(goal, lines, metadata, goal_proof=context.goal_proof) != context:
             raise ValueError("Frozen context does not match the exact intent")
     except (TypeError, KeyError, UnicodeError, RecursionError):
         raise ValueError("Invalid frozen reading context") from None
     value["context"] = supplied
+    if context.goal_proof is not None:
+        value["restored_goal"] = context.goal_proof.header(goal, supplied["provenance"])
     return value
 
 

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from . import (
     analyze_diagnostics,
     reading,
+    reading_goal_proof,
     reading_map_series,
     reading_pass_context,
     reading_pass_types,
@@ -19,6 +20,8 @@ from . import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+
+    from .reading_source_words import MessageWords
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ class Inputs:
     recovered_sources: tuple[Mapping[str, Any], ...] = ()
     settled_through: float | None = None
     open_call_at: float | None = None
+    message_words: tuple[MessageWords, ...] = ()
 
 
 def _request_data(inputs: Inputs) -> tuple[dict[str, float], frozenset[str], float | None]:
@@ -180,6 +184,7 @@ def freeze_context(
     goal, lines = str(revision.get("goal") or ""), reading.outcome_lines(revision)
     floors, uncitable, through = _request_data(inputs)
     source = revision.get("goal_source") or "typed"
+    proof = reading_goal_proof.restore(inputs.row, revision, inputs.facts, inputs.message_words)
     raw_lines = _line_sources(revision)
     provenance = [
         {
@@ -199,7 +204,9 @@ def freeze_context(
                 "goal_source": source,
                 "goal_source_at": reading.valid_prompt_time(revision.get("goal_source_at")),
                 "goal_saved_at": reading.valid_prompt_time(revision.get("goal_saved_at")),
-                "goal_status": goal_status or ("typed" if source == "typed" else "unknown"),
+                "goal_status": "whole"
+                if proof is not None
+                else goal_status or ("typed" if source == "typed" else "unknown"),
                 "lines": provenance,
             },
             "window": _window(inputs, scope),
@@ -210,6 +217,7 @@ def freeze_context(
                 "gaps": list(gaps),
             },
         },
+        goal_proof=proof,
     )
 
 
@@ -408,12 +416,14 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered prepare/call/persist
     if measures.failed:
         return result("persistence-unresolved", "persistence-unresolved")
     if context["provenance"]["goal_source"] != "typed" and not packet.selection.goal_whole:
-        # Context metadata is not restoration proof. This packet builder does not yet
-        # rehydrate an adopted goal; do not pay for a final verdict about its excerpt.
-        built = replace(
-            built, unresolved=tuple(dict.fromkeys((*built.unresolved, "adopted-goal-unavailable")))
+        # Metadata alone cannot establish complete adopted words or an unclipped /goal.
+        gap = (
+            "stated-goal-limited"
+            if context["provenance"]["goal_source"] == reading.SESSION_GOAL
+            else "adopted-goal-unavailable"
         )
-        return result("unresolved", "adopted-goal-unavailable")
+        built = replace(built, unresolved=tuple(dict.fromkeys((*built.unresolved, gap))))
+        return result("unresolved", gap)
     stopped = _stopped(stop_reason)
     if stopped is not None:
         return result(stopped, stopped)

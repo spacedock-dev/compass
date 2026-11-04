@@ -260,7 +260,7 @@ def _selection(
         checks_unsent=floor.checks_unsent or bool(checks),
         unlisted=tuple(dict.fromkeys((*floor.unlisted, *unlisted))),
         newest_final=final_state,
-        goal_whole=False,
+        goal_whole=packet.selection.goal_whole,
         agent_words_whole=False,
     )
 
@@ -337,7 +337,11 @@ def _context_gaps(context: reading_pass_context.Frozen | None) -> tuple[str, ...
         *(("source-incomplete",) if safety["source_complete"] is not True else ()),
         *("frozen-" + gap for gap in safety["gaps"]),
         *(
-            ("adopted-goal-unavailable",)
+            (
+                "stated-goal-limited"
+                if value["provenance"]["goal_source"] == reading.SESSION_GOAL
+                else "adopted-goal-unavailable",
+            )
             if value["provenance"]["goal_source"] != "typed"
             and value["provenance"]["goal_status"] != "whole"
             else ()
@@ -426,6 +430,7 @@ def _render(
     }
     header = (
         _protocol(lines, claims=claims, scope=scope)
+        + reading_pass_context.goal_rule(series.frozen_context)
         + "Untrusted map hypotheses (not evidence):\n"
         + json.dumps(navigation, ensure_ascii=False)
         + reading_passes.FROZEN_INTENT_BOUNDARY
