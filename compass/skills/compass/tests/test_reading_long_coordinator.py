@@ -489,6 +489,71 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         assert diagnostic is not None
         self.assertEqual("partial", diagnostic["outcome"])
 
+    def test_unacknowledged_publication_failure_keeps_measured_withheld_after_actual_calls(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            annotation_store, "record_reading", return_value=annotation_store.OUTCOME_REFUSED
+        ):
+            saved = self.actual_case(advancing=True)
+        self.assertNotIn("assessment", saved)
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_LONG_INCOMPLETE], saved["withheld"])
+        diagnostic = saved["long_diagnostic"]
+        assert diagnostic is not None
+        self.assertEqual("withheld", diagnostic["outcome"])
+        self.assertEqual("unknown", diagnostic["stop_reason"])
+        self.assertEqual(2, diagnostic["accounting"]["totals"]["calls"])
+
+    def test_invalid_or_unavailable_publication_falls_back_without_claiming_final_coverage(
+        self,
+    ) -> None:
+        for reason in ("publication-invalid", "publication-unavailable"):
+            with (
+                self.subTest(reason=reason),
+                mock.patch.object(
+                    finalization, "completed", return_value=finalization.Finalized(reason=reason)
+                ),
+            ):
+                saved = self.actual_case(advancing=True)
+                diagnostic = saved["long_diagnostic"]
+                assert diagnostic is not None
+                self.assertEqual("withheld", diagnostic["outcome"])
+                self.assertEqual("unknown", diagnostic["stop_reason"])
+
+    def test_durable_acknowledgment_never_falls_back_when_retirement_fails(self) -> None:
+        with (
+            mock.patch.object(inspection, "_retire_locked", return_value=False),
+            mock.patch.object(coordinator, "finish_withheld", side_effect=AssertionError),
+        ):
+            saved = self.actual_case(advancing=True, retained="acknowledged")
+        self.assertIn("assessment", saved)
+        self.assertNotIn("withheld", saved)
+
+    def test_failed_fallback_store_keeps_marker_and_does_not_ack_or_count(self) -> None:
+        original = annotation_store.record_withheld
+
+        def unwritable(*args: Any, **kwargs: Any) -> str:
+            with mock.patch.object(annotation_store, "save", return_value=False):
+                return original(*args, **kwargs)
+
+        with (
+            mock.patch.object(
+                annotation_store, "record_reading", return_value=annotation_store.OUTCOME_REFUSED
+            ),
+            mock.patch.object(annotation_store, "record_withheld", side_effect=unwritable),
+        ):
+            self.actual_case(advancing=True, retained="unpublished")
+
+    def test_accounting_lost_at_publication_retains_marker_without_fabricated_count(self) -> None:
+        original = finalization.completed
+
+        def lost(*args: Any, **kwargs: Any) -> finalization.Finalized:
+            policy.store_path(args[0]).unlink()
+            return original(*args, **kwargs)
+
+        with mock.patch.object(finalization, "completed", side_effect=lost):
+            self.actual_case(advancing=True, retained="unpublished")
+
     def test_owned_timeout_retains_charge_and_specific_reason_after_proven_cleanup(self) -> None:
         saved = self.actual_case(timed_out=True)
         self.assertNotIn("assessment", saved)
@@ -506,7 +571,12 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.actual_case(unstopped="ci")
 
     def actual_case(
-        self, *, timed_out: bool = False, unstopped: str = "", advancing: bool = False
+        self,
+        *,
+        timed_out: bool = False,
+        unstopped: str = "",
+        advancing: bool = False,
+        retained: str = "",
     ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
@@ -611,16 +681,30 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             self.assert_unstopped(fixture, started, uncertain[0], count)
             return entry
         self.assertTrue(started.context.active.job.group.cleanup_complete())
+        return self.assert_saved(fixture, started, count, retained)
+
+    def assert_saved(
+        self,
+        fixture: worker_tests.GuardedNativeWorkerTest,
+        started: admission.Started,
+        count: int,
+        retained: str,
+    ) -> annotation_store.Annotation:
         saved = annotation_store.find(
             annotation_store.load(fixture.config), "claude", fixture.row["sid"]
         )
         assert saved is not None
+        self.assertIsNone(reading.job(fixture.config, f"claude:{fixture.row['sid']}"))
+        marker = markers.load(fixture.config, started.context.active.job.id)
+        self.assertEqual(bool(retained), marker is not None)
+        if retained == "unpublished":
+            self.assertNotIn("readings", saved)
+            self.assertNotIn("long_diagnostic", saved)
+            return saved
         self.assertEqual(1, annotation_store.published(saved)["reading_count"])
         diagnostic = saved["long_diagnostic"]
         assert diagnostic is not None
         self.assertEqual(count, diagnostic["accounting"]["totals"]["calls"])
-        self.assertIsNone(markers.load(fixture.config, started.context.active.job.id))
-        self.assertIsNone(reading.job(fixture.config, f"claude:{fixture.row['sid']}"))
         return saved
 
     def assert_unstopped(

@@ -367,23 +367,17 @@ def _completed(
     )
     # A durable acknowledgment may outlive retirement failure. Never overwrite it
     # with a second outcome merely because cleanup did not finish.
-    if not result.acknowledged and result.reason in (
-        "cancelled",
-        "closed",
-        "permission-changed",
-        "model-calls-paused",
-        "context-changed",
-        "intent-changed",
-        "source-changed",
-        "job-deadline",
-        "run-disabled",
-    ):
+    if not result.acknowledged:
+        # Publication itself failed. Earlier reconciliation coverage is not the
+        # cause of this latest outcome; derive its closed category afresh.
+        diagnostic = deepcopy(finished.diagnostic)
+        diagnostic.pop("stop_reason", None)
         finish_withheld(
             application,
             started,
             result.reason,
             collection=collected,
-            long_diagnostic=finished.diagnostic,
+            long_diagnostic=diagnostic,
         )
         return
     reading.end_job(config, _key(started), expected_job=active.job)
