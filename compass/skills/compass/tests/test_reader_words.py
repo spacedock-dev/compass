@@ -583,6 +583,8 @@ GET_ROUTES = {
     "/api/session-record": f"/api/session-record?project=billing&session=claude:{SHORT}",
     "/api/data": "/api/data?all=1",
     "/api/observe": f"/api/observe?harness=claude&sid={SHORT}",
+    "/api/reading-long-plan": f"/api/reading-long-plan?harness=claude&sid={SHORT}",
+    "/api/reading-long-history": f"/api/reading-long-history?harness=claude&sid={SHORT}",
     "/api/project-context": f"/api/project-context?project=billing&session=claude:{SHORT}&prompts=1",
     "/api/overlays": "/api/overlays",
     "/api/cleared": "/api/cleared",
@@ -633,6 +635,7 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
         self.assertEqual(routes, set(GET_ROUTES) | UNSWEPT_GET)
 
     def test_no_get_route_answers_with_the_words(self) -> None:
+        refuse_real_models(self)
         with (
             mock.patch.object(project_context, "collect", self.context),
             mock.patch.object(
@@ -644,7 +647,25 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
         ):
             for route, path in GET_ROUTES.items():
                 with self.subTest(route=route):
-                    _status, body = self.request(port, "GET", path)
+                    status, body = self.request(port, "GET", path)
+                    if route in {"/api/reading-long-plan", "/api/reading-long-history"}:
+                        # Exercise real successful metadata, never a word-free 400/503 refusal.
+                        self.assertEqual(200, status, body)
+                        answer = json.loads(body)
+                        field = "long_plan" if route == "/api/reading-long-plan" else "long_history"
+                        self.assertEqual({"ok", field}, set(answer))
+                        self.assertIs(answer["ok"], True)
+                        self.assertEqual(1, answer[field]["version"])
+                        if field == "long_plan":
+                            self.assertEqual("long", answer[field]["mode"])
+                            self.assertIs(answer[field]["source"]["frozen"], False)
+                        else:
+                            self.assertEqual(
+                                {"version", "items", "incomplete", "reason"}, set(answer[field])
+                            )
+                            self.assertEqual([], answer[field]["items"])
+                        self.assertNotIn(OPENING.encode(), body)
+                        self.assertNotIn(POINT.encode(), body)
                     self.assertNotIn(FIELD.encode(), body)
                     if route == "/api/project-context":
                         body = self._without_prompt_choices(body)
