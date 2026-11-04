@@ -150,6 +150,12 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
                 "prompt": "Review parser.",
             },
         }
+        self.parent.rows = [short]
+        bounded = self.collect()
+        self.assertEqual(1793750401.0, bounded.words[0].at)
+        wanted = reading.build_ledger(
+            bounded.evidence.facts, "claude", SHORT, read_agent_words=True
+        )
         oversized = copy.deepcopy(short)
         oversized["attachment"]["prompt"] += "x" * context.PRESS_TEXT_MAX_CHARS
         for rows in ([short, oversized], [oversized, short]):
@@ -161,15 +167,24 @@ class VerifiedOrdinaryWordsTest(unittest.TestCase):
                     side_effect=AssertionError("admission before words"),
                 ):
                     result = self.collect()
-                self.assertEqual([], self.oracle(result))
-                self.assertTrue(result.words)
-                self.assertTrue(
-                    all(
-                        row.state == "unavailable" and row.reason == "admission"
-                        for row in result.words
-                    )
+                self.assertEqual("message_limit", result.reason)
+                self.assertIsNone(result.evidence)
+                self.assertIsNone(result.words)
+                self.assertIsNone(result.final)
+                self.assertIsNone(result.snapshot)
+                # Legacy G2 still refuses the duplicate at its original typing time.
+                self.assertEqual(
+                    [],
+                    context.transcript_message_words(
+                        self.config,
+                        str(self.path),
+                        "claude",
+                        SHORT,
+                        wanted,
+                        max_bytes=32 * 1024 * 1024,
+                        expected_stamp=context.transcript_stamp(str(self.path)),
+                    ),
                 )
-                self.assertEqual(1793750401.0, result.words[0].at)
 
     def test_foreign_full_identity_child_markers_and_child_file_never_supply_parent_words(
         self,

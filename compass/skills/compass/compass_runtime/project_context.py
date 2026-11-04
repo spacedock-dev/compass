@@ -524,7 +524,9 @@ def _instruction_event(
         return None
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
-    message = observer.parse_reader_record(record)
+    message = (
+        observer.parse_reader_record(record) if observer.reader_record_candidate(record) else None
+    )
     if message is None or message.get("role") != "user":
         return None
     at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
@@ -822,6 +824,22 @@ def _message_text_chars(record: Mapping[str, Any]) -> int:
         for block in content
         if isinstance(block, dict) and isinstance(block.get("text"), str)
     )
+
+
+def _ordinary_message_over_limit(record: dict[str, Any]) -> bool:
+    """Raw ordinary-message admission, before any canonical text redaction.
+
+    A resource candidate is a parent-file shape the canonical reader may redact.
+    Source identity refusal still belongs to the later exact word join; skipping
+    a foreign ID here would leave its canonical redaction unbounded.
+    """
+    reader = observer.reader_record_candidate(record)
+    agent = (
+        record.get("type") == "assistant"
+        and records.message_dict(record).get("model") != claude_data.SYNTHETIC_MODEL
+        and observer.message_record_role(record) == "assistant"
+    )
+    return (reader or agent) and _message_text_chars(record) > PRESS_TEXT_MAX_CHARS
 
 
 class _MessageRead:
@@ -9283,6 +9301,8 @@ def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> fl
     """Parent-only human boundary, excluding tool results and injected messages."""
     times = []
     for record in parent:
+        if observer.message_record_role(record) != "user":
+            continue
         message = observer.parse_message_record(record)
         if message is not None and message.get("role") == "user":
             text = str(message.get("text") or "")
@@ -9301,6 +9321,8 @@ def _delegated_last_turn_floor(parent: list[dict[str, Any]]) -> float:
     )
     directions = []
     for record in parent:
+        if observer.message_record_role(record) != "user":
+            continue
         message = observer.parse_message_record(record)
         if message is not None and message.get("role") == "user":
             text = str(message.get("text") or "")

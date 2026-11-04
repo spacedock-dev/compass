@@ -53,6 +53,7 @@ Reason = Literal[
     "source_gap",
     "native_incomplete",
     "canonical_limit",
+    "message_limit",
 ]
 
 
@@ -508,6 +509,16 @@ class _Collection:
                 )
             )
 
+    def admit_messages(self) -> None:
+        # All parent rows are verified, but no message projection or redaction
+        # has run. Whole-corpus refusal preserves original canonical identities.
+        for row in self.state.rows[0]:
+            self.checkpoint()
+            oversized = context._ordinary_message_over_limit(row.value)  # noqa: SLF001
+            self.checkpoint()
+            if oversized:
+                raise _StopError("message_limit")
+
     def materialize(self) -> None:
         self.checkpoint()
         streams = self.state.inventory.streams
@@ -631,6 +642,7 @@ class _Collection:
             self.prepare()
             for index in range(len(self.state.inventory.streams)):
                 self.read_stream(index)
+            self.admit_messages()
             self.materialize()
             self.prove_final()
             self.join_words()
