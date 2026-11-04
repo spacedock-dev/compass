@@ -14,6 +14,35 @@ const DEFAULTS = {
   analyze_listed_checks: 200,
 };
 
+const PREVIEW = {
+  kind: 'capacity-preview',
+  policy: 'analyze-context-v1',
+  maximum_prompt_bytes: 524288,
+  window_tokens: null,
+  window_source: 'unknown',
+  generation_reserve_tokens: 128000,
+  cli_reserve_tokens: 16384,
+  estimated_system_tokens: 0,
+  estimate_method: 'legacy-byte-cap',
+  fit_verified: false,
+  policy_verified: false,
+  configuration_reason: '',
+  reason: 'estimated',
+  can_lower_prompt_setting: true,
+};
+const production = (value = 524288, claude: unknown = PREVIEW): Answer => ({
+  status: 200,
+  body: {
+    values: { ...DEFAULTS, analyze_prompt_bytes: value },
+    limits: LIMITS.map((limit) =>
+      limit.key === 'analyze_prompt_bytes'
+        ? { ...limit, default: 524288, maximum: 2097152 }
+        : limit,
+    ),
+    capacities: { claude, codex: PREVIEW },
+  },
+});
+
 type Answer = { readonly status: number; readonly body: unknown } | 'offline';
 
 /* A scripted server: each GET and POST takes the next answer in its queue, and every request is kept. */
@@ -59,6 +88,115 @@ async function mount(server: ReturnType<typeof backend>) {
 }
 
 describe('the Settings screen', () => {
+  it('saves and reopens 2048 KB independently of route allowance, then restores 512 KB', async () => {
+    const server = backend(
+      [production(), production(2097152)],
+      [production(2097152), production()],
+    );
+    const view = render(<SettingsScreen client={server.client} />);
+    await flush();
+    expect(prompt().value).toBe('512');
+    expect(prompt().max).toBe('2048');
+    const allowance = screen.getByRole('region', { name: 'Estimated prompt allowances' });
+    expect(within(allowance).getByText(/Claude Code/)).toBeTruthy();
+    expect(within(allowance).getAllByText(/512 KB/)).toHaveLength(2);
+    expect(
+      within(allowance).getAllByText(
+        /An assembled prompt above this allowance is refused before a model call; it is not automatically shortened/,
+      ),
+    ).toHaveLength(2);
+    expect(
+      within(allowance).getAllByText(
+        /Conservative estimate; this route’s context window is unknown/,
+      ),
+    ).toHaveLength(2);
+    fireEvent.change(prompt(), { target: { value: '2048' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await flush();
+    expect(server.posts()[0]?.body).toEqual({ values: { analyze_prompt_bytes: 2097152 } });
+    expect(prompt().value).toBe('2048');
+    view.unmount();
+    render(<SettingsScreen client={server.client} />);
+    await flush();
+    expect(prompt().value).toBe('2048');
+    expect(
+      screen.getByText(/Your saved limit stays the same when the reading route changes/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore default (512 KB)' }));
+    await flush();
+    expect(prompt().value).toBe('512');
+    expect(server.posts()[1]?.body).toEqual({ values: { analyze_prompt_bytes: null } });
+  });
+
+  it('names one Analyze prompt separately from outline and Summary source coverage', async () => {
+    await mount(backend([production()]));
+    expect(screen.getByText(/one Analyze drift prompt/)).toBeTruthy();
+    expect(screen.getByText(/outline.*Summary.*source coverage/)).toBeTruthy();
+    expect(
+      screen.getByText(/do not confirm model availability or that a prompt will fit/),
+    ).toBeTruthy();
+  });
+
+  it('shows unknown allowance for old or malformed previews while settings stay editable', async () => {
+    const server = backend([ok()], [production(524288, { ...PREVIEW, fit_verified: true })]);
+    await mount(server);
+    expect(screen.getAllByText(/Allowance unknown/)).toHaveLength(2);
+    expect(screen.queryByText(/above this allowance is refused/)).toBeNull();
+    fireEvent.change(prompt(), { target: { value: '512' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await flush();
+    expect(prompt().value).toBe('512');
+    expect(screen.getAllByText(/Allowance unknown/)).toHaveLength(1);
+    expect(screen.queryByText(/0 KB/)).toBeNull();
+    expect(outcome()).toMatch(/^Saved/);
+  });
+
+  it('keeps a tiny positive allowance distinct from the smallest storable preference', async () => {
+    await mount(
+      backend([
+        production(2097152, {
+          ...PREVIEW,
+          maximum_prompt_bytes: 1,
+          window_tokens: 144443,
+          window_source: 'configured',
+          estimate_method: 'utf8-bytes-div-3',
+          can_lower_prompt_setting: false,
+        }),
+      ]),
+    );
+    expect(prompt().value).toBe('2048');
+    expect(screen.getByText(/1 byte/)).toBeTruthy();
+    expect(screen.getByText(/below the minimum Prompt size setting/)).toBeTruthy();
+    expect(screen.getByText(/A smaller actual prompt may still fit/)).toBeTruthy();
+    expect(screen.queryByText(/Lower Prompt size/)).toBeNull();
+  });
+
+  it.each([
+    ['context-no-room', '', /leaves no room/],
+    ['context-dynamic', 'dynamic-policy', /policy can change when it starts/],
+    ['context-config', 'context-config', /context settings could not be checked/],
+    ['context-compaction', 'compaction-policy-conflict', /compaction/],
+    ['context-fallback', 'fallback-policy-conflict', /model switching/],
+  ])(
+    'states a blocked %s route without a numerical fit claim',
+    async (reason, configuration, words) => {
+      await mount(
+        backend([
+          production(2097152, {
+            ...PREVIEW,
+            maximum_prompt_bytes: 0,
+            reason,
+            configuration_reason: configuration,
+            can_lower_prompt_setting: false,
+          }),
+        ]),
+      );
+      expect(screen.getByText(words)).toBeTruthy();
+      expect(screen.queryByText(/0 KB/)).toBeNull();
+      expect(prompt().value).toBe('2048');
+    },
+  );
+
   it('says it is reading, then draws every limit from the answer in the reader’s unit', async () => {
     const server = backend([ok({ ...DEFAULTS, analyze_record_events: 5000 })]);
     render(<SettingsScreen client={server.client} />);

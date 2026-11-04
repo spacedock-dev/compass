@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ApiClient } from '../api/client';
-import type { ApiResult, SettingsBody } from '../api/types';
+import type { ApiResult, PromptCapacityPreview, SettingsBody } from '../api/types';
 import { useShell } from '../shell/context';
 import { Alert } from '../ui/alert';
 import { Button } from '../ui/button';
@@ -9,6 +9,7 @@ import { Label } from '../ui/label';
 import {
   changedValues,
   fieldsOf,
+  formatAmount,
   parseDraft,
   rangeText,
   settingsBody,
@@ -67,18 +68,94 @@ function redraw(
   return next;
 }
 
+function allowanceText(preview: PromptCapacityPreview | null | undefined): string {
+  if (!preview) return 'Allowance unknown. This server did not provide a usable estimate.';
+  switch (preview.reason) {
+    case 'estimated': {
+      const bytes = preview.maximum_prompt_bytes;
+      const amount =
+        bytes < 1024
+          ? `${formatAmount(bytes)} ${bytes === 1 ? 'byte' : 'bytes'}`
+          : `${formatAmount(bytes / 1024)} KB`;
+      return `Estimated allowance: ${amount}.`;
+    }
+    case 'context-no-room':
+      return 'The current context configuration leaves no room for this reading. Choose a larger context window.';
+    case 'context-dynamic':
+      return 'This route’s policy can change when it starts, so its allowance cannot be established. Check its managed settings or choose another route.';
+    case 'context-config':
+      return 'The route’s context settings could not be checked. Check the managed settings before trying Analyze.';
+    case 'context-compaction':
+      return 'Managed settings conflict with keeping compaction off for Analyze. Ask your administrator to resolve the conflict.';
+    case 'context-fallback':
+      return 'Managed settings conflict with keeping automatic model switching off for Analyze. Ask your administrator to resolve the conflict.';
+    case 'unavailable':
+      return 'Allowance unknown. No reading route is selected.';
+  }
+}
+
+function PromptAllowances({
+  capacities,
+  minimumBytes,
+}: {
+  readonly capacities: SettingsBody['capacities'];
+  readonly minimumBytes: number;
+}) {
+  return (
+    <section aria-labelledby="next-settings-capacity" className="flex flex-col gap-2">
+      <h3 id="next-settings-capacity" className="m-0 text-body font-bold">
+        Estimated prompt allowances
+      </h3>
+      <p className="m-0 text-body text-muted-foreground">
+        Your saved limit stays the same when the reading route changes. The actual prompt may be
+        smaller. These estimates do not confirm model availability or that a prompt will fit.
+      </p>
+      <ul className="m-0 flex flex-col gap-2 pl-4 text-body text-muted-foreground">
+        {(['claude', 'codex'] as const).map((provider) => {
+          const preview = capacities?.[provider];
+          return (
+            <li key={provider}>
+              <strong>{provider === 'claude' ? 'Claude Code' : 'Codex'}: </strong>
+              {allowanceText(preview)}
+              {preview?.reason === 'estimated' ? (
+                <p className="m-0">
+                  An assembled prompt above this allowance is refused before a model call; it is not
+                  automatically shortened.
+                </p>
+              ) : null}
+              {preview?.reason === 'estimated' && preview.window_source === 'unknown' ? (
+                <p className="m-0">
+                  Conservative estimate; this route’s context window is unknown.
+                </p>
+              ) : null}
+              {preview?.reason === 'estimated' && preview.maximum_prompt_bytes < minimumBytes ? (
+                <p className="m-0">
+                  This allowance is below the minimum Prompt size setting. A smaller actual prompt
+                  may still fit; choose a route with a larger context window for a larger reading.
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function SettingField({
   field,
   draft,
   pending,
   onChange,
   onRestore,
+  capacities,
 }: {
   readonly field: Field;
   readonly draft: string;
   readonly pending: Pending;
   readonly onChange: (value: string) => void;
   readonly onRestore: () => void;
+  readonly capacities: SettingsBody['capacities'];
 }) {
   const id = `next-setting-${field.key}`;
   const parsed = draft === textOf(field.value) ? null : parseDraft(field, draft);
@@ -137,6 +214,9 @@ function SettingField({
         <p id={`${id}-error`} className="m-0 text-body text-foreground">
           {error}
         </p>
+      ) : null}
+      {field.key === 'analyze_prompt_bytes' ? (
+        <PromptAllowances capacities={capacities} minimumBytes={field.minimum * field.scale} />
       ) : null}
     </div>
   );
@@ -282,6 +362,7 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
             field={field}
             draft={drafts[field.key] ?? textOf(field.value)}
             pending={pending}
+            capacities={load.body.capacities}
             onChange={(value) => setDrafts((current) => ({ ...current, [field.key]: value }))}
             onRestore={() =>
               void send(
