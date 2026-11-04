@@ -132,6 +132,7 @@ export const leaseScenario = (state: Record<string, unknown> = leaseState()): Le
 });
 
 export interface Scenario {
+  readonly longPlan?: { readonly descriptor: unknown; gets: number };
   readonly reading?: ReadingScenario;
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
   readonly lease?: LeaseScenario;
@@ -263,6 +264,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     if (ciPosts) ciPosts.length = 0;
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
+    if (scenario.longPlan) scenario.longPlan.gets = 0;
     let afterRefusal: Record<string, unknown> = {};
     if (scenario.readingStoreRefusal) scenario.readingStoreRefusal.posts = 0;
     const shell = createShell({
@@ -275,6 +277,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
       reducedMotion: () => true,
       ...(scenario.clipboard ? { clipboard: () => ({ writeText: async () => undefined }) } : {}),
       fetch: async (url, init) => {
+        if (url.startsWith('/api/reading-long-plan')) {
+          if (scenario.longPlan) scenario.longPlan.gets += 1;
+          return json({ ok: true, long_plan: scenario.longPlan?.descriptor ?? null });
+        }
         if (url.startsWith('/api/reading') && scenario.readingStoreRefusal) {
           scenario.readingStoreRefusal.posts += 1;
           afterRefusal = scenario.readingStoreRefusal.after ?? {};

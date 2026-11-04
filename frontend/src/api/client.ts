@@ -1,3 +1,4 @@
+import type { ReadingLongPlanBody } from './longPlan';
 import { dataPath } from './bootstrap';
 import type {
   AnnotateReceipt,
@@ -213,6 +214,11 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       body: SessionIdentity & { readonly fact_ids: readonly string[] },
       signal?: AbortSignal,
     ) => post<DirectionBatchReceipt>('/api/direction', body, signal),
+    getReadingLongPlan: (identity: SessionIdentity, signal?: AbortSignal) =>
+      get<ReadingLongPlanBody>(
+        `/api/reading-long-plan?harness=${encodeURIComponent(identity.harness)}&sid=${encodeURIComponent(identity.sid)}`,
+        signal,
+      ),
     postReading: (body: ReadingRequest | UnaskedGrantRequest, signal?: AbortSignal) =>
       post<ReadingReceipt>('/api/reading', body, signal),
     /* "Find goal": the reader's prompts read for a goal, on one press (docs/design-reading-a-session.md). */

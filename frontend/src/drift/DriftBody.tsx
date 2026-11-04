@@ -1,3 +1,4 @@
+import { LongPlanControl } from './LongPlanControl';
 import type { ReactNode } from 'react';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
@@ -188,6 +189,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
       <UnaskedPermission key={key} payload={payload} session={session} />
       {readable && job ? null : answer}
       <ReadingAllowance route={model.route} />
+      <LongPlanControl key={`long:${model.key}`} board={board} />
       {area}
       <ReadingSection />
     </div>
