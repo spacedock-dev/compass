@@ -571,8 +571,10 @@ prompt (512 KB by default, optionally up to 2,048 KB), how many of the session's
 many checks and written files it lists (1,000), and how much of the session's and its subagents'
 transcripts it scans for them (512 MB), which is where delegated work runs its tests. Prompt size
 limits one Analyze drift prompt, not the outline or Summary's source coverage. Settings shows
-each route's estimated allowance separately from the saved limit; it does not confirm model
-availability or fit. An assembled prompt above that allowance is refused before a model call,
+each route's estimated allowance separately from the saved limit. The session's Next Analyze
+prompt line shows the current route's allowance outside any stored assessment; it describes the
+next press, not what an earlier reading covered. Neither estimate confirms model availability
+or fit. An assembled prompt above that allowance is refused before a model call,
 without automatically shortening it or switching providers. A smaller actual prompt may still
 pass when the saved limit is higher. Unknown or unusable estimates say so, and a tiny allowance
 does not ask you to save below the 16 KB minimum. The project

@@ -9653,6 +9653,15 @@ the allowance. Settings GET/POST and the selected requested route publish previe
 input counts or an admission verdict; the Settings screen keeps malformed or missing previews
 unknown while leaving the saved limits editable.
 
+The session's Next Analyze prompt line uses the same validated preview and allowance wording
+as Settings. It sits outside the retained assessment, so a changed route describes the next
+press without restating what an older reading covered. Missing or malformed previews remain
+unknown. In the normal Analyze-control layout, an initial admission refusal persists as an
+ordinary visible outcome after the job ends and across board refreshes; its session count
+stays unchanged and it saves no assessment. The inherited pending-direction layout omits that
+stored outcome while its intent question stands; the browser comparison confirmed this on
+both the merged base and this change.
+
 A failed requested Claude CLI call can report `invalid_request_error` and `prompt is too long`
 in its bounded error output. Compass treats that as a CLI context-limit hint, keeps the attempt
 counted and says no new analysis was saved. The reader can reduce Prompt size when above 16 KiB
