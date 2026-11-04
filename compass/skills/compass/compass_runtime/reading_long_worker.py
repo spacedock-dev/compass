@@ -136,6 +136,21 @@ class _Passes:
             if token in reading.WITHHELD:
                 self.withheld_reason = token
 
+    def uncertain_cleanup(self, observation: dict[str, Any]) -> bool:
+        measured = (observation.get("diagnostic") or {}).get("input")
+        if measured is None or measured["outcome"] != "unstopped":
+            return False
+        # Preserve the actual charged observation before closing the series.
+        # Do not mark this slot settled or let another group replace its handle.
+        self.reason = "unstopped"
+        self.staged[observation["ordinal"]] = observation
+        reading_long_markers.observe(
+            self.config, self.context.active.owner, observation=observation, now=self.clock()
+        )
+        job = self.context.active.job
+        reading.block_long_job(self.config, f"{job.harness}:{job.sid}", job)
+        return True
+
     def close_post(self) -> None:
         try:
             self.post.close()
@@ -172,9 +187,9 @@ class _Passes:
         return True
 
     def observe(self, event: dict[str, Any]) -> bool:
-        self.remember_failure(event["observation"])
-        if self.reason:
+        if self.uncertain_cleanup(event["observation"]) or self.reason:
             return False
+        self.remember_failure(event["observation"])
         observation = event["observation"]
         ordinal = observation["ordinal"]
         # This emission occurs after the model returns, before parsing/indexing.

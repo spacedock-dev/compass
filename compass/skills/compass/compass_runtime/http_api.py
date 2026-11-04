@@ -37,7 +37,10 @@ from compass_runtime import (
     quota,
     reading_long_admission,
     reading_long_coordinator,
+    reading_long_history,
+    reading_long_markers,
     reading_long_preview,
+    reading_long_recovery,
     reading_policy,
     record_pages,
     records,
@@ -1406,6 +1409,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/project-context": self._project_context,
             "/api/session-record": self._session_record,
             "/api/reading-long-plan": self._reading_long_plan,
+            "/api/reading-long-history": self._reading_long_history,
         }.get(url.path)
         if with_url is not None:
             with_url(url)
@@ -2556,6 +2560,113 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         preview = reading_long_preview.describe(application, query["harness"][0], query["sid"][0])
         self._send(json.dumps({"ok": True, "long_plan": preview}).encode(), "application/json")
+
+    def _reading_long_history(self, url: ParseResult) -> None:
+        if self._is_document_navigation() or not self._loopback_resource_ok():
+            self._reject(403)
+            return
+        query = parse_qs(url.query, keep_blank_values=True)
+        if (
+            set(query) != {"harness", "sid"}
+            or any(len(values) != 1 for values in query.values())
+            or not reading_long_preview.identity(query["harness"][0], query["sid"][0])
+        ):
+            self._reject(400)
+            return
+        application = self.server.application
+        if not application.config.annotations_enabled:
+            self._reject(503)
+            return
+        history = reading_long_history.read(
+            application.config, query["harness"][0], query["sid"][0], now=application.clock()
+        )
+        self._send(json.dumps({"ok": True, "long_history": history}).encode(), "application/json")
+
+    @staticmethod
+    def _valid_long_discard(payload: Any) -> bool:
+        return (
+            isinstance(payload, dict)
+            and set(payload) == {"harness", "sid", "job", "press", "observer_model"}
+            and reading_long_preview.identity(payload["harness"], payload["sid"])
+            and isinstance(payload["job"], str)
+            and len(payload["job"]) == 32
+            and all(char in "0123456789abcdef" for char in payload["job"])
+            and payload["press"] is True
+            and type(payload["observer_model"]) is int
+            and payload["observer_model"] == 1
+        )
+
+    def _reading_long_discard(self) -> None:
+        application = self.server.application
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= application.config.annotation_body_cap_bytes:
+            self._reject(413)
+            return
+        try:
+            payload = json.loads(self._read_body(length) or b"{}")
+        except (ValueError, RecursionError):
+            payload = None
+        if not self._valid_long_discard(payload):
+            self._reject(400)
+            return
+        refused = self._reading_refusal(payload, off=True)
+        if refused is not None:
+            self._reject(refused)
+            return
+        status, discarded, reason = self._discard_long_marker(payload)
+        self._send(
+            json.dumps({"ok": discarded, "discarded": discarded, "reason": reason}).encode(),
+            "application/json",
+            status,
+        )
+
+    def _discard_long_marker(self, payload: dict[str, Any]) -> tuple[int, bool, str]:
+        application = self.server.application
+        probes = application.long_recovery_probes
+        if not application.config.annotations_enabled or probes is None:
+            return 503, False, "discard-unavailable"
+        # Attribute the request before the mutation owner takes its own publication lock.
+        # Its locked reread validates this immutable job/header again; never nest that lock.
+        marker = reading_long_markers.load(application.config, payload["job"])
+        association = marker["header"].get("publication") if marker is not None else None
+        if (
+            association is None
+            or association["harness"] != payload["harness"]
+            or association["sid"] != payload["sid"]
+        ):
+            return 409, False, "marker-unavailable"
+        try:
+            result = reading_long_recovery.discard_terminal(
+                application.config,
+                application.state,
+                job_id=payload["job"],
+                now=application.clock(),
+                alive=probes[0],
+                process_exists=probes[1],
+                diagnostic_sink=application.diagnostic_sink,
+            )
+        except Exception:  # noqa: BLE001 - an unavailable probe/store never proves retirement
+            return 503, False, "discard-unavailable"
+        if result.retired:
+            application.state.snapshot.clear()
+            return 200, True, "" if result.receipt_released else "receipt-unresolved"
+        retained = {
+            "clock-invalid",
+            "marker-unavailable",
+            "marker-changed",
+            "owner-current",
+            "owner-unresolved",
+            "accounting-unknown",
+            "publication-unattributed",
+            "discard-unproved",
+            "retirement-unresolved",
+        }
+        if result.reason in retained:
+            return 409, False, result.reason
+        return 503, False, "discard-unavailable"
 
     def _reading(self) -> None:
         """Read one session against the words typed against it.
@@ -4636,6 +4747,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/api/correction/copied": self._correction_copied,
             "/api/reading": self._reading,
             "/api/reading/cancel": self._reading_cancel,
+            "/api/reading-long-discard": self._reading_long_discard,
             "/api/goal/find": self._goal_find,
             "/api/live-monitor": self._live_monitor,
             "/api/summary": self._summary,

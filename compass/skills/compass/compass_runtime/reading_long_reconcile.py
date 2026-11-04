@@ -70,9 +70,9 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
         return None  # Other actual causes remain latched; no Assessment can escape them.
 
     def observe(self, event: dict[str, Any]) -> bool:
-        self.remember_failure(event["observation"])
-        if self.reason:
+        if self.uncertain_cleanup(event["observation"]) or self.reason:
             return False
+        self.remember_failure(event["observation"])
         observation = event["observation"]
         diagnostic = observation["diagnostic"]
         if diagnostic["input"] is not None:

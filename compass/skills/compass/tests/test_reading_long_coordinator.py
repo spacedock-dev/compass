@@ -24,8 +24,11 @@ from compass_runtime import annotations as annotation_store
 from compass_runtime import reading_long_admission as admission
 from compass_runtime import reading_long_coordinator as coordinator
 from compass_runtime import reading_long_execution as execution
+from compass_runtime import reading_long_finalize as finalization
 from compass_runtime import reading_long_inspection as inspection
 from compass_runtime import reading_long_markers as markers
+from compass_runtime import reading_long_reconcile as reconcile
+from compass_runtime import reading_long_worker as worker
 from compass_runtime import reading_policy as policy
 
 from . import test_reading_long_admission as admission_tests
@@ -205,6 +208,13 @@ class LongCoordinatorTest(unittest.TestCase):
             result = self.module.finish_withheld(self.app, started, "cancelled")
         self.assertEqual("unstopped", result.reason)
         self.assertIs(job, reading.job(self.config, self.fixture.key))
+        public = reading.published_jobs(self.config)[self.fixture.key]
+        self.assertEqual("cleanup-unresolved", public.get("blocked_reason"))
+        public["blocked_reason"] = "changed"
+        self.assertEqual(
+            "cleanup-unresolved",
+            reading.published_jobs(self.config)[self.fixture.key]["blocked_reason"],
+        )
         marker = markers.load(self.config, job.id)
         assert marker is not None
         self.assertEqual("active", marker["state"])
@@ -308,6 +318,29 @@ class LongCoordinatorTest(unittest.TestCase):
         self.assertFalse(reading.job_cancelled(job))
         self.assertNotIn("mode", reading.published_jobs(self.config)[self.fixture.key])
 
+    def test_completed_cleanup_unknown_projects_blocked_even_after_accepted_cancel(self) -> None:
+        started = self.admitted()
+        job = started.context.active.job
+        self.assertTrue(reading.cancel_job(self.config, self.fixture.key, job.id, now=12)[0])
+        # Unknown cleanup is not completion, even if no qualified candidate can be examined.
+        reading.hand_over(job, object())
+        with mock.patch.object(finalization, "completed", side_effect=AssertionError):
+            coordinator._completed(
+                self.app,
+                started,
+                mock.Mock(spec=reading_source_collect.Collection),
+                mock.Mock(spec=worker.Mapped),
+                mock.Mock(spec=reconcile.Finished),
+            )
+        self.assertIs(job, reading.job(self.config, self.fixture.key))
+        self.assertEqual(
+            "cleanup-unresolved",
+            reading.published_jobs(self.config)[self.fixture.key]["blocked_reason"],
+        )
+        self.assertEqual("unstopped", reading.long_stop_reason(job))
+        self.assertIsNotNone(markers.load(self.config, job.id))
+        self.assertNotIn("long_diagnostic", self.entry())
+
     def test_resource_or_permission_stop_is_not_overwritten_by_earlier_provider_failure(
         self,
     ) -> None:
@@ -365,6 +398,7 @@ class LongCoordinatorTest(unittest.TestCase):
         self.assertEqual("time", self.diagnostic()["source"]["reason"])
         self.assertEqual(0, self.diagnostic()["source"]["usage"]["io_bytes"])
         self.assertGreaterEqual(self.diagnostic()["source"]["usage"]["prepare_ms"], 61000)
+        self.assertEqual("resource-limit", self.diagnostic().get("stop_reason"))
 
     def test_cancel_during_preparation_is_immediate_and_unspent(self) -> None:
         started = self.admitted()
@@ -443,12 +477,28 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertNotIn("assessment", saved)
         self.assertEqual(reading.WITHHELD[reading.WITHHELD_CLAUDE_TIMED_OUT], saved["withheld"])
 
-    def actual_case(self, *, timed_out: bool = False) -> annotation_store.Annotation:
+    def test_unstopped_first_map_never_starts_a_later_factory_or_replaces_uncertain_group(
+        self,
+    ) -> None:
+        self.actual_case(unstopped="evidence")
+
+    def test_unstopped_final_preserves_its_observation_marker_slot_and_blocked_state(self) -> None:
+        self.actual_case(unstopped="reconciliation")
+
+    def test_unstopped_owned_ci_never_reaches_model_factory_or_charge(self) -> None:
+        self.actual_case(unstopped="ci")
+
+    def actual_case(
+        self, *, timed_out: bool = False, unstopped: str = ""
+    ) -> annotation_store.Annotation:
         fixture = worker_tests.GuardedNativeWorkerTest()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
-        fixture.goal = "Keep the retry safe."
-        fixture.make_case(ci_state="unbound")
+        if unstopped != "ci":
+            fixture.goal = "Keep the retry safe."
+        fixture.make_case(
+            ci_state="ready" if unstopped == "ci" else "unbound", large=unstopped == "evidence"
+        )
         entry = annotation_store.find(
             annotation_store.load(fixture.config), "claude", fixture.row["sid"]
         )
@@ -475,11 +525,27 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         )
         popen = subprocess.Popen
         calls: list[list[str]] = []
+        ci_calls: list[list[str]] = []
+        uncertain: list[supervise.Group] = []
+        wait_group = supervise.Group._wait_group
+
+        def quiescence(group: supervise.Group, deadline: float) -> None:
+            if not uncertain and (
+                bool(ci_calls)
+                if unstopped == "ci"
+                else len(calls) == (1 if unstopped == "evidence" else 2)
+            ):
+                uncertain.append(group)
+                raise supervise.UnstoppedError(group.pid)
+            wait_group(group, deadline)
 
         def spawn(command: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
             if command[0] == "/owned/git":
                 value = "a" * 40 if command[-1] == "HEAD" else "https://github.com/acme/widgets"
                 return popen([sys.executable, "-c", f"print({value!r})"], **kwargs)
+            if command[0] == "/owned/gh":
+                ci_calls.append(command)
+                return popen([sys.executable, "-c", "print('{}')"], **kwargs)
             if command[0] != "/owned/claude":
                 return popen(command, **kwargs)
             calls.append(command)
@@ -504,11 +570,16 @@ class ActualLongCoordinatorTest(unittest.TestCase):
             mock.patch.object(supervise, "_wait_posix", return_value=True)
             if timed_out
             else contextlib.nullcontext(),
+            mock.patch.object(supervise.Group, "_wait_group", quiescence)
+            if unstopped
+            else contextlib.nullcontext(),
+            mock.patch.object(execution, "guard", wraps=execution.guard) as factory,
+            mock.patch.object(markers, "reserve", wraps=markers.reserve) as reserve,
         ):
             thread = coordinator.launch(app, started, binary_resolver=lambda name: f"/owned/{name}")
-            thread.join(20)
+            thread.join(45)
         self.assertFalse(thread.is_alive())
-        count = 1 if timed_out else 2
+        count = 0 if unstopped == "ci" else 1 if timed_out or unstopped == "evidence" else 2
         if timed_out:
             self.assertEqual(
                 reading.WITHHELD_CLAUDE_TIMED_OUT,
@@ -516,6 +587,12 @@ class ActualLongCoordinatorTest(unittest.TestCase):
                 withheld.call_args.args[2],
             )
         self.assertEqual(count, len(calls), [call.args[2] for call in withheld.call_args_list])
+        self.assertEqual(count, factory.call_count)
+        self.assertEqual(count, reserve.call_count)
+        if unstopped:
+            self.assertEqual(1 if unstopped == "ci" else 0, len(ci_calls))
+            self.assert_unstopped(fixture, started, uncertain[0], count)
+            return entry
         self.assertTrue(started.context.active.job.group.cleanup_complete())
         saved = annotation_store.find(
             annotation_store.load(fixture.config), "claude", fixture.row["sid"]
@@ -528,3 +605,37 @@ class ActualLongCoordinatorTest(unittest.TestCase):
         self.assertIsNone(markers.load(fixture.config, started.context.active.job.id))
         self.assertIsNone(reading.job(fixture.config, f"claude:{fixture.row['sid']}"))
         return saved
+
+    def assert_unstopped(
+        self,
+        fixture: worker_tests.GuardedNativeWorkerTest,
+        started: admission.Started,
+        group: supervise.Group,
+        count: int,
+    ) -> None:
+        self.assertIs(group, started.context.active.job.group)
+        self.assertFalse(group.cleanup_complete())
+        key = f"claude:{fixture.row['sid']}"
+        self.assertEqual(
+            "cleanup-unresolved", reading.published_jobs(fixture.config)[key].get("blocked_reason")
+        )
+        marker = markers.load(fixture.config, started.context.active.job.id)
+        assert marker is not None
+        self.assertEqual("active", marker["state"])
+        self.assertEqual(count, len(marker["passes"]))
+        if count:
+            self.assertEqual(
+                "unstopped", marker["passes"][-1]["observation"]["diagnostic"]["input"]["outcome"]
+            )
+        measured = inspection.inspect(
+            fixture.config, started.context.active.job.id, now=fixture.now
+        )
+        assert measured.exact is not None
+        self.assertEqual(count, measured.exact.calls)
+        self.assertNotIn(
+            "long_diagnostic",
+            annotation_store.find(
+                annotation_store.load(fixture.config), "claude", fixture.row["sid"]
+            )
+            or {},
+        )

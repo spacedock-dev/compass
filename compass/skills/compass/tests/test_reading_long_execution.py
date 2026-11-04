@@ -94,6 +94,52 @@ class LongExecutionTest(unittest.TestCase):
         self.assertEqual(invoked, self.last["input"]["model_invoked"])
         self.assertEqual([True] if calls else [], self.reserved)
 
+    def test_blocked_owner_refuses_existing_and_new_guards_and_preserves_uncertain_group(
+        self,
+    ) -> None:
+        guard = self.guard()
+        job = self.active.job
+        uncertain = object()
+        self.assertFalse(reading.hand_over(job, uncertain))
+        self.assertTrue(reading.block_long_job(self.config, self.fixture.key, job))
+        self.assertEqual("unstopped", reading.long_stop_reason(job))
+        self.assertFalse(reading.commit_job(job))
+        self.assertTrue(reading.hand_over(job, object()))
+        self.assertIs(uncertain, job.group)
+        self.assertFalse(reading.job_cancelled(job))
+        with mock.patch.object(markers, "reserve", side_effect=AssertionError):
+            with self.assertRaises(policy.RefusedError):
+                self.guard()
+            self.assertEqual(("", "cancelled"), self.call(guard))
+        self.assertEqual("unstopped", reading.long_stop_reason(job))
+        self.proof(0, invoked=False)
+        self.assertEqual([], self.calls)
+        self.assertIs(uncertain, job.group)
+
+    def test_cleanup_warning_survives_unknown_or_malformed_long_progress(self) -> None:
+        job = self.active.job
+        self.assertTrue(reading.block_long_job(self.config, self.fixture.key, job))
+        for progress in (None, "{}", "not-json"):
+            job._long_progress = progress
+            value = reading.published_jobs(self.config)[self.fixture.key]
+            self.assertEqual("cleanup-unresolved", value["blocked_reason"])
+            self.assertIsNone(value["progress"])
+            self.assertFalse(reading.commit_job(job))
+
+    def test_old_or_ordinary_owner_cannot_publish_blocked_metadata(self) -> None:
+        old = self.active.job
+        key = self.fixture.key
+        reading.end_job(self.config, key, expected_job=old)
+        replacement = reading.start_job(
+            self.config, key, provider="claude", label="Claude", now=100
+        )
+        assert replacement is not None
+        before = reading.published_jobs(self.config)
+        self.assertFalse(reading.block_long_job(self.config, key, old))
+        self.assertFalse(reading.block_long_job(self.config, key, replacement))
+        self.assertEqual(before, reading.published_jobs(self.config))
+        self.assertTrue(reading.commit_job(replacement))
+
     def test_exact_unchanged_prompt_cap_model_timeout_and_replay(self) -> None:
         guard = self.guard()
         self.assertIsInstance(guard.model, reading.ClaudeReadingModel)

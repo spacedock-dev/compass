@@ -1910,6 +1910,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.http_api": {
             "compass_runtime.reading_long_admission",
             "compass_runtime.reading_long_coordinator",
+            # Read-only history and explicit, attributed terminal marker discard.
+            "compass_runtime.reading_long_history",
+            "compass_runtime.reading_long_markers",
+            "compass_runtime.reading_long_recovery",
             "compass_runtime.reading_long_preview",
             "compass_runtime.analyze_capacity",
             "compass_runtime.config",

@@ -1067,6 +1067,10 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
         # exactly one of the two runs and they can never both collect.
         served = getattr(server, "application", None)
         if served is not None:
+            served.long_recovery_probes = (
+                functools.partial(dashboard_alive, config),
+                _recovery_process_exists,
+            )
             # In the serving process, after the fork, so the pid a marker is
             # compared against is a daemon's and never the parent that exits.
             with contextlib.suppress(Exception):

@@ -40,6 +40,11 @@ def _clean(started: admission.Started) -> bool:
     return group is None or (type(group) is supervise.Group and group.cleanup_complete() is True)
 
 
+def _blocked(application: Application, started: admission.Started) -> None:
+    if reading.block_long_job(application.config, _key(started), started.context.active.job):
+        application.state.snapshot.clear()
+
+
 def stop(application: Application, key: str, *, reason: str) -> bool:
     """Latch Clear/Pause before consulting the handover handle; never accept Cancel."""
     job = reading.job(application.config, key)
@@ -198,6 +203,7 @@ def finish_withheld(
     """
     active, config = started.context.active, application.config
     if not _clean(started):
+        _blocked(application, started)
         return finalize.Finalized(reason="unstopped")
     reading.seal_job(active.job)
     inspected = inspection.inspect(config, active.job.id, now=application.clock())
@@ -232,6 +238,24 @@ def finish_withheld(
             )
         )
         value.update(outcome=outcome, complete=False)
+        category = diagnostics.stop_reason(
+            "cancelled"
+            if outcome == "cancelled"
+            else "closed"
+            if outcome == "interrupted"
+            else reading.long_stop_reason(active.job) or cause
+        )
+        if category is not None and (category != "unknown" or "stop_reason" not in value):
+            value["stop_reason"] = category
+        if collection is not None and value["source"] is not None:
+            usage = collection.usage
+            value["source"]["usage"] = {
+                "io_bytes": usage.source_bytes,
+                "pages": usage.source_pages,
+                "retained_graph_peak_bytes": usage.retained_bytes,
+                "retained_graph_peak_units": usage.retained_units,
+                "prepare_ms": math.ceil(usage.prepare_ms),
+            }
         return finalize.withheld_measured(
             config,
             application.state,
@@ -255,6 +279,7 @@ def _completed(
 ) -> None:
     active, config = started.context.active, application.config
     if not _clean(started):
+        _blocked(application, started)
         return
     if (
         finished.assessment is None

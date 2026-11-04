@@ -1489,6 +1489,7 @@ class Job:
     _long_plan: str | None = field(default=None, repr=False)
     _long_progress: str | None = field(default=None, repr=False)
     _long_stop: str = field(default="", repr=False)
+    _long_blocked: str = field(default="", repr=False)
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1596,9 +1597,29 @@ def _long_snapshot(job: Job) -> dict[str, Any]:
         checked = reading_long_progress.validate(value, plan=plan)
     except (ValueError, TypeError, RecursionError):
         checked = None
+    blocked = {"blocked_reason": job._long_blocked} if job._long_blocked else {}  # noqa: SLF001
     if checked is None:
-        return {"mode": "long", "plan": None, "progress": None}
-    return {"mode": "long", "plan": plan, "progress": checked}
+        return {"mode": "long", "plan": None, "progress": None, **blocked}
+    return {
+        "mode": "long",
+        "plan": plan,
+        "progress": checked,
+        **blocked,
+    }
+
+
+def block_long_job(config: RuntimeConfig, session_key: str, expected_job: Job) -> bool:
+    """Publish unresolved cleanup for this exact long owner, even after Cancel/seal.
+
+    This never releases ownership or asserts a stopped process. A stale owner
+    cannot block a replacement job, and ordinary snapshots remain unchanged.
+    """
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if running is not expected_job or running._long_plan is None:  # noqa: SLF001
+            return False
+        running._long_blocked = "cleanup-unresolved"  # noqa: SLF001
+        return True
 
 
 def update_long_progress(
@@ -1618,6 +1639,7 @@ def update_long_progress(
             or running.id != job_id
             or running.cancelled_at is not None
             or running.sealed
+            or running._long_blocked  # noqa: SLF001
         ):
             return False
         before = _long_snapshot(running)
@@ -1679,6 +1701,8 @@ def cancel_job(
 def hand_over(job: Job, group: Any) -> bool:
     """Give the job its CLI's group. True when a Cancel already asked for it."""
     with _FLIGHT_LOCK:
+        if job._long_blocked:  # noqa: SLF001 - preserve the original uncertain process owner
+            return True
         job.group = group
         return job.cancelled_at is not None or bool(job._long_stop)  # noqa: SLF001
 
@@ -1690,7 +1714,7 @@ def commit_job(job: Job) -> bool:
     this answer, and spends nothing, or wholly after it, and is charged.
     """
     with _FLIGHT_LOCK:
-        return job.cancelled_at is None and not job._long_stop  # noqa: SLF001
+        return job.cancelled_at is None and not job._long_stop and not job._long_blocked  # noqa: SLF001
 
 
 def stop_long_job(
@@ -1715,7 +1739,7 @@ def stop_long_job(
 def long_stop_reason(job: Job) -> str:
     """Return only the private, already-latched cause; perform no external work."""
     with _FLIGHT_LOCK:
-        return job._long_stop  # noqa: SLF001
+        return "unstopped" if job._long_blocked else job._long_stop  # noqa: SLF001
 
 
 def job_cancelled(job: Job) -> bool:

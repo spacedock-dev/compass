@@ -149,3 +149,7 @@ class LongRecoveryStartupTest(unittest.TestCase):
             ["signal", "state", "ordinary", "summary", "long", "observe", "http"], events
         )
         long.assert_called_once()
+        alive, exists = server.application.long_recovery_probes
+        self.assertIs(lifecycle._recovery_process_exists, exists)
+        self.assertIs(lifecycle.dashboard_alive, alive.func)
+        self.assertIs(self.config, alive.args[0])
