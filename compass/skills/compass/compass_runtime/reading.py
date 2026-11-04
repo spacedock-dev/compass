@@ -1258,8 +1258,8 @@ class Selection:
     is given from 1, and the ledger and the selected slice are the same tuple
     type, so a caller confusing the two produced citations that resolved to the
     wrong entries -- fully rule-3 compliant, and a departure against an entry
-    the model never saw (DRC-4544 item 1). Only `build_prompt` constructs one
-    in production, so the type says which list the numbering belongs to.
+    the model never saw (DRC-4544 item 1). The prompt renderers (`build_prompt`
+    and `reading_passes`) construct it from their actual numbered rows.
     """
 
     entries: tuple[LedgerEntry, ...]
@@ -3242,9 +3242,18 @@ def _header(
 
 def _menu_row(index: int, row: LedgerEntry, *, whole: bool = False) -> str:
     """One numbered menu row, its summary or, `whole`, its words."""
+    return records.redact_secrets(render_admitted_row(index, row, whole=whole))
+
+
+def render_admitted_row(index: int, row: LedgerEntry, *, whole: bool = False) -> str:
+    """Serialize admitted fields without changing their text after a character-range cut.
+
+    Ordinary `build_prompt` applies its legacy final redaction in `_menu_row`; exact range
+    packets already received complete masked words and must preserve each supplied slice.
+    """
     tail = row.get("tail", "")
     text = _row_body(row) if whole else row["summary"]
-    return records.redact_secrets(
+    return (
         f"[{index}] {row['type']}{MENU_SEPARATOR}{row['source']}"
         f"{MENU_SEPARATOR}{text}"
         + (f"{MENU_SEPARATOR}output tail, untrusted: {tail}" if tail else "")
