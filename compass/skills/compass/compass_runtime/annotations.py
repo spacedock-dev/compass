@@ -40,7 +40,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
-from compass_runtime import ci_read, reading, records
+from compass_runtime import analyze_diagnostics, ci_read, reading, records
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
@@ -586,6 +586,9 @@ class Annotation(TypedDict):
     jobs: NotRequired[list[str]]
     settled: NotRequired[Settlement]
     assessment: NotRequired[reading.Assessment]
+    # Latest kept outcome, which can be a refusal beside an older assessment.
+    # Absent/None means no measurement, including readings stored by older builds.
+    reading_diagnostic: NotRequired[dict[str, Any] | None]
     # Set on read-back when a stored reading was refused whole, never written
     # to disk and never carried across a save. It is a fact about THIS build
     # reading THAT file, so a build that can read the reading publishes no
@@ -1464,6 +1467,9 @@ def _counters(entry: Annotation, value: dict[str, Any]) -> Annotation:
     written = records.norm_epoch(value.get("written"))
     if written:
         entry["written"] = float(written)
+    diagnostic = analyze_diagnostics.validate(value.get("reading_diagnostic"))
+    if diagnostic is not None:
+        entry["reading_diagnostic"] = diagnostic
     return entry
 
 
@@ -1527,7 +1533,17 @@ def _on_disk(entry: Annotation) -> dict[str, Any]:
     merely could not parse.
     """
     return {
-        **{name: field for name, field in entry.items() if name not in {"refused", "refused_raw"}},
+        **{
+            name: field
+            for name, field in entry.items()
+            if name not in {"refused", "refused_raw", "reading_diagnostic"}
+        },
+        **(
+            {"reading_diagnostic": diagnostic}
+            if (diagnostic := analyze_diagnostics.validate(entry.get("reading_diagnostic")))
+            is not None
+            else {}
+        ),
         **({"assessment": entry["refused_raw"]} if "refused_raw" in entry else {}),
         "revisions": [
             {**rev, "lines": [dict(line) for line in rev["lines"]]} for rev in entry["revisions"]
@@ -2108,6 +2124,13 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
         # who has not pressed: the count and the reason say different things
         # and an absent reading says neither.
         "assessment": entry.get("assessment") if entry else None,
+        **(
+            {"reading_diagnostic": diagnostic}
+            if entry
+            and (diagnostic := analyze_diagnostics.validate(entry.get("reading_diagnostic")))
+            is not None
+            else {}
+        ),
         "reading_count": entry.get("readings", 0) if entry else 0,
         "reading_withheld": entry.get("withheld", "") if entry else "",
         # When that reason was written, or None: no reason, or one stored
@@ -2167,6 +2190,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     for name in (
         "settled",
         "assessment",
+        "reading_diagnostic",
         "readings",
         "withheld",
         "withheld_at",
@@ -2188,7 +2212,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
     return updated
 
 
-def record_reading(
+def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared write seam)
     config: RuntimeConfig,
     state: RuntimeState,
     harness: Any,
@@ -2198,6 +2222,7 @@ def record_reading(
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
+    analyze_diagnostic: dict[str, Any] | None = None,
 ) -> str:
     """Store one reading beside the words it read. Returns an `OUTCOMES` token.
 
@@ -2221,10 +2246,11 @@ def record_reading(
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
         on_a_check=on_a_check,
+        analyze_diagnostic=analyze_diagnostic,
     )
 
 
-def record_withheld(
+def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared write seam)
     config: RuntimeConfig,
     state: RuntimeState,
     harness: Any,
@@ -2234,6 +2260,7 @@ def record_withheld(
     spent: bool,
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
+    analyze_diagnostic: dict[str, Any] | None = None,
 ) -> str:
     """Store why there is no reading. Returns an `OUTCOMES` token.
 
@@ -2262,6 +2289,7 @@ def record_withheld(
         spent=spent,
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
+        analyze_diagnostic=analyze_diagnostic,
     )
 
 
@@ -2317,13 +2345,17 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
+    analyze_diagnostic: dict[str, Any] | None = None,
 ) -> str:
     """The shared write behind `record_reading` and `record_withheld`.
 
     Speaks the mutators' vocabulary: a reading of a session nobody annotated
     is `OUTCOME_REFUSED`, like any other request the store will not take.
     """
-    if not config.annotations_enabled:
+    checked_diagnostic = analyze_diagnostics.validate(analyze_diagnostic, spent=spent)
+    if not config.annotations_enabled or (
+        analyze_diagnostic is not None and checked_diagnostic is None
+    ):
         return OUTCOME_REFUSED
     key = _key(harness, sid)
     if not key[0] or not key[1]:
@@ -2357,6 +2389,11 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         stored = True
         if assessment is not None:
             stored = _with_reading(updated, existing, assessment, on_a_check)
+        # Explicit None clears a previous attempt's measurement. A late
+        # assessment that was not kept cannot replace its diagnostic either.
+        updated["reading_diagnostic"] = (
+            checked_diagnostic if stored else existing.get("reading_diagnostic")
+        )
         written = time.time()
         if withheld:
             updated["withheld"] = withheld

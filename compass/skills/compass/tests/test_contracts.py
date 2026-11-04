@@ -1406,6 +1406,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # shape belongs with the producer, and it stays a DAG: `reading`
         # imports neither this module nor `state`.
         "compass_runtime.annotations": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.reading",
@@ -1430,6 +1431,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # Pure byte/estimated-context policy; no route discovery or execution.
         "compass_runtime.reading_capacity": set(),
+        "compass_runtime.analyze_diagnostics": set(),
         "compass_runtime.analyze_capacity": {
             "compass_runtime.claude_settings",
             "compass_runtime.reading_capacity",
@@ -1439,6 +1441,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # optional SQLite loading, and the runner says whether Compass is
         # stopping. It reaches no session or model producer.
         "compass_runtime.reading_policy": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.io",
             # Whether Compass is stopping, so a call it cannot send is not charged.

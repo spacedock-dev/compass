@@ -13,8 +13,8 @@ import os
 import time
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
+from . import analyze_diagnostics, supervise
 from . import io as runtime_io
-from . import supervise
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -791,30 +791,6 @@ class RefusedError(Exception):
         self.answer = answer
 
 
-# Only these model-seam outcomes may enter an Analyze diagnostic. A provider's
-# unexpected status or an exception's message is never diagnostic content.
-_ANALYZE_OUTCOMES = frozenset(
-    {
-        "ok",
-        "error",
-        "timeout",
-        "unavailable",
-        "closed",
-        "cancelled",
-        "unstopped",
-        "oversized",
-        "context-admission",
-        "context-small-window",
-        "context-config",
-        "context-no-room",
-        "context-dynamic",
-        "context-compaction",
-        "context-fallback",
-        "context-config-after-reserve",
-    }
-)
-
-
 class GuardedModel:
     """Reserve at the actual model seam, after eligibility and evidence checks."""
 
@@ -941,7 +917,7 @@ class GuardedModel:
             outcome = "refused"
             raise
         else:
-            outcome = status if status in _ANALYZE_OUTCOMES else "error"
+            outcome = status if status in analyze_diagnostics.INPUT_OUTCOMES else "error"
             return raw, status
         finally:
             # Input is the already assembled argument, not source transcript
