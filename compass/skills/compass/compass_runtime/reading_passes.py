@@ -332,11 +332,13 @@ def _sources(
             raise ValueError("Strict-final evidence cannot use ordinary message packets")
         message = row["type"] in {"user_message", reading.AGENT_MESSAGE_TYPE}
         if message:
-            author = (
-                reading.AUTHOR_PERSON if row["type"] == "user_message" else reading.AUTHOR_AGENT
+            authors = (
+                {reading.AUTHOR_PERSON, reading.AUTHOR_DERIVED}
+                if row["type"] == "user_message"
+                else {reading.AUTHOR_AGENT}
             )
             if (
-                row["author"] != author
+                row["author"] not in authors
                 or (not words and original.final_state != "unfit")
                 or (words is not None and not isinstance(words, str))
             ):
