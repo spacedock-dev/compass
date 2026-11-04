@@ -2228,6 +2228,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
         "settled",
         "assessment",
         "reading_diagnostic",
+        "long_diagnostic",
         "readings",
         "withheld",
         "withheld_at",
@@ -2239,10 +2240,7 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
             continue
         if name not in updated and name in existing:
             updated[name] = existing[name]
-    if "long_diagnostic" not in updated:
-        updated["long_diagnostic"] = reading_long_diagnostics.validate(
-            existing.get("long_diagnostic")
-        )
+    updated["long_diagnostic"] = reading_long_diagnostics.validate(updated.get("long_diagnostic"))
     # Words the reader changed are not what an earlier departure was about.
     priors = _prior_departures(
         updated.pop("prior_departures", ()),
@@ -2292,6 +2290,46 @@ def _publication_receipts(
         # A legacy recent-job match is not a durable publication acknowledgment.
         return OUTCOME_REFUSED
     return [*receipts, job_id]
+
+
+def long_receipt_acknowledged(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    harness: str,
+    sid: str,
+    *,
+    job_id: str,
+    incarnation: str,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> bool:
+    """Inspect one durable acknowledgment under the annotation lock; never write.
+
+    The retirement owner holds the marker publication barrier and checks its
+    current immutable job identity first. Revision may advance after an outcome
+    was acknowledged; clear/recreation or an untrusted store cannot inherit it.
+    This is not permission to publish, discard, resume or infer zero spending.
+    """
+    key = _key(harness, sid)
+    if (
+        not config.annotations_enabled
+        or not all(key)
+        or key != (harness, sid)
+        or _long_incarnation(job_id) is None
+        or _long_incarnation(incarnation) is None
+    ):
+        return False
+    with _locked_store(config, state, diagnostic_sink) as store:
+        if store is None or not store.trusted:
+            return False
+        entry = find(store.entries, *key)
+        return bool(
+            entry is not None
+            and not is_discarded(entry)
+            and not _held(store, key)
+            and entry.get("long_incarnation") == incarnation
+            and (receipts := _long_receipts(entry.get("long_receipts"))) is not None
+            and job_id in receipts
+        )
 
 
 def release_long_receipt(
