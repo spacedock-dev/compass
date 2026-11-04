@@ -57,7 +57,8 @@ DESTINATION_MOVED = "destination-changed"
 # The content epoch serves both notices and legacy explicit coverage. Epoch 2 added agent
 # messages, 3 added the newest final reply whole within 4,096 bytes, and 4 repaired the
 # ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
-# routes and the unasked lane retain epoch 1. Reader-started calls renew the notice when
+# routes and the unasked lane retain epoch 1. Epoch 5 widens requested person messages;
+# epoch 6 also widens requested agent messages. Reader-started calls renew the notice when
 # the epoch changes; Codex unasked calls retain the explicit coverage boundary.
 CONTENT_VERSION = 6
 # Wider requested person messages renew consent without widening the unasked lane.

@@ -129,10 +129,7 @@ class WhatTheAgentSaidBecomesACitableFactTest(_Board):
     def test_another_harness_has_no_agent_messages_yet(self) -> None:
         say(self.session, SAID)
         self.session.save(self.board.path)
-        self.assertEqual(
-            reading_policy.REQUESTED_WORDS_CONTENT_VERSION, http_api._press_content("codex")
-        )
-        for harness in ("pi", "antigravity"):
+        for harness in ("codex", "pi", "antigravity"):
             with self.subTest(harness=harness):
                 self.assertEqual(
                     [],
@@ -919,7 +916,10 @@ class AnAllowGivenBeforeTheAgentsMessagesDoesNotCoverThemTest(unittest.TestCase)
 
     def test_a_press_needs_the_agent_words_version_only_on_claude_code(self) -> None:
         self.assertEqual(reading_policy.CONTENT_VERSION, http_api._press_content("claude"))
-        for harness in ("codex", "pi", "antigravity"):
+        self.assertEqual(
+            reading_policy.REQUESTED_WORDS_CONTENT_VERSION, http_api._press_content("codex")
+        )
+        for harness in ("pi", "antigravity"):
             with self.subTest(harness=harness):
                 self.assertEqual(
                     reading_policy.WORDS_CONTENT_VERSION, http_api._press_content(harness)

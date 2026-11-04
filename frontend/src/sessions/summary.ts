@@ -126,6 +126,8 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
   ...Object.fromEntries(
     Object.entries(SOURCE_READ_LINES).map(([reason, line]) => [reason, () => line]),
   ),
+  legacy_text: () =>
+    'This saved summary used message excerpts. Summarize again to read beyond them.',
   no_entries: () => 'The part of the record Compass read holds no entries to summarize.',
   ceiling: () =>
     'The summary reached one of its limits on calls, bytes or time, so the parts after it were not read.',
@@ -440,14 +442,17 @@ export function outOfDateLine(
   context: ReasonContext,
 ): { readonly sentence: string; readonly action: 'update' | 'rerun' } | null {
   const report = summary.outOfDate;
-  if (!report || report.kind === 'unchanged') return null;
+  if (!report || (report.kind === 'unchanged' && !report.action)) return null;
   const at = summary.madeAt ? clock(summary.madeAt) : '';
   if (report.action === 'update') {
     const since = at ? ` since ${at}` : '';
     return {
-      sentence: report.newEntries
-        ? `${plural(report.newEntries, 'new entry', 'new entries')}${since}.`
-        : `A check’s result arrived${since}.`,
+      sentence:
+        report.kind === 'unchanged'
+          ? 'Some message text remains unread. Update summary continues from where it stopped.'
+          : report.newEntries
+            ? `${plural(report.newEntries, 'new entry', 'new entries')}${since}.`
+            : `A check’s result arrived${since}.`,
       action: 'update',
     };
   }
@@ -476,6 +481,18 @@ export const FRESHNESS_UNKNOWN =
 /* What the read behind a stored summary did not cover, said once above the phases. */
 export function summaryNotes(summary: StoredSummary, startsAt: string): string[] {
   const notes: string[] = [];
+  const fragmented = summary.blocks.some(
+    (block) =>
+      block.span && (block.span.firstOffset > 0 || block.span.lastOffset < block.span.lastTotal),
+  );
+  if (fragmented)
+    notes.push(
+      summary.blocks.some((block) => block.gap)
+        ? 'Long messages were split into fragments. Some fragments were not summarized; citations still open the original entries.'
+        : 'Long messages were read in fragments; citations open the original entries.',
+    );
+  if (summary.blocks.some((block) => !block.span) || summary.outOfDate?.reason === 'legacy_text')
+    notes.push('This saved summary used message excerpts; full message coverage was not recorded.');
   /* `starts_at` is set for any partial read, a stop at a time or byte limit included, so it is not the
      signal that the read began partway (docs/design-session-summary.md#open-questions). */
   const partway =

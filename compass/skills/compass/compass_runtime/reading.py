@@ -2704,9 +2704,15 @@ def cutoff_text(
         omissions.append(
             f"{unread_checks} check{'s' if unread_checks != 1 else ''} had no room in the prompt"
         )
-    partial_messages = sum(row.get("text_read", 0) < row.get("text_total", 0) for row in selected)
+    partial_messages = sum(
+        row.get("text_total", 0) < 0 or row.get("text_read", 0) < row.get("text_total", 0)
+        for row in selected
+    )
     if partial_messages:
-        omissions.append(f"{partial_messages} message(s) were read only in part")
+        omissions.append(
+            f"{partial_messages} message{'s' if partial_messages != 1 else ''} "
+            f"{'were' if partial_messages != 1 else 'was'} read only in part"
+        )
     commands = _commands_note(measured)
     if not omissions:
         return opening + commands
@@ -3259,8 +3265,10 @@ def _fit_message(row: LedgerEntry, *, width: int, limit: int) -> LedgerEntry | N
     if len(_menu_row(10**width - 1, row, whole=True).encode()) <= limit:
         return row
     field: Literal["agent_words", "words"] = "agent_words" if row.get("agent_words") else "words"
+    if "text_total" not in row:
+        return None
     words = json.loads(row[field]) if field == "agent_words" else row.get(field, "")
-    if not isinstance(words, str) or "text_total" not in row:
+    if not isinstance(words, str):
         return None
     lo, hi = 0, len(words)
 
@@ -3348,14 +3356,22 @@ def _read_whole(  # noqa: C901, PLR0912 - reader-first lanes and one selected re
     # The reader's half has already been offered, and no entry is removed.
     # Unused room may now carry more agent excerpts, newest first.
     for row in sorted(chosen, key=lambda row: -row["at"]):
-        if id(row) in whole or not row.get("agent_words"):
+        current = restored.get(id(row), row)
+        if not row.get("agent_words") or (id(row) in whole and not current.get("agent_excerpt")):
             continue
         candidate = wider.get(id(row), row) if wider else row
-        fitted = _fit_message(candidate, width=width, limit=room + sizes[id(row)])
+        # A measured prefix already spent bytes in the first allocation. Enlarge it using
+        # only the growth over that exact row; `whole` still means its words are transmitted.
+        current_size = (
+            len(_menu_row(10**width - 1, current, whole=True).encode("utf-8", "replace"))
+            if id(row) in whole
+            else sizes[id(row)]
+        )
+        fitted = _fit_message(candidate, width=width, limit=room + current_size)
         if fitted is None:
             continue
         size = len(_menu_row(10**width - 1, fitted, whole=True).encode("utf-8", "replace"))
-        grows = size - sizes[id(row)]
+        grows = size - current_size
         if room >= grows:
             room -= grows
             whole.add(id(row))
@@ -3620,7 +3636,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         width=width,
         room=budget - used,
         shares=(words_share, agent_share),
-        skip=goal_fact if goal_read != goal_text else "",
+        skip=goal_fact if goal_read != goal_text and message_lookup is None else "",
         final={id(final_row): final_swap} if final_row is not None and final_swap else None,
         wider=wider_messages,
     )
@@ -3646,7 +3662,14 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         for index, row in enumerate(selected, start=1)
     )
     taken = {id(row) for row in selected}
-    printed = tuple(restored.get(id(row), row) for row in selected) if message_lookup else selected
+    printed = (
+        _printed_messages(selected, whole, restored, wider_messages) if message_lookup else selected
+    )
+    source_known = message_lookup is None or all(
+        id(row) in wider_messages or (row is final_row and id(row) in restored)
+        for row in citable
+        if row["type"] == AGENT_MESSAGE_TYPE
+    )
     return header + body, Selection(
         printed,
         unread_failures=tuple(entry for entry in failures if id(entry) not in taken),
@@ -3656,8 +3679,33 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         asked_claims=asked_claims,
         goal_whole=goal_read != goal_text,
         newest_final=final_state,
-        agent_words_whole=_agents_read_whole(citable, whole, restored),
+        agent_words_whole=source_known and _agents_read_whole(citable, whole, restored),
     )
+
+
+def _printed_messages(
+    selected: Sequence[LedgerEntry],
+    whole: set[int],
+    restored: Mapping[int, LedgerEntry],
+    wider: Mapping[int, LedgerEntry],
+) -> tuple[LedgerEntry, ...]:
+    """Return only the words and coverage the serialized prompt actually contains."""
+    printed: list[LedgerEntry] = []
+    for row in selected:
+        if row["type"] not in {"user_message", AGENT_MESSAGE_TYPE}:
+            printed.append(row)
+            continue
+        projected = restored.get(id(row), row).copy()
+        if id(row) not in whole:
+            projected.pop("words", None)
+            projected.pop("agent_words", None)
+            projected["text_read"] = 0
+            candidate = wider.get(id(row))
+            projected["text_total"] = candidate.get("text_total", -1) if candidate else -1
+        elif id(row) not in wider and id(row) not in restored:
+            projected["text_read"], projected["text_total"] = 0, -1
+        printed.append(projected)
+    return tuple(printed)
 
 
 def _agents_read_whole(

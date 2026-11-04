@@ -25,7 +25,72 @@ import {
   withheldTitle,
   WITHHELD_TITLES,
   summaryStamp,
+  summaryNotes,
 } from './summary';
+
+it('says when a summary read only fragments of an original message', () => {
+  const focused = parseFocusedSummary({
+    sources: {
+      summary: {
+        exists: true,
+        state: 'partial',
+        harness: 'claude',
+        blocks: [
+          {
+            first: 'a',
+            last: 'a',
+            entries: 1,
+            phases: [],
+            span: {
+              text_version: 1,
+              first_offset: 0,
+              first_total: 4000,
+              last_offset: 1800,
+              last_total: 4000,
+            },
+          },
+          {
+            first: 'a',
+            last: 'a',
+            entries: 1,
+            gap: true,
+            reason: 'stopped',
+            span: {
+              text_version: 1,
+              first_offset: 1800,
+              first_total: 4000,
+              last_offset: 4000,
+              last_total: 4000,
+            },
+          },
+        ],
+      },
+    },
+  });
+  expect(focused?.summary).not.toBeNull();
+  if (focused?.summary)
+    expect(summaryNotes(focused.summary, '')).toContain(
+      'Long messages were split into fragments. Some fragments were not summarized; citations still open the original entries.',
+    );
+});
+
+it('marks legacy coverage unknown even before a freshness report is available', () => {
+  const focused = parseFocusedSummary({
+    sources: {
+      summary: {
+        exists: true,
+        state: 'ok',
+        harness: 'claude',
+        blocks: [{ first: 'a', last: 'a', entries: 1, phases: [] }],
+      },
+    },
+  });
+  expect(focused?.summary).not.toBeNull();
+  if (focused?.summary)
+    expect(summaryNotes(focused.summary, '')).toContain(
+      'This saved summary used message excerpts; full message coverage was not recorded.',
+    );
+});
 
 /* The tokens the summary contract publishes (docs/design-session-summary.md, "Job and grant contract" and
    "Bounds, spend and gaps"), each of which the card must say in the reader's words rather than as a token. */

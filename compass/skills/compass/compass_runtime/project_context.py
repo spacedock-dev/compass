@@ -645,8 +645,10 @@ def whole_message_words(
     """Source words use the same parser and slash-command normalization, without a prompt cap."""
     message = observer.parse_reader_record(record, cap=cap)
     text = str(message["text"]) if message else ""
-    command = transcripts.command_direction(config, text) if harness == "claude" else None
-    return records.safe_text(" ".join(records.mask_prose(command or text).split()), cap)
+    # Rendering a slash command folds line breaks. Preserve them until the raw-prose
+    # masker has removed split credentials; both summary and requested reading use this text.
+    masked = _masked_window_words(config, text, harness)
+    return records.safe_text(" ".join(masked.split()), cap)
 
 
 def _agent_message_event(
@@ -9862,6 +9864,13 @@ def transcript_message_words(  # noqa: C901, PLR0912 - source identity and reten
                 continue
             shape = {"message": record.get("payload")} if harness == "codex" else record
             if _message_text_chars(shape) > PRESS_TEXT_MAX_CHARS:
+                # Its identity cannot be recovered under the admission bound. Do not let an
+                # older duplicate at this instant stand as proof of the complete message.
+                at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
+                for key in priorities:
+                    if key[1] == at:
+                        ambiguous.add(key)
+                        found.pop(key, None)
                 continue
             event = _instruction_event(config, record, harness, sid)
             kind, fact_type = "steer", "user_message"
@@ -9885,18 +9894,26 @@ def transcript_message_words(  # noqa: C901, PLR0912 - source identity and reten
             total = len(words)
             words = words.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
             found[key] = {"id": key[0], "at": key[1], "words": words, "total": total}
-            left = max_bytes
-            for held in sorted(found, key=priorities.__getitem__):
-                text = found[held]["words"]
-                encoded = text.encode("utf-8")
-                if len(encoded) > left:
-                    found[held]["words"] = encoded[:left].decode("utf-8", "ignore")
-                left -= len(found[held]["words"].encode("utf-8"))
+            _bound_message_words(found, priorities, max_bytes)
     except OSError:
         return []
     if transcript_stamp(path) != before:
         return []
     return [found[key] for key in sorted(found, key=priorities.__getitem__) if found[key]["words"]]
+
+
+def _bound_message_words(
+    found: dict[tuple[Any, Any], dict[str, Any]],
+    priorities: dict[tuple[Any, Any], int],
+    max_bytes: int,
+) -> None:
+    """A newly found reader message can displace retained lower-priority prose."""
+    left = max_bytes
+    for key in sorted(found, key=priorities.__getitem__):
+        encoded = found[key]["words"].encode("utf-8")
+        if len(encoded) > left:
+            found[key]["words"] = encoded[:left].decode("utf-8", "ignore")
+        left -= len(found[key]["words"].encode("utf-8"))
 
 
 def _final_signature(record: dict[str, Any]) -> bytes:

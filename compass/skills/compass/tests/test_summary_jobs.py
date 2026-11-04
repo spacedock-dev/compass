@@ -308,6 +308,22 @@ class SummaryJobTest(_SummaryCase):
         self.assertEqual(0, reading_policy.status(self.config, now=100.0)["used"])
         self.assertNotIn("notice", self.run_job())
 
+    def test_old_excerpt_notice_is_renewed_before_sending_message_fragments(self) -> None:
+        self.assertIsNotNone(
+            reading_policy.note(
+                self.config,
+                kind="summary",
+                provider="claude",
+                destination="Anthropic",
+                content=1,
+                tool_output="",
+                now=99.0,
+            )
+        )
+        first = self.run_job()
+        self.assertEqual(2, first["notice"]["content"])
+        self.assertNotIn("notice", self.run_job())
+
     def test_pausing_before_each_part_sends_no_more_session_text(self) -> None:
         for part in range(1, 5):
             with self.subTest(part=part):

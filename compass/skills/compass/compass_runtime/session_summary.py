@@ -219,7 +219,7 @@ def _message_text(entry: SourceEntry) -> tuple[str, str]:
         entry.kind == "person" and records.injected_prompt(words, "claude")
     ):
         label = "relayed"
-    return label, _clean(words)
+    return label, _clean(records.mask_prose(words))
 
 
 def _fragments(
@@ -345,7 +345,9 @@ def _prepare(
                     omitted.append(empty)
     windows = list(kept)
     return (
-        tuple(line for window in windows for line in window),
+        # Output bounding can later collapse the prefix into a larger gap. Keep its full
+        # range metadata beside the retained text, including the original numbers/offsets.
+        (*omitted, *(line for window in windows for line in window)),
         windows,
         _block(omitted, "before_window") if omitted else None,
     )

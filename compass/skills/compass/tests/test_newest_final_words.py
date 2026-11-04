@@ -1140,8 +1140,8 @@ class TheDisclosureNamesTheWholeFinalReply(unittest.TestCase):
         text = " ".join(reading_route._base_parts("claude", harness="claude"))
         self.assertIn(f"up to {cap:,} characters", text)
 
-    def test_the_consent_repair_epoch_is_four_and_unasked_reads_stay_at_one(self) -> None:
-        self.assertEqual(4, reading_policy.CONTENT_VERSION)
+    def test_wider_message_consent_renews_and_unasked_reads_stay_at_one(self) -> None:
+        self.assertEqual(6, reading_policy.CONTENT_VERSION)
         self.assertEqual(1, reading_policy.WORDS_CONTENT_VERSION)
         self.assertEqual(reading_policy.CONTENT_VERSION, http_api._press_content("claude"))
 

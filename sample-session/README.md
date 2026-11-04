@@ -209,7 +209,7 @@ refuses a mapping file kept in this directory.
 
 The fixture ships inside the built page, so both are bounded before anything is built;
 [the design record](../docs/design-sample-session.md#how-big-it-may-be) owns the bounds and why. This
-session's record is 81 entries in two pages, and the fixture with its summary and reading is 139,650
+session's record is 81 entries in two pages, and the fixture with its summary and reading is 139,981
 bytes of compact JSON.
 
 ## Regenerating it

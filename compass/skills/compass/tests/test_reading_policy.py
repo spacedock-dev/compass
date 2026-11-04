@@ -407,7 +407,11 @@ class ReadingPolicyTest(unittest.TestCase):
             db.execute("INSERT OR REPLACE INTO permission_disclosure VALUES ('claude', 4, 'A')")
             db.commit()
         answer = reading_policy.status(
-            self.config, now=101.0, provider="claude", destinations={"claude": "A"}
+            self.config,
+            now=101.0,
+            provider="claude",
+            destinations={"claude": "A"},
+            content=reading_policy.WORDS_CONTENT_VERSION,
         )
         self.assertFalse(answer["off"])
         self.assertTrue(answer["consent"])
@@ -415,9 +419,13 @@ class ReadingPolicyTest(unittest.TestCase):
         self.assertEqual({"codex": False, "claude": True}, answer["providers"])
         self.assertEqual(
             "",
-            reading_policy.reserve(self.config, now=102.0, provider="claude", destination="A")[
-                "reason"
-            ],
+            reading_policy.reserve(
+                self.config,
+                now=102.0,
+                provider="claude",
+                destination="A",
+                content=reading_policy.WORDS_CONTENT_VERSION,
+            )["reason"],
         )
         # And this build's off still stores off over it.
         self.assertTrue(reading_policy.set_consent(self.config, False, now=103.0)["off"])

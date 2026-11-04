@@ -21,7 +21,8 @@ from compass_runtime import (
 )
 from compass_runtime.config import build_runtime_config
 
-from .test_session_summary import Replies, entry
+from .test_agent_words import _agent, _check, _person
+from .test_session_summary import Replies, entry, phase
 
 
 class SummaryMessageTextTest(unittest.TestCase):
@@ -114,6 +115,9 @@ class SummaryMessageTextTest(unittest.TestCase):
             on_part=after_part,
         )
         self.assertEqual("partial", first.state)
+        change = session_source.SourceChange("unchanged")
+        self.assertEqual("update", session_summary.change_report(first, rows, change)["action"])
+        planned = session_summary.plan(rows, "claude", config=config, prior=first, change=change)
         model = Replies()
         result = session_summary.update(
             first,
@@ -125,6 +129,7 @@ class SummaryMessageTextTest(unittest.TestCase):
             clock=lambda: 0,
         )
         self.assertGreater(len(model.prompts), 0)
+        self.assertEqual(planned["parts"], len(model.prompts))
         self.assertIs(first.blocks[0], result.blocks[0])
         self.assertIn("LATE_REMAINDER", "\n".join(model.prompts))
         span = first.blocks[0].span
@@ -147,12 +152,223 @@ class SummaryMessageTextTest(unittest.TestCase):
         )
         self.assertEqual("summarize_again", report["action"])
 
+    def test_lede_does_not_recover_an_unread_fragment_from_a_cited_fact(self) -> None:
+        model = Replies(
+            {"phases": [phase([1], "The person asked for a parser review.", kind="asked")]},
+            ("", "failed"),
+            ("", "failed"),
+            {"lede": "The person asked for a parser review.", "cites": [1]},
+        )
+        result = session_summary.summarize(
+            [entry(1, words="Review parser. " + "x" * 850 + "UNREAD_LATE")],
+            self.coverage,
+            "claude",
+            config=dataclasses.replace(self.config, session_summary_window_bytes=700),
+            model=model,
+            clock=lambda: 0,
+        )
+        self.assertEqual("no_output", result.blocks[1].reason)
+        self.assertTrue(model.prompts[-1].startswith("Write the opening"))
+        self.assertNotIn("UNREAD_LATE", model.prompts[-1])
+
+    def test_masking_happens_before_fragment_boundaries(self) -> None:
+        secret = "sample-PrivateValue-0123456789" * 30
+        words = 'Review parser. password="' + secret + '" ' + "界🙂 " * 300 + "LATE_PUBLIC"
+        model = Replies()
+        result = session_summary.summarize(
+            [entry(1, words=words)],
+            self.coverage,
+            "claude",
+            config=dataclasses.replace(self.config, session_summary_window_bytes=700),
+            model=model,
+            clock=lambda: 0,
+        )
+        sent = "\n".join(model.prompts)
+        self.assertNotIn("PrivateValue", sent)
+        self.assertIn("LATE_PUBLIC", sent)
+        self.assertNotIn("LATE_PUBLIC", json.dumps(result.as_dict()))
+        self.assertNotIn("\ufffd", sent)
+
+    def test_changed_canonical_late_text_invalidates_a_saved_range(self) -> None:
+        rows = [entry(1, words="review " * 500)]
+        prior = session_summary.summarize(
+            rows, self.coverage, "claude", config=self.config, model=Replies(), clock=lambda: 0
+        )
+        changed = [dataclasses.replace(rows[0], words="review " * 499 + "changed")]
+        report = session_summary.change_report(
+            prior, changed, session_source.SourceChange("unchanged")
+        )
+        self.assertEqual("summarize_again", report["action"])
+
 
 class RequestedMessageTextTest(SummaryMessageTextTest):
+    def test_private_lookup_masks_before_retention_and_refuses_source_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            secret = "Private-test-value-0123456789" * 20
+            record = {
+                "type": "user",
+                "uuid": "u",
+                "timestamp": "2026-11-04T00:00:01Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": 'Review parser. password="' + secret + '" ' + "界🙂 " * 500,
+                        }
+                    ],
+                },
+            }
+            raw = json.dumps(record).encode()
+            path.write_bytes(raw + b"\n")
+            fact = record_pages._fact(self.config, raw, "claude", "s")
+            assert fact is not None
+            wanted = reading.build_ledger([fact], "claude", "s")
+            stamp = project_context.transcript_stamp(str(path))
+            result = project_context.transcript_message_words(
+                self.config,
+                str(path),
+                "claude",
+                "s",
+                wanted,
+                max_bytes=120,
+                expected_stamp=stamp,
+            )
+            self.assertEqual(1, len(result))
+            self.assertLessEqual(sum(len(row["words"].encode()) for row in result), 120)
+            self.assertGreater(result[0]["total"], len(result[0]["words"]))
+            self.assertNotIn("Private-test-value", json.dumps(result))
+            path.write_bytes(raw + b"\n\n")
+            self.assertEqual(
+                [],
+                project_context.transcript_message_words(
+                    self.config,
+                    str(path),
+                    "claude",
+                    "s",
+                    wanted,
+                    max_bytes=120,
+                    expected_stamp=stamp,
+                ),
+            )
+
+    def test_conflicting_duplicate_cannot_restore_later_words(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+
+            def source(suffix: str) -> bytes:
+                return json.dumps(
+                    {
+                        "type": "assistant",
+                        "uuid": "same",
+                        "timestamp": "2026-11-04T00:00:01Z",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "I reviewed parser. " + "context " * 200 + suffix,
+                                }
+                            ],
+                        },
+                    }
+                ).encode()
+
+            raw = source("FIRST_LATE")
+            path.write_bytes(raw + b"\n" + source("CONFLICTING_LATE") + b"\n")
+            fact = record_pages._fact(self.config, raw, "claude", "s")
+            assert fact is not None
+            wanted = reading.build_ledger([fact], "claude", "s", read_agent_words=True)
+            self.assertEqual(
+                [],
+                project_context.transcript_message_words(
+                    self.config,
+                    str(path),
+                    "claude",
+                    "s",
+                    wanted,
+                    max_bytes=16000,
+                    expected_stamp=project_context.transcript_stamp(str(path)),
+                ),
+            )
+
+    def test_oversized_duplicate_cannot_make_an_older_excerpt_look_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            record = {
+                "type": "assistant",
+                "uuid": "same",
+                "timestamp": "2026-11-04T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Review parser."}],
+                },
+            }
+            raw = json.dumps(record).encode()
+            fact = record_pages._fact(self.config, raw, "claude", "s")
+            assert fact is not None
+            record["message"] = {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Review parser." + " context" * 40000,
+                    }
+                ],
+            }
+            path.write_bytes(raw + b"\n" + json.dumps(record).encode() + b"\n")
+            self.assertEqual(
+                [],
+                project_context.transcript_message_words(
+                    self.config,
+                    str(path),
+                    "claude",
+                    "s",
+                    reading.build_ledger([fact], "claude", "s", read_agent_words=True),
+                    max_bytes=16000,
+                    expected_stamp=project_context.transcript_stamp(str(path)),
+                ),
+            )
+
+    def test_adopted_goal_excerpt_does_not_suppress_later_source_words(self) -> None:
+        words = "Review parser. " + "context " * 300 + "LATE_CONSTRAINT"
+        row: reading.LedgerEntry = {
+            "id": "p",
+            "at": 10.0,
+            "type": "user_message",
+            "by": "person",
+            "author": "person",
+            "source": "transcript",
+            "summary": "Review parser.",
+            "words": words[:1000],
+        }
+        prompt, _ = reading.build_prompt(
+            [row],
+            goal="Review parser.",
+            goal_words=words[:1000],
+            goal_fact="p",
+            max_bytes=16000,
+            message_lookup=lambda _wanted, _cap: [
+                {
+                    "id": "p",
+                    "at": 10.0,
+                    "words": words,
+                    "total": len(words),
+                }
+            ],
+        )
+        self.assertIn("LATE_CONSTRAINT", prompt)
+
     def test_a_missing_source_never_proves_every_agent_word_was_read(self) -> None:
         row: reading.LedgerEntry = {
-            "id": "a", "at": 10.0, "type": "agent_message", "by": "agent",
-            "author": "agent", "source": "transcript", "summary": "The agent spoke",
+            "id": "a",
+            "at": 10.0,
+            "type": "agent_message",
+            "by": "agent",
+            "author": "agent",
+            "source": "transcript",
+            "summary": "The agent spoke",
             "agent_words": json.dumps("An old excerpt with no source length"),
         }
         _, selection = reading.build_prompt(
@@ -162,22 +378,79 @@ class RequestedMessageTextTest(SummaryMessageTextTest):
 
     def test_budgeted_message_projection_holds_only_the_words_sent(self) -> None:
         row: reading.LedgerEntry = {
-            "id": "a", "at": 10.0, "type": "agent_message", "by": "agent",
-            "author": "agent", "source": "transcript", "summary": "The agent spoke",
+            "id": "a",
+            "at": 10.0,
+            "type": "agent_message",
+            "by": "agent",
+            "author": "agent",
+            "source": "transcript",
+            "summary": "The agent spoke",
             "agent_words": json.dumps("An old excerpt"),
         }
         prompt, selection = reading.build_prompt(
-            [row], goal="Review parser", max_bytes=16000,
-            message_lookup=lambda _wanted, _cap: [{
-                "id": "a", "at": 10.0, "words": "prose " * 5000 + "UNREAD_END",
-                "total": 30010,
-            }],
+            [row],
+            goal="Review parser",
+            max_bytes=16000,
+            message_lookup=lambda _wanted, _cap: [
+                {
+                    "id": "a",
+                    "at": 10.0,
+                    "words": "prose " * 5000 + "UNREAD_END",
+                    "total": 30010,
+                }
+            ],
         )
         self.assertLessEqual(len(prompt.encode()), 16000)
         self.assertNotIn("UNREAD_END", prompt)
         self.assertNotIn("UNREAD_END", json.dumps(selection.entries))
         self.assertFalse(selection.agent_words_whole)
         self.assertIn("read only in part", reading.cutoff_text(selection.entries, 1, 20))
+
+    def test_wider_words_keep_failed_checks_and_do_not_count_checks_as_partial_messages(
+        self,
+    ) -> None:
+        facts = [_person("p", 10, "Review parser"), _check(at=20)]
+        ledger = reading.build_ledger(facts, "claude", "s1", tool_output={})
+        prompt, selection = reading.build_prompt(
+            ledger,
+            goal="Review parser",
+            max_bytes=16000,
+            message_lookup=lambda _wanted, _cap: [
+                {"id": "p", "at": 10, "words": "context " * 5000, "total": 40000}
+            ],
+        )
+        self.assertLessEqual(len(prompt.encode()), 16000)
+        self.assertEqual({"p", "check-1"}, {row["id"] for row in selection.entries})
+        self.assertIn("failed", prompt)
+        self.assertFalse(selection.unread_failures)
+        self.assertIn(
+            "1 message was read only in part", reading.cutoff_text(selection.entries, 2, 30)
+        )
+
+    def test_wider_older_words_leave_the_newest_final_its_whole_reply_priority(self) -> None:
+        facts = [_agent("old", 10, "old excerpt"), _agent("final", 20, "final excerpt")]
+        ledger = reading.build_ledger(facts, "claude", "s1", read_agent_words=True)
+        final = "Final recorded reply. " * 90 + "FINAL_END"
+        prompt, selection = reading.build_prompt(
+            ledger,
+            goal="Review parser",
+            max_bytes=16000,
+            final_lookup=lambda _wanted: {
+                "outcome": "whole",
+                "fact_id": "final",
+                "at": 20,
+                "words": final,
+            },
+            message_lookup=lambda _wanted, _cap: [
+                {"id": "old", "at": 10, "words": "older " * 5000, "total": 30000},
+                {"id": "final", "at": 20, "words": "wrong alternative", "total": 17},
+            ],
+        )
+        self.assertLessEqual(len(prompt.encode()), 16000)
+        self.assertIn("FINAL_END", prompt)
+        self.assertNotIn("wrong alternative", prompt)
+        self.assertEqual("whole", selection.newest_final)
+        self.assertFalse(selection.agent_words_whole)
 
     def test_prior_allow_cannot_authorize_wider_message_content(self) -> None:
         for harness, previous in (("claude", 4), ("codex", 1)):
@@ -190,6 +463,40 @@ class RequestedMessageTextTest(SummaryMessageTextTest):
                     content=http_api._press_content(harness),
                 )
                 self.assertFalse(covered["codex"])
+
+    def test_codex_requested_person_message_recovers_words_past_the_shared_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            words = "Review parser. " + "context " * 200 + "CODEX_LATE"
+            raw = json.dumps(
+                {
+                    "timestamp": "2026-11-04T00:00:01Z",
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": words},
+                }
+            ).encode()
+            path.write_bytes(raw + b"\n")
+            fact = record_pages._fact(self.config, raw, "codex", "s")
+            assert fact is not None
+            ledger = reading.build_ledger([fact], "codex", "s")
+            recovered = project_context.transcript_message_words(
+                self.config,
+                str(path),
+                "codex",
+                "s",
+                ledger,
+                max_bytes=16000,
+                expected_stamp=project_context.transcript_stamp(str(path)),
+            )
+            self.assertEqual(words, recovered[0]["words"])
+            prompt, _ = reading.build_prompt(
+                ledger,
+                goal="Review parser",
+                max_bytes=16000,
+                message_lookup=lambda _wanted, _cap: recovered,
+            )
+            self.assertIn("CODEX_LATE", prompt)
+            self.assertNotIn("CODEX_LATE", json.dumps(project_context.for_page({"facts": [fact]})))
 
     def test_older_source_words_reach_only_the_requested_prompt(self) -> None:
         lookup = getattr(project_context, "transcript_message_words", None)

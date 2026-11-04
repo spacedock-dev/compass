@@ -537,23 +537,23 @@ def _base_parts(
     elif harness in OUTCOME_HARNESSES:
         outcome = ", and your expected outcome lines when a work result is among them"
     cli_adds = _CLI_ADDS.get(provider, "")
-    # The newest final reply goes whole (owner amendment, 2026-10-05), and it is the only
-    # message that does: every other keeps the cap above, and no shell or tool output joins it.
+    # The newest final reply retains its strict whole-row admission. Ordinary messages can
+    # now send bounded fragments; neither path adds shell or tool output.
     final = (
         "The agent's newest final reply, as its transcript records one, goes whole, up to "
         f"{_FINAL_REPLY_CHARS:,} characters."
         if harness in AGENT_MESSAGE_HARNESSES
         else ""
     )
+    sent = (
+        f"Sent: your goal, a bounded set of entries, and {messages}, whole or partial, "
+        f"within the prompt budget{outcome}."
+        if harness in {"claude", "codex"}
+        else f"Sent: your goal and a bounded set of the session's entries, with {messages} "
+        f"up to {_WORDS_CAP:,} characters each{outcome}."
+    )
     return [
-        (
-            f"Sent: your goal and a bounded set of the session's entries, with {messages} "
-            + (
-                f"as whole messages or measured excerpts within your prompt budget{outcome}."
-                if harness in {"claude", "codex"}
-                else f"up to {_WORDS_CAP:,} characters each{outcome}."
-            )
-        ),
+        sent,
         *([final] if final else []),
         *([tool_output] if tool_output else []),
         (
