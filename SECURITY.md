@@ -1602,7 +1602,7 @@ records measure the full masked, folded length; a cropped prompt row labels its 
 length and that total. Neither count is inferred for a legacy record. These counts stay in memory
 and are stripped from page responses with the words. Amended 2026-10-28 by the owner: a press's bounds are the reader's, set on the Settings screen
 and stored in `compass-settings.json` (`settings`). The prompt bound is
-`settings.analyze_prompt_bytes`, 512 KiB by default and at most, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
+`settings.analyze_prompt_bytes`, 512 KiB by default, optionally up to 2 MiB, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
 and never under the project page's 100; the checks and written files it lists are
 `settings.analyze_listed_checks`, 1,000 by default and never under the page's 12; and the
 transcript bytes it scans for them, the session's and its subagents', are
@@ -1620,6 +1620,26 @@ other caller (the unasked lane, goal and session summaries, the project page) ke
 
 That change stayed within the existing
 content classes, so it left `reading_policy.CONTENT_VERSION` at 2.
+
+The saved prompt limit does not authorize every route to accept that much text. Requested Analyze
+checks the assembled prompt against the selected route's estimated allowance before reserving a
+model attempt or starting its CLI. A refusal at that point sends no prompt to the model and spends
+no Analyze attempt; separately consented CI queries may already have run during preparation.
+Compass neither rebuilds a smaller prompt nor switches providers to make it pass. A small actual
+prompt can pass even when the saved preference exceeds the allowance. A policy failure detected
+after reservation, or a failed CLI call reporting a context limit, keeps that attempt counted.
+The [capacity amendment](docs/design-reading-a-session.md#amended-2026-11-04-larger-prompts-need-a-route-allowance)
+owns the estimate, conservative unknown-route bounds and refusal behavior.
+
+Requested Analyze outcomes may also store and publish `reading_diagnostic` beside the existing
+assessment. This is the latest stored attempt's metadata, including a refusal or failure while an
+older assessment remains. A closed validator permits only counts, booleans and enumerated labels:
+assembled UTF-8 bytes, selected and eligible ledger counts, serialized message bytes, available
+message-character counts, preparation and model-seam durations, reservation/invocation state and
+the outcome. It admits no transcript, goal, system prompt, raw CLI error, settings text or
+credential. Missing measurements stay unknown; neither those counts nor invocation prove complete
+source coverage, provider receipt or accuracy. The existing outcome, cancellation, late-result and
+Clear barriers govern publication. The same amendment defines the two durations and legacy data.
 
 Amended 2026-10-05 by the owner through delegated adversarial acceptance
 ([the amendment](docs/design-reading-a-session.md#amended-2026-10-05-owner-the-newest-recorded-final-reply-is-read-whole)):
@@ -1819,6 +1839,15 @@ The argv, every flag checked against `claude --help` on 2.1.280, run without a s
   `--append-system-prompt`, which would keep the default, never appears.
 
 `--bare` is not used, because it refuses OAuth sign-in. `--json-schema` is not used either.
+
+Requested Analyze additionally sets child `DISABLE_COMPACT=1` and passes inline
+`--settings '{"switchModelsOnFlag":false}'`. These controls belong only to that call path;
+summaries, unasked readings, qualification and the Live monitor keep their existing envelopes.
+Compass checks applicable managed settings before admission and again before launch, refusing
+known conflicting or dynamic policy. Managed controls still take precedence. A missing remote
+cache does not prove that the CLI cannot fetch policy, and a read cannot prevent a later policy
+or file change. The [capacity amendment](docs/design-reading-a-session.md#amended-2026-11-04-larger-prompts-need-a-route-allowance)
+records that remaining boundary; no immutable policy or model-fit receipt is claimed.
 
 #### Amended 2026-10-05: Claude reading model baseline
 

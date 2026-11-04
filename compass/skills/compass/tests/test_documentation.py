@@ -1806,8 +1806,17 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # pattern once let two of them through uncounted (review, 2026-09-24).
         # Either quote, since a single-quoted read is the same read.
         # `pop`, `setdefault`, a default and spaced arguments too (`INPUT_READS`).
+        # The two `analyze_diagnostics` matches read its closed measurement metadata
+        # section, not a tool input payload. Count them explicitly, as the output
+        # inventory does for unrelated `output` keys, so another read still fails.
         self.assertEqual(
-            {"claude_data.py": 1, "codex.py": 1, "project_context.py": 6, "transcripts.py": 2},
+            {
+                "analyze_diagnostics.py": 2,
+                "claude_data.py": 1,
+                "codex.py": 1,
+                "project_context.py": 6,
+                "transcripts.py": 2,
+            },
             self.counted(self.INPUT_READS),
         )
         self.assertIn("eleven expressions in `compass_runtime` reach an input payload", self.FLAT)

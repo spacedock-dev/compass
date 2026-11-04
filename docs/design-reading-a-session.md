@@ -9584,21 +9584,10 @@ checks, scanned 8 MiB of a 17 MB parent and none of its 282 subagent transcripts
 tell. The owner ruled that a press reads the session whole, within bounds the reader sets.
 
 - The bounds are the reader's, on the Settings screen (`settings`): the prompt (512 KiB by
-  default, with a stored maximum of 2 MiB), the messages and checks kept (2,000), the checks and
+  default), the messages and checks kept (2,000), the checks and
   files listed (1,000) and the
   transcript bytes scanned for checks, the subagents' included (512 MiB). The old constants are
   the floors, and the project page, the unasked lane and the summaries keep their own.
-- Prompt storage and sending are separate bounds. The actual assembled prompt must pass the
-  selected route's estimated capacity policy before reservation. A route change never clamps
-  the saved preference, and a small actual prompt may pass even when the preference exceeds
-  that route's allowance. Settings GET/POST and requested routes publish policy previews,
-  without implying an actual prompt was measured or token fit was verified. An allowance below
-  the setting's 16 KiB floor is not a recommendation to save an unrepresentable value.
-- A failed requested Claude CLI call can report the documented `invalid_request_error` and
-  `prompt is too long` wording. Compass labels that bounded error hint as a context limit,
-  keeps the failed attempt counted, and offers a smaller reading or larger route window.
-  It neither retries nor changes the prompt or provider. Successful output is not searched
-  for error prose, and the hint is not a provider receipt or generation stop reason.
 - A check `&&` joins ahead of a later check whose own summary ends the output passed, because the
   later one ran only after the earlier exited 0.
 - Checks separated by `;`, each cut by `tail`, each take their own summary line in order, read only
@@ -9616,3 +9605,73 @@ tell. The owner ruled that a press reads the session whole, within bounds the re
 
 The same session then read all 1,148 entries after its intent in a 431 KB prompt, its passed runs
 rose from 3 to 451, and the reading drew None or low.
+
+### Amended 2026-11-04: larger prompts need a route allowance
+
+The stored prompt preference now ranges from 16 KiB to 2 MiB, with the default still 512 KiB.
+It limits one assembled Analyze prompt, not the outline or Summary's source coverage. Keeping
+the preference separate from admission lets a reader retain it across route changes: a small
+actual prompt may pass even when the preference exceeds that route's allowance. Clamping the
+preference to today's route would silently change the next reading on another route.
+
+The policy measures the assembled UTF-8 prompt and explicit system prompt. Its extended path
+recognizes only direct Claude routes with the exact IDs `claude-sonnet-5`, `claude-sonnet-5-5`,
+`claude-opus-5` and `claude-opus-5-5`. It starts with a 1,000,000-token window and a 2 MiB byte
+ceiling. The [model overview](https://platform.claude.com/docs/en/models/overview) and
+[Claude Code context documentation](https://code.claude.com/docs/en/model-config#extended-context)
+are the external basis, not evidence of account access. Unknown IDs, remapped models, gateways,
+cloud deployments and Codex retain a conservative ceiling of 512 KiB. An observed lower window
+can only reduce either ceiling, never enlarge it.
+
+For a known or configured window, the policy reserves 128,000 tokens for generation, including
+thinking and answer, 16,384 for the CLI, and the explicit system prompt estimated as UTF-8 bytes
+divided by three, rounded up. The prompt uses the same estimate. These are policy reserves and a
+heuristic, not measured hidden overhead or a tokenizer bound. A window smaller than the reserves
+leaves no room. An allowance below the setting's 16 KiB floor is not advice to save an impossible
+value; a small enough actual prompt may still pass a positive allowance. `fit_verified` and
+`policy_verified` remain false. No credential read or token-count network call is added.
+
+Applicable environment, managed settings and per-model restrictions contribute their smallest
+valid limit. Malformed or ambiguous controls, unreadable policy, unsupported policy sources,
+known dynamic policy and compaction or model-switching conflicts refuse. Requested Analyze uses
+the child environment and inline settings described in
+[Claude Code reading calls](../SECURITY.md#claude-code-reading-calls). It rechecks controls before
+admission and before launch, but does not freeze the external CLI's policy. The CLI can
+[refresh managed settings](https://code.claude.com/docs/en/server-managed-settings); cache absence
+and disabled nonessential traffic do not prove otherwise. A file can also change after the last
+read. This boundary is why neither the estimate nor the local settings read is a fit or policy
+receipt.
+
+Admission runs before the job's model-attempt marker and reservation, with Pause, cancellation,
+destination and shutdown gates preserved. An initial refusal starts no model call and reserves
+no Analyze attempt. A configuration failure detected after reservation remains counted. The
+assembled prompt is never silently rebuilt, evidence removed or another provider tried to meet
+the allowance. Settings GET/POST and the selected requested route publish previews without actual
+input counts or an admission verdict; the Settings screen keeps malformed or missing previews
+unknown while leaving the saved limits editable.
+
+A failed requested Claude CLI call can report `invalid_request_error` and `prompt is too long`
+in its bounded error output. Compass treats that as a CLI context-limit hint, keeps the attempt
+counted and says no new analysis was saved. The reader can reduce Prompt size when above 16 KiB
+or choose a larger route window. There is no automatic retry, shortening or provider switch.
+Successful output is not searched for error prose. The text-only reply establishes neither a
+provider receipt nor a generation stop reason; unclassified failures, including Codex's, stay
+unclassified.
+
+Optional `reading_diagnostic` records the latest stored Analyze outcome, which can be a failure
+alongside an older assessment. Preparation measures actual assembled prompt bytes and prompt
+construction time only. Selection records eligible and selected ledger/message counts and the
+bytes of message rows actually serialized, including JSON quoting. Available character counts
+describe only those selected messages; unknown original lengths remain null. A separate model
+guard measurement covers its gates and invocation, excluding earlier source collection. Its
+reservation flag distinguishes a counted attempt from an initial refusal, and its invocation flag
+means entry into the adapter, not CLI creation or verified transmission. None of these counts
+proves a whole source was read, and neither duration is total job latency.
+
+Capture resets for every invocation. A failure before assembly has unknown input, not zero;
+one after assembly retains the available measurements even if no model was called. The closed
+validator admits no session words, raw errors or arbitrary labels. On load, legacy or invalid
+metadata is unknown without discarding an otherwise valid assessment. Existing outcome-store, late-result,
+cancellation and Clear barriers govern persistence and publication. Measurements establish no
+accuracy result and change no verdict. Module ownership remains in the
+[runtime architecture](design-runtime-architecture.md).
