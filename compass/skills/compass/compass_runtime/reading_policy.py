@@ -278,6 +278,11 @@ def _pass_ledger(db: Any, now: float) -> float:
     )
 
 
+def validate_long_request(value: Any, *, now: float) -> dict[str, Any] | None:
+    """Copy closed pass metadata for durable markers; grants no reservation authority."""
+    return _pass_request(value, now)
+
+
 def _reserve_pass(
     db: Any,
     answer: Status,

@@ -110,23 +110,29 @@ def header(job: Any) -> dict[str, Any] | None:
         return None
     try:
         value = json.loads(job.binding)
-        if (
-            not isinstance(value, dict)
-            or set(value) != _FIELDS | {"version", "nonce", "lineage", "epoch"}
-            or type(value["version"]) is not int
-            or value["version"] != 1
-            or not _hex(value["nonce"], 32)
-            or not _hex(value["lineage"], 32)
-            or type(value["epoch"]) is not int
-            or not 0 <= value["epoch"] < 2**63
-            or _binding({key: value[key] for key in _FIELDS}) is None
-            or digest(value)[:32] != job.job_id
-            or canonical(value) != job.binding
-        ):
+        if canonical(value) != job.binding:
             return None
     except (ValueError, TypeError, RecursionError):
         return None
-    return value
+    return validate_header(value, job.job_id)
+
+
+def validate_header(value: Any, job_id: Any) -> dict[str, Any] | None:
+    """Copy stored word-free identity metadata; never construct live authority."""
+    if (
+        not isinstance(value, dict)
+        or set(value) != _FIELDS | {"version", "nonce", "lineage", "epoch"}
+        or type(value["version"]) is not int
+        or value["version"] != 1
+        or not _hex(value["nonce"], 32)
+        or not _hex(value["lineage"], 32)
+        or type(value["epoch"]) is not int
+        or not 0 <= value["epoch"] < 2**63
+        or (checked := _binding({key: value[key] for key in _FIELDS})) is None
+        or digest(value)[:32] != job_id
+    ):
+        return None
+    return {**value, **checked}
 
 
 def live_header(job: Any) -> dict[str, Any] | None:
