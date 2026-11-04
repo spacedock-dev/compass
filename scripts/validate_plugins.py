@@ -507,6 +507,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/reading_long_diagnostics.py",
     "skills/compass/compass_runtime/reading_long_cleanup.py",
     "skills/compass/compass_runtime/reading_long_finalize.py",
+    "skills/compass/compass_runtime/reading_native.py",
     "skills/compass/compass_runtime/reading_policy.py",
     "skills/compass/compass_runtime/reading_route.py",
     "skills/compass/compass_runtime/levels.py",
