@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import io
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from .test_claude_checks import Transcript
 
@@ -245,3 +247,97 @@ class FrozenParentSourceTest(unittest.TestCase):
         )
         self.assertTrue(pages[-1].source_complete)
         self.assertEqual(len(raw) * 3, spent + sum(page.bytes_read for page in pages))
+
+    def test_real_file_reads_are_bounded_blocks_with_exact_native_boundaries(self) -> None:
+        rows = [
+            {"text": "x" * (128 * 1024)},
+            {"text": '漢字 "quoted"'},
+            {"text": "last"},
+        ]
+        lines = [
+            json.dumps(rows[0]).encode() + b"\r\n",
+            json.dumps(rows[1], ensure_ascii=False).encode() + b"\n",
+            b'{\r"text": "last"}\n',
+        ]
+        raw = b"".join(lines)
+        cursor = self.start(raw)
+        requests = []
+        actual = []
+
+        class CountedFile(io.FileIO):
+            def read(self, size: int = -1) -> bytes:
+                requests.append(size)
+                result = super().read(size)
+                actual.append(len(result))
+                return result
+
+        def opened(path: str, **_options: Any) -> Any:
+            return CountedFile(path, "rb")
+
+        with mock.patch.object(self.module().runtime_io, "_open_scan_binary", side_effect=opened):
+            pages = self.drain(cursor, max_bytes=64 * 1024)
+        records = [record for page in pages for record in page.records]
+        self.assertEqual(rows, [record.value for record in records])
+        self.assertEqual(lines, [record.raw for record in records])
+        ends = [sum(map(len, lines[:index])) for index in range(1, len(lines) + 1)]
+        self.assertEqual([0, *ends[:-1]], [record.start_offset for record in records])
+        self.assertEqual(ends, [record.end_offset for record in records])
+        self.assertTrue(pages[-1].source_complete)
+        self.assertEqual(3 * len(raw), sum(actual))
+        self.assertEqual(sum(actual), sum(page.bytes_read for page in pages))
+        self.assertLessEqual(len(requests), 3 * ((len(raw) + 65535) // 65536))
+        self.assertTrue(all(0 < size <= 65536 for size in requests))
+
+    def test_short_reads_and_fragment_replay_preserve_crlf_and_utf8_bytes(self) -> None:
+        raw = '{"text":"漢字"}\r\n'.encode() + b'{\r"text":"next"}\n'
+        cursor = self.start(raw)
+        cursor, spent = self.phase(cursor, "records")
+        original_digest = cursor.digest.hexdigest()
+
+        class ShortFile(io.FileIO):
+            def read(self, size: int = -1) -> bytes:
+                return super().read(min(size, 2))
+
+        def opened(path: str, **_options: Any) -> Any:
+            return ShortFile(path, "rb")
+
+        with mock.patch.object(self.module().runtime_io, "_open_scan_binary", side_effect=opened):
+            # End in the first multibyte character, then replay the same immutable cursor.
+            first = self.advance(cursor, max_bytes=10)
+            replay = self.advance(cursor, max_bytes=10)
+            self.assertEqual(raw[:10], first.next.fragment)
+            self.assertEqual(first.next.fragment, replay.next.fragment)
+            self.assertEqual(first.next.digest.hexdigest(), replay.next.digest.hexdigest())
+            self.assertEqual(original_digest, cursor.digest.hexdigest())
+            self.assertEqual(b"", cursor.fragment)
+            pages = [first, *self.drain(first.next, max_bytes=7)]
+        records = [record for page in pages for record in page.records]
+        self.assertEqual(raw, b"".join(record.raw for record in records))
+        self.assertEqual([{"text": "漢字"}, {"text": "next"}], [r.value for r in records])
+        self.assertEqual(3 * len(raw), spent + sum(page.bytes_read for page in pages))
+        self.assertTrue(pages[-1].source_complete)
+
+    def test_record_clock_boundary_finishes_one_charged_chunk_then_resumes(self) -> None:
+        line = b'{"text":"' + b"x" * 64 + b'"}\n'
+        raw = line * 2000
+        cursor = self.start(raw)
+        # Baseline once; the clock below only exercises the record phase.
+        baseline = self.advance(cursor, max_bytes=len(raw))
+        cursor = baseline.next
+        self.assertEqual("records", cursor.phase)
+        ticks = -0.6
+
+        def clock() -> float:
+            nonlocal ticks
+            ticks += 0.6
+            return ticks
+
+        first = self.module().read(cursor, max_bytes=256 * 1024, max_seconds=1, clock=clock)
+        self.assertEqual("time", first.reason)
+        self.assertEqual(65536, first.bytes_read)
+        self.assertEqual(65536, first.next.offset)
+        self.assertEqual(raw[first.next.line_start : 65536], first.next.fragment)
+        pages = [first, *self.drain(first.next, max_bytes=64 * 1024)]
+        self.assertEqual(raw, b"".join(record.raw for page in pages for record in page.records))
+        self.assertEqual(3 * len(raw), baseline.bytes_read + sum(p.bytes_read for p in pages))
+        self.assertTrue(pages[-1].source_complete)

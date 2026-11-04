@@ -213,14 +213,25 @@ def _consume(
     source.seek(cursor.offset)
     while cursor.offset < cursor.frozen.end_offset and budget.remaining and clock() < deadline:
         size = min(_CHUNK_BYTES, budget.remaining, cursor.frozen.end_offset - cursor.offset)
-        raw = source.readline(size) if cursor.phase == "records" else source.read(size)
+        raw = source.read(size)
         budget.charge(raw)
         if not raw:
             raise OSError("frozen source shortened while reading")
         cursor.digest.update(raw)
-        cursor = replace(cursor, offset=cursor.offset + len(raw))
-        if cursor.phase == "records":
-            cursor = _line(cursor, raw, rows, gaps)
+        if cursor.phase != "records":
+            cursor = replace(cursor, offset=cursor.offset + len(raw))
+            continue
+        # Finish one bounded, already charged chunk before checking the clock.
+        # Only LF ends a physical record; CR and partial UTF-8 stay raw bytes.
+        # No unread chunk suffix or unaccounted buffered prefetch survives a page.
+        start = 0
+        while start < len(raw):
+            end = raw.find(b"\n", start) + 1
+            if not end:
+                end = len(raw)
+            cursor = replace(cursor, offset=cursor.offset + end - start)
+            cursor = _line(cursor, raw[start:end], rows, gaps)
+            start = end
     return cursor, rows, gaps
 
 
@@ -302,7 +313,9 @@ def read(
     Baseline and verification require stable metadata across their slices.
     Movement during either pass refuses without retry. Append present before a
     phase starts is outside the endpoint; record pages can observe later append
-    between slices, with the final stable digest still required.
+    between slices, with the final stable digest still required. The page clock
+    is cooperative: one charged block of at most 64 KiB finishes before the
+    next clock check, including any complete records it contains.
     """
     if type(max_bytes) is not int or not 0 <= max_bytes <= SESSION_SOURCE_PAGE_MAX_BYTES:
         raise ValueError("invalid page byte allowance")
