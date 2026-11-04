@@ -40,6 +40,7 @@ _SOURCE_REASONS = {
     "message_limit",
 }
 _MAP_REASONS = {
+    "plan-unresolved",
     "input-limit",
     "context-unfit",
     "prompt-unfit",

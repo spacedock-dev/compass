@@ -144,6 +144,18 @@ def _construct_model(
         return None, "factory-failed"
 
 
+def _publish_plan(
+    callback: Callable[[reading_passes.PacketPlan], bool] | None,
+    packets: reading_passes.PacketPlan,
+) -> bool:
+    if callback is None:
+        return True
+    try:
+        return callback(deepcopy(packets)) is True
+    except Exception:  # noqa: BLE001 - failed plan publication cannot launch calls
+        return False
+
+
 def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-owned call seams
     originals: Sequence[reading_passes.Original],
     *,
@@ -160,6 +172,7 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     on_observation: Callable[[dict[str, Any]], bool] | None = None,
     frozen_context: reading_pass_context.Frozen | None = None,
     final: Mapping[str, Any] | None = None,
+    on_plan: Callable[[reading_passes.PacketPlan], bool] | None = None,
 ) -> Series:
     """Plan once, then call each evidence position at most once without automatic resume.
 
@@ -171,6 +184,8 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     An observation sink must return True for accepted/staged snapshots. Its ended=True
     event owns per-pass persistence; False or an exception stops further calls while
     preserving charged diagnostics and unresolved ranges. It never seals the whole job.
+    on_plan receives the exact completed plan once, before any factory/call. Its explicit
+    acceptance is required when supplied; refusal/exception leaves all ranges unassigned.
     """
     declared = reading_pass_types.validate_plan(plan)
     if declared is None or declared["limits"]["reply_bytes"] != reading.REPLY_CAP_BYTES:
@@ -205,7 +220,9 @@ def run(  # noqa: PLR0913 - immutable declaration, original inputs and caller-ow
     passes: list[EvidencePass] = []
     failed: list[reading_passes.EvidenceRange] = []
     reason = packets.reason if slots else "output-limit"
-    for ordinal, packet in enumerate(packets.packets, 1):
+    accepted = _publish_plan(on_plan, packets)
+    reason = reason if accepted else "plan-unresolved"
+    for ordinal, packet in enumerate(packets.packets if accepted else (), 1):
         if measurements.persistence_failed:
             reason = "persistence-unresolved"
             break

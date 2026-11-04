@@ -328,13 +328,17 @@ class NativeProducerTest(unittest.TestCase):
             "source_id": requested["fact_id"],
             "request": request,
         }
-        unbound = self.call_prepare().prepared
+        unbound = self.call_prepare(recovered_sources=()).prepared
         assert unbound is not None
         self.assertIsNone(unbound.context.value()["provenance"]["lines"][0]["requested_at"])
         prepared = self.call_prepare(
             settled_through=requested["at"], recovered_sources=recovered
         ).prepared
         assert prepared is not None
+        automatic = self.call_prepare(settled_through=requested["at"]).prepared
+        assert automatic is not None
+        self.assertEqual(prepared.inputs.recovered_sources, automatic.inputs.recovered_sources)
+        self.assertEqual(prepared.context, automatic.context)
         value = prepared.context.value()
         self.assertEqual(requested["at"], value["provenance"]["lines"][0]["requested_at"])
         self.assertIn(requested["fact_id"], value["settlement"]["uncitable"])

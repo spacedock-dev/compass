@@ -11,10 +11,13 @@ from . import (
     copied_corrections,
     reading,
     reading_final_call,
+    reading_preparation,
+    reading_reconcile_packet,
     reading_route,
     records,
 )
 from . import reading_passes as passes
+from .reading_map_series import FinalSlot
 from .reading_source_collect import PhysicalOrigin, RecordPosition
 
 if TYPE_CHECKING:
@@ -49,6 +52,86 @@ class Preparation:
     prepared: Prepared | None
     reason: str
     elapsed_ms: float
+
+
+@dataclass(frozen=True)
+class CallPreparation:
+    prepared: Prepared | None
+    budget: reading_preparation.Budget | None
+    final_floor: reading_reconcile_packet.Reconciliation | None
+    reason: str
+
+
+def prepare_calls(  # noqa: PLR0913 - same frozen preparation inputs plus the existing job plan
+    config: RuntimeConfig,
+    row: Mapping[str, Any],
+    revisions: Sequence[Mapping[str, Any]],
+    collection: Collection,
+    route: Mapping[str, Any],
+    *,
+    plan: dict[str, Any],
+    now: float,
+    discarded: bool = False,
+    settled_through: float | None = None,
+    open_call_at: float | None = None,
+    recovered_sources: Sequence[Mapping[str, Any]] | None = None,
+) -> CallPreparation:
+    """Meter preparation and prove the mandatory final byte floor before any map call.
+
+    This performs no map planning or invocation. The runner next wraps its single map
+    planning interval in budget.stage(), accepting its exact on_plan through that stage.
+    Candidate-driven final growth, fresh source verification and live gates remain later.
+    """
+    if collection.snapshot is None:
+        return CallPreparation(None, None, None, "source-incomplete")
+    try:
+        budget = reading_preparation.Budget(collection.snapshot, plan)
+    except ValueError:
+        return CallPreparation(None, None, None, "invalid-plan")
+    except reading_preparation.LimitError as error:
+        return CallPreparation(None, None, None, error.reason)
+    floor = None
+    try:
+        with budget.stage() as stage:
+            prepared = prepare(
+                config,
+                row,
+                revisions,
+                collection,
+                route,
+                now=now,
+                discarded=discarded,
+                settled_through=settled_through,
+                open_call_at=open_call_at,
+                recovered_sources=recovered_sources,
+            )
+            stage.keep(prepared)
+        if prepared.prepared is None:
+            return CallPreparation(None, budget, None, prepared.reason)
+        native = prepared.prepared
+        limits = budget.plan["limits"]
+        with budget.stage() as stage:
+            floor = reading_reconcile_packet.preflight(
+                native.originals,
+                goal=str(native.inputs.revision.get("goal") or ""),
+                lines=reading.outcome_lines(native.inputs.revision),
+                scope=native.scope,
+                scope_floor=native.floor,
+                final=native.final,
+                frozen_context=native.context,
+                slot=FinalSlot(
+                    budget.plan["max_calls"], limits["prompt_bytes"], limits["reply_bytes"]
+                ),
+            )
+            stage.keep(floor)
+        return CallPreparation(
+            native if floor.packet is not None else None,
+            budget,
+            floor,
+            "" if floor.packet is not None else floor.reason,
+        )
+    except reading_preparation.LimitError as error:
+        return CallPreparation(None, budget, floor, error.reason)
 
 
 def _output(press: PressChecks, route: Mapping[str, Any]) -> reading.ToolOutput:
@@ -153,7 +236,7 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     discarded: bool = False,
     settled_through: float | None = None,
     open_call_at: float | None = None,
-    recovered_sources: Sequence[Mapping[str, Any]] = (),
+    recovered_sources: Sequence[Mapping[str, Any]] | None = None,
 ) -> Preparation:
     """Prepare retained source data only; the caller owns grants and source revalidation.
 
@@ -161,8 +244,8 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     Physical order comes only from the collection's exact indexed origins. Unknown
     placement on an eligible original refuses; out-of-window origins are not required.
     elapsed_ms measures this preparation separately from the collection's metered usage.
-    recovered_sources is existing owner-proved request lineage; absent proof stays unknown.
-    Its acquisition/metering belongs to the caller, never a hidden reread here.
+    recovered_sources defaults to the collection's metered owner-proved request lineage.
+    An explicit empty sequence tests unavailable proof; no hidden reread reconstructs it.
     Physical verification alone is not semantic or model completeness. In particular an
     enabled CI read with an unknown/available binding remains an explicit context gap.
     """
@@ -220,7 +303,13 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         revision,
         tuple(facts),
         output,
-        recovered_sources=tuple(deepcopy(recovered_sources)),
+        recovered_sources=tuple(
+            deepcopy(
+                collection.recovered_sources or ()
+                if recovered_sources is None
+                else recovered_sources
+            )
+        ),
         settled_through=settled_through,
         open_call_at=open_call_at,
         message_words=deepcopy(collection.words),

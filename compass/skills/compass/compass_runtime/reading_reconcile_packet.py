@@ -404,7 +404,15 @@ def build(
         return Reconciliation(
             "original-unavailable", None, (*unresolved, "original-unavailable"), final_state
         )
-    packet, navigation = _render(held, spans, series, goal=goal, lines=frozen_lines, scope=scope)
+    packet, navigation = _render(
+        held,
+        spans,
+        series.index.entries,
+        frozen_context=series.frozen_context,
+        goal=goal,
+        lines=frozen_lines,
+        scope=scope,
+    )
     return _finish(
         packet, scope_floor, held, unresolved, final_state, series.final_slot, navigation
     )
@@ -413,8 +421,9 @@ def build(
 def _render(
     held: Mapping[str, reading_passes.Original],
     spans: tuple[reading_passes.EvidenceRange, ...],
-    series: reading_map_series.Series,
+    candidates: Sequence[reading_map_series.IndexedCandidate],
     *,
+    frozen_context: reading_pass_context.Frozen | None,
     goal: str,
     lines: tuple[str, ...],
     scope: str,
@@ -428,7 +437,7 @@ def _render(
             "detail": indexed.candidate.detail,
             "cites": [numbers[cite.span.fact_id] for cite in indexed.candidate.cites],
         }
-        for indexed in series.index.entries
+        for indexed in candidates
     )
     claims = any(held[span.fact_id].row["type"] == reading.AGENT_MESSAGE_TYPE for span in spans)
     sources = {
@@ -436,19 +445,72 @@ def _render(
     }
     header = (
         _protocol(lines, claims=claims, scope=scope)
-        + reading_pass_context.goal_rule(series.frozen_context)
+        + reading_pass_context.goal_rule(frozen_context)
         + "Untrusted map hypotheses (not evidence):\n"
         + json.dumps(navigation, ensure_ascii=False)
         + reading_passes.FROZEN_INTENT_BOUNDARY
-        + json.dumps(
-            reading_pass_context.intent(goal, lines, series.frozen_context), ensure_ascii=False
-        )
+        + json.dumps(reading_pass_context.intent(goal, lines, frozen_context), ensure_ascii=False)
         + reading_passes.EVIDENCE_BOUNDARY
     )
     packet = reading_passes._packet(  # noqa: SLF001
-        sources, spans, (), header, lines, measure=True, frozen_context=series.frozen_context
+        sources, spans, (), header, lines, measure=True, frozen_context=frozen_context
     )
     return packet, navigation
+
+
+def preflight(  # noqa: PLR0911 - explicit mandatory-proof refusals before paid mapping
+    originals: Sequence[reading_passes.Original],
+    *,
+    goal: str,
+    lines: Sequence[str],
+    scope: str,
+    scope_floor: reading.Selection,
+    final: Mapping[str, Any] | None,
+    slot: reading_map_series.FinalSlot,
+    frozen_context: reading_pass_context.Frozen | None,
+) -> Reconciliation:
+    """Exact mandatory final floor, never a completed pass or a usable final assessment.
+
+    All person/atomic originals and the strict final must already fit. Candidate-driven
+    agent counterproof/navigation may require more later, so success promises no final fit.
+    Known source/context/proof gaps refuse before paid mapping. This does not plan maps.
+    """
+    try:
+        frozen_lines = tuple(lines)
+        _validate_scope(goal, frozen_lines, scope, slot)
+        _context_scope(frozen_context, goal, frozen_lines, scope, scope_floor)
+        gaps = _context_gaps(frozen_context)
+        if gaps:
+            return Reconciliation(gaps[0], None, gaps, None)
+        held = _originals(originals)
+        if any(
+            row["type"] != reading.AGENT_MESSAGE_TYPE
+            and (row["id"] not in held or held[row["id"]].row != row)
+            for row in scope_floor.entries
+        ):
+            return Reconciliation("original-unavailable", None, ("original-unavailable",), None)
+        final_id, final_state, gap = _final(held, final)
+        if gap:
+            return Reconciliation(gap, None, (gap,), final_state)
+        spans = _required(held, {}, final_id, final_state)
+        packet, navigation = _render(
+            held,
+            spans,
+            (),
+            frozen_context=frozen_context,
+            goal=goal,
+            lines=frozen_lines,
+            scope=scope,
+        )
+        checked = _finish(packet, scope_floor, held, [], final_state, slot, navigation)
+    except _UnavailableError:
+        return Reconciliation("original-unavailable", None, ("original-unavailable",), None)
+    except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
+        return Reconciliation("invalid-context", None, ("invalid-context",), None)
+    hard = tuple(gap for gap in checked.unresolved if gap != "agent-words-partial")
+    if checked.packet is not None and hard:
+        return replace(checked, reason=hard[0], packet=None)
+    return checked
 
 
 def _finish(
