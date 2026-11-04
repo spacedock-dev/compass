@@ -1136,6 +1136,50 @@ def capture_long_permission(config: RuntimeConfig, *, now: float) -> LongPermiss
         return None
 
 
+def long_permission_reason(  # noqa: PLR0911 - fail-closed stages of one read-only snapshot
+    config: RuntimeConfig, permission: LongPermission
+) -> str:
+    """Read the captured permission without recapture, schema writes or quota admission.
+
+    A committed last-budget call must still pass its execution checks. This
+    checks only current permission; it grants no reservation or launch.
+    """
+    if config.model_calls_disabled:
+        return "run-disabled"
+    if not _valid_long_permission(permission):
+        return "permission-changed"
+    path = store_path(config)
+    try:
+        if runtime_io.sqlite_module is None or path.is_symlink() or not path.is_file():
+            return "store-unavailable"
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(
+                path.absolute().as_uri() + "?mode=ro",
+                uri=True,
+                timeout=READ_WAIT_SEC,
+                isolation_level=None,
+            )
+        ) as db:
+            db.execute("BEGIN")
+            row = db.execute("SELECT lineage, epoch FROM long_permission WHERE id=1").fetchone()
+            if row is None or not _valid_long_permission(current := LongPermission(*row)):
+                return "store-unavailable"
+            if current != permission:
+                return "permission-changed"
+            if _permission_tables(db) != PERMISSION_TABLES:
+                return "store-unavailable"
+            values = [
+                value
+                for table in sorted(PERMISSION_TABLES)
+                for (value,) in db.execute(f"SELECT allowed FROM {table}")  # noqa: S608 - fixed tables
+            ]
+            if any(type(value) is not int or value not in (0, 1) for value in values):
+                return "store-unavailable"
+            return "model-calls-paused" if 0 in values and 1 not in values else ""
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return "store-unavailable"
+
+
 def reserve_long(
     config: RuntimeConfig,
     *,

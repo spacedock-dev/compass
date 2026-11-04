@@ -2374,6 +2374,26 @@ def _long_target_matches(
     )
 
 
+def long_target_current(config: RuntimeConfig, harness: str, sid: str, target: LongTarget) -> bool:
+    """Compare a captured target with disk without capture, migration, locks or writes.
+
+    Atomic store replacement supplies a complete read, not an execution or
+    publication barrier. Publication still checks again under its existing lock.
+    """
+    key = _key(harness, sid)
+    if not config.annotations_enabled or not all(key) or key != (harness, sid):
+        return False
+    store = _read_store(config)
+    entry = find(store.entries, *key)
+    return bool(
+        store.trusted
+        and entry is not None
+        and not is_discarded(entry)
+        and not _held(store, key)
+        and _long_target_matches(target, entry, None)
+    )
+
+
 def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared write seam)
     config: RuntimeConfig,
     state: RuntimeState,

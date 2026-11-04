@@ -1,0 +1,159 @@
+"""Read-only checks of a registered long job's frozen execution context."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
+
+from . import annotations as annotation_store
+from . import claude_settings, observer, reading, reading_route, settings, supervise
+from . import reading_long_control as control
+from . import reading_long_jobs as jobs
+from . import reading_long_markers as markers
+from . import reading_policy as policy
+
+if TYPE_CHECKING:
+    from .config import RuntimeConfig
+
+
+@dataclass(frozen=True)
+class Route:
+    harness: str
+    provider: str
+    model: str
+    destination: str
+    content: int
+    preferences: settings.Settings
+    controls_sha256: str
+    system_sha256: str
+    effort: str
+    ci_read: str
+    reason: str
+    fallback: bool
+    call_timeout_ms: int
+
+
+def describe(config: RuntimeConfig, harness: str) -> Route | None:
+    """Resolve the native requested route and effective settings; never choose a model anew."""
+    if harness not in ("claude", "codex"):
+        return None  # These are the registered header's content epochs 6 and 5.
+    try:
+        route = reading_route.resolve(harness, config=config)
+        provider = route["provider"]
+        if provider not in policy.PROVIDERS:
+            return None
+        claude = provider == "claude"
+        controls = claude_settings.resolve(route["model"]) if claude else None
+        return Route(
+            harness,
+            provider,
+            route["model"],
+            route["words_destination"],
+            policy.CONTENT_VERSION
+            if harness == "claude"
+            else policy.REQUESTED_WORDS_CONTENT_VERSION,
+            settings.load(config),
+            jobs.digest(asdict(controls) if controls is not None else None),
+            jobs.digest(observer.CLAUDE_READING_SYSTEM_PROMPT if claude else ""),
+            observer.CLAUDE_READING_EFFORT if claude else observer.OBSERVER_MODEL_REASONING_EFFORT,
+            route["ci_read"],
+            route["reason"],
+            route["fallback"],
+            observer.OBSERVER_READING_TIMEOUT_SEC * 1000,
+        )
+    except (OSError, ValueError):
+        return None
+
+
+def scope_digest(route: Route, scope_sha256: str) -> str | None:
+    """Bind an opaque frozen scope identity to the complete effective route descriptor.
+
+    The caller owns what scope was frozen; this adds no source-completeness claim.
+    Only the digest goes into the registered header, never configured text.
+    """
+    if (
+        type(route) is not Route
+        or not isinstance(scope_sha256, str)
+        or len(scope_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in scope_sha256)
+    ):
+        return None
+    return jobs.digest({"scope_sha256": scope_sha256, "route": asdict(route)})
+
+
+def destination_digest(route: Route) -> str:
+    """The canonical registered destination binding for this route."""
+    return jobs.digest(route.destination)
+
+
+@dataclass(frozen=True)
+class Context:
+    # A descriptor is not authority: every check requires the actual live owner.
+    active: control.Active
+    route: Route
+    scope_sha256: str
+
+
+def _current(config: RuntimeConfig, context: Context) -> bool:
+    active, route = context.active, context.route
+    marker = markers._owned(config, active.owner)  # noqa: SLF001 - shared current-process owner check
+    if marker is None or marker["state"] != "active" or type(active.job) is not reading.Job:
+        return False
+    header = marker["header"]
+    publication = header.get("publication")
+    return bool(
+        publication is not None
+        and not active.job.sealed
+        and (active.job.harness, active.job.sid) == (publication["harness"], publication["sid"])
+        and route.harness == publication["harness"]
+        and active.job.id == marker["job_id"]
+        and active.job.provider == route.provider == header["provider"]
+        and reading.job(config, f"{route.harness}:{active.job.sid}") is active.job
+        and header["content"] == route.content
+        and header["scope_sha256"] == scope_digest(route, context.scope_sha256)
+        and header["destination_sha256"] == destination_digest(route)
+        and active.owner.live.prepared.call_timeout_ms == route.call_timeout_ms
+        and (header["lineage"], header["epoch"])
+        == (active.owner.permission.lineage, active.owner.permission.epoch)
+    )
+
+
+def _live_reason(config: RuntimeConfig, context: Context) -> str:
+    if not _current(config, context):
+        return "context-changed"
+    if supervise.closed():
+        return "closed"
+    return "cancelled" if reading.job_cancelled(context.active.job) else ""
+
+
+def check(config: RuntimeConfig, context: Context) -> str:
+    """Return a closed refusal or empty string; never refresh, reserve, resume or launch.
+
+    These separate reads do not make external settings atomic. The caller must
+    check again at its execution boundary; publication keeps its own barriers.
+    """
+    if (
+        type(context) is not Context
+        or type(context.active) is not control.Active
+        or type(context.route) is not Route
+    ):
+        return "context-changed"
+    active = context.active
+    if reason := _live_reason(config, context):
+        return reason
+    header = jobs.live_header(active.owner.live)
+    if header is None or describe(config, context.route.harness) != context.route:
+        return "context-changed"
+    publication = header["publication"]
+    target = annotation_store.LongTarget(publication["incarnation"], publication["revision"])
+    if not annotation_store.long_target_current(
+        config, publication["harness"], publication["sid"], target
+    ):
+        return "intent-changed"
+    if reason := policy.long_permission_reason(config, active.owner.permission):
+        return reason
+    # Read work can block; shared ownership, Cancel/shutdown and full timeout
+    # fit must still hold after it. Nothing here authorizes a new pass.
+    return _live_reason(config, context) or jobs.deadline_reason(
+        active.owner.live, header["plan"]["limits"]["job_ms"]
+    )
