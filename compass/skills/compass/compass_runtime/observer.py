@@ -29,7 +29,15 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Protocol
 
-from . import claude_settings, reading_policy, records, spacedock, supervise, transcripts
+from . import (
+    claude_settings,
+    reading_capacity,
+    reading_policy,
+    records,
+    spacedock,
+    supervise,
+    transcripts,
+)
 from . import config as runtime_config
 from . import io as runtime_io
 
@@ -531,8 +539,19 @@ class PreparedClaude:
         environment = claude_environment(os.environ, analyze=self.analyze)
         # Re-read immediately before launching. This narrows, but cannot remove,
         # the file-mutation/remote-refresh race inside the external CLI.
-        if self.analyze and claude_settings.resolve(self.model, environ=environment).refusal:
-            return "", "context-config"
+        if self.analyze:
+            controls = claude_settings.resolve(self.model, environ=environment)
+            capacity = reading_capacity.assess(
+                prompt,
+                system_prompt=self.system_prompt,
+                provider="claude",
+                model=self.model,
+                deployment=controls.deployment,
+                window_limits=controls.window_limits,
+                configuration_ambiguous=bool(controls.refusal),
+            )
+            if not capacity.allowed:
+                return "", "context-config"
         command = [
             self.binary,
             *_claude_reading_argv(

@@ -9636,7 +9636,10 @@ valid limit. Malformed or ambiguous controls, unreadable policy, unsupported pol
 known dynamic policy and compaction or model-switching conflicts refuse. Requested Analyze uses
 the child environment and inline settings described in
 [Claude Code reading calls](../SECURITY.md#claude-code-reading-calls). It rechecks controls before
-admission and before launch, but does not freeze the external CLI's policy. The CLI can
+admission and before launch. The final practical read applies every observed deployment, window
+and refusal control to the same unchanged prompt and actual explicit system prompt through the
+shared capacity policy. It refuses before runner entry if the new allowance is exceeded, keeping
+the already reserved attempt counted. It does not freeze the external CLI's policy. The CLI can
 [refresh managed settings](https://code.claude.com/docs/en/server-managed-settings); cache absence
 and disabled nonessential traffic do not prove otherwise. A file can also change after the last
 read. This boundary is why neither the estimate nor the local settings read is a fit or policy
@@ -9667,6 +9670,9 @@ guard measurement covers its gates and invocation, excluding earlier source coll
 reservation flag distinguishes a counted attempt from an initial refusal, and its invocation flag
 means entry into the adapter, not CLI creation or verified transmission. None of these counts
 proves a whole source was read, and neither duration is total job latency.
+The stored capacity section describes initial admission before reservation; it can still say
+allowed when a later adapter read refuses changed controls. The outcome records that counted
+late refusal. Initial capacity metadata is neither a final execution allowance nor a provider receipt.
 
 Capture resets for every invocation. A failure before assembly has unknown input, not zero;
 one after assembly retains the available measurements even if no model was called. The closed

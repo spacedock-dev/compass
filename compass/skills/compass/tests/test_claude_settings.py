@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import observer, reading_capacity, reading_route
+from compass_runtime import claude_settings, observer, reading_capacity, reading_route
 
 from .support import make_config
 
@@ -324,4 +324,22 @@ class AnalyzeClaudeExecutionTest(unittest.TestCase):
                 ) as prepared,
             ):
                 self.assertEqual(("", "context-config"), prepared("words", output_cap_bytes=8192))
+            runner.assert_not_called()
+
+    def test_the_final_capacity_check_counts_the_actual_explicit_system_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = dataclasses.replace(make_config(), state_dir=Path(directory))
+            runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0))
+            controls = claude_settings.Controls(deployment="direct", window_limits=(180_000,))
+            with (
+                mock.patch.object(claude_settings, "resolve", return_value=controls),
+                observer.prepare_claude_exec(
+                    config,
+                    runner=runner,
+                    binary_resolver=lambda _name: "/synthetic/claude",
+                    system_prompt="界" * 40_000,
+                    analyze=True,
+                ) as prepared,
+            ):
+                self.assertEqual(("", "context-config"), prepared("small", output_cap_bytes=8192))
             runner.assert_not_called()

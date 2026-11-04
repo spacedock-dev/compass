@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import importlib.util
 import inspect
 import json
+import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import claude_settings, observer, reading, reading_policy, supervise
 
 from .support import make_runtime
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class AnalyzeAdmissionTest(unittest.TestCase):
@@ -137,6 +142,99 @@ class AnalyzeAdmissionTest(unittest.TestCase):
         self.assertFalse(admission.measurement["fit_verified"])
         self.assertEqual("context-admission", admission("x" * 524_289))
         self.assertEqual(2_097_152, admission.measurement["requested_maximum"])
+
+    def test_fresh_managed_capacity_after_reservation_controls_the_unchanged_prompt(self) -> None:
+        model_id = self.config.claude_reading_model
+        restrictions = (
+            {
+                "autoCompactWindow": 200_000,
+                "env": {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "190000"},
+                "modelSettings": {model_id: {"autoCompactWindow": 180_000}},
+            },
+            {"env": {"ANTHROPIC_BASE_URL": "https://synthetic.invalid"}},
+            {"modelOverrides": {model_id: "synthetic-remapped-model"}},
+        )
+        for timing in ("on_reserved", "after_preparation"):
+            for restriction in restrictions:
+                for prompt in ('small "界🙂"', "x" * 600_000):
+                    with self.subTest(timing=timing, restriction=restriction, size=len(prompt)):
+                        self.check_fresh_capacity(timing, restriction, prompt)
+
+    def check_fresh_capacity(self, timing: str, restriction: dict[str, Any], prompt: str) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            managed = root / "etc/claude-code/managed-settings.json"
+            managed.parent.mkdir(parents=True)
+            managed.write_text("{}")
+            original_resolve = claude_settings.resolve
+            original_prepare = observer.prepare_claude_exec
+            observed: list[claude_settings.Controls] = []
+            invoked: list[str] = []
+            reservations: list[bool] = []
+
+            def resolve(model: str, **_kwargs: Any) -> claude_settings.Controls:
+                controls = original_resolve(
+                    model,
+                    environ={"HOME": "/synthetic-home", "USER": "synthetic-user"},
+                    root=root,
+                    system="Linux",
+                )
+                observed.append(controls)
+                return controls
+
+            def reserved() -> None:
+                reservations.append(True)
+                if timing == "on_reserved":
+                    managed.write_text(json.dumps(restriction))
+
+            @contextlib.contextmanager
+            def prepare(*args: Any, **kwargs: Any) -> Iterator[Any]:
+                with original_prepare(*args, **kwargs) as prepared:
+                    if timing == "after_preparation":
+                        managed.write_text(json.dumps(restriction))
+                    yield prepared
+
+            def runner(command: list[str], **kwargs: Any) -> Any:
+                invoked.append(kwargs["input"])
+                kwargs["stdout"].write(b"{}")
+                return subprocess.CompletedProcess(command, 0)
+
+            admission = self.module().Admission(
+                "claude",
+                self.config.claude_reading_model,
+                observer.CLAUDE_READING_SYSTEM_PROMPT,
+                requested_maximum=2_097_152,
+            )
+            model = reading.ClaudeReadingModel(
+                self.config,
+                runner=runner,
+                binary_resolver=lambda _name: "/never-launched/claude",
+                analyze=True,
+            )
+            guard = self.guard(
+                model, provider="claude", admit_prompt=admission, on_reserved=reserved
+            )
+            used = reading_policy.status(self.config, now=100)["used"]
+            with (
+                mock.patch.object(claude_settings, "resolve", side_effect=resolve),
+                mock.patch.object(observer, "prepare_claude_exec", side_effect=prepare),
+                mock.patch.object(observer, "reading_workdir_root", return_value=str(root)),
+            ):
+                result = guard(prompt, output_cap_bytes=100)
+            fits = len(prompt) < 600_000
+            self.assertEqual(("{}", "ok") if fits else ("", "context-config-after-reserve"), result)
+            self.assertEqual([prompt] if fits else [], invoked)
+            self.assertEqual([True], reservations)
+            self.assertEqual(used + 1, reading_policy.status(self.config, now=100)["used"])
+            self.assertTrue(guard.reserved)
+            self.assertEqual(2_097_152, admission.measurement["maximum_prompt_bytes"])
+            self.assertTrue(admission.measurement["allowed"])
+            self.assertEqual(result[1], self.trace(guard)["outcome"])
+            self.assertEqual(len(prompt.encode()), self.trace(guard)["prompt_bytes"])
+            if "autoCompactWindow" in restriction:
+                self.assertEqual({180_000, 190_000, 200_000}, set(observed[-1].window_limits))
+            else:
+                self.assertIn(observed[-1].deployment, {"gateway", "unknown"})
 
     def test_capacity_rechecks_reduced_dynamic_and_empty_windows_at_the_call(self) -> None:
         module = self.module()

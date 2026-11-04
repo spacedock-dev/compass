@@ -1506,6 +1506,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.io",
+            "compass_runtime.reading_capacity",
             "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.spacedock",
