@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
-from . import analyze_diagnostics, supervise
+from . import analyze_diagnostics, reading_long_jobs, supervise
 from . import io as runtime_io
 
 if TYPE_CHECKING:
@@ -171,6 +171,17 @@ class LongReservation:
         return self.outcome == "reserved"
 
 
+@dataclass(frozen=True)
+class LongRegistration:
+    outcome: str
+    status: Status
+    live: reading_long_jobs.LiveJob | None = None
+
+    @property
+    def launch(self) -> bool:
+        return False
+
+
 _PASS_REQUEST_FIELDS = frozenset(
     {
         "version",
@@ -267,8 +278,19 @@ def _pass_ledger(db: Any, now: float) -> float:
     )
 
 
-def _reserve_pass(db: Any, answer: Status, now: float, request: dict[str, Any]) -> LongReservation:
+def _reserve_pass(
+    db: Any,
+    answer: Status,
+    now: float,
+    request: dict[str, Any],
+    live: reading_long_jobs.LiveJob | None = None,
+) -> LongReservation:
     since = _pass_ledger(db, now)
+    if live is not None:
+        reason = _registered_pass_reason(db, now, live, request, since)
+        if reason:
+            db.execute("COMMIT")
+            return LongReservation("refused", {**answer, "reason": reason})
     row = db.execute(
         "SELECT binding, at FROM long_pass_reservations WHERE job=? AND ordinal=?",
         (request["job_id"], request["ordinal"]),
@@ -296,17 +318,118 @@ def _reserve_pass(db: Any, answer: Status, now: float, request: dict[str, Any]) 
     if answer["reason"]:
         db.execute("COMMIT")
         return LongReservation("refused", answer)
+    job_ms = 0
+    if live is not None:
+        value = reading_long_jobs.live_header(live)
+        if value is None:
+            raise ValueError("Invalid live job")
+        receipts = _registered_receipts(db, live, value, now)
+        reason = reading_long_jobs.allocations(request, value, receipts)
+        if reason:
+            db.execute("COMMIT")
+            return LongReservation("refused", {**answer, "reason": reason})
+        job_ms = value["plan"]["limits"]["job_ms"]
     db.execute(
         "INSERT INTO long_pass_reservations VALUES (?, ?, ?, ?)",
         (request["job_id"], request["ordinal"], binding, now),
     )
     # The receipt and spend commit together under the existing supervision
     # admission barrier. Shutdown rolls back both; replay never reaches it.
-    charged = _commit_charge(db, answer, now, "")
+    charged = _commit_charge(db, answer, now, "", live=live, job_ms=job_ms)
     return (
         LongReservation("refused", charged)
         if charged["reason"]
         else LongReservation("reserved", charged, True)
+    )
+
+
+def _registered_pass_reason(
+    db: Any, now: float, live: reading_long_jobs.LiveJob, request: dict[str, Any], pass_since: float
+) -> str:
+    value = reading_long_jobs.live_header(live)
+    if value is None:
+        return "invalid-live-job"
+    if not reading_long_jobs.matches(request, value, live.prepared.job_id):
+        return "job-binding-changed"
+    if value["started_at"] <= pass_since:
+        return "pass-ledger-unknown"
+    since = reading_long_jobs.ledger(db, now, JOB_LEDGER_SEC)
+    return reading_long_jobs.registered(db, live, value, since)
+
+
+def _registered_receipts(
+    db: Any, live: reading_long_jobs.LiveJob, value: dict[str, Any], now: float
+) -> list[dict[str, Any]]:
+    receipts: list[dict[str, Any]] = []
+    for ordinal, binding, at in db.execute(
+        "SELECT ordinal, binding, at FROM long_pass_reservations WHERE job=? LIMIT 18",
+        (live.prepared.job_id,),
+    ):
+        checked = _pass_request(json.loads(binding), now)
+        if (
+            checked is None
+            or checked["ordinal"] != ordinal
+            or not reading_long_jobs.matches(checked, value, live.prepared.job_id)
+            or type(at) not in (int, float)
+            or not math.isfinite(at)
+            or at <= 0
+        ):
+            raise ValueError("Incomplete registered pass receipts")
+        receipts.append(checked)
+    if len(receipts) > value["plan"]["max_calls"]:
+        raise ValueError("Invalid registered pass count")
+    return receipts
+
+
+def _register_job(
+    db: Any, answer: Status, now: float, job: reading_long_jobs.PreparedJob
+) -> LongRegistration:
+    value = reading_long_jobs.header(job)
+    if value is None:
+        raise ValueError("Invalid registration")
+    pass_since = _pass_ledger(db, now)
+    since = reading_long_jobs.ledger(db, now, JOB_LEDGER_SEC)
+    if value["started_at"] <= since:
+        outcome = "job-ledger-unknown"
+    elif value["started_at"] <= pass_since:
+        outcome = "pass-ledger-unknown"
+    elif answer["reason"]:
+        outcome = answer["reason"]
+    else:
+        outcome = reading_long_jobs.register(db, job, value, since)
+    db.execute("COMMIT")
+    if outcome == "registered":
+        return LongRegistration(outcome, answer, reading_long_jobs.activate(job))
+    return LongRegistration(outcome, {**answer, "reason": outcome})
+
+
+def _long_operation(
+    db: Any,
+    answer: Status,
+    now: float,
+    operation: str,
+    permission: LongPermission | None,
+    captured: LongPermission | None,
+    request: dict[str, Any] | None,
+    job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None,
+) -> LongRegistration | LongReservation:
+    if not _valid_long_permission(captured) or permission != captured:
+        answer["reason"] = answer["reason"] or "permission-changed"
+    elif job is not None and not _job_permission_matches(job, captured):
+        answer["reason"] = answer["reason"] or "job-binding-changed"
+    elif not answer["off"]:
+        if operation == "register-long-job":
+            if not isinstance(job, reading_long_jobs.PreparedJob):
+                raise ValueError("Invalid prepared job")
+            return _register_job(db, answer, now, job)
+        if request is not None:
+            live = job if isinstance(job, reading_long_jobs.LiveJob) else None
+            return _reserve_pass(db, answer, now, request, live)
+    db.execute("COMMIT")
+    return (
+        LongRegistration("refused", answer)
+        if operation == "register-long-job"
+        else LongReservation("refused", answer)
     )
 
 
@@ -645,7 +768,8 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
     *,
     long_permission: LongPermission | None = None,
     long_request: dict[str, Any] | None = None,
-) -> tuple[Status, Notice | None, LongPermission | LongReservation | None]:
+    long_job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None = None,
+) -> tuple[Status, Notice | None, LongPermission | LongReservation | LongRegistration | None]:
     if not math.isfinite(now) or now <= 0:
         return _answer(reason="store-unavailable"), None, None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
@@ -726,7 +850,14 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
         _notice_schema(db)
         permission = (
             _long_permission_schema(db)
-            if operation in ("capture-long", "reserve-long", "reserve-long-pass")
+            if operation
+            in (
+                "capture-long",
+                "reserve-long",
+                "reserve-long-pass",
+                "register-long-job",
+                "reserve-registered-pass",
+            )
             else None
         )
         allowed = _allowed(db)
@@ -753,12 +884,11 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
             notices=_notices(db),
         )
         recorded = _store_notice(db, answer, operation)
-        if operation == "reserve-long-pass":
-            if not _valid_long_permission(long_permission) or permission != long_permission:
-                answer["reason"] = answer["reason"] or "permission-changed"
-            elif not answer["off"] and long_request is not None:
-                result = _reserve_pass(db, answer, now, long_request)
-                return result.status, None, result
+        if operation in ("reserve-long-pass", "register-long-job", "reserve-registered-pass"):
+            result = _long_operation(
+                db, answer, now, operation, permission, long_permission, long_request, long_job
+            )
+            return result.status, None, result
         if (
             operation == "reserve-long"
             and not answer["reason"]
@@ -772,7 +902,15 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
         return answer, recorded, captured
 
 
-def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
+def _commit_charge(
+    db: Any,
+    answer: Status,
+    now: float,
+    job_id: str,
+    *,
+    live: reading_long_jobs.LiveJob | None = None,
+    job_ms: int = 0,
+) -> Status:
     """Insert the charge and its job, and commit, unless the runner has shut.
 
     Under the lock a shutdown takes (DRC-4712). The wait for SQLite's write
@@ -783,6 +921,9 @@ def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
         if not open_:
             db.execute("ROLLBACK")
             return {**answer, "reason": "stopping"}
+        if live is not None and (reason := reading_long_jobs.deadline_reason(live, job_ms)):
+            db.execute("ROLLBACK")
+            return {**answer, "reason": reason}
         db.execute("INSERT INTO spends VALUES (?)", (now,))
         if job_id:
             db.execute("INSERT OR IGNORE INTO spend_jobs VALUES (?, ?)", (job_id, now))
@@ -1031,6 +1172,91 @@ def reserve_long_pass(
             content=checked["content"],
             long_permission=permission,
             long_request=checked,
+        )
+        return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongReservation("unknown", _answer(reason="store-unavailable"))
+
+
+def prepare_long_job(
+    *,
+    permission: LongPermission,
+    binding: Any,
+    call_timeout_ms: int,
+    clock: Callable[[], float] = time.monotonic,
+) -> reading_long_jobs.PreparedJob | None:
+    """Mint a bounded header identity and capture live time once; grants no execution."""
+    if not _valid_long_permission(permission):
+        return None
+    return reading_long_jobs.prepare(
+        binding, permission.lineage, permission.epoch, call_timeout_ms, clock
+    )
+
+
+def _job_permission_matches(job: Any, permission: Any) -> bool:
+    value = (
+        reading_long_jobs.live_header(job)
+        if isinstance(job, reading_long_jobs.LiveJob)
+        else reading_long_jobs.header(job)
+    )
+    return (
+        value is not None
+        and _valid_long_permission(permission)
+        and (value["lineage"], value["epoch"]) == (permission.lineage, permission.epoch)
+    )
+
+
+def register_long_job(
+    config: RuntimeConfig, *, permission: LongPermission, job: Any, now: float
+) -> LongRegistration:
+    """Persist one immutable job; only a fresh registration returns a live admission handle."""
+    value = reading_long_jobs.header(job)
+    if value is None or value["started_at"] > now:
+        return LongRegistration("conflict", _answer(reason="invalid-long-job"))
+    if config.model_calls_disabled:
+        return LongRegistration("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "register-long-job",
+            value["provider"],
+            content=value["content"],
+            long_permission=permission,
+            long_job=job,
+        )
+        return (
+            result if isinstance(result, LongRegistration) else LongRegistration("refused", answer)
+        )
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongRegistration("unknown", _answer(reason="store-unavailable"))
+
+
+def reserve_registered_pass(
+    config: RuntimeConfig, *, permission: LongPermission, job: Any, request: Any, now: float
+) -> LongReservation:
+    """Admit one registered slot with aggregate allocations and a live final deadline check.
+
+    Only use the handle returned by fresh registration. A stored header or a
+    newly prepared replay is not a new monotonic window and cannot launch.
+    """
+    if reading_long_jobs.live_header(job) is None:
+        return LongReservation("refused", _answer(reason="invalid-live-job"))
+    checked = _pass_request(request, now)
+    if checked is None:
+        return LongReservation("refused", _answer(reason="invalid-long-request"))
+    if config.model_calls_disabled:
+        return LongReservation("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "reserve-registered-pass",
+            checked["provider"],
+            content=checked["content"],
+            long_permission=permission,
+            long_request=checked,
+            long_job=job,
         )
         return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):

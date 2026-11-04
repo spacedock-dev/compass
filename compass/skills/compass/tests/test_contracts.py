@@ -1433,6 +1433,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reading_capacity": set(),
         "compass_runtime.analyze_diagnostics": set(),
         "compass_runtime.reading_pass_types": {"compass_runtime.analyze_diagnostics"},
+        "compass_runtime.reading_long_jobs": {"compass_runtime.reading_pass_types"},
         "compass_runtime.analyze_capacity": {
             "compass_runtime.claude_settings",
             "compass_runtime.reading_capacity",
@@ -1443,6 +1444,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # stopping. It reaches no session or model producer.
         "compass_runtime.reading_policy": {
             "compass_runtime.analyze_diagnostics",
+            "compass_runtime.reading_long_jobs",
             "compass_runtime.config",
             "compass_runtime.io",
             # Whether Compass is stopping, so a call it cannot send is not charged.
