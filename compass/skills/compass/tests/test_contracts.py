@@ -1592,6 +1592,16 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_source_collect",
             "compass_runtime.records",
         },
+        "compass_runtime.reading_long_plan": {
+            "compass_runtime.ci_read",
+            "compass_runtime.reading",
+            "compass_runtime.reading_long_jobs",
+            "compass_runtime.reading_pass_types",
+            "compass_runtime.reading_policy",
+            "compass_runtime.reading_route",
+            "compass_runtime.reading_source_collect",
+            "compass_runtime.settings",
+        },
         "compass_runtime.reading_long_diagnostics": {
             "compass_runtime.reading_pass_context",
             "compass_runtime.reading_pass_types",
