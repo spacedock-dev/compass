@@ -85,7 +85,10 @@ class CollectedDeclarationTest(unittest.TestCase):
             self.assertEqual(("check", "passed"), (fact["subject"], fact["result"]))
         self.assertEqual("acquired", result.ancillary_info.origin)
         self.assertEqual("available", result.ancillary_info.project_scripts)
-        self.assertEqual("unavailable", result.ancillary_info.ci_binding)
+        self.assertEqual(
+            "available" if self.config.git_probe_enabled else "disabled",
+            result.ancillary_info.ci_binding,
+        )
         self.assertEqual(
             (1, 1), (result.ancillary_info.project_loads, result.ancillary_info.reader_loads)
         )
@@ -141,7 +144,10 @@ class CollectedDeclarationTest(unittest.TestCase):
                 self.assertEqual(
                     "unavailable" if enabled else "disabled", result.ancillary_info.project_scripts
                 )
-                self.assertEqual("unavailable", result.ancillary_info.ci_binding)
+                self.assertEqual(
+                    "available" if self.config.git_probe_enabled else "disabled",
+                    result.ancillary_info.ci_binding,
+                )
 
     def test_full_git_timeout_must_fit_before_acquisition(self) -> None:
         with mock.patch.object(

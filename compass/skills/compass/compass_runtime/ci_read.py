@@ -517,14 +517,9 @@ def scan_records(
         record = _row(raw)
         if record is None or record.get("type") != "pr-link":
             continue
-        repository, number = record.get("prRepository"), record.get("prNumber")
-        if (
-            isinstance(repository, str)
-            and _github_repository(repository)
-            and type(number) is int
-            and 0 < number <= _NUMBER_MAX
-        ):
-            links[(repository, number)] = None
+        linked = _record_link(record)
+        if linked is not None:
+            links[linked] = None
         if len(links) >= MAX_SCANNED:
             break
     pushes: dict[str, None] = {}
@@ -532,13 +527,52 @@ def scan_records(
         config, transcript_path, max_bytes=SCAN_BYTES, contains=b'"gitOperation"'
     ):
         record = _row(raw)
-        result = record.get("toolUseResult") if record is not None else None
-        operation = result.get("gitOperation") if isinstance(result, dict) else None
-        push = operation.get("push") if isinstance(operation, dict) else None
-        branch = push.get("branch") if isinstance(push, dict) else None
-        if isinstance(branch, str) and _usable_branch(branch):
+        branch = _record_push(record)
+        if branch is not None:
             pushes[branch] = None
         if len(pushes) >= MAX_SCANNED:
+            break
+    return tuple(links), tuple(pushes)
+
+
+def _record_link(record: Mapping[str, Any] | None) -> tuple[str, int] | None:
+    if record is None or record.get("type") != "pr-link":
+        return None
+    repository, number = record.get("prRepository"), record.get("prNumber")
+    if (
+        isinstance(repository, str)
+        and _github_repository(repository)
+        and type(number) is int
+        and 0 < number <= _NUMBER_MAX
+    ):
+        return repository, number
+    return None
+
+
+def _record_push(record: Mapping[str, Any] | None) -> str | None:
+    result = record.get("toolUseResult") if record is not None else None
+    operation = result.get("gitOperation") if isinstance(result, dict) else None
+    push = operation.get("push") if isinstance(operation, dict) else None
+    branch = push.get("branch") if isinstance(push, dict) else None
+    return branch if isinstance(branch, str) and _usable_branch(branch) else None
+
+
+def records_from_rows(
+    newest_first: Iterable[Mapping[str, Any]],
+) -> tuple[tuple[tuple[str, int], ...], tuple[str, ...]]:
+    """The same validated/capped historical records from an admitted parent window.
+
+    The caller bounds the retained native byte window before this pure iterator;
+    child records and display text are not inputs.
+    """
+    links: dict[tuple[str, int], None] = {}
+    pushes: dict[str, None] = {}
+    for row in newest_first:
+        if len(links) < MAX_SCANNED and (linked := _record_link(row)) is not None:
+            links[linked] = None
+        if len(pushes) < MAX_SCANNED and (branch := _record_push(row)) is not None:
+            pushes[branch] = None
+        if len(links) >= MAX_SCANNED and len(pushes) >= MAX_SCANNED:
             break
     return tuple(links), tuple(pushes)
 

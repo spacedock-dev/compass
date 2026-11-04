@@ -18,22 +18,23 @@ from dataclasses import dataclass, field, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-from . import io as runtime_io
-from . import project_context as context
 from . import (
+    ci_read,
     project_scripts,
     reader_checks,
     reading_source,
     reading_source_final,
     reading_source_words,
 )
+from . import io as runtime_io
+from . import project_context as context
 from . import reading_source_inventory as inventory_source
 from . import reading_source_stream as raw_source
 from .config import SESSION_SOURCE_PAGE_MAX_BYTES, SESSION_SOURCE_PAGE_MAX_SECONDS
 
 if TYPE_CHECKING:
     from _thread import LockType
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from .config import RuntimeConfig
     from .project_scripts import Declarations
@@ -78,6 +79,7 @@ class Limits:
 
 
 _DEFAULT_LIMITS = Limits()
+_CI_BINDING_TYPE = context._CiBinding  # noqa: SLF001 - owned graph type, not a lazy factory
 
 
 @dataclass(frozen=True)
@@ -86,14 +88,16 @@ class AncillaryInfo:
 
     At most one starting cwd is loaded, with the existing project-script file,
     script and five-second git-family caps and reader listing's 64-KiB cap.
-    CI remains explicitly unavailable until the frozen-binding leaf.
+    Historical CI freezes at most four remote cwd values, each under the
+    configured git-probe timeout. Supplied ancillary inputs retain no CI binding.
     """
 
     origin: Literal["supplied", "acquired"] = "supplied"
     project_scripts: Literal["supplied", "available", "unavailable", "disabled"] = "supplied"
-    ci_binding: Literal["unavailable"] = "unavailable"
+    ci_binding: Literal["unavailable", "available", "disabled", "unknown"] = "unavailable"
     project_loads: int = 0
     reader_loads: int = 0
+    remote_probes: int = 0
 
 
 @dataclass(frozen=True)
@@ -102,8 +106,8 @@ class Ancillary:
 
     Explicitly supplied head/declaration acquisition belongs to the caller.
     Omitting Ancillary requests bounded acquisition from retained native rows.
-    CI binding is explicitly absent in this leaf; a lazy live _CiBinding
-    would perform unaccounted reads and is therefore not an accepted input.
+    Supplied inputs retain absent CI binding; a lazy live _CiBinding would
+    perform unaccounted reads and is therefore not an accepted input.
     """
 
     session_dir: str
@@ -205,6 +209,9 @@ class _Retained:
     proofs: tuple[VerifiedStream, ...] = ()
     snapshot: Snapshot | None = None
     ancillary_info: AncillaryInfo = AncillaryInfo()
+    goal_texts: tuple[str, ...] = ()
+    ci_records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] = ((), ())
+    ci_remotes: tuple[tuple[str, tuple[str, str]], ...] = ()
 
 
 class _StopError(Exception):
@@ -230,7 +237,9 @@ def _measure(value: Any, limits: Limits) -> tuple[int, int]:
             raise _StopError("retained_bytes")
         if len(seen) > limits.retained_units:
             raise _StopError("retained_units")
-        if is_dataclass(item) and not isinstance(item, type):
+        if isinstance(item, _CI_BINDING_TYPE) or (
+            is_dataclass(item) and not isinstance(item, type)
+        ):
             pending.append(vars(item))
         elif isinstance(item, Mapping):
             pending.extend(item.keys())
@@ -260,8 +269,10 @@ class _Collection:
         page_seconds: float,
         clock: Callable[[], float],
         cancelled: Callable[[], bool],
+        ci_remote_limit: int,
     ) -> None:
         self.config, self.state, self.limits = config, state, limits
+        self.ci_remote_limit = ci_remote_limit
         self.page_bytes, self.page_seconds = page_bytes, page_seconds
         self.clock, self.cancelled = clock, cancelled
         self.started = clock()
@@ -408,6 +419,95 @@ class _Collection:
         self.checkpoint()
         self.accept(replace(self.state, ancillary=Ancillary(began_in, declared)), entries)
 
+    def ci_rows(self) -> Iterator[dict[str, Any]]:
+        rows = self.state.rows[0]
+        end = self.state.inventory.streams[0].cursor.frozen.end_offset
+        floor = max(0, end - ci_read.SCAN_BYTES)
+        for row in reversed(rows):
+            self.checkpoint()
+            # The legacy reverse window drops its leading carry at a nonzero
+            # floor, including a row beginning exactly there.
+            if floor and row.start_offset <= floor:
+                break
+            yield row.value
+            self.checkpoint()
+
+    def freeze_ci(self, scan: context._CheckScan) -> context._CheckScan:
+        self.checkpoint()
+        recorded = ci_read.records_from_rows(self.ci_rows())
+        self.accept(replace(self.state, ci_records=recorded))
+        info = replace(
+            self.state.ancillary_info,
+            ci_binding="available" if self.config.git_probe_enabled else "disabled",
+        )
+        self.accept(replace(self.state, ancillary_info=info))
+        if self.config.git_probe_enabled:
+            self.acquire_remotes(scan)
+        binding = context._CiBinding.frozen(  # noqa: SLF001
+            self.config, self.state.goal_texts, recorded, dict(self.state.ci_remotes)
+        )
+        updated = scan._replace(ci_binding=binding)
+        self.accept(replace(self.state, scan=updated))
+        return updated
+
+    def ci_directories(self, scan: context._CheckScan) -> Iterator[str]:
+        # Canonical placed poll runs include child polls and shell cd/wrapper
+        # rules. Temporary tally scratch is bounded by the admitted native input.
+        tally = context._tally_from_scan(scan)  # noqa: SLF001
+        self.checkpoint()
+        for history in tally.commands.values():
+            for run in history:
+                self.checkpoint()
+                poll = run.get("ci_poll")
+                if poll is None or not poll.valid:
+                    continue
+                yield scan.session_dir
+                if (
+                    not poll.repository
+                    and run["cwd"]
+                    and os.path.normpath(run["cwd"]) != os.path.normpath(scan.session_dir)
+                ):
+                    yield run["cwd"]
+
+    def acquire_remotes(self, scan: context._CheckScan) -> None:
+        directories: list[str] = []
+        unknown = False
+        for cwd in self.ci_directories(scan):
+            if not cwd or not os.path.isabs(cwd) or "\x00" in cwd:
+                unknown = True
+            elif cwd not in directories:
+                if len(directories) >= self.ci_remote_limit:
+                    unknown = True
+                else:
+                    directories.append(cwd)
+        self.accept(self.state, directories)
+        for cwd in directories:
+            self.reserve_time(self.config.git_probe_timeout_sec)
+            before_probe = self.state
+            info = replace(
+                self.state.ancillary_info,
+                remote_probes=self.state.ancillary_info.remote_probes + 1,
+            )
+            try:
+                self.accept(replace(self.state, ancillary_info=info), directories)
+                self.reserve_time(self.config.git_probe_timeout_sec)
+            except _StopError:
+                self.state = before_probe
+                raise
+            remote = ci_read.folder_remote(self.config, cwd)
+            self.checkpoint()
+            unknown |= not bool(remote[1])
+            self.accept(
+                replace(self.state, ci_remotes=(*self.state.ci_remotes, (cwd, remote))), directories
+            )
+        if unknown:
+            self.accept(
+                replace(
+                    self.state,
+                    ancillary_info=replace(self.state.ancillary_info, ci_binding="unknown"),
+                )
+            )
+
     def materialize(self) -> None:
         self.checkpoint()
         streams = self.state.inventory.streams
@@ -450,6 +550,8 @@ class _Collection:
             None,
         )
         self.accept(replace(self.state, scan=scan))
+        if self.state.supplied_ancillary is None:
+            scan = self.freeze_ci(scan)
         self.checkpoint()
         frozen = streams[0].cursor.frozen
         # Every projected candidate needs at least one new retained object.
@@ -575,11 +677,13 @@ class _Collection:
         )
 
 
-def collect(
+def collect(  # noqa: PLR0913 - explicit input and whole-job/per-page controls
     config: RuntimeConfig,
     inventory: inventory_source.Inventory,
     *,
     ancillary: Ancillary | None = None,
+    goal_texts: tuple[str, ...] = (),
+    ci_remote_limit: int = 4,
     limits: Limits = _DEFAULT_LIMITS,
     page_bytes: int = 1024 * 1024,
     page_seconds: float = 0.25,
@@ -593,8 +697,11 @@ def collect(
     Words exist only in this call's private native state and returned evidence.
     Without supplied ancillary inputs, declaration acquisition uses only retained
     native head/rows. Native source_bytes excludes bounded ancillary file/git
-    work; ancillary_info records acquisition counts and unavailable CI binding.
+    work; ancillary_info records acquisition counts and CI binding availability.
+    goal_texts must be genuine caller goal/line inputs, never cached readings.
     """
+    if type(ci_remote_limit) is not int or not 0 <= ci_remote_limit <= 4:
+        raise ValueError("invalid historical CI remote allowance")
     if type(page_bytes) is not int or not 0 < page_bytes <= SESSION_SOURCE_PAGE_MAX_BYTES:
         raise ValueError("invalid collection page bytes")
     if (
@@ -613,12 +720,14 @@ def collect(
             ancillary_info=AncillaryInfo(origin="acquired", project_scripts="unavailable")
             if ancillary is None
             else AncillaryInfo(),
+            goal_texts=goal_texts,
         ),
         limits,
         page_bytes,
         page_seconds,
         clock,
         cancelled,
+        ci_remote_limit,
     ).run()
 
 

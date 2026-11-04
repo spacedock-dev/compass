@@ -5810,13 +5810,30 @@ class _CiBinding:
         self._shared = remotes
         self.goal_texts = tuple(text for text in goal_texts if text)
         self._remotes: dict[str, tuple[str, str]] = {}
+        self._frozen_remotes: dict[str, tuple[str, str]] | None = None
         # `ci_read.scan_records` reads Claude Code's `pr-link` rows and `gitOperation` results. A
         # Codex rollout writes neither, so a Codex poll binds through the goal's own link alone.
         self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = (
             None if claude_records else ((), ())
         )
 
+    @classmethod
+    def frozen(
+        cls,
+        config: RuntimeConfig,
+        goal_texts: tuple[str, ...],
+        recorded: tuple[tuple[tuple[str, int], ...], tuple[str, ...]],
+        remotes: Mapping[str, tuple[str, str]],
+    ) -> _CiBinding:
+        """An independently owned binding with no lazy source or probe fallback."""
+        binding = cls(config, "", goal_texts, claude_records=False)
+        binding._records = recorded
+        binding._frozen_remotes = dict(remotes)
+        return binding
+
     def _remote(self, cwd: str) -> tuple[str, str]:
+        if self._frozen_remotes is not None:
+            return self._frozen_remotes.get(cwd, ("", ""))
         if cwd not in self._remotes:
             self._remotes[cwd] = ci_read.folder_remote(self._config, cwd, self._shared)
         return self._remotes[cwd]
