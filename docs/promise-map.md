@@ -57,6 +57,14 @@ GitHub Copilot CLI, OpenCode, Cursor CLI, Goose, Factory Droid), a one-line desc
 each session is, the Projects view that groups sessions by the label their harness publishes, and
 the active-versus-recent split that shipped with the session operations board in 0.19.
 
+From any shell, `spacedock-compass --sessions` lists the running sessions, with recent ones under
+their own heading, and `--sessions waiting` lists only what waits on you. It reads the board's own
+snapshot and uses the board's own groups and words, so it says what the board says and no more: no
+drift level on any row, a duration only where the board states one, "Stop observed" and never
+"unread", and a re-entry command only for Claude Code and Codex sessions that publish an id. It
+needs the dashboard running, and says so and exits non-zero when it is not. It prints nothing the
+board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has the options.
+
 Where it stops: a row counts as active only when its harness published evidence that it is. A
 recorded departure may bring an idle session into the first group without adding to the active
 figure. A recent observation cannot prove that a harness is still open, so history keeps identity and scope
@@ -236,6 +244,16 @@ the absence on every row, and the copy control is what remains. Compass does not
 for you. The one shape it is allowed is the session asking and Compass
 answering, as the [ask lane design](design-ask-lane.md) describes.
 
+If you already run a Claude Code status line, `spacedock-compass --footer` can add how many other
+sessions are waiting on you. It counts by the same rule as the board's Attention queue and
+`--sessions waiting`: questions an agent put to you through Compass count, and a waiting session
+the board draws as a risk row does not. The number is left out when nothing could be measured and is
+never shown as zero, and a harness that cannot report a wait is named on the line instead of being
+counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
+can be about a minute behind. It shows no drift level, because the Live monitor cannot be turned on
+from the terminal yet. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
+to a status line you already have.
+
 Compass can now check a session against your words while you are away and raise a departure
 without being asked, which is off by default and the only thing here that spends your model capacity
 with nobody watching. The Live monitor does not: it calls a model only while a reader is viewing the
@@ -321,6 +339,12 @@ the window's reset time and leaves the comparison to you, including on the day t
 seconds apart. There is deliberately no single safe-to-start light and no likelihood: every quota
 producer signals failure as an empty list, so a composed verdict reads green exactly when Compass
 can see nothing.
+
+The same status line shows your tightest Claude quota window and when it resets. It reads the
+figures Claude Code hands to a status line, so Compass makes no vendor request for it and asks no
+disclosure. Claude Code supplies them to Pro and Max subscriptions after a session's first reply,
+so the segment is absent otherwise, and it shows no verdict: the window and its reset time, and the
+comparison stays yours.
 
 ### P5. Did anything die quietly?
 

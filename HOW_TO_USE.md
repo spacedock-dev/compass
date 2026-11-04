@@ -754,7 +754,11 @@ Barista 1.8.0 does not run a module file you drop into its `modules` directory: 
 modules exist from fixed lists in `barista.sh`, and it hands the status line JSON only to its own
 `context`, `model` and `cost` modules. A wrapper is the route that works without editing Barista. This
 was run against a scratch copy of Barista 1.8.0 and its own `barista.conf`, with the `--footer` line
-appended as in the script above. [Checking it](#checking-it-worked-on-your-own-status-line) below shows how
+appended as in the script above. The wrapper was also run inside a live Claude Code 2.1.317 session on
+macOS, started with a scratch settings file through `claude --settings` so nothing in the user's own settings
+was touched: the bar showed Barista's row followed by the footer segment. The `resets_at` Claude Code sends
+is a number of epoch seconds, and the [payload record](docs/captures/claude/status-line-2.1.317-macos.jsonl)
+holds the field names and types. [Checking it](#checking-it-worked-on-your-own-status-line) below shows how
 to see the same on yours.
 
 ### Checking it worked on your own status line
