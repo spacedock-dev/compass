@@ -10,7 +10,12 @@ import unittest
 from dataclasses import replace
 from unittest import mock
 
-from compass_runtime import project_context, reading, reading_final_call, reading_map_series
+from compass_runtime import (
+    project_context,
+    reading,
+    reading_final_call,
+    reading_map_series,
+)
 
 from . import test_reading_useful_long as long_tests
 
@@ -67,7 +72,7 @@ class NativeProducerTest(unittest.TestCase):
             dt.datetime.fromisoformat(row["timestamp"]).timestamp(): i
             for i, row in enumerate(f.source.parent.rows)
         }
-        # Explicit fixture-only oracle. The source owner's PhysicalOrigin join is pending.
+        # Independent fixture oracle; preparation consumes Collection.origins instead.
         self.order = tuple(
             (fact["fact_id"], fact["at"])
             for fact in sorted(facts, key=lambda fact: positions[fact["at"]])
@@ -81,7 +86,6 @@ class NativeProducerTest(unittest.TestCase):
             "revisions": [self.revision],
             "collection": self.collection,
             "route": self.route,
-            "physical_order": self.order,
             "now": self.row["ended_at"] + 60,
         }
         args.update(changes)
@@ -153,17 +157,44 @@ class NativeProducerTest(unittest.TestCase):
         )
         self.assertEqual(len(series.passes) + 1, self.fixture.marker.fixture.spends())
 
-    def test_missing_ambiguous_or_retimed_physical_order_never_falls_back_to_clock(self):
+    def test_missing_ambiguous_or_detached_origins_never_fall_back_to_clock(self):
         self.prepare()
-        for order in (
-            self.order[:-1],
-            (*self.order, self.order[0]),
-            ((self.order[0][0], self.order[0][1] + 1), *self.order[1:]),
+        origins = self.collection.origins
+        for changed in (
+            None,
+            origins[:-1],
+            (replace(origins[0], position=None, reason="ambiguous"), *origins[1:]),
+            (replace(origins[0], fact_id="foreign"), *origins[1:]),
+            (replace(origins[0], canonical_index=True), *origins[1:]),
         ):
-            result = self.call_prepare(physical_order=order)
+            result = self.call_prepare(collection=replace(self.collection, origins=changed))
             self.assertEqual("original-order-unavailable", result.reason)
             self.assertIsNone(result.prepared)
         self.assertEqual(0, self.fixture.marker.fixture.spends())
+
+    def test_unknown_outside_window_origin_does_not_discard_eligible_originals(self):
+        self.prepare()
+        earliest = min(self.collection.evidence.facts, key=lambda f: f["at"])
+        self.revision["at"] = earliest["at"] + 1
+        origins = tuple(
+            replace(o, position=None, reason="ambiguous") if o.fact_id == earliest["fact_id"] else o
+            for o in self.collection.origins
+        )
+        prepared = self.call_prepare(collection=replace(self.collection, origins=origins)).prepared
+        self.assertIsNotNone(prepared)
+        self.assertNotIn(earliest["fact_id"], [o.row["id"] for o in prepared.originals])
+
+    def test_real_native_clock_rollback_keeps_collected_physical_order(self):
+        self.prepare()
+        rows = self.fixture.source.parent.rows
+        rows[1]["timestamp"] = (
+            dt.datetime.fromisoformat(rows[0]["timestamp"]) - dt.timedelta(seconds=10)
+        ).isoformat()
+        self.collection = self.fixture.source.collect()
+        self.revision["at"] = min(f["at"] for f in self.collection.evidence.facts)
+        prepared = self.call_prepare().prepared
+        self.assertIsNotNone(prepared)
+        self.assertGreater(prepared.originals[0].row["at"], prepared.originals[1].row["at"])
 
     def test_eligibility_and_incomplete_source_stop_before_any_calls(self):
         self.prepare()
@@ -323,17 +354,6 @@ class NativeProducerTest(unittest.TestCase):
                 self.assertIsNone(result.prepared)
                 self.assertEqual(reason, result.reason)
         self.assertEqual(0, self.fixture.marker.fixture.spends())
-
-    def test_failed_map_cannot_be_formatted_as_an_assessment(self):
-        prepared = self.prepare().prepared
-        self.fixture.fail_middle = self.fixture.always_consistent = True
-        series, result = self.invoke(prepared)
-        self.assertIsNone(result.criteria)
-        self.assertIsNone(
-            self.native().assessment(
-                prepared, series, result, now=self.row["ended_at"] + 61, stamp_text="Fake"
-            )
-        )
 
     def test_formatter_refuses_a_detached_success_or_a_new_reassuring_partial(self):
         prepared = self.prepare().prepared

@@ -7,8 +7,15 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import copied_corrections, reading, reading_final_call, reading_route, records
+from . import (
+    copied_corrections,
+    reading,
+    reading_final_call,
+    reading_route,
+    records,
+)
 from . import reading_passes as passes
+from .reading_source_collect import PhysicalOrigin, RecordPosition
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -64,19 +71,46 @@ def _output(press: PressChecks, route: Mapping[str, Any]) -> reading.ToolOutput:
     )
 
 
+def _origin_order(
+    facts: Sequence[Mapping[str, Any]],
+    scoped: set[tuple[str, float]],
+    origins: tuple[PhysicalOrigin, ...] | None,
+) -> list[tuple[str, float]]:
+    if origins is None or len(origins) != len(facts):
+        raise ValueError("original-order-unavailable")
+    positioned = []
+    for index, fact in enumerate(facts):
+        key = (fact["fact_id"], fact["at"])
+        if key not in scoped:
+            continue  # Unknown placement outside this eligible scope is irrelevant.
+        origin = origins[index]
+        if (
+            type(origin) is not PhysicalOrigin
+            or type(origin.canonical_index) is not int
+            or origin.canonical_index != index
+            or origin.fact_id != key[0]
+            or origin.reason
+            or type(origin.position) is not RecordPosition
+        ):
+            raise ValueError("original-order-unavailable")
+        position = origin.position
+        if (
+            any(type(v) is not int or v < 0 for v in vars(position).values())
+            or position.end_offset <= position.start_offset
+        ):
+            raise ValueError("original-order-unavailable")
+        positioned.append(((position.stream, position.start_offset, index), key))
+    return [key for _, key in sorted(positioned)]
+
+
 def _ordered(
     inputs: reading_final_call.Inputs,
     floor: reading.Selection,
-    physical_order: Sequence[tuple[str, float]],
+    origins: tuple[PhysicalOrigin, ...] | None,
     final: Mapping[str, Any] | None,
 ) -> tuple[passes.Original, ...]:
-    # Temporary explicit provenance seam. The source owner must supply these identities
-    # from exact PhysicalOrigin joins, never sort timestamps as a replacement.
-    actual = {(fact["fact_id"], fact["at"]) for fact in inputs.facts}
-    order = tuple(physical_order)
-    if len(order) != len(actual) or len(set(order)) != len(order) or set(order) != actual:
-        raise ValueError("original-order-unavailable")
     rows = {(row["id"], row["at"]): row for row in floor.entries}
+    order = _origin_order(inputs.facts, set(rows), origins)
     words = {}
     for admitted in inputs.message_words:
         key = (admitted.fact_id, admitted.at)
@@ -115,7 +149,6 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     collection: Collection,
     route: Mapping[str, Any],
     *,
-    physical_order: Sequence[tuple[str, float]],
     now: float,
     discarded: bool = False,
     settled_through: float | None = None,
@@ -125,6 +158,8 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     """Prepare retained source data only; the caller owns grants and source revalidation.
 
     No route resolution, source acquisition, CI read, reservation or transport occurs.
+    Physical order comes only from the collection's exact indexed origins. Unknown
+    placement on an eligible original refuses; out-of-window origins are not required.
     elapsed_ms measures this preparation separately from the collection's metered usage.
     recovered_sources is existing owner-proved request lineage; absent proof stays unknown.
     Its acquisition/metering belongs to the caller, never a hidden reread here.
@@ -207,7 +242,7 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         return finish(withheld)
     try:
         floor = reading_final_call.scope_floor(inputs, scope=scope)
-        originals = _ordered(inputs, floor, physical_order, collection.final)
+        originals = _ordered(inputs, floor, collection.origins, collection.final)
         passes._strict_final(originals, collection.final)  # noqa: SLF001 - same proof binding as maps
         gaps = (
             ("context",)
