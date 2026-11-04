@@ -41,7 +41,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, NotRequired, TypedDict, cast
 
-from compass_runtime import analyze_diagnostics, ci_read, reading, records
+from compass_runtime import analyze_diagnostics, ci_read, reading, reading_long_diagnostics, records
 from compass_runtime import io as runtime_io
 
 if TYPE_CHECKING:
@@ -597,6 +597,8 @@ class Annotation(TypedDict):
     # Latest kept outcome, which can be a refusal beside an older assessment.
     # Absent/None means no measurement, including readings stored by older builds.
     reading_diagnostic: NotRequired[dict[str, Any] | None]
+    # Latest long outcome, independent of the legacy one-invocation measurement.
+    long_diagnostic: NotRequired[dict[str, Any] | None]
     # Set on read-back when a stored reading was refused whole, never written
     # to disk and never carried across a save. It is a fact about THIS build
     # reading THAT file, so a build that can read the reading publishes no
@@ -1479,10 +1481,17 @@ def _counters(entry: Annotation, value: dict[str, Any]) -> Annotation:
     written = records.norm_epoch(value.get("written"))
     if written:
         entry["written"] = float(written)
+    _read_diagnostics(entry, value)
+    return entry
+
+
+def _read_diagnostics(entry: Annotation, value: dict[str, Any]) -> None:
     diagnostic = analyze_diagnostics.validate(value.get("reading_diagnostic"))
     if diagnostic is not None:
         entry["reading_diagnostic"] = diagnostic
-    return entry
+    long_diagnostic = reading_long_diagnostics.validate(value.get("long_diagnostic"))
+    if long_diagnostic is not None:
+        entry["long_diagnostic"] = long_diagnostic
 
 
 def _withheld(value: Any) -> str:
@@ -1548,7 +1557,7 @@ def _on_disk(entry: Annotation) -> dict[str, Any]:
         **{
             name: field
             for name, field in entry.items()
-            if name not in {"refused", "refused_raw", "reading_diagnostic"}
+            if name not in {"refused", "refused_raw", "reading_diagnostic", "long_diagnostic"}
         },
         **(
             {"reading_diagnostic": diagnostic}
@@ -1557,6 +1566,12 @@ def _on_disk(entry: Annotation) -> dict[str, Any]:
             else {}
         ),
         **({"assessment": entry["refused_raw"]} if "refused_raw" in entry else {}),
+        **(
+            {"long_diagnostic": long_diagnostic}
+            if (long_diagnostic := reading_long_diagnostics.validate(entry.get("long_diagnostic")))
+            is not None
+            else {}
+        ),
         "revisions": [
             {**rev, "lines": [dict(line) for line in rev["lines"]]} for rev in entry["revisions"]
         ],
@@ -2144,6 +2159,13 @@ def published(entry: Annotation | None, *, binding_why: str = BINDING_EXACT) -> 
             else {}
         ),
         "reading_count": entry.get("readings", 0) if entry else 0,
+        **(
+            {"long_diagnostic": long_diagnostic}
+            if entry
+            and (long_diagnostic := reading_long_diagnostics.validate(entry.get("long_diagnostic")))
+            is not None
+            else {}
+        ),
         "reading_withheld": entry.get("withheld", "") if entry else "",
         # When that reason was written, or None: no reason, or one stored
         # before the time was kept. A number and no prose.
@@ -2216,6 +2238,10 @@ def _carried(existing: Annotation, updated: Annotation) -> Annotation:
             continue
         if name not in updated and name in existing:
             updated[name] = existing[name]
+    if "long_diagnostic" not in updated:
+        updated["long_diagnostic"] = reading_long_diagnostics.validate(
+            existing.get("long_diagnostic")
+        )
     # Words the reader changed are not what an earlier departure was about.
     priors = _prior_departures(
         updated.pop("prior_departures", ()),
@@ -2405,6 +2431,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
 ) -> str:
@@ -2423,6 +2450,9 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
     the publication lock. Explicit None or any malformed target refuses.
     `long_publication=True` also requires a 32-hex job ID and atomically keeps
     its unretired receipt; the recent ordinary-job list is not that guarantee.
+    Optional `long_diagnostic` requires that receipt path and exact accounting
+    matching this attempted job. A kept ordinary outcome clears old long metrics;
+    a late assessment that is not kept preserves the standing diagnostics.
     """
     return _record(
         config,
@@ -2436,6 +2466,7 @@ def record_reading(  # noqa: PLR0913 (independent outcome fields at the shared w
         job_id=job_id,
         on_a_check=on_a_check,
         analyze_diagnostic=analyze_diagnostic,
+        long_diagnostic=long_diagnostic,
         long_target=long_target,
         long_publication=long_publication,
     )
@@ -2452,6 +2483,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     diagnostic_sink: Callable[[str], None] = print,
     job_id: str = "",
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
 ) -> str:
@@ -2473,6 +2505,9 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
     `long_target` has the same opt-in, fail-closed meaning as `record_reading`.
     `long_publication=True` keeps the same durable receipt even when unspent;
     a zero-spent job is acknowledged without incrementing the job count.
+    Optional `long_diagnostic` is separate from the one-invocation measurement;
+    its exact receipt-derived attempted_job must agree with `spent`. Unknown or
+    minimum accounting cannot be acknowledged here. None clears old long metrics.
     """
     if reason not in reading.WITHHELD:
         return OUTCOME_REFUSED
@@ -2487,6 +2522,7 @@ def record_withheld(  # noqa: PLR0913 (independent outcome fields at the shared 
         diagnostic_sink=diagnostic_sink,
         job_id=job_id,
         analyze_diagnostic=analyze_diagnostic,
+        long_diagnostic=long_diagnostic,
         long_target=long_target,
         long_publication=long_publication,
     )
@@ -2549,6 +2585,7 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     job_id: str = "",
     on_a_check: Collection[str] = frozenset(),
     analyze_diagnostic: dict[str, Any] | None = None,
+    long_diagnostic: dict[str, Any] | None = None,
     long_target: Any = _UNGUARDED_LONG_TARGET,
     long_publication: bool = False,
 ) -> str:
@@ -2558,9 +2595,20 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
     is `OUTCOME_REFUSED`, like any other request the store will not take.
     """
     checked_diagnostic = analyze_diagnostics.validate(analyze_diagnostic, spent=spent)
+    checked_long = reading_long_diagnostics.validate(long_diagnostic)
     if (
         not config.annotations_enabled
         or (analyze_diagnostic is not None and checked_diagnostic is None)
+        or (
+            long_diagnostic is not None
+            and (
+                checked_long is None
+                or not long_publication
+                or type(spent) is not bool
+                or checked_long["accounting"]["state"] != "exact"
+                or checked_long["accounting"]["attempted_job"] != int(spent)
+            )
+        )
         or type(long_publication) is not bool
         or (
             long_publication
@@ -2612,6 +2660,11 @@ def _record(  # noqa: PLR0913 (the two callers' fields, one keyword each)
         # assessment that was not kept cannot replace its diagnostic either.
         updated["reading_diagnostic"] = (
             checked_diagnostic if stored else existing.get("reading_diagnostic")
+        )
+        updated["long_diagnostic"] = (
+            checked_long
+            if stored
+            else reading_long_diagnostics.validate(existing.get("long_diagnostic"))
         )
         written = time.time()
         if withheld:

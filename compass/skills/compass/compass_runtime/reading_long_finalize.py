@@ -10,6 +10,7 @@ from . import (
     reading,
     reading_long_cleanup,
     reading_long_control,
+    reading_long_diagnostics,
     reading_long_inspection,
     reading_long_markers,
 )
@@ -48,6 +49,30 @@ def _terminal(config: RuntimeConfig, active: Any) -> dict[str, Any] | None:
     return marker
 
 
+def _measurement_matches(
+    diagnostic: dict[str, Any] | None,
+    marker: dict[str, Any],
+    inspected: reading_long_inspection.Inspection,
+) -> bool:
+    if diagnostic is None:
+        return True  # Legacy helper; withheld_measured never permits this case.
+    checked = reading_long_diagnostics.validate(diagnostic)
+    totals = inspected.exact
+    return bool(
+        checked is not None
+        and totals is not None
+        and checked["plan"] == marker["header"]["plan"]
+        and checked["accounting"]["state"] == "exact"
+        and checked["accounting"]["totals"]
+        == {
+            "calls": totals.calls,
+            "prompt_bytes": totals.prompt_bytes,
+            "reply_bytes": totals.reply_bytes,
+        }
+        and checked["outcome"] != "pending"
+    )
+
+
 def withheld(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -56,6 +81,7 @@ def withheld(
     reason: str,
     now: float,
     diagnostic_sink: Callable[[str], None] = print,
+    long_diagnostic: dict[str, Any] | None = None,
 ) -> Finalized:
     """Publish a closed withheld token with exact receipt-derived job spending.
 
@@ -72,7 +98,9 @@ def withheld(
             if marker is None:
                 return Finalized()
             inspected = reading_long_inspection.inspect(config, marker["job_id"], now=now)
-            if inspected.exact is None:
+            if inspected.exact is None or not _measurement_matches(
+                long_diagnostic, marker, inspected
+            ):
                 return Finalized()
             publication = marker["header"]["publication"]
             outcome = annotation_store.record_withheld(
@@ -87,6 +115,7 @@ def withheld(
                     publication["incarnation"], publication["revision"]
                 ),
                 long_publication=True,
+                long_diagnostic=long_diagnostic,
                 diagnostic_sink=diagnostic_sink,
             )
             acknowledged = outcome in (
@@ -112,4 +141,34 @@ def withheld(
         True,
         True,
         released in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED),
+    )
+
+
+def withheld_measured(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    *,
+    active: reading_long_control.Active,
+    reason: str,
+    now: float,
+    long_diagnostic: dict[str, Any] | None,
+    diagnostic_sink: Callable[[str], None] = print,
+) -> Finalized:
+    """Terminal production path: require long metrics before any acknowledgment.
+
+    The legacy withheld helper remains available to older internal callers. New
+    measured callers cannot omit metadata or downgrade malformed data to unknown.
+    Plan and exact accounting are compared again under the marker barrier.
+    """
+    checked = reading_long_diagnostics.validate(long_diagnostic)
+    if checked is None:
+        return Finalized()
+    return withheld(
+        config,
+        state,
+        active=active,
+        reason=reason,
+        now=now,
+        long_diagnostic=checked,
+        diagnostic_sink=diagnostic_sink,
     )

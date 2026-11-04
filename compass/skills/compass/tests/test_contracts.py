@@ -1407,6 +1407,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # imports neither this module nor `state`.
         "compass_runtime.annotations": {
             "compass_runtime.analyze_diagnostics",
+            "compass_runtime.reading_long_diagnostics",
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.reading",
@@ -1571,6 +1572,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.reading_long_cleanup",
             "compass_runtime.reading_long_control",
+            "compass_runtime.reading_long_diagnostics",
             "compass_runtime.reading_long_inspection",
             "compass_runtime.reading_long_markers",
             "compass_runtime.state",
