@@ -31,7 +31,7 @@ from . import test_reading_map_series as series_tests
 from . import test_reading_source_final as source_tests
 from .test_agent_words import _check, _person
 from .test_claude_checks import SHORT
-from .test_reading_source import CompleteReadingSourceTest
+from .test_reading_source import CompleteReadingSourceFixture
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -211,7 +211,7 @@ class FinalCallTest(unittest.TestCase):
                 prompt_bytes=len(prompt.encode()),
                 prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
             )
-            return self.fixture.markers.reserve(
+            return reading_long_markers.reserve(
                 self.fixture.fixture.config, self.fixture.owner, request=request, now=100
             )
 
@@ -551,7 +551,7 @@ class FinalCallTest(unittest.TestCase):
         assert collection.words is not None
         assert collection.final is not None
         self.facts = list(collection.evidence.facts)
-        self.output = CompleteReadingSourceTest.output(collection.evidence.press)
+        self.output = CompleteReadingSourceFixture.output(collection.evidence.press)
         self.row["sid"] = SHORT
         self.row["ended_at"] = max(f["at"] for f in self.facts) + 100
         self.revision["window_start"] = 1

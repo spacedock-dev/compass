@@ -23,7 +23,7 @@ from compass_runtime import (
 from . import test_reading_map_series as series_tests
 from . import test_reading_source_final as source_tests
 from .test_claude_checks import SHORT
-from .test_reading_source import CompleteReadingSourceTest
+from .test_reading_source import CompleteReadingSourceFixture
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -80,7 +80,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             )
         )
         facts = collection.evidence.facts
-        output = CompleteReadingSourceTest.output(collection.evidence.press)
+        output = CompleteReadingSourceFixture.output(collection.evidence.press)
         self.inputs = reading_final_call.Inputs(
             {
                 "harness": "claude",
@@ -139,7 +139,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
                 prompt_bytes=len(prompt.encode()),
                 prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
             )
-            return self.marker.markers.reserve(
+            return reading_long_markers.reserve(
                 self.marker.fixture.config, self.marker.owner, request=request, now=100
             )
 

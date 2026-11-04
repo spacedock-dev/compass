@@ -19,7 +19,7 @@ from compass_runtime import (
 from . import test_reading_source_final as final_tests
 from .test_agent_words import _agent, _check, _person, _write
 from .test_claude_checks import SHORT
-from .test_reading_source import CompleteReadingSourceTest
+from .test_reading_source import CompleteReadingSourceFixture
 
 GOAL = "Keep the retry safe."
 LINES = ("The tests pass", "Do not delete the repository.")
@@ -417,7 +417,7 @@ class ReconciliationPacketTest(unittest.TestCase):
                 assert collection.words is not None
                 assert collection.final is not None
                 facts = collection.evidence.facts
-                output = CompleteReadingSourceTest.output(collection.evidence.press)
+                output = CompleteReadingSourceFixture.output(collection.evidence.press)
                 words = {(w.fact_id, w.at): w.words for w in collection.words if w.state == "whole"}
                 originals = [
                     reading_passes.Original(row, words.get((row["id"], row["at"])))
