@@ -14,7 +14,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, cast
 
 from . import analyze_diagnostics, reading_long_jobs, supervise
 from . import io as runtime_io
@@ -1319,6 +1319,19 @@ class RefusedError(Exception):
         self.answer = answer
 
 
+class PromptPermit(Protocol):
+    """Reservation authority for this invocation, independent of historical charges."""
+
+    @property
+    def launch(self) -> bool: ...
+
+    @property
+    def fresh_charge(self) -> bool: ...
+
+    @property
+    def reason(self) -> str: ...
+
+
 class GuardedModel:
     """Reserve at the actual model seam, after eligibility and evidence checks."""
 
@@ -1338,7 +1351,12 @@ class GuardedModel:
         unasked: bool = False,
         reserve_with: Callable[..., Status] | None = None,
         admit_prompt: Callable[[str], str | None] | None = None,
+        reserve_prompt: Callable[[str, int], PromptPermit] | None = None,
     ) -> None:
+        if reserve_prompt is not None and (
+            reserve_with is not None or before_reserve is not None or unasked
+        ):
+            raise ValueError("Prompt reservation requires its own requested-call reservation path")
         if reserve_with is not None and before_reserve is not None:
             # `before_reserve` returns the job id the charge is recorded under, and a ledger of
             # its own records none, so the pair would drop the marker's promise silently.
@@ -1350,6 +1368,7 @@ class GuardedModel:
         # A ledger of its own for a caller that must not spend Analyze's budget: the Live monitor
         # charges `reserve_monitor` here, at the same seam and in the same order.
         self.reserve_with = reserve_with
+        self.reserve_prompt = reserve_prompt
         self.admit_prompt = admit_prompt
         self.reserved = False
         self.analyze_diagnostic: dict[str, Any] | None = None
@@ -1408,7 +1427,7 @@ class GuardedModel:
         return None
 
     def _admission(self, prompt: str) -> str | None:
-        if self.admit_prompt is None:
+        if self.admit_prompt is None and self.reserve_prompt is None:
             return None
         # Pause/consent precede capacity work. The reservation transaction
         # authoritatively checks them again before committing a charge.
@@ -1421,7 +1440,7 @@ class GuardedModel:
         )
         if answer["reason"]:
             raise RefusedError(answer)
-        refusal = self.admit_prompt(prompt)
+        refusal = self.admit_prompt(prompt) if self.admit_prompt is not None else None
         if refusal is not None:
             return refusal
         # Configuration reads can take time. Recheck the live gates before
@@ -1432,7 +1451,7 @@ class GuardedModel:
         self.reserved = False
         self._model_invoked = False
         self.analyze_diagnostic = None
-        if self.admit_prompt is None or self.unasked:
+        if (self.admit_prompt is None and self.reserve_prompt is None) or self.unasked:
             return self._call(prompt, output_cap_bytes=output_cap_bytes)
         reset = getattr(self.admit_prompt, "reset", None)
         if callable(reset):
@@ -1461,6 +1480,27 @@ class GuardedModel:
                 "model_invoked": self._model_invoked,
             }
 
+    def _reserve_call(self, prompt: str, output_cap_bytes: int) -> str | None:
+        if self.reserve_prompt is not None:
+            permit = self.reserve_prompt(prompt, output_cap_bytes)
+            # A committed charge survives a failed marker write. Replay's
+            # historical charge cannot count as this invocation's reservation.
+            self.reserved = permit.fresh_charge is True
+            answer = _answer(
+                reason=permit.reason
+                or ("" if permit.launch is True and self.reserved else "reservation-refused")
+            )
+        else:
+            answer = self._reserve()
+            self.reserved = not answer["reason"]
+        if self.reserved and self.on_reserved is not None:
+            self.on_reserved()
+        if answer["reason"] == "stopping":
+            return "closed"
+        if answer["reason"]:
+            raise RefusedError(answer)
+        return None
+
     def _call(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         if refusal := self._preflight():
             return "", refusal
@@ -1473,14 +1513,8 @@ class GuardedModel:
             return self.model(prompt, output_cap_bytes=output_cap_bytes)
         if refusal := self._admission(prompt):
             return "", refusal
-        answer = self._reserve()
-        if answer["reason"] == "stopping":
-            return "", "closed"
-        if answer["reason"]:
-            raise RefusedError(answer)
-        self.reserved = True
-        if self.on_reserved is not None:
-            self.on_reserved()
+        if refusal := self._reserve_call(prompt, output_cap_bytes):
+            return "", refusal
         self._model_invoked = True
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # A last-moment managed-policy change can stop the child after the
