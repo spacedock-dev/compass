@@ -6,16 +6,17 @@ import hashlib
 import math
 import os
 import sys
+import threading
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import observer, session_source, session_summary
-from . import state as runtime_state
 
 if TYPE_CHECKING:
+    from _thread import LockType
     from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     from .config import RuntimeConfig
@@ -676,6 +677,7 @@ def _advance_parent(
     sid: str,
     identity: tuple[object, ...],
     previous: _FactGraph | None,
+    deadline: float,
 ) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], _FactGraph | None]:
     old = previous.extras if previous and isinstance(previous.extras, _Progress) else None
     refusal, refusal_graph = _limit_parent(previous, identity, config, harness, sid)
@@ -688,7 +690,7 @@ def _advance_parent(
         sid,
         after=old.checkpoint if old else None,
         opening_bytes=min(config.session_outline_head_bytes, config.session_outline_max_bytes // 2),
-        deadline=time.monotonic() + config.session_outline_max_seconds,
+        deadline=deadline,
     )
     if page.state == "limited":
         return _limit_parent(previous, identity, config, harness, sid)
@@ -734,116 +736,228 @@ def for_session(
     return for_session_with_plan(config, state, harness, sid)[0]
 
 
-def _cached_parent(
-    config: RuntimeConfig,
-    state: RuntimeState,
-    path: str,
-    harness: str,
-    sid: str,
-    key: str,
-    stamps: object,
-    bounds: tuple[object, ...],
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    identity = (key, stamps, bounds)
-    cached = state.session_outlines.get(key)
+@dataclass(slots=True)
+class _Slot:
+    identity: tuple[object, ...]
+    generation: int = 0
+    lock: LockType = field(default_factory=threading.Lock)
+
+
+@dataclass(frozen=True, slots=True)
+class _Request:
+    path: str
+    harness: str
+    sid: str
+    key: str
+    identity: tuple[object, ...]
+    stamps: tuple[tuple[str, session_source.Stamp | None], ...]
+    deadline: float
+
+
+@dataclass(frozen=True, slots=True)
+class _Lease:
+    slot: _Slot
+    generation: int
+    cached: Any
+
+
+# Each bounded identity reserves 64 KiB/1024 accounting units plus fixed slot/lock
+# storage. Active work is separately bounded even if a slot is externally evicted.
+_SLOT_LIMITS = _FactLimits(bytes=64 * 1024, objects=1024)
+_MAX_ACTIVE = 16
+
+
+def _matching_result(
+    cached: Any, identity: tuple[object, ...]
+) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
+    if isinstance(cached, _FactGraph):
+        progress = cached.extras
+        return (
+            progress.result
+            if isinstance(progress, _Progress) and progress.identity == identity
+            else None
+        )
+    if cached is not None and cached[0] == identity[1:]:
+        result: tuple[dict[str, Any], dict[str, Any] | None] = cached[1]
+        return result
+    return None
+
+
+def _claim(
+    state: RuntimeState, request: _Request, capacity: int
+) -> tuple[_Lease | None, tuple[dict[str, Any], dict[str, Any] | None] | None]:
+    with state.session_outline_lock:
+        slot = state.session_outline_slots.get(request.key)
+        if slot is None:
+            while len(state.session_outline_slots) >= capacity > 0:
+                idle = next(
+                    (
+                        key
+                        for key, value in state.session_outline_slots.items()
+                        if not value.lock.locked()
+                    ),
+                    None,
+                )
+                if idle is None:
+                    break
+                del state.session_outline_slots[idle]
+                state.session_outlines.pop(idle, None)
+            if capacity <= 0 or len(state.session_outline_slots) >= capacity:
+                return None, None
+            slot = _Slot(request.identity)
+            state.session_outline_slots[request.key] = slot
+        if slot.identity != request.identity:
+            slot.generation += 1
+            slot.identity = request.identity
+            state.session_outlines.pop(request.key, None)
+        cached = state.session_outlines.get(request.key)
+        if state.session_outline_active >= capacity or not slot.lock.acquire(blocking=False):
+            return None, _matching_result(cached, request.identity)
+        state.session_outline_active += 1
+        return _Lease(slot, slot.generation, cached), None
+
+
+def _publish(state: RuntimeState, request: _Request, lease: _Lease, cached: Any) -> bool:
+    with state.session_outline_lock:
+        current = state.session_outline_slots.get(request.key)
+        valid = (
+            current is lease.slot
+            and current.generation == lease.generation
+            and current.identity == request.identity
+        )
+        if valid and cached is not None:
+            state.session_outlines[request.key] = cached
+        return valid
+
+
+def _release(state: RuntimeState, lease: _Lease) -> None:
+    with state.session_outline_lock:
+        lease.slot.lock.release()
+        state.session_outline_active -= 1
+
+
+def _read_legacy(
+    config: RuntimeConfig, request: _Request, cached: Any
+) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], Any]:
+    existing = _matching_result(cached, request.identity)
+    if existing is not None:
+        return existing, cached
+    page = session_source.read(
+        config,
+        request.path,
+        request.harness,
+        request.sid,
+        newest=True,
+        max_bytes=config.session_outline_max_bytes,
+        deadline=request.deadline,
+    )
+    opening, head_clipped = (
+        _head(
+            config,
+            request.path,
+            request.harness,
+            request.sid,
+            page.coverage.start_offset,
+            request.deadline,
+        )
+        if page.state == "ok" and page.coverage is not None and page.coverage.start_offset > 0
+        else (None, False)
+    )
+    result = (build(page, config, opening), _plan(page, config))
+    clipped = head_clipped or bool(
+        page.coverage and any(region.reason == "time" for region in page.coverage.unread)
+    )
+    return result, (request.identity[1:], result) if page.state == "ok" and not clipped else None
+
+
+def _read_candidate(
+    config: RuntimeConfig, request: _Request, cached: Any
+) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], Any]:
+    if len(request.stamps) != 1:
+        return _read_legacy(config, request, cached)
     previous = (
         cached
-        if isinstance(cached, _FactGraph)
-        and isinstance(cached.extras, _Progress)
-        and cached.extras.identity == identity
+        if isinstance(cached, _FactGraph) and _matching_result(cached, request.identity) is not None
         else None
     )
     if previous and isinstance(previous.extras, _Progress) and previous.extras.terminal:
-        return previous.extras.result
-    result, graph = _advance_parent(config, path, harness, sid, identity, previous)
+        return previous.extras.result, previous
+    return _advance_parent(
+        config,
+        request.path,
+        request.harness,
+        request.sid,
+        request.identity,
+        previous,
+        request.deadline,
+    )
+
+
+def _bounds(config: RuntimeConfig) -> tuple[object, ...]:
+    return (
+        config.session_outline_max_bytes,
+        config.session_outline_head_bytes,
+        config.session_outline_max_seconds,
+        config.session_outline_max_blocks,
+        config.session_outline_highlights,
+        tuple(
+            (name, getattr(config, name))
+            for name in config.__dataclass_fields__
+            if name.startswith("session_summary_")
+        ),
+    )
+
+
+def _status(
+    config: RuntimeConfig, harness: str, sid: str, state: str, reason: str | None = None
+) -> tuple[dict[str, Any], None]:
+    answer = build(session_source.SourcePage(state, harness, sid), config)
+    if reason is not None:
+        answer["reason"] = reason
+    return answer, None
+
+
+def _owned_poll(
+    config: RuntimeConfig, state: RuntimeState, request: _Request, lease: _Lease
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     try:
-        unchanged = session_source.source_stamps(path, harness) == stamps
-    except OSError:
-        unchanged = False
-    if not unchanged:
-        return build(session_source.SourcePage("stale", harness, sid), config), None
-    if graph is not None:
-        runtime_state.bounded_put(
-            state.session_outlines, key, graph, limit=config.session_outline_cache_limit
-        )
-    return result
+        result, candidate = _read_candidate(config, request, lease.cached)
+        try:
+            unchanged = (
+                session_source.source_stamps(request.path, request.harness) == request.stamps
+            )
+        except OSError:
+            unchanged = False
+        if not unchanged or not _publish(state, request, lease, candidate):
+            return _status(config, request.harness, request.sid, "stale")
+        return result
+    finally:
+        _release(state, lease)
 
 
 def for_session_with_plan(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Cache word-free grouping by transcript stamps; no grants or model seams are involved."""
+    """Poll one bounded source generation; registry locks never cover source or projection work."""
+    deadline = time.monotonic() + config.session_outline_max_seconds
     supported = harness in session_source.HARNESSES
     path = observer.resolve_transcript(config, state, harness, sid) if supported else None
     if path is None:
-        unavailable = "unavailable" if supported else "unsupported"
-        return build(session_source.SourcePage(unavailable, harness, sid), config), None
+        return _status(config, harness, sid, "unavailable" if supported else "unsupported")
+    try:
+        stamps = session_source.source_stamps(path, harness)
+    except OSError:
+        return _status(config, harness, sid, "unavailable")
     key = f"{os.path.abspath(path)}\0{harness}\0{sid}"
-    with state.session_outline_lock:
-        try:
-            stamps = session_source.source_stamps(path, harness)
-        except OSError:
-            return build(session_source.SourcePage("unavailable", harness, sid), config), None
-        bounds = (
-            config.session_outline_max_bytes,
-            config.session_outline_head_bytes,
-            config.session_outline_max_seconds,
-            config.session_outline_max_blocks,
-            config.session_outline_highlights,
-            config.session_summary_window_bytes,
-            config.session_summary_max_windows,
-            config.session_summary_max_calls,
-            config.session_summary_max_bytes_sent,
-            config.session_summary_max_seconds,
-            config.session_summary_call_timeout,
-            tuple(
-                (name, getattr(config, name))
-                for name in config.__dataclass_fields__
-                if name.startswith("session_summary_")
-            ),
+    identity = (key, stamps, _bounds(config))
+    if _measure_facts(identity, _SLOT_LIMITS) is None:
+        return _status(config, harness, sid, "unavailable", "outline_state_limit")
+    request = _Request(path, harness, sid, key, identity, stamps, deadline)
+    lease, accepted = _claim(state, request, min(config.session_outline_cache_limit, _MAX_ACTIVE))
+    if lease is None:
+        return (
+            accepted
+            if accepted is not None
+            else _status(config, harness, sid, "unavailable", "outline_busy")
         )
-        cached = state.session_outlines.get(key)
-        if harness in ("claude", "codex") and len(stamps) == 1:
-            return _cached_parent(config, state, path, harness, sid, key, stamps, bounds)
-        if isinstance(cached, _FactGraph):
-            cached = None
-        if cached is not None and cached[0] == (stamps, bounds):
-            result: tuple[dict[str, Any], dict[str, Any] | None] = cached[1]
-            return result
-        deadline = time.monotonic() + config.session_outline_max_seconds
-        page = session_source.read(
-            config,
-            path,
-            harness,
-            sid,
-            newest=True,
-            max_bytes=config.session_outline_max_bytes,
-            deadline=deadline,
-        )
-        opening, head_clipped = (
-            _head(config, path, harness, sid, page.coverage.start_offset, deadline)
-            if page.state == "ok" and page.coverage is not None and page.coverage.start_offset > 0
-            else (None, False)
-        )
-        result = (build(page, config, opening), _plan(page, config))
-        try:
-            unchanged = session_source.source_stamps(path, harness) == stamps
-        except OSError:
-            unchanged = False
-        if not unchanged:
-            return build(session_source.SourcePage("stale", harness, sid), config), None
-        clipped = head_clipped or (
-            page.coverage is not None
-            and any(region.reason == "time" for region in page.coverage.unread)
-        )
-        # A time-clipped window is short of its newest turns, and a clipped head of its first
-        # prompt's part; caching either would serve it until the transcript changed, so the next
-        # poll retries instead.
-        if page.state == "ok" and not clipped:
-            runtime_state.bounded_put(
-                state.session_outlines,
-                key,
-                ((stamps, bounds), result),
-                limit=config.session_outline_cache_limit,
-            )
-        return result
+    return _owned_poll(config, state, request, lease)

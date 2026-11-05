@@ -11,6 +11,8 @@ import math
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -884,6 +886,267 @@ class SessionOutlineTest(unittest.TestCase):
             self.assertTrue(answer["coverage"]["complete"])
             self.assertIsNotNone(plan)
             self.assertFalse(plan["complete"])
+
+    @contextmanager
+    def _blocked_poll(self, config: Any = None) -> Iterator[tuple[Any, Any, list[str]]]:
+        entered, release = threading.Event(), threading.Event()
+        calls: list[str] = []
+        real = self.source._read_outline
+
+        def blocked(*args: Any, **kwargs: Any) -> Any:
+            calls.append(args[3])
+            result = real(*args, **kwargs)
+            if len(calls) == 1:
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("owned read barrier timed out")
+            return result
+
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.source, "_read_outline", side_effect=blocked),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            first = pool.submit(
+                self.outline.for_session_with_plan,
+                config or self.config,
+                self.state,
+                "claude",
+                "root",
+            )
+            try:
+                self.assertTrue(entered.wait(2))
+                yield pool, first, calls
+            finally:
+                release.set()
+                first.result(timeout=2)
+
+    def test_same_session_cold_poll_is_singleflight_and_truthfully_busy(self) -> None:
+        self._large(2)
+        with self._blocked_poll() as (pool, first, calls):
+            second = pool.submit(
+                self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
+            )
+            pending, plan = second.result(timeout=1)
+            self.assertEqual(("unavailable", "outline_busy"), (pending["state"], pending["reason"]))
+            self.assertIsNone(pending["coverage"])
+            self.assertIsNone(plan)
+            self.assertEqual(["root"], calls)
+        self.assertEqual("ok", first.result()[0]["state"])
+        self.assertEqual(0, self.state.session_outline_active)
+
+    def test_same_session_busy_poll_returns_prior_accepted_progress_promptly(self) -> None:
+        self._large()
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1800
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            accepted = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        with self._blocked_poll(config) as (pool, _first, calls):
+            second = pool.submit(
+                self.outline.for_session_with_plan, config, self.state, "claude", "root"
+            )
+            answer = second.result(timeout=1)
+            self.assertIs(accepted[0], answer[0])
+            self.assertIs(accepted[1], answer[1])
+            self.assertEqual(["root"], calls)
+
+    def test_config_replacement_fences_late_result_and_publication(self) -> None:
+        self._large(2)
+        changed = dataclasses.replace(
+            self.config,
+            session_summary_attempts_per_part=self.config.session_summary_attempts_per_part + 1,
+        )
+        with self._blocked_poll() as (pool, first, calls):
+            second = pool.submit(
+                self.outline.for_session_with_plan, changed, self.state, "claude", "root"
+            )
+            self.assertEqual("outline_busy", second.result(timeout=1)[0]["reason"])
+            self.assertEqual(["root"], calls)
+        self.assertEqual("stale", first.result()[0]["state"])
+        self.assertEqual({}, self.state.session_outlines)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            current = self.outline.for_session_with_plan(changed, self.state, "claude", "root")
+        self.assertEqual("ok", current[0]["state"])
+        self.assertEqual(0, self.state.session_outline_active)
+
+    def test_source_replacement_fences_late_result_and_publication(self) -> None:
+        self._large(2)
+        with self._blocked_poll() as (pool, first, _calls):
+            replacement = Transcript(self.root)
+            replacement.prompt("Replacement source generation.")
+            replacement.save(self.path)
+            second = pool.submit(
+                self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
+            )
+            self.assertEqual("outline_busy", second.result(timeout=1)[0]["reason"])
+        self.assertEqual("stale", first.result()[0]["state"])
+        self.assertEqual({}, self.state.session_outlines)
+
+    def test_evicted_slot_cannot_publish_or_return_over_recreated_slot(self) -> None:
+        self._large(2)
+        with self._blocked_poll() as (pool, first, calls):
+            with self.state.session_outline_lock:
+                self.state.session_outline_slots.clear()
+                self.state.session_outlines.clear()
+            second = pool.submit(
+                self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
+            )
+            newer = second.result(timeout=1)
+            self.assertEqual("ok", newer[0]["state"])
+            self.assertEqual(["root", "root"], calls)
+        self.assertEqual("stale", first.result()[0]["state"])
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            self.assertIs(
+                newer[0],
+                self.outline.for_session_with_plan(self.config, self.state, "claude", "root")[0],
+            )
+        self.assertEqual(0, self.state.session_outline_active)
+
+    def test_evicted_busy_slots_do_not_release_active_work_capacity(self) -> None:
+        self._large(2)
+        config = dataclasses.replace(self.config, session_outline_cache_limit=1)
+        with self._blocked_poll(config) as (pool, _first, calls):
+            for number in range(5):
+                with self.state.session_outline_lock:
+                    self.state.session_outline_slots.clear()
+                next_poll = pool.submit(
+                    self.outline.for_session_with_plan,
+                    config,
+                    self.state,
+                    "claude",
+                    f"cold-{number}",
+                )
+                self.assertEqual("outline_busy", next_poll.result(timeout=1)[0]["reason"])
+                self.assertEqual(["root"], calls)
+                self.assertEqual(1, self.state.session_outline_active)
+        self.assertEqual(0, self.state.session_outline_active)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            self.assertEqual(
+                "ok",
+                self.outline.for_session_with_plan(config, self.state, "claude", "after")[0][
+                    "state"
+                ],
+            )
+
+    def test_source_exception_releases_slot_and_active_permit(self) -> None:
+        self._large(2)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            with (
+                mock.patch.object(
+                    self.source, "_read_outline", side_effect=OSError("owned fixture read failure")
+                ),
+                self.assertRaisesRegex(OSError, "owned fixture"),
+            ):
+                self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            self.assertEqual(0, self.state.session_outline_active)
+            self.assertEqual(
+                "ok",
+                self.outline.for_session_with_plan(self.config, self.state, "claude", "root")[0][
+                    "state"
+                ],
+            )
+
+    def test_registry_lock_never_covers_stat_source_plan_or_graph_measurement(self) -> None:
+        self._large(2)
+
+        def outside_registry(real: Any, *args: Any, **kwargs: Any) -> Any:
+            acquired = self.state.session_outline_lock.acquire(blocking=False)
+            self.assertTrue(acquired, "expensive work ran under the registry lock")
+            if acquired:
+                self.state.session_outline_lock.release()
+            return real(*args, **kwargs)
+
+        owners = [
+            (self.source, "source_stamps"),
+            (self.source, "_read_outline"),
+            (self.outline, "_plan"),
+            (self.outline, "_project_parent"),
+            (self.outline, "_measure_facts"),
+        ]
+        with ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(observer, "resolve_transcript", return_value=str(self.path))
+            )
+            for owner, name in owners:
+                real = getattr(owner, name)
+                stack.enter_context(
+                    mock.patch.object(
+                        owner,
+                        name,
+                        side_effect=lambda *args, real=real, **kwargs: outside_registry(
+                            real, *args, **kwargs
+                        ),
+                    )
+                )
+            answer, _ = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+        self.assertTrue(answer["coverage"]["complete"])
+
+    def test_source_deadline_includes_time_spent_before_slot_admission(self) -> None:
+        self._large(2)
+        now = [100.0]
+        deadlines = []
+        real = self.source._read_outline
+
+        def resolve(*_args: Any) -> str:
+            now[0] = 109.0
+            return str(self.path)
+
+        def read(*args: Any, **kwargs: Any) -> Any:
+            deadlines.append(kwargs["deadline"])
+            return real(*args, **kwargs)
+
+        config = dataclasses.replace(self.config, session_outline_max_seconds=10)
+        with (
+            mock.patch.object(observer, "resolve_transcript", side_effect=resolve),
+            mock.patch.object(self.outline.time, "monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(self.source, "_read_outline", side_effect=read),
+        ):
+            self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        self.assertEqual([110.0], deadlines)
+
+    def test_blocked_parent_read_does_not_block_another_session(self) -> None:
+        self._large(2)
+        other = self.root / "other.jsonl"
+        other.write_bytes(self.path.read_bytes())
+        entered, release = threading.Event(), threading.Event()
+        real = self.source._read_outline
+
+        def blocked(*args: Any, **kwargs: Any) -> Any:
+            result = real(*args, **kwargs)
+            if args[3] == "root":
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("owned read barrier timed out")
+            return result
+
+        with (
+            mock.patch.object(
+                observer,
+                "resolve_transcript",
+                side_effect=lambda _c, _s, _h, sid: str(self.path if sid == "root" else other),
+            ),
+            mock.patch.object(self.source, "_read_outline", side_effect=blocked),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            first = pool.submit(
+                self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
+            )
+            try:
+                self.assertTrue(entered.wait(2))
+                second = pool.submit(
+                    self.outline.for_session_with_plan, self.config, self.state, "claude", "other"
+                )
+                try:
+                    result = second.result(timeout=1)
+                except TimeoutError:
+                    self.fail("session B waited behind session A source I/O")
+                self.assertEqual("ok", result[0]["state"])
+            finally:
+                release.set()
+                self.assertEqual("ok", first.result(timeout=2)[0]["state"])
 
     def test_codex_polls_accumulate_person_only_in_order_with_one_byte_budget(self) -> None:
         rows = []

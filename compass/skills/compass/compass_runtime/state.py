@@ -67,7 +67,10 @@ class RuntimeState:
     entry_indexes: dict[str, Any] = field(default_factory=dict)
     entry_index_lock: LockType = field(default_factory=threading.Lock)
     session_outlines: dict[str, Any] = field(default_factory=dict)
+    # Registry exchanges only; each outline slot owns its work outside this lock.
     session_outline_lock: LockType = field(default_factory=threading.Lock)
+    session_outline_slots: dict[str, Any] = field(default_factory=dict)
+    session_outline_active: int = 0
     # "harness:sid" -> the latest summary job this process knows, bounded by max_cache_entries.
     summary_jobs: dict[str, Any] = field(default_factory=dict)
     # (harness, sid) -> (source stamps and stored record identity, out-of-date report).
