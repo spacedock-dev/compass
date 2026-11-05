@@ -20,6 +20,7 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import (
+    claude_data,
     diagnostics,
     git_status,
     live_estimate,
@@ -94,6 +95,38 @@ class ProjectScriptTestCase(ClaudeChecksTestCase):
 
 
 class ADeclaredScriptReadsAsACheck(ProjectScriptTestCase):
+    def test_outline_admitted_head_keeps_declared_checks_without_a_transcript_reread(self) -> None:
+        self.commit({"package.json": package(typecheck="tsc --noEmit")})
+        self.session.bash("pnpm typecheck", "", is_error=False)
+        self.session.save(self.path)
+        config = dataclasses.replace(self.config, git_probe_enabled=True)
+        with (
+            mock.patch.object(
+                claude_data, "head_cwd", side_effect=AssertionError("extra head read")
+            ),
+            mock.patch.object(
+                claude_data, "head_start", side_effect=AssertionError("extra head read")
+            ),
+        ):
+            page, checkpoint = session_source._read_outline_parent(
+                config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=10000,
+                deadline=time.monotonic() + 30,
+            )
+            unknown = project_context._declared_scripts(
+                config, str(self.path), str(self.cwd), self.session.rows, [], known_start=(None,)
+            )
+        assert checkpoint is not None
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertEqual(
+            [("pnpm typecheck", "passed")],
+            [(entry.title, entry.result) for entry in page.entries if entry.kind == "check"],
+        )
+        self.assertIsNone(unknown)  # Unknown head time cannot become a later page's timestamp.
+
     def test_a_typecheck_script_whose_body_is_a_runner_is_a_check_with_its_result(self) -> None:
         self.commit({"package.json": package(typecheck="tsc --noEmit")})
         self.ran("pnpm typecheck")

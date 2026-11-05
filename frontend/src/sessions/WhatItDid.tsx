@@ -28,7 +28,7 @@ import {
 import { useSteadyOutline } from './steadyOutline';
 
 export const WHAT_IT_DID_PLACEHOLDER =
-  'An outline of what this session did is not drawn here yet. Every entry it recorded is under Full activity below.';
+  'An outline of what this session did is not drawn here yet. Full activity below shows the recorded activity available to this page.';
 
 /* An entry chip: its `#n` where the page holds and numbers the entry. Pressing it opens Full activity and lands
    on the entry, reading older record pages for it first when the page does not hold it, as Show cited entries
@@ -452,6 +452,7 @@ function outlineSize(outline: ReturnType<typeof parseOutline>): {
   if (outline?.state !== 'ok' || !outline.blocks.length) return { entries: null, more: false };
   const entries = outline.blocks.reduce((sum, block) => sum + block.span.entries, 0);
   const partial =
+    outline.coverage?.complete !== true ||
     outline.moreBlocks > 0 ||
     (outline.coverage !== null &&
       (outline.coverage.startOffset > 0 || outline.coverage.unread.length > 0));

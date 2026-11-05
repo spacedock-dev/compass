@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2307675,
+    "bytes": 2308931,
     "file": "react.html",
-    "sha256": "be27579a7ebf454cdda55b5290f385f8e44e6721ff6037ede7998152e152cb95"
+    "sha256": "fb44d723d18ecad04f119e756cefc78a91db2f98716a01a5a996f41b998fb807"
   },
   "format": 1,
   "frontend": "react",
@@ -307,7 +307,7 @@
       },
       {
         "file": "frontend/src/api/outline.ts",
-        "sha256": "2092ff20c4060e06156aff43681407318269e31ee0b064f0ef34c6a7a6ce03db"
+        "sha256": "d71094d7faf3edc8ffa7dceb8b0e09e832df736997ddc87cc65948da953c7d85"
       },
       {
         "file": "frontend/src/api/paste.ts",
@@ -1251,7 +1251,7 @@
       },
       {
         "file": "frontend/src/sessions/WhatItDid.tsx",
-        "sha256": "34ccd9b3c40ca7fc43321830558a10a6e0a1acc74cba25d01098951af7047620"
+        "sha256": "d01b5ef819616d3cf4af212048106df92765452040b3b6d9cef38780dcbe0ebc"
       },
       {
         "file": "frontend/src/sessions/detail.ts",
@@ -1287,7 +1287,7 @@
       },
       {
         "file": "frontend/src/sessions/outline.ts",
-        "sha256": "317cd55e659fea3563d0ceb75786d92bd9c8489854348f4ae4ef3a7c660c6576"
+        "sha256": "6f01cdb97d42cb6f3c32a4a19dfaa30b875c291bbe130fbe163cff3bcef6001c"
       },
       {
         "file": "frontend/src/sessions/rows.ts",

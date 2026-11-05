@@ -53,6 +53,16 @@ class _Collection:
         self.positions: dict[str, tuple[int, int, int]] = {}
         self.page: source.SourcePage | None = None
 
+    def with_page(self, page: source.SourcePage) -> _Collection:
+        candidate = _Collection(self.harness, self.sid)
+        candidate.streams = {key: dict(entries) for key, entries in self.streams.items()}
+        candidate.unread = list(self.unread)
+        candidate.boundaries = dict(self.boundaries)
+        candidate.result_calls = set(self.result_calls)
+        candidate.positions = dict(self.positions)
+        candidate.add(page)
+        return candidate
+
     def add(self, page: source.SourcePage) -> None:
         if page.snapshot is None or page.coverage is None:
             raise ValueError("Collection requires a readable source page")
@@ -190,7 +200,54 @@ def _unread(
     return list(dict.fromkeys((*unread, *page.coverage.unread)))
 
 
-def collect(
+def _limit(
+    remaining: int | None, end: float, check: Callable[[], str], clock: Callable[[], float]
+) -> str:
+    return check() or (
+        "source_time"
+        if clock() >= end
+        else "source_bytes"
+        if remaining is not None and remaining <= 0
+        else ""
+    )
+
+
+def _head(
+    config: RuntimeConfig, path: str, harness: str, end: float
+) -> tuple[tuple[str, float | None] | None, source.Stamp | None, int, str]:
+    if harness != "claude":
+        return None, None, 0, ""
+    budget = source._Budget(config.session_summary_source_max_bytes, end, end)  # noqa: SLF001
+    try:
+        head, stamp, complete = source._summary_head(config, path, budget)  # noqa: SLF001
+    except ValueError:
+        return None, None, budget.used, "source_changed"
+    except OSError:
+        return None, None, budget.used, "source-unavailable"
+    if not complete:
+        return None, None, budget.used, "source_time" if time.monotonic() >= end else "source_bytes"
+    if _size((head, stamp)) > config.session_summary_source_max_memory_bytes:
+        return None, None, budget.used, "source_memory"
+    return head, stamp, budget.used, ""
+
+
+def _fallback_head(
+    head: tuple[str, float | None] | None,
+    fallback: tuple[str | None, float | None],
+    observed: tuple[str | None, float | None],
+) -> tuple[tuple[str | None, float | None], tuple[str, float | None] | None]:
+    fallback = (
+        fallback[0] if fallback[0] is not None else observed[0],
+        fallback[1] if fallback[1] is not None else observed[1],
+    )
+    return fallback, (
+        (head[0] or fallback[0] or "", head[1] if head[1] is not None else fallback[1])
+        if head is not None
+        else None
+    )
+
+
+def collect(  # noqa: C901, PLR0915 - one job budget owns every restart and admission gate
     config: RuntimeConfig,
     path: str,
     harness: str,
@@ -205,17 +262,21 @@ def collect(
     after = None
     remaining = config.session_summary_source_max_bytes
     end = min(deadline, clock() + config.session_summary_source_max_seconds)
-    reason = ""
-    while True:
-        reason = check()
+    reason = _limit(remaining, end, check, clock)
+    withdrawals: set[str] = set()
+    restart_stamps: tuple[tuple[str, source.Stamp], ...] = ()
+    known_head: tuple[str, float | None] | None = None
+    head_stamp: source.Stamp | None = None
+    if not reason:
+        known_head, head_stamp, used, reason = _head(config, path, harness, end)
+        remaining -= used
+    prefix_head = known_head
+    fallback_head: tuple[str | None, float | None] = (None, None)
+    while not reason:
+        reason = _limit(remaining, end, check, clock)
         if reason:
             break
-        if clock() >= end:
-            reason = "source_time"
-            break
-        if remaining <= 0:
-            reason = "source_bytes"
-            break
+        observed = set(withdrawals)
         page = source.read(
             config,
             path,
@@ -224,25 +285,60 @@ def collect(
             after=after,
             max_bytes=min(remaining, config.session_source_page_max_bytes),
             deadline=min(end, clock() + config.session_source_page_max_seconds),
+            observed_writes=observed,
+            known_head=known_head,
         )
         remaining -= page.bytes_read
         if page.state != "ok" or page.snapshot is None:
             reason = "source_changed" if page.state == "stale" else "source-unavailable"
             break
+        stamps = tuple((stream.stream, stream.stamp) for stream in page.snapshot.cursor.streams)
+        if (head_stamp is not None and page.snapshot.stamp != head_stamp) or (
+            restart_stamps and stamps != restart_stamps
+        ):
+            reason = "source_changed"
+            break
+        head_stamp = None
+        restart_stamps = ()
+        fallback_head, next_head = _fallback_head(prefix_head, fallback_head, page.head_fallback)
+        head_changed = next_head != known_head
+        known_head = next_head
+        if head_changed or (observed != withdrawals and collection.page is not None):
+            # A later write can withdraw or restore earlier canonical facts, even in another
+            # stream. Discard that classification and replay under the monotone union. Reads,
+            # verification and reduction retain this job's remaining allowance and deadline.
+            # No obsolete prefix survives a resource/cancellation stop during reconciliation.
+            collection = _Collection(harness, sid)
+            after = None
+            withdrawals = observed
+            restart_stamps = stamps
+            if _size(
+                (withdrawals, restart_stamps, page, known_head, prefix_head, fallback_head)
+            ) > (config.session_summary_source_max_memory_bytes):
+                reason = "source_memory"
+                break
+            del page
+            continue
         # Build the candidate separately: exceeding retention must not lose the accepted prefix.
-        candidate = _Collection(harness, sid)
-        candidate.streams = {key: dict(entries) for key, entries in collection.streams.items()}
-        candidate.unread = list(collection.unread)
-        candidate.boundaries = dict(collection.boundaries)
-        candidate.result_calls = set(collection.result_calls)
-        candidate.positions = dict(collection.positions)
-        candidate.add(page)
+        candidate = collection.with_page(page)
         completed = candidate.finish()
-        if _size((vars(candidate), completed)) > config.session_summary_source_max_memory_bytes:
+        graph = (
+            vars(collection),
+            vars(candidate),
+            completed,
+            observed,
+            withdrawals,
+            known_head,
+            prefix_head,
+            fallback_head,
+        )
+        if _size(graph) > config.session_summary_source_max_memory_bytes:
             reason = "source_memory"
             break
         collection = candidate
-        reason = check()
+        withdrawals = observed
+        del graph
+        reason = _limit(None, end, check, clock)
         if reason:
             break
         progress(completed, config.session_summary_source_max_bytes - remaining)
@@ -260,6 +356,7 @@ def collect(
             )
             break
         after = page.next
+        del candidate, completed
     return replace(
         collection.finish(reason), bytes_read=config.session_summary_source_max_bytes - remaining
     ), reason

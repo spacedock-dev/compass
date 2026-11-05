@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import builtins
 import dataclasses
+import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
-from compass_runtime import session_source, summary_source
+from compass_runtime import project_scripts, session_source, summary_source
 from compass_runtime.config import build_runtime_config
 
 from .test_claude_checks import Transcript, hook_stdout
+from .test_project_script_checks import git, package
 
 
 class SummarySourceTest(unittest.TestCase):
@@ -44,6 +48,246 @@ class SummarySourceTest(unittest.TestCase):
             progress=kwargs.pop("progress", lambda page, _: self.pages.append(page)),
             **kwargs,
         )
+
+    def declaration_fixture(self, *, script: str = "tsc --noEmit") -> None:
+        project_scripts.reset()
+        self.addCleanup(project_scripts.reset)
+        git(self.root, "init", "-q")
+        (self.root / "package.json").write_text(package(typecheck=script, test=script))
+        git(self.root, "add", "package.json")
+        git(self.root, "commit", "-qm", "Owned declaration")
+        self.config = dataclasses.replace(
+            self.config, git_probe_enabled=True, session_source_page_max_bytes=4_000
+        )
+
+    def declaration_transcript(
+        self, *, write: bool = True, command: str = "pnpm typecheck"
+    ) -> None:
+        self.transcript.prompt("Owned summary declaration regression")
+        self.transcript.bash(f"{command}; pytest tests/direct.py", "1 passed")
+        for index in range(10):
+            self.transcript.prompt(f"Before write {index}: " + "padding " * 100)
+        if write:
+            self.transcript.write(str(self.root / "package.json"))
+        for index in range(10):
+            self.transcript.prompt(f"After write {index}: " + "padding " * 100)
+        self.transcript.bash(command, "1 passed")
+        self.transcript.save(self.path)
+
+    def assert_complete_oracle(self) -> session_source.SourcePage:
+        whole = session_source.read(
+            self.config, str(self.path), "claude", "root", max_bytes=100_000
+        )
+        page, reason = self.collect()
+        self.assertEqual("", reason)
+        self.assertTrue(page.coverage.complete)
+        self.assertGreater(len(self.pages), 2)
+        self.assertEqual(whole.entries, page.entries)
+        return whole
+
+    def test_later_declaration_write_reconciles_complete_collection(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript()
+        whole = self.assert_complete_oracle()
+        self.assertEqual(
+            ["pytest tests/direct.py"], [e.title for e in whole.entries if e.kind == "check"]
+        )
+
+    def test_no_write_keeps_declared_checks(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript(write=False)
+        whole = self.assert_complete_oracle()
+        self.assertEqual(3, len([e for e in whole.entries if e.kind == "check"]))
+
+    def test_withdrawal_restores_previously_unemitted_closed_list_check(self) -> None:
+        self.declaration_fixture(script="echo skipped")
+        self.declaration_transcript(command="pnpm test")
+        whole = self.assert_complete_oracle()
+        self.assertEqual(
+            ["pnpm test", "pytest tests/direct.py", "pnpm test"],
+            [e.title for e in whole.entries if e.kind == "check"],
+        )
+        self.assertNotIn("pnpm test", [e.title for e in self.pages[0].entries])
+
+    def test_child_write_reconciles_parent_and_sibling_checks(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript(write=False)
+        for name, writes in (("agent-ab12", False), ("agent-cd34", True)):
+            child = Transcript(self.root)
+            child.bash("pnpm typecheck; pytest tests/child.py", "1 passed")
+            for index in range(8):
+                child.prompt(f"Child padding {index}: " + "padding " * 100)
+            if writes:
+                child.write(str(self.root / "package.json"))
+            child.write(str(self.root / f"{name}.py"))
+            for row in child.rows:
+                row["isSidechain"] = True
+            child.save(self.path.with_suffix("") / "subagents" / f"{name}.jsonl")
+        whole = self.assert_complete_oracle()
+        self.assertEqual(3, len([e for e in whole.entries if e.kind == "check"]))
+        self.assertEqual(3, len([e for e in whole.entries if e.kind == "file"]))
+        self.assertTrue(
+            all(e.title.startswith("pytest") for e in whole.entries if e.kind == "check")
+        )
+
+    def test_single_page_withdrawal_needs_no_replay(self) -> None:
+        self.declaration_fixture()
+        self.transcript.prompt("Owned one-page source")
+        self.transcript.bash("pnpm typecheck", "1 passed")
+        self.transcript.write(str(self.root / "package.json"))
+        self.transcript.save(self.path)
+        size = self.path.stat().st_size + len(self.path.read_bytes().splitlines(keepends=True)[0])
+        self.config = dataclasses.replace(self.config, session_summary_source_max_bytes=size)
+        page, reason = self.collect()
+        self.assertEqual("", reason)
+        self.assertTrue(page.coverage.complete)
+        self.assertEqual(size, page.bytes_read)
+
+    def test_actual_file_reads_include_metadata_and_reconciliation_in_one_allowance(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript()
+        child = Transcript(self.root)
+        child.bash("pnpm typecheck; pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        original = builtins.open
+        original_fdopen = os.fdopen
+        reads = [0]
+
+        def metered(handle: Any) -> Any:
+            proxy = mock.MagicMock(wraps=handle)
+            proxy.__enter__.return_value = proxy
+            proxy.__exit__.side_effect = handle.__exit__
+
+            def count(method: Any, size: int = -1) -> bytes:
+                raw: bytes = method(size)
+                reads[0] += len(raw)
+                return raw
+
+            proxy.read.side_effect = lambda size=-1: count(handle.read, size)
+            proxy.readline.side_effect = lambda size=-1: count(handle.readline, size)
+            return proxy
+
+        def opened(file: Any, *args: Any, **kwargs: Any) -> Any:
+            handle = original(file, *args, **kwargs)
+            if str(file) != str(self.path) or "b" not in str(
+                args[0] if args else kwargs.get("mode")
+            ):
+                return handle
+            return metered(handle)
+
+        with (
+            mock.patch("builtins.open", side_effect=opened),
+            mock.patch(
+                "os.fdopen", side_effect=lambda *a, **kw: metered(original_fdopen(*a, **kw))
+            ),
+        ):
+            page, reason = self.collect()
+        self.assertEqual("", reason)
+        self.assertEqual(reads[0], page.bytes_read)
+        self.assertGreater(page.bytes_read, self.path.stat().st_size)
+        self.assertLessEqual(page.bytes_read, self.config.session_summary_source_max_bytes)
+
+    def test_reconciliation_stops_with_no_obsolete_prefix_on_cancel_time_or_byte_cap(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript()
+        original = session_source.read
+        observed_write = [False]
+        used = len(self.path.read_bytes().splitlines(keepends=True)[0])
+        at_write = 0
+
+        def read(*args: Any, **kwargs: Any) -> session_source.SourcePage:
+            nonlocal used, at_write
+            prior = set(kwargs["observed_writes"])
+            page = original(*args, **kwargs)
+            used += page.bytes_read
+            if prior != kwargs["observed_writes"]:
+                observed_write[0] = True
+                at_write = used
+            return page
+
+        for stop in ("cancelled", "source_time"):
+            with self.subTest(stop=stop):
+                observed_write[0] = False
+                used = len(self.path.read_bytes().splitlines(keepends=True)[0])
+                with mock.patch.object(session_source, "read", side_effect=read):
+                    page, reason = self.collect(
+                        check=lambda stop=stop: (
+                            "cancelled" if observed_write[0] and stop == "cancelled" else ""
+                        ),
+                        clock=lambda stop=stop: (
+                            time.monotonic()
+                            + (100 if observed_write[0] and stop == "source_time" else 0)
+                        ),
+                    )
+                self.assertTrue(observed_write[0])
+                self.assertEqual(stop, reason)
+                self.assertFalse(page.coverage.complete)
+                self.assertEqual((), page.entries)
+        self.config = dataclasses.replace(self.config, session_summary_source_max_bytes=at_write)
+        page, reason = self.collect()
+        self.assertEqual("source_bytes", reason)
+        self.assertFalse(page.coverage.complete)
+        self.assertEqual((), page.entries)
+        self.assertEqual(at_write, page.bytes_read)
+
+    def test_rewind_keeps_source_version_guard(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript()
+        original = session_source.read
+        changed = False
+
+        def read(*args: Any, **kwargs: Any) -> session_source.SourcePage:
+            nonlocal changed
+            prior = set(kwargs["observed_writes"])
+            page = original(*args, **kwargs)
+            if not changed and prior != kwargs["observed_writes"]:
+                changed = True
+                self.path.write_text(
+                    self.path.read_text().replace("Owned summary", "Other summary")
+                )
+            return page
+
+        with mock.patch.object(session_source, "read", side_effect=read):
+            page, reason = self.collect()
+        self.assertTrue(changed)
+        self.assertEqual("source_changed", reason)
+        self.assertFalse(page.coverage.complete)
+        self.assertEqual((), page.entries)
+
+    def test_clipped_head_metadata_cannot_certify_a_complete_collection(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript()
+        self.config = dataclasses.replace(self.config, session_summary_source_max_bytes=30)
+        page, reason = self.collect()
+        self.assertEqual("source_bytes", reason)
+        self.assertFalse(page.coverage.complete)
+        self.assertEqual(30, page.bytes_read)
+        self.assertEqual((), page.entries)
+
+    def test_missing_head_time_uses_the_canonical_first_stamped_body_fallback(self) -> None:
+        self.declaration_fixture()
+        self.declaration_transcript(write=False)
+        self.transcript.rows[0].pop("timestamp")
+        self.transcript.save(self.path)
+        self.config = dataclasses.replace(self.config, claude_cwd_scan_lines=1)
+        self.assert_complete_oracle()
+
+    def test_missing_head_fields_keep_anonymous_person_sources_complete(self) -> None:
+        for index in range(8):
+            self.transcript.prompt(f"Anonymous request {index}")
+        for row in self.transcript.rows:
+            row.pop("cwd", None)
+            row.pop("timestamp", None)
+        self.transcript.save(self.path)
+        whole = session_source.read(
+            self.config, str(self.path), "claude", "root", max_bytes=100_000
+        )
+        page, reason = self.collect()
+        self.assertEqual("", reason)
+        self.assertTrue(page.coverage.complete)
+        self.assertEqual(whole.entries, page.entries)
 
     def test_pending_result_and_child_merge_match_one_read_without_duplicates(self) -> None:
         self.config = dataclasses.replace(self.config, session_source_page_max_bytes=1_400)

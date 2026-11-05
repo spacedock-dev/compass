@@ -144,6 +144,45 @@ export function claudeOutline(over: Record<string, unknown> = {}, matched = fals
   };
 }
 
+/* Successive native-shaped outline answers; completeness belongs to this producer, not the summary plan. */
+export function progressiveOutline(stage: 0 | 1 | 2) {
+  const base = claudeOutline();
+  const [opening, latest] = base.blocks;
+  if (!opening || !latest) throw new Error('progress fixture needs opening and latest blocks');
+  const middle = {
+    ...latest,
+    prompt: { fact_id: 'middle', title: 'Check the retry tests before continuing.', at: G - 450 },
+    span: {
+      first: 'middle',
+      last: 'middle-check',
+      entries: stage === 2 ? 4 : 3,
+      from_at: G - 450,
+      to_at: G - 400,
+    },
+    counts: counts({ checks: stage === 2 ? 2 : 1 }),
+  };
+  return {
+    ...base,
+    more_blocks: 2,
+    coverage: {
+      ...COVERAGE,
+      complete: stage === 2,
+      unread:
+        stage === 2
+          ? []
+          : [{ start_offset: 800, end_offset: 1600, reason: 'bytes', stream: 'parent' }],
+    },
+    blocks: stage === 0 ? [opening, latest] : [opening, middle, latest],
+  };
+}
+
+export const PARTIAL_SUMMARY_PLAN = {
+  state: 'absent',
+  reason: '',
+  job: null,
+  plan: { complete: false, reason: '', parts: 2, windows: 1, calls: 4, minutes: 10 },
+};
+
 export function codexOutline() {
   return {
     ...claudeOutline(),

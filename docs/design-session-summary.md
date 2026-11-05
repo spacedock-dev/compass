@@ -1296,19 +1296,24 @@ new lede fails, the prior lede is kept rather than lost.
 ## Source and outline contract
 
 `session_source.read(config, path, harness, sid, after=None, newest=False, max_bytes=None,
-deadline=None)` is a forward, contiguous JSONL read, independent of a reading's retained messages
-and anchors. `deadline` is an absolute monotonic deadline. The module retains nothing between
-calls. Its frozen dataclasses are the contract for the later summary producer:
+deadline=None, observed_writes=None, known_head=None)` is a forward, contiguous JSONL read,
+independent of a reading's retained messages and anchors. `deadline` is an absolute monotonic
+deadline. The module retains nothing between calls. The optional `observed_writes` set supplies
+prior canonical withdrawal context and receives newly observed withdrawals; the collecting caller
+must reconcile earlier facts when it grows. `known_head` supplies already metered directory/time
+metadata. Ordinary callers retain their existing cursor behavior. [Summary collection](#source-collection-for-summaries)
+owns the opt-in reconciliation. The frozen dataclasses are the contract for the summary producer:
 
 | Shape | Fields and meaning |
 | -- | -- |
 | `SourceEntry` | `fact_id`, `fingerprint`, `kind` (`person`, `agent`, `check`, `file`), `actor` (`parent`, `subagent`), `stream`, `at`, masked `title`, optional `result`, display `path`, `folder`, grouping `subject`, and server-only `words`. |
 | `UnreadRegion` | `start_offset`, `end_offset`, `reason`, `stream`. Offsets belong to the named stream, so two transcripts never share a byte coordinate. |
 | `SourceCoverage` | `complete`, `starts_at`, `start_offset`, `end_offset`, `unread`, `agent_replies`, `checks_and_files`, `notes`. |
-| `SourcePage` | `state` (`ok`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, `bytes_read` including boundary probes, server-only `replacements` pairs of retired and replacement fact-id tuples, and `positions` mapping emitted fact ids to physical line offset, call order and fact order. Non-ok pages contain no entries. |
+| `SourcePage` | `state` (`ok`, `limited`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, and `bytes_read` including boundary probes. Server-only `replacements` pairs name retired and replacement fact ids; `positions` and `observations` map emitted fact ids to physical order and the observation offset supporting their value. `replacement_observations` aligns with replacement pairs. `classification_revision` is positive only on canonical outline replay pages. The transient `head_fallback` pair supplies directory/time observations from parent rows for summary collection, and otherwise defaults to `(None, None)`. A limited outline page may carry accepted evidence and a checkpoint; unavailable or stale pages do not. |
 | `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs and physical call positions, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
 | `SourceSnapshot` | Parent `(device, inode, size, mtime_ns)` stamp, `end_offset`, `boundary_digest`, accumulated `(fact_id, fingerprint, at)` entries, read-only `subjects` mapping to latest fact and result/write fingerprint, `pending_calls`, continuation `cursor`, `message_ids`, and boundary hashes measured by this read. `verified_boundary` records a continuation's comparison against its previous boundary. `result_calls` names processed `(stream, call id)` result pairs, including a refused call that retracts an earlier unknown run. `snapshot(page)` returns this same value. |
 | `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
+| `OutlineCheckpoint` | The outline-only continuation: source identity and stamps, sanitized stream frontiers and accepted intervals, pending-call locators, child inventory, permanent gaps, conditional-call locators, the canonical withdrawal union and replay queue. It holds no generic cursor or source payload. `done` and `complete` have separate meanings under [focused grouping](#bounds-and-focused-grouping). |
 
 Message ids come from `record_pages._fact`, including its title normalization and redaction.
 Check and file ids use `project_context._semantic_fact_from_event` on the same tally events the
@@ -1411,14 +1416,34 @@ has passed, that discarded every page holding a call and `page.next` repeated wi
 
 ### Source collection for summaries
 
-A summary start admits its job before reading source text. The worker follows `page.next` through
-the parent and admitted subagent streams without restarting at byte zero. It replaces a pending
+A summary start admits its job before reading source text. Ordinary continuation follows
+`page.next` through the parent and admitted subagent streams. It replaces a pending
 check when its result or command rewrite arrives, including a rewrite with no result yet, and
 removes a retracted or renamed fact. Every carried call retains its physical position even when
 it has emitted no fact, so a later write or newly recognized check precedes intervening messages.
 The collector then merges the accumulated streams using the existing next-entry timestamp rule. Concatenating
 pages would put a child's earlier work after all parent pages; globally sorting would move a
 parent's backward-timestamped message out of its recorded order. Neither is used.
+
+The collector carries the canonical union of observed declaration, reader-listing and script-shell
+withdrawals across pages and admitted streams. If a later page changes that union after earlier
+evidence was accepted, it discards the old classification and rewinds under the known union. The
+union only grows, so rereading the same writes causes no further rewind. The existing classifier
+can both withdraw obsolete checks and restore previously unemitted fallback checks; direct checks
+and file facts keep their own admission rules.
+
+A bounded head scan obtains canonical directory/time metadata once, charging actual reads to the
+job. Missing fields use the canonical fallback from already read parent rows, kept in physical
+order: the first string directory and the first stamped record, not the lowest timestamp. A newly
+resolved fallback also triggers a rewind under the corrected context. Genuinely absent metadata
+remains absent; an anonymous person-only source can still be complete. A budget-clipped head scan
+cannot certify that metadata is absent.
+
+Every head read, content page, boundary check and rewind spends the same job's remaining byte and
+time allowances. Rewinds retain cancellation and memory checks and require the same native stream
+identities and stamps as the pass that triggered them. No obsolete prefix survives an interrupted
+reconciliation as completed evidence. The existing stop reasons apply, and progress byte counts
+include rereads. This changes no model grant, provider call or producer allowance.
 
 Coverage accumulates independently of the producer's windows. A later read clears only the part
 of a byte/time tail it actually reached. Oversized and malformed lines remain gaps. Unreadable
@@ -1428,14 +1453,16 @@ model call; an incomplete update keeps its existing summary rather than claiming
 
 | RuntimeConfig field | Default | Bound |
 | -- | --: | -- |
-| `session_summary_source_max_bytes` | 256 MiB | Actual bytes consumed across all pages, including repeated boundary verification. Four full scan-page allowances permit continuation without an unbounded read. |
+| `session_summary_source_max_bytes` | 256 MiB | Actual source bytes consumed, including head acquisition, content pages, boundary verification and classification rewinds. All share one job allowance. |
 | `session_summary_source_max_seconds` | 30 seconds | Collection allowance, inside the existing 600-second whole-job deadline; fifteen ordinary page allowances. |
-| `session_summary_source_max_memory_bytes` | 64 MiB | Retained Python objects: evidence, indexes, boundary metadata, cursor fragments and pending inputs. Shared objects count once. A bounded incoming page and candidate assembly are transient additional allocations; this is not a process RSS limit. |
+| `session_summary_source_max_memory_bytes` | 64 MiB | Object-size admission covers accepted and candidate evidence, indexes, boundary metadata, cursor fragments, pending inputs, withdrawal/head context, restart identities and the projected page. Shared objects count once. This is not a process RSS limit. |
 
 These are local collection allowances, not measured guarantees that every long session fits.
 The collector checks them on each page and refuses a candidate that exceeds retention, keeping
-the accepted prefix. Each page still shares its byte and time allowance across streams. Boundary
-verification that makes no progress ends with `source_stalled`, rather than repeating forever.
+the accepted prefix only while its classification remains valid. A withdrawal or head-context
+change clears that prefix before replay. Each page still shares its byte and time allowance
+across streams. Boundary verification that makes no progress ends with `source_stalled`, rather
+than repeating forever.
 The cooperative filesystem/parse limit described above still applies.
 
 `source_bytes`, `source_time`, `source_memory` and `source_stalled` name incomplete collection;
@@ -1461,12 +1488,12 @@ job ceilings whose numbers still require measurement:
 | `session_source_page_max_seconds` | 2 seconds | Match the press's time allowance. |
 | `session_source_classify_share` | 0.25 | Hold back a quarter of that time from scanning for classifying what was scanned. |
 | `session_source_line_max_bytes` | 16 MiB | Match the forward index's line skip before masking. |
-| `session_outline_max_bytes` | 2 MiB | A focused poll pays less than a press and names its unread prefix. |
-| `session_outline_head_bytes` | 256 KiB | Read the start of the record for the first prompt's part, once the newest window begins after it. |
-| `session_outline_max_seconds` | 0.25 seconds | Bound work repeated on focused polls. |
+| `session_outline_max_bytes` | 2 MiB | One shared source-byte allowance per focused update, including opening, tail, boundary verification and input rehydration. |
+| `session_outline_head_bytes` | 256 KiB | Opening share of a long record's first update, capped at half that update's byte allowance. |
+| `session_outline_max_seconds` | 0.25 seconds | Cooperative source-work deadline, starting before resolution and slot admission; bounded final inventory validation is described below. |
 | `session_outline_max_blocks` | 20 | Keep recent turns in a bounded focused response. |
 | `session_outline_highlights` | 3 | Bound each block's failures, folders and check examples separately. |
-| `session_outline_cache_limit` | 16 | Match the message-index cache's session count. |
+| `session_outline_cache_limit` | 16 | Bound recently focused session slots and active updates, also capped at 16 by the outline owner. |
 
 `session_outline.build(page, config, opening=None)` returns `state`, `made_by: compass`, `basis:
 grouping`, `reason`, `harness`, `coverage`, `blocks` and `more_blocks`. Each block has `prompt` (fact id,
@@ -1497,38 +1524,101 @@ a pass in that work would fix it, and nothing in the outline can say. The card s
 This is Compass's grouping, never a summary or a completion verdict. Its titles quote the
 existing masked evidence; its result tokens are as the tool reported. It authors no prose about
 whether the requested work was delivered. It requires no model grant and makes no model call.
-`for_session` resolves one transcript and caches only the built, word-free answer and summary plan,
-under a lock. `for_session_with_plan` returns both from that same pass; no source words are cached.
-The cache key includes outline and summary-plan bounds and parent and admitted child stamps; a
-child-only append rebuilds the outline. An outline whose coverage names a `time` region is returned but not cached: the window
-reads forward from its start, so a time-clipped outline lacks the newest turns, and caching it
-would serve that until the transcript changed, for a finished session the life of the process. An unchanged transcript costs a stat, with admission discovery and a stat for each
-owned child when present. Only a focused project/session answer gains `sources.outline`, before
-`for_page`. When the focus matches no single row, `session_outline.unmatched` returns the same
-labelled shape with `state: unavailable` and `reason: session_not_matched`, reading nothing. Session rows gain nothing.
+`for_session` resolves one transcript and retains bounded progress in runtime state.
+`for_session_with_plan` returns the outline and its independently computed summary plan. The cache
+holds sanitized stream frontiers, fact identities and authority, bounded masked display fields,
+the projected answer and the plan. It holds no full source words, raw records, input JSON,
+`SourcePage`, `SourceCursor` or `PendingCall`. Inputs needed for a later result or classification
+are verified offset/end/digest locators, rehydrated only during that update. No provider is called.
+
+The first update previews the parent's opening and latest work within one byte and time allowance.
+Later updates advance one unfinished native stream at a time, round-robin across the parent and
+admitted Claude Code children. Each stream gets the shared allowance on its turn; splitting it
+into small per-stream quotas could leave too little room to verify a boundary and read an input.
+Codex retains its existing person-message-only admission and has no summary plan. Accepted facts
+keep physical order within each stream, even when its clock moves backward. Stream heads merge by
+time, parent first and then stream name at ties. Gaps break groups in their own stream. All retained
+facts contribute to check reconciliation before the display cap is applied.
+
+A later recorded write can withdraw a project declaration, a reader-listed script or a script-shell
+assumption used to classify an earlier check. The source carries the canonical withdrawal union
+across admitted streams and queues affected calls for replay through the same classifier. Replay
+rehydrates verified input, rewrite and result locators under the shared allowance. Its positive
+`classification_revision`, paired with the actual observation offset, outranks ordinary
+revision-zero facts. A later result for a replayed call requests a newer replay; unrelated calls
+stay at zero. Replacements retire only old ids absent from the new result, then upsert new ids.
+This prevents an older opening revisit from overwriting a newer result in the tail.
+
+The canonical parent directory or first stamped record can appear after earlier calls were read.
+While either is unknown, the source retains bounded, verified call locators even for calls that
+emit no facts. When that parent metadata resolves, it queues those calls across admitted streams
+for the same replay. This repairs check admission and file identities under the discovered context;
+it does not add a head scan or another read allowance. Permanently absent metadata keeps the
+canonical unknown-context result, subject to the same dependency and checkpoint caps.
+
+Native EOF is not completion while replay remains. Checkpoint `done` means no more work can be
+attempted for that source generation; `complete` additionally requires every admitted stream to
+finish without permanent gaps and every classification update to settle. A stopped stream or a
+resource refusal can therefore be done and incomplete. `classification_pending` is a zero-width
+classification marker: check counts may change, but it does not claim unread source bytes.
+
+The source and cache each finish with a full inventory comparison under a separate, fixed 25 ms
+validation-only allowance. This permits validating a bounded row whose parsing or masking finished
+after its cooperative work deadline. The stream and directory-entry caps still apply, and this
+allowance admits no additional transcript content. A changed source or an incomplete validation
+still refuses publication; optional summary planning cannot erase valid outline progress merely
+by exhausting the earlier work deadline.
+
+Time cuts retain accepted progress and remain retryable. Only a cold cut with no source bytes,
+accepted intervals, facts or children is discarded. A candidate refused by a source checkpoint or
+retained-state limit keeps the prior accepted frontier, names its limit and stops repeating that
+refused work for the same generation. Skipped input or line regions remain permanent gaps. An
+unreadable child leaves its gap while healthy streams continue. Once `done`
+is true, an unchanged generation reuses the answer after bounded inventory and stat checks.
+
+The key includes the resolved session identity, outline and summary-plan bounds, and parent and
+admitted child stamps. Parent or child appends and rewrites invalidate that generation. Inventory
+is checked before and after each update. A failed inventory cannot establish currentness and
+returns an unavailable result with its reason, without presenting prior storage as current.
+Per-session locks admit one update at a time. A busy caller receives a matching accepted answer
+when one exists, otherwise `outline_busy`; the next refresh can try again. The registry lock covers
+admission and publication only. Slot identity and generation checks prevent an evicted or replaced
+worker from publishing into a newer slot, and active work remains bounded after eviction.
+
+The combined retained graph has allowances of 8 MiB, 131,072 object-accounting units and 32,768
+fact or retirement identities. Normal admission uses half the byte and object allowances to
+reserve room for a refusal carrying the previous answer. Candidate admission and projection also
+account for their bounded scratch. Source checkpoints separately allow 128 streams including the
+parent, 4,096 visited inventory entries, 256 pending calls per stream, 4,096 conditional calls
+across streams, 512 withdrawal identities and 8 MiB of serialized checkpoint metadata. Slot
+identities have their own 64 KiB and 1,024-unit allowance. These are implementation accounting
+limits, not process RSS limits or response-time guarantees; filesystem, parse and masking work
+must return before a cooperative deadline check can run.
+
+Only a focused project/session answer gains `sources.outline`, before `for_page`. When the focus
+matches no single row, `session_outline.unmatched` returns the same labelled shape with
+`state: unavailable` and `reason: session_not_matched`, reading nothing. Session rows gain nothing.
 
 ### The outline always opens at the first prompt
 
-The newest window is bounded in bytes, and a busy session passes the bound in minutes: an
-eight-minute session with about 200 thousand output tokens produced an outline whose only part was
-the work after the window began, headed by no prompt. The window is unchanged. When it begins after
-byte zero (`coverage.start_offset` above zero), `for_session` makes one more read from the start of
-the record, bounded by `session_outline_head_bytes` and by where the window begins so the two never
-overlap, and keeps the first part that starts at a person's message. `build` shows that part first
-with `opening: true`. `partial: true` marks an opening part whose read ended before the next
-prompt, so its counts are a floor; the card says so. A complete read marks its own first part
-`opening` and `partial` is false.
+An eight-minute session with about 200 thousand output tokens once produced an outline whose
+only part was work after the newest window began, headed by no prompt. That established the need
+to retain the opening. The earlier remedy read a separate bounded head beside a one-shot tail;
+the current bootstrap spends one shared allowance on the opening first, then the tail. Subsequent
+updates fill the unread middle and admitted children instead of repeating those two windows.
+Increasing the window alone was rejected because it would move the same cliff to larger sessions
+and charge every focused update for it.
 
-The head spends what the window left of the one `session_outline_max_seconds` budget, so a focused
-poll never waits for more than that once; a head the window left no time for is clipped, and the
-outline is not cached.
+An opening part is marked `opening: true` only when the accepted parent prefix establishes it.
+Child work reached before an unread parent opening is not labelled as the opening. `partial: true`
+marks a first part whose accepted prefix ends before the next prompt while the parent remains
+incomplete, so its counts are a floor. The card says so. A complete read marks its own first part
+as opening without that partial flag.
 
-The head is a second read, not a larger window. A larger window would have moved the same cliff
-to bigger sessions and made every focused poll pay for it; the head costs at most its byte bound
-and is skipped when the window already starts at zero. A head read that its clock clipped is not
-cached, as a clipped window is not. The block cap applies to the newest parts after the opening
-one, so the outline holds at most the cap plus one parts. What lies between the opening part and the
-window is named by `coverage` and is not outlined; Full activity lists it.
+The block cap applies to recent parts after the opening one, so the outline holds at most the cap
+plus one parts. `more_blocks` counts display omissions; it does not mean those facts went unread.
+Coverage separately names unread or refused source regions and pending classification. Full
+activity has its own paging and grouping limits and is not a promise to expose every omitted fact.
 
 The card draws each part as a quoted prompt and short sentences ("The agent replied 7 times, ran 3
 checks and wrote 5 files in frontend/src/drift."), not a line of counts. A count is said once: a
@@ -2036,18 +2126,24 @@ For a matched focused session with no summary and a readable store, `sources.sum
 {"reason":null,"complete":true,"parts":4,"windows":3,"calls":8,"minutes":10,"largest_read":{"windows":32,"window_bytes":16384,"calls":37,"bytes_sent":786432,"seconds":600,"call_timeout":180}}
 ```
 
-It is `session_summary.plan` run on the entries of the outline's own source pass, so it costs no
-second transcript read, no grant and no model call, and it is cached with the outline under the
-same stamps, bounds (the summary ceilings included), eviction and refusal to cache a time-clipped
-read. `parts` is the retained windows plus one lede (zero for no entries) and `windows` is
-`parts - 1`. `reason` is the token the 422 preflight would give for these entries
+It is `session_summary.plan` run on one transient, word-bearing source page from the outline
+update, so it costs no second transcript read, no grant and no model call. The resulting plan is
+cached beside the outline under the same stamps, bounds and eviction. Accumulated display facts
+cannot reconstruct the full words a summary plans over. Later pages keep a prior plan when the new
+one is absent or partial with no larger part count. A partial page with more than one configured
+summary window of message words, or no work time left, defers that optional estimate. The prior
+valid plan remains, or the card uses its entry-count fallback until a plan is available. Small
+complete source pages still supply exact plans. `parts` is the retained windows plus one lede
+(zero for no entries) and `windows` is `parts - 1`. `reason` is the token the 422 preflight would give for these entries
 (`planned_calls`, `planned_bytes`, ...) or null. `largest_read` is exactly the 422 refusal's
 object, so the largest read allowed has one shape wherever it appears, rather than a second
 bytes-only field under the same name.
 
-`complete` is the outline read's own coverage. The outline reads a newest window of at most
-`session_outline_max_bytes`, while a start reads the whole source, so off a partial read `parts`
-is a floor. `calls` is an upper bound on charged attempts: with a complete read it is
+The plan's `complete` belongs only to that transient source page. A small source fully read on
+its first update can supply an exact plan. Accumulated outline completion never promotes a partial
+plan to exact: resumed and child-containing pages remain conservative, even after the outline
+settles. Off a partial page `parts` is a floor. `calls` is an upper bound on charged attempts:
+with a complete read it is
 `min(parts x session_summary_attempts_per_part, session_summary_max_calls)`, because a part makes one retry
 after an empty reply and no more; with a partial read it is the whole-job call ceiling. `minutes`
 is `ceil(min(calls x session_summary_call_timeout, session_summary_max_seconds) / 60)`, an upper
