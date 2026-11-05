@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { openPage } from '../e2e/support/browser.mjs';
-import { openDevelopmentStorybookPage, waitForDevelopmentStorybookReady } from './browser.mjs';
+import { openDevelopmentStorybookPage } from './browser.mjs';
 const root = resolve('.storybook-build');
 const types = {
   '.html': 'text/html',
@@ -105,7 +105,6 @@ try {
   try {
     await opened.page.goto('http://127.0.0.1:6006/?path=/story/ui-button--pending');
     await opened.page.frameLocator('iframe').getByRole('button', { name: 'Saving…' }).waitFor();
-    await waitForDevelopmentStorybookReady(opened.page);
     assert.deepEqual(opened.log.externalRequests, [], 'Development Storybook must stay offline');
     assert.deepEqual(
       opened.log.consoleErrors,
