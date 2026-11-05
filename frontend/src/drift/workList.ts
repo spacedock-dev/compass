@@ -444,6 +444,7 @@ function unlistedClause(count: number, what: string, cited: number, timed = true
 export function workMix(entries: readonly WorkEntry[]): string {
   let directions = 0;
   let copied = 0;
+  let answered = 0;
   let derived = 0;
   let summaries = 0;
   let said = 0;
@@ -451,6 +452,7 @@ export function workMix(entries: readonly WorkEntry[]): string {
   for (const entry of entries) {
     if (personAuthored(entry)) directions += 1;
     else if (readingCopied(entry)) copied += 1;
+    else if (entry.compassTurn === true) answered += 1;
     else if (entry.modelDerived) derived += 1;
     else if (String(entry.type || '') === 'observer_snapshot') summaries += 1;
     /* What the agent said is its account, not an observation of what it did. */ else if (
@@ -464,6 +466,7 @@ export function workMix(entries: readonly WorkEntry[]): string {
     parts.push(`${String(directions)} ${directions === 1 ? 'direction' : 'directions'} you gave`);
   if (said) parts.push(`${String(said)} ${said === 1 ? 'message' : 'messages'} the agent wrote`);
   if (copied) parts.push(`${String(copied)} copied from Compass`);
+  if (answered) parts.push(`${String(answered)} marked as Compass’s answer`);
   if (derived) parts.push(`${String(derived)} model-derived`);
   if (summaries) {
     parts.push(

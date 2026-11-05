@@ -153,6 +153,10 @@ export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
     await expect(await labelled(RAN?.fact_id)).toHaveTextContent('Compass’s answer, not read');
     await expect(await labelled(CHECK?.fact_id)).toBeNull();
     await expect(document.querySelectorAll('[data-next-entry-flag="compass"]')).toHaveLength(2);
+    // The summary line counts the same two entries the rows label.
+    await expect(document.querySelector('.next-cockpit-work-mix')).toHaveTextContent(
+      /2 marked as Compass’s answer/,
+    );
   },
 };
 

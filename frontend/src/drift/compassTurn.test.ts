@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { activityRow } from './activity.test.helper';
 import { arrivedLine, resultStale } from './result';
+import { workMix } from './workList';
 import type { Shape } from './shape';
 import type { WorkEntry } from '../intent/work';
 
@@ -33,5 +34,18 @@ describe('a Compass turn after a reading', () => {
     const entries = [message({ compassTurn: true }), after({ id: 'c2', at: 1200 })];
     expect(resultStale(SHAPE, RAW, ANNOTATION, entries)?.kind).toBe('work');
     expect(arrivedLine(ANNOTATION, entries)).toBe('1 check arrived since this analysis.');
+  });
+});
+
+describe('the Full activity summary line', () => {
+  it('counts the marked entries as Compass’s answer, from the same entries it counts', () => {
+    const entries = [
+      message(),
+      message({ id: 'm2', compassTurn: true }),
+      after({ id: 'c2', compassTurn: true }),
+    ];
+    expect(workMix(entries)).toBe(
+      '3 entries · 1 message the agent wrote · 2 marked as Compass’s answer · 0 observed of what it did.',
+    );
   });
 });

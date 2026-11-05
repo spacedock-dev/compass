@@ -344,8 +344,9 @@ person-authored entries: the command publishes no message entry, as a harness co
 and what the agent ran and repeated in that turn stays in Full activity but is not evidence a
 reading, the Live monitor or a summary reads (2026-11-05). The page is told which facts those are
 (`compass_turn` on the fact, published for the focused session), so Full activity labels each
-`Compass’s answer, not read`, the Drift card does not call a reading stale for them or count them as
-arrived since it, and the scope sentence says a reading leaves out entries so marked. A model-started Compass skill opens no
+`Compass’s answer, not read` and counts them in its summary line, the Drift card does not call a
+reading stale for them or count them as arrived since it, and the scope sentence says a reading
+leaves out entries so marked. A model-started Compass skill opens no
 such turn, and the work around it stays the agent's evidence. Codex's `$compass` is not recognised
 yet: the command is read like any prompt, and the turn it opens is evidence. One thing the turn
 still moves: the agent's launcher run in it counts, for the drift level, as a command run after a
