@@ -534,8 +534,9 @@ number-to-fact-id map. Stored citations contain fact ids only. Each menu line is
 | Check | `ran`, followed by its masked title and `result as the tool reported: failed`, `passed` or `not-recorded`. |
 | File write | `wrote`, followed by the display path. |
 
-Compass's own command typed in the session (`/compass:compass`, any action) is not on the menu, and
-neither is anything in the turn it opens, up to the reader's next typed prompt: the reader asked
+Compass's own command typed in a Claude Code session (`/compass:compass`, any action) is not on the
+menu, and nothing the agent ran or said in the turn it opens is on it either; that turn ends at the
+agent's turn stop, the next prompt of any kind or a message the reader sent mid-turn: the reader asked
 Compass, and what the agent ran and repeated there is Compass's answer (`compass_turns`, amended
 2026-11-05). The outline groups from the same source, so it opens no phase for the command. A
 model-started Compass skill opens no such turn.
