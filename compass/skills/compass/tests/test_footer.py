@@ -33,6 +33,10 @@ NOW = 1_800_000_000.0
 # scheduler as much as the reader (0.352 s observed against 0.2 s + 0.15 s on a loaded macOS lane).
 HANG_GUARD_SEC = 5.0
 
+# `LogicalDeadline` replaces the clock and the `select` of `_read_pipe`, which Windows never runs
+# (its reader is a thread), so the tests that observe the logical budget are POSIX tests.
+POSIX_ONLY = unittest.skipIf(os.name == "nt", "the Windows reader is a thread, not a select loop")
+
 
 def pro_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -54,9 +58,12 @@ def held_open_pipe() -> Iterator[tuple[TextIO, int]]:
     try:
         yield stream, write_fd
     finally:
-        stream.close()
+        # The write end goes first. A reader still blocked in `stream.read()` holds the buffered
+        # stream's lock, so `stream.close()` would wait behind it for as long as the writer stays
+        # open; end of input lets that read return and release the lock.
         with contextlib.suppress(OSError):
             os.close(write_fd)
+        stream.close()
 
 
 class LogicalDeadline:
@@ -143,7 +150,74 @@ def read_guarded(stream: TextIO, deadline: float) -> dict[str, object] | None:
     return box[0]
 
 
+class HangGuardTest(unittest.TestCase):
+    """The outer guard itself, in a child process, because a regression in it is a hung test run.
+
+    A reader blocked in `stream.read()` holds the buffered stream's lock, so closing the stream
+    before the write end blocks behind it for as long as the writer stays open. The guard must
+    fail the test and the cleanup must return. The child runs with a short guard, and this test
+    kills it at a fixed limit, so a regression here is a failure and never a hang.
+    """
+
+    CHILD_LIMIT_SEC = 20.0  # kill limit for the child; the child itself needs about a second
+
+    SCRIPT = """
+import sys
+import time
+
+from tests import test_footer as t
+from compass_runtime import terminal_client
+
+t.HANG_GUARD_SEC = 0.3
+mutant = sys.argv[1]
+if mutant == "blocked-in-stream-read":
+    terminal_client.read_status_line = lambda stream, deadline: stream.read()
+else:
+    def spin(stream, deadline):
+        while True:
+            time.sleep(0.01)
+    terminal_client.read_status_line = spin
+try:
+    with t.held_open_pipe() as (stream, write_fd):
+        t.read_guarded(stream, 0.2)
+except AssertionError as error:
+    print("guard fired:", error)
+else:
+    print("guard did not fire")
+"""
+
+    def run_child(self, mutant: str) -> subprocess.CompletedProcess[str]:
+        package_root = Path(__file__).resolve().parents[1]
+        return subprocess.run(
+            [sys.executable, "-c", self.SCRIPT, mutant],
+            cwd=package_root,
+            capture_output=True,
+            text=True,
+            timeout=self.CHILD_LIMIT_SEC,
+            check=False,
+        )
+
+    def test_a_reader_blocked_in_the_stream_is_failed_by_the_guard_and_cleaned_up(self) -> None:
+        try:
+            done = self.run_child("blocked-in-stream-read")
+        except subprocess.TimeoutExpired:
+            self.fail("cleanup after the guard hung while the reader held the stream lock")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("guard fired", done.stdout)
+
+    def test_a_reader_that_never_returns_is_failed_by_the_guard_and_cleaned_up(self) -> None:
+        try:
+            done = self.run_child("spins-forever")
+        except subprocess.TimeoutExpired:
+            self.fail("cleanup after the guard hung while the reader kept running")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("guard fired", done.stdout)
+
+
 class ReadStatusLineTest(unittest.TestCase):
+    @POSIX_ONLY
     def test_a_pipe_held_open_with_nothing_written_answers_none_at_the_deadline(self) -> None:
         with held_open_pipe() as (stream, write_fd):
             clock = LogicalDeadline(write_fd)
@@ -188,6 +262,7 @@ class ReadStatusLineTest(unittest.TestCase):
 
         self.assertEqual({"session_id": "abc"}, got)
 
+    @POSIX_ONLY
     def test_a_partial_object_that_stalls_answers_none_at_the_deadline(self) -> None:
         with held_open_pipe() as (stream, write_fd):
             os.write(write_fd, b'{"session_id": "ab')
@@ -210,6 +285,7 @@ class ReadStatusLineTest(unittest.TestCase):
         self.assertIsNone(got)
         self.assertGreaterEqual(elapsed, 0.1)
 
+    @POSIX_ONLY
     def test_a_producer_that_keeps_writing_without_finishing_is_cut_off_at_one_deadline(
         self,
     ) -> None:
@@ -229,6 +305,7 @@ class ReadStatusLineTest(unittest.TestCase):
         )  # 0.1 + 0.1 + 0.1 covers the 0.25 budget
         self.assertAlmostEqual(0.3, clock.elapsed)
 
+    @POSIX_ONLY
     def test_the_wait_after_the_last_data_is_only_what_the_budget_has_left(self) -> None:
         with held_open_pipe() as (stream, write_fd):
             os.write(write_fd, b'{"a": ')
