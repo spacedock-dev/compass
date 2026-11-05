@@ -141,6 +141,51 @@ export function storedSummary(over: Record<string, unknown> = {}) {
   };
 }
 
+/* Source collection can finish before every model window has prose; a later freshness read is independent. */
+export function collectedPartialSummary() {
+  return storedSummary({
+    state: 'partial',
+    reason: 'ceiling',
+    blocks: [
+      {
+        ...block('a1', 'a1', 1, [
+          {
+            title: 'Reading the audit',
+            bullets: [bullet('The agent said it read the parser.', 'said', ['a1'])],
+          },
+        ]),
+        span: {
+          text_version: 1,
+          first_offset: 0,
+          first_total: 4000,
+          last_offset: 1800,
+          last_total: 4000,
+        },
+      },
+      {
+        ...gap('a1', 'a1', 1, 'ceiling'),
+        span: {
+          text_version: 1,
+          first_offset: 1800,
+          first_total: 4000,
+          last_offset: 4000,
+          last_total: 4000,
+        },
+      },
+      block('p2', 'a2', 2, [SECOND_PHASE]),
+    ],
+    job: job({ state: 'partial', reason: 'ceiling', part: 3, parts: 3, finished_parts: [1, 2] }),
+    out_of_date: {
+      kind: 'unavailable',
+      reason: 'source_incomplete',
+      affected_blocks: [],
+      new_entries: 0,
+      appendable: false,
+      action: null,
+    },
+  });
+}
+
 /* The outline's record, then the work after the reader's intent was saved: a failed check, which the stored
    reading's departure cites, and one more reply of the agent's. */
 export function summaryRecord() {

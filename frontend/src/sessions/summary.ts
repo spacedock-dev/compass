@@ -130,9 +130,9 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
     'This saved summary used message excerpts. Summarize again to read beyond them.',
   no_entries: () => 'The part of the record Compass read holds no entries to summarize.',
   ceiling: () =>
-    'The summary reached one of its limits on calls, bytes or time, so the parts after it were not read.',
+    'The summary reached one of its limits on calls, bytes or time, so the parts after it were not summarized.',
   refused: () => 'A model call was refused, so the summary stopped.',
-  stopped: () => 'The summary stopped before every part was read.',
+  stopped: () => 'The summary stopped before every part was summarized.',
   output_bound_too_small: () => 'Compass’s summary size limit is too small for any summary.',
 };
 
@@ -448,7 +448,7 @@ export function outOfDateLine(
     return {
       sentence:
         report.kind === 'unchanged'
-          ? 'Some message text remains unread. Update summary continues from where it stopped.'
+          ? 'Some message text remains unsummarized. Update summary continues from where it stopped.'
           : report.newEntries
             ? `${plural(report.newEntries, 'new entry', 'new entries')}${since}.`
             : `A check’s result arrived${since}.`,
@@ -480,6 +480,8 @@ export const FRESHNESS_UNKNOWN =
 /* What the read behind a stored summary did not cover, said once above the phases. */
 export function summaryNotes(summary: StoredSummary, startsAt: string): string[] {
   const notes: string[] = [];
+  if (summary.coverage?.complete && summary.blocks.some((block) => block.gap))
+    notes.push('Source collection finished for this summary. Some parts were not summarized.');
   const fragmented = summary.blocks.some(
     (block) =>
       block.span && (block.span.firstOffset > 0 || block.span.lastOffset < block.span.lastTotal),
@@ -546,8 +548,8 @@ export function progressLine(job: SummaryJob): string {
 export function partsKept(job: SummaryJob): string {
   if (!job.parts) return '';
   return job.finishedParts.length
-    ? `It kept ${plural(job.finishedParts.length, 'part', 'parts')} of ${String(job.parts)}.`
-    : 'It kept no part.';
+    ? `It kept ${plural(job.finishedParts.length, 'finished part', 'finished parts')} of ${String(job.parts)}.`
+    : 'It kept no finished part.';
 }
 
 /* Whether the page posts the one summary a finished session gets when it is opened: summaries on and not at

@@ -44,6 +44,7 @@ import {
   poll,
   script,
   storedSummary,
+  collectedPartialSummary,
 } from './summary.scenario';
 
 /* The What the session has done card with a model-written summary, one story per state it can draw. Each mounts
@@ -219,7 +220,7 @@ export const FragmentedMessageCoverage: Story = {
       'Long messages were split into fragments. Some fragments were not summarized; citations still open the original entries.',
     );
     await expect(region).toHaveTextContent(
-      'Some message text remains unread. Update summary continues from where it stopped.',
+      'Some message text remains unsummarized. Update summary continues from where it stopped.',
     );
     await expect(within(region).getByRole('button', { name: 'Update summary' })).toBeVisible();
     await openPhases(summary);
@@ -227,6 +228,37 @@ export const FragmentedMessageCoverage: Story = {
     await expect(cite).not.toBeNull();
     if (cite) await seeInContext(cite);
     await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'a1')));
+  },
+};
+
+export const CollectedSourceWithUnsummarizedWindows: Story = {
+  render: () => <SummaryPage summary={collectedPartialSummary()} />,
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const summary = await summaryOf(region);
+    await expect(summary).toHaveTextContent(
+      'Source collection finished for this summary. Some parts were not summarized.',
+    );
+    await expect(region.querySelector('[data-next-summary-reason="ceiling"]')).toHaveTextContent(
+      'parts after it were not summarized',
+    );
+    await expect(region.querySelector('[data-next-summary-reason="ceiling"]')).toHaveTextContent(
+      '2 finished parts of 3',
+    );
+    await expect(summary.querySelector('[data-next-summary-gap="ceiling"]')).toHaveTextContent(
+      'This part was not summarized',
+    );
+    await expect(summary).toHaveTextContent(
+      'Some fragments were not summarized; citations still open the original entries.',
+    );
+    await expect(summary).toHaveTextContent('full message coverage was not recorded');
+    await expect(region).toHaveTextContent(FRESHNESS_UNKNOWN);
+    await openPhases(summary);
+    const cite = summary.querySelector<HTMLElement>('[data-next-outline-entry="a1"]');
+    await expect(cite).not.toBeNull();
+    if (cite) await seeInContext(cite);
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'a1')));
+    await expect(script.posts).toEqual([]);
   },
 };
 
@@ -956,7 +988,7 @@ export const Interrupted: Story = {
     const region = await card(canvasElement);
     const none = await stateOf(region, 'none');
     await expect(none.querySelector('[data-next-summary-reason]')).toHaveTextContent(
-      'Compass restarted while this summary ran, so it stopped. It does not resume on its own. It kept no part.',
+      'Compass restarted while this summary ran, so it stopped. It does not resume on its own. It kept no finished part.',
     );
     await expect(within(none).getByRole('button', { name: 'Summarize' })).toBeVisible();
     await expect(region.querySelector('[data-next-outline="blocks"]')).not.toBeNull();
@@ -980,7 +1012,7 @@ export const CancelledKeepsParts: Story = {
     const region = await card(canvasElement);
     const summary = await summaryOf(region);
     await expect(region.querySelector('[data-next-summary-reason]')).toHaveTextContent(
-      'You cancelled the summary. It kept 2 parts of 3.',
+      'You cancelled the summary. It kept 2 finished parts of 3.',
     );
     await expect(summary.querySelector('[data-next-summary-gap="stopped"]')).toHaveTextContent(
       'This part was not summarized: the summary stopped before it.',
