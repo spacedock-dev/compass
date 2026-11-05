@@ -580,16 +580,25 @@ class _Progress:
 
 
 def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]:
+    positions, observations = dict(page.positions), dict(page.observations)
+    identities = {entry.fact_id for entry in page.entries}
+    if (
+        len(identities) != len(page.entries)
+        or len(positions) != len(page.positions)
+        or len(observations) != len(page.observations)
+        or positions.keys() != identities
+        or observations.keys() != identities
+        or any(observed < 0 for observed in observations.values())
+    ):
+        raise ValueError("missing or conflicting source observation")
     for (old, new), observed in zip(page.replacements, page.replacement_observations, strict=True):
         for fact_id in old:
             if fact_id not in new:
                 yield _FactObservation(fact_id, None, (-1, 0, 0), (0, observed))
-    for entry, (fact_id, position), (observed_id, observed) in zip(
-        page.entries, page.positions, page.observations, strict=True
-    ):
-        if entry.fact_id != fact_id or observed_id != fact_id or observed < 0:
-            raise ValueError("missing source observation")
-        yield _FactObservation(fact_id, entry, position, (0, observed))
+    for entry in page.entries:
+        yield _FactObservation(
+            entry.fact_id, entry, positions[entry.fact_id], (0, observations[entry.fact_id])
+        )
 
 
 def _project_parent(

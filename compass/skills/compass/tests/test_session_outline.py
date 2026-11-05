@@ -106,6 +106,32 @@ class OutlineFactBoundsTest(unittest.TestCase):
             elif isinstance(value, str):
                 self.assertNotIn("PRIVATE-WORDS-SENTINEL", value)
 
+    def test_source_metadata_is_joined_by_fact_id_in_any_mapping_order(self) -> None:
+        first, second = self.observation("first").entry, self.observation("second").entry
+        page = self.source.SourcePage(
+            "ok",
+            "claude",
+            "root",
+            (first, second),
+            positions=(("second", (20, 0, 0)), ("first", (10, 0, 0))),
+            observations=(("first", 30), ("second", 40)),
+        )
+        observations = tuple(self.outline._observations(page))
+        self.assertEqual(
+            [("first", (10, 0, 0), (0, 30)), ("second", (20, 0, 0), (0, 40))],
+            [(item.fact_id, item.position, item.authority) for item in observations],
+        )
+        for changes in (
+            {"positions": (("first", (10, 0, 0)), ("first", (20, 0, 0)))},
+            {"positions": (("first", (10, 0, 0)),)},
+            {"observations": (("first", 30), ("other", 40))},
+            {"observations": (("first", 30), ("first", 40))},
+            {"observations": (("first", 30), ("second", -1))},
+            {"entries": (first, first)},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                tuple(self.outline._observations(dataclasses.replace(page, **changes)))
+
     def test_older_pass_and_unknown_cannot_downgrade_newer_failure(self) -> None:
         first = self.outline._merge_facts(None, [self.observation(authority=(0, 100))])
         for status in ("passed", None):
