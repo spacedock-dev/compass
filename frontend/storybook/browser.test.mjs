@@ -37,9 +37,9 @@ async function fixture() {
     traffic.upgrades++;
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
-    // Closing the owned context can reset a socket that the delayed bridge just opened.
+    // Closing the owned context can reset the delayed bridge's socket or break its reply pipe.
     socket.on('error', (error) => {
-      if (error.code !== 'ECONNRESET') throw error;
+      if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE') throw error;
     });
     const accept = createHash('sha1')
       .update(request.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
