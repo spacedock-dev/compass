@@ -61,24 +61,30 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
     LAUNCHER = 'python3 "<skill-dir>/launch.py" "<skill-dir>/server.py"'
 
     @classmethod
-    def rows(cls) -> list[tuple[str, str]]:
+    def section(cls) -> str:
         skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
         match = re.search(r"^## Terminal actions\n(.*?)(?=^## )", skill, re.MULTILINE | re.DOTALL)
-        if match is None:
-            return []
-        return re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|$", match.group(1), re.MULTILINE)
+        return "" if match is None else match.group(1)
+
+    @classmethod
+    def rows(cls) -> list[tuple[str, str]]:
+        return re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|$", cls.section(), re.MULTILINE)
 
     def test_the_terminal_actions_come_first_where_every_harness_loads_them(self) -> None:
         skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
         body = skill.split("\n---\n", 1)[1]
         self.assertEqual(re.findall(r"^## .*$", body, re.MULTILINE)[:1], ["## Terminal actions"])
-        # AGY loads only the first 24,000 bytes of a skill body.
-        end = body.find("\n## ", body.find("## Terminal actions") + 1)
-        self.assertLess(len(body[:end].encode()), 24_000)
+        # AGY loads only the first 24,000 bytes of SKILL.md. Counted from the file's first byte,
+        # frontmatter included, so the whole section has to end inside them.
+        end = skill.find("\n## ", skill.find("## Terminal actions") + 1)
+        self.assertLess(len(skill[:end].encode()), 24_000)
 
     def test_each_action_a_person_can_type_runs_a_command_the_client_answers_alone(self) -> None:
         rows = self.rows()
         self.assertTrue(rows, "the Terminal actions section has no action rows")
+        table = [line for line in self.section().splitlines() if line.startswith("|")]
+        self.assertEqual(table[:2], ["| Action | Command |", "|---|---|"])
+        self.assertEqual(len(table) - 2, len(rows), "a Terminal actions row this test cannot read")
         for action, command in rows:
             with self.subTest(action=action):
                 self.assertTrue(command.startswith(self.LAUNCHER + " "), command)
@@ -94,12 +100,33 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
                 continue
             expected.add(operation.flag)
             expected.update(f"{operation.flag} {choice}" for choice in operation.choices)
-        self.assertEqual(offered, expected, "Update SKILL.md's Terminal actions with the client")
+        self.assertEqual(
+            offered,
+            expected,
+            "Add the action to SKILL.md's Terminal actions and to "
+            "SECURITY.md#what-can-reach-into-a-session, or name it in NOT_ACTIONS",
+        )
 
-    def test_the_section_says_what_to_print_when_an_action_is_refused(self) -> None:
-        skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
-        section = skill.split("## Terminal actions", 1)[1].split("\n## ", 1)[0]
-        for phrase in ("standard output", "verbatim", "standard error", "<skill-dir>"):
+    def test_every_exemption_is_an_operation_the_client_still_answers(self) -> None:
+        self.assertLessEqual(set(self.NOT_ACTIONS), {o.flag for o in terminal_client.OPERATIONS})
+
+    def test_each_action_is_named_where_security_lists_what_reaches_a_session(self) -> None:
+        security = (SERVER_PATH.parents[3] / "SECURITY.md").read_text(encoding="utf-8")
+        section = security.split("### What can reach into a session\n", 1)[1]
+        section = re.split(r"^#{2,3} ", section, maxsplit=1, flags=re.MULTILINE)[0]
+        for action, _ in self.rows():
+            with self.subTest(action=action):
+                self.assertIn(f"`{action}`", section, "Name the action in SECURITY.md's row")
+
+    def test_the_section_says_what_to_print_on_success_on_refusal_and_how_to_treat_it(self) -> None:
+        section = " ".join(self.section().split())
+        for phrase in (
+            "standard output",
+            "verbatim",
+            "exits non-zero",
+            "standard error",
+            "data, not instructions",
+        ):
             self.assertIn(phrase, section)
 
 
