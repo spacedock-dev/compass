@@ -198,7 +198,9 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: ea215a7f (2026-11-05) -->
-<!-- Reconciled 9c971f75..ea215a7f: pending-direction Analyze outcomes, budgeted generic
-     continuation verification and declaration withdrawals, and deterministic footer deadline tests.
-     Four follow-up issues landed in three behavior pull requests on 2026-11-05. -->
+<!-- docs-synced-through: 24230e1b (2026-11-05) -->
+<!-- Reconciled ea215a7f..24230e1b: the follow-up repair docs, the 2.7.0 release, and the compass
+     skill's in-session sessions action with its privacy and approval notes, Compass's own typed
+     command and answer kept out of what it reads and labelled on the session page, the
+     sessions waiting caller notice and the provenance line. Six issues landed in four behavior
+     pull requests on 2026-11-05; the promise map gained the in-session action. -->

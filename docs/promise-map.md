@@ -65,6 +65,14 @@ drift level on any row, a duration only where the board states one, "Stop observ
 needs the dashboard running, and says so and exits non-zero when it is not. It prints nothing the
 board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) has the options.
 
+Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
+print the same list into that session, where the agent can read it too. The first use asks you to
+approve the command. A line above the listed sessions says they are what other sessions said
+about themselves, and the list goes to that session's model provider with the rest of its context, as
+[SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out. Compass leaves the command you
+typed, and the agent's answer to it, out of what it reads about the session, and the session page
+labels that answer. Codex's `$compass` is not recognised that way yet.
+
 Where it stops: a row counts as active only when its harness published evidence that it is. A
 recorded departure may bring an idle session into the first group without adding to the active
 figure. A recent observation cannot prove that a harness is still open, so history keeps identity and scope
