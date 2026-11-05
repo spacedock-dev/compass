@@ -57,9 +57,13 @@ if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;
 
 if (mode === 'test' && process.exitCode === 0) {
-  const offline = spawnSync(process.execPath, ['frontend/storybook/offline.mjs'], {
-    stdio: 'inherit',
-  });
-  if (offline.error) throw offline.error;
-  process.exitCode = offline.status ?? 1;
+  for (const args of [
+    ['--test', 'frontend/storybook/browser.test.mjs'],
+    ['frontend/storybook/offline.mjs'],
+  ]) {
+    const offline = spawnSync(process.execPath, args, { stdio: 'inherit' });
+    if (offline.error) throw offline.error;
+    process.exitCode = offline.status ?? 1;
+    if (process.exitCode !== 0) break;
+  }
 }
