@@ -1,5 +1,6 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from '../../stories/driftCoverage.scenario';
 import { liveMonitorFor } from '../intent/liveMonitor';
 import {
   byAction,
@@ -11,6 +12,7 @@ import {
   LEASE_ROUTE,
   mountDrift,
   press,
+  readingPosts,
   textOf,
 } from './testing';
 
@@ -550,6 +552,44 @@ describe('A marked reading with the Live monitor on', () => {
 });
 
 describe('What the analysis read', () => {
+  it.each([
+    [
+      'excerpted messages',
+      EXCERPTED_DRIFT,
+      'Read all 2 entries',
+      '1 message was read only in part.',
+    ],
+    [
+      'prompt exhaustion',
+      PROMPT_LIMITED_DRIFT,
+      'Read 1 of the 4 entries',
+      '3 checks had no room in the prompt.',
+    ],
+  ] as const)(
+    'keeps %s explicit even without a source-tail gap',
+    async (_name, evidence, count, omission) => {
+      const page = mountDrift({
+        session: stored({ annotation_assessment: { ...ASSESSMENT, ...evidence } }),
+        facts: FACTS,
+      });
+      await page.settle();
+      await page.settle();
+      const session = textOf('[data-next-read-section="session"]');
+      expect(session).toContain(count);
+      expect(session).toContain(omission);
+      expect(session).not.toMatch(/tail.*truncated|outside it|start time was not recorded/i);
+      if (evidence.coverage.unlisted) {
+        expect(session).toContain('2 passes or writes in the window were left unlisted');
+        expect(textOf('[data-next-reading-coverage]')).toContain(
+          '2 passes or writes in the window were not listed.',
+        );
+      } else {
+        expect(session).not.toContain('left unlisted');
+      }
+      expect(readingPosts(page)).toEqual([]);
+    },
+  );
+
   it('groups the model, the intent, the session and what is never read under headings', async () => {
     const page = mountDrift({
       session: stored({
