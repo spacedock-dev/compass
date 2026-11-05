@@ -8074,6 +8074,7 @@ def _declared_scripts(
     *,
     prior_writes: frozenset[str] = frozenset(),
     calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
+    known_start: tuple[float | None] | None = None,
 ) -> project_scripts.Declarations | None:
     """What counts as a check beyond the closed list for the session, or None where nothing can.
 
@@ -8085,6 +8086,9 @@ def _declared_scripts(
     project, which no git read is needed for. A page of the paged reader holds only its own rows,
     so the names an earlier page saw written ride in as `prior_writes`, since no work tree
     comparison covers them.
+
+    `known_start` is supplied by a reader that already admitted the head under its own budget.
+    Its single value may be None: an unknown head time must not fall back to this page's time.
     """
     if not began_in:
         steered = _steered_writes(
@@ -8095,7 +8099,11 @@ def _declared_scripts(
     # `--no-git` means no git command runs in any repository, and this reader runs git reads of
     # its own (`git_status.read_committed`).
     if config.git_probe_enabled:
-        start = claude_data.head_start(config, transcript_path) or _oldest_at(parent)
+        start = (
+            known_start[0]
+            if known_start is not None
+            else claude_data.head_start(config, transcript_path) or _oldest_at(parent)
+        )
         loaded = project_scripts.load(began_in, start) if start is not None else None
         if loaded is not None and not loaded.files:
             loaded = None

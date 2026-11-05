@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 import importlib
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import project_context, record_pages
+from compass_runtime import claude_data, project_context, project_scripts, record_pages
 from compass_runtime.config import build_runtime_config
 
 from . import test_record_pages
@@ -463,6 +464,270 @@ class SessionSourceTest(unittest.TestCase):
             str(self.path), "claude", "root", later, resumed.snapshot.cursor.pending, checkpoint
         )
         self.assertEqual((), finished.calls)
+
+    def test_outline_parent_pages_resolve_a_later_rewrite_and_result_without_raw_state(
+        self,
+    ) -> None:
+        call = self.session.call("Bash", {"command": "python3 -m pytest tests"})
+        for number in range(3):
+            self.session.prompt(f"Before rewrite {number}. " + "padding " * 100)
+        self.session.hook_rewrite(call, hook_stdout("rtk pytest tests"))
+        for number in range(3):
+            self.session.prompt(f"Before result {number}. " + "padding " * 100)
+        self.session.result(call, "1 failed", is_error=False)
+        self.save()
+        checkpoint = None
+        facts: dict[str, Any] = {}
+        positions: dict[str, Any] = {}
+        held_rewrite = False
+        held_unresolved = False
+        transient_words = False
+        for _poll in range(30):
+            page, checkpoint = self.source._read_outline_parent(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                after=checkpoint,
+                max_bytes=3000,
+                deadline=time.monotonic() + 30,
+            )
+            self.assertEqual("ok", page.state)
+            self.assertLessEqual(page.bytes_read, 3000)
+            self.assertIsNone(page.next)
+            self.assertIsNone(page.snapshot)
+            self.assertFalse(page.coverage.complete)  # Children have not been admitted yet.
+            self.assertIsNotNone(checkpoint)
+            retained = repr(checkpoint)
+            for prohibited in (
+                "SourceCursor",
+                "SourceSnapshot",
+                "input_json",
+                "fragment=",
+                "words=",
+            ):
+                self.assertNotIn(prohibited, retained)
+            for old, _new in page.replacements:
+                for fact_id in old:
+                    facts.pop(fact_id, None)
+                    positions.pop(fact_id, None)
+            facts.update((entry.fact_id, entry) for entry in page.entries)
+            positions.update(page.positions)
+            transient_words |= any(entry.words for entry in page.entries)
+            held_unresolved |= bool(checkpoint.calls)
+            held_rewrite |= any(item.rewrite is not None for item in checkpoint.calls)
+            if checkpoint.parent_complete:
+                break
+        assert checkpoint is not None
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertTrue(held_unresolved)
+        self.assertTrue(held_rewrite)
+        self.assertTrue(transient_words)
+        whole = self.read()
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertEqual(dict(whole.positions), positions)
+        self.assertEqual(
+            ["not-recorded"], [entry.result for entry in facts.values() if entry.kind == "check"]
+        )
+
+    def test_outline_parent_whole_api_meters_bytes_and_never_rereads_head_for_git(self) -> None:
+        self.session.prompt("Read the owned transcript.")
+        self.session.bash("pytest tests", "1 passed")
+        self.save()
+        config = dataclasses.replace(self.config, git_probe_enabled=True)
+        actual_bytes = 0
+        open_binary = self.source.runtime_io._open_binary
+
+        def counted_open(*args: Any, **kwargs: Any) -> Any:
+            handle = open_binary(*args, **kwargs)
+            proxy = mock.MagicMock(wraps=handle)
+            proxy.__enter__.return_value = proxy
+            proxy.__exit__.side_effect = handle.__exit__
+
+            def count(method: Any, size: int = -1) -> bytes:
+                nonlocal actual_bytes
+                raw: bytes = method(size)
+                actual_bytes += len(raw)
+                return raw
+
+            proxy.readline.side_effect = lambda size=-1: count(handle.readline, size)
+            proxy.read.side_effect = lambda size=-1: count(handle.read, size)
+            return proxy
+
+        with (
+            mock.patch.object(self.source.runtime_io, "_open_binary", side_effect=counted_open),
+            mock.patch.object(
+                claude_data,
+                "head_cwd",
+                side_effect=AssertionError("unmetered cwd read"),
+            ),
+            mock.patch.object(
+                claude_data,
+                "head_start",
+                side_effect=AssertionError("unmetered timestamp read"),
+            ),
+            mock.patch.object(project_scripts, "load", return_value=None),
+        ):
+            page, checkpoint = self.source._read_outline_parent(
+                config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=10000,
+                deadline=time.monotonic() + 30,
+            )
+        self.assertEqual(self.path.stat().st_size, actual_bytes)
+        self.assertEqual(actual_bytes, page.bytes_read)
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertEqual(str(self.root), checkpoint.head[0])
+        self.assertIsNotNone(checkpoint.head[1])
+        self.assertEqual(
+            ["passed"], [entry.result for entry in page.entries if entry.kind == "check"]
+        )
+
+    def test_outline_parent_keeps_admitted_head_metadata_before_a_later_gap(self) -> None:
+        self.session.prompt("The known opening.")
+        self.session.prompt("A later record after a gap.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        self.path.write_bytes(lines[0] + b"{broken-record}\n" + lines[1])
+        page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=5000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual(str(self.root), checkpoint.head[0])
+        self.assertEqual(
+            self.source.records.parse_ts(self.session.rows[0]["timestamp"]), checkpoint.head[1]
+        )
+        self.assertIn("unreadable_record", [region.reason for region in page.coverage.unread])
+        self.assertFalse(checkpoint.parent_complete)
+
+    def test_outline_parent_verifies_the_prior_boundary_even_when_stamps_match(self) -> None:
+        self.session.prompt("The first owned record.")
+        self.session.prompt("A later owned record.")
+        self.save()
+        _page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=600,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertGreater(checkpoint.frontier.end_offset, 0)
+        self.assertFalse(checkpoint.parent_complete)
+        wrong, wrong_checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "other",
+            after=checkpoint,
+            max_bytes=10000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual("stale", wrong.state)
+        self.assertIsNone(wrong_checkpoint)
+        stamp = self.path.stat()
+        with self.path.open("r+b") as stream:
+            stream.seek(checkpoint.frontier.boundary_start)
+            stream.write(b"[")
+        os.utime(self.path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        stale, stale_checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=10000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual("stale", stale.state)
+        self.assertIsNone(stale_checkpoint)
+
+    def test_outline_parent_retention_limit_refuses_without_publishing_the_checkpoint(self) -> None:
+        self.session.prompt("Owned input with a tiny retained-state allowance.")
+        self.save()
+        with mock.patch.object(self.source, "_OUTLINE_CHECKPOINT_BYTES", 1):
+            page, checkpoint = self.source._read_outline_parent(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=10000,
+                deadline=time.monotonic() + 30,
+            )
+        self.assertEqual("limited", page.state)
+        self.assertIsNone(checkpoint)
+        self.assertEqual((), page.entries)
+        self.assertEqual(
+            ["outline_state_limit"], [region.reason for region in page.coverage.unread]
+        )
+
+    def test_outline_parent_unfinished_eof_is_not_complete_or_retained_as_raw_bytes(self) -> None:
+        self.session.prompt("PRIVATE_UNFINISHED_WORDS " * 10)
+        self.save()
+        self.path.write_bytes(self.path.read_bytes().rstrip(b"\n"))
+        page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=2000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual(self.path.stat().st_size, checkpoint.frontier.offset)
+        self.assertEqual(0, checkpoint.frontier.end_offset)
+        self.assertFalse(checkpoint.parent_complete)
+        self.assertEqual((), page.entries)
+        self.assertIn("partial_line", [region.reason for region in page.coverage.unread])
+        self.assertNotIn("PRIVATE_UNFINISHED_WORDS", repr(checkpoint))
+        again, continued = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=2000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertFalse(continued.parent_complete)
+        self.assertEqual(checkpoint.frontier.offset, continued.frontier.offset)
+        self.assertIn("partial_line", [region.reason for region in again.coverage.unread])
+
+    def test_outline_parent_unfit_line_advances_without_retaining_its_fragment(self) -> None:
+        self.session.prompt("PRIVATE_OVERSIZED_WORDS " * 400)
+        self.session.prompt("A later small record.")
+        self.save()
+        checkpoint = None
+        offsets = []
+        for _poll in range(40):
+            page, checkpoint = self.source._read_outline_parent(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                after=checkpoint,
+                max_bytes=1000,
+                deadline=time.monotonic() + 30,
+            )
+            self.assertLessEqual(page.bytes_read, 1000)
+            self.assertNotIn("PRIVATE_OVERSIZED_WORDS", repr(checkpoint))
+            self.assertNotIn("fragment=", repr(checkpoint))
+            offsets.append(checkpoint.frontier.offset)
+            if page.state == "limited":
+                break
+        self.assertGreater(offsets[-1], 1000)
+        self.assertEqual(sorted(offsets), offsets)
+        self.assertEqual(sorted(set(offsets[:-1])), offsets[:-1])
+        self.assertEqual("limited", page.state)
+        assert checkpoint is not None
+        self.assertFalse(checkpoint.parent_complete)
+        self.assertIn("outline_line_limit", [region.reason for region in page.coverage.unread])
+        self.assertIn("outline_boundary_limit", [region.reason for region in page.coverage.unread])
 
     def test_a_hook_rewrite_on_a_later_page_reads_as_the_whole_file_does(self) -> None:
         for split_result in (False, True):

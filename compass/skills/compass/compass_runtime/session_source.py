@@ -191,16 +191,40 @@ class _OutlineCall:
 
 
 @dataclass(frozen=True)
+class _OutlineFrontier:
+    offset: int
+    end_offset: int
+    boundary_start: int
+    boundary_digest: str
+    line_start: int
+    line_hash: _LineHash = field(default_factory=_LineHash)
+    discarding: bool = False
+
+
+@dataclass(frozen=True)
 class OutlineCheckpoint:
     """Bounded parent-call locators, with no classifier inputs or generic source cursor.
 
-    This primitive does not yet carry a scanning frontier or resume an outline. A caller must
-    keep its transient source page separate and use the same poll budget for rehydration.
+    A caller must keep its transient source page separate from retained outline state.
     """
 
     identity: str
     stamp: Stamp
     calls: tuple[_OutlineCall, ...]
+    frontier: _OutlineFrontier | None = None
+    gaps: tuple[UnreadRegion, ...] = ()
+    head: tuple[str, float | None] = ("", None)
+    listing_writes: tuple[str, ...] = ()
+    stopped: bool = False
+    head_unknown: bool = False
+
+    @property
+    def parent_complete(self) -> bool:
+        return (
+            self.frontier is not None
+            and self.frontier.end_offset == self.stamp[2]
+            and not self.gaps
+        )
 
 
 _OUTLINE_PENDING_LIMIT = 256
@@ -255,9 +279,26 @@ def _outline_checkpoint(
     if len(calls) > _OUTLINE_PENDING_LIMIT:
         raise ValueError("outline_state_limit")
     checkpoint = OutlineCheckpoint(identity, read.cursor.stamp, tuple(calls.values()))
-    if len(json.dumps(asdict(checkpoint)).encode("utf-8")) > _OUTLINE_CHECKPOINT_BYTES:
-        raise ValueError("outline_state_limit")
+    _outline_bound(checkpoint)
     return checkpoint
+
+
+def _outline_bound(checkpoint: OutlineCheckpoint) -> None:
+    # Hash state is fixed-size and opaque. Never deepcopy/serialize a hashlib object or raw input.
+    frontier = checkpoint.frontier
+    metadata = asdict(replace(checkpoint, frontier=None))
+    if frontier is not None:
+        metadata["frontier"] = {
+            "offset": frontier.offset,
+            "end_offset": frontier.end_offset,
+            "boundary_start": frontier.boundary_start,
+            "boundary_digest": frontier.boundary_digest,
+            "line_start": frontier.line_start,
+            "line_hash": frontier.line_hash.digest(),
+            "discarding": frontier.discarding,
+        }
+    if len(json.dumps(metadata).encode("utf-8")) > _OUTLINE_CHECKPOINT_BYTES:
+        raise ValueError("outline_state_limit")
 
 
 def _outline_pending(
@@ -340,6 +381,261 @@ def _outline_rows(
     return rows
 
 
+def _outline_defer(read: _StreamRead, before: StreamCursor, row: int) -> None:
+    if len(read.rows) > row:
+        _cut(read, row)
+    read.cursor = before
+    read.boundaries = [(end, digest) for end, digest in read.boundaries if end <= before.end_offset]
+    read.unread = [region for region in read.unread if region.end_offset <= before.end_offset]
+
+
+def _outline_scan(
+    config: RuntimeConfig,
+    source: BinaryIO,
+    read: _StreamRead,
+    checkpoint: OutlineCheckpoint,
+    budget: _Budget,
+    sid: str,
+) -> tuple[PendingCall, ...]:
+    held: dict[str, PendingCall] = {}
+    allowance = budget.used + budget.remaining
+    while read.cursor.offset < read.cursor.stamp[2]:
+        if budget.remaining <= 0 or time.monotonic() >= budget.scan_deadline:
+            break
+        before, row = read.cursor, len(read.rows)
+        read.unread = [region for region in read.unread if region.reason not in {"bytes", "time"}]
+        _consume(config, source, read, budget, "claude", sid, one_line=True)
+        if read.cursor.fragment:
+            if read.cursor.offset == read.cursor.stamp[2]:
+                read.cursor = replace(read.cursor, fragment=b"")
+            elif before.end_offset == read.start and budget.reason == "bytes":
+                read.cursor = replace(read.cursor, fragment=b"", skipping=True)
+            else:
+                _outline_defer(read, before, row)
+            break
+        read.unread = [
+            replace(region, reason="outline_line_limit")
+            if region.reason == "oversized_line"
+            else region
+            for region in read.unread
+        ]
+        remaining = replace(
+            checkpoint, calls=tuple(c for c in checkpoint.calls if c.call_id not in held)
+        )
+        pending = _outline_pending(read.path, "claude", sid, remaining, read, budget)
+        if pending is None:
+            # A fresh poll needs the preceding boundary, this row and its touched source inputs.
+            _calls, results, rewrites = _rows_of(read.rows[row:], False)
+            lines = {
+                line
+                for call in checkpoint.calls
+                if call.call_id in results.keys() | rewrites.keys()
+                for line in (call.line, call.rewrite)
+                if line is not None
+            }
+            minimum = (
+                read.cursor.end_offset
+                - before.boundary_start
+                + sum(line.end - line.start for line in lines)
+            )
+            if budget.reason == "time" or minimum <= allowance:
+                _outline_defer(read, before, row)
+                break
+            end = read.cursor
+            _outline_defer(read, before, row)
+            read.cursor = end
+            read.unread.append(
+                UnreadRegion(before.end_offset, end.end_offset, "outline_input_limit")
+            )
+        else:
+            held.update((call.call_id, call) for call in pending)
+    return tuple(held.values())
+
+
+def _outline_parent_page(
+    config: RuntimeConfig, path: str, sid: str, checkpoint: OutlineCheckpoint, budget: _Budget
+) -> tuple[SourcePage, OutlineCheckpoint]:
+    frontier = checkpoint.frontier
+    old = (
+        StreamCursor("parent", checkpoint.stamp)
+        if frontier is None
+        else StreamCursor(
+            "parent",
+            checkpoint.stamp,
+            offset=frontier.offset,
+            end_offset=frontier.end_offset,
+            boundary_start=frontier.boundary_start,
+            boundary_digest=frontier.boundary_digest,
+            line_start=frontier.line_start,
+            line_hash=frontier.line_hash,
+            skipping=frontier.discarding,
+        )
+    )
+    follow = "claude" not in observer.DIRECTION_HARNESSES
+    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+        if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
+            raise _SourceChangedError
+        stopped = checkpoint.stopped or old.end_offset - old.boundary_start > budget.remaining
+        verified = None if stopped else _verify(source, old, budget)
+        if verified is not None and verified != old.boundary_digest:
+            raise _SourceChangedError
+        read = _StreamRead(old, old.end_offset, path, initial=old)
+        pending = (
+            _outline_scan(config, source, read, checkpoint, budget, sid)
+            if verified is not None
+            else ()
+        )
+    if stopped and not checkpoint.stopped:
+        read.unread.append(UnreadRegion(old.end_offset, old.stamp[2], "outline_boundary_limit"))
+    head_unknown = (
+        checkpoint.head_unknown
+        or read.cursor.skipping
+        or any(region.reason not in {"bytes", "time"} for region in read.unread)
+    )
+    first_gap = min(
+        (region.start_offset for region in read.unread if region.reason not in {"bytes", "time"}),
+        default=read.cursor.line_start if read.cursor.skipping else read.cursor.offset,
+    )
+    head_rows = [
+        row
+        for row, cursor in zip(read.rows, read.row_cursors, strict=True)
+        if not checkpoint.head_unknown and cursor.line_start < first_gap
+    ]
+    head = (
+        checkpoint.head[0]
+        or next(
+            (row["cwd"] for row in head_rows if isinstance(row.get("cwd"), str) and row["cwd"]), ""
+        ),
+        checkpoint.head[1]
+        if checkpoint.head[1] is not None
+        else next(
+            (
+                stamp
+                for row in head_rows
+                if (stamp := records.parse_ts(row.get("timestamp"))) is not None
+            ),
+            None,
+        ),
+    )
+    transient = SourceCursor(
+        checkpoint.identity,
+        (old,),
+        pending,
+        head[0],
+        listing_writes=frozenset(checkpoint.listing_writes),
+    )
+    read.known_head = head
+    page = _finish(config, path, "claude", sid, [read], [], transient, budget)
+    snapshot = page.snapshot
+    if snapshot is None:
+        raise _SourceChangedError
+    next_checkpoint = replace(
+        _outline_checkpoint(path, "claude", sid, read, snapshot.cursor.pending, checkpoint),
+        frontier=_OutlineFrontier(
+            read.cursor.offset,
+            read.cursor.end_offset,
+            read.cursor.boundary_start,
+            read.cursor.boundary_digest,
+            read.cursor.line_start,
+            read.cursor.line_hash,
+            read.cursor.skipping,
+        ),
+        gaps=(
+            *checkpoint.gaps,
+            *(region for region in read.unread if region.reason not in {"bytes", "time"}),
+        ),
+        head=head,
+        listing_writes=tuple(sorted(snapshot.cursor.listing_writes)),
+        stopped=stopped,
+        head_unknown=head_unknown,
+    )
+    _outline_bound(next_checkpoint)
+    unread = list(next_checkpoint.gaps)
+    if read.cursor.end_offset < checkpoint.stamp[2] and not stopped:
+        reason = (
+            "outline_line_limit"
+            if read.cursor.skipping
+            else "partial_line"
+            if read.cursor.offset == checkpoint.stamp[2]
+            else budget.reason or "bytes"
+        )
+        unread.append(UnreadRegion(read.cursor.end_offset, checkpoint.stamp[2], reason))
+    coverage = SourceCoverage(
+        False,
+        page.entries[0].fact_id if page.entries else None,
+        old.end_offset,
+        read.cursor.end_offset,
+        tuple(unread),
+        "read",
+        "read",
+        ("parent_only",),
+    )
+    return replace(
+        page,
+        state="limited" if stopped else page.state,
+        coverage=coverage,
+        snapshot=None,
+        next=None,
+        bytes_read=budget.used,
+    ), next_checkpoint
+
+
+def _read_outline_parent(
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    *,
+    after: OutlineCheckpoint | None = None,
+    max_bytes: int | None = None,
+    deadline: float | None = None,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    """Internal parent-only admission. Full words in the returned page are transient."""
+    if harness != "claude":
+        return SourcePage("unsupported", harness, sid), None
+    now = time.monotonic()
+    end = now + config.session_source_page_max_seconds if deadline is None else deadline
+    budget = _Budget(
+        max(0, config.session_source_page_max_bytes if max_bytes is None else max_bytes),
+        end,
+        now + max(0.0, end - now) * (1 - config.session_source_classify_share),
+    )
+    identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
+    size = after.stamp[2] if after else 0
+    try:
+        info = os.stat(path)
+        size = info.st_size
+        checkpoint = after or OutlineCheckpoint(identity, _stamp(info), ())
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or checkpoint.identity != identity
+            or checkpoint.stamp != _stamp(info)
+        ):
+            return SourcePage("stale" if after else "unavailable", harness, sid), None
+        return _outline_parent_page(config, path, sid, checkpoint, budget)
+    except _SourceChangedError:
+        return SourcePage("stale", harness, sid, bytes_read=budget.used), None
+    except ValueError as error:
+        if str(error) != "outline_state_limit":
+            raise
+        start = after.frontier.offset if after and after.frontier else 0
+        coverage = SourceCoverage(
+            False,
+            None,
+            start,
+            start,
+            (UnreadRegion(start, size, "outline_state_limit"),),
+            "read",
+            "read",
+            ("parent_only",),
+        )
+        return SourcePage("limited", harness, sid, coverage=coverage, bytes_read=budget.used), None
+    except OSError:
+        return SourcePage(
+            "stale" if after else "unavailable", harness, sid, bytes_read=budget.used
+        ), None
+
+
 class _SourceChangedError(ValueError):
     def __init__(self, verified: tuple[int, str] | None = None) -> None:
         super().__init__("source changed")
@@ -414,6 +710,7 @@ class _StreamRead:
     verified: tuple[int, str] | None = None
     replacements: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
     fact_positions: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    known_head: tuple[str, float | None] | None = None
 
 
 def _verify(source: BinaryIO, old: StreamCursor, budget: _Budget) -> str | None:
@@ -570,6 +867,8 @@ def _consume(
     budget: _Budget,
     harness: str,
     sid: str,
+    *,
+    one_line: bool = False,
 ) -> None:
     cursor = read.cursor
     source.seek(cursor.offset)
@@ -614,6 +913,8 @@ def _consume(
         cursor = replace(cursor, line_start=cursor.offset, skipping=False, line_hash=_LineHash())
         clean = cursor
         chunks, length = [], 0
+        if one_line:
+            break
     read.cursor = replace(cursor, fragment=b"".join(chunks))
     if cursor.offset < cursor.stamp[2]:
         read.unread.append(
@@ -1086,11 +1387,14 @@ def _finish(
     budget: _Budget,
 ) -> SourcePage:
     parent = streams[0]
+    known_head = parent.known_head
     identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
     # The transcript head's directory, as the published tool report resolves written paths, since
     # a newest window may begin after a `cd`. `project_context._session_directory` cites the ruling.
     session_dir = after.session_dir if after else ""
-    if not session_dir and harness == "claude":
+    if known_head is not None:
+        session_dir = known_head[0]
+    elif not session_dir and harness == "claude":
         session_dir = context._session_directory(config, path, parent.rows)  # noqa: SLF001
     pending: list[PendingCall] = []
     groups = []
@@ -1105,6 +1409,7 @@ def _finish(
             parent.rows,
             [stream.rows for stream in streams[1:]],
             prior_writes=after.listing_writes if after else frozenset(),
+            known_start=(known_head[1],) if known_head is not None else None,
         )
         if harness == "claude"
         else None
