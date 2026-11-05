@@ -6862,6 +6862,39 @@ nothing is typed into a terminal, and `send-keys` contradicts that.
 stand unchanged: a measured, session-bound transport; acceptance by the receiving session shown
 working; and evidence that pasting by hand is not enough.
 
+### Amended 2026-11-03 (owner): a terminal action you invoke is read by the session's model
+
+Ruled 2026-11-03. When the reader invokes the compass skill with an action word, such as
+`/compass:compass sessions` in Claude Code or `$compass sessions` in Codex, the agent runs that
+action's read-only launcher operation and prints its output in the session. That output is now part
+of the session's context. The agent reads it on that turn and on every later one, and it goes to the
+session's model provider with the rest of the context. DEC-25 ruled that Compass sends no correction into a
+session. Until now nothing Compass read about other sessions reached a session's model either. This
+relaxes that second point, for these actions only: the reader asked for the answer in that session,
+and may want the agent to act on it when they ask it to.
+
+The privacy change is plain. `sessions` prints the title, the goal or the start of the first prompt, the current activity and
+the resume command of every session on the board, in any harness or project, and `sessions waiting`
+prints the questions waiting on the reader. [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session)
+lists every field. Invoked through the skill, a Codex or
+Cursor session's words reach the model provider of the session the reader typed the action into.
+Before this, `--sessions` printed only to a terminal the reader was looking at.
+
+What does not change:
+
+- Compass sends nothing on its own. An action runs as a command the agent runs in its own tool call
+  when the skill is invoked with an action word, which the agent can also do unasked. The harness's
+  permission prompt asks before a run only in a permission mode that shows one.
+- A correction stays the reader's to copy. No action composes or sends one.
+- Compass never submits a prompt for the reader, never approves a tool call and never edits a
+  session's transcript store.
+- [DEC-16](#dec-16-compass-does-not-write-into-a-session) is not amended. An invoked skill writes
+  nothing into a session on Compass's behalf, and DEC-16's three reopening conditions stand.
+
+An action prints what its client operation prints, and no more. Each action has a row in the skill's
+Terminal actions section, and `TerminalActionsMatchTheClientTest` holds that table to the client's
+operations. [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists the row.
+
 ## DEC-26: four drift levels, and a live estimate after every turn
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
