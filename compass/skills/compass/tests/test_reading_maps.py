@@ -32,6 +32,8 @@ class MapReplyTest(unittest.TestCase):
         *,
         context: Sequence[str] = (),
         max_bytes: int = 3_000,
+        boundary_chars: int = 0,
+        overlap_chars: int = 10,
     ) -> tuple[reading_passes.EvidencePacket, ...]:
         return reading_passes.plan_packets(
             originals,
@@ -41,7 +43,8 @@ class MapReplyTest(unittest.TestCase):
             max_bytes=max_bytes,
             max_passes=16,
             boundary_context=context,
-            overlap_chars=10,
+            overlap_chars=overlap_chars,
+            boundary_chars=boundary_chars,
         ).packets
 
     def reply(
@@ -109,6 +112,83 @@ class MapReplyTest(unittest.TestCase):
         span = result.candidates[0].cites[0].span
         self.assertEqual(row["id"], span.fact_id)
         self.assertEqual((None, None, None), (span.start, span.end, span.total))
+
+    def middle_packet(self) -> reading_passes.EvidencePacket:
+        packets = self.packets(
+            [self.original("work", "abcdefghijkl" * 200)],
+            max_bytes=700,
+            boundary_chars=4,
+            overlap_chars=0,
+        )
+        packet = packets[1]
+        self.assertEqual(1, len(packet.primary))
+        self.assertEqual(2, len(packet.context))
+        return packet
+
+    def rerender(self, packet: reading_passes.EvidencePacket) -> reading_passes.EvidencePacket:
+        header = packet.prompt.split("Range roles (menu, start, end, total):\n", 1)[0]
+        return replace(
+            packet,
+            prompt=header
+            + reading_passes.render_packet_evidence(
+                packet.selection, packet.primary, packet.context
+            ),
+        )
+
+    def test_two_context_edges_bind_through_their_primary_without_losing_roles(self) -> None:
+        packet = self.middle_packet()
+        result = self.parse(self.reply(), packet)
+        self.assertEqual("ok", result.reason)
+        cite = result.candidates[0].cites[0]
+        before, after = packet.context
+        self.assertEqual(packet.primary, cite.primary)
+        self.assertEqual(packet.context, cite.context)
+        self.assertEqual((before.start, after.end), (cite.span.start, cite.span.end))
+        row = packet.selection.entries[0]
+        assert cite.span.start is not None and cite.span.end is not None
+        self.assertEqual(cite.span.end - cite.span.start, len(json.loads(row["agent_words"])))
+        self.assertEqual("ok", self.parse('{"version":1,"candidates":[]}', packet).reason)
+
+    def test_multiple_context_ranges_do_not_admit_gaps_duplicates_or_tampering(self) -> None:
+        packet = self.middle_packet()
+        before, after = packet.context
+        assert before.end is not None and before.total is not None
+        row = packet.selection.entries[0]
+        altered = (
+            replace(packet, primary=packet.primary * 2),
+            replace(packet, context=(*packet.context, before)),
+            replace(packet, context=(replace(before, end=before.end - 1), after)),
+            replace(packet, context=(replace(before, at=999.0), after)),
+            replace(packet, context=(replace(before, fact_id="foreign"), after)),
+            replace(packet, context=(replace(before, total=before.total + 1), after)),
+            replace(packet, context=(replace(before, start=True), after)),
+            replace(packet, context=(replace(before, start=None, end=None, total=None), after)),
+            replace(
+                packet,
+                selection=replace(
+                    packet.selection, entries=({**row, "text_read": row["text_read"] + 1},)
+                ),
+            ),
+            replace(
+                packet,
+                selection=replace(
+                    packet.selection, entries=({**row, "text_total": row["text_total"] + 1},)
+                ),
+            ),
+        )
+        for changed in altered:
+            with self.subTest(primary=changed.primary, context=changed.context):
+                # Make roles/menu internally consistent: the interval/metadata guard
+                # must reject these, rather than merely noticing a stale suffix.
+                bad = (
+                    changed
+                    if any(s.fact_id == "foreign" for s in changed.context)
+                    else self.rerender(changed)
+                )
+                self.assertEqual("invalid-packet", self.parse(self.reply(), bad).reason)
+        changed_words = replace(packet, prompt=packet.prompt.replace("abcdef", "ABCDEF"))
+        self.assertNotEqual(packet.prompt, changed_words.prompt)
+        self.assertEqual("invalid-packet", self.parse(self.reply(), changed_words).reason)
 
     def test_valid_empty_candidates_are_distinct_from_an_unusable_pass(self) -> None:
         packet = self.packets([self.original("one", "Original.")])[0]

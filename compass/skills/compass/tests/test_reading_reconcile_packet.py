@@ -51,6 +51,7 @@ class ReconciliationPacketTest(unittest.TestCase):
         *,
         max_bytes: int = 10000,
         overlap: int = 0,
+        boundary_chars: int = 0,
     ) -> tuple[reading_passes.EvidencePacket, ...]:
         return reading_passes.plan_packets(
             originals,
@@ -60,6 +61,7 @@ class ReconciliationPacketTest(unittest.TestCase):
             max_bytes=max_bytes,
             max_passes=16,
             overlap_chars=overlap,
+            boundary_chars=boundary_chars,
         ).packets
 
     def series(
@@ -255,6 +257,31 @@ class ReconciliationPacketTest(unittest.TestCase):
                 result = self.build(originals, bad)
                 self.assertIsNone(result.packet)
                 self.assertEqual("invalid-candidates", result.reason)
+
+    def test_two_sided_middle_citation_restores_original_and_rejects_changed_context(self) -> None:
+        originals = self.originals([_agent("message", 110, "abcdefghijkl" * 200)])
+        packet = self.packets(originals, max_bytes=700, boundary_chars=4)[1]
+        self.assertEqual(2, len(packet.context))
+        series = self.series((packet,))
+        result = self.build(originals, series)
+        assert result.packet is not None
+        cite = series.index.entries[0].candidate.cites[0]
+        restored = result.packet.selection.entries[0]
+        self.assertEqual("message", restored["id"])
+        self.assertEqual(110, restored["at"])
+        assert originals[0].words is not None
+        self.assertEqual(
+            originals[0].words[cite.span.start : cite.span.end], json.loads(restored["agent_words"])
+        )
+        indexed = series.index.entries[0]
+        changed = replace(cite, context=(replace(cite.context[0], at=999), *cite.context[1:]))
+        candidate = replace(indexed.candidate, cites=(changed,))
+        bad = replace(
+            series, index=replace(series.index, entries=(replace(indexed, candidate=candidate),))
+        )
+        refused = self.build(originals, bad)
+        self.assertIsNone(refused.packet)
+        self.assertEqual("invalid-candidates", refused.reason)
 
     def test_scope_floor_and_missing_passes_survive_even_when_packet_subset_fits(self) -> None:
         originals = self.originals(

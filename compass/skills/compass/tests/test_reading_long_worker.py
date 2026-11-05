@@ -42,6 +42,7 @@ from .test_reading_long_jobs import binding
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
     from types import TracebackType
 
 
@@ -330,6 +331,105 @@ class GuardedNativeWorkerTest(unittest.TestCase):
                         packet.prompt,
                     )
         self.assertEqual((), result.series.plan.uncovered_primary)
+
+    def test_three_fragment_unicode_message_maps_with_both_context_edges(self) -> None:
+        say = self.source.say
+
+        def unicode_message(words: str, *args: Any, **kwargs: Any) -> Any:
+            return say(
+                "🙂" * 260000 if words.startswith("Original ordinary 0.") else words,
+                *args,
+                **kwargs,
+            )
+
+        def save_utf8(path: Path) -> None:
+            path.write_text(
+                "".join(
+                    json.dumps(row, ensure_ascii=False) + "\n" for row in self.source.parent.rows
+                ),
+                encoding="utf-8",
+            )
+
+        with (
+            mock.patch.object(self.source, "say", side_effect=unicode_message),
+            mock.patch.object(self.source.parent, "save", side_effect=save_utf8),
+        ):
+            self.make_case()
+        self.assertLess(max(map(len, self.source.path.read_bytes().splitlines())), 1024 * 1024)
+        real_popen = subprocess.Popen
+        children: list[subprocess.Popen[Any]] = []
+        calls: list[object] = []
+
+        def popen(command: Any, **options: Any) -> Any:
+            if command[0] == "/owned/claude":
+                calls.append(command)
+                command = [
+                    sys.executable,
+                    "-c",
+                    'import sys; sys.stdin.read(); print(\'{"version":1,"candidates":[]}\')',
+                ]
+            child = real_popen(command, **options)
+            children.append(child)
+            return child
+
+        try:
+            with mock.patch.object(subprocess, "Popen", side_effect=popen):
+                result = reading_long_worker.run_maps(
+                    self.config,
+                    self.context,
+                    self.inventory,
+                    self.collection,
+                    row=self.row,
+                    revisions=self.revisions,
+                    clock=lambda: self.now,
+                    runner=supervise.run,
+                    ci_runner=self.ci_runner,
+                    binary_resolver=lambda name: f"/owned/{name}",
+                    environ={},
+                )
+            assert result.series is not None and result.prepared is not None
+            inspected = reading_long_inspection.inspect(
+                self.config, self.active.job.id, now=self.now
+            )
+            assert inspected.exact is not None
+            self.assertEqual(3, len(calls))
+            self.assertEqual(3, inspected.exact.calls)
+            group = self.active.job.group
+            assert group is not None
+            self.assertTrue(group.cleanup_complete())
+            self.assertIsNotNone(group._limit)
+            self.assertEqual(1, len(group._limits))
+            self.assertTrue(all(child.poll() is not None for child in children))
+            self.assertEqual(["ok", "ok", "ok"], [passed.reason for passed in result.series.passes])
+            self.assertEqual("mapped", result.state)
+            self.assertEqual((), result.series.failed_primary)
+            self.assertEqual((), result.series.plan.uncovered_primary)
+            packets = result.series.plan.packets
+            middle = packets[1]
+            self.assertEqual(1, len(middle.primary))
+            self.assertEqual(2, len(middle.context))
+            self.assertEqual({middle.primary[0].fact_id}, {span.fact_id for span in middle.context})
+            ranges = [
+                span
+                for packet in packets
+                for span in packet.primary
+                if span.fact_id == middle.primary[0].fact_id
+            ]
+            self.assertEqual(
+                [(0, ranges[0].end), (ranges[0].end, ranges[1].end), (ranges[1].end, 260000)],
+                [(span.start, span.end) for span in ranges],
+            )
+            self.assertTrue(all(len(packet.prompt.encode("utf-8")) <= 524288 for packet in packets))
+            self.assertLessEqual(
+                result.series.plan.transmitted_bytes, self.plan["limits"]["input_bytes"]
+            )
+            assert result.prepared.final is not None
+            self.assertEqual("whole", result.prepared.final["outcome"])
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
 
     def test_unknown_small_route_known_uncovered_plan_costs_zero(self) -> None:
         self.env.controls = replace(self.env.controls, window_limits=(180000,))

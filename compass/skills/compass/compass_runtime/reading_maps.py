@@ -60,46 +60,54 @@ def _range(span: reading_passes.EvidenceRange) -> bool:
 
 
 def _roles(
-    spans: Sequence[object], rows: dict[str, reading.LedgerEntry]
-) -> dict[str, reading_passes.EvidenceRange] | None:
-    result: dict[str, reading_passes.EvidenceRange] = {}
+    spans: Sequence[object], rows: dict[str, reading.LedgerEntry], *, multiple: bool = False
+) -> dict[str, tuple[reading_passes.EvidenceRange, ...]] | None:
+    result: dict[str, tuple[reading_passes.EvidenceRange, ...]] = {}
     for span in spans:
         if not isinstance(span, reading_passes.EvidenceRange):
             return None
         if (
             not isinstance(span.fact_id, str)
             or span.fact_id not in rows
-            or span.fact_id in result
+            or (span.fact_id in result and (not multiple or span in result[span.fact_id]))
             or not _time(span.at)
             or span.at != rows[span.fact_id]["at"]
             or not _range(span)
         ):
             return None
-        result[span.fact_id] = replace(span)
+        result[span.fact_id] = (*result.get(span.fact_id, ()), replace(span))
     return result
 
 
 def _merged(
     spans: tuple[reading_passes.EvidenceRange, ...], row: reading.LedgerEntry
 ) -> reading_passes.EvidenceRange | None:
-    if not spans or len({s.total for s in spans}) != 1:
-        return None
     message = row["type"] in {"user_message", reading.AGENT_MESSAGE_TYPE}
+    if (
+        not spans
+        or len({s.total for s in spans}) != 1
+        or (not message and spans[0].start is not None)
+    ):
+        return None
     if spans[0].start is None:
         return None if message else replace(spans[0])
-    if not message:
-        return None
     starts = [s.start for s in spans if s.start is not None]
     ends = [s.end for s in spans if s.end is not None]
-    if len(starts) != len(spans) or len(ends) != len(spans) or max(starts) > min(ends):
+    if len(starts) != len(spans) or len(ends) != len(spans):
         return None
-    merged = replace(spans[0], start=min(starts), end=max(ends))
+    ordered = sorted(zip(starts, ends, strict=True))
+    start, end = ordered[0]
+    for next_start, next_end in ordered[1:]:
+        if next_start > end:
+            return None
+        end = max(end, next_end)
+    merged = replace(spans[0], start=start, end=end)
     words = (
         json.loads(row.get("agent_words", ""))
         if row["type"] == reading.AGENT_MESSAGE_TYPE
         else row.get("words")
     )
-    length = max(ends) - min(starts)
+    length = end - start
     if (
         not isinstance(words, str)
         or len(words) != length
@@ -132,13 +140,13 @@ def _bindings(packet: reading_passes.EvidencePacket) -> dict[int, BoundCitation]
         ):
             return None
         rows[identity] = row
-    primary, context = _roles(packet.primary, rows), _roles(packet.context, rows)
+    primary, context = _roles(packet.primary, rows), _roles(packet.context, rows, multiple=True)
     if primary is None or context is None:
         return None
     bound: dict[int, BoundCitation] = {}
     for index, row in packet.selection.by_index().items():
-        own = (primary[row["id"]],) if row["id"] in primary else ()
-        adjacent = (context[row["id"]],) if row["id"] in context else ()
+        own = primary.get(row["id"], ())
+        adjacent = context.get(row["id"], ())
         merged = _merged((*own, *adjacent), row)
         if merged is None:
             return None
