@@ -4130,8 +4130,10 @@ the entry it came from is not kept here. Schema 4 reads versions 1, 2 and 3 with
 their observations, and a record's one `annotation_output` comes forward as line 1. Six line
 fields make an annotated session's records larger than one did, so the size cap below ages other
 sessions out sooner; the owner accepted that on 2026-09-24. Unknown versions still refuse. First prompts come
-from a bounded two-MiB transcript-prefix scan, excluding generated titles, compaction summaries
-and recognized injected messages. An unread prefix yields no first prompt; it never substitutes
+from a bounded two-MiB transcript-prefix scan, excluding generated titles, compaction summaries,
+recognized injected messages and Compass's own command typed in the session (`/compass:compass`,
+any action), which asked Compass rather than the agent. The scan reads past each of those to the
+next prompt the reader typed. An unread prefix yields no first prompt; it never substitutes
 a later record. A first prompt that is a harness control such as `/clear` is still the first
 prompt, published with the boolean `first_prompt_control`. No goal is drafted from it, none is
 drafted from a later record in its place, and the server refuses to adopt it. Source text is at most 140 characters plus the clipping mark. The page names an

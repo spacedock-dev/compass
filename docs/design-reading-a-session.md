@@ -337,7 +337,12 @@ in the code.
 time is after the revision you last saved and after anything you have already settled. Both halves
 are available without a model: the annotation carries an epoch, every fact carries its own, and
 `nextReadingPersonAuthored` already owns the authorship question, so rule 7 and this cannot
-disagree about who wrote a row.
+disagree about who wrote a row. Compass's own command typed in the session (`/compass:compass`,
+any action) and the turn it opens, up to the reader's next typed prompt, are not person-authored
+entries: the command publishes no message entry, as a harness control's does not, and what the
+agent ran and repeated in that turn stays in Full activity but is not evidence a reading, the Live
+monitor or a summary reads (2026-11-05). A model-started Compass skill opens no such turn, and the
+work around it stays the agent's evidence.
 
 **Not detected: whether it conflicts.** Deciding that a later instruction contradicts a typed goal
 is a reading of two prose strings, which DEC-15 refused and DEC-18 permits only behind four
