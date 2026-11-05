@@ -1192,10 +1192,162 @@ class SessionSourceTest(unittest.TestCase):
             opening_bytes=1,
             deadline=time.monotonic() + 30,
         )
-        self.assertIsNone(checkpoint)
+        self.assertIsNotNone(checkpoint)
+        self.assertTrue(checkpoint.parent_complete)
         self.assertEqual(page.entries, wrapped.entries)
+        self.assertTrue(wrapped.coverage.complete)
         self.assertEqual("not_read", wrapped.coverage.agent_replies)
         self.assertEqual("not_admitted", wrapped.coverage.checks_and_files)
+
+    def assert_outline_checkpoint_private(self, checkpoint: Any) -> None:
+        retained = [checkpoint]
+        while retained:
+            value = retained.pop()
+            self.assertNotIsInstance(
+                value,
+                (
+                    bytes,
+                    self.source.SourcePage,
+                    self.source.SourceCursor,
+                    self.source.SourceSnapshot,
+                    self.source.PendingCall,
+                ),
+            )
+            if dataclasses.is_dataclass(value):
+                for field in dataclasses.fields(value):
+                    self.assertNotIn(field.name, {"words", "fragment", "input_json"})
+                    retained.append(getattr(value, field.name))
+            elif isinstance(value, tuple):
+                retained.extend(value)
+
+    def test_codex_outline_continues_person_only_with_first_latest_and_metered_bytes(self) -> None:
+        outline = importlib.import_module("compass_runtime.session_outline")
+        rows = []
+        for number in range(12):
+            rows.extend(
+                [
+                    test_record_pages.RecordPagesTest.record(
+                        number * 3,
+                        harness="codex",
+                        text=f"Owned person phase {number}. PERSON_PRIVATE_SENTINEL "
+                        + "padding " * 25,
+                    ),
+                    test_record_pages.RecordPagesTest.record(
+                        number * 3 + 1,
+                        harness="codex",
+                        role="assistant",
+                        text="ASSISTANT_PRIVATE_SENTINEL " * 8,
+                    ),
+                    {
+                        "type": "response_item",
+                        "timestamp": "2026-10-01T00:00:00Z",
+                        "payload": {
+                            "type": "function_call",
+                            "name": "shell_command",
+                            "call_id": f"call-{number}",
+                            "arguments": '{"command":"TOOL_PRIVATE_SENTINEL pytest tests"}',
+                        },
+                    },
+                ]
+            )
+        self.path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        size = self.path.stat().st_size
+        self.assertGreater(size, 3 * 2400)
+        whole = self.source.read(self.config, str(self.path), "codex", "root", max_bytes=size + 1)
+        self.assertEqual(12, len(whole.entries))
+        expected = [entry.fact_id for entry in whole.entries]
+        facts: dict[str, Any] = {}
+        positions: dict[str, tuple[int, int, int]] = {}
+        checkpoint = None
+        remaining = size
+        frontier_offset = -1
+        with (
+            self._meter_source_reads() as reads,
+            mock.patch.object(self.source, "_tools", side_effect=AssertionError("no Codex tools")),
+            mock.patch.object(
+                self.source, "_outline_pending", side_effect=AssertionError("no Codex inputs")
+            ),
+            mock.patch.object(
+                self.source, "_rows_of", side_effect=AssertionError("no Codex classifier")
+            ),
+        ):
+            for poll in range(50):
+                before = reads[0]
+                page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "codex",
+                    "root",
+                    after=checkpoint,
+                    max_bytes=2400,
+                    opening_bytes=700,
+                    deadline=time.monotonic() + 30,
+                )
+                self.assertIsNotNone(checkpoint, "Codex must return a sanitized continuation")
+                self.assertEqual("ok", page.state)
+                self.assertEqual(reads[0] - before, page.bytes_read)
+                self.assertLessEqual(page.bytes_read, 2400)
+                self.assertEqual("not_read", page.coverage.agent_replies)
+                self.assertEqual("not_admitted", page.coverage.checks_and_files)
+                self.assertEqual(whole.coverage.notes, page.coverage.notes)
+                self.assertTrue(all(entry.kind == "person" for entry in page.entries))
+                self.assertIsNone(outline._plan(page, self.config))
+                self.assertNotIn("ASSISTANT_PRIVATE_SENTINEL", repr(page.entries))
+                self.assertNotIn("TOOL_PRIVATE_SENTINEL", repr(page.entries))
+                self.assertIsNone(page.next)
+                self.assertIsNone(page.snapshot)
+                self.assertEqual(
+                    ((), ("", None), ()),
+                    (
+                        checkpoint.calls,
+                        checkpoint.head,
+                        checkpoint.listing_writes,
+                    ),
+                )
+                for sentinel in (
+                    "PERSON_PRIVATE_SENTINEL",
+                    "ASSISTANT_PRIVATE_SENTINEL",
+                    "TOOL_PRIVATE_SENTINEL",
+                ):
+                    self.assertNotIn(sentinel, repr(checkpoint))
+                self.assert_outline_checkpoint_private(checkpoint)
+                facts.update((entry.fact_id, entry) for entry in page.entries)
+                positions.update(page.positions)
+                missing = size - sum(end - start for start, end in checkpoint.accepted)
+                self.assertLessEqual(missing, remaining)
+                self.assertGreater(checkpoint.frontier.offset, frontier_offset)
+                frontier_offset = checkpoint.frontier.offset
+                remaining = missing
+                if poll == 0:
+                    self.assertTrue({expected[0], expected[-1]} <= facts.keys())
+                    self.assertGreater(missing, 0)
+                if checkpoint.parent_complete:
+                    break
+        assert checkpoint is not None
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertEqual(((0, size),), checkpoint.accepted)
+        self.assertEqual(
+            whole.entries, tuple(facts[key] for key in sorted(facts, key=positions.__getitem__))
+        )
+
+    def test_codex_outline_unfinished_line_retains_no_raw_fragment(self) -> None:
+        record = test_record_pages.RecordPagesTest.record(
+            1, harness="codex", text="UNFINISHED_PRIVATE_SENTINEL " * 8
+        )
+        self.path.write_text(json.dumps(record))
+        page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "codex",
+            "root",
+            max_bytes=2000,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertIsNotNone(checkpoint)
+        self.assertFalse(checkpoint.parent_complete)
+        self.assertEqual((), page.entries)
+        self.assertIn("partial_line", [gap.reason for gap in page.coverage.unread])
+        self.assertNotIn("UNFINISHED_PRIVATE_SENTINEL", repr(checkpoint))
 
     def test_subagent_streams_keep_call_results_and_writes(self) -> None:
         self.session.bash("pytest tests", "1 passed")

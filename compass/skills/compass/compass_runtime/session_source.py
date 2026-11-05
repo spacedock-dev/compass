@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 Stamp = tuple[int, int, int, int]
 HARNESSES = record_pages.HARNESSES
+_CODEX_NOTES = ("codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted")
 
 
 @dataclass(frozen=True)
@@ -248,12 +249,22 @@ def _outline_checkpoint(
 ) -> OutlineCheckpoint:
     """Discard raw pending inputs while the canonical parser's line boundaries are available."""
     identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
-    if read.cursor.stream != "parent" or (
-        after and (after.identity != identity or after.stamp != read.cursor.stamp)
+    if (
+        read.cursor.stream != "parent"
+        or (after and (after.identity != identity or after.stamp != read.cursor.stamp))
+        or (
+            harness == "codex"
+            and (
+                pending
+                or (after and (after.calls or after.head != ("", None) or after.listing_writes))
+            )
+        )
     ):
         raise _SourceChangedError
     if len(pending) > _OUTLINE_PENDING_LIMIT:
         raise ValueError("outline_state_limit")
+    if harness == "codex":
+        return OutlineCheckpoint(identity, read.cursor.stamp, ())
     calls = {call.call_id: call for call in after.calls} if after else {}
     for call_id in read.result_calls:
         calls.pop(call_id, None)
@@ -408,6 +419,7 @@ def _outline_scan(
     checkpoint: OutlineCheckpoint,
     budget: _Budget,
     sid: str,
+    harness: str,
 ) -> tuple[PendingCall, ...]:
     held: dict[str, PendingCall] = {}
     allowance = budget.used + budget.remaining
@@ -416,7 +428,7 @@ def _outline_scan(
             break
         before, row = read.cursor, len(read.rows)
         read.unread = [region for region in read.unread if region.reason not in {"bytes", "time"}]
-        _consume(config, source, read, budget, "claude", sid, one_line=True)
+        _consume(config, source, read, budget, harness, sid, one_line=True)
         if read.cursor.fragment:
             if read.cursor.offset == read.cursor.stamp[2]:
                 read.cursor = replace(read.cursor, fragment=b"")
@@ -438,10 +450,12 @@ def _outline_scan(
             else region
             for region in read.unread
         ]
+        if harness == "codex":
+            continue
         remaining = replace(
             checkpoint, calls=tuple(c for c in checkpoint.calls if c.call_id not in held)
         )
-        pending = _outline_pending(read.path, "claude", sid, remaining, read, budget)
+        pending = _outline_pending(read.path, harness, sid, remaining, read, budget)
         if pending is None:
             # A fresh poll needs the preceding boundary, this row and its touched source inputs.
             _calls, results, rewrites = _rows_of(read.rows[row:], False)
@@ -483,6 +497,7 @@ def _outline_parent_page(
     budget: _Budget,
     *,
     newest: bool = False,
+    harness: str = "claude",
 ) -> tuple[SourcePage, OutlineCheckpoint]:
     frontier = checkpoint.frontier
     old = (
@@ -500,7 +515,7 @@ def _outline_parent_page(
             skipping=frontier.discarding,
         )
     )
-    follow = "claude" not in observer.DIRECTION_HARNESSES
+    follow = harness not in observer.DIRECTION_HARNESSES
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
@@ -526,7 +541,7 @@ def _outline_parent_page(
                 raise _SourceChangedError
             read = _StreamRead(old, old.end_offset, path, initial=old)
         pending = (
-            _outline_scan(config, source, read, checkpoint, budget, sid)
+            _outline_scan(config, source, read, checkpoint, budget, sid, harness)
             if verified is not None
             else ()
         )
@@ -544,7 +559,7 @@ def _outline_parent_page(
     head_rows = [
         row
         for row, cursor in zip(read.rows, read.row_cursors, strict=True)
-        if not checkpoint.head_unknown and cursor.line_start < first_gap
+        if harness == "claude" and not checkpoint.head_unknown and cursor.line_start < first_gap
     ]
     head = (
         checkpoint.head[0]
@@ -570,12 +585,12 @@ def _outline_parent_page(
         listing_writes=frozenset(checkpoint.listing_writes),
     )
     read.known_head = head
-    page = _finish(config, path, "claude", sid, [read], [], transient, budget)
+    page = _finish(config, path, harness, sid, [read], [], transient, budget)
     snapshot = page.snapshot
     if snapshot is None:
         raise _SourceChangedError
     next_checkpoint = replace(
-        _outline_checkpoint(path, "claude", sid, read, snapshot.cursor.pending, checkpoint),
+        _outline_checkpoint(path, harness, sid, read, snapshot.cursor.pending, checkpoint),
         frontier=_OutlineFrontier(
             read.cursor.offset,
             read.cursor.end_offset,
@@ -592,7 +607,7 @@ def _outline_parent_page(
         head=head,
         listing_writes=tuple(sorted(snapshot.cursor.listing_writes)),
         stopped=stopped,
-        head_unknown=head_unknown,
+        head_unknown=head_unknown if harness == "claude" else False,
     )
     _outline_bound(next_checkpoint)
     unread = list(next_checkpoint.gaps)
@@ -611,9 +626,9 @@ def _outline_parent_page(
         old.end_offset,
         read.cursor.end_offset,
         tuple(unread),
-        "read",
-        "read",
-        ("parent_only",),
+        "read" if harness == "claude" else "not_read",
+        "read" if harness == "claude" else "not_admitted",
+        ("parent_only",) if harness == "claude" else _CODEX_NOTES,
     )
     return replace(
         page,
@@ -637,7 +652,7 @@ def _read_outline_parent(
     budget: _Budget | None = None,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
     """Internal parent-only admission. Full words in the returned page are transient."""
-    if harness != "claude":
+    if harness not in HARNESSES:
         return SourcePage("unsupported", harness, sid), None
     now = time.monotonic()
     end = now + config.session_source_page_max_seconds if deadline is None else deadline
@@ -658,7 +673,7 @@ def _read_outline_parent(
             or checkpoint.stamp != _stamp(info)
         ):
             return SourcePage("stale" if after else "unavailable", harness, sid), None
-        return _outline_parent_page(config, path, sid, checkpoint, budget)
+        return _outline_parent_page(config, path, sid, checkpoint, budget, harness=harness)
     except _SourceChangedError:
         return SourcePage("stale", harness, sid, bytes_read=budget.used), None
     except ValueError as error:
@@ -671,9 +686,9 @@ def _read_outline_parent(
             start,
             start,
             (UnreadRegion(start, size, "outline_state_limit"),),
-            "read",
-            "read",
-            ("parent_only",),
+            "read" if harness == "claude" else "not_read",
+            "read" if harness == "claude" else "not_admitted",
+            ("parent_only",) if harness == "claude" else _CODEX_NOTES,
         )
         return SourcePage("limited", harness, sid, coverage=coverage, bytes_read=budget.used), None
     except OSError:
@@ -768,9 +783,11 @@ def _outline_preview(
         checkpoint.accepted[0][0] if checkpoint.accepted else 0,
         checkpoint.accepted[-1][1] if checkpoint.accepted else 0,
         tuple(unread),
-        "read",
-        "read",
-        ("children_not_read",) if children else (),
+        "read" if pages[0].harness == "claude" else "not_read",
+        "read" if pages[0].harness == "claude" else "not_admitted",
+        (("children_not_read",) if children else ())
+        if pages[0].harness == "claude"
+        else _CODEX_NOTES,
     )
     return replace(
         pages[0],
@@ -793,8 +810,9 @@ def _outline_bootstrap(
     after: OutlineCheckpoint | None,
     budget: _Budget,
     opening_bytes: int,
+    harness: str,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
-    stamps = source_stamps(path, "claude")
+    stamps = source_stamps(path, harness)
     stamp = stamps[0][1]
     if stamp is None:
         raise OSError("missing parent")
@@ -803,7 +821,7 @@ def _outline_bootstrap(
         budget.read_limit = budget.used + min(budget.remaining, max(0, opening_bytes))
     try:
         page, checkpoint = _read_outline_parent(
-            config, path, "claude", sid, after=after, budget=budget
+            config, path, harness, sid, after=after, budget=budget
         )
     finally:
         budget.read_limit = None
@@ -812,10 +830,10 @@ def _outline_bootstrap(
     pages = [page]
     if cold_long and budget.reason is None:
         tail, _tail_checkpoint = _outline_parent_page(
-            config, path, sid, checkpoint, budget, newest=True
+            config, path, sid, checkpoint, budget, newest=True, harness=harness
         )
         pages.append(tail)
-    latest = source_stamps(path, "claude")
+    latest = source_stamps(path, harness)
     if latest[0][1] != stamp:
         raise _SourceChangedError
     children = len(stamps) > 1 or len(latest) > 1
@@ -841,7 +859,7 @@ def _read_outline(
     deadline: float | None = None,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
     """Cold opening/tail preview, then forward parent pages; no retained words or child coverage."""
-    if harness != "claude":
+    if harness not in HARNESSES:
         return read(config, path, harness, sid, max_bytes=max_bytes, deadline=deadline), None
     now = time.monotonic()
     end = now + config.session_outline_max_seconds if deadline is None else deadline
@@ -858,6 +876,7 @@ def _read_outline(
             after,
             budget,
             config.session_outline_head_bytes if opening_bytes is None else opening_bytes,
+            harness,
         )
     except _SourceChangedError:
         return SourcePage("stale", harness, sid, bytes_read=budget.used), None
@@ -1716,11 +1735,7 @@ def _finish(
         (declared.listing_writes if declared else frozenset())
         | (after.listing_writes if after else frozenset()),
     )
-    notes = (
-        ("codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted")
-        if harness == "codex"
-        else ()
-    )
+    notes = _CODEX_NOTES if harness == "codex" else ()
     coverage = SourceCoverage(
         not unread and all(stream.start == 0 for stream in streams),
         entries[0].fact_id if entries and (unread or parent.start) else None,
