@@ -7,6 +7,7 @@ import io
 import json
 import math
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -26,7 +27,11 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 NOW = 1_800_000_000.0
-SLACK_SEC = 0.15  # scheduling slack over a deadline on a loaded desk
+# The outer guard only separates "the reader is hung" from "the reader is slow". It is not a
+# deadline check: whether the reader gives up at its own deadline is decided on a controlled
+# clock (`LogicalDeadline`), because a wall-clock upper bound over the deadline measures the
+# scheduler as much as the reader (0.352 s observed against 0.2 s + 0.15 s on a loaded macOS lane).
+HANG_GUARD_SEC = 5.0
 
 
 def pro_payload(**overrides: object) -> dict[str, object]:
@@ -54,15 +59,112 @@ def held_open_pipe() -> Iterator[tuple[TextIO, int]]:
             os.close(write_fd)
 
 
+class LogicalDeadline:
+    """A controlled clock under the reader's real pipe, so the deadline is observed and not timed.
+
+    The reader still `select`s and `os.read`s a real `os.pipe`. Only its clock and the length of an
+    idle wait are replaced: an idle `select` reports the timeout the reader asked for, advances the
+    clock by exactly that much and answers "nothing ready" without sleeping, so the reader sees the
+    deadline arrive and a slow host cannot make it arrive late. Data is never faked: `feed` writes
+    its fragments into the real pipe, one per wait, and each one moves the clock on by `gap`.
+    """
+
+    MAX_WAITS = 100  # a reader that never reaches its deadline fails here instead of looping
+
+    def __init__(self, write_fd: int, *, feed: tuple[bytes, ...] = (), gap: float = 0.0) -> None:
+        self.write_fd = write_fd
+        self.feed = list(feed)
+        self.gap = gap
+        self.now = 1_000.0
+        self.started = self.now
+        self.idle_waits: list[float] = []  # each timeout the reader asked an empty pipe to cover
+        self.overdrawn: list[tuple[float, float]] = []  # (asked, still left) when asked > left
+        self._deadline = 0.0
+        self._real_select = select.select
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(time, name)  # `terminal_client.time.time` and the rest stay real
+
+    def select(
+        self, rlist: list[int], wlist: list[int], xlist: list[int], timeout: float | None = None
+    ) -> tuple[list[int], list[int], list[int]]:
+        if len(rlist) != 1 or wlist or xlist:
+            return self._real_select(rlist, wlist, xlist, timeout)
+        if timeout is None:
+            raise AssertionError("the reader waited on the pipe with no bound")
+        left = self._deadline - (self.now - self.started)
+        if timeout > left + 1e-9:
+            self.overdrawn.append((timeout, left))
+        if self.feed:
+            os.write(self.write_fd, self.feed.pop(0))
+            self.now += self.gap
+        ready = self._real_select(rlist, wlist, xlist, 0)
+        if not ready[0]:
+            self.idle_waits.append(timeout)
+            self.now += timeout
+            if len(self.idle_waits) > self.MAX_WAITS:
+                raise AssertionError("the reader kept waiting past its deadline")
+        return ready
+
+    @property
+    def elapsed(self) -> float:
+        return self.now - self.started
+
+    def read(self, stream: TextIO, deadline: float) -> dict[str, object] | None:
+        self._deadline = deadline
+        with (
+            mock.patch.object(terminal_client, "time", self),
+            mock.patch.object(select, "select", self.select),
+        ):
+            return read_guarded(stream, deadline)
+
+
+def read_guarded(stream: TextIO, deadline: float) -> dict[str, object] | None:
+    """`read_status_line` under an outer wall-clock guard that only tells hung from slow."""
+    box: list[dict[str, object] | None] = []
+    failed: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            box.append(terminal_client.read_status_line(stream, deadline=deadline))
+        except BaseException as error:  # noqa: BLE001 — re-raised on the test's own thread
+            failed.append(error)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(HANG_GUARD_SEC)
+    if worker.is_alive():
+        raise AssertionError(f"read_status_line was still running after {HANG_GUARD_SEC}s")
+    if failed:
+        raise failed[0]
+    return box[0]
+
+
 class ReadStatusLineTest(unittest.TestCase):
     def test_a_pipe_held_open_with_nothing_written_answers_none_at_the_deadline(self) -> None:
+        with held_open_pipe() as (stream, write_fd):
+            clock = LogicalDeadline(write_fd)
+
+            got = clock.read(stream, 0.2)
+
+        self.assertIsNone(got)
+        self.assertEqual([], clock.overdrawn)
+        self.assertAlmostEqual(0.2, sum(clock.idle_waits))
+        self.assertAlmostEqual(0.2, clock.elapsed)
+
+    def test_a_pipe_held_open_with_nothing_written_is_given_up_on_in_real_time(self) -> None:
         with held_open_pipe() as (stream, _write_fd):
             started = time.monotonic()
-            got = terminal_client.read_status_line(stream, deadline=0.2)
+            got = read_guarded(stream, 0.2)
             elapsed = time.monotonic() - started
 
         self.assertIsNone(got)
-        self.assertLess(elapsed, 0.2 + SLACK_SEC)
+        self.assertGreaterEqual(
+            elapsed, 0.1
+        )  # a late wake-up is the scheduler's, an early one is not
 
     def test_json_with_no_newline_and_no_eof_is_answered_without_waiting_for_the_deadline(
         self,
@@ -89,12 +191,55 @@ class ReadStatusLineTest(unittest.TestCase):
     def test_a_partial_object_that_stalls_answers_none_at_the_deadline(self) -> None:
         with held_open_pipe() as (stream, write_fd):
             os.write(write_fd, b'{"session_id": "ab')
+            clock = LogicalDeadline(write_fd)
+
+            got = clock.read(stream, 0.2)
+
+        self.assertIsNone(got)
+        self.assertEqual([], clock.overdrawn)
+        self.assertAlmostEqual(0.2, sum(clock.idle_waits))
+        self.assertAlmostEqual(0.2, clock.elapsed)
+
+    def test_a_partial_object_that_stalls_is_given_up_on_in_real_time(self) -> None:
+        with held_open_pipe() as (stream, write_fd):
+            os.write(write_fd, b'{"session_id": "ab')
             started = time.monotonic()
-            got = terminal_client.read_status_line(stream, deadline=0.2)
+            got = read_guarded(stream, 0.2)
             elapsed = time.monotonic() - started
 
         self.assertIsNone(got)
-        self.assertLess(elapsed, 0.2 + SLACK_SEC)
+        self.assertGreaterEqual(elapsed, 0.1)
+
+    def test_a_producer_that_keeps_writing_without_finishing_is_cut_off_at_one_deadline(
+        self,
+    ) -> None:
+        fragments = (b'{"session_id": "', *(b"ab",) * 9)
+        with held_open_pipe() as (stream, write_fd):
+            clock = LogicalDeadline(write_fd, feed=fragments, gap=0.1)
+
+            got = clock.read(stream, 0.25)
+
+        self.assertIsNone(got)
+        self.assertEqual([], clock.overdrawn)
+        self.assertEqual(
+            [], clock.idle_waits
+        )  # every wait was answered; the budget, not a stall, ended it
+        self.assertEqual(
+            len(fragments) - 3, len(clock.feed)
+        )  # 0.1 + 0.1 + 0.1 covers the 0.25 budget
+        self.assertAlmostEqual(0.3, clock.elapsed)
+
+    def test_the_wait_after_the_last_data_is_only_what_the_budget_has_left(self) -> None:
+        with held_open_pipe() as (stream, write_fd):
+            os.write(write_fd, b'{"a": ')
+            clock = LogicalDeadline(write_fd, feed=(b'"b', b"c"), gap=0.05)
+
+            got = clock.read(stream, 0.2)
+
+        self.assertIsNone(got)
+        self.assertEqual([], clock.overdrawn)
+        self.assertAlmostEqual(0.1, sum(clock.idle_waits))  # 0.2 less the 0.1 the fragments took
+        self.assertAlmostEqual(0.2, clock.elapsed)
 
     def test_a_stream_without_a_file_descriptor_is_read_the_same_way(self) -> None:
         got = terminal_client.read_status_line(io.StringIO('{"a": 1}'))
