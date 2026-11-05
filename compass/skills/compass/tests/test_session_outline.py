@@ -25,7 +25,7 @@ from compass_runtime.state import build_runtime_state
 
 from . import test_record_pages, test_session_source
 from .support import make_server, poll_fast
-from .test_claude_checks import Transcript
+from .test_claude_checks import Transcript, hook_stdout
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1084,7 +1084,7 @@ class SessionOutlineTest(unittest.TestCase):
             return real(*args, **kwargs)
 
         owners = [
-            (self.source, "source_stamps"),
+            (self.source, "_outline_stamps"),
             (self.source, "_read_outline"),
             (self.outline, "_plan"),
             (self.outline, "_project_parent"),
@@ -1375,6 +1375,363 @@ class SessionOutlineTest(unittest.TestCase):
             (result["state"], result["reason"], result["blocks"]),
         )
 
+    def test_repeated_native_rows_are_coalesced_on_cold_resumed_and_appended_polls(self) -> None:
+        transcript = Transcript(self.root)
+        for number in range(18):
+            transcript.prompt(f"Owned duplicate phase {number}: " + "padding " * 70)
+        transcript.rows.insert(5, dict(transcript.rows[4]))
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config,
+            session_outline_max_bytes=4000,
+            session_outline_head_bytes=1000,
+            session_outline_max_blocks=64,
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for expected in (18, 19):
+                for _poll in range(30):
+                    answer, _ = self.outline.for_session_with_plan(
+                        config, self.state, "claude", "root"
+                    )
+                    ids = [block["prompt"]["fact_id"] for block in answer["blocks"]]
+                    self.assertEqual(len(ids), len(set(ids)))
+                    if answer["coverage"]["complete"]:
+                        break
+                self.assertTrue(answer["coverage"]["complete"])
+                self.assertEqual(expected, len(ids))
+                transcript.rows.append(dict(transcript.rows[4]))
+                transcript.prompt("New phase after duplicate append.")
+                transcript.save(self.path)
+
+    def test_child_polls_replay_canonical_order_and_complete_all_streams(self) -> None:
+        parent = Transcript(self.root)
+        for number in range(10):
+            parent.prompt(f"Parent phase {number}. " + "padding " * 60)
+            parent.bash(f"pytest tests/parent_{number}.py", "1 passed")
+        parent.save(self.path)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child_first.py", "1 failed", is_error=True)
+        call = child.call("Bash", {"command": "pytest tests/old.py"})
+        for number in range(5):
+            child.prompt(f"PRIVATE_CHILD_PADDING {number}. " + "private " * 100)
+        child.hook_rewrite(call, hook_stdout("pytest tests/new.py"))
+        for number in range(5):
+            child.prompt(f"PRIVATE_CHILD_AFTER_REWRITE {number}. " + "private " * 100)
+        child.result(call, "1 passed")
+        child.bash("pytest tests/backward.py", "1 passed")
+        child.rows[-2]["timestamp"] = child.rows[0]["timestamp"]
+        sibling = Transcript(self.root)
+        sibling.bash("pytest tests/sibling.py", "1 passed")
+        for transcript, name in (
+            (child, "agent-ab12.jsonl"),
+            (sibling, "workflows/owned/agent-ab12.jsonl"),
+        ):
+            for row in transcript.rows:
+                row["isSidechain"] = True
+            transcript.save(self.path.with_suffix("") / "subagents" / name)
+        config = dataclasses.replace(
+            self.config,
+            session_outline_max_bytes=2800,
+            session_outline_head_bytes=900,
+            session_outline_max_blocks=64,
+        )
+        whole = self.source.read(config, str(self.path), "claude", "root", max_bytes=100000)
+        self.assertTrue(whole.coverage.complete)
+        expected = self.outline.build(whole, config)
+        self.assertEqual(14, sum(block["counts"]["checks"] for block in expected["blocks"]))
+        meter = test_session_source.SessionSourceTest()
+        meter.source = self.source
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(
+                self.source, "source_stamps", side_effect=AssertionError("unbounded inventory")
+            ),
+            meter._meter_source_reads() as reads,
+        ):
+            for _poll in range(80):
+                before = reads[0]
+                result, plan = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                self.assertLessEqual(reads[0] - before, 2800)
+                self.assertTrue(
+                    all(
+                        region["stream"] in {"parent", "agent-ab12", "workflows/owned/agent-ab12"}
+                        for region in result["coverage"]["unread"]
+                    )
+                )
+                if _poll == 0:
+                    self.assertFalse(result["coverage"]["complete"])
+                    self.assertTrue(
+                        any(region["stream"] != "parent" for region in result["coverage"]["unread"])
+                    )
+                if result["coverage"]["complete"]:
+                    break
+            self.assertTrue(
+                result["coverage"]["complete"],
+                "bounded child polls never reached all-stream completion",
+            )
+            self.assertEqual(expected["blocks"], result["blocks"])
+            self.assertIsNotNone(plan)
+            self.assertFalse(plan["complete"])
+            before = reads[0]
+            again, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+            self.assertIs(result, again)
+            self.assertEqual(before, reads[0])
+            retained = next(iter(self.state.session_outlines.values()))
+            self.assertIsNotNone(self.outline._measure_facts(retained, self.outline._FACT_LIMITS))
+            self.assertNotIn("PRIVATE_CHILD_PADDING", repr(retained))
+            self.assertNotIn("PRIVATE_CHILD_AFTER_REWRITE", repr(retained))
+
+    def test_bounded_inventory_refusal_is_explicit_without_unbounded_fallback(self) -> None:
+        self._large(1)
+        child = Transcript(self.root)
+        child.bash("pytest tests", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(
+                self.source,
+                "source_stamps",
+                side_effect=AssertionError("unbounded inventory must not run"),
+            ),
+            mock.patch.object(self.source, "_OUTLINE_STREAM_LIMIT", 1),
+        ):
+            result, plan = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+        self.assertEqual(
+            ("unavailable", "outline_stream_limit"), (result["state"], result["reason"])
+        )
+        self.assertIsNone(result["coverage"])
+        self.assertIsNone(plan)
+        self.assertEqual(0, self.state.session_outline_active)
+
+    def test_child_inventory_time_cut_keeps_frontier_retryable(self) -> None:
+        self._large(1)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            first, _ = self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            checkpoint = next(iter(self.state.session_outlines.values())).extras.checkpoint
+            real = self.source._outline_stamps
+            calls = [0]
+
+            def cut_once(*args: Any, **kwargs: Any) -> Any:
+                calls[0] += 1
+                if calls[0] == 3:
+                    raise ValueError("time")
+                return real(*args, **kwargs)
+
+            with mock.patch.object(self.source, "_outline_stamps", side_effect=cut_once):
+                clipped, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertEqual(first["blocks"], clipped["blocks"])
+            self.assertEqual("time", clipped["reason"])
+            gaps = clipped["coverage"]["unread"]
+            for _retry in range(2):
+                calls[0] = 0
+                with mock.patch.object(self.source, "_outline_stamps", side_effect=cut_once):
+                    repeated, _ = self.outline.for_session_with_plan(
+                        self.config, self.state, "claude", "root"
+                    )
+                self.assertEqual(gaps, repeated["coverage"]["unread"])
+            self.assertIs(
+                checkpoint, next(iter(self.state.session_outlines.values())).extras.checkpoint
+            )
+            for _poll in range(4):
+                complete, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                if complete["coverage"]["complete"]:
+                    break
+            self.assertTrue(
+                complete["coverage"]["complete"], "one time cut permanently stopped child progress"
+            )
+            self.assertEqual(2, sum(block["counts"]["checks"] for block in complete["blocks"]))
+
+    def test_unfinished_child_is_terminal_partial_without_unchanged_rereads(self) -> None:
+        self._large(1)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        path = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        child.save(path)
+        path.write_bytes(path.read_bytes()[:-8])
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(4):
+                answer, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertFalse(answer["coverage"]["complete"])
+            self.assertIn(
+                ("agent-ab12", "partial_line"),
+                [(gap["stream"], gap["reason"]) for gap in answer["coverage"]["unread"]],
+            )
+            with mock.patch.object(
+                self.source,
+                "_read_outline",
+                side_effect=AssertionError("partial EOF must be stat-only"),
+            ):
+                again, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertIs(answer, again)
+
+    def test_child_inventory_deadline_before_or_after_read_is_not_an_http_error(self) -> None:
+        self._large(1)
+        for fail_at in (1, 4):
+            self.state = build_runtime_state(self.config, started=1)
+            calls = [0]
+            real = self.source._outline_stamps
+
+            def deadline(
+                *args: Any,
+                calls: list[int] = calls,
+                fail_at: int = fail_at,
+                real: Any = real,
+                **kwargs: Any,
+            ) -> Any:
+                calls[0] += 1
+                if calls[0] == fail_at:
+                    raise ValueError("time")
+                return real(*args, **kwargs)
+
+            with (
+                self.subTest(fail_at=fail_at),
+                mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+                mock.patch.object(self.source, "_outline_stamps", side_effect=deadline),
+            ):
+                answer, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertEqual(("unavailable", "time"), (answer["state"], answer["reason"]))
+            self.assertIsNone(answer["coverage"])
+            self.assertEqual({}, self.state.session_outlines)
+            self.assertEqual(0, self.state.session_outline_active)
+
+    def test_unreadable_child_does_not_stop_healthy_sibling_progress(self) -> None:
+        self._large(1)
+        directory = self.path.with_suffix("") / "subagents"
+        (directory / "agent-dead.jsonl").mkdir(parents=True)
+        child = Transcript(self.root)
+        child.bash("pytest tests/healthy.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(directory / "agent-eeee.jsonl")
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(4):
+                answer, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertFalse(answer["coverage"]["complete"])
+            self.assertEqual(2, sum(block["counts"]["checks"] for block in answer["blocks"]))
+            self.assertIn(
+                ("agent-dead", "unreadable_subagent"),
+                [(gap["stream"], gap["reason"]) for gap in answer["coverage"]["unread"]],
+            )
+            checkpoint = next(iter(self.state.session_outlines.values())).extras.checkpoint
+            self.assertTrue(checkpoint.children[0][1].stopped)
+            self.assertTrue(checkpoint.children[1][1].parent_complete)
+            with mock.patch.object(
+                self.source,
+                "_read_outline",
+                side_effect=AssertionError("settled gap must not spin"),
+            ):
+                again, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertIs(answer, again)
+
+    def test_child_fix_in_hidden_group_reconciles_opening_failure(self) -> None:
+        parent = Transcript(self.root)
+        parent.prompt("Opening failed check.")
+        parent.bash("pytest tests/shared.py", "1 failed", is_error=True)
+        parent.prompt("Hidden delegated repair.")
+        child = Transcript(self.root)
+        child.seconds = parent.seconds
+        child.bash("pytest tests/shared.py", "1 passed")
+        parent.seconds += 20
+        parent.prompt("Newest phase.")
+        parent.save(self.path)
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        config = dataclasses.replace(self.config, session_outline_max_blocks=1)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(4):
+                answer, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+                if answer["coverage"]["complete"]:
+                    break
+        self.assertTrue(answer["coverage"]["complete"])
+        self.assertEqual(1, answer["more_blocks"])
+        first = answer["blocks"][0]
+        self.assertEqual(
+            (1, 0, 0),
+            (
+                first["counts"]["checks_fixed"],
+                first["counts"]["checks_failed"],
+                first["counts"]["checks_unknown"],
+            ),
+        )
+
+    def test_source_checkpoint_refusal_retains_prior_child_graph_and_is_sticky(self) -> None:
+        self._large(1)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            first, _ = self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            previous = next(iter(self.state.session_outlines.values())).extras.checkpoint
+            with mock.patch.object(self.source, "_OUTLINE_CHECKPOINT_BYTES", 1):
+                limited, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertEqual("outline_state_limit", limited["reason"])
+            self.assertEqual(first["blocks"], limited["blocks"])
+            self.assertIs(
+                previous, next(iter(self.state.session_outlines.values())).extras.checkpoint
+            )
+            with mock.patch.object(
+                self.source,
+                "_read_outline",
+                side_effect=AssertionError("source refusal must not repeat"),
+            ):
+                again, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertIs(limited, again)
+
+    def test_child_work_is_not_the_opening_when_parent_opening_is_unread(self) -> None:
+        parent = Transcript(self.root)
+        parent.prompt("Unread opening. " + "padding " * 600)
+        parent.save(self.path)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=2000, session_outline_head_bytes=500
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(10):
+                answer, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+                if answer["blocks"]:
+                    break
+        self.assertTrue(answer["blocks"])
+        self.assertFalse(answer["coverage"]["complete"])
+        self.assertFalse(any(block["opening"] for block in answer["blocks"]))
+
     def test_cache_rebuilds_for_child_only_append(self) -> None:
         parent = Transcript(self.root)
         parent.prompt("Delegate synthetic checks.")
@@ -1386,14 +1743,36 @@ class SessionOutlineTest(unittest.TestCase):
             row["isSidechain"] = True
         child.save(path)
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
-            first = self.outline.for_session(self.config, self.state, "claude", "root")
+            for _poll in range(4):
+                first = self.outline.for_session(self.config, self.state, "claude", "root")
+                if first["coverage"]["complete"]:
+                    break
+            self.assertTrue(first["coverage"]["complete"])
             child.bash("pytest tests", "1 failed", is_error=True)
             for row in child.rows:
                 row["isSidechain"] = True
             child.save(path)
-            later = self.outline.for_session(self.config, self.state, "claude", "root")
+            for _poll in range(4):
+                later = self.outline.for_session(self.config, self.state, "claude", "root")
+                if later["coverage"]["complete"]:
+                    break
+            self.assertTrue(later["coverage"]["complete"])
         self.assertIsNot(first, later)
         self.assertEqual(1, sum(block["counts"]["checks_failed"] for block in later["blocks"]))
+        rewritten = Transcript(self.root)
+        rewritten.bash("pytest tests", "1 passed")
+        for row in rewritten.rows:
+            row["isSidechain"] = True
+        rewritten.save(path)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(4):
+                updated = self.outline.for_session(self.config, self.state, "claude", "root")
+                if updated["coverage"]["complete"]:
+                    break
+        self.assertTrue(updated["coverage"]["complete"])
+        self.assertIsNot(later, updated)
+        self.assertEqual(0, sum(block["counts"]["checks_failed"] for block in updated["blocks"]))
+        self.assertEqual(1, sum(block["counts"]["checks"] for block in updated["blocks"]))
 
     def check_handler(self, handler: Any) -> None:
         application = handler.server.application

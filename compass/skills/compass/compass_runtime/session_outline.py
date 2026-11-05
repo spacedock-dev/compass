@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import heapq
 import math
 import os
 import sys
@@ -277,23 +278,26 @@ def _merge_facts(
 
 
 def _ordered_entries(graph: _FactGraph) -> tuple[session_source.SourceEntry, ...]:
-    """Project parent facts in physical order; cross-stream replay belongs to integration."""
-    return tuple(
-        session_source.SourceEntry(
-            fact.fact_id,
-            fact.fingerprint,
-            fact.kind,
-            fact.actor,
-            fact.stream,
-            fact.at,
-            fact.title,
-            fact.result,
-            fact.path,
-            fact.folder,
-            fact.subject,
+    """Preserve each stream's physical order; merge heads with parent-first clock ties."""
+    groups: dict[str, list[session_source.SourceEntry]] = {}
+    for fact in sorted(graph.facts.values(), key=lambda fact: fact.position):
+        groups.setdefault(fact.stream, []).append(
+            session_source.SourceEntry(
+                fact.fact_id,
+                fact.fingerprint,
+                fact.kind,
+                fact.actor,
+                fact.stream,
+                fact.at,
+                fact.title,
+                fact.result,
+                fact.path,
+                fact.folder,
+                fact.subject,
+            )
         )
-        for fact in sorted(graph.facts.values(), key=lambda fact: (fact.stream, fact.position))
-    )
+    streams = sorted(groups, key=lambda stream: (stream != "parent", stream))
+    return tuple(heapq.merge(*(groups[stream] for stream in streams), key=lambda entry: entry.at))
 
 
 @dataclass(frozen=True)
@@ -441,6 +445,7 @@ def build(
     opening: _Opening | None = None,
     *,
     breaks: frozenset[str] = frozenset(),
+    opening_known: bool | None = None,
 ) -> dict[str, Any]:
     """One block per person's message, opening with the session's first one.
 
@@ -452,7 +457,11 @@ def build(
     head = opening
     # A window that began after byte zero has no known first prompt: when the head read found none
     # (a first line past its budget), the window's first part is an ordinary part, not the opening.
-    from_start = page.coverage is None or page.coverage.start_offset == 0
+    from_start = (
+        (page.coverage is None or page.coverage.start_offset == 0)
+        if opening_known is None
+        else opening_known
+    )
     if head is None and groups and from_start:
         head = _Opening(tuple(groups[0]), partial=False)
         groups = groups[1:]
@@ -509,43 +518,6 @@ def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
     }
 
 
-def _head(
-    config: RuntimeConfig, path: str, harness: str, sid: str, window_start: int, deadline: float
-) -> tuple[_Opening | None, bool]:
-    """The first prompt's part, read from byte zero up to where the newest window begins.
-
-    A busy session passes the window's byte bound in minutes, and the window then starts after its
-    own first prompt. The read stops at the window so the two never overlap, and it spends what is
-    left of the window's `deadline` rather than a second budget of its own. Returns whether its
-    clock clipped it, which keeps the outline from being cached.
-    """
-    budget = min(max(0, config.session_outline_head_bytes), window_start)
-    if budget <= 0:
-        return None, False
-    page = session_source.read(
-        config,
-        path,
-        harness,
-        sid,
-        max_bytes=budget,
-        deadline=deadline,
-    )
-    clipped = page.coverage is not None and any(
-        region.reason == "time" for region in page.coverage.unread
-    )
-    if page.state != "ok":
-        return None, clipped
-    gap = budget < window_start or clipped
-    groups = _groups(page.entries)
-    for number, group in enumerate(groups):
-        if group[0].kind == "person":
-            # Later groups the head read held are dropped from the outline, so a pass in one of
-            # them cannot be shown: the opening part's failures are then unknown, not failing.
-            dropped = number < len(groups) - 1
-            return _Opening(tuple(group), number == len(groups) - 1, gap or dropped), clipped
-    return None, clipped
-
-
 def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, Any] | None:
     if page.state != "ok" or page.harness != "claude":
         return None
@@ -581,10 +553,10 @@ class _Progress:
 
 def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]:
     positions, observations = dict(page.positions), dict(page.observations)
-    identities = {entry.fact_id for entry in page.entries}
+    entries = {entry.fact_id: entry for entry in page.entries}
+    identities = entries.keys()
     if (
-        len(identities) != len(page.entries)
-        or len(positions) != len(page.positions)
+        len(positions) != len(page.positions)
         or len(observations) != len(page.observations)
         or positions.keys() != identities
         or observations.keys() != identities
@@ -595,7 +567,7 @@ def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]
         for fact_id in old:
             if fact_id not in new:
                 yield _FactObservation(fact_id, None, (-1, 0, 0), (0, observed))
-    for entry in page.entries:
+    for entry in entries.values():
         yield _FactObservation(
             entry.fact_id, entry, positions[entry.fact_id], (0, observations[entry.fact_id])
         )
@@ -609,29 +581,43 @@ def _project_parent(
     opening = None
     breaks: set[str] = set()
     if checkpoint and checkpoint.accepted:
-        for start, _end in checkpoint.accepted[1:]:
-            following = next(
-                (entry for entry in entries if graph.facts[entry.fact_id].position[0] >= start),
-                None,
-            )
-            if following:
-                breaks.add(following.fact_id)
+        for current in (checkpoint, *(child for _, child in checkpoint.children)):
+            for start, _end in current.accepted:
+                if start == 0:
+                    continue
+                following = next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.stream == current.stream
+                        and graph.facts[entry.fact_id].position[0] >= start
+                    ),
+                    None,
+                )
+                if following:
+                    breaks.add(following.fact_id)
         if checkpoint.accepted[0][0] == 0:
             prefix = [
                 entry
                 for entry in entries
-                if graph.facts[entry.fact_id].position[0] < checkpoint.accepted[0][1]
+                if entry.stream == "parent"
+                and graph.facts[entry.fact_id].position[0] < checkpoint.accepted[0][1]
             ]
             groups = _groups(prefix)
-            if groups:
+            combined = _groups(entries, frozenset(breaks))
+            if groups and combined:
                 opening = _Opening(
-                    tuple(groups[0]),
+                    tuple(combined[0]),
                     partial=len(groups) == 1 and not checkpoint.parent_complete,
                     gap=bool(coverage and coverage.unread),
                 )
-                entries = entries[len(groups[0]) :]
+                entries = entries[len(combined[0]) :]
     page = session_source.SourcePage("ok", harness, sid, entries, coverage)
-    return build(page, config, opening, breaks=frozenset(breaks))
+    known = bool(
+        checkpoint
+        and (checkpoint.parent_complete or (checkpoint.accepted and checkpoint.accepted[0][0] == 0))
+    )
+    return build(page, config, opening, breaks=frozenset(breaks), opening_known=known)
 
 
 def _limit_parent(
@@ -651,7 +637,11 @@ def _limit_parent(
     end = old.checkpoint.stamp[2] if old and old.checkpoint else start
     region = session_source.UnreadRegion(start, end, reason)
     coverage = (
-        replace(coverage, complete=False, unread=(*coverage.unread, region))
+        replace(
+            coverage,
+            complete=False,
+            unread=coverage.unread if region in coverage.unread else (*coverage.unread, region),
+        )
         if coverage
         else session_source.SourceCoverage(
             False,
@@ -674,7 +664,9 @@ def _limit_parent(
     public_coverage["notes"] = list(public_coverage["notes"])
     answer.update(reason=reason, coverage=public_coverage)
     result = (answer, old.result[1] if old else None)
-    progress = _Progress(identity, old.checkpoint if old else None, coverage, result, terminal=True)
+    progress = _Progress(
+        identity, old.checkpoint if old else None, coverage, result, terminal=reason != "time"
+    )
     admitted = _merge_facts(previous, (), extras=progress, limits=_FACT_LIMITS)
     return result, admitted.graph if not admitted.limited else None
 
@@ -701,24 +693,27 @@ def _advance_parent(
         opening_bytes=min(config.session_outline_head_bytes, config.session_outline_max_bytes // 2),
         deadline=deadline,
     )
-    if page.state == "limited":
-        return _limit_parent(previous, identity, config, harness, sid)
-    if page.state != "ok" or checkpoint is None:
+    if page.state == "limited" and checkpoint is None:
+        reason = (
+            page.coverage.unread[-1].reason
+            if page.coverage and page.coverage.unread
+            else "outline_state_limit"
+        )
+        return _limit_parent(previous, identity, config, harness, sid, reason=reason)
+    if page.state not in {"ok", "limited"} or checkpoint is None:
         return (build(page, config), _plan(page, config)), None
     plan = _plan(page, config)  # Only this transient word-bearing page may supply an exact plan.
     if (
         old
         and old.result[1]
-        and plan
-        and not plan["complete"]
-        and old.result[1]["parts"] >= plan["parts"]
+        and (plan is None or (not plan["complete"] and old.result[1]["parts"] >= plan["parts"]))
     ):
         plan = old.result[1]
-    coverage = (
-        replace(page.coverage, complete=checkpoint.parent_complete) if page.coverage else None
-    )
-    terminal = checkpoint.stopped or bool(
-        checkpoint.frontier and checkpoint.frontier.offset == checkpoint.stamp[2]
+    coverage = replace(page.coverage, complete=checkpoint.complete) if page.coverage else None
+    terminal = all(
+        current.stopped
+        or (current.frontier is not None and current.frontier.offset == current.stamp[2])
+        for current in (checkpoint, *(child for _, child in checkpoint.children))
     )
     progress = _Progress(identity, checkpoint, coverage, ({}, plan), terminal)
     # Reserve half the combined graph budget for a sticky refusal and its prior projection.
@@ -734,7 +729,14 @@ def _advance_parent(
     if published.limited or published.graph is None:
         return _limit_parent(previous, identity, config, harness, sid)
     # Do not cache an evidence-free time cut; retain an accepted prefix across time cuts.
-    empty = not previous and not published.graph.facts and not checkpoint.accepted
+    empty = (
+        not previous
+        and not published.graph.facts
+        and not checkpoint.accepted
+        and page.bytes_read == 0
+        and not checkpoint.complete
+        and not checkpoint.children
+    )
     return progress.result, None if empty else published.graph
 
 
@@ -845,45 +847,9 @@ def _release(state: RuntimeState, lease: _Lease) -> None:
         state.session_outline_active -= 1
 
 
-def _read_legacy(
-    config: RuntimeConfig, request: _Request, cached: Any
-) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], Any]:
-    existing = _matching_result(cached, request.identity)
-    if existing is not None:
-        return existing, cached
-    page = session_source.read(
-        config,
-        request.path,
-        request.harness,
-        request.sid,
-        newest=True,
-        max_bytes=config.session_outline_max_bytes,
-        deadline=request.deadline,
-    )
-    opening, head_clipped = (
-        _head(
-            config,
-            request.path,
-            request.harness,
-            request.sid,
-            page.coverage.start_offset,
-            request.deadline,
-        )
-        if page.state == "ok" and page.coverage is not None and page.coverage.start_offset > 0
-        else (None, False)
-    )
-    result = (build(page, config, opening), _plan(page, config))
-    clipped = head_clipped or bool(
-        page.coverage and any(region.reason == "time" for region in page.coverage.unread)
-    )
-    return result, (request.identity[1:], result) if page.state == "ok" and not clipped else None
-
-
 def _read_candidate(
     config: RuntimeConfig, request: _Request, cached: Any
 ) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], Any]:
-    if len(request.stamps) != 1:
-        return _read_legacy(config, request, cached)
     previous = (
         cached
         if isinstance(cached, _FactGraph) and _matching_result(cached, request.identity) is not None
@@ -933,10 +899,17 @@ def _owned_poll(
         result, candidate = _read_candidate(config, request, lease.cached)
         try:
             unchanged = (
-                session_source.source_stamps(request.path, request.harness) == request.stamps
+                session_source._outline_stamps(  # noqa: SLF001
+                    request.path, request.harness, deadline=request.deadline
+                )
+                == request.stamps
             )
         except OSError:
             unchanged = False
+        except ValueError as error:
+            if str(error) not in {"time", "outline_stream_limit"}:
+                raise
+            return _status(config, request.harness, request.sid, "unavailable", str(error))
         if not unchanged or not _publish(state, request, lease, candidate):
             return _status(config, request.harness, request.sid, "stale")
         return result
@@ -954,7 +927,11 @@ def for_session_with_plan(
     if path is None:
         return _status(config, harness, sid, "unavailable" if supported else "unsupported")
     try:
-        stamps = session_source.source_stamps(path, harness)
+        stamps = session_source._outline_stamps(path, harness, deadline=deadline)  # noqa: SLF001
+    except ValueError as error:
+        if str(error) not in {"time", "outline_stream_limit"}:
+            raise
+        return _status(config, harness, sid, "unavailable", str(error))
     except OSError:
         return _status(config, harness, sid, "unavailable")
     key = f"{os.path.abspath(path)}\0{harness}\0{sid}"
