@@ -1115,6 +1115,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The turns a typed Compass command opened, read from the transcript itself, as
         # `copied_corrections` reads it, so the frozen collector modules are not edited.
         "compass_runtime.compass_turns": {
+            "compass_runtime.claude_data",
             "compass_runtime.config",
             "compass_runtime.observer",
             "compass_runtime.reading",

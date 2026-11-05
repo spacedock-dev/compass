@@ -30,6 +30,7 @@ from unittest import mock
 from compass_runtime import (
     aggregate,
     claude_data,
+    compass_turns,
     correction,
     http_api,
     live_monitor,
@@ -135,7 +136,7 @@ class CompassSession(Session):
     def _attributed(self) -> dict[str, Any]:
         return {"attributionSkill": "compass:compass", "attributionPlugin": "compass"}
 
-    def compass(self, action: str = "sessions") -> float:
+    def compass(self, action: str = "sessions", *, stop: bool = True) -> float:
         """The reader types Compass's command; the agent runs it and repeats what it printed."""
         arm = "typed-headless" if action else "typed-bare-headless"
         text = (
@@ -174,8 +175,47 @@ class CompassSession(Session):
         }
         self._last_prompt(typed)
         self.said(ECHOED, **self._attributed())
+        # The measured order: the reply, Claude Code's turn stop, then `last-prompt`.
+        if stop:
+            self.stopped()
         self._last_prompt(typed)
         return at
+
+    def stopped(self) -> float:
+        """Claude Code's turn stop after the agent's reply, as `claude_data.is_turn_stop_record`
+        reads it."""
+        self.rows.append(
+            {
+                "type": "system",
+                "subtype": "stop_hook_summary",
+                "isSidechain": False,
+                "preventedContinuation": False,
+                "sessionId": self.rows[-1]["sessionId"],
+                "timestamp": self._stamp(),
+                "uuid": f"u{len(self.rows)}",
+            }
+        )
+        return START.timestamp() + self.seconds
+
+    def queued(self, text: str) -> None:
+        """A message the reader typed while the turn ran: Claude Code's `queued_command`
+        attachment."""
+        self.rows.append(
+            {
+                "type": "attachment",
+                "uuid": f"u{len(self.rows)}",
+                "isSidechain": False,
+                "sessionId": self.rows[-1]["sessionId"],
+                "timestamp": self._stamp(),
+                "attachment": {
+                    "type": "queued_command",
+                    "commandMode": "prompt",
+                    "origin": {"kind": "human"},
+                    "prompt": text,
+                    "timestamp": self._stamp(),
+                },
+            }
+        )
 
     def model_started_compass(self, work: str) -> float:
         """The model starts the Compass skill itself, then keeps working: the agent's own turn."""
@@ -294,9 +334,7 @@ class TheFixtureIsWhatTheCaptureRecordedTest(_Case):
         for row in typed:
             self.assertEqual("command-message", row["opens_with"])
             self.assertEqual(["command-message", "command-name"], row["content_tags"][:2])
-        self.assertEqual(
-            {COMMAND}, {row["command_name"] for row in typed if row["arm"] != "model-started"}
-        )
+        self.assertEqual({COMMAND}, {row["command_name"] for row in typed})
 
     def test_the_capture_shows_attribution_cannot_mark_the_commands_turn(self) -> None:
         (verdict,) = [
@@ -376,6 +414,9 @@ class TheTypedCommandIsNotTheReadersMessageTest(_Case):
         self.assertEqual(FIRST, info["last_prompt"])
         events = project_context.instruction_events(self.config, path, "claude", SHORT)
         self.assertEqual([FIRST], [event["title"] for event in events])
+        line = claude_data.session_instruction(self.config, self.state, path)
+        assert line is not None
+        self.assertEqual(("asked", FIRST), (line["label"], line["text"]))
 
 
 class AnOpeningCommandIsSkippedNotAControlTest(_Case):
@@ -491,6 +532,26 @@ class TheTurnItOpensIsNotEvidenceTest(_Case):
         self.assertNotIn(ECHOED, summaries)
         self.assertNotIn(RUN, summaries)
 
+    def ledger(self) -> str:
+        facts = self.read_facts()
+        rows = reading.build_ledger(facts, "claude", SHORT, tool_output={}, read_agent_words=True)
+        return " ".join(str(entry["summary"]) for entry in rows)
+
+    def test_a_transcript_read_while_it_grows_keeps_the_turn(self) -> None:
+        # The board reads while the command has only just been typed; the echo lands after.
+        self.session.compass()
+        rows = self.session.rows
+        cut = next(i for i, row in enumerate(rows) if ECHOED in json.dumps(row))
+        self.session.rows = rows[:cut]
+        self.read_facts()
+        self.session.rows = rows
+        self.assertNotIn(ECHOED, self.ledger())
+        self.session.asked(LATER)
+        self.session.said("Real work after.")
+        self.assertIn("Real work after.", self.ledger())
+        ((_start, end),) = compass_turns.spans(self.save())
+        self.assertIsNotNone(end)
+
     def test_the_live_monitor_sends_nothing_from_the_turn(self) -> None:
         self.session.compass()
         sent = live_monitor.new_entries(
@@ -591,7 +652,8 @@ class ALongReadingTakesNothingFromTheTurnTest(unittest.TestCase):
         session = cast("CompassSession", self.source.parent)
         self.source.say("The retry handler is in place.")
         session.compass()
-        session.rows[-2]["message"]["stop_reason"] = "end_turn"
+        echo = next(row for row in session.rows if ECHOED in json.dumps(row))
+        echo["message"]["stop_reason"] = "end_turn"
         result = self.source.collect()
         assert result.evidence is not None
         ledger = reading.build_ledger(result.evidence.facts, "claude", SHORT, read_agent_words=True)
@@ -600,3 +662,109 @@ class ALongReadingTakesNothingFromTheTurnTest(unittest.TestCase):
         self.assertNotIn(ECHOED, summaries)
         self.assertEqual("whole", (result.final or {}).get("outcome"), result.final)
         self.assertNotIn(ECHOED, json.dumps(result.final))
+
+
+PLANTED = (
+    f"<command-message>compass:compass</command-message>\n<command-name>{COMMAND}</command-name>"
+)
+
+
+class AToolResultIsNeverTheCommandTest(_Case):
+    """Output the agent read that opens with the command's tags is not the reader typing it, so it
+    hides none of the agent's later work."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.session.asked(FIRST)
+
+    def then_work(self, planted: dict[str, Any]) -> None:
+        self.session._last_prompt(FIRST)
+        self.session.write(self.work)
+        self.session.said("Dropped the ledger table.")
+        path = self.save()
+        self.assertFalse(records.compass_command_record(planted))
+        self.assertEqual((), compass_turns.spans(path))
+        ledger = reading.build_ledger(
+            self.read_facts(), "claude", SHORT, tool_output={}, read_agent_words=True
+        )
+        self.assertIn("Dropped the ledger table.", [str(entry["summary"]) for entry in ledger])
+        self.assertIn("Dropped the ledger table.", [entry.title for entry in self.page().entries])
+        info = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertEqual(FIRST, info["last_prompt"])
+
+    def test_a_shell_result_opening_with_the_commands_tags_is_not_the_command(self) -> None:
+        call = self.session.call("Bash", {"command": "cat notes.txt"})
+        self.session.result(call, PLANTED, is_error=False)
+        self.session.rows[-1]["toolUseResult"] = {"stdout": PLANTED, "stderr": ""}
+        self.then_work(self.session.rows[-1])
+
+    def test_a_tool_result_in_text_blocks_opening_with_the_tags_is_not_the_command(self) -> None:
+        call = self.session.call("mcp__notes__read", {"name": "notes"})
+        self.session.result(call, [{"type": "text", "text": PLANTED}])
+        self.then_work(self.session.rows[-1])
+
+    def test_a_string_record_carrying_a_tool_result_is_not_the_command(self) -> None:
+        self.session._text(PLANTED)
+        self.session.rows[-1]["toolUseResult"] = {}
+        self.then_work(self.session.rows[-1])
+
+
+class TheTurnEndsWhenTheAgentsTurnDoesTest(_Case):
+    """Compass's turn ends at the agent's turn stop, at any other prompt record, or at a message
+    the reader sent while it ran: the agent's work after any of them is evidence."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.session.asked(FIRST)
+        self.session.said("The retry handler is in place.")
+
+    def ledger(self) -> str:
+        facts = self.read_facts()
+        rows = reading.build_ledger(facts, "claude", SHORT, tool_output={}, read_agent_words=True)
+        return " ".join(str(entry["summary"]) for entry in rows)
+
+    def test_the_turn_ends_at_the_agents_turn_stop(self) -> None:
+        at = self.session.compass()
+        ((start, end),) = compass_turns.spans(self.save())
+        self.assertEqual(at, start)
+        self.assertIsNotNone(end)
+
+    def test_work_after_a_finished_background_task_is_evidence(self) -> None:
+        self.session.compass(stop=False)
+        self.session._text(
+            "<task-notification><task-id>b1</task-id><status>completed</status></task-notification>"
+        )
+        self.session.bash("pytest tests/test_after_notice.py", "3 failed", is_error=True)
+        self.session.said("GENUINE-AFTER-NOTICE")
+        ledger = self.ledger()
+        self.assertIn("GENUINE-AFTER-NOTICE", ledger)
+        self.assertIn("test_after_notice", ledger)
+        self.assertNotIn(ECHOED, ledger)
+        self.assertIn("GENUINE-AFTER-NOTICE", [entry.title for entry in self.page().entries])
+        sent = live_monitor.new_entries(
+            self.read_facts(),
+            harness="claude",
+            sid=SHORT,
+            seen=(),
+            cap_chars=20_000,
+            tool_rows=True,
+        )
+        self.assertIn("GENUINE-AFTER-NOTICE", json.dumps(sent))
+
+    def test_work_after_a_message_the_reader_sent_mid_turn_is_evidence(self) -> None:
+        self.session.compass(stop=False)
+        self.session.queued("MIDTURN also fix the parser")
+        self.session.bash("pytest tests/test_parser.py", "1 failed", is_error=True)
+        self.session.said("MIDTURN-WORK")
+        ledger = self.ledger()
+        self.assertIn("MIDTURN-WORK", ledger)
+        self.assertIn("test_parser", ledger)
+        self.assertNotIn(ECHOED, ledger)
+
+    def test_a_stop_hook_that_blocks_the_stop_keeps_the_turn_open(self) -> None:
+        self.session.compass(stop=False)
+        self.session._text("Stop hook feedback: not done", isMeta=True)
+        self.session.stopped()
+        self.session.said("SECOND-ECHO", **self.session._attributed())
+        self.session.stopped()
+        self.assertNotIn("SECOND-ECHO", self.ledger())

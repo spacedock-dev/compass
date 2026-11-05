@@ -5,10 +5,12 @@ and repeats what it printed. That turn is neither the reader's direction nor the
 its records are not evidence: not for a reading, the Live monitor, a summary or the outline. Full
 activity still lists what the agent ran and said, because it is what happened.
 
-A turn runs from the typed command record (`records.compass_command_record`) to the reader's next
-prompt (`records.person_prompt_record`), measured as times. It is never keyed on the
-`attributionSkill` field the harness stamps on the agent's records: after a model-started Skill
-call that field stays on the agent's later real work in the same turn
+A turn runs from the typed command record (`records.compass_command_record`) to the first of: the
+agent's turn stop (`claude_data.is_turn_stop_record`), any other prompt record, harness-injected
+ones such as a finished background task's notice included (`records.claude_prompt_record`), and a
+message the reader sent while the turn ran (`observer._queued_attachment`), measured as times. It
+is never keyed on the `attributionSkill` field the harness stamps on the agent's records: after a
+model-started Skill call that field stays on the agent's later real work in the same turn
 (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl), and a model-started call is the
 agent's own work, so it opens no turn here.
 
@@ -26,7 +28,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from . import observer, reading, records
+from . import claude_data, observer, reading, records
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -39,6 +41,8 @@ Span = tuple[float, float | None]
 
 # Every typed command line holds the skill's name, so a line without it is not parsed.
 _NAME = records.COMPASS_COMMAND.encode()
+# While a turn is open, only a line holding one of these can end it or say what came last.
+_OPEN_MARKS: Final = (b'"user"', b'"assistant"', b"stop_hook_summary", b"queued_command")
 # Bounded like the runtime's other per-file caches; an evicted file is read again from its start.
 _CACHE_FILES: Final = 256
 
@@ -49,42 +53,69 @@ class _Read:
     offset: int
     closed: tuple[Span, ...]
     open_at: float | None
+    # The type of the newest main-thread `user`/`assistant` record since the command: the context
+    # `claude_data.is_turn_stop_record` reads a stop in, so a Stop hook that blocks keeps it open.
+    after: str | None = None
 
 
 _LOCK = threading.Lock()
 _CACHE: dict[str, _Read] = {}
 
 
+def _candidate(raw: bytes, open_at: float | None) -> tuple[dict[str, Any], float] | None:
+    """The record on a line that can open, end or precede the end of a turn, with its time."""
+    if open_at is None:
+        if _NAME not in raw:
+            return None
+    # A tool result neither ends a turn nor precedes a stop, so it never sets `after`.
+    elif b'"toolUseResult"' in raw or not any(mark in raw for mark in _OPEN_MARKS):
+        return None
+    try:
+        record = json.loads(raw)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    at = records.parse_ts(record.get("timestamp") or "")
+    return (record, at) if at is not None else None
+
+
+def _ends(record: dict[str, Any], after: str | None) -> bool:
+    """Whether a record ends an open turn: the agent's turn stop, any prompt, or a message the
+    reader sent while it ran."""
+    return (
+        claude_data.is_turn_stop_record(record, after)
+        or records.claude_prompt_record(record)
+        or observer._queued_attachment(record) is not None  # noqa: SLF001
+    )
+
+
 def _advance(path: str, held: _Read) -> _Read:
-    closed, open_at, offset = list(held.closed), held.open_at, held.offset
+    closed, open_at, offset, after = list(held.closed), held.open_at, held.offset, held.after
     with open(path, "rb") as source:
         source.seek(offset)
         for raw in source:
             if not raw.endswith(b"\n"):
                 break  # a line still being written is read whole next time
             offset += len(raw)
-            if open_at is None:
-                if _NAME not in raw:
-                    continue
-            elif b'"user"' not in raw or b'"toolUseResult"' in raw:
+            found = _candidate(raw, open_at)
+            if found is None:
                 continue
-            try:
-                record = json.loads(raw)
-            except (ValueError, RecursionError):
-                continue
-            at = (
-                records.parse_ts(record.get("timestamp") or "")
-                if isinstance(record, dict)
-                else None
-            )
-            if at is None:
-                continue
+            record, at = found
             if records.compass_command_record(record):
-                open_at = at if open_at is None else open_at
-            elif open_at is not None and records.person_prompt_record(record):
+                if open_at is not None:
+                    closed.append((open_at, at))
+                open_at, after = at, None
+            elif open_at is not None and _ends(record, after):
                 closed.append((open_at, at))
-                open_at = None
-    return _Read(held.identity, offset, tuple(closed), open_at)
+                open_at, after = None, None
+            if (
+                open_at is not None
+                and record.get("type") in ("user", "assistant")
+                and not record.get("isSidechain")
+            ):
+                after = record["type"]
+    return _Read(held.identity, offset, tuple(closed), open_at, after)
 
 
 def spans(path: str) -> tuple[Span, ...]:

@@ -1982,19 +1982,34 @@ def compass_command(text: object) -> bool:
 
 
 def compass_command_record(record: Any) -> bool:
-    """A main-thread Claude Code user record that is the reader typing Compass's command."""
+    """A main-thread Claude Code prompt record that is the reader typing Compass's command.
+
+    Only the captured shape: a prompt record (`_turn_signal`, which refuses `isMeta` records and
+    tool results) whose content is one string and which carries no `toolUseResult`
+    (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl, `"content": "str"`). A tool's
+    output that opens with the same tags is something the agent read, not the reader typing.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain") or "toolUseResult" in record:
+        return False
+    if _turn_signal(record, "claude") != ("prompt", None):
+        return False
+    content = message_dict(record).get("content")
+    return isinstance(content, str) and compass_command(content)
+
+
+def claude_prompt_record(record: Any) -> bool:
+    """A main-thread Claude Code record that starts a turn: typed or harness-injected."""
     return (
         isinstance(record, dict)
-        and record.get("type") == "user"
         and not record.get("isSidechain")
-        and not record.get("isMeta")
-        and compass_command(extract_text(message_dict(record).get("content")))
+        and _turn_signal(record, "claude") == ("prompt", None)
     )
 
 
 def person_prompt_record(record: Any) -> bool:
-    """A main-thread Claude Code prompt the reader typed to the session: the record that ends
-    the turn Compass's command opened. Harness-injected prompts and the command are not one."""
+    """A main-thread Claude Code prompt the reader typed to the session: the record after which
+    `claude_data.analyze_transcript` reads `last-prompt` again: those records repeat the command
+    until the reader types. Harness-injected prompts and the command are not one."""
     if not isinstance(record, dict) or record.get("isSidechain"):
         return False
     signal = _turn_signal(record, "claude")
