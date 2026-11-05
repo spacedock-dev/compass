@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import unittest
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -288,6 +289,42 @@ class OrderedPacketPlanTest(unittest.TestCase):
             ],
             [(r.fact_id, r.start, r.end) for r in result.uncovered_primary],
         )
+
+    def test_two_sided_boundary_context_keeps_exact_unicode_primary_coverage(self) -> None:
+        originals = [
+            self.original("failure", '界🙂 "retry failed" ' * 40),
+            self.original("repair", "The retry is repaired; the check passes. " * 25),
+            self.original("regression", "Later regression: it fails again. " * 25),
+            self.original("conflict", "The claim of success conflicts with the failed check."),
+        ]
+        result = self.plan(originals, boundary_chars=40, max_bytes=1700)
+        self.assertEqual("complete", result.reason)
+        for original in originals:
+            ranges = [
+                s for p in result.packets for s in p.primary if s.fact_id == original.row["id"]
+            ]
+            self.assertEqual(0, ranges[0].start)
+            self.assertEqual(len(original.words), ranges[-1].end)
+            self.assertTrue(all(a.end == b.start for a, b in pairwise(ranges)))
+        self.assertTrue(any(s.fact_id == "repair" for p in result.packets for s in p.context))
+        self.assertTrue(all(len(p.prompt.encode("utf-8")) <= 1700 for p in result.packets))
+        self.assertEqual(
+            sum(len(p.prompt.encode("utf-8")) for p in result.packets), result.transmitted_bytes
+        )
+
+    def test_unfit_whole_final_neighbor_is_never_clipped_for_boundary_context(self) -> None:
+        first = self.original("first", "Earlier failure." * 100)
+        final = self.original("final", "The repair now passes." * 100)
+        result = self.plan(
+            [first, final],
+            boundary_chars=40,
+            max_bytes=1100,
+            final={"outcome": "whole", "fact_id": "final", "at": 110.0, "words": final.words},
+        )
+        self.assertEqual("context-unfit", result.reason)
+        self.assertTrue(result.uncovered_primary)
+        self.assertFalse(any(s.fact_id == "final" for p in result.packets for s in p.context))
+        self.assertTrue(all(len(p.prompt.encode("utf-8")) <= 1100 for p in result.packets))
 
     def test_required_context_that_does_not_fit_is_not_clipped_or_discarded(self) -> None:
         originals = [

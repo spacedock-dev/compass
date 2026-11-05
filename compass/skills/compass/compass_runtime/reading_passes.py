@@ -219,7 +219,7 @@ def _packet(
     measure: bool = False,
     frozen_context: reading_pass_context.Frozen | None = None,
 ) -> EvidencePacket:
-    combined = _union((*context, *primary))
+    combined = _union((*primary, *context))
     identities = sorted(combined, key=lambda key: sources[key][0])
     selected = tuple(_project(sources[key][1], combined[key]) for key in identities)
     proof = frozen_context.goal_proof if frozen_context is not None else None
@@ -396,10 +396,45 @@ def _observe_preparation(
         observer(ordinal, packet)
 
 
-def _unfit_reason(context: Sequence[EvidenceRange], cap: int, maximum: int) -> str:
+def _boundary_ranges(
+    ordered: Sequence[Original],
+    sources: dict[str, tuple[int, Original]],
+    primary: Sequence[EvidenceRange],
+    chars: int,
+) -> tuple[EvidenceRange, ...]:
+    """Immediate physical neighbors; message continuations retain masked offsets."""
+    if not primary or not chars:
+        return ()
+    first, last = primary[0], primary[-1]
+    before, after = sources[first.fact_id][0], sources[last.fact_id][0]
+    result: list[EvidenceRange] = []
+    if first.start:
+        result.append(_span(ordered[before], max(0, first.start - chars), first.start))
+    elif before:
+        original = ordered[before - 1]
+        start = (
+            max(0, len(original.words) - chars)
+            if original.words and original.final_state is None
+            else 0
+        )
+        result.append(_span(original, start))
+    if last.end is not None and last.total is not None and last.end < last.total:
+        result.append(_span(ordered[after], last.end, min(last.total, last.end + chars)))
+    elif after + 1 < len(ordered):
+        original = ordered[after + 1]
+        end = (
+            min(len(original.words), chars)
+            if original.words and original.final_state is None
+            else None
+        )
+        result.append(_span(original, end=end))
+    return tuple(result)
+
+
+def _unfit_reason(has_context: bool, cap: int, maximum: int) -> str:
     if cap < maximum:
         return "input-limit"
-    return "context-unfit" if context else "prompt-unfit"
+    return "context-unfit" if has_context else "prompt-unfit"
 
 
 def _validate_limits(
@@ -418,7 +453,7 @@ def _validate_limits(
         raise ValueError("Aggregate packet bytes must be a nonnegative count")
 
 
-def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-proof gates
+def plan_packets(  # noqa: C901, PLR0913, PLR0915 - ordered exact-fit and unavailable-proof gates
     originals: Sequence[Original],
     *,
     goal: str,
@@ -428,6 +463,7 @@ def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-pro
     max_passes: int,
     boundary_context: Sequence[str] = (),
     overlap_chars: int = 0,
+    boundary_chars: int = 0,
     total_bytes: int | None = None,
     on_preparation: Callable[[int, EvidencePacket | None], None] | None = None,
     frozen_context: reading_pass_context.Frozen | None = None,
@@ -441,6 +477,9 @@ def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-pro
     Context never advances the primary cursor. `covered_characters` counts the union of
     all serialized message ranges, while `uncovered_primary` separately names unassigned
     primary ranges (which may already have appeared as required context).
+    `boundary_chars` repeats the immediate physical context on both sides of each
+    primary span: up to that many masked message characters, or a whole atomic row.
+    Strict-final neighbors stay whole. This bounded context is not a semantic guarantee.
 
     The caller's complete protocol prefix is included before any allocation. The returned
     prompts are final byte-budgeted packets: appending instructions invalidates their fit.
@@ -453,6 +492,8 @@ def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-pro
     the first position. These observations establish no transmission or reservation.
     """
     _validate_limits(max_bytes, max_passes, overlap_chars, total_bytes)
+    if type(boundary_chars) is not int or boundary_chars < 0:
+        raise ValueError("Boundary characters must be nonnegative")
     _observe_preparation(on_preparation, 1)
     sources = _sources(originals, final)
     ordered = [original for _, original in sources.values()]
@@ -514,25 +555,33 @@ def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-pro
             held: tuple[EvidenceRange, ...] = held,
             cap: int = cap,
         ) -> bool:
-            prompt = _packet(sources, candidate, held, header, frozen_lines).prompt
+            context = (*held, *_boundary_ranges(ordered, sources, candidate, boundary_chars))
+            if any(sources[span.fact_id][1].final_state == "unfit" for span in context):
+                return False
+            prompt = _packet(sources, candidate, context, header, frozen_lines).prompt
             return len(prompt.encode()) <= cap
 
         if not fits(()):
-            reason = _unfit_reason(held, cap, max_bytes)
+            reason = _unfit_reason(bool(held), cap, max_bytes)
             break
-        primary, cursor, start = _fill_primary(ordered, cursor, start, fits, cap)
+        primary, next_cursor, next_start = _fill_primary(ordered, cursor, start, fits, cap)
         if not primary:
-            reason = _unfit_reason(held, cap, max_bytes)
+            reason = _unfit_reason(bool(held or boundary_chars), cap, max_bytes)
             break
+        packet_context = (*held, *_boundary_ranges(ordered, sources, primary, boundary_chars))
         packet = _packet(
             sources,
             primary,
-            held,
+            packet_context,
             header,
             frozen_lines,
             measure=True,
             frozen_context=frozen_context,
         )
+        if len(packet.prompt.encode("utf-8")) > cap:
+            reason = _unfit_reason(bool(packet_context), cap, max_bytes)
+            break
+        cursor, start = next_cursor, next_start
         packets.append(packet)
         transmitted += len(packet.prompt.encode())
         _observe_preparation(on_preparation, ordinal, packet)
@@ -543,7 +592,7 @@ def plan_packets(  # noqa: C901, PLR0913 - ordered exact-fit and unavailable-pro
     )
     if remaining and reason == "complete":
         reason = "pass-limit"
-    covered = _union(tuple(span for p in packets for span in (*p.context, *p.primary)))
+    covered = _union(tuple(span for p in packets for span in (*p.primary, *p.context)))
     return PacketPlan(
         tuple(packets),
         remaining,

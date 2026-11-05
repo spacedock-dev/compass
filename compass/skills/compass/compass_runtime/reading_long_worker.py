@@ -302,6 +302,7 @@ class _Passes:
                     lines=lines,
                     clauses=("goal", *(f"line_{n}" for n in range(1, len(lines) + 1))),
                     plan=self.budget.plan,
+                    boundary_chars=4096,
                     model_for=self.model_for,
                     stop_reason=self.stop,
                     on_observation=self.observe,

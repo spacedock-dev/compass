@@ -274,6 +274,58 @@ class GuardedNativeWorkerTest(unittest.TestCase):
         self.assertTrue(result.source_current())
         self.assertGreater(result.usage.prepare_ms, self.collection.usage.prepare_ms)
 
+    def test_sent_maps_repeat_original_context_across_correction_boundaries(self) -> None:
+        say = self.source.say
+        correction = "Correction: the retry test still fails despite the earlier success claim."
+
+        def with_correction(words: str, *args: Any, **kwargs: Any) -> Any:
+            if words.startswith("Original ordinary 4. "):
+                words = words[:64710] + correction + words[64710 + len(correction) :]
+            return say(words, *args, **kwargs)
+
+        with mock.patch.object(self.source, "say", side_effect=with_correction):
+            self.make_case(large=True)
+        result = self.run_worker()
+        self.assertEqual("mapped", result.state)
+        assert result.series is not None and result.prepared is not None
+        packets = result.series.plan.packets
+        originals = {item.row["id"]: item for item in result.prepared.originals}
+        self.assertEqual(7, len(self.calls))
+        self.assertTrue(any(correction in prompt for prompt in self.calls))
+        for index, packet in enumerate(packets):
+            self.assertEqual(packet.prompt, self.calls[index])
+            self.assertLessEqual(len(packet.prompt.encode("utf-8")), 512 * 1024)
+            first, last = packet.primary[0], packet.primary[-1]
+            if first.start:
+                self.assertTrue(
+                    any(
+                        span.fact_id == first.fact_id
+                        and span.start < first.start
+                        and span.end == first.start
+                        for span in packet.context
+                    ),
+                    "a continuation must carry the original words before its cut",
+                )
+            if last.end is not None and last.end < last.total:
+                self.assertTrue(
+                    any(
+                        span.fact_id == last.fact_id
+                        and span.start == last.end
+                        and span.end > last.end
+                        for span in packet.context
+                    ),
+                    "a split must carry the original words after its cut",
+                )
+            for span in packet.context:
+                original = originals[span.fact_id]
+                if span.start is not None:
+                    assert original.words is not None
+                    self.assertIn(
+                        json.dumps(original.words[span.start : span.end], ensure_ascii=False)[1:-1],
+                        packet.prompt,
+                    )
+        self.assertEqual((), result.series.plan.uncovered_primary)
+
     def test_unknown_small_route_known_uncovered_plan_costs_zero(self) -> None:
         self.env.controls = replace(self.env.controls, window_limits=(180000,))
         self.make_case(large=True, model="claude-sonnet-6")
