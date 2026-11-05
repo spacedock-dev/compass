@@ -72,13 +72,16 @@ python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
 
 What to expect:
 
-- In Claude Code's default permission mode, the first use asks you to approve the command (measured
-  on macOS; other systems were not). Its "Yes, and don't ask again" offers `python3 *`, which approves
-  every `python3` command, not this one, so do not choose it. Answer Yes each time, or add
-  `Bash(python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions:*)` to `permissions.allow`
-  in your settings, with `<skill-dir>` written out as the paths the prompt shows. That rule removes the
-  prompt for this command only. A plugin update that moves the install path needs the rule again. In
-  a permission mode that runs commands without asking, nothing asks.
+- Claude Code runs the command without asking for approval. The skill pre-approves exactly its two
+  commands, each with the skill's own install path written out, and nothing else (measured on Claude
+  Code 2.1.318 on macOS; other systems were not). A `python3 -c` command, an extra flag such as
+  `--stop`, or a second command joined on with `&&` still asks. So does any other spelling of the
+  command, such as `python` on Windows. To be asked again, or to stop the action running at all, add
+  a deny rule to `permissions.deny` in your settings, which overrides the skill (measured):
+  `Bash(python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions)`, and the same with
+  ` waiting` before the closing parenthesis, with `<skill-dir>` written out as the path the command
+  shows. Do not answer a prompt from this skill with "Yes, and don't ask again": it offers
+  `python3 *`, which approves every `python3` command.
 - The agent prints the answer in one code block and adds nothing.
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
   goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
