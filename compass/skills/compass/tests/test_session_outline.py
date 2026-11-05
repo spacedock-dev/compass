@@ -1304,6 +1304,212 @@ class SessionOutlineTest(unittest.TestCase):
             )
         self.assertTrue(answer["coverage"]["complete"])
 
+    def test_cooperative_row_or_plan_overrun_keeps_verified_progress(self) -> None:
+        self._large(2)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        for stage in ("source", "plan"):
+            self.state = build_runtime_state(self.config, started=1)
+            now = [100.0]
+            target = self.source if stage == "source" else self.outline
+            name = "_message" if stage == "source" else "_plan"
+            real = getattr(target, name)
+
+            def overrun(*args: Any, real: Any = real, now: list[float] = now, **kwargs: Any) -> Any:
+                result = real(*args, **kwargs)
+                now[0] += 0.3
+                return result
+
+            meter = test_session_source.SessionSourceTest()
+            meter.source = self.source
+            with (
+                self.subTest(stage=stage),
+                mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+                mock.patch.object(
+                    self.outline.time, "monotonic", side_effect=lambda now=now: now[0]
+                ),
+                mock.patch.object(target, name, side_effect=overrun),
+                meter._meter_source_reads() as reads,
+            ):
+                answer, _plan = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                self.assertLessEqual(reads[0], self.config.session_outline_max_bytes)
+                self.assertEqual("ok", answer["state"])
+                self.assertTrue(answer["blocks"][0]["opening"])
+                graph = next(iter(self.state.session_outlines.values()))
+                self.assertGreater(graph.extras.checkpoint.frontier.end_offset, 0)
+                self.assertEqual(1, graph.extras.checkpoint.next_stream)
+                # The next poll gets the child, not an endless retry of the discarded parent.
+                answer, _plan = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                self.assertTrue(
+                    any(block["counts"]["subagent_entries"] for block in answer["blocks"])
+                )
+
+    def test_default_budget_wordful_parent_and_children_eventually_complete(self) -> None:
+        transcript = Transcript(self.root)
+        for number in range(8):
+            transcript.prompt(f"Owned wordful phase {number}. " + "padding " * 24000)
+        transcript.save(self.path)
+        for name in ("agent-ab12.jsonl", "workflows/owned/agent-ab12.jsonl"):
+            child = Transcript(self.root)
+            for number in range(2):
+                child.bash(f"pytest tests/child_{number}.py", "1 passed " + "output " * 14000)
+            for row in child.rows:
+                row["isSidechain"] = True
+            child.save(self.path.with_suffix("") / "subagents" / name)
+        self.assertEqual(0.25, self.config.session_outline_max_seconds)
+        self.assertEqual(2 * 1024 * 1024, self.config.session_outline_max_bytes)
+        whole = self.source.read(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=8 * 1024 * 1024,
+            deadline=self.outline.time.monotonic() + 30,
+        )
+        self.assertTrue(whole.coverage.complete)
+        expected = {entry.fact_id for entry in whole.entries}
+        opening = whole.entries[0].fact_id
+        meter = test_session_source.SessionSourceTest()
+        meter.source = self.source
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            meter._meter_source_reads() as reads,
+        ):
+            for _poll in range(24):
+                before = reads[0]
+                answer, plan = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                self.assertLessEqual(reads[0] - before, self.config.session_outline_max_bytes)
+                self.assertEqual("ok", answer["state"])
+                graph = next(iter(self.state.session_outlines.values()))
+                self.assertIn(opening, graph.facts)
+                if plan is not None:
+                    self.assertFalse(plan["complete"])
+                if answer["coverage"]["complete"]:
+                    break
+            self.assertTrue(
+                answer["coverage"]["complete"], "wordful parent starved the remaining streams"
+            )
+            self.assertEqual(expected, set(graph.facts))
+            before = reads[0]
+            again, _ = self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            self.assertIs(answer, again)
+            self.assertEqual(before, reads[0])
+
+    def test_word_heavy_partial_page_defers_optional_plan(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Owned large words. " + "padding " * 20000)
+        transcript.save(self.path)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(
+                self.outline.session_summary,
+                "plan",
+                side_effect=AssertionError(
+                    "optional word-heavy partial estimate must not consume the poll"
+                ),
+            ),
+        ):
+            answer, plan = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+        self.assertEqual("ok", answer["state"])
+        self.assertFalse(answer["coverage"]["complete"])
+        self.assertIsNone(plan)
+
+    def test_final_validation_rejects_changed_inventory_or_source_after_overrun(self) -> None:
+        self._large(2)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        directory = self.path.with_suffix("") / "subagents"
+        child.save(directory / "agent-ab12.jsonl")
+        added = directory / "agent-added.jsonl"
+        for finish, changed in (
+            (3, "source"),
+            (3, "inventory"),
+            (3, "validation_time"),
+            (4, "source"),
+            (4, "inventory"),
+            (4, "validation_time"),
+        ):
+            self.state = build_runtime_state(self.config, started=1)
+            now = [100.0]
+            calls = [0]
+            real = self.source._outline_stamps
+
+            def stamps(
+                *args: Any,
+                calls: list[int] = calls,
+                finish: int = finish,
+                changed: str = changed,
+                now: list[float] = now,
+                real: Any = real,
+                **kwargs: Any,
+            ) -> Any:
+                calls[0] += 1
+                if calls[0] == finish:
+                    if changed == "inventory":
+                        child.save(added)
+                    elif changed == "source":
+                        with self.path.open("a") as handle:
+                            handle.write("\n")
+                    else:
+                        # The finishing allowance is finite, not a freshness-check bypass.
+                        now[0] = kwargs["deadline"] + 0.001
+                return real(*args, **kwargs)
+
+            message = self.source._message
+
+            def overrun(
+                *args: Any, message: Any = message, now: list[float] = now, **kwargs: Any
+            ) -> Any:
+                result = message(*args, **kwargs)
+                now[0] += 0.3
+                return result
+
+            with (
+                self.subTest(finish=finish, changed=changed),
+                mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+                mock.patch.object(
+                    self.outline.time, "monotonic", side_effect=lambda now=now: now[0]
+                ),
+                mock.patch.object(self.source, "_outline_stamps", side_effect=stamps),
+                mock.patch.object(self.source, "_message", side_effect=overrun),
+            ):
+                answer, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            if changed == "validation_time":
+                self.assertEqual("time", answer["reason"])
+                self.assertEqual([], answer["blocks"])
+                self.assertTrue(
+                    all(
+                        graph.extras.checkpoint is None
+                        for graph in self.state.session_outlines.values()
+                    )
+                )
+            else:
+                self.assertEqual("stale", answer["state"])
+                self.assertEqual({}, self.state.session_outlines)
+            self.assertEqual(0, self.state.session_outline_active)
+            if added.exists():
+                added.unlink()
+
     def test_source_deadline_includes_time_spent_before_slot_admission(self) -> None:
         self._large(2)
         now = [100.0]

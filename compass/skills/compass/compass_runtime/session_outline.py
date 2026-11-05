@@ -518,8 +518,23 @@ def unmatched(config: RuntimeConfig, harness: str, sid: str) -> dict[str, Any]:
     }
 
 
-def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, Any] | None:
+def _plan(
+    page: session_source.SourcePage, config: RuntimeConfig, *, deadline: float | None = None
+) -> dict[str, Any] | None:
     if page.state != "ok" or page.harness != "claude":
+        return None
+    complete = page.coverage is not None and page.coverage.complete
+    # An optional partial estimate must not spend another full word-processing pass after the
+    # source's budget. Keep small estimates within one existing summary window, or defer them.
+    if (
+        not complete
+        and deadline is not None
+        and (
+            time.monotonic() >= deadline
+            or sum(len((entry.words or "").encode("utf-8")) for entry in page.entries)
+            > config.session_summary_window_bytes
+        )
+    ):
         return None
     planned = session_summary.plan(page.entries, page.harness, config=config)
     ceilings = planned["largest_read"]
@@ -527,7 +542,6 @@ def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, A
     # The outline reads a newest window; the job reads the whole source. Off a partial read the
     # parts are a floor, so the call count falls back to the whole-job ceiling to stay an upper
     # bound, as [the focused plan](docs/design-session-summary.md#the-focused-plan) records.
-    complete = page.coverage is not None and page.coverage.complete
     calls = int(ceilings["calls"])
     if complete:
         calls = min(calls, parts * config.session_summary_attempts_per_part)
@@ -707,7 +721,7 @@ def _advance_parent(
         return _limit_parent(previous, identity, config, harness, sid, reason=reason)
     if page.state not in {"ok", "limited"} or checkpoint is None:
         return (build(page, config), _plan(page, config)), None
-    plan = _plan(page, config)  # Only this transient word-bearing page may supply an exact plan.
+    plan = _plan(page, config, deadline=deadline)  # Exact plans need the transient complete page.
     if (
         old
         and old.result[1]
@@ -900,8 +914,8 @@ def _owned_poll(
         result, candidate = _read_candidate(config, request, lease.cached)
         try:
             unchanged = (
-                session_source._outline_stamps(  # noqa: SLF001
-                    request.path, request.harness, deadline=request.deadline
+                session_source._outline_finish_stamps(  # noqa: SLF001
+                    request.path, request.harness
                 )
                 == request.stamps
             )

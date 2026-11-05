@@ -1074,6 +1074,12 @@ def _outline_stamps(
     return (inventory[0], *sorted(inventory[1:]))
 
 
+def _outline_finish_stamps(path: str, harness: str) -> tuple[tuple[str, Stamp | None], ...]:
+    # A bounded row/classification can cooperatively overrun its work deadline. Validate that
+    # completed work with one fresh, bounded inventory pass; this allowance admits no content.
+    return _outline_stamps(path, harness, deadline=time.monotonic() + 0.025)
+
+
 def _outline_child(path: str, child: str, stamp: Stamp | None, sid: str) -> OutlineCheckpoint:
     stream = _child_stream(path, child)
     return OutlineCheckpoint(
@@ -1374,7 +1380,7 @@ def _outline_streams(
         initial_complete=bool(after is None and page.coverage and page.coverage.complete),
     )
     _outline_bound(checkpoint)
-    if _outline_stamps(path, harness, deadline=budget.deadline) != inventory:
+    if _outline_finish_stamps(path, harness) != inventory:
         raise _SourceChangedError
     previous = page.coverage
     coverage = SourceCoverage(
