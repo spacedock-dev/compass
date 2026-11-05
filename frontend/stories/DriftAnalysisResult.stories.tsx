@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { EXCERPTED_DRIFT, PROMPT_LIMITED_DRIFT } from './driftCoverage.scenario';
 import {
   READ_NEVER,
   READ_SUMMARY,
@@ -10,6 +11,7 @@ import {
 } from '../src/drift/sentences';
 import {
   analysisRow,
+  readingScenario,
   DEPARTURE_READING,
   DriftScenario,
   failedCheck,
@@ -396,6 +398,42 @@ export const WhatTheAnalysisRead: Story = {
     }
   },
 };
+
+function boundedPrompt(evidence: typeof EXCERPTED_DRIFT): Story {
+  const reading = readingScenario([]);
+  return {
+    ...scenario({
+      ...RESULT,
+      reading,
+      session: { ...RESULT.session, annotation_assessment: { ...READING, ...evidence } },
+    }),
+    play: async ({ canvasElement }) => {
+      const read = await openWhatItRead(canvasElement);
+      const session = read.querySelector('[data-next-read-section="session"]');
+      if (evidence.coverage.unread_checks) {
+        await expect(session).toHaveTextContent('Read 1 of the 4 entries after your intent');
+        await expect(session).toHaveTextContent('3 checks had no room in the prompt.');
+        await expect(session).toHaveTextContent(
+          '2 passes or writes in the window were left unlisted',
+        );
+        await expect(canvasElement.querySelector('[data-next-reading-coverage]')).toHaveTextContent(
+          '2 passes or writes in the window were not listed.',
+        );
+      } else {
+        await expect(session).toHaveTextContent('Read all 2 entries after your intent');
+        await expect(session).toHaveTextContent('1 message was read only in part.');
+        await expect(session).not.toHaveTextContent('left unlisted');
+      }
+      await expect(read.textContent).not.toMatch(
+        /tail.*truncated|outside it|start time was not recorded/i,
+      );
+      await expect(reading.posts).toEqual([]);
+    },
+  };
+}
+
+export const WhatTheAnalysisReadWithMessageExcerpts = boundedPrompt(EXCERPTED_DRIFT);
+export const WhatTheAnalysisReadWithAnExhaustedPrompt = boundedPrompt(PROMPT_LIMITED_DRIFT);
 
 export const WhatTheAnalysisReadFromAPromptGoal: Story = {
   ...scenario({

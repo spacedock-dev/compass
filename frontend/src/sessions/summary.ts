@@ -130,9 +130,9 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
     'This saved summary used message excerpts. Summarize again to read beyond them.',
   no_entries: () => 'The part of the record Compass read holds no entries to summarize.',
   ceiling: () =>
-    'The summary reached one of its limits on calls, bytes or time, so the parts after it were not read.',
+    'The summary reached one of its limits on calls, bytes or time, so the parts after it were not summarized.',
   refused: () => 'A model call was refused, so the summary stopped.',
-  stopped: () => 'The summary stopped before every part was read.',
+  stopped: () => 'The summary stopped before every part was summarized.',
   output_bound_too_small: () => 'Compass’s summary size limit is too small for any summary.',
 };
 
@@ -148,10 +148,9 @@ export function reasonSentence(reason: string, context: ReasonContext): string {
   return line ? line(context) : `The summary stopped (${reason}).`;
 }
 
-/* A part the summary could not summarize, said where it sits. Every gap points at the outline. */
+/* A summary gap says what was not summarized, without certifying the separate outline. */
 export const GAP_LINES: Readonly<Record<string, string>> = {
-  before_window:
-    'The summary starts after this part: the session is longer than one summary reads. The outline covers it.',
+  before_window: 'This part was not summarized: the summary starts later in the session.',
   no_valid_reply: 'This part could not be summarized: the model’s reply could not be read.',
   no_output: 'This part could not be summarized: the model returned nothing, twice.',
   refused: 'This part could not be summarized: the model call was refused.',
@@ -449,7 +448,7 @@ export function outOfDateLine(
     return {
       sentence:
         report.kind === 'unchanged'
-          ? 'Some message text remains unread. Update summary continues from where it stopped.'
+          ? 'Some message text remains unsummarized. Update summary continues from where it stopped.'
           : report.newEntries
             ? `${plural(report.newEntries, 'new entry', 'new entries')}${since}.`
             : `A check’s result arrived${since}.`,
@@ -481,6 +480,8 @@ export const FRESHNESS_UNKNOWN =
 /* What the read behind a stored summary did not cover, said once above the phases. */
 export function summaryNotes(summary: StoredSummary, startsAt: string): string[] {
   const notes: string[] = [];
+  if (summary.coverage?.complete && summary.blocks.some((block) => block.gap))
+    notes.push('Source collection finished for this summary. Some parts were not summarized.');
   const fragmented = summary.blocks.some(
     (block) =>
       block.span && (block.span.firstOffset > 0 || block.span.lastOffset < block.span.lastTotal),
@@ -502,8 +503,8 @@ export function summaryNotes(summary: StoredSummary, startsAt: string): string[]
   if (partway)
     notes.push(
       startsAt
-        ? `This summary starts at ${startsAt}, not at the session’s first entry. The outline covers what comes before.`
-        : 'This summary starts partway through the session, not at its first entry. The outline covers what comes before.',
+        ? `This summary starts at ${startsAt}, not at the session’s first entry. Earlier entries were not summarized here.`
+        : 'This summary starts partway through the session, not at its first entry. Earlier entries were not summarized here.',
     );
   if (summary.coverage?.agentReplies === 'not_read')
     notes.push('The agent’s replies were not read for this harness, so the summary has none.');
@@ -547,8 +548,8 @@ export function progressLine(job: SummaryJob): string {
 export function partsKept(job: SummaryJob): string {
   if (!job.parts) return '';
   return job.finishedParts.length
-    ? `It kept ${plural(job.finishedParts.length, 'part', 'parts')} of ${String(job.parts)}.`
-    : 'It kept no part.';
+    ? `It kept ${plural(job.finishedParts.length, 'finished part', 'finished parts')} of ${String(job.parts)}.`
+    : 'It kept no finished part.';
 }
 
 /* Whether the page posts the one summary a finished session gets when it is opened: summaries on and not at
@@ -598,7 +599,7 @@ export interface Placement {
 
 export const PLACE_LINES: Readonly<Record<Exclude<Where, 'phase'>, string>> = {
   after: 'Its evidence comes after the last entry the summary covers.',
-  before: 'Its evidence sits before where the summary starts, in the part the outline covers.',
+  before: 'Its evidence comes before the first entry this summary covers.',
   gap: 'Its evidence sits inside a part of the session the summary could not summarize.',
   between: 'Its evidence sits inside the span the summary covers, but in no phase of it.',
   unplaced: 'Compass cannot place its evidence against the summary.',
