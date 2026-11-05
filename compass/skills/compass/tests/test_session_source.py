@@ -2484,6 +2484,85 @@ class SessionSourceTest(unittest.TestCase):
             cursor = page.next
         self.assertEqual("stale", page.state)
 
+    def test_source_change_during_other_stream_verification_is_stale(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        child = Transcript(self.root)
+        for i in range(5):
+            child.prompt(f"Synthetic child {i}.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child_path = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        child.save(child_path)
+        initial = self.read()
+        with child_path.open("ab") as output:
+            output.write(child_path.read_bytes())
+        original = self.source._validate_prefix_stream
+
+        def mutate(path: str, harness: str, stream: Any, budget: Any) -> Any:
+            result = original(path, harness, stream, budget)
+            if stream.stream != "parent":
+                with self.path.open("ab") as output:
+                    output.write(b"{}\n")
+            return result
+
+        with mock.patch.object(self.source, "_validate_prefix_stream", side_effect=mutate):
+            page = self.read(after=initial.snapshot.cursor, max_bytes=64)
+        self.assertEqual("stale", page.state)
+
+    def test_exhausted_verification_read_remains_resumable(self) -> None:
+        for i in range(4):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        initial = self.read()
+        with self.path.open("ab") as output:
+            output.write(self.path.read_bytes())
+        original = self.source._Budget.line
+
+        def exhaust(budget: Any, _source: Any, _count: int) -> bytes:
+            budget.remaining = 0
+            return b""
+
+        with mock.patch.object(self.source._Budget, "line", exhaust):
+            page = self.read(after=initial.snapshot.cursor)
+        self.assertEqual("ok", page.state)
+        self.assertEqual((), page.entries)
+        self.assertFalse(page.coverage.complete)
+        self.assertIsNotNone(page.next)
+        with mock.patch.object(self.source._Budget, "line", original):
+            self.assertEqual("ok", self.read(after=page.next).state)
+
+    def test_generic_continuation_reuses_one_child_inventory(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        initial = self.read()
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        inventory = self.source.context._admitted_subagent_paths
+        with mock.patch.object(
+            self.source.context, "_admitted_subagent_paths", wraps=inventory
+        ) as measured:
+            page = self.read(after=initial.snapshot.cursor)
+        self.assertEqual("ok", page.state)
+        self.assertEqual(1, measured.call_count)
+
+    def test_newest_window_verifies_only_consumed_range_after_append(self) -> None:
+        for i in range(20):
+            self.session.prompt(f"Synthetic message {i:02d}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(newest=True, max_bytes=sum(map(len, lines[-4:])))
+        frontier = initial.snapshot.cursor.streams[0]
+        self.assertGreater(frontier.prefix_start, 0)
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        page = self.read(after=initial.snapshot.cursor, max_bytes=self.path.stat().st_size * 2)
+        self.assertEqual("ok", page.state)
+        self.assertEqual(
+            frontier.offset - frontier.prefix_start + len(lines[-1]) * 2, page.bytes_read
+        )
+        self.assertEqual(1, len(page.entries))
+
     def test_changed_earlier_words_keep_identity_and_change_fingerprint(self) -> None:
         self.session.prompt("Read this synthetic title. Earlier private sentence.")
         self.session.prompt("Leave the boundary intact.")

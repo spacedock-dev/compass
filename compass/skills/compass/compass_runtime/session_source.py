@@ -2349,6 +2349,8 @@ def _validate_prefix_bytes(source: BinaryIO, old: StreamCursor, budget: _Budget)
     while old.verify_offset < old.offset and budget.reason is None:
         raw = budget.line(source, min(64 * 1024, old.offset - old.verify_offset))
         if not raw:
+            if budget.reason is not None:
+                break  # type: ignore[unreachable]  # The budget can expire during the read.
             raise _SourceChangedError
         old = replace(
             old, verify_offset=old.verify_offset + len(raw), verify_hash=old.verify_hash.add(raw)
@@ -2365,20 +2367,19 @@ def _validate_prefix_bytes(source: BinaryIO, old: StreamCursor, budget: _Budget)
 
 
 def _validate_prefixes(
-    path: str, harness: str, cursor: SourceCursor, budget: _Budget
+    path: str, harness: str, cursor: SourceCursor, budget: _Budget, children: list[str]
 ) -> tuple[SourceCursor, bool]:
     """Validate changed streams incrementally before releasing any new facts."""
     paths = {"parent": path}
-    if harness == "claude":
-        paths.update(
-            (_child_stream(path, child), child)
-            for child in context._admitted_subagent_paths(path, None)  # noqa: SLF001
-        )
+    paths.update((_child_stream(path, child), child) for child in children)
     streams = []
     for old in cursor.streams:
         if old.stream not in paths:
             raise _SourceChangedError
         streams.append(_validate_prefix_stream(paths[old.stream], harness, old, budget))
+    for stream in streams:
+        if _stamp(os.stat(paths[stream.stream])) != stream.stamp:
+            raise _SourceChangedError
     return replace(cursor, streams=tuple(streams)), any(s.verify_hash is not None for s in streams)
 
 
@@ -2436,8 +2437,15 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
     if after and (after.identity != identity or not after.streams):
         return SourcePage("stale", harness, sid)
     try:
+        admitted_children = (
+            context._admitted_subagent_paths(path, None)  # noqa: SLF001
+            if after and observed_writes is None and harness == "claude"
+            else None
+        )
         if after and observed_writes is None:
-            after, validating = _validate_prefixes(path, harness, after, budget)
+            after, validating = _validate_prefixes(
+                path, harness, after, budget, admitted_children or []
+            )
             if validating:
                 return _validation_page(after, harness, sid, budget)
         old = {stream.stream: stream for stream in after.streams} if after else {}
@@ -2462,6 +2470,7 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
             old,
             newest=newest,
             track_prefix=observed_writes is None,
+            admitted=admitted_children,
         )
         return replace(
             _finish(
@@ -2488,7 +2497,7 @@ def _child_stream(path: str, child: str) -> str:
     return os.path.splitext(os.path.relpath(child, subagents))[0].replace(os.sep, "/")
 
 
-def _read_children(
+def _read_children(  # noqa: PLR0913 - stream context and shared inventory
     config: RuntimeConfig,
     path: str,
     harness: str,
@@ -2498,10 +2507,17 @@ def _read_children(
     *,
     newest: bool,
     track_prefix: bool = False,
+    admitted: list[str] | None = None,
 ) -> tuple[list[_StreamRead], list[UnreadRegion]]:
     streams: list[_StreamRead] = []
     unread: list[UnreadRegion] = []
-    children = context._admitted_subagent_paths(path, None) if harness == "claude" else []  # noqa: SLF001
+    children = (
+        (
+            admitted if admitted is not None else context._admitted_subagent_paths(path, None)  # noqa: SLF001
+        )
+        if harness == "claude"
+        else []
+    )
     for child in sorted(children):
         # Admission accepts `subagents/` and `subagents/workflows/<wf>/`, so one agent id can
         # appear twice; the relative path keeps their fact ids and cursors apart.
