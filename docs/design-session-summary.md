@@ -1301,19 +1301,32 @@ independent of a reading's retained messages and anchors. `deadline` is an absol
 deadline. The module retains nothing between calls. The optional `observed_writes` set supplies
 prior canonical withdrawal context and receives newly observed withdrawals; the collecting caller
 must reconcile earlier facts when it grows. `known_head` supplies already metered directory/time
-metadata. Ordinary callers retain their existing cursor behavior. [Summary collection](#source-collection-for-summaries)
-owns the opt-in reconciliation. The frozen dataclasses are the contract for the summary producer:
+metadata. [Summary collection](#source-collection-for-summaries) owns the opt-in reconciliation.
+The frozen dataclasses are the contract for the summary producer:
 
 | Shape | Fields and meaning |
 | -- | -- |
 | `SourceEntry` | `fact_id`, `fingerprint`, `kind` (`person`, `agent`, `check`, `file`), `actor` (`parent`, `subagent`), `stream`, `at`, masked `title`, optional `result`, display `path`, `folder`, grouping `subject`, and server-only `words`. |
 | `UnreadRegion` | `start_offset`, `end_offset`, `reason`, `stream`. Offsets belong to the named stream, so two transcripts never share a byte coordinate. |
 | `SourceCoverage` | `complete`, `starts_at`, `start_offset`, `end_offset`, `unread`, `agent_replies`, `checks_and_files`, `notes`. |
-| `SourcePage` | `state` (`ok`, `limited`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, and `bytes_read` including boundary probes. Server-only `replacements` pairs name retired and replacement fact ids; `positions` and `observations` map emitted fact ids to physical order and the observation offset supporting their value. `replacement_observations` aligns with replacement pairs. `classification_revision` is positive only on canonical outline replay pages. The transient `head_fallback` pair supplies directory/time observations from parent rows for summary collection, and otherwise defaults to `(None, None)`. A limited outline page may carry accepted evidence and a checkpoint; unavailable or stale pages do not. |
-| `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs and physical call positions, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
+| `SourcePage` | `state` (`ok`, `limited`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, and `bytes_read` including boundary probes. Generic callers clear accumulated evidence when `reset` is true, before accepting this page. Server-only `replacements` pairs name retired and replacement fact ids; `positions` and `observations` map emitted fact ids to physical order and the observation offset supporting their value. `replacement_observations` aligns with replacement pairs. `classification_revision` is positive only on canonical outline replay pages. The transient `head_fallback` pair supplies directory/time observations from parent rows for summary collection, and otherwise defaults to `(None, None)`. A limited outline page may carry accepted evidence and a checkpoint; unavailable or stale pages do not. |
+| `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs and physical call positions, session directory, accumulated id/fingerprint/time and subject metadata, and the generic reader's bounded canonical `withdrawals` union and `replaying` flag. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, bounded unfinished-line state, and, for generic continuation, copy-on-write hashes of consumed and verification ranges. These are server-only Python values, not HTTP cursors. |
 | `SourceSnapshot` | Parent `(device, inode, size, mtime_ns)` stamp, `end_offset`, `boundary_digest`, accumulated `(fact_id, fingerprint, at)` entries, read-only `subjects` mapping to latest fact and result/write fingerprint, `pending_calls`, continuation `cursor`, `message_ids`, and boundary hashes measured by this read. `verified_boundary` records a continuation's comparison against its previous boundary. `result_calls` names processed `(stream, call id)` result pairs, including a refused call that retracts an earlier unknown run. `snapshot(page)` returns this same value. |
 | `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
 | `OutlineCheckpoint` | The outline-only continuation: source identity and stamps, sanitized stream frontiers and accepted intervals, pending-call locators, child inventory, permanent gaps, conditional-call locators, the canonical withdrawal union and replay queue. It holds no generic cursor or source payload. `done` and `complete` have separate meanings under [focused grouping](#bounds-and-focused-grouping). |
+
+Generic forward-page consumers apply `reset`, retire ids named by `replacements`, and then upsert
+the page's entries by fact id. When a parent or admitted child records a new declaration withdrawal,
+the reader returns an empty reset page with a cursor at the beginning under the expanded withdrawal
+union. This also recovers calls that originally emitted no check. Replay reads and boundary probes
+spend each call's byte allowance and deadline; a zero allowance keeps a retryable cursor. Replay
+requires the same stream inventory and exact file stamps throughout, returning `stale` if they
+change. The additional continuation metadata holds at most 512 canonical withdrawal names and
+64 KiB of their UTF-8 bytes, with no commands, results or write bodies. Exceeding either cap returns
+`limited`, `reset=True`, no entries or snapshot, and an incomplete coverage region with reason
+`classification_state_limit`. That stop must never be treated as successful cursor exhaustion.
+The outline checkpoint and the summary collector retain their separate reconciliation contracts.
+The other production caller, stored-summary freshness, reads one page and holds no generic cursor.
 
 Message ids come from `record_pages._fact`, including its title normalization and redaction.
 Check and file ids use `project_context._semantic_fact_from_event` on the same tally events the
@@ -1374,7 +1387,7 @@ inputs, not previously emitted message words.
 `newest=True` begins at the first line boundary at or after `size - max_bytes`. It names `[0,
 start_offset)` as `before_window`, and `starts_at` names the first emitted fact when coverage is
 partial. Other unread reasons are `bytes`, `time`, `oversized_line`, `unreadable_record`, and
-`unreadable_subagent`. A malformed JSON line is skipped with `unreadable_record`.
+`unreadable_subagent`, and `verification` while a consumed range is being checked. A malformed JSON line is skipped with `unreadable_record`.
 An oversized message is skipped before masking, as is a line above the line ceiling. Fragments
 crossing page allowances are held only to that ceiling; oversized bytes are discarded while
 hashing continues. A child with no readable allowance names `unreadable_subagent` as well as its
@@ -1384,6 +1397,20 @@ the extension (`agent-<hex>` or `workflows/<wf>/agent-<hex>`), because admission
 directories and one agent id can appear in each. Children are opened without following a link
 swapped in after admission, as the published tool report's child reads are; the parent follows
 links exactly where that report's transcript read does.
+
+Generic continuation keeps a word-free SHA-256 state for each consumed range. An unchanged-size
+mtime change refuses the cursor, including a metadata-only touch. Outside classification replay,
+growth triggers a reread of the entire consumed range before emitting further facts; the check can span calls, each returning no entries,
+incomplete coverage and a continuation until it finishes. Each reread spends the same byte/time
+allowance as new records. The cost of one append is proportional to the consumed range, including
+skipped oversized lines; `newest` verifies only the range it actually consumed. A stamp change during
+verification refuses the cursor. Hash states are copied on extension, so using an earlier cursor does
+not advance it. A changed or missing source requires a fresh read.
+
+These checks rely on filesystem stamps and do not make an atomic snapshot: an edit whose mtime is
+restored, or a rewrite racing after a range was verified, can escape detection. A digest is not source
+text, but it is derived from the transcript; no verification text is retained. The dedicated summary
+and outline paths use their own generation and source checks, not this generic continuation pass.
 
 Boundary verification consumes the same byte/time allowance as new records. A smaller allowance
 than the old boundary line may therefore return no new evidence; a caller must increase that

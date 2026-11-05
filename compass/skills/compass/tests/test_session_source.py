@@ -1282,6 +1282,221 @@ class SessionSourceTest(unittest.TestCase):
         git(self.root, "add", "package.json")
         git(self.root, "commit", "-q", "-m", "owned base")
 
+    def collect_generic_pages(self, budget: int = 4000) -> tuple[dict[str, Any], list[Any]]:
+        facts: dict[str, Any] = {}
+        pages = []
+        cursor = None
+        with self._meter_source_reads() as reads:
+            for _ in range(500):
+                before = reads[0]
+                page = self.read(after=cursor, max_bytes=budget, deadline=time.monotonic() + 30)
+                self.assertEqual("ok", page.state)
+                self.assertEqual(reads[0] - before, page.bytes_read)
+                self.assertLessEqual(page.bytes_read, budget)
+                if getattr(page, "reset", False):
+                    facts.clear()
+                for old, new in page.replacements:
+                    for fact_id in set(old) - set(new):
+                        facts.pop(fact_id, None)
+                facts.update((entry.fact_id, entry) for entry in page.entries)
+                pages.append(page)
+                cursor = page.next
+                if cursor is None:
+                    break
+            else:
+                self.fail("generic source pages did not exhaust")
+        return facts, pages
+
+    def test_generic_pages_reconcile_parent_declaration_withdrawal(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned generic declaration reconciliation.")
+        self.session.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        for number in range(10):
+            self.session.prompt(f"Before write {number}. " + "padding " * 100)
+        self.session.write(str(self.root / "package.json"))
+        for number in range(10):
+            self.session.prompt(f"After write {number}. " + "padding " * 100)
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        whole = self.read(max_bytes=100000, deadline=time.monotonic() + 30)
+        self.assertEqual(
+            ["pytest tests/direct.py"], [e.title for e in whole.entries if e.kind == "check"]
+        )
+        facts, pages = self.collect_generic_pages()
+        self.assertTrue(any(e.title == "pnpm typecheck" for e in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertTrue(any(page.reset for page in pages))
+
+    def test_generic_child_withdrawal_replays_parent_and_sibling(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned parent check.")
+        self.session.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        self.save()
+        sibling = Transcript(self.root)
+        sibling.bash("pnpm typecheck", "1 passed")
+        self.save_outline_child(sibling, "agent-ab12.jsonl")
+        writer = Transcript(self.root)
+        for number in range(8):
+            writer.prompt(f"Before child write {number}. " + "padding " * 60)
+        writer.write(str(self.root / "package.json"))
+        self.save_outline_child(writer, "agent-cd34.jsonl")
+        whole = self.read(max_bytes=100000, deadline=time.monotonic() + 30)
+        facts, pages = self.collect_generic_pages()
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertTrue(any(page.reset for page in pages))
+        self.assertEqual(
+            ["pytest tests/direct.py"], [e.title for e in facts.values() if e.kind == "check"]
+        )
+
+    def test_generic_withdrawal_recovers_zero_emission_call_and_intervening_outcome(self) -> None:
+        self.prepare_outline_declarations()
+        (self.root / "package.json").write_text(package(test="echo skipped"))
+        git(self.root, "add", "package.json")
+        git(self.root, "commit", "-q", "-m", "owned non-check script")
+        project_scripts.reset()
+        self.session.prompt("Owned zero-emission call and later outcome.")
+        self.session.bash("pnpm test", "1 passed")
+        direct = self.session.call("Bash", {"command": "pytest tests/direct.py"})
+        for number in range(8):
+            self.session.prompt(f"Before outcome {number}. " + "padding " * 30)
+        self.session.result(direct, "Exit code 1\n1 failed", is_error=True)
+        for number in range(8):
+            self.session.prompt(f"Before write {number}. " + "padding " * 30)
+        self.session.write(str(self.root / "package.json"), "PRIVATE_WRITE_BODY_SENTINEL")
+        for number in range(8):
+            self.session.prompt(f"After write {number}. " + "padding " * 30)
+        self.save()
+        whole = self.read(max_bytes=100000, deadline=time.monotonic() + 30)
+        facts, pages = self.collect_generic_pages(budget=1400)
+        self.assertFalse(any(e.title == "pnpm test" for e in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertEqual(
+            {"pnpm test": "passed", "pytest tests/direct.py": "failed"},
+            {e.title: e.result for e in facts.values() if e.kind == "check"},
+        )
+        resets = [page for page in pages if page.reset]
+        self.assertEqual(1, len(resets))
+        reset = resets[0]
+        self.assertEqual((), reset.entries)
+        self.assertEqual(frozenset({"package.json"}), reset.next.withdrawals)
+        self.assertEqual((), reset.next.pending)
+        self.assertNotIn("PRIVATE_WRITE_BODY_SENTINEL", repr(reset.next))
+        self.assertFalse(reset.coverage.complete)
+        self.assertIn("classification_pending", [gap.reason for gap in reset.coverage.unread])
+        self.assertGreater(sum(page.bytes_read for page in pages), self.path.stat().st_size)
+
+    def test_generic_withdrawal_metadata_overflow_stops_with_explicit_partial_state(self) -> None:
+        self.session.prompt("Owned bounded generic metadata.")
+        self.session.bash("pytest tests/direct.py", "1 passed")
+        self.session.write(str(self.root / "package.json"))
+        self.save()
+        for cap in ("_SOURCE_WITHDRAWAL_LIMIT", "_SOURCE_WITHDRAWAL_BYTES"):
+            with self.subTest(cap=cap), mock.patch.object(self.source, cap, 0):
+                page = self.read()
+                self.assertEqual("limited", page.state)
+                self.assertTrue(page.reset)
+                self.assertFalse(page.coverage.complete)
+                self.assertIsNone(page.next)
+                self.assertIsNone(page.snapshot)
+                self.assertEqual((), page.entries)
+                self.assertIn(
+                    "classification_state_limit", [gap.reason for gap in page.coverage.unread]
+                )
+
+    def generic_reset_page(self) -> Any:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned replay generation.")
+        self.session.bash("pnpm typecheck", "1 passed")
+        for number in range(8):
+            self.session.prompt(f"Before reset {number}. " + "padding " * 30)
+        self.session.write(str(self.root / "package.json"))
+        self.save()
+        cursor = None
+        for _ in range(30):
+            page = self.read(after=cursor, max_bytes=1400, deadline=time.monotonic() + 30)
+            if page.reset:
+                return page
+            cursor = page.next
+            self.assertIsNotNone(cursor)
+        raise AssertionError("expected a classification reset")
+
+    def test_generic_replay_empty_allowance_keeps_retryable_context(self) -> None:
+        reset = self.generic_reset_page()
+        for allowance in ({"max_bytes": 0}, {"deadline": 0}):
+            with self.subTest(allowance=allowance):
+                page = self.read(after=reset.next, **allowance)
+                self.assertEqual("ok", page.state)
+                self.assertEqual(0, page.bytes_read)
+                self.assertFalse(page.reset)
+                self.assertFalse(page.coverage.complete)
+                self.assertEqual(reset.next.withdrawals, page.next.withdrawals)
+                self.assertTrue(page.next.replaying)
+        page = self.read(after=reset.next, max_bytes=1400, deadline=time.monotonic() + 30)
+        self.assertGreater(page.bytes_read, 0)
+        self.assertGreater(page.snapshot.end_offset, 0)
+
+    def test_generic_replay_refuses_a_changed_generation(self) -> None:
+        reset = self.generic_reset_page()
+        self.session.prompt("An append during classification replay changes the generation.")
+        self.save()
+        page = self.read(after=reset.next)
+        self.assertEqual("stale", page.state)
+        self.assertEqual((), page.entries)
+        self.assertIsNone(page.next)
+
+    def test_generic_replay_append_after_progress_stales_at_any_allowance(self) -> None:
+        reset = self.generic_reset_page()
+        progress = self.read(after=reset.next, max_bytes=1400, deadline=time.monotonic() + 30)
+        self.assertGreater(progress.next.streams[0].offset, 0)
+        self.assertTrue(progress.next.replaying)
+        self.assertEqual(reset.next.withdrawals, progress.next.withdrawals)
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        for allowance in (0, 1, 1400, 100000):
+            with self.subTest(allowance=allowance):
+                page = self.read(after=progress.next, max_bytes=allowance)
+                self.assertEqual("stale", page.state)
+                self.assertEqual((), page.entries)
+                self.assertIsNone(page.next)
+
+    def test_generic_replay_refuses_new_child_inventory_before_emitting(self) -> None:
+        reset = self.generic_reset_page()
+        progress = self.read(after=reset.next, max_bytes=1400, deadline=time.monotonic() + 30)
+        self.assertGreater(progress.next.streams[0].offset, 0)
+        child = Transcript(self.root)
+        child.prompt("Synthetic new child.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        self.save_outline_child(child, "agent-ab12.jsonl")
+        page = self.read(after=progress.next, max_bytes=0)
+        self.assertEqual("stale", page.state)
+        self.assertEqual((), page.entries)
+        self.assertIsNone(page.next)
+
+    def test_prefix_verification_retains_withdrawals_after_replay(self) -> None:
+        reset = self.generic_reset_page()
+        cursor = reset.next
+        for _ in range(100):
+            page = self.read(after=cursor, max_bytes=1400, deadline=time.monotonic() + 30)
+            self.assertEqual("ok", page.state)
+            if page.next is None:
+                break
+            cursor = page.next
+        self.assertIsNone(page.next)
+        completed = page.snapshot.cursor
+        self.assertFalse(completed.replaying)
+        self.assertEqual(reset.next.withdrawals, completed.withdrawals)
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        checking = self.read(after=completed, max_bytes=1)
+        self.assertEqual("ok", checking.state)
+        self.assertEqual((), checking.entries)
+        self.assertFalse(checking.reset)
+        self.assertFalse(checking.coverage.complete)
+        self.assertEqual(completed.withdrawals, checking.next.withdrawals)
+        self.assertFalse(checking.next.replaying)
+        self.assertEqual(checking.next, checking.snapshot.cursor)
+
     def collect_outline_with_authority(
         self, budget: int = 4000
     ) -> tuple[dict[str, Any], list[Any]]:
@@ -2363,6 +2578,205 @@ class SessionSourceTest(unittest.TestCase):
             row["timestamp"] = self.session.rows[0]["timestamp"]
         self.save()
         self.assertEqual(["check", "person"], [entry.kind for entry in self.read().entries])
+
+    def test_continuation_rejects_earlier_equal_length_edit(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}: ORIGINAL content.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        first = self.read(max_bytes=sum(map(len, lines[:3])))
+        self.assertIsNotNone(first.next)
+        self.assertGreaterEqual(len(first.entries), 2)
+        edited = self.path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1)
+        self.path.write_bytes(edited)
+        info = self.path.stat()
+        os.utime(self.path, ns=(info.st_atime_ns, first.snapshot.stamp[3] + 1_000_000_000))
+        whole = self.read()
+        self.assertNotEqual(first.entries[0].words, whole.entries[0].words)
+        continued = self.read(after=first.next, max_bytes=sum(map(len, lines[:3])))
+        self.assertEqual("stale", continued.state)
+
+    def test_continuation_detects_earlier_edit_with_append_in_budgeted_pass(self) -> None:
+        for i in range(12):
+            self.session.prompt(f"Synthetic message {i}: ORIGINAL content.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        edited = self.path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1)
+        self.path.write_bytes(edited + lines[-1])
+        cursor = initial.next
+        for _ in range(20):
+            page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if page.state == "stale":
+                break
+            self.assertIsNotNone(page.next)
+            cursor = page.next
+        self.assertEqual("stale", page.state)
+
+    def test_append_verification_makes_budgeted_progress_without_emitting(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        cursor = initial.next
+        self.assertNotIn("Synthetic message", repr(cursor))
+        expired = self.read(after=cursor, deadline=0)
+        self.assertEqual(0, expired.bytes_read)
+        self.assertFalse(expired.coverage.complete)
+        self.assertEqual((), expired.entries)
+        self.assertIsNotNone(expired.next)
+        before = self.read(after=cursor, max_bytes=len(lines[0]))
+        again = self.read(after=cursor, max_bytes=len(lines[0]))
+        self.assertEqual(before.next.streams[0].verify_offset, again.next.streams[0].verify_offset)
+        self.assertEqual(
+            before.next.streams[0].verify_hash.digest(), again.next.streams[0].verify_hash.digest()
+        )
+        verification_pages = 0
+        for _ in range(40):
+            page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertEqual("ok", page.state)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if any(region.reason == "verification" for region in page.coverage.unread):
+                verification_pages += 1
+                self.assertFalse(page.coverage.complete)
+                self.assertEqual((), page.entries)
+            cursor = page.next
+            if cursor is None:
+                break
+        self.assertGreater(verification_pages, 1)
+        self.assertIsNone(cursor)
+
+    def test_edit_during_incremental_verification_invalidates_cursor(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        checking = self.read(after=initial.next, max_bytes=len(lines[0]))
+        self.assertEqual((), checking.entries)
+        self.assertIn("verification", [r.reason for r in checking.coverage.unread])
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        self.assertEqual("stale", self.read(after=checking.next).state)
+
+    def test_child_append_and_edit_withholds_parent_facts_until_verified(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        child = Transcript(self.root)
+        for i in range(8):
+            child.prompt(f"Child synthetic {i}: ORIGINAL.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child_path = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        child.save(child_path)
+        lines = child_path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=self.path.stat().st_size + sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        child_path.write_bytes(
+            child_path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1) + lines[-1]
+        )
+        with self.path.open("ab") as output:
+            output.write(self.path.read_bytes())
+        cursor = initial.next
+        for _ in range(30):
+            with self._meter_source_reads() as measured:
+                page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertEqual(measured[0], page.bytes_read)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if page.state == "stale":
+                break
+            self.assertEqual((), page.entries)
+            self.assertFalse(page.coverage.complete)
+            self.assertIsNotNone(page.next)
+            cursor = page.next
+        self.assertEqual("stale", page.state)
+
+    def test_source_change_during_other_stream_verification_is_stale(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        child = Transcript(self.root)
+        for i in range(5):
+            child.prompt(f"Synthetic child {i}.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child_path = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        child.save(child_path)
+        initial = self.read()
+        with child_path.open("ab") as output:
+            output.write(child_path.read_bytes())
+        original = self.source._validate_prefix_stream
+
+        def mutate(path: str, harness: str, stream: Any, budget: Any) -> Any:
+            result = original(path, harness, stream, budget)
+            if stream.stream != "parent":
+                with self.path.open("ab") as output:
+                    output.write(b"{}\n")
+            return result
+
+        with mock.patch.object(self.source, "_validate_prefix_stream", side_effect=mutate):
+            page = self.read(after=initial.snapshot.cursor, max_bytes=64)
+        self.assertEqual("stale", page.state)
+
+    def test_exhausted_verification_read_remains_resumable(self) -> None:
+        for i in range(4):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        initial = self.read()
+        with self.path.open("ab") as output:
+            output.write(self.path.read_bytes())
+        original = self.source._Budget.line
+
+        def exhaust(budget: Any, _source: Any, _count: int) -> bytes:
+            budget.remaining = 0
+            return b""
+
+        with mock.patch.object(self.source._Budget, "line", exhaust):
+            page = self.read(after=initial.snapshot.cursor)
+        self.assertEqual("ok", page.state)
+        self.assertEqual((), page.entries)
+        self.assertFalse(page.coverage.complete)
+        self.assertIsNotNone(page.next)
+        with mock.patch.object(self.source._Budget, "line", original):
+            self.assertEqual("ok", self.read(after=page.next).state)
+
+    def test_generic_continuation_reuses_one_child_inventory(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        initial = self.read()
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        inventory = self.source.context._admitted_subagent_paths
+        with mock.patch.object(
+            self.source.context, "_admitted_subagent_paths", wraps=inventory
+        ) as measured:
+            page = self.read(after=initial.snapshot.cursor)
+        self.assertEqual("ok", page.state)
+        self.assertEqual(1, measured.call_count)
+
+    def test_newest_window_verifies_only_consumed_range_after_append(self) -> None:
+        for i in range(20):
+            self.session.prompt(f"Synthetic message {i:02d}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(newest=True, max_bytes=sum(map(len, lines[-4:])))
+        frontier = initial.snapshot.cursor.streams[0]
+        self.assertGreater(frontier.prefix_start, 0)
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        page = self.read(after=initial.snapshot.cursor, max_bytes=self.path.stat().st_size * 2)
+        self.assertEqual("ok", page.state)
+        self.assertEqual(
+            frontier.offset - frontier.prefix_start + len(lines[-1]) * 2, page.bytes_read
+        )
+        self.assertEqual(1, len(page.entries))
 
     def test_changed_earlier_words_keep_identity_and_change_fingerprint(self) -> None:
         self.session.prompt("Read this synthetic title. Earlier private sentence.")

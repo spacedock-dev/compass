@@ -118,6 +118,11 @@ class StreamCursor:
     skipping: bool = False
     line_start: int = 0
     line_hash: _LineHash = field(default_factory=_LineHash)
+    # Generic reads alone opt into a word-free digest of the consumed range.
+    prefix_hash: _LineHash | None = field(default=None, repr=False, compare=False)
+    prefix_start: int = 0
+    verify_offset: int = 0
+    verify_hash: _LineHash | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,9 @@ class SourceCursor:
     # The names of the files a listing depends on that an earlier page saw the session write. A
     # page holds only its own rows, and no work tree byte comparison covers a listing.
     listing_writes: frozenset[str] = frozenset()
+    # Generic classification replay retains canonical dependency names, never call inputs.
+    withdrawals: frozenset[str] = frozenset()
+    replaying: bool = False
 
 
 @dataclass(frozen=True)
@@ -176,6 +184,8 @@ class SourcePage:
     classification_revision: int = 0
     # Opt-in summary observation: canonical body fallback when the bounded head has no field.
     head_fallback: tuple[str | None, float | None] = (None, None)
+    # Discard every earlier generic page before accepting this page and continuing its cursor.
+    reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -1775,7 +1785,10 @@ def _consume(
         if not raw:
             raise OSError("source shortened while reading")
         cursor = replace(
-            cursor, offset=cursor.offset + len(raw), line_hash=cursor.line_hash.add(raw)
+            cursor,
+            offset=cursor.offset + len(raw),
+            line_hash=cursor.line_hash.add(raw),
+            prefix_hash=cursor.prefix_hash.add(raw) if cursor.prefix_hash is not None else None,
         )
         length += len(raw)
         skipping = cursor.skipping or length > config.session_source_line_max_bytes
@@ -1817,7 +1830,7 @@ def _consume(
         )
 
 
-def _read_stream(
+def _read_stream(  # noqa: PLR0913 - stream identity, budget and read modes
     config: RuntimeConfig,
     path: str,
     stream: str,
@@ -1827,6 +1840,7 @@ def _read_stream(
     old: StreamCursor | None,
     *,
     newest: bool,
+    track_prefix: bool = False,
 ) -> _StreamRead:
     # Children were admitted link-free, so a link swapped in since is refused, as the tool report's
     # child reads do; the parent follows exactly where `project_context`'s transcript read does.
@@ -1842,6 +1856,8 @@ def _read_stream(
         if old and verified is not None and verified != old.boundary_digest:
             raise _SourceChangedError((old.end_offset, verified))
         cursor = replace(old, stamp=stamp) if old else StreamCursor(stream, stamp)
+        if track_prefix and cursor.prefix_hash is None and cursor.offset == 0:
+            cursor = replace(cursor, prefix_hash=_LineHash())
         read = _StreamRead(cursor, cursor.end_offset, path)
         read.verified = (old.end_offset, verified) if old and verified is not None else None
         if old and verified is None:
@@ -1877,7 +1893,9 @@ def _window_start(source: BinaryIO, read: _StreamRead, budget: _Budget) -> None:
                     break
         read.unread.append(UnreadRegion(0, start, "before_window", read.cursor.stream))
     read.start = start
-    read.cursor = replace(read.cursor, offset=start, end_offset=start, line_start=start)
+    read.cursor = replace(
+        read.cursor, offset=start, end_offset=start, line_start=start, prefix_start=start
+    )
 
 
 def _pending_calls(rows: list[dict[str, Any]], stream: str) -> list[PendingCall]:
@@ -2306,6 +2324,180 @@ def _summary_head(
     return (cwd, start), stamp, True
 
 
+def _validate_prefix_stream(
+    path: str, harness: str, old: StreamCursor, budget: _Budget, *, replaying: bool = False
+) -> StreamCursor:
+    follow = old.stream == "parent" and harness not in observer.DIRECTION_HARNESSES
+    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+        stamp = _stamp(os.fstat(source.fileno()))
+        if replaying and stamp != old.stamp:
+            raise _SourceChangedError
+        if stamp[:2] != old.stamp[:2] or stamp[2] < old.stamp[2]:
+            raise _SourceChangedError
+        if old.verify_hash is not None and stamp != old.stamp:
+            raise _SourceChangedError
+        if stamp[2] == old.stamp[2] and stamp[3] != old.stamp[3]:
+            boundary = _verify(source, old, budget)
+            if boundary is not None and boundary != old.boundary_digest:
+                raise _SourceChangedError((old.end_offset, boundary))
+            raise _SourceChangedError
+        if stamp != old.stamp and old.prefix_hash is not None:
+            old = replace(old, stamp=stamp, verify_offset=old.prefix_start, verify_hash=_LineHash())
+        old = _validate_prefix_bytes(source, old, budget)
+        if _stamp(os.stat(path)) != stamp:
+            raise _SourceChangedError
+        return old
+
+
+def _validate_prefix_bytes(source: BinaryIO, old: StreamCursor, budget: _Budget) -> StreamCursor:
+    if old.verify_hash is None:
+        return old
+    source.seek(old.verify_offset)
+    while old.verify_offset < old.offset and budget.reason is None:
+        raw = budget.line(source, min(64 * 1024, old.offset - old.verify_offset))
+        if not raw:
+            if budget.reason is not None:
+                break  # type: ignore[unreachable]  # The budget can expire during the read.
+            raise _SourceChangedError
+        old = replace(
+            old, verify_offset=old.verify_offset + len(raw), verify_hash=old.verify_hash.add(raw)
+        )
+    if old.verify_offset == old.offset:
+        if (
+            old.verify_hash is None
+            or old.prefix_hash is None
+            or old.verify_hash.digest() != old.prefix_hash.digest()
+        ):
+            raise _SourceChangedError
+        old = replace(old, verify_hash=None, verify_offset=0)
+    return old
+
+
+def _validate_prefixes(
+    path: str, harness: str, cursor: SourceCursor, budget: _Budget, children: list[str]
+) -> tuple[SourceCursor, bool]:
+    """Validate changed streams incrementally before releasing any new facts."""
+    paths = {"parent": path}
+    paths.update((_child_stream(path, child), child) for child in children)
+    if cursor.replaying and set(paths) != {stream.stream for stream in cursor.streams}:
+        raise _SourceChangedError
+    streams = []
+    for old in cursor.streams:
+        if old.stream not in paths:
+            raise _SourceChangedError
+        if cursor.replaying:
+            streams.append(
+                _validate_prefix_stream(paths[old.stream], harness, old, budget, replaying=True)
+            )
+        else:
+            streams.append(_validate_prefix_stream(paths[old.stream], harness, old, budget))
+    for stream in streams:
+        if _stamp(os.stat(paths[stream.stream])) != stream.stamp:
+            raise _SourceChangedError
+    return replace(cursor, streams=tuple(streams)), any(s.verify_hash is not None for s in streams)
+
+
+def _validation_page(cursor: SourceCursor, harness: str, sid: str, budget: _Budget) -> SourcePage:
+    parent = _StreamRead(cursor.streams[0], cursor.streams[0].end_offset)
+    metadata = _metadata(cursor, (), parent)
+    unread = tuple(
+        UnreadRegion(stream.end_offset, stream.stamp[2], "verification", stream.stream)
+        for stream in cursor.streams
+        if stream.verify_hash is not None
+    )
+    coverage = SourceCoverage(
+        False,
+        None,
+        parent.start,
+        parent.cursor.end_offset,
+        unread,
+        "read" if harness == "claude" else "not_read",
+        "read" if harness == "claude" else "not_admitted",
+        _CODEX_NOTES if harness == "codex" else (),
+    )
+    return SourcePage(
+        "ok", harness, sid, (), coverage, metadata.cursor, metadata, bytes_read=budget.used
+    )
+
+
+_SOURCE_WITHDRAWAL_LIMIT = 512
+_SOURCE_WITHDRAWAL_BYTES = 64 * 1024
+
+
+def _verify_replay_generation(after: SourceCursor | None, streams: list[_StreamRead]) -> None:
+    if (
+        after
+        and after.replaying
+        and tuple((s.cursor.stream, s.cursor.stamp) for s in streams)
+        != tuple((s.stream, s.stamp) for s in after.streams)
+    ):
+        raise _SourceChangedError
+
+
+def _classification_page(
+    page: SourcePage, after: SourceCursor | None, written: set[str]
+) -> SourcePage:
+    """Invalidate an obsolete generic prefix and replay with bounded, word-free context."""
+    if page.snapshot is None or page.coverage is None:
+        return page
+    if len(written) > _SOURCE_WITHDRAWAL_LIMIT or sum(len(w.encode()) for w in written) > (
+        _SOURCE_WITHDRAWAL_BYTES
+    ):
+        return replace(
+            page,
+            state="limited",
+            entries=(),
+            next=None,
+            snapshot=None,
+            coverage=replace(
+                page.coverage,
+                complete=False,
+                unread=(*page.coverage.unread, UnreadRegion(0, 0, "classification_state_limit")),
+            ),
+            replacements=(),
+            positions=(),
+            observations=(),
+            replacement_observations=(),
+            reset=True,
+        )
+    cursor = replace(
+        page.snapshot.cursor,
+        withdrawals=frozenset(written),
+        replaying=bool(after and after.replaying and page.next is not None),
+    )
+    if after and written != set(after.withdrawals) and any(s.offset for s in after.streams):
+        cursor = SourceCursor(
+            cursor.identity,
+            tuple(StreamCursor(s.stream, s.stamp) for s in cursor.streams),
+            session_dir=cursor.session_dir,
+            listing_writes=cursor.listing_writes,
+            withdrawals=frozenset(written),
+            replaying=True,
+        )
+        metadata = _metadata(cursor, (), _StreamRead(cursor.streams[0], 0))
+        return SourcePage(
+            "ok",
+            page.harness,
+            page.sid,
+            coverage=replace(
+                page.coverage,
+                complete=False,
+                starts_at=None,
+                start_offset=0,
+                end_offset=0,
+                unread=(UnreadRegion(0, 0, "classification_pending"),),
+            ),
+            next=metadata.cursor,
+            snapshot=metadata,
+            reset=True,
+        )
+    return replace(
+        page,
+        snapshot=replace(page.snapshot, cursor=cursor),
+        next=cursor if page.next is not None else None,
+    )
+
+
 def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classification context
     config: RuntimeConfig,
     path: str,
@@ -2321,8 +2513,11 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
 ) -> SourcePage:
     """Read owned streams in one allowance; optionally carry canonical withdrawal names.
 
-    The opt-in set is both prior classification context and an observation sink. A collecting
-    caller must reconcile its earlier facts when it grows; an ordinary cursor is unchanged.
+    Generic callers must clear accumulated facts when `reset` is true, then continue `next`.
+    A later recorded declaration write restarts classification under the union of withdrawals;
+    every replay read spends this call's byte/time allowance. `limited` stops without a complete
+    result when classification metadata exceeds its cap. The opt-in `observed_writes` sink
+    leaves reconciliation to its collecting caller instead, preserving the summary contract.
     """
     if harness not in record_pages.HARNESSES:
         return SourcePage("unsupported", harness, sid, notes=("no paged record for this harness",))
@@ -2336,25 +2531,59 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
     identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
     if after and (after.identity != identity or not after.streams):
         return SourcePage("stale", harness, sid)
-    old = {stream.stream: stream for stream in after.streams} if after else {}
     try:
+        admitted_children = (
+            context._admitted_subagent_paths(path, None)  # noqa: SLF001
+            if after and observed_writes is None and harness == "claude"
+            else None
+        )
+        if after and observed_writes is None:
+            after, validating = _validate_prefixes(
+                path, harness, after, budget, admitted_children or []
+            )
+            if validating:
+                return _validation_page(after, harness, sid, budget)
+        old = {stream.stream: stream for stream in after.streams} if after else {}
         parent = _read_stream(
-            config, path, "parent", harness, sid, budget, old.get("parent"), newest=newest
+            config,
+            path,
+            "parent",
+            harness,
+            sid,
+            budget,
+            old.get("parent"),
+            newest=newest,
+            track_prefix=observed_writes is None,
         )
         parent.known_head = known_head
-        children, unread = _read_children(config, path, harness, sid, budget, old, newest=newest)
+        children, unread = _read_children(
+            config,
+            path,
+            harness,
+            sid,
+            budget,
+            old,
+            newest=newest,
+            track_prefix=observed_writes is None,
+            admitted=admitted_children,
+        )
+        _verify_replay_generation(after, [parent, *children])
+        written = (
+            set(after.withdrawals if after else ()) if observed_writes is None else observed_writes
+        )
+        page = _finish(
+            config,
+            path,
+            harness,
+            sid,
+            [parent, *children],
+            unread,
+            after,
+            budget,
+            observed_writes=written,
+        )
         return replace(
-            _finish(
-                config,
-                path,
-                harness,
-                sid,
-                [parent, *children],
-                unread,
-                after,
-                budget,
-                observed_writes=observed_writes,
-            ),
+            _classification_page(page, after, written) if observed_writes is None else page,
             bytes_read=budget.used,
         )
     except _SourceChangedError as error:
@@ -2368,7 +2597,7 @@ def _child_stream(path: str, child: str) -> str:
     return os.path.splitext(os.path.relpath(child, subagents))[0].replace(os.sep, "/")
 
 
-def _read_children(
+def _read_children(  # noqa: PLR0913 - stream context and shared inventory
     config: RuntimeConfig,
     path: str,
     harness: str,
@@ -2377,17 +2606,33 @@ def _read_children(
     old: dict[str, StreamCursor],
     *,
     newest: bool,
+    track_prefix: bool = False,
+    admitted: list[str] | None = None,
 ) -> tuple[list[_StreamRead], list[UnreadRegion]]:
     streams: list[_StreamRead] = []
     unread: list[UnreadRegion] = []
-    children = context._admitted_subagent_paths(path, None) if harness == "claude" else []  # noqa: SLF001
+    children = (
+        (
+            admitted if admitted is not None else context._admitted_subagent_paths(path, None)  # noqa: SLF001
+        )
+        if harness == "claude"
+        else []
+    )
     for child in sorted(children):
         # Admission accepts `subagents/` and `subagents/workflows/<wf>/`, so one agent id can
         # appear twice; the relative path keeps their fact ids and cursors apart.
         stream = _child_stream(path, child)
         try:
             child_read = _read_stream(
-                config, child, stream, harness, sid, budget, old.get(stream), newest=newest
+                config,
+                child,
+                stream,
+                harness,
+                sid,
+                budget,
+                old.get(stream),
+                newest=newest,
+                track_prefix=track_prefix,
             )
             streams.append(child_read)
             if not child_read.rows and child_read.cursor.end_offset < child_read.cursor.stamp[2]:
@@ -2448,6 +2693,7 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
             parent.rows,
             [stream.rows for stream in streams[1:]],
             prior_writes=(after.listing_writes if after else frozenset())
+            | (after.withdrawals if after else frozenset())
             | frozenset(observed_writes or ()),
             known_start=(known_head[1],) if known_head is not None else None,
             observed_writes=observed_writes,
