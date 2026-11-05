@@ -372,7 +372,9 @@ def command_direction(config: RuntimeConfig, text: str) -> str | None:
     """
     if not (_LOCAL_COMMAND_RE.match(text) or _PROMPT_COMMAND_RE.match(text)):
         return None
-    if harness_control_prompt(config, text):
+    # Compass's own command is no direction either, but it is not a control: a control stops the
+    # first-prompt read, and this is skipped past like an injected record (`_first_prompt_record`).
+    if harness_control_prompt(config, text) or records.compass_command(text):
         return ""
     # Decide whether the original record was cut, before redaction can remove
     # a wrapper. Mask only the captured arguments before their tags become spaces.
@@ -1503,7 +1505,11 @@ def _first_prompt_record(record: dict[str, Any], harness: str) -> tuple[str, flo
         at = records.parse_ts(record.get("timestamp") or "") or 0.0
     else:
         return None
-    return (body, at) if body.strip() and not records.injected_prompt(body, harness) else None
+    # Compass's own command is skipped like an injected record, so the goal drafts from the
+    # reader's next prompt; a control such as `/clear` still stops the read (SECURITY.md).
+    if not body.strip() or records.injected_prompt(body, harness) or records.compass_command(body):
+        return None
+    return body, at
 
 
 # ---------------------------------------------------------------------------

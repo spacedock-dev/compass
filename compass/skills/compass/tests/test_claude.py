@@ -2654,8 +2654,10 @@ class ClaudeInstructionTest(unittest.TestCase):
         # "a bare command carries no arguments, so it carries no goal" was checked
         # against the same corpus and is wrong: a skill invoked with no arguments
         # is exactly what the operator asked for. Only the measured control names
-        # are refused.
-        for skill in ("/create-pr", "/compass:compass", "/security-review"):
+        # are refused. `/compass:compass` was the third example until 2026-11-05:
+        # Compass's own command asks Compass, so the line reads past it
+        # (`test_compass_skill_action`).
+        for skill in ("/create-pr", "/security-review"):
             with self.subTest(skill=skill):
                 line = self.read(
                     self._prompt(0, "Reconcile the harness registry with the docs"),

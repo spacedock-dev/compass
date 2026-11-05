@@ -337,7 +337,19 @@ in the code.
 time is after the revision you last saved and after anything you have already settled. Both halves
 are available without a model: the annotation carries an epoch, every fact carries its own, and
 `nextReadingPersonAuthored` already owns the authorship question, so rule 7 and this cannot
-disagree about who wrote a row.
+disagree about who wrote a row. Compass's own command typed in a Claude Code session
+(`/compass:compass`, any action) and the turn it opens, until the agent's turn ends, another prompt
+arrives (a harness-injected one included) or the reader sends a message mid-turn, are not
+person-authored entries: the command publishes no message entry, as a harness control's does not,
+and what the agent ran and repeated in that turn stays in Full activity but is not evidence a
+reading, the Live monitor or a summary reads (2026-11-05). A model-started Compass skill opens no
+such turn, and the work around it stays the agent's evidence. Codex's `$compass` is not recognised
+yet: the command is read like any prompt, and the turn it opens is evidence. One thing the turn
+still moves: the agent's launcher run in it counts, for the drift level, as a command run after a
+passing check (`changed_after` and `last_changing_command_at`, computed in the collector modules
+frozen with the abstention qualification). Typing the command can therefore lower a live estimate
+to Not enough recorded yet and raise a stored reading's level, as it did before this change. The
+evidence a reading sends is not affected, and correcting the level needs a qualified run.
 
 **Not detected: whether it conflicts.** Deciding that a later instruction contradicts a typed goal
 is a reading of two prose strings, which DEC-15 refused and DEC-18 permits only behind four
@@ -6888,8 +6900,11 @@ What does not change:
 - A correction stays the reader's to copy. No action composes or sends one.
 - Compass never submits a prompt for the reader, never approves a tool call and never edits a
   session's transcript store.
-- [DEC-16](#dec-16-compass-does-not-write-into-a-session) is not amended. An invoked skill writes
-  nothing into a session on Compass's behalf, and DEC-16's three reopening conditions stand.
+- [DEC-16](#dec-16-compass-does-not-write-into-a-session)'s ruling that Compass writes nothing into
+  a session is not relaxed. An invoked skill writes nothing into a session on Compass's behalf, and
+  DEC-16's three reopening conditions stand. DEC-16's 2026-11-05 note, that a typed Compass command
+  and its turn are not the reader's entries or evidence, is about what Compass reads, not what it
+  writes.
 
 An action prints what its client operation prints, and no more. Each action has a row in the skill's
 Terminal actions section, and `TerminalActionsMatchTheClientTest` holds that table to the client's

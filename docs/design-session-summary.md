@@ -534,6 +534,13 @@ number-to-fact-id map. Stored citations contain fact ids only. Each menu line is
 | Check | `ran`, followed by its masked title and `result as the tool reported: failed`, `passed` or `not-recorded`. |
 | File write | `wrote`, followed by the display path. |
 
+Compass's own command typed in a Claude Code session (`/compass:compass`, any action) is not on the
+menu, and nothing the agent ran or said in the turn it opens is on it either; that turn ends at the
+agent's turn stop, the next prompt of any kind or a message the reader sent mid-turn: the reader asked
+Compass, and what the agent ran and repeated there is Compass's answer (`compass_turns`, amended
+2026-11-05). The outline groups from the same source, so it opens no phase for the command. A
+model-started Compass skill opens no such turn.
+
 Every admitted message is masked as complete prose and normalized to one line before any cut.
 Short messages occupy one menu line. A message longer than a window continues as JSON-quoted
 fragments labeled with character ranges in that canonical text. Every fragment keeps the original

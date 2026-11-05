@@ -22,6 +22,7 @@ from urllib.parse import ParseResult, parse_qs, urlparse
 from compass_runtime import (
     analyze_capacity,
     ci_read,
+    compass_turns,
     copied_corrections,
     correction,
     departures,
@@ -372,7 +373,8 @@ def _session_context(
         model_consent=False,
         message_reach=reach,
     )
-    return copied_corrections.mark(context, [row]) if isinstance(context, dict) else {}
+    marked = compass_turns.mark(application.config, application.state, context, [row])
+    return copied_corrections.mark(marked, [row])
 
 
 # An Allow with no `words_destination` at all comes from a page older than the

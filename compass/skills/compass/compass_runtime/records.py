@@ -1799,7 +1799,9 @@ _PROMPT_LEADING_TAG_RE = re.compile(r"^</?([A-Za-z][A-Za-z0-9_-]*)[\s>/]")
 # `prompt_title` and refuses a local command and a `harness_control` name, so a
 # skill command is a later direction and a person entry while `/clear` is
 # neither. Before that it kept the record and published nothing from it, every
-# line opening with `<` (DRC-4764).
+# line opening with `<` (DRC-4764). Compass's own command (`compass_command`) is
+# neither as well: the reader asked Compass, so the parser refuses it as it
+# refuses injected text.
 #
 # `<teammate-message>` stays listed, and the cost is accepted rather than
 # overlooked: a message from another agent is not the operator's instruction,
@@ -1955,6 +1957,66 @@ def strip_paste_wrapper(text: str) -> str:
     recognises a correction pasted back, so a wrapper never reaches either.
     """
     return _PROMPT_TRIM_RE.sub("", _PASTE_TAG_RE.sub("", text))
+
+
+# Compass's own command, typed. Claude Code 2.1.318 writes it as one string opening with
+# `<command-message>` and naming the skill in `<command-name>`, headless and interactive alike
+# (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl). Keyed on that name and never on
+# `attributionSkill`: after the model starts the skill itself, that field stays on the agent's
+# later work in the same turn, so it cannot say where Compass's turn ends.
+COMPASS_COMMAND: Final = "/compass:compass"
+_COMMAND_NAME_FIELD_RE = re.compile(r"<command-name>\s*(.*?)\s*</command-name>", re.DOTALL)
+
+
+def compass_command(text: object) -> bool:
+    """Whether a user record's text is the reader typing Compass's own command, any action.
+
+    The reader asked Compass, not the agent, so it is not the reader's message to the session:
+    it publishes no entry and is no prompt to adopt, offer or show as the last one. Prose naming
+    the command, a project skill called `compass` and another plugin's skill are not it.
+    """
+    if not isinstance(text, str) or not text.lstrip().startswith("<command-message>"):
+        return False
+    name = _COMMAND_NAME_FIELD_RE.search(text)
+    return name is not None and name.group(1) == COMPASS_COMMAND
+
+
+def compass_command_record(record: Any) -> bool:
+    """A main-thread Claude Code prompt record that is the reader typing Compass's command.
+
+    Only the captured shape: a prompt record (`_turn_signal`, which refuses `isMeta` records and
+    tool results) whose content is one string and which carries no `toolUseResult`
+    (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl, `"content": "str"`). A tool's
+    output that opens with the same tags is something the agent read, not the reader typing.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain") or "toolUseResult" in record:
+        return False
+    if _turn_signal(record, "claude") != ("prompt", None):
+        return False
+    content = message_dict(record).get("content")
+    return isinstance(content, str) and compass_command(content)
+
+
+def claude_prompt_record(record: Any) -> bool:
+    """A main-thread Claude Code record that starts a turn: typed or harness-injected."""
+    return (
+        isinstance(record, dict)
+        and not record.get("isSidechain")
+        and _turn_signal(record, "claude") == ("prompt", None)
+    )
+
+
+def person_prompt_record(record: Any) -> bool:
+    """A main-thread Claude Code prompt the reader typed to the session: the record after which
+    `claude_data.analyze_transcript` reads `last-prompt` again: those records repeat the command
+    until the reader types. Harness-injected prompts and the command are not one."""
+    if not isinstance(record, dict) or record.get("isSidechain"):
+        return False
+    signal = _turn_signal(record, "claude")
+    if not signal or signal[0] != "prompt":
+        return False
+    body = extract_text(message_dict(record).get("content")).strip()
+    return bool(body) and not injected_prompt(body, "claude") and not compass_command(body)
 
 
 def injected_prompt(text: str, harness: str) -> bool:
@@ -2223,8 +2285,11 @@ def harness_control(rendered: str | None) -> bool:
     A measured name list and NOT the structural rule "a bare command carries no
     arguments, so it carries no goal". That rule was checked against the same
     corpus and is wrong: bare-command goals are also skill invocations —
-    `/create-pr`, `/compass:compass`, `/security-review` — and a skill invoked
-    with no arguments is exactly what the operator asked for. Argument-carrying
+    `/create-pr`, `/security-review` — and a skill invoked with no arguments is
+    exactly what the operator asked for. Compass's own `/compass:compass` was the
+    third example until 2026-11-05: it asks Compass, not the agent, and
+    `compass_command` now keeps it out of every surface without making it a
+    control, so a goal still drafts from the prompt after it. Argument-carrying
     commands are untouched either way; `prompt_title` renders those as
     `/code-review 1287 with fresh eyes`, which never matches here.
 

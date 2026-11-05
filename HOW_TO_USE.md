@@ -54,6 +54,10 @@ without opening the dashboard:
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
+In Claude Code, the command you typed and the agent's answer to it stay in Full activity but are
+left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
+`$compass sessions` counts as a message you sent the session.
+
 Both read a running dashboard and never start one. With none running, the agent prints the
 refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
 belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
