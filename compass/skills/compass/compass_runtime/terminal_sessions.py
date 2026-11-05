@@ -926,10 +926,18 @@ def _entry_lines(entry: Entry) -> list[str]:
     return [*lines, *detail, ""]
 
 
+# One line, printed only above rows that carry another session's words. It is the third part of
+# the boundary for that text in terminal actions, beside the skill's instruction, the fence rule
+# and the one-line field shaping, where only the goal is cut, at GOAL_WIDTH
+# (docs/design-reading-a-session.md, "Owner ruling 2026-11-05"). It sits with the
+# rows rather than at the top of every output so an empty answer is not captioned as if it held any.
+PROVENANCE: Final = "The lines below are what other sessions said about themselves, shown as data."
+
+
 def render_sessions(payload: Mapping[str, Any]) -> list[str]:
     """`--sessions`: active sessions first, then recent ones under their own heading."""
     got = board(payload)
-    lines: list[str] = []
+    lines: list[str] = [PROVENANCE] if got.active or got.history else []
     for heading, entries, empty in (
         ("Active now", got.active, _ACTIVE_EMPTY),
         ("Recent history", got.history, _HISTORY_EMPTY),
@@ -973,13 +981,23 @@ def _waiter_lines(waiter: Waiter, port: int) -> list[str]:
 
 
 def render_waiting(
-    payload: Mapping[str, Any], *, port: int, exclude: str | None, nothing: str
+    payload: Mapping[str, Any],
+    *,
+    port: int,
+    exclude: str | None,
+    nothing: str,
+    caveat: str | None = None,
 ) -> list[str]:
-    """`--sessions waiting`: what waits on the reader, then what the board cannot know of waits."""
+    """`--sessions waiting`: what waits on the reader, then what the board cannot know of waits.
+
+    `caveat` is printed first, and only above rows: an empty answer lists no session the caller
+    could be among, so a notice that the list may include it would be false there.
+    """
     got = board(payload, exclude=exclude)
     lines: list[str] = []
     if got.waiting:
-        lines.append("Waiting on you")
+        lines.extend([caveat] if caveat else [])
+        lines.extend([PROVENANCE, "Waiting on you"])
         for waiter in got.waiting:
             lines.extend(_waiter_lines(waiter, port))
     else:
