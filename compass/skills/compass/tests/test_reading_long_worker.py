@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
+import threading
 import unittest
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
@@ -18,6 +20,7 @@ from compass_runtime import (
     reading_ci_acquire,
     reading_long_context,
     reading_long_control,
+    reading_long_execution,
     reading_long_inspection,
     reading_long_jobs,
     reading_long_markers,
@@ -29,6 +32,7 @@ from compass_runtime import (
     reading_route,
     reading_source_collect,
     settings,
+    supervise,
 )
 
 from . import test_reading_long_context as context_tests
@@ -433,6 +437,79 @@ class GuardedNativeWorkerTest(unittest.TestCase):
         self.assertEqual(1, len(self.calls))
         assert result.series is not None
         self.assertTrue(result.series.unassigned_primary)
+
+    def test_deadline_exhausted_waiting_for_spawn_keeps_charge_without_launch(self) -> None:
+        self.goal = "Keep the retry safe."
+        self.make_case(ci_state="unbound")
+        self.env.clock[0] = 1619
+        reserved, proceed, entering = threading.Event(), threading.Event(), threading.Event()
+        real_lock, real_popen = supervise._LOCK, subprocess.Popen
+        launched: list[float] = []
+        outcomes: list[Any] = []
+
+        def on_reserved() -> None:
+            reserved.set()
+            self.assertTrue(proceed.wait(5))
+
+        class ObservedLock:
+            def __enter__(self) -> Any:
+                if (
+                    threading.current_thread() is thread
+                    and sys._getframe(1).f_code is supervise.run.__code__
+                ):
+                    entering.set()
+                return real_lock.__enter__()
+
+            def __exit__(self, *args: object) -> Any:
+                return real_lock.__exit__(*args)
+
+        def popen(command: Any, **options: Any) -> Any:
+            if command[0] == "/owned/claude":
+                launched.append(self.env.clock[0])
+                command = [sys.executable, "-c", "import sys; sys.stdin.read(); print('received')"]
+            return real_popen(command, **options)
+
+        source = reading_long_worker._Source(self.config, self.context, self.collection)
+        model = reading_long_execution.guard(
+            self.config,
+            self.context,
+            1,
+            clock=lambda: self.now,
+            runner=supervise.run,
+            binary_resolver=lambda name: f"/owned/{name}",
+            on_reserved=on_reserved,
+            source_current=lambda: not source.current(),
+        )
+
+        def invoke() -> None:
+            try:
+                outcomes.append(model("Owned synthetic prompt", output_cap_bytes=8192))
+            except reading_policy.RefusedError as error:
+                outcomes.append(error)
+
+        thread = threading.Thread(target=invoke)
+        with (
+            mock.patch.object(subprocess, "Popen", side_effect=popen),
+            mock.patch.object(supervise, "_LOCK", ObservedLock()),
+        ):
+            thread.start()
+            try:
+                self.assertTrue(reserved.wait(5))
+                with real_lock:
+                    proceed.set()
+                    self.assertTrue(entering.wait(5))
+                    self.env.clock[0] = 1621
+            finally:
+                proceed.set()
+                thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual([], launched, "expired full-call budget must prevent the actual spawn")
+        self.assertEqual(1, len(outcomes))
+        self.assertIsInstance(outcomes[0], reading_policy.RefusedError)
+        measured = reading_long_inspection.inspect(self.config, self.active.job.id, now=self.now)
+        assert measured.exact is not None
+        self.assertEqual(1, measured.exact.calls)
+        self.assertIsNone(self.active.job.group)
 
     def test_model_wait_is_excluded_from_shared_preparation_clock(self) -> None:
         self.make_case(large=True)

@@ -139,7 +139,12 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
         elif on_spawn is not None:
             on_spawn()
 
-    checked_runner = observer.CheckedRunner(runner, before_runner)
+    def before_spawn() -> None:
+        # Only owned monotonic state here: supervise holds its global spawn lock.
+        if reason := jobs.deadline_reason(active.owner.live, plan["limits"]["job_ms"]):
+            _refuse(reason)
+
+    checked_runner = observer.CheckedRunner(runner, before_runner, before_spawn)
     model = (
         reading.ClaudeReadingModel(
             config,

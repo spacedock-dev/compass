@@ -191,9 +191,12 @@ class CheckedRunner:
 
     runner: Any
     before_call: Callable[[], None]
+    before_spawn: Callable[[], None] | None = None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         self.before_call()
+        if self.runner is supervise.run and self.before_spawn is not None:
+            kwargs["before_spawn"] = self.before_spawn
         return self.runner(*args, **kwargs)
 
 
