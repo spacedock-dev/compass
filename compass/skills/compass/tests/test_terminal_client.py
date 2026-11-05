@@ -819,6 +819,37 @@ class SessionsCommandTest(HomeCase):
         self.assertIn("Another waiter", out)
         self.assertNotIn("Wire the parser", out)
 
+    def waiting_output(self, environ: dict[str, str], mode: str | None = "waiting") -> str:
+        with FakeDashboard(answers=data_reply(BOARD)) as fake:
+            _, out, _ = self.run_sessions(mode, port=fake.port, environ=environ)
+        return out
+
+    def test_a_reader_whose_session_cannot_be_identified_is_told_it_may_be_in_the_waiting_list(
+        self,
+    ) -> None:
+        notice = terminal_client.sentence("caller_unknown")
+        for name, environ in {
+            "no id": {},
+            "an id that is not one": {"CLAUDE_CODE_SESSION_ID": "not an id!"},
+            "an empty id": {"CLAUDE_CODE_SESSION_ID": ""},
+        }.items():
+            with self.subTest(name):
+                out = self.waiting_output(environ)
+
+                self.assertEqual(1, out.count(notice))
+                self.assertEqual(notice, out.splitlines()[0])
+
+    def test_a_reader_whose_session_is_identified_is_not_told_anything_about_it(self) -> None:
+        out = self.waiting_output({"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"})
+
+        self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
+
+    def test_the_plain_session_list_never_mentions_the_waiting_list_caveat(self) -> None:
+        out = self.waiting_output({}, mode=None)
+
+        self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
+        self.assertIn("Wire the parser", out)
+
     def test_a_lone_sessions_never_loads_the_dashboard_modules(self) -> None:
         program = (
             "import sys\n"

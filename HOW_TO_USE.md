@@ -86,7 +86,7 @@ What to expect:
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.
 - `sessions waiting` leaves out the session you typed it in only on Claude Code, which gives the
-  command that session's id. Elsewhere the list can include it, and the output does not say so.
+  command that session's id. Elsewhere the list can include it, and the first line of the output says so.
 
 ## When `python3` is older than 3.12
 

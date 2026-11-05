@@ -87,6 +87,10 @@ SENTENCES: Final[dict[str, str]] = {
     "no_session": "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
     "unreadable_reply": "Compass answered, but its session list could not be read.",
+    "caller_unknown": (
+        "This session could not be identified, because CLAUDE_CODE_SESSION_ID is not set to a "
+        "session id, so it may be in the list."
+    ),
     "nothing_waiting": "Nothing is reported as waiting on you.",
     "version_mismatch": (
         "The running dashboard is version {theirs} and this is version {own}, so nothing was sent. "
@@ -784,7 +788,8 @@ def run_sessions(
     """`--sessions`, and `--sessions waiting` for the second one: read the board, print it.
 
     Read only. With no dashboard it says so and stops; it never starts one. The caller is left
-    out of the waiting list, since a session that asks what waits on you is not what waits.
+    out of the waiting list, since a session that asks what waits on you is not what waits. When
+    the caller cannot be identified nothing can be left out, and the first line says so.
     """
     env = os.environ if environ is None else environ
     found = ensure_dashboard(state_home(env), port=port, spend=False, own_version=None)
@@ -812,6 +817,10 @@ def run_sessions(
                 exclude=caller.sid if isinstance(caller, Session) else None,
                 nothing=sentence("nothing_waiting"),
             )
+            if not isinstance(caller, Session):
+                # First line, not the footer: the list can run long and a reader or a model
+                # skims its head, while a caveat at the end reads as an afterthought.
+                lines.insert(0, sentence("caller_unknown"))
         else:
             lines = terminal_sessions.render_sessions(payload)
     except Exception:  # noqa: BLE001 - a payload is untrusted; whatever it holds, say one sentence
