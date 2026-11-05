@@ -47,6 +47,8 @@ export interface OutlineBlock {
 }
 
 export interface OutlineCoverage {
+  /** Native aggregate coverage; absent or malformed completeness stays unknown. */
+  readonly complete: boolean | null;
   /* Where in the parent record the read began. Above zero means an older prefix was skipped; `starts_at` is
      not that signal, because the server sets it for any unread region, a time or byte stop included. */
   readonly startOffset: number;
@@ -126,6 +128,7 @@ function coverage(value: unknown): OutlineCoverage | null {
   const row = record(value);
   if (!row) return null;
   return {
+    complete: typeof row['complete'] === 'boolean' ? row['complete'] : null,
     startOffset: count(row['start_offset']),
     agentReplies: text(row['agent_replies']),
     checksAndFiles: text(row['checks_and_files']),

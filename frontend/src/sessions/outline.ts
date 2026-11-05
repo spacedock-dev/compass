@@ -67,24 +67,23 @@ export function noOutline(outline: Outline, harness: string): string {
     return `${harness} keeps no record Compass can page through, so this session has no outline. Full activity below lists what the harness reported.`;
   if (outline.state === 'stale')
     return "The session's record changed while Compass was reading it. Compass reads it again on the next update.";
+  if (outline.reason === 'outline_busy')
+    return 'Compass is updating this outline. It will be checked again on the next update.';
+  if (outline.reason === 'time')
+    return 'Compass ran out of time while reading the outline. It will try again on the next update.';
+  if (outline.reason === 'outline_state_limit' || outline.reason === 'outline_stream_limit')
+    return 'Compass reached an outline limit. A complete outline is not available for this record.';
   if (outline.reason === 'session_not_matched')
     return 'Compass could not match this page to exactly one session, so it read no record for an outline.';
   return "Compass could not find this session's record on this machine, so there is no outline.";
 }
 
 /* What the read behind the outline did not cover, said once above the blocks. */
-export function coverageNotes(
-  coverage: OutlineCoverage | null,
-  more: number,
-  /** The outline opens at the session's first prompt although the newest window began after it. */
-  opens = false,
-): string[] {
+export function coverageNotes(coverage: OutlineCoverage | null, more: number): string[] {
   const notes: string[] = [];
   if (coverage) {
     const replies = coverage.agentReplies === 'not_read';
     const work = coverage.checksAndFiles === 'not_admitted';
-    /* "Not outlined", not "not read": a Codex session's checks and files are read for a reading, and only the
-       outline leaves them out. */
     if (replies && work)
       notes.push(
         'Only your messages are outlined for this harness: the outline has no agent replies, checks or files.',
@@ -93,26 +92,54 @@ export function coverageNotes(
       notes.push('The outline has no agent replies: they are not read for this harness.');
     else if (work)
       notes.push('The outline has no checks or files: they are not outlined for this harness.');
-    const reasons = new Set(coverage.unread.map((region) => region.reason));
-    if (coverage.startOffset > 0 || reasons.has('before_window'))
-      notes.push(
-        opens
-          ? 'Compass read your first message and the newest part of this session. What happened between them is not outlined here.'
-          : "Compass read only the newest part of this session's record, so the outline starts partway.",
-      );
-    if (reasons.has('time') || reasons.has('bytes'))
-      notes.push(
-        'Compass stopped reading at its limit, so the newest entries may be missing. It reads again on the next update.',
-      );
-    if (reasons.has('oversized_line')) notes.push('A record line too large to read was skipped.');
-    if (reasons.has('unreadable_subagent'))
-      notes.push("A subagent's record could not be read, so its checks and files are not counted.");
   }
-  /* "Parts", not "messages of yours": the server opens a group for work before the first prompt it reads, and
-     counts that group among those it drops. */
+  const reasons = new Set(coverage?.unread.map((region) => region.reason));
+  const resourceLimit = reasons.has('outline_state_limit') || reasons.has('outline_stream_limit');
+  const readLimit = [
+    'oversized_line',
+    'outline_line_limit',
+    'outline_input_limit',
+    'outline_boundary_limit',
+  ].some((reason) => reasons.has(reason));
+  const classification = reasons.has('classification_pending');
+  const unfinished = reasons.has('partial_line');
+  const unreadable = reasons.has('unreadable_subagent');
+  if (resourceLimit)
+    notes.push('Compass reached an outline limit. Some recorded work is not included.');
+  if (readLimit)
+    notes.push(
+      "Some recorded work could not fit within the outline's read limits and is not included.",
+    );
+  if (unfinished)
+    notes.push('A record ends with an unfinished entry. That entry is not included yet.');
+  if (unreadable)
+    notes.push("A subagent's record could not be read, so some of its work is not included.");
+  if (classification)
+    notes.push('Compass is updating recorded checks. Check counts may change on later updates.');
+  if (
+    !resourceLimit &&
+    !readLimit &&
+    !unfinished &&
+    !unreadable &&
+    (!classification || reasons.size > 1)
+  ) {
+    if (reasons.size > 0 || coverage?.complete === false) {
+      const retryable = ['bytes', 'time', 'before_window', 'children_not_read'].some((reason) =>
+        reasons.has(reason),
+      );
+      notes.push(
+        retryable
+          ? 'This outline is partial. Compass will try to read more on later updates.'
+          : 'This outline is partial. Some recorded work is not included.',
+      );
+    } else if (coverage?.complete !== true) {
+      notes.push('Compass has not confirmed how much of the record this outline covers.');
+    }
+  }
+  // Hidden groups are display omissions, not unread source or an exhaustive activity promise.
   if (more > 0)
     notes.push(
-      `${plural(more, 'earlier part of this session is', 'earlier parts of this session are')} not shown here. Full activity lists every entry.`,
+      `${plural(more, 'earlier part of this session is', 'earlier parts of this session are')} not shown here.`,
     );
   return notes;
 }
@@ -194,11 +221,10 @@ export function outlineView(
     failures: block.failures.map((row) => ({ factId: row.factId, title: row.title })),
     moreFailures: Math.max(0, block.counts.checksFailed - block.failures.length),
   }));
-  const opens = Boolean(outline.blocks[0]?.opening && outline.blocks[0].prompt);
   return {
     kind: 'blocks',
     blocks,
-    notes: coverageNotes(outline.coverage, outline.moreBlocks, opens),
+    notes: coverageNotes(outline.coverage, outline.moreBlocks),
     empty: blocks.length === 0,
   };
 }

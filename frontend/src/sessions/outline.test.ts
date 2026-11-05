@@ -13,6 +13,7 @@ import {
 } from './outline';
 
 const CLAUDE: OutlineCoverage = {
+  complete: true,
   startOffset: 0,
   agentReplies: 'read',
   checksAndFiles: 'read',
@@ -166,49 +167,85 @@ describe('the outline card model', () => {
     ]);
   });
 
-  it('says where the read stopped short, and how many earlier parts are not shown', () => {
-    const partial: OutlineCoverage = {
-      ...CLAUDE,
-      startOffset: 900,
-      unread: [{ reason: 'before_window' }, { reason: 'time' }],
-    };
-    const notes = coverageNotes(partial, 3);
-    expect(notes).toHaveLength(3);
-    expect(notes[0]).toMatch(/starts partway/);
-    expect(notes[1]).toMatch(/newest entries may be missing/);
-    expect(notes[2]).toBe(
-      '3 earlier parts of this session are not shown here. Full activity lists every entry.',
+  it('keeps incomplete progress separate from hidden display parts, clearing it only at completion', () => {
+    const partial: OutlineCoverage = { ...CLAUDE, complete: false, unread: [{ reason: 'bytes' }] };
+    expect(coverageNotes(partial, 3)).toEqual([
+      'This outline is partial. Compass will try to read more on later updates.',
+      '3 earlier parts of this session are not shown here.',
+    ]);
+    expect(coverageNotes({ ...partial, unread: [] }, 0)).toEqual([
+      'This outline is partial. Some recorded work is not included.',
+    ]);
+    expect(coverageNotes(CLAUDE, 3)).toEqual([
+      '3 earlier parts of this session are not shown here.',
+    ]);
+    expect(coverageNotes({ ...partial, unread: [{ reason: 'before_window' }] }, 0)).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/first message and the newest/)]),
     );
   });
 
-  it('says the outline opens at the first message when the newest window began after it', () => {
-    const partial: OutlineCoverage = {
-      ...CLAUDE,
-      startOffset: 900,
-      unread: [{ reason: 'before_window' }],
-    };
-    expect(coverageNotes(partial, 0, true)).toEqual([
-      'Compass read your first message and the newest part of this session. What happened between them is not outlined here.',
-    ]);
-    const view = outlineView(
-      outline({ coverage: partial, blocks: [block(), block({ opening: false, prompt: null })] }),
-      { loaded: true, failed: false },
-      'x',
+  it('does not promise progress through permanent gaps or an outline limit', () => {
+    for (const reason of [
+      'outline_line_limit',
+      'oversized_line',
+      'outline_input_limit',
+      'outline_boundary_limit',
+      'outline_state_limit',
+      'outline_stream_limit',
+    ]) {
+      const notes = coverageNotes(
+        { ...CLAUDE, complete: false, unread: [{ reason }, { reason: 'bytes' }] },
+        0,
+      );
+      expect(notes.join(' ')).toMatch(/not included/);
+      expect(notes.join(' ')).not.toMatch(/later updates|reads again|try to read more/);
+    }
+    expect(
+      coverageNotes({ ...CLAUDE, complete: false, unread: [{ reason: 'partial_line' }] }, 0).join(
+        ' ',
+      ),
+    ).toContain('unfinished entry');
+    expect(
+      coverageNotes(
+        { ...CLAUDE, complete: false, unread: [{ reason: 'unreadable_subagent' }] },
+        0,
+      ).join(' '),
+    ).toContain("A subagent's record could not be read");
+  });
+
+  it('distinguishes pending check reconciliation from unread transcript bytes', () => {
+    const notes = coverageNotes(
+      { ...CLAUDE, complete: false, unread: [{ reason: 'classification_pending' }] },
+      0,
     );
-    expect(view.kind === 'blocks' && view.notes[0]).toMatch(/read your first message/);
-    // The part after the gap has no prompt to name and says where it carries on from.
-    expect(view.kind === 'blocks' && view.blocks.map((row) => row.noPrompt)).toEqual([
-      'Work before your first message',
-      'Work carrying on from earlier in this session',
+    expect(notes).toEqual([
+      'Compass is updating recorded checks. Check counts may change on later updates.',
+    ]);
+    expect(notes.join(' ')).not.toMatch(/read more|not included|complete/);
+  });
+
+  it('never treats missing or malformed completeness as a complete outline', () => {
+    expect(coverageNotes(null, 0)).toEqual([
+      'Compass has not confirmed how much of the record this outline covers.',
+    ]);
+    expect(coverageNotes({ ...CLAUDE, complete: null }, 0)).toEqual([
+      'Compass has not confirmed how much of the record this outline covers.',
     ]);
   });
 
-  it('does not say the outline starts partway for a read from the start that stopped at its limit', () => {
-    const stopped: OutlineCoverage = { ...CLAUDE, unread: [{ reason: 'time' }] };
-    expect(coverageNotes(stopped, 0)).toEqual([
-      'Compass stopped reading at its limit, so the newest entries may be missing. It reads again on the next update.',
-    ]);
-    expect(coverageNotes({ ...CLAUDE, startOffset: 512 }, 0)[0]).toMatch(/starts partway/);
+  it('names busy reads and resource refusals instead of saying the record is missing', () => {
+    expect(noOutline(outline({ state: 'unavailable', reason: 'outline_busy' }), 'x')).toBe(
+      'Compass is updating this outline. It will be checked again on the next update.',
+    );
+    expect(noOutline(outline({ state: 'unavailable', reason: 'time' }), 'x')).toMatch(
+      /time.*next update/,
+    );
+    for (const reason of ['outline_state_limit', 'outline_stream_limit']) {
+      expect(noOutline(outline({ state: 'unavailable', reason }), 'x')).toMatch(/outline limit/);
+      expect(noOutline(outline({ state: 'unavailable', reason }), 'x')).not.toMatch(
+        /next update|could not find/,
+      );
+    }
   });
 
   it('says why there is no outline in the reader’s words', () => {

@@ -28,6 +28,26 @@ describe('parseOutline', () => {
     });
   });
 
+  it.each([
+    [true, true],
+    [false, false],
+    [undefined, null],
+    [null, null],
+    ['false', null],
+    [0, null],
+  ])(
+    'keeps native completeness %s as %s without inventing a known result',
+    (complete, expected) => {
+      const outline = {
+        state: 'ok',
+        made_by: 'compass',
+        basis: 'grouping',
+        coverage: { complete, unread: [] },
+      };
+      expect(parseOutline({ sources: { outline } })?.coverage).toHaveProperty('complete', expected);
+    },
+  );
+
   it('reads an unavailable answer with its reason and no blocks', () => {
     const outline = parseOutline(body('context-focused-session'));
     expect(outline).toMatchObject({ state: 'unavailable', reason: 'unavailable', blocks: [] });

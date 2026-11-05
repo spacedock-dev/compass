@@ -9,6 +9,8 @@ import {
 } from '../src/sessions/outline';
 import {
   G,
+  PARTIAL_SUMMARY_PLAN,
+  progressiveOutline,
   OutlinePage,
   claudeOutline,
   codexOutline,
@@ -16,6 +18,8 @@ import {
   staleOutline,
   unsupportedOutline,
 } from './outline.scenario';
+
+import { SummaryPage, poll as summaryPoll, script as summaryScript } from './summary.scenario';
 
 /* The What the session has done card before any summary exists: Compass's outline of the session, one block
    per message of the reader's, made with no model call. Every story mounts the real page over a scripted
@@ -295,11 +299,9 @@ export const StartsPartway: Story = {
     const region = await card(canvasElement);
     const box = within(region);
     await box.findByText(
-      "Compass read only the newest part of this session's record, so the outline starts partway.",
+      'This outline is partial. Compass will try to read more on later updates.',
     );
-    await box.findByText(
-      '2 earlier parts of this session are not shown here. Full activity lists every entry.',
-    );
+    await box.findByText('2 earlier parts of this session are not shown here.');
     await expect(region.querySelector('[data-next-outline-prompt="none"]')).toHaveTextContent(
       'Work carrying on from earlier in this session',
     );
@@ -351,7 +353,7 @@ export const OpensAtTheFirstPromptBeyondTheWindow: Story = {
     const region = await card(canvasElement);
     const box = within(region);
     await box.findByText(
-      'Compass read your first message and the newest part of this session. What happened between them is not outlined here.',
+      'This outline is partial. Compass will try to read more on later updates.',
     );
     await expect(box.queryByText(/starts partway/)).toBeNull();
     const [opening, later] = [
@@ -517,5 +519,129 @@ export const LongPromptCutAtAWord: Story = {
     const whole = prompt.getAttribute('title') ?? '';
     await expect(whole.startsWith(shown.slice(0, -1))).toBe(true);
     await expect(whole.charAt(shown.length - 1)).toMatch(/^\s?$/);
+  },
+};
+
+export const PartialProgressBecomesComplete: Story = {
+  render: () => (
+    <SummaryPage ended={false} outline={progressiveOutline(0)} summary={PARTIAL_SUMMARY_PLAN} />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const box = within(region);
+    await box.findByText(
+      'This outline is partial. Compass will try to read more on later updates.',
+    );
+    const opening = box.getByText('Add retry with backoff to the webhook handler.');
+    const full = within(canvasElement).getByRole('button', { name: 'Full activity' });
+    await userEvent.click(full);
+    await expect(document.activeElement).toBe(full);
+    summaryScript.outline = progressiveOutline(1);
+    await summaryPoll();
+    await box.findByText('Check the retry tests before continuing.');
+    await expect(box.getByText('The agent ran 1 check.')).toBeVisible();
+    await expect(
+      box.getByText('This outline is partial. Compass will try to read more on later updates.'),
+    ).toBeVisible();
+    await expect(box.getByText('Add retry with backoff to the webhook handler.')).toBe(opening);
+    await expect(box.getByText('Keep the diff small and leave the tests alone.')).toBeVisible();
+    await expect(full).toHaveAttribute('aria-expanded', 'true');
+    await expect(document.activeElement).toBe(full);
+    summaryScript.outline = progressiveOutline(2);
+    await summaryPoll();
+    await waitFor(() => expect(box.queryByText(/This outline is partial/)).toBeNull());
+    await expect(box.getByText('The agent ran 2 checks.')).toBeVisible();
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(3);
+    await expect(
+      box.getByText('2 earlier parts of this session are not shown here.'),
+    ).toBeVisible();
+    await expect(region.querySelector('[data-next-summary-size]')).toHaveTextContent(
+      'Compass plans the parts when the summary starts',
+    );
+    await expect(region).not.toHaveTextContent(
+      /Full activity lists every entry|first message and the newest/,
+    );
+    await expect(full).toHaveAttribute('aria-expanded', 'true');
+    await expect(document.activeElement).toBe(full);
+    await expect(summaryScript.posts).toEqual([]);
+  },
+};
+
+export const UnknownCoverage: Story = {
+  render: () => (
+    <OutlinePage
+      outline={claudeOutline({ coverage: { ...claudeOutline().coverage, complete: 'yes' } })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(
+      'Compass has not confirmed how much of the record this outline covers.',
+    );
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+  },
+};
+
+export const PermanentLimitKeepsKnownWork: Story = {
+  render: () => (
+    <OutlinePage
+      outline={claudeOutline({
+        coverage: {
+          ...claudeOutline().coverage,
+          complete: false,
+          unread: [{ reason: 'outline_state_limit' }, { reason: 'bytes' }],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(
+      'Compass reached an outline limit. Some recorded work is not included.',
+    );
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+    await expect(region).not.toHaveTextContent(/try to read more|reads again/);
+  },
+};
+
+export const Updating: Story = {
+  render: () => (
+    <OutlinePage outline={{ ...staleOutline(), state: 'unavailable', reason: 'outline_busy' }} />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(
+      'Compass is updating this outline. It will be checked again on the next update.',
+    );
+    await expect(region).not.toHaveTextContent(/could not find|No agent work/);
+  },
+};
+
+export const RecordedChecksStillUpdating: Story = {
+  render: () => (
+    <OutlinePage
+      outline={claudeOutline({
+        coverage: {
+          ...claudeOutline().coverage,
+          complete: false,
+          unread: [
+            {
+              reason: 'classification_pending',
+              stream: 'classification',
+              start_offset: 0,
+              end_offset: 0,
+            },
+          ],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(
+      'Compass is updating recorded checks. Check counts may change on later updates.',
+    );
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+    await expect(region).not.toHaveTextContent(/try to read more|has been read completely/);
   },
 };
