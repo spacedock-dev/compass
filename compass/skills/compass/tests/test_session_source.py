@@ -2364,6 +2364,126 @@ class SessionSourceTest(unittest.TestCase):
         self.save()
         self.assertEqual(["check", "person"], [entry.kind for entry in self.read().entries])
 
+    def test_continuation_rejects_earlier_equal_length_edit(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}: ORIGINAL content.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        first = self.read(max_bytes=sum(map(len, lines[:3])))
+        self.assertIsNotNone(first.next)
+        self.assertGreaterEqual(len(first.entries), 2)
+        edited = self.path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1)
+        self.path.write_bytes(edited)
+        info = self.path.stat()
+        os.utime(self.path, ns=(info.st_atime_ns, first.snapshot.stamp[3] + 1_000_000_000))
+        whole = self.read()
+        self.assertNotEqual(first.entries[0].words, whole.entries[0].words)
+        continued = self.read(after=first.next, max_bytes=sum(map(len, lines[:3])))
+        self.assertEqual("stale", continued.state)
+
+    def test_continuation_detects_earlier_edit_with_append_in_budgeted_pass(self) -> None:
+        for i in range(12):
+            self.session.prompt(f"Synthetic message {i}: ORIGINAL content.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        edited = self.path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1)
+        self.path.write_bytes(edited + lines[-1])
+        cursor = initial.next
+        for _ in range(20):
+            page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if page.state == "stale":
+                break
+            self.assertIsNotNone(page.next)
+            cursor = page.next
+        self.assertEqual("stale", page.state)
+
+    def test_append_verification_makes_budgeted_progress_without_emitting(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        cursor = initial.next
+        self.assertNotIn("Synthetic message", repr(cursor))
+        expired = self.read(after=cursor, deadline=0)
+        self.assertEqual(0, expired.bytes_read)
+        self.assertFalse(expired.coverage.complete)
+        self.assertEqual((), expired.entries)
+        self.assertIsNotNone(expired.next)
+        before = self.read(after=cursor, max_bytes=len(lines[0]))
+        again = self.read(after=cursor, max_bytes=len(lines[0]))
+        self.assertEqual(before.next.streams[0].verify_offset, again.next.streams[0].verify_offset)
+        self.assertEqual(
+            before.next.streams[0].verify_hash.digest(), again.next.streams[0].verify_hash.digest()
+        )
+        verification_pages = 0
+        for _ in range(40):
+            page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertEqual("ok", page.state)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if any(region.reason == "verification" for region in page.coverage.unread):
+                verification_pages += 1
+                self.assertFalse(page.coverage.complete)
+                self.assertEqual((), page.entries)
+            cursor = page.next
+            if cursor is None:
+                break
+        self.assertGreater(verification_pages, 1)
+        self.assertIsNone(cursor)
+
+    def test_edit_during_incremental_verification_invalidates_cursor(self) -> None:
+        for i in range(8):
+            self.session.prompt(f"Synthetic message {i}.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=sum(map(len, lines[:5])))
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        checking = self.read(after=initial.next, max_bytes=len(lines[0]))
+        self.assertEqual((), checking.entries)
+        self.assertIn("verification", [r.reason for r in checking.coverage.unread])
+        with self.path.open("ab") as output:
+            output.write(lines[-1])
+        self.assertEqual("stale", self.read(after=checking.next).state)
+
+    def test_child_append_and_edit_withholds_parent_facts_until_verified(self) -> None:
+        self.session.prompt("Synthetic parent.")
+        self.save()
+        child = Transcript(self.root)
+        for i in range(8):
+            child.prompt(f"Child synthetic {i}: ORIGINAL.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child_path = self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl"
+        child.save(child_path)
+        lines = child_path.read_bytes().splitlines(keepends=True)
+        initial = self.read(max_bytes=self.path.stat().st_size + sum(map(len, lines[:5])))
+        self.assertIsNotNone(initial.next)
+        child_path.write_bytes(
+            child_path.read_bytes().replace(b"ORIGINAL", b"MODIFIED", 1) + lines[-1]
+        )
+        with self.path.open("ab") as output:
+            output.write(self.path.read_bytes())
+        cursor = initial.next
+        for _ in range(30):
+            with self._meter_source_reads() as measured:
+                page = self.read(after=cursor, max_bytes=len(lines[0]) * 2)
+            self.assertEqual(measured[0], page.bytes_read)
+            self.assertLessEqual(page.bytes_read, len(lines[0]) * 2)
+            if page.state == "stale":
+                break
+            self.assertEqual((), page.entries)
+            self.assertFalse(page.coverage.complete)
+            self.assertIsNotNone(page.next)
+            cursor = page.next
+        self.assertEqual("stale", page.state)
+
     def test_changed_earlier_words_keep_identity_and_change_fingerprint(self) -> None:
         self.session.prompt("Read this synthetic title. Earlier private sentence.")
         self.session.prompt("Leave the boundary intact.")
