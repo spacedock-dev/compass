@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 describe('a reader watching automatic outline progress', () => {
-  it('keeps a saved summary omission independent of a partial outline', async () => {
+  it('keeps saved summary omissions and freshness while the outline becomes complete', async () => {
     render(
       <SummaryPage
         outline={progressiveOutline(0)}
@@ -28,6 +28,14 @@ describe('a reader watching automatic outline progress', () => {
           state: 'partial',
           reason: 'gaps',
           starts_at: 'p2',
+          out_of_date: {
+            kind: 'unavailable',
+            reason: 'source_incomplete',
+            affected_blocks: [],
+            new_entries: 0,
+            appendable: false,
+            action: null,
+          },
           blocks: [gap('p1', 'c2', 4, 'before_window'), block('p2', 'a2', 2, [SECOND_PHASE])],
         })}
       />,
@@ -37,6 +45,7 @@ describe('a reader watching automatic outline progress', () => {
     await box.findByText(/^This summary starts at #3/);
     const disclosure = box.getByRole('button', { name: "Compass's outline of this session" });
     fireEvent.click(disclosure);
+    disclosure.focus();
     await box.findByText(
       'This outline is partial. Compass will try to read more on later updates.',
     );
@@ -47,6 +56,31 @@ describe('a reader watching automatic outline progress', () => {
     expect(
       region.querySelector('[data-next-summary] [data-next-outline-entry="p2"]'),
     ).not.toBeNull();
+    const saved = box.getByRole('region', { name: 'Summary' });
+    const omission = box.getByText(/^This summary starts at #3/);
+    const unknown = box.getByText(
+      'This saved summary used message excerpts; full message coverage was not recorded.',
+    );
+    const freshness = box.getByText(
+      'Compass could not read the whole record now, so it cannot tell whether this summary is current.',
+    );
+    const citation = saved.querySelector('[data-next-outline-entry="p2"]');
+    script.outline = progressiveOutline(2);
+    await act(async () => {
+      await poll();
+    });
+    await waitFor(() => expect(box.queryByText(/This outline is partial/)).toBeNull());
+    expect(box.getByText('Check the retry tests before continuing.')).toBeVisible();
+    expect(omission).toBeVisible();
+    expect(unknown).toBeVisible();
+    expect(freshness).toBeVisible();
+    expect(saved.querySelector('[data-next-summary-gap="before_window"]')?.textContent).toContain(
+      'This part was not summarized',
+    );
+    expect(saved.querySelector('[data-next-outline-entry="p2"]')).toBe(citation);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(disclosure);
+    expect(region.textContent).not.toMatch(/outline covers/i);
     expect(script.posts).toEqual([]);
   });
 

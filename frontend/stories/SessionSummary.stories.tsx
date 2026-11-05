@@ -922,6 +922,14 @@ export const Partial: Story = {
         state: 'partial',
         reason: 'gaps',
         starts_at: 'p2',
+        out_of_date: {
+          kind: 'unavailable',
+          reason: 'source_incomplete',
+          affected_blocks: [],
+          new_entries: 0,
+          appendable: false,
+          action: null,
+        },
         blocks: [
           gap('p1', 'c2', 4, 'before_window'),
           block('p2', 'a2', 2, [
@@ -950,8 +958,16 @@ export const Partial: Story = {
         'This summary starts at #3, not at the session’s first entry.',
       ),
     );
-    await userEvent.click(
-      within(region).getByRole('button', { name: "Compass's outline of this session" }),
+    const disclosure = within(region).getByRole('button', {
+      name: "Compass's outline of this session",
+    });
+    await userEvent.click(disclosure);
+    await waitFor(() =>
+      expect(
+        within(region).getByText(
+          'This outline is partial. Compass will try to read more on later updates.',
+        ),
+      ).toBeVisible(),
     );
     await expect(region).toHaveTextContent(
       'This outline is partial. Compass will try to read more on later updates.',
@@ -969,6 +985,32 @@ export const Partial: Story = {
     await expect(
       summary.querySelector('h3 [data-next-summary-withheld="completion_claim"]'),
     ).toHaveTextContent(withheldTitle('completion_claim'));
+    const notes = [...summary.querySelectorAll('[data-next-summary-note]')].map(
+      (node) => node.textContent,
+    );
+    await expect(region).toHaveTextContent(FRESHNESS_UNKNOWN);
+    script.outline = progressiveOutline(2);
+    await poll();
+    await waitFor(() => expect(region.textContent).not.toContain('This outline is partial.'));
+    await waitFor(() =>
+      expect(within(region).getByText('Check the retry tests before continuing.')).toBeVisible(),
+    );
+    await expect(
+      [...summary.querySelectorAll('[data-next-summary-note]')].map((node) => node.textContent),
+    ).toEqual(notes);
+    await expect(summary).toHaveTextContent('full message coverage was not recorded');
+    await expect(region).toHaveTextContent(FRESHNESS_UNKNOWN);
+    await expect(
+      summary.querySelector('[data-next-summary-gap="before_window"]'),
+    ).toHaveTextContent('This part was not summarized');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await expect(document.activeElement).toBe(disclosure);
+    await openPhases(summary);
+    await seeInContext(
+      within(summary).getByRole('link', { name: /^Open entry #3, cited for “You asked to keep/ }),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(entryRow(canvasElement, 'p2')));
+    await expect(script.posts).toEqual([]);
     await neverDone(region);
   },
 };
