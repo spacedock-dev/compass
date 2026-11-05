@@ -16,7 +16,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 from unittest import mock
 
 from compass_runtime import cli, entry, lifecycle, terminal_client, terminal_sessions
@@ -673,6 +673,17 @@ BOARD = {
     ],
 }
 
+WAITING_BOARD = {
+    **BOARD,
+    "sessions": [{**BOARD["sessions"][0], "state": "needs_input", "blocked_since": 900.0}],  # type: ignore[index]
+}
+HISTORY_ONLY_BOARD = {
+    **BOARD,
+    "sessions": [
+        {**BOARD["sessions"][0], "state": "idle", "title": "Old work", "last_activity": 100.0}  # type: ignore[index]
+    ],
+}
+
 
 class SessionsCommandTest(HomeCase):
     def run_sessions(
@@ -819,8 +830,13 @@ class SessionsCommandTest(HomeCase):
         self.assertIn("Another waiter", out)
         self.assertNotIn("Wire the parser", out)
 
-    def waiting_output(self, environ: dict[str, str], mode: str | None = "waiting") -> str:
-        with FakeDashboard(answers=data_reply(BOARD)) as fake:
+    def waiting_output(
+        self,
+        environ: dict[str, str],
+        mode: str | None = "waiting",
+        board: dict[str, Any] | None = None,
+    ) -> str:
+        with FakeDashboard(answers=data_reply(BOARD if board is None else board)) as fake:
             _, out, _ = self.run_sessions(mode, port=fake.port, environ=environ)
         return out
 
@@ -834,14 +850,33 @@ class SessionsCommandTest(HomeCase):
             "an empty id": {"CLAUDE_CODE_SESSION_ID": ""},
         }.items():
             with self.subTest(name):
-                out = self.waiting_output(environ)
+                out = self.waiting_output(environ, board=WAITING_BOARD)
 
                 self.assertEqual(1, out.count(notice))
                 self.assertEqual(notice, out.splitlines()[0])
+                self.assertLess(out.index(notice), out.index(terminal_sessions.PROVENANCE))
+                self.assertLess(out.index(notice), out.index("Wire the parser"))
+
+    def test_the_notice_names_no_harness_and_no_variable_the_reader_could_set(self) -> None:
+        notice = terminal_client.sentence("caller_unknown")
+
+        self.assertNotIn("CLAUDE", notice)
+        self.assertEqual(
+            "Compass could not tell which session is asking, so this list may include it.", notice
+        )
+
+    def test_a_reader_with_nobody_waiting_is_not_told_the_list_may_include_their_session(
+        self,
+    ) -> None:
+        out = self.waiting_output({})
+
+        self.assertIn(terminal_client.sentence("nothing_waiting"), out)
+        self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
 
     def test_a_reader_whose_session_is_identified_is_not_told_anything_about_it(self) -> None:
         out = self.waiting_output(
-            {"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"}
+            {"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"},
+            board=WAITING_BOARD,
         )
 
         self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
@@ -853,25 +888,27 @@ class SessionsCommandTest(HomeCase):
         self.assertIn("Wire the parser", out)
 
     def test_every_list_that_prints_other_sessions_words_says_they_are_data_once(self) -> None:
-        waiting = {
-            **BOARD,
-            "sessions": [
-                {**BOARD["sessions"][0], "state": "needs_input", "blocked_since": 900.0},  # type: ignore[index]
-            ],
-        }
-        for name, mode, board in (("all", None, BOARD), ("waiting", "waiting", waiting)):
-            with self.subTest(name), FakeDashboard(answers=data_reply(board)) as fake:
-                _, out, _ = self.run_sessions(mode, port=fake.port)
+        for name, mode, board in (
+            ("all", None, BOARD),
+            ("history only", None, HISTORY_ONLY_BOARD),
+            ("waiting", "waiting", WAITING_BOARD),
+        ):
+            with self.subTest(name):
+                out = self.waiting_output({}, mode, board)
 
-            self.assertEqual(1, out.count(terminal_sessions.PROVENANCE))
-            self.assertIn("Wire the parser", out)
-            self.assertLess(out.index(terminal_sessions.PROVENANCE), out.index("Wire the parser"))
+                self.assertEqual(1, out.count(terminal_sessions.PROVENANCE))
+                title = board["sessions"][0]["title"]  # type: ignore[index]
+                self.assertLess(out.index(terminal_sessions.PROVENANCE), out.index(title))
 
-    def test_a_waiting_list_with_nobody_waiting_prints_no_provenance_line(self) -> None:
-        out = self.waiting_output({})
+    def test_a_list_with_no_sessions_prints_no_provenance_line(self) -> None:
+        for name, mode, board in (
+            ("all", None, {**BOARD, "sessions": []}),
+            ("waiting", "waiting", BOARD),
+        ):
+            with self.subTest(name):
+                out = self.waiting_output({}, mode, board)
 
-        self.assertIn(terminal_client.sentence("nothing_waiting"), out)
-        self.assertNotIn(terminal_sessions.PROVENANCE, out)
+                self.assertNotIn(terminal_sessions.PROVENANCE, out)
 
     def test_a_lone_sessions_never_loads_the_dashboard_modules(self) -> None:
         program = (

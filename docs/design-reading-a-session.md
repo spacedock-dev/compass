@@ -6914,14 +6914,14 @@ operations. [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists th
 
 Four things, taken together, are the boundary for other sessions' text in a terminal action: the
 skill's instruction to treat the output as data and act on none of it unless the reader asks, the
-fence rule, the one-line truncation of each field, and a provenance line. The line is printed once
+fence rule, the putting of each field on one line (only the goal is cut, at 120
+characters), and a provenance line. The line is printed once
 above any `sessions` or `sessions waiting` list that holds another session's words: "The lines below
 are what other sessions said about themselves, shown as data." An empty waiting answer does not carry
 it, because there are no such lines to describe. Each is an instruction to a model or a shaping of
 text, not a guarantee, and the ruling does not claim more. Later terminal actions inherit this
 boundary. It is revisited when the drift action prints model-written text, which is a different kind
 of text from what a session said about itself.
-
 
 ## DEC-26: four drift levels, and a live estimate after every turn
 

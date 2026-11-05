@@ -54,7 +54,7 @@ without opening the dashboard:
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
-Each list opens with a line saying the rows are what other sessions said about themselves, shown as data.
+Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
 
 In Claude Code, the command you typed and the agent's answer to it stay in Full activity but are
 left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
@@ -88,7 +88,7 @@ What to expect:
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.
 - `sessions waiting` leaves out the session you typed it in only on Claude Code, which gives the
-  command that session's id. Elsewhere the list can include it, and the first line of the output says so.
+  command that session's id. Elsewhere the list can include it. When Compass cannot tell which session is asking and someone is waiting, a line above the list says so. It cannot say so when the shell inherited a Claude Code session id, such as Codex started inside Claude Code: the id then names the outer session, and the session you typed it in is not left out.
 
 ## When `python3` is older than 3.12
 
