@@ -32,7 +32,6 @@ import {
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
   LONG_INTERRUPTED,
-  LONG_INCOMPLETE,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
@@ -60,19 +59,13 @@ export function ReadingCount({ count }: { readonly count: number }) {
   );
 }
 
-/* Pending directions retain the exact long interruption/incomplete accounts; ordinary outcomes keep their layout. */
-export function ReadingOutcome({
-  longOnly = false,
-  unless = '',
-}: {
-  readonly longOnly?: boolean;
-  readonly unless?: string;
-}) {
+/* The last outcome, from the store, drawn the same way beside the Analyze control and beside a pending direction's
+   question: a `longOnly` filter once hid every ordinary refusal, cancellation and failure behind the question. */
+export function ReadingOutcome({ unless = '' }: { readonly unless?: string }) {
   const { model } = useDrift();
   const stored = String(model.annotation?.['reading_withheld'] || '');
   const long = stored === LONG_INTERRUPTED;
-  if (!stored || stored === unless || (longOnly && !long && stored !== LONG_INCOMPLETE))
-    return null;
+  if (!stored || stored === unless) return null;
   const age = withheldAge(model.annotation, model.generated);
   return (
     <p
