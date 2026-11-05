@@ -63,8 +63,10 @@ Each session's page has three cards, one under another:
 
 - Intent: your goal and expected outcome lines.
 - What the session has done: Compass's own outline of a Claude Code or Codex session, built without a
-  model. On Claude Code it adds a model-written summary: an opening paragraph, then phases that start
-  closed and open when you press them. A phase holding evidence of drift, or failed test runs, says so
+  model. It keeps reading on later page updates and says when work remains unread or a limit leaves
+  a gap. Check counts may change while earlier checks are reconciled with later recorded work.
+  Codex outlines only your messages. On Claude Code it adds a model-written summary: an opening
+  paragraph, then phases that start closed and open when you press them. A phase holding evidence of drift, or failed test runs, says so
   on its heading. Long messages can span several parts; a citation still opens the original entry.
   The card says when parts remain unread, and Update summary can continue an interrupted message.
   Older summaries made from excerpts offer Summarize again.
