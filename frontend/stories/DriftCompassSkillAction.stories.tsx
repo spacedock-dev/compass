@@ -1,0 +1,137 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { expect, waitFor, within } from 'storybook/test';
+import published from '../test/fixtures/compass-skill-action.json';
+import { DEPARTURE_READING, DriftScenario, fact, type Scenario } from './drift.scenario';
+import { OutlinePage } from './outline.scenario';
+
+/* The reader typed `/compass:compass sessions` inside the session, after saving their goal. The agent ran Compass
+   and repeated what it printed. That asked Compass a question: it is not a message the reader sent the session,
+   so the Drift card asks nothing about it, and the outline opens no phase for it. Full activity still lists what
+   the agent ran and said, because it happened.
+
+   The facts and the outline are not written here. They are what the server published for a transcript in
+   Claude Code's recorded shapes (`test_compass_skill_action`, `TheStoryReadsWhatTheServerPublishesTest`, which
+   fails when the committed file is not what the server now publishes). A server that again publishes the
+   command as the reader's message changes the file, and these stories assert against the change. Only the times
+   are the scenario's: before the save for the reader's work, after it for Compass's turn. */
+
+const meta = {
+  title: 'Drift/A Compass skill action',
+  component: DriftScenario,
+} satisfies Meta<typeof DriftScenario>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+type Published = (typeof published.facts)[number];
+
+const FIRST = 'Add retry with backoff to the webhook handler.';
+const COMMAND = '/compass:compass';
+const ECHOED = 'ECHOED-BY-AGENT placeholder board line for another session';
+
+/* The server's facts in its own order of time, placed in the scenario's session: the reader's three entries
+   before the save at 990, everything after them inside the Compass turn. */
+const ordered = [...published.facts].sort((a, b) => a.at - b.at);
+const TIMES = [200, 300, 400, 1050, 1100, 1150, 1200];
+const placed = ordered.map(({ source_session: _own, ...fields }: Published, index) => {
+  const at = TIMES[index] ?? 1200 + index;
+  return fact(fields.fact_id, at, { ...fields, at });
+});
+const CHECK = ordered.find((row) => row.type === 'tool_report' && row.subject === 'check');
+const ECHO = ordered.find((row) => row.summary === ECHOED);
+
+const reading = {
+  ...DEPARTURE_READING,
+  read_at: 1300,
+  evidence_through: 1300,
+  criteria: {
+    goal: {
+      result: 'consistent with the evidence read',
+      cites: [CHECK?.fact_id ?? ''],
+      detail: '',
+      clause: 'Ship the queue',
+    },
+    line_1: {
+      result: 'consistent with the evidence read',
+      cites: [CHECK?.fact_id ?? ''],
+      detail: '',
+      clause: 'Tests pass',
+    },
+  },
+};
+
+const scenario = (facts: readonly unknown[]): Scenario => ({
+  session: { annotation_assessment: reading, annotation_reading_count: 1 },
+  facts,
+});
+
+const driftOf = async (canvasElement: HTMLElement) => {
+  const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+  await waitFor(() => expect(drift.querySelector('[data-next-result]')).not.toBeNull());
+  return drift;
+};
+
+export const ACompassSkillActionAddsNothingToTheGoal: Story = {
+  args: { scenario: scenario(placed) },
+  play: async ({ canvasElement }) => {
+    const drift = await driftOf(canvasElement);
+    // The server published no message for the command, so nothing asks to add it.
+    await expect(published.facts.map((row) => row.summary)).not.toContain(`${COMMAND} sessions`);
+    await expect(drift).not.toHaveTextContent(/message adds:/);
+    await expect(drift).not.toHaveTextContent(/messages after your goal/);
+    await expect(drift.querySelector('[data-next-cockpit-direction-question]')).toBeNull();
+    // Full activity still lists what the agent repeated, as the agent's.
+    const echo = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>(
+        `[data-next-entry-id="${ECHO?.fact_id ?? ''}"]`,
+      );
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    await expect(echo.textContent).toContain(ECHOED);
+    for (const row of document.querySelectorAll<HTMLElement>('[data-next-entry-id]'))
+      await expect(row.textContent).not.toContain(COMMAND);
+  },
+};
+
+/* The control: the same record with a message the reader typed after the save is asked about, so the absence
+   above is the server's doing and not a page that never asks. */
+export const AMessageTheReaderTypedAfterTheGoalIsStillAskedAbout: Story = {
+  args: {
+    scenario: scenario([
+      ...placed,
+      fact('typed-later', 1250, {
+        type: 'user_message',
+        by: 'person:me',
+        summary: 'Also cover the retry path with a test.',
+      }),
+    ]),
+  },
+  play: async ({ canvasElement }) => {
+    const drift = await driftOf(canvasElement);
+    await expect(await within(drift).findByText(/message adds:/)).toBeVisible();
+  },
+};
+
+/* The outline the server made for the same transcript: one phase, the reader's, holding their check and the
+   agent's one reply. The command opens none, and what the agent repeated is not in the phase. */
+export const TheOutlineOpensNoPhaseForACompassSkillAction: Story = {
+  // The meta's component takes a scenario; this story draws the outline card over its own backend instead.
+  args: { scenario: scenario(placed) },
+  render: () => <OutlinePage outline={published.outline} />,
+  play: async ({ canvasElement }) => {
+    const region = await within(canvasElement).findByRole('region', {
+      name: 'What the session has done',
+    });
+    const blocks = await waitFor(() => {
+      const found = region.querySelectorAll<HTMLElement>('[data-next-outline-block]');
+      expect(found).toHaveLength(1);
+      return found;
+    });
+    const [only] = [...blocks] as [HTMLElement];
+    await expect(within(only).getByText(FIRST)).toBeVisible();
+    await expect(region).not.toHaveTextContent(COMMAND);
+    await expect(only.querySelector('[data-next-outline-counts]')).toHaveTextContent(
+      /replied 1 time/,
+    );
+  },
+};

@@ -1106,7 +1106,9 @@ def _message_from(
     # publishable as a goal rather than as a marker. A paste's tags come off first
     # (DRC-4920), so what a direction quotes is the pasted words, never the wrapper.
     body = records.strip_prompt_wrappers(text if paste_tags else records.strip_paste_wrapper(text))
-    if not body or records.injected_prompt(text, harness):
+    # The reader typing Compass's own command asked Compass, not the session: like a harness
+    # control's message it publishes nothing, here so every reader of the reader's words agrees.
+    if not body or records.injected_prompt(text, harness) or records.compass_command(text):
         return None
     return {"role": "user", "text": body}
 

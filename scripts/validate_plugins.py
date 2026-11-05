@@ -464,6 +464,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/departures.py",
     "skills/compass/compass_runtime/ends.py",
     "skills/compass/compass_runtime/dismissals.py",
+    "skills/compass/compass_runtime/compass_turns.py",
     "skills/compass/compass_runtime/copied_corrections.py",
     "skills/compass/compass_runtime/correction.py",
     "skills/compass/compass_runtime/notifications.py",

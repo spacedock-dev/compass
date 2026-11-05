@@ -373,6 +373,9 @@ AUTHOR_DERIVED = "derived"
 # makes the three one rule.
 COPIED_FLAG = "copied"
 COPIED_PROMPTS = "copied_prompts"
+# What the agent ran and said inside a turn the reader's typed Compass command opened
+# (`compass_turns`) carries this flag: Full activity lists it, and no reader of evidence takes it.
+COMPASS_TURN_FLAG = "compass_turn"
 # Which of the row's prompt fields quote a recognised message, on that message's entry:
 # `"instruction"`, `"first_prompt"`, or both. `copied_corrections.attach` decides it by fact id, so
 # a message the reader typed in the same second as a paste stays theirs.
@@ -2465,7 +2468,7 @@ def _listed(
     fact: Any, harness: str, sid: str, *, reports: bool, said: bool, failed_only: bool = False
 ) -> bool:
     """Whether `build_ledger` lists this fact: this session's, and of a kind the caller admits."""
-    if not isinstance(fact, dict):
+    if not isinstance(fact, dict) or fact.get(COMPASS_TURN_FLAG) is True:
         return False
     session = fact.get("source_session")
     if not isinstance(session, dict) or (session.get("harness"), session.get("sid")) != (

@@ -1112,6 +1112,15 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.records",
         },
+        # The turns a typed Compass command opened, read from the transcript itself, as
+        # `copied_corrections` reads it, so the frozen collector modules are not edited.
+        "compass_runtime.compass_turns": {
+            "compass_runtime.config",
+            "compass_runtime.observer",
+            "compass_runtime.reading",
+            "compass_runtime.records",
+            "compass_runtime.state",
+        },
         "compass_runtime.copied_corrections": {
             "compass_runtime.config",
             "compass_runtime.io",
@@ -1163,6 +1172,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.state",
             # Revoke and Pause cancel only this lane's supervised child.
             "compass_runtime.supervise",
+            "compass_runtime.compass_turns",
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
@@ -1506,6 +1516,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.project_context",
             "compass_runtime.reading_source_stream",
+            "compass_runtime.reading",
         },
         "compass_runtime.reading_source_collect": {
             "compass_runtime.reading_source_final",
@@ -1519,6 +1530,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_source_stream",
             "compass_runtime.reader_checks",
             "compass_runtime.ci_read",
+            "compass_runtime.compass_turns",
         },
         "compass_runtime.reading_source_inventory": {
             "compass_runtime.config",
@@ -1971,6 +1983,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.snapshot",
             "compass_runtime.stream",
             "compass_runtime.ci_read",
+            # The `compass_turn` mark on the facts a reading and the Live monitor read.
+            "compass_runtime.compass_turns",
         },
         # Above aggregate, events and probe, and the module that starts the
         # runtime's standing threads (a reading job's thread is `reading_jobs`'). Nothing imports it except the assembly point and the
@@ -2090,6 +2104,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.records",
             # Cuts a bounded prompt title back to a whole word for the outline (`transcripts.clip`).
             "compass_runtime.transcripts",
+            "compass_runtime.compass_turns",
         },
         "compass_runtime.settings": {"compass_runtime.config", "compass_runtime.io"},
         # The summary store persists the producer's frozen result and compares it with a fresh

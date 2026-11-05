@@ -42,7 +42,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from . import annotations as annotation_store
-from . import departures, notifications, reading_policy, reading_route, supervise
+from . import compass_turns, departures, notifications, reading_policy, reading_route, supervise
 from . import io as runtime_io
 from . import observer as runtime_observer
 from . import project_context as runtime_project_context
@@ -321,6 +321,8 @@ class Lane:
         )
         # Kept from the collection the facts came from, so the counts cost no second scan.
         self._counts[key] = runtime_project_context.command_counts_of(context, *key)
+        if isinstance(context, dict):
+            context = compass_turns.mark(self.config, state, context, [row])
         semantic = context.get("semantic") if isinstance(context, dict) else None
         facts = semantic.get("facts", []) if isinstance(semantic, dict) else []
         return list(facts) if isinstance(facts, list) else []

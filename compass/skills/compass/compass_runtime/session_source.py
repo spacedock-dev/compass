@@ -17,8 +17,8 @@ from dataclasses import asdict, dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from . import compass_turns, observer, project_scripts, record_pages, records, transcripts
 from . import io as runtime_io
-from . import observer, project_scripts, record_pages, records, transcripts
 from . import project_context as context
 
 if TYPE_CHECKING:
@@ -2730,6 +2730,15 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
     )
     unread = [*regions, *unread]
     entries = tuple(heapq.merge(*groups, key=lambda entry: entry.at))
+    # Nothing inside a turn the reader's typed Compass command opened is a summary's to cite or
+    # the outline's to group: what the agent ran and repeated there is Compass's answer.
+    turns = compass_turns.spans(path) if harness == "claude" else ()
+    if turns:
+        entries = tuple(
+            entry
+            for entry in entries
+            if entry.kind == "person" or not compass_turns.within(turns, entry.at)
+        )
     cursor = SourceCursor(
         identity,
         tuple(s.cursor for s in streams),

@@ -246,7 +246,8 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
                     # The opener of a goal no longer held names nothing; the next prompt does.
                     # Only when no held goal is authoritative: a read that started mid-file and saw
                     # no goal event may have missed a set, so the opener stays as the last resort.
-                    if (
+                    # Compass's own command names nothing either: the reader asked Compass.
+                    if records.compass_command(prompt) or (
                         candidate
                         and candidate.split()[0] == "/goal"
                         and goal_history_known(state, path)
@@ -321,7 +322,7 @@ def session_instruction(
         if not signal or signal[0] != "prompt":
             continue
         body = records.extract_text(records.message_dict(record).get("content")).strip()
-        if not body or records.injected_prompt(body, "claude"):
+        if not body or records.injected_prompt(body, "claude") or records.compass_command(body):
             continue
         at = records.parse_ts(record.get("timestamp") or "") or 0.0
         if prompt is None:
@@ -1017,6 +1018,10 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
     # The type of the newest conversation record so far, in file order: the
     # context `is_turn_stop_record` reads a summary in.
     conversation: str | None = None
+    # Whether the newest prompt so far is Compass's own command. Its `last-prompt` records repeat
+    # the command and name no prompt (`leafUuid` is the newest record of any kind), so only their
+    # order says which prompt they follow: those before the reader's next prompt are not read.
+    in_compass_turn = False
     for line in runtime_io.read_tail(config, path):
         if not line or line[0] != "{":
             continue
@@ -1035,8 +1040,13 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
             info["turn_stop_sid"] = d["sessionId"]
         if t in ("user", "assistant"):  # a tuple: `t` may be any JSON value
             conversation = t
+        if t == "user" and records.compass_command_record(d):
+            in_compass_turn = True
+        elif t == "user" and records.person_prompt_record(d):
+            in_compass_turn = False
         if t == "last-prompt":
-            info["last_prompt"] = d.get("lastPrompt")
+            if not in_compass_turn:
+                info["last_prompt"] = d.get("lastPrompt")
         elif t == "assistant":
             if ep:
                 info["last_assistant_ts"] = max(info["last_assistant_ts"], ep)

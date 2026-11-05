@@ -1,0 +1,196 @@
+{
+  "facts": [
+    {
+      "fact_id": "fact:43a409174c876017",
+      "at": 1790218850.0,
+      "type": "agent_message",
+      "source_kind": "agent_say",
+      "summary": "ECHOED-BY-AGENT placeholder board line for another session",
+      "scope": "session",
+      "actor_claim": "timestamped top-level assistant text record",
+      "work_item_id": null,
+      "evidence": {
+        "source": "timestamped top-level assistant text record",
+        "confidence": "exact"
+      },
+      "source_session": {
+        "harness": "claude",
+        "sid": "4a1c9e7d"
+      },
+      "branch": {
+        "harness": "claude",
+        "sid": "4a1c9e7d",
+        "record_id": "u12"
+      }
+    },
+    {
+      "fact_id": "fact:8ae1d3cbc589b5f5",
+      "at": 1790218840.0,
+      "type": "tool_report",
+      "source_kind": "command_run",
+      "summary": "python3 compass/skills/compass/server.py --sessions",
+      "scope": "session",
+      "actor_claim": "",
+      "work_item_id": null,
+      "evidence": {
+        "source": "Claude Bash call and paired result",
+        "confidence": "exact"
+      },
+      "subject": "command",
+      "tier": 3,
+      "cannot_fail": false,
+      "result": "passed",
+      "result_source": "flag",
+      "earlier_failed": false,
+      "before_last_change": false,
+      "changed_after": false,
+      "read_incomplete": false,
+      "result_at": 1790218845.0,
+      "source_session": {
+        "harness": "claude",
+        "sid": "4a1c9e7d"
+      },
+      "branch": {
+        "harness": "claude",
+        "sid": "4a1c9e7d",
+        "record_id": "toolu_002"
+      }
+    },
+    {
+      "fact_id": "fact:ae6febb03061f5bf",
+      "at": 1790218820.0,
+      "type": "agent_message",
+      "source_kind": "agent_say",
+      "summary": "The retry handler is in place.",
+      "scope": "session",
+      "actor_claim": "timestamped top-level assistant text record",
+      "work_item_id": null,
+      "evidence": {
+        "source": "timestamped top-level assistant text record",
+        "confidence": "exact"
+      },
+      "source_session": {
+        "harness": "claude",
+        "sid": "4a1c9e7d"
+      },
+      "branch": {
+        "harness": "claude",
+        "sid": "4a1c9e7d",
+        "record_id": "u4"
+      }
+    },
+    {
+      "fact_id": "fact:3fe23ab97de1f7aa",
+      "at": 1790218810.0,
+      "type": "tool_report",
+      "source_kind": "check_run",
+      "summary": "pytest tests/test_retry.py",
+      "scope": "session",
+      "actor_claim": "",
+      "work_item_id": null,
+      "evidence": {
+        "source": "Claude Bash call and paired result",
+        "confidence": "exact"
+      },
+      "subject": "check",
+      "check_id": "check:8ea5504e9e4d6035",
+      "result": "passed",
+      "result_source": "flag",
+      "runs": [
+        {
+          "at": 1790218810.0,
+          "piped": false
+        }
+      ],
+      "earlier_failed": false,
+      "before_last_change": false,
+      "changed_after": true,
+      "read_incomplete": false,
+      "result_at": 1790218815.0,
+      "ordinal": 1,
+      "ordinal_sub": 1,
+      "source_session": {
+        "harness": "claude",
+        "sid": "4a1c9e7d"
+      },
+      "branch": {
+        "harness": "claude",
+        "sid": "4a1c9e7d",
+        "record_id": "toolu_001"
+      }
+    },
+    {
+      "fact_id": "fact:cf9b2fa235a25ca4",
+      "at": 1790218805.0,
+      "type": "user_message",
+      "source_kind": "steer",
+      "summary": "Add retry with backoff to the webhook handler.",
+      "scope": "session",
+      "actor_claim": "timestamped non-meta user-role record",
+      "work_item_id": null,
+      "evidence": {
+        "source": "timestamped non-meta user-role record",
+        "confidence": "exact"
+      },
+      "intent_promoted": true,
+      "source_session": {
+        "harness": "claude",
+        "sid": "4a1c9e7d"
+      }
+    }
+  ],
+  "outline": {
+    "state": "ok",
+    "made_by": "compass",
+    "basis": "grouping",
+    "reason": null,
+    "harness": "claude",
+    "coverage": {
+      "complete": true,
+      "starts_at": null,
+      "start_offset": 0,
+      "end_offset": 4626,
+      "unread": [],
+      "agent_replies": "read",
+      "checks_and_files": "read",
+      "notes": []
+    },
+    "blocks": [
+      {
+        "prompt": {
+          "fact_id": "fact:cf9b2fa235a25ca4",
+          "title": "Add retry with backoff to the webhook handler.",
+          "at": 1790218805.0
+        },
+        "opening": true,
+        "partial": false,
+        "span": {
+          "first": "fact:cf9b2fa235a25ca4",
+          "last": "fact:ae6febb03061f5bf",
+          "entries": 3,
+          "from_at": 1790218805.0,
+          "to_at": 1790218820.0
+        },
+        "counts": {
+          "checks": 1,
+          "checks_failed": 0,
+          "checks_fixed": 0,
+          "checks_unknown": 0,
+          "files": 0,
+          "agent_messages": 1,
+          "subagent_entries": 0
+        },
+        "failures": [],
+        "folders": [],
+        "checks": [
+          {
+            "fact_id": "fact:3fe23ab97de1f7aa",
+            "title": "pytest tests/test_retry.py",
+            "result": "passed"
+          }
+        ]
+      }
+    ],
+    "more_blocks": 0
+  }
+}

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from . import (
     ci_read,
+    compass_turns,
     project_scripts,
     reader_checks,
     reading_source,
@@ -759,6 +760,12 @@ class _Collection:
         except context.ToolReportLimitError as exc:
             raise _StopError("canonical_limit") from exc
         self.checkpoint()
+        # The agent's facts inside a turn the reader's typed Compass command opened are marked
+        # here, before the final words are chosen, so neither the ledger nor the final reads them.
+        turns = compass_turns.spans(frozen.path) if frozen.harness == "claude" else ()
+        if turns:
+            marked = compass_turns.mark_facts(evidence.facts, frozen.harness, frozen.sid, turns)
+            evidence = replace(evidence, facts=tuple(marked))
         self.accept(replace(self.state, evidence=evidence))
 
     def prove_final(self) -> None:

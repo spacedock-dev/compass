@@ -439,7 +439,7 @@ def new_entries(
         fact_id, at = fact.get("fact_id"), fact.get("at")
         if not isinstance(fact_id, str) or not fact_id or fact_id in known:
             continue
-        if fact.get("source_session") != wanted:
+        if fact.get("source_session") != wanted or fact.get(reading.COMPASS_TURN_FLAG) is True:
             continue
         if isinstance(at, bool) or not isinstance(at, (int, float)):
             continue

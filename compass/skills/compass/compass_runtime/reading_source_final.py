@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from . import project_context as context
+from . import reading
 from . import reading_source_stream as raw_source
 
 if TYPE_CHECKING:
@@ -93,6 +94,7 @@ def build(  # noqa: PLR0911 - explicit strict-bound and current-version refusals
         for fact in facts
         if fact.get("type") == "agent_message"
         and fact.get("source_session") == {"harness": parent.harness, "sid": parent.sid}
+        and fact.get(reading.COMPASS_TURN_FLAG) is not True
     ]
     selected = context._final_word_rows(wanted)  # noqa: SLF001
     if parent.harness not in context.AGENT_MESSAGE_HARNESSES or not selected:
