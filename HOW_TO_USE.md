@@ -54,9 +54,11 @@ without opening the dashboard:
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
-Both read a running dashboard and never start one. With none running, the answer is one sentence
-saying so, and starting it is a separate step ([the start command](#find-the-copy-your-commands-will-run)
-finds the path). The CLI runs this exact command, so you can check what the agent should print:
+Both read a running dashboard and never start one. With none running, the agent prints the
+refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
+belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
+action word. The skill runs the command below, so you can run it yourself to check what the agent
+should print:
 
 ```bash
 python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
@@ -64,16 +66,23 @@ python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
 
 What to expect:
 
-- The first use asks you to approve the command, on every OS. Choosing "don't ask again" saves that
-  exact command, with the plugin's install path in it, to your own settings. A plugin update that
-  moves the install path makes it ask once more.
+- In Claude Code's default permission mode, the first use asks you to approve the command (measured
+  on macOS; other systems were not). Its "Yes, and don't ask again" offers `python3 *`, which approves
+  every `python3` command, not this one, so do not choose it. Answer Yes each time, or add
+  `Bash(python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions:*)` to `permissions.allow`
+  in your settings, with `<skill-dir>` written out as the paths the prompt shows. That rule removes the
+  prompt for this command only. A plugin update that moves the install path needs the rule again. In
+  a permission mode that runs commands without asking, nothing asks.
 - The agent prints the answer in one code block and adds nothing.
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
-  goes to that session's model provider. `sessions` lists the titles, goals and pending questions
-  of sessions from every harness, so a Codex or Cursor session's words can reach the provider of the
+  goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
+  with its title, its goal or the start of its first prompt, what it is doing and its resume command, so a Codex or Cursor session's words can reach the provider of the
   Claude Code session you typed this into. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
-  has the full account. To keep a list out of a session, run the command above in a terminal instead.
-- On native Windows, the agent writes `python` or `py -3` where this page writes `python3`.
+  has the full account. To keep a list out of a session, run the command above in a terminal outside the session instead.
+- On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
+  `python3`. That was not measured.
+- `sessions waiting` leaves out the session you typed it in only on Claude Code, which gives the
+  command that session's id. Elsewhere the list can include it, and the output does not say so.
 
 ## When `python3` is older than 3.12
 

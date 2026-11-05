@@ -115,9 +115,11 @@ how much.
 
 One more path starts from you and is not traffic Compass sends. When you invoke the `compass` skill
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
-becomes part of that session's context, so it goes to that session's model provider. The list includes
-the titles, goals and pending questions of sessions from other harnesses. Not invoking the skill with
-an action word stops it, and the same command run in a terminal prints to that terminal only.
+becomes part of that session's context, so it goes to that session's model provider. The list covers
+every session on the board, in any harness or project, and
+[what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
+does and does not stop it. The same command run in a terminal outside the session prints to that
+terminal only.
 
 ### What calls a model
 
