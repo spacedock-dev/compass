@@ -198,8 +198,7 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 51f0d53d (2026-11-04) -->
-<!-- Reconciled 0d7eaae2..51f0d53d: the terminal client and a lone `--version`, the `--footer`
-     status line segment and the files the dashboard writes for it, the `--sessions` list and the one
-     waiting rule they share, with the status line payload recorded by shape. Docs-only: the quota
-     scrub and observer commits in the range change no documented behavior. -->
+<!-- docs-synced-through: 9c971f75 (2026-11-05) -->
+<!-- Reconciled 51f0d53d..9c971f75: status-line and session-list documentation, bounded long-session
+     source collection and message fragments, prompt allowances and long analysis, progressive
+     outlines and separate summary coverage, and the burndown and Storybook workflows. -->
