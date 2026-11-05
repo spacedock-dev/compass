@@ -153,9 +153,15 @@ export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
     await expect(await labelled(RAN?.fact_id)).toHaveTextContent('Compass’s answer, not read');
     await expect(await labelled(CHECK?.fact_id)).toBeNull();
     await expect(document.querySelectorAll('[data-next-entry-flag="compass"]')).toHaveLength(2);
-    // The summary line counts the same two entries the rows label.
+    // The summary line counts the numbered entries, as it counts every other kind, and the command the agent
+    // ran is listed without a number, so it is labelled and not counted there.
+    const numbered = document.querySelectorAll('[data-next-entry][data-next-entry-id]');
+    const numberedLabels = [...numbered].filter((row) =>
+      row.querySelector('[data-next-entry-flag="compass"]'),
+    ).length;
+    await expect(numberedLabels).toBe(1);
     await expect(document.querySelector('.next-cockpit-work-mix')).toHaveTextContent(
-      /2 marked as Compass’s answer/,
+      new RegExp(`${String(numberedLabels)} marked as Compass’s answer`),
     );
   },
 };
