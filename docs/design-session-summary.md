@@ -1296,16 +1296,20 @@ new lede fails, the prior lede is kept rather than lost.
 ## Source and outline contract
 
 `session_source.read(config, path, harness, sid, after=None, newest=False, max_bytes=None,
-deadline=None)` is a forward, contiguous JSONL read, independent of a reading's retained messages
-and anchors. `deadline` is an absolute monotonic deadline. The module retains nothing between
-calls. Its frozen dataclasses are the contract for the later summary producer:
+deadline=None, observed_writes=None, known_head=None)` is a forward, contiguous JSONL read,
+independent of a reading's retained messages and anchors. `deadline` is an absolute monotonic
+deadline. The module retains nothing between calls. The optional `observed_writes` set supplies
+prior canonical withdrawal context and receives newly observed withdrawals; the collecting caller
+must reconcile earlier facts when it grows. `known_head` supplies already metered directory/time
+metadata. Ordinary callers retain their existing cursor behavior. [Summary collection](#source-collection-for-summaries)
+owns the opt-in reconciliation. The frozen dataclasses are the contract for the summary producer:
 
 | Shape | Fields and meaning |
 | -- | -- |
 | `SourceEntry` | `fact_id`, `fingerprint`, `kind` (`person`, `agent`, `check`, `file`), `actor` (`parent`, `subagent`), `stream`, `at`, masked `title`, optional `result`, display `path`, `folder`, grouping `subject`, and server-only `words`. |
 | `UnreadRegion` | `start_offset`, `end_offset`, `reason`, `stream`. Offsets belong to the named stream, so two transcripts never share a byte coordinate. |
 | `SourceCoverage` | `complete`, `starts_at`, `start_offset`, `end_offset`, `unread`, `agent_replies`, `checks_and_files`, `notes`. |
-| `SourcePage` | `state` (`ok`, `limited`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, and `bytes_read` including boundary probes. Server-only `replacements` pairs name retired and replacement fact ids; `positions` and `observations` map emitted fact ids to physical order and the observation offset supporting their value. `replacement_observations` aligns with replacement pairs. `classification_revision` is positive only on canonical outline replay pages. A limited outline page may carry accepted evidence and a checkpoint; unavailable or stale pages do not. |
+| `SourcePage` | `state` (`ok`, `limited`, `unsupported`, `unavailable`, `stale`), `harness`, `sid`, tuple `entries`, optional `coverage`, `next`, `snapshot`, tuple `notes`, and `bytes_read` including boundary probes. Server-only `replacements` pairs name retired and replacement fact ids; `positions` and `observations` map emitted fact ids to physical order and the observation offset supporting their value. `replacement_observations` aligns with replacement pairs. `classification_revision` is positive only on canonical outline replay pages. The transient `head_fallback` pair supplies directory/time observations from parent rows for summary collection, and otherwise defaults to `(None, None)`. A limited outline page may carry accepted evidence and a checkpoint; unavailable or stale pages do not. |
 | `SourceCursor` | Source identity digest, tuple of `StreamCursor` frontiers, unresolved `PendingCall` inputs and physical call positions, session directory, and accumulated id/fingerprint/time and subject metadata. A stream frontier holds its file stamp, consumed offset, last complete-line boundary and SHA-256 digest, and bounded unfinished-line state. These are server-only Python values, not HTTP cursors. |
 | `SourceSnapshot` | Parent `(device, inode, size, mtime_ns)` stamp, `end_offset`, `boundary_digest`, accumulated `(fact_id, fingerprint, at)` entries, read-only `subjects` mapping to latest fact and result/write fingerprint, `pending_calls`, continuation `cursor`, `message_ids`, and boundary hashes measured by this read. `verified_boundary` records a continuation's comparison against its previous boundary. `result_calls` names processed `(stream, call id)` result pairs, including a refused call that retracts an earlier unknown run. `snapshot(page)` returns this same value. |
 | `SourceChange` | `kind`, tuple `changed` of `(fact_id, reason)`, tuple `appended` of new fact ids. |
@@ -1412,14 +1416,34 @@ has passed, that discarded every page holding a call and `page.next` repeated wi
 
 ### Source collection for summaries
 
-A summary start admits its job before reading source text. The worker follows `page.next` through
-the parent and admitted subagent streams without restarting at byte zero. It replaces a pending
+A summary start admits its job before reading source text. Ordinary continuation follows
+`page.next` through the parent and admitted subagent streams. It replaces a pending
 check when its result or command rewrite arrives, including a rewrite with no result yet, and
 removes a retracted or renamed fact. Every carried call retains its physical position even when
 it has emitted no fact, so a later write or newly recognized check precedes intervening messages.
 The collector then merges the accumulated streams using the existing next-entry timestamp rule. Concatenating
 pages would put a child's earlier work after all parent pages; globally sorting would move a
 parent's backward-timestamped message out of its recorded order. Neither is used.
+
+The collector carries the canonical union of observed declaration, reader-listing and script-shell
+withdrawals across pages and admitted streams. If a later page changes that union after earlier
+evidence was accepted, it discards the old classification and rewinds under the known union. The
+union only grows, so rereading the same writes causes no further rewind. The existing classifier
+can both withdraw obsolete checks and restore previously unemitted fallback checks; direct checks
+and file facts keep their own admission rules.
+
+A bounded head scan obtains canonical directory/time metadata once, charging actual reads to the
+job. Missing fields use the canonical fallback from already read parent rows, kept in physical
+order: the first string directory and the first stamped record, not the lowest timestamp. A newly
+resolved fallback also triggers a rewind under the corrected context. Genuinely absent metadata
+remains absent; an anonymous person-only source can still be complete. A budget-clipped head scan
+cannot certify that metadata is absent.
+
+Every head read, content page, boundary check and rewind spends the same job's remaining byte and
+time allowances. Rewinds retain cancellation and memory checks and require the same native stream
+identities and stamps as the pass that triggered them. No obsolete prefix survives an interrupted
+reconciliation as completed evidence. The existing stop reasons apply, and progress byte counts
+include rereads. This changes no model grant, provider call or producer allowance.
 
 Coverage accumulates independently of the producer's windows. A later read clears only the part
 of a byte/time tail it actually reached. Oversized and malformed lines remain gaps. Unreadable
@@ -1429,14 +1453,16 @@ model call; an incomplete update keeps its existing summary rather than claiming
 
 | RuntimeConfig field | Default | Bound |
 | -- | --: | -- |
-| `session_summary_source_max_bytes` | 256 MiB | Actual bytes consumed across all pages, including repeated boundary verification. Four full scan-page allowances permit continuation without an unbounded read. |
+| `session_summary_source_max_bytes` | 256 MiB | Actual source bytes consumed, including head acquisition, content pages, boundary verification and classification rewinds. All share one job allowance. |
 | `session_summary_source_max_seconds` | 30 seconds | Collection allowance, inside the existing 600-second whole-job deadline; fifteen ordinary page allowances. |
-| `session_summary_source_max_memory_bytes` | 64 MiB | Retained Python objects: evidence, indexes, boundary metadata, cursor fragments and pending inputs. Shared objects count once. A bounded incoming page and candidate assembly are transient additional allocations; this is not a process RSS limit. |
+| `session_summary_source_max_memory_bytes` | 64 MiB | Object-size admission covers accepted and candidate evidence, indexes, boundary metadata, cursor fragments, pending inputs, withdrawal/head context, restart identities and the projected page. Shared objects count once. This is not a process RSS limit. |
 
 These are local collection allowances, not measured guarantees that every long session fits.
 The collector checks them on each page and refuses a candidate that exceeds retention, keeping
-the accepted prefix. Each page still shares its byte and time allowance across streams. Boundary
-verification that makes no progress ends with `source_stalled`, rather than repeating forever.
+the accepted prefix only while its classification remains valid. A withdrawal or head-context
+change clears that prefix before replay. Each page still shares its byte and time allowance
+across streams. Boundary verification that makes no progress ends with `source_stalled`, rather
+than repeating forever.
 The cooperative filesystem/parse limit described above still applies.
 
 `source_bytes`, `source_time`, `source_memory` and `source_stalled` name incomplete collection;
