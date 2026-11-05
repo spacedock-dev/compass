@@ -198,7 +198,7 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 9c971f75 (2026-11-05) -->
-<!-- Reconciled 51f0d53d..9c971f75: status-line and session-list documentation, bounded long-session
-     source collection and message fragments, prompt allowances and long analysis, progressive
-     outlines and separate summary coverage, and the burndown and Storybook workflows. -->
+<!-- docs-synced-through: ea215a7f (2026-11-05) -->
+<!-- Reconciled 9c971f75..ea215a7f: pending-direction Analyze outcomes, budgeted generic
+     continuation verification and declaration withdrawals, and deterministic footer deadline tests.
+     Four follow-up issues landed in three behavior pull requests on 2026-11-05. -->
