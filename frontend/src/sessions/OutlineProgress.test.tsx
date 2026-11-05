@@ -1,7 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PARTIAL_SUMMARY_PLAN, progressiveOutline } from '../../stories/outline.scenario';
-import { SummaryPage, poll, script } from '../../stories/summary.scenario';
+import {
+  SummaryPage,
+  block,
+  gap,
+  SECOND_PHASE,
+  storedSummary,
+  poll,
+  script,
+} from '../../stories/summary.scenario';
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -12,6 +20,36 @@ beforeEach(() => {
 });
 
 describe('a reader watching automatic outline progress', () => {
+  it('keeps a saved summary omission independent of a partial outline', async () => {
+    render(
+      <SummaryPage
+        outline={progressiveOutline(0)}
+        summary={storedSummary({
+          state: 'partial',
+          reason: 'gaps',
+          starts_at: 'p2',
+          blocks: [gap('p1', 'c2', 4, 'before_window'), block('p2', 'a2', 2, [SECOND_PHASE])],
+        })}
+      />,
+    );
+    const region = await screen.findByRole('region', { name: 'What the session has done' });
+    const box = within(region);
+    await box.findByText(/^This summary starts at #3/);
+    const disclosure = box.getByRole('button', { name: "Compass's outline of this session" });
+    fireEvent.click(disclosure);
+    await box.findByText(
+      'This outline is partial. Compass will try to read more on later updates.',
+    );
+    expect(region.textContent).not.toMatch(/outline covers/i);
+    expect(region.querySelector('[data-next-summary-gap="before_window"]')?.textContent).toContain(
+      'This part was not summarized',
+    );
+    expect(
+      region.querySelector('[data-next-summary] [data-next-outline-entry="p2"]'),
+    ).not.toBeNull();
+    expect(script.posts).toEqual([]);
+  });
+
   it.each([false, null])(
     'keeps the summary size partial when coverage is %s without unread ranges',
     async (complete) => {

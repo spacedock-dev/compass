@@ -148,10 +148,9 @@ export function reasonSentence(reason: string, context: ReasonContext): string {
   return line ? line(context) : `The summary stopped (${reason}).`;
 }
 
-/* A part the summary could not summarize, said where it sits. Every gap points at the outline. */
+/* A summary gap says what was not summarized, without certifying the separate outline. */
 export const GAP_LINES: Readonly<Record<string, string>> = {
-  before_window:
-    'The summary starts after this part: the session is longer than one summary reads. The outline covers it.',
+  before_window: 'This part was not summarized: the summary starts later in the session.',
   no_valid_reply: 'This part could not be summarized: the model’s reply could not be read.',
   no_output: 'This part could not be summarized: the model returned nothing, twice.',
   refused: 'This part could not be summarized: the model call was refused.',
@@ -502,8 +501,8 @@ export function summaryNotes(summary: StoredSummary, startsAt: string): string[]
   if (partway)
     notes.push(
       startsAt
-        ? `This summary starts at ${startsAt}, not at the session’s first entry. The outline covers what comes before.`
-        : 'This summary starts partway through the session, not at its first entry. The outline covers what comes before.',
+        ? `This summary starts at ${startsAt}, not at the session’s first entry. Earlier entries were not summarized here.`
+        : 'This summary starts partway through the session, not at its first entry. Earlier entries were not summarized here.',
     );
   if (summary.coverage?.agentReplies === 'not_read')
     notes.push('The agent’s replies were not read for this harness, so the summary has none.');
@@ -598,7 +597,7 @@ export interface Placement {
 
 export const PLACE_LINES: Readonly<Record<Exclude<Where, 'phase'>, string>> = {
   after: 'Its evidence comes after the last entry the summary covers.',
-  before: 'Its evidence sits before where the summary starts, in the part the outline covers.',
+  before: 'Its evidence comes before the first entry this summary covers.',
   gap: 'Its evidence sits inside a part of the session the summary could not summarize.',
   between: 'Its evidence sits inside the span the summary covers, but in no phase of it.',
   unplaced: 'Compass cannot place its evidence against the summary.',

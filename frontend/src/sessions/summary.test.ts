@@ -28,6 +28,28 @@ import {
   summaryNotes,
 } from './summary';
 
+it.each(['#25', ''])(
+  'names the summary omission without certifying an outline (%s)',
+  (startsAt) => {
+    const focused = parseFocusedSummary({
+      sources: {
+        summary: {
+          exists: true,
+          state: 'partial',
+          harness: 'claude',
+          blocks: [{ first: 'a', last: 'b', entries: 2, gap: true, reason: 'before_window' }],
+        },
+      },
+    });
+    expect(focused?.summary).not.toBeNull();
+    if (focused?.summary) {
+      const notes = summaryNotes(focused.summary, startsAt).join(' ');
+      expect(notes).toContain('Earlier entries were not summarized here.');
+      expect(notes).not.toMatch(/outline covers/i);
+    }
+  },
+);
+
 it('says when a summary read only fragments of an original message', () => {
   const focused = parseFocusedSummary({
     sources: {
