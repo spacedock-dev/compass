@@ -100,8 +100,11 @@ try {
     }, 100);
   });
   devBrowser = await chromium.launch({ headless: true });
-  const opened = await openPage(devBrowser, 'http://127.0.0.1:6006');
+  const opened = await openPage(devBrowser, 'http://127.0.0.1:6006', { nativeWebSockets: true });
   try {
+    // Reproduces the proxy-induced one-second UniversalStore timeout on a fast developer machine.
+    const session = await opened.context.newCDPSession(opened.page);
+    await session.send('Emulation.setCPUThrottlingRate', { rate: 6 });
     await opened.page.goto('http://127.0.0.1:6006/?path=/story/ui-button--pending');
     await opened.page.frameLocator('iframe').getByRole('button', { name: 'Saving…' }).waitFor();
     assert.deepEqual(opened.log.externalRequests, [], 'Development Storybook must stay offline');

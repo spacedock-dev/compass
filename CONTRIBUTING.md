@@ -61,7 +61,12 @@ set `COMPASS_TEST_PYTHON` to name one. Add the story with the reason.
 
 After changing a component or view, update its story. Run `pnpm build:storybook`, then
 `pnpm test:stories`. The tests run in pinned Chromium with one worker, fail on console and page
-errors or external requests, and check the static manager and preview offline. Stories have a separate
+errors or external requests, and check the static and development manager and preview offline.
+The development smoke runs with sixfold CPU throttling to expose startup races. Its browser context
+adds a connection CSP and grants local-network access to the allowed origins so local WebSockets
+stay native. Separate loopback fixtures prove that unlisted origins receive no HTTP request or
+WebSocket upgrade. The policy and permission belong only to this test browser context.
+Stories have a separate
 strict typecheck with dependency declaration checking skipped because Storybook 10.6.0's declarations
 fail with TypeScript 6 and exact optional properties; the page's declaration checks stay strict.
 Stories are excluded from page coverage and the CSS budget. They live outside Tailwind's explicit

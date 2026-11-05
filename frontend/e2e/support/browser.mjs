@@ -74,11 +74,12 @@ export async function startBoard({ root = REPOSITORY } = {}) {
 /**
  * A page that may only talk to `origins` (plus data: URLs), with a log of what it did.
  * `log.externalRequests` must stay empty; `log.nonGet` lists every request that was not a GET.
+ * `nativeWebSockets` applies a document CSP only in this context, for the Storybook startup proof.
  */
 export async function openPage(
   browser,
   origins,
-  { viewport, reducedMotion, locale, hasTouch } = {},
+  { viewport, reducedMotion, locale, hasTouch, nativeWebSockets = false } = {},
 ) {
   const allowed = [].concat(origins);
   const context = await browser.newContext({
@@ -92,18 +93,50 @@ export async function openPage(
   const inside = (url) =>
     url.startsWith('data:') ||
     allowed.some((origin) => url.startsWith(origin + '/') || url === origin);
+  if (nativeWebSockets) {
+    // Fulfilled documents lack Chromium's network address classification, even on loopback.
+    for (const origin of allowed)
+      await context.grantPermissions(['local-network-access'], { origin });
+    await context.exposeBinding('__recordConnectionRefusal', (_, url) => {
+      log.externalRequests.push(url);
+    });
+    await context.addInitScript(() => {
+      document.addEventListener('securitypolicyviolation', (event) => {
+        if (event.effectiveDirective === 'connect-src')
+          globalThis.__recordConnectionRefusal(event.blockedURI);
+      });
+    });
+  }
   await context.route('**/*', (route) => {
     const url = route.request().url();
-    if (inside(url)) return route.continue();
+    if (inside(url)) {
+      if (nativeWebSockets && route.request().resourceType() === 'document') {
+        return (async () => {
+          const response = await route.fetch({ maxRedirects: 0 });
+          const headers = response.headers();
+          const connections = allowed.flatMap((origin) => [origin, origin.replace(/^http/, 'ws')]);
+          const policy = `connect-src ${connections.join(' ')} data:`;
+          headers['content-security-policy'] = [headers['content-security-policy'], policy]
+            .filter(Boolean)
+            .join(', ');
+          await route.fulfill({ response, headers });
+        })();
+      }
+      return route.continue();
+    }
     log.externalRequests.push(url);
     return route.abort();
   });
-  await context.routeWebSocket('**/*', (socket) => {
-    const target = socket.url().replace(/^ws:/, 'http:');
-    if (inside(target)) return socket.connectToServer();
-    log.externalRequests.push(socket.url());
-    return socket.close({ code: 1008 });
-  });
+  // Storybook's one-second store handshake can expire while Playwright creates its socket proxy.
+  // Its smoke uses document CSP instead, keeping loopback sockets native and outbound sockets blocked.
+  if (!nativeWebSockets) {
+    await context.routeWebSocket('**/*', (socket) => {
+      const target = socket.url().replace(/^ws:/, 'http:');
+      if (inside(target)) return socket.connectToServer();
+      log.externalRequests.push(socket.url());
+      return socket.close({ code: 1008 });
+    });
+  }
   const page = await context.newPage();
   page.on('console', (message) => {
     if (message.type() === 'error') log.consoleErrors.push(message.text());
