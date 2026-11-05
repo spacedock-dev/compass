@@ -698,6 +698,105 @@ class SessionSourceTest(unittest.TestCase):
         self.assertEqual(checkpoint.frontier.offset, continued.frontier.offset)
         self.assertIn("partial_line", [region.reason for region in again.coverage.unread])
 
+    def test_outline_parent_exact_boundary_allowance_refuses_instead_of_stalling(self) -> None:
+        self.session.prompt("First owned prompt.")
+        self.session.prompt("Second owned prompt.")
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        boundary = len(lines[0])
+        _page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=boundary,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual(boundary, checkpoint.frontier.end_offset)
+        limited, stopped = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=boundary,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual("limited", limited.state)
+        self.assertTrue(stopped.stopped)
+        self.assertFalse(stopped.parent_complete)
+        self.assertEqual((), limited.entries)
+        self.assertIn(
+            "outline_boundary_limit", [region.reason for region in limited.coverage.unread]
+        )
+
+        # One additional byte permits bounded discard progress; a fitting next line is admitted.
+        _page, advancing = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=boundary + 1,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertFalse(advancing.stopped)
+        self.assertGreater(advancing.frontier.offset, boundary)
+        complete, finished = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=boundary + len(lines[1]),
+            deadline=time.monotonic() + 30,
+        )
+        self.assertTrue(finished.parent_complete)
+        self.assertEqual(["Second owned prompt."], [entry.title for entry in complete.entries])
+
+    def test_outline_parent_short_remainder_does_not_permanently_refuse_a_fitting_boundary(
+        self,
+    ) -> None:
+        self.session.prompt("First owned prompt.")
+        self.session.prompt("Second owned prompt.")
+        self.save()
+        boundary = len(self.path.read_bytes().splitlines(keepends=True)[0])
+        _page, checkpoint = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=boundary,
+            deadline=time.monotonic() + 30,
+        )
+        allowance = self.path.stat().st_size
+        deadline = time.monotonic() + 30
+        budget = self.source._Budget(allowance, deadline, deadline)
+        # Another phase really spends bytes from the shared poll allowance first.
+        with self.path.open("rb") as source:
+            while budget.remaining > boundary - 1:
+                budget.line(source, budget.remaining - (boundary - 1))
+        deferred, continued = self.source._outline_parent_page(
+            self.config, str(self.path), "root", checkpoint, budget
+        )
+        self.assertEqual("ok", deferred.state)
+        self.assertFalse(continued.stopped)
+        self.assertEqual(boundary, continued.frontier.offset)
+        self.assertNotIn(
+            "outline_boundary_limit", [region.reason for region in deferred.coverage.unread]
+        )
+        self.assertLessEqual(budget.used, allowance)
+        _page, finished = self.source._read_outline_parent(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=continued,
+            max_bytes=allowance,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertTrue(finished.parent_complete)
+
     def test_outline_parent_unfit_line_advances_without_retaining_its_fragment(self) -> None:
         self.session.prompt("PRIVATE_OVERSIZED_WORDS " * 400)
         self.session.prompt("A later small record.")

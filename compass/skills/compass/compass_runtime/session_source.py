@@ -475,7 +475,15 @@ def _outline_parent_page(
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
-        stopped = checkpoint.stopped or old.end_offset - old.boundary_start > budget.remaining
+        boundary_bytes = old.end_offset - old.boundary_start
+        allowance = budget.used + budget.remaining
+        # Exhausting this poll's remainder is retryable. Refuse only when a whole poll cannot
+        # verify the boundary and, while source remains, admit even one new byte.
+        stopped = (
+            checkpoint.stopped
+            or boundary_bytes > allowance
+            or (boundary_bytes == allowance and old.offset < old.stamp[2])
+        )
         verified = None if stopped else _verify(source, old, budget)
         if verified is not None and verified != old.boundary_digest:
             raise _SourceChangedError
