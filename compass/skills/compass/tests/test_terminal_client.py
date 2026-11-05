@@ -840,7 +840,9 @@ class SessionsCommandTest(HomeCase):
                 self.assertEqual(notice, out.splitlines()[0])
 
     def test_a_reader_whose_session_is_identified_is_not_told_anything_about_it(self) -> None:
-        out = self.waiting_output({"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"})
+        out = self.waiting_output(
+            {"CLAUDE_CODE_SESSION_ID": "a1b2c3d4-0000-4000-8000-000000000000"}
+        )
 
         self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
 
