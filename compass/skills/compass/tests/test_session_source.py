@@ -1546,6 +1546,157 @@ class SessionSourceTest(unittest.TestCase):
         self.assertLess(replayed[0][0], replayed[1][0])
         self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
 
+    def test_dependency_recovery_after_work_deadline_is_typed_and_validated(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        directory = self.path.with_suffix("") / "subagents"
+        child.save(directory / "agent-ab12.jsonl")
+        added = directory / "agent-added.jsonl"
+        for failure in ("none", "time", "outline_stream_limit", "os", "parent", "child"):
+            now = [100.0]
+            rejected = [False]
+            streams, stamps = self.source._outline_streams, self.source._outline_stamps
+
+            def reject(
+                *args: Any,
+                streams: Any = streams,
+                rejected: list[bool] = rejected,
+                now: list[float] = now,
+                failure: str = failure,
+                **kwargs: Any,
+            ) -> Any:
+                try:
+                    return streams(*args, **kwargs)
+                except ValueError as error:
+                    self.assertEqual("outline_dependency_limit", str(error))
+                    rejected[0] = True
+                    now[0] = 101.0
+                    if failure == "parent":
+                        with self.path.open("a") as handle:
+                            handle.write("\n")
+                    elif failure == "child":
+                        child.save(added)
+                    raise
+
+            def inventory(
+                *args: Any,
+                stamps: Any = stamps,
+                rejected: list[bool] = rejected,
+                failure: str = failure,
+                **kwargs: Any,
+            ) -> Any:
+                errors = {
+                    "time": ValueError("time"),
+                    "outline_stream_limit": ValueError("outline_stream_limit"),
+                    "os": OSError("owned recovery metadata unavailable"),
+                }
+                if rejected[0] and failure in errors:
+                    raise errors[failure]
+                return stamps(*args, **kwargs)
+
+            with (
+                self.subTest(failure=failure),
+                mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0),
+                mock.patch.object(self.source, "_outline_streams", side_effect=reject),
+                mock.patch.object(self.source, "_outline_stamps", side_effect=inventory),
+                mock.patch.object(
+                    self.source.time, "monotonic", side_effect=lambda now=now: now[0]
+                ),
+            ):
+                page, checkpoint = self.source._read_outline(
+                    self.config, str(self.path), "claude", "root", max_bytes=4000, deadline=100.25
+                )
+                self.assertTrue(rejected[0])
+                self.assertLessEqual(page.bytes_read, 4000)
+                self._assert_dependency_recovery(page, checkpoint, failure)
+            if added.exists():
+                added.unlink()
+
+    def _assert_dependency_recovery(self, page: Any, checkpoint: Any, failure: str) -> None:
+        if failure == "none":
+            self.assertEqual("limited", page.state)
+            self.assertTrue(checkpoint.dependency_limited)
+            self.assertTrue(checkpoint.done)
+            self.assertFalse(checkpoint.complete)
+        else:
+            self.assertIsNone(checkpoint)
+            self.assertEqual(
+                {
+                    "time": "limited",
+                    "outline_stream_limit": "limited",
+                    "os": "unavailable",
+                    "parent": "stale",
+                    "child": "stale",
+                }[failure],
+                page.state,
+            )
+            if failure in {"time", "outline_stream_limit"}:
+                self.assertEqual([failure], [gap.reason for gap in page.coverage.unread])
+
+    def test_dependency_recovery_keeps_only_same_version_accepted_checkpoint(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        _page, accepted = self.source._read_outline(self.config, str(self.path), "claude", "root")
+        self.assertIsNotNone(accepted)
+        for mutate in (False, True):
+            now = [100.0]
+            streams = self.source._outline_streams
+
+            def reject(
+                *args: Any,
+                streams: Any = streams,
+                now: list[float] = now,
+                mutate: bool = mutate,
+                **kwargs: Any,
+            ) -> Any:
+                try:
+                    return streams(*args, **kwargs)
+                except ValueError as error:
+                    self.assertEqual("outline_dependency_limit", str(error))
+                    now[0] = 101.0
+                    if mutate:
+                        with self.path.open("a") as handle:
+                            handle.write("\n")
+                    raise
+
+            with (
+                self.subTest(mutate=mutate),
+                mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0),
+                mock.patch.object(self.source, "_outline_streams", side_effect=reject),
+                mock.patch.object(
+                    self.source.time, "monotonic", side_effect=lambda now=now: now[0]
+                ),
+            ):
+                page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    after=accepted,
+                    max_bytes=4000,
+                    deadline=100.25,
+                )
+                if mutate:
+                    self.assertEqual("stale", page.state)
+                    self.assertIsNone(checkpoint)
+                else:
+                    self.assertEqual("limited", page.state)
+                    self.assertTrue(checkpoint.dependency_limited)
+                    self.assertEqual(accepted.inventory, checkpoint.inventory)
+                    self.assertIs(accepted.frontier, checkpoint.frontier)
+                    self.assertEqual(accepted.accepted, checkpoint.accepted)
+
     def test_outline_dependency_cap_is_explicit_and_sticky(self) -> None:
         self.prepare_outline_declarations()
         self.session.prompt("Owned limited declaration.")

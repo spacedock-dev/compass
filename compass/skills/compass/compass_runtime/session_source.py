@@ -1344,8 +1344,8 @@ def _outline_streams(
     after: OutlineCheckpoint | None,
     budget: _Budget,
     opening_bytes: int,
+    inventory: tuple[tuple[str, Stamp | None], ...],
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
-    inventory = _outline_stamps(path, harness, deadline=budget.deadline)
     checkpoint: OutlineCheckpoint | None
     if after is not None and (
         after.inventory != inventory
@@ -1424,7 +1424,9 @@ def _read_outline(
         end,
         now + max(0.0, end - now) * (1 - config.session_source_classify_share),
     )
+    inventory: tuple[tuple[str, Stamp | None], ...] = ()
     try:
+        inventory = _outline_stamps(path, harness, deadline=budget.deadline)
         return _outline_streams(
             config,
             path,
@@ -1433,6 +1435,7 @@ def _read_outline(
             after,
             budget,
             config.session_outline_head_bytes if opening_bytes is None else opening_bytes,
+            inventory,
         )
     except _SourceChangedError:
         return SourcePage("stale", harness, sid, bytes_read=budget.used), None
@@ -1448,22 +1451,31 @@ def _read_outline(
             "time",
         }:
             raise
-        coverage = SourceCoverage(
-            False,
-            None,
-            0,
-            0,
-            (UnreadRegion(0, 0, str(error), "children"),),
-            "read" if harness == "claude" else "not_read",
-            "read" if harness == "claude" else "not_admitted",
-            () if harness == "claude" else _CODEX_NOTES,
-        )
-        stopped = None
-        if str(error) == "outline_dependency_limit":
-            inventory = _outline_stamps(path, harness, deadline=budget.deadline)
+        return _outline_refusal(path, harness, sid, after, inventory, budget.used, str(error))
+
+
+def _outline_refusal(
+    path: str,
+    harness: str,
+    sid: str,
+    after: OutlineCheckpoint | None,
+    inventory: tuple[tuple[str, Stamp | None], ...],
+    bytes_read: int,
+    reason: str,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    stopped = None
+    if reason == "outline_dependency_limit":
+        try:
+            # Recovery validates the original admitted inventory, never stamps a new source
+            # generation as a successful refusal. No source content is read in this pass.
+            if _outline_finish_stamps(path, harness) != inventory:
+                return SourcePage("stale", harness, sid, bytes_read=bytes_read), None
+            stamp = inventory[0][1]
+            if stamp is None:
+                return SourcePage("stale", harness, sid, bytes_read=bytes_read), None
             stopped = after or OutlineCheckpoint(
                 record_pages._identity(path, harness, sid),  # noqa: SLF001
-                _stamp(os.stat(path)),
+                stamp,
                 (),
                 inventory=inventory,
             )
@@ -1476,14 +1488,27 @@ def _read_outline(
                     UnreadRegion(0, 0, "outline_dependency_limit", "classification"),
                 ),
             )
-        return SourcePage(
-            "limited",
-            harness,
-            sid,
-            notes=(str(error),),
-            bytes_read=budget.used,
-            coverage=coverage,
-        ), stopped
+        except OSError:
+            return SourcePage(
+                "stale" if after else "unavailable", harness, sid, bytes_read=bytes_read
+            ), None
+        except ValueError as error:
+            if str(error) not in {"time", "outline_stream_limit"}:
+                raise
+            reason = str(error)
+    coverage = SourceCoverage(
+        False,
+        None,
+        0,
+        0,
+        (UnreadRegion(0, 0, reason, "children"),),
+        "read" if harness == "claude" else "not_read",
+        "read" if harness == "claude" else "not_admitted",
+        () if harness == "claude" else _CODEX_NOTES,
+    )
+    return SourcePage(
+        "limited", harness, sid, notes=(reason,), bytes_read=bytes_read, coverage=coverage
+    ), stopped
 
 
 class _SourceChangedError(ValueError):
