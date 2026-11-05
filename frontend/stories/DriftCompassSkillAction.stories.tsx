@@ -34,10 +34,16 @@ const ordered = [...published.facts].sort((a, b) => a.at - b.at);
 const TIMES = [200, 300, 400, 1050, 1100, 1150, 1200];
 const placed = ordered.map(({ source_session: _own, ...fields }: Published, index) => {
   const at = TIMES[index] ?? 1200 + index;
-  return fact(fields.fact_id, at, { ...fields, at });
+  // A check's result time moves with its call, or the recorded one would land after every reading here.
+  return fact(fields.fact_id, at, {
+    ...fields,
+    at,
+    ...('result_at' in fields ? { result_at: at + 5 } : {}),
+  });
 });
 const CHECK = ordered.find((row) => row.type === 'tool_report' && row.subject === 'check');
 const ECHO = ordered.find((row) => row.summary === ECHOED);
+const RAN = ordered.find((row) => row.subject === 'command');
 
 const reading = {
   ...DEPARTURE_READING,
@@ -59,8 +65,16 @@ const reading = {
   },
 };
 
+/* The same reading, made before the reader typed the Compass command: the turn comes after it. */
+const earlier = { ...reading, read_at: 1000, evidence_through: 1000 };
+
 const scenario = (facts: readonly unknown[]): Scenario => ({
   session: { annotation_assessment: reading, annotation_reading_count: 1 },
+  facts,
+});
+
+const scenarioAfter = (facts: readonly unknown[]): Scenario => ({
+  session: { annotation_assessment: earlier, annotation_reading_count: 1 },
   facts,
 });
 
@@ -90,6 +104,55 @@ export const ACompassSkillActionAddsNothingToTheGoal: Story = {
     await expect(echo.textContent).toContain(ECHOED);
     for (const row of document.querySelectorAll<HTMLElement>('[data-next-entry-id]'))
       await expect(row.textContent).not.toContain(COMMAND);
+  },
+};
+
+/* The reading came before the command, so the turn lands after it. Nothing a reading reads changed, so the card
+   stays current: no "New work since this analysis.", and no count of what arrived. */
+export const ACompassSkillActionAfterAnAnalysisLeavesItCurrent: Story = {
+  args: { scenario: scenarioAfter(placed) },
+  play: async ({ canvasElement }) => {
+    const drift = await driftOf(canvasElement);
+    await expect(drift).not.toHaveTextContent(/New work since this analysis/);
+    await expect(drift).not.toHaveTextContent(/arrived since this analysis/);
+    await expect(drift.querySelector('[data-next-result-stale]')).toBeNull();
+  },
+};
+
+/* The control: the same facts without the server's mark, so the absence above is the mark's doing and not a card
+   that never says it. */
+export const TheSameTurnWithoutTheMarkIsNewWork: Story = {
+  args: {
+    scenario: scenarioAfter(
+      placed.map(({ compass_turn: _marked, ...rest }: Record<string, unknown>) => rest),
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const drift = await driftOf(canvasElement);
+    await expect(drift).toHaveTextContent(/New work since this analysis/);
+    await expect(drift).toHaveTextContent(/arrived since this analysis/);
+  },
+};
+
+/* Full activity says whose answer the agent's echo and the command it ran are, and says nothing of the reader's own
+   work. */
+export const FullActivityLabelsTheEntriesAsCompassAnswer: Story = {
+  args: { scenario: scenario(placed) },
+  play: async ({ canvasElement }) => {
+    await driftOf(canvasElement);
+    const labelled = async (id: string | undefined) => {
+      const row = await waitFor(() => {
+        const node = document.querySelector<HTMLElement>(`[data-next-entry-id="${id ?? ''}"]`);
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      return row.querySelector('[data-next-entry-flag="compass"]');
+    };
+    const echoFlag = await labelled(ECHO?.fact_id);
+    await expect(echoFlag).toHaveTextContent('Compass’s answer, not read');
+    await expect(await labelled(RAN?.fact_id)).toHaveTextContent('Compass’s answer, not read');
+    await expect(await labelled(CHECK?.fact_id)).toBeNull();
+    await expect(document.querySelectorAll('[data-next-entry-flag="compass"]')).toHaveLength(2);
   },
 };
 

@@ -21,7 +21,9 @@
         "harness": "claude",
         "sid": "4a1c9e7d",
         "record_id": "u12"
-      }
+      },
+      "compass_turn": true,
+      "ordinal": 3
     },
     {
       "fact_id": "fact:8ae1d3cbc589b5f5",
@@ -54,7 +56,8 @@
         "harness": "claude",
         "sid": "4a1c9e7d",
         "record_id": "toolu_002"
-      }
+      },
+      "compass_turn": true
     },
     {
       "fact_id": "fact:ae6febb03061f5bf",
@@ -77,7 +80,8 @@
         "harness": "claude",
         "sid": "4a1c9e7d",
         "record_id": "u4"
-      }
+      },
+      "ordinal": 2
     },
     {
       "fact_id": "fact:3fe23ab97de1f7aa",
@@ -136,7 +140,8 @@
       "source_session": {
         "harness": "claude",
         "sid": "4a1c9e7d"
-      }
+      },
+      "ordinal": 1
     }
   ],
   "outline": {

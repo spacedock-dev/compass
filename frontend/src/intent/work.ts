@@ -53,6 +53,8 @@ export interface WorkEntry {
   readonly cannotFail?: boolean;
   /** A check that counted because the reader listed its command for the project; absent on every other row. */
   readonly listedByReader?: boolean;
+  /** What the agent ran or said in a turn the reader's typed Compass command opened, which the server marked; absent on every other row. */
+  readonly compassTurn?: boolean;
   /** The server's fixed number for a message, or for the message a check or file follows. */
   readonly ordinal: number | null;
   /** A check or file's place after that message; null for a message. */
@@ -129,6 +131,7 @@ export function workEntries(session: Row, semantic: unknown): WorkEntry[] {
         readIncomplete: fact['read_incomplete'] === true,
         ...(fact['cannot_fail'] === true ? { cannotFail: true } : {}),
         ...(fact['listed_by_reader'] === true ? { listedByReader: true } : {}),
+        ...(fact['compass_turn'] === true ? { compassTurn: true } : {}),
         ordinal: positiveInteger(fact['ordinal']),
         ordinalSub: positiveInteger(fact['ordinal_sub']),
         source: [evidence['source'], evidence['confidence']]

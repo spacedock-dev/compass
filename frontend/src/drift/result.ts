@@ -496,8 +496,10 @@ export function resultStale(
   shape: Shape,
   raw: Row | null | undefined,
   annotation: Annotation | null | undefined,
-  entries: readonly WorkEntry[],
+  all: readonly WorkEntry[],
 ): Stale | null {
+  /* Compass's answer to a command the reader typed is not work the reading could have read. */
+  const entries = all.filter((entry) => entry.compassTurn !== true);
   const current = nextNumber(annotation?.['revision']);
   const superseded = revisionSuperseded(
     'This reading',
@@ -536,8 +538,9 @@ export function resultStale(
 /* What arrived since a reading read, counted from the entries and never authored. */
 export function arrivedLine(
   annotation: Annotation | null | undefined,
-  entries: readonly WorkEntry[],
+  all: readonly WorkEntry[],
 ): string {
+  const entries = all.filter((entry) => entry.compassTurn !== true);
   const assessment = annotation?.['assessment'];
   const at = nextNumber(
     assessment && typeof assessment === 'object' ? (assessment as Row)['read_at'] : null,

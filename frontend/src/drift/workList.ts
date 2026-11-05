@@ -513,7 +513,7 @@ export interface WorkRow {
         readonly check: CheckMarks | null;
       }
     | { readonly actor: string; readonly type: string };
-  readonly flags: readonly ('later' | 'cited')[];
+  readonly flags: readonly ('later' | 'cited' | 'compass')[];
   readonly source: string;
   readonly at: string;
   readonly turn: boolean;
@@ -674,6 +674,9 @@ export function workList(input: WorkListInput): WorkList {
       flags: [
         ...(later.has(entry) ? (['later'] as const) : []),
         ...(isCited(entry) ? (['cited'] as const) : []),
+        /* What the agent ran and said after the reader typed a Compass command is listed because it
+           happened, and said to be Compass's answer because no reading reads it. */
+        ...(entry.compassTurn === true ? (['compass'] as const) : []),
       ],
       /* Out of view and still read out: the same source on every row was a full-width caption five times
          over. Only where `actor_claim` says something the source line does not. */

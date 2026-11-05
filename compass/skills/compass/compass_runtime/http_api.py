@@ -1560,6 +1560,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # `copied_corrections` cites).
         result = copied_corrections.mark(result, collected["sessions"])
         if focus is not None:
+            # The focused session's Compass turns reach the page as a mark on each fact, so Full
+            # activity labels them and the Drift card does not count them as new work. Only the
+            # focused row: finding a turn reads the whole transcript once, and no other session's
+            # facts are drawn.
+            result = compass_turns.mark(
+                application.config,
+                application.state,
+                result,
+                [
+                    row
+                    for row in collected["sessions"]
+                    if (row.get("harness"), row.get("sid")) == focus
+                ],
+            )
             result = _with_message_ordinals(application, result, focus)
             result = _with_levels(application, result, collected["sessions"], focus, project)
             result = _with_lease(application, result, collected["sessions"], focus)
@@ -1670,7 +1684,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 index = entry_numbers.message_index(
                     application.config, application.state, path, harness, sid
                 )
-        marked = copied_corrections.mark({"semantic": {"facts": result["entries"]}}, matching)
+        marked = compass_turns.mark(
+            application.config,
+            application.state,
+            {"semantic": {"facts": result["entries"]}},
+            matching,
+        )
+        marked = copied_corrections.mark(marked, matching)
         result["entries"] = marked["semantic"]["facts"]
         if index is not None:
             # Each message's fixed number (DRC-4897), so a page of any age numbers it the same way.

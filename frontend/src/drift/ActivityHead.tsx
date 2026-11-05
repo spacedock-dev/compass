@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { ActivityMarks } from './ActivityMarks';
+import { COMPASS_ANSWER } from './sentences';
 import { LAST_TURN_MARK, type WorkRow } from './workList';
 
 /* `turnRange` is given by the list: null on every row of the last turn but its newest, which says the turn once,
@@ -45,6 +46,15 @@ export function ActivityHead({
             data-next-entry-flag="cited"
           >
             Cited
+          </Badge>
+        ) : null}
+        {row.flags.includes('compass') ? (
+          <Badge
+            variant="work-flag"
+            className="next-cockpit-work-flag"
+            data-next-entry-flag="compass"
+          >
+            {COMPASS_ANSWER}
           </Badge>
         ) : null}
         {turn ? (
