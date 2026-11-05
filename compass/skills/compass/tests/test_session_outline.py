@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import http.client
 import importlib
 import json
@@ -11,7 +12,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 from urllib.parse import urlparse
 
@@ -22,6 +24,243 @@ from compass_runtime.state import build_runtime_state
 from . import test_record_pages
 from .support import make_server, poll_fast
 from .test_claude_checks import Transcript
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+class OutlineFactBoundsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.outline = importlib.import_module("compass_runtime.session_outline")
+        self.source = importlib.import_module("compass_runtime.session_source")
+        self.assertTrue(
+            hasattr(self.outline, "_merge_facts"), "bounded word-free fact admission is missing"
+        )
+
+    def observation(
+        self,
+        fact_id: str = "check-1",
+        *,
+        offset: int = 10,
+        authority: tuple[int, int] = (0, 10),
+        result: str | None = "failed",
+        at: float = 100,
+        retired: bool = False,
+    ) -> Any:
+        entry = self.source.SourceEntry(
+            fact_id,
+            "fingerprint",
+            "check",
+            "agent",
+            "parent",
+            at,
+            "pytest tests",
+            result=result,
+            path="src/a.py",
+            folder="src",
+            subject="pytest tests",
+            words="PRIVATE-WORDS-SENTINEL " * 1000,
+        )
+        return self.outline._FactObservation(
+            fact_id, None if retired else entry, (offset, 0, 0), authority
+        )
+
+    def test_retained_facts_strip_words_and_projection_preserves_display_fields(self) -> None:
+        observation = self.observation()
+        result = self.outline._merge_facts(None, [observation])
+        self.assertFalse(result.limited)
+        fact = result.graph.facts["check-1"]
+        self.assertFalse(hasattr(fact, "words"))
+        projected = self.outline._ordered_entries(result.graph)
+        self.assertEqual((dataclasses.replace(observation.entry, words=None),), projected)
+        self.assertNotIn("PRIVATE-WORDS-SENTINEL", repr(result.graph))
+        self.assertIsNot(observation.entry, fact)
+        pending = [result.graph]
+        seen: set[int] = set()
+        while pending:
+            value = pending.pop()
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            self.assertNotIsInstance(
+                value,
+                (
+                    self.source.SourceEntry,
+                    self.source.SourcePage,
+                    self.source.SourceCursor,
+                    self.source.SourceSnapshot,
+                    bytes,
+                ),
+            )
+            if dataclasses.is_dataclass(value):
+                for field in dataclasses.fields(value):
+                    self.assertNotIn(field.name, {"words", "input", "raw", "fragment"})
+                    pending.append(getattr(value, field.name))
+            elif isinstance(value, (dict, MappingProxyType)):
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, (tuple, list)):
+                pending.extend(value)
+            elif isinstance(value, str):
+                self.assertNotIn("PRIVATE-WORDS-SENTINEL", value)
+
+    def test_older_pass_and_unknown_cannot_downgrade_newer_failure(self) -> None:
+        first = self.outline._merge_facts(None, [self.observation(authority=(0, 100))])
+        for status in ("passed", None):
+            with self.subTest(status=status):
+                later = self.outline._merge_facts(
+                    first.graph, [self.observation(authority=(0, 20), result=status)]
+                )
+                self.assertEqual("failed", later.graph.facts["check-1"].result)
+                self.assertEqual((0, 100), later.graph.facts["check-1"].authority)
+
+    def test_replacement_and_empty_replacement_retire_without_resurrection(self) -> None:
+        first = self.outline._merge_facts(None, [self.observation()])
+        replaced = self.outline._merge_facts(
+            first.graph,
+            [
+                self.observation(retired=True, authority=(0, 50)),
+                self.observation("renamed", authority=(0, 50), result="passed"),
+            ],
+        )
+        self.assertEqual(["renamed"], list(replaced.graph.facts))
+        replay = self.outline._merge_facts(replaced.graph, [self.observation()])
+        self.assertEqual(["renamed"], list(replay.graph.facts))
+        empty = self.outline._merge_facts(
+            replay.graph,
+            [
+                self.observation("renamed", retired=True, authority=(1, 0)),
+                self.observation("never-emitted", retired=True, authority=(1, 0)),
+            ],
+        )
+        self.assertEqual({}, dict(empty.graph.facts))
+        self.assertEqual({"check-1", "renamed", "never-emitted"}, set(empty.graph.retired))
+        fresh = self.outline._merge_facts(
+            empty.graph, [self.observation("renamed", authority=(1, 1), result="passed")]
+        )
+        self.assertEqual("passed", fresh.graph.facts["renamed"].result)
+
+    def test_projection_uses_physical_order_despite_backward_timestamps(self) -> None:
+        result = self.outline._merge_facts(
+            None,
+            [
+                self.observation("last", offset=20, at=1, result="passed"),
+                self.observation("first", offset=10, at=100),
+            ],
+        )
+        entries = self.outline._ordered_entries(result.graph)
+        self.assertEqual(["first", "last"], [entry.fact_id for entry in entries])
+        self.assertEqual({"first"}, self.outline._runs(entries).fixed)
+
+    def test_retirement_wins_an_equal_authority_replay(self) -> None:
+        prior = self.outline._merge_facts(None, [self.observation()])
+        result = self.outline._merge_facts(
+            prior.graph,
+            [
+                self.observation(retired=True),
+                self.observation(),
+            ],
+        )
+        self.assertEqual({}, dict(result.graph.facts))
+        self.assertEqual({"check-1": (0, 10)}, dict(result.graph.retired))
+
+    def test_oversized_display_field_is_refused_before_retention(self) -> None:
+        prior = self.outline._merge_facts(None, [self.observation()])
+        observation = self.observation("large")
+        observation = dataclasses.replace(
+            observation,
+            entry=dataclasses.replace(observation.entry, title="long display title " * 10_000),
+        )
+        result = self.outline._merge_facts(
+            prior.graph, [observation], limits=self.outline._FactLimits(bytes=20_000)
+        )
+        self.assertTrue(result.limited)
+        self.assertIs(prior.graph, result.graph)
+
+    def test_byte_object_and_fact_refusals_preserve_previous_graph_and_frontier(self) -> None:
+        prior = self.outline._merge_facts(None, [self.observation()], extras={"frontier": 10})
+        for limits in (
+            self.outline._FactLimits(bytes=1),
+            self.outline._FactLimits(objects=1),
+            self.outline._FactLimits(facts=1),
+        ):
+            with self.subTest(limits=limits):
+                refused = self.outline._merge_facts(
+                    prior.graph,
+                    [self.observation("second")],
+                    extras={"frontier": 100},
+                    limits=limits,
+                )
+                self.assertTrue(refused.limited)
+                self.assertEqual("outline_state_limit", refused.reason)
+                self.assertIs(prior.graph, refused.graph)
+                self.assertEqual({"frontier": 10}, refused.graph.extras)
+                self.assertEqual(["check-1"], list(prior.graph.facts))
+
+    def test_answer_plan_and_checkpoint_share_the_admission_budget(self) -> None:
+        for extras in (
+            {"answer": {"blocks": ["answer" * 1000]}},
+            {"plan": {"windows": [str(index) for index in range(1000)]}},
+            {"checkpoint": MappingProxyType({str(index): index for index in range(1000)})},
+        ):
+            with self.subTest(key=next(iter(extras))):
+                result = self.outline._merge_facts(
+                    None,
+                    [self.observation()],
+                    extras=extras,
+                    limits=self.outline._FactLimits(bytes=4000, objects=100),
+                )
+                self.assertTrue(result.limited)
+                self.assertIsNone(result.graph)
+
+    def test_tombstones_are_bounded_and_candidates_stop_at_first_refusal(self) -> None:
+        seen: list[int] = []
+
+        def changes() -> Iterator[Any]:
+            for index in range(100):
+                seen.append(index)
+                yield self.observation(str(index), retired=True)
+
+        result = self.outline._merge_facts(
+            None, changes(), limits=self.outline._FactLimits(facts=2)
+        )
+        self.assertTrue(result.limited)
+        self.assertEqual([0, 1, 2], seen)
+        self.assertIsNone(result.graph)
+
+    def test_actual_retained_graph_has_no_source_payload_objects(self) -> None:
+        for forbidden in (
+            self.observation().entry,
+            self.source.SourcePage("ok", "claude", "root"),
+            b"PRIVATE-RAW-FRAGMENT",
+            {"input": "PRIVATE-INPUT-SENTINEL"},
+            {"words": "PRIVATE-WORDS-SENTINEL"},
+        ):
+            with self.subTest(kind=type(forbidden).__name__):
+                result = self.outline._merge_facts(None, [], extras=forbidden)
+                self.assertTrue(result.limited)
+                self.assertIsNone(result.graph)
+
+    def test_measurement_counts_slots_dicts_keys_proxies_and_fixed_hash_state(self) -> None:
+        @dataclasses.dataclass
+        class Checkpoint:
+            digest: object
+            locators: object
+
+        small = Checkpoint(hashlib.sha256(), MappingProxyType({"position": (10, 20)}))
+        allowed = self.outline._merge_facts(None, [self.observation()], extras=small)
+        self.assertFalse(allowed.limited)
+        for payload in (
+            Checkpoint(hashlib.sha256(), {"large-key" * 1000: None}),
+            MappingProxyType({"key": "large-value" * 1000}),
+            list(range(1000)),
+        ):
+            with self.subTest(kind=type(payload).__name__):
+                self.assertIsNone(
+                    self.outline._measure_facts(
+                        payload, self.outline._FactLimits(bytes=3000, objects=100)
+                    )
+                )
 
 
 class SessionOutlineTest(unittest.TestCase):
