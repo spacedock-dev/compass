@@ -5111,7 +5111,10 @@ section below the fold.
 - Every account of a press sits directly under the button's row, before the hint and the
   disclosure: the refusal, this tab's last answer (including "Could not confirm the reading"), and
   a stored withhold as "Last analysis, 3m ago: <sentence>", aged from `reading_withheld_at`. The
-  READING section no longer repeats the withheld sentence.
+  READING section no longer repeats the withheld sentence. While a later direction waits for a
+  decision, the question draws the same line by the same rule. A filter once limited it there to the
+  long-session sentences, which hid an ordinary refusal, cancellation or failure behind the
+  question; it was removed, and the line is drawn once, not announced again.
 
 #### Amended 2026-10-02 (owner): a press shows it is working, and Analyze says when it opens or closes
 

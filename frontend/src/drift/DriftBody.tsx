@@ -256,7 +256,7 @@ function QuestionWithAnalysis({
       before={job ? <JobBox job={job} running={running} again={kept} /> : null}
       after={
         <>
-          <ReadingOutcome longOnly />
+          <ReadingOutcome unless={board.inert ? String(board.pressed?.['sentence'] || '') : ''} />
           {off ? (
             <ReadingsOffAsk refusedId={!edited} />
           ) : (
