@@ -420,6 +420,70 @@ class SessionOutlineTest(unittest.TestCase):
         self.assertIsNot(first, later)
         self.assertEqual(2, len(later["blocks"]))
 
+    def test_unchanged_bounded_polls_keep_opening_and_fill_missing_middle(self) -> None:
+        transcript = Transcript(self.root)
+        for number in range(12):
+            transcript.prompt(f"Synthetic phase {number}: {'pad ' * 40}")
+            transcript.bash(f"pytest tests/test_{number}.py", "1 passed")
+            transcript.write(str(self.root / f"src/file_{number}.py"))
+        transcript.save(self.path)
+        size = self.path.stat().st_size
+        config = dataclasses.replace(
+            self.config,
+            session_outline_max_bytes=6000,
+            session_outline_head_bytes=1800,
+            session_outline_max_seconds=30,
+            session_outline_max_blocks=64,
+            session_source_page_max_seconds=30,
+        )
+        self.assertGreater(size, 3 * config.session_outline_max_bytes)
+        self.assertLess(max(map(len, self.path.read_bytes().splitlines())), 1500)
+        whole = self.source.read(config, str(self.path), "claude", "root", max_bytes=size + 1)
+        self.assertTrue(whole.coverage.complete)
+        expected = self.outline.build(whole, config)
+        self.assertEqual(12, sum(block["counts"]["checks"] for block in expected["blocks"]))
+        self.assertEqual(12, sum(block["counts"]["files"] for block in expected["blocks"]))
+        opening_id = expected["blocks"][0]["prompt"]["fact_id"]
+        newest_id = expected["blocks"][-1]["prompt"]["fact_id"]
+
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            first, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+            self.assertFalse(first["coverage"]["complete"])
+            self.assertTrue(first["blocks"][0]["opening"])
+            remaining = sum(
+                region["end_offset"] - region["start_offset"]
+                for region in first["coverage"]["unread"]
+                if region["stream"] == "parent"
+            )
+            self.assertGreater(remaining, 0)
+            result = first
+            for _poll in range(100):
+                prompt_ids = {
+                    block["prompt"]["fact_id"] for block in result["blocks"] if block["prompt"]
+                }
+                self.assertTrue({opening_id, newest_id} <= prompt_ids)
+                missing = sum(
+                    region["end_offset"] - region["start_offset"]
+                    for region in result["coverage"]["unread"]
+                    if region["stream"] == "parent"
+                )
+                self.assertLessEqual(missing, remaining)
+                remaining = missing
+                if result["coverage"]["complete"]:
+                    break
+                result, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+            self.assertTrue(
+                result["coverage"]["complete"],
+                f"unchanged bounded polls never filled the missing middle: {remaining} bytes unread",
+            )
+            self.assertEqual([], result["coverage"]["unread"])
+            self.assertEqual(expected["blocks"], result["blocks"])
+            self.assertEqual(12, sum(block["counts"]["checks"] for block in result["blocks"]))
+            self.assertEqual(12, sum(block["counts"]["files"] for block in result["blocks"]))
+            again, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+            self.assertIs(result, again)
+            self.assertEqual(expected["blocks"], again["blocks"])
+
     def test_plan_shares_outline_read_cache_and_config_invalidation(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Read the synthetic record.")
