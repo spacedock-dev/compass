@@ -42,6 +42,7 @@ from .test_reading_long_jobs import binding
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import TracebackType
 
 
 class GuardedNativeWorkerTest(unittest.TestCase):
@@ -300,22 +301,26 @@ class GuardedNativeWorkerTest(unittest.TestCase):
                 self.assertTrue(
                     any(
                         span.fact_id == first.fact_id
+                        and span.start is not None
                         and span.start < first.start
                         and span.end == first.start
                         for span in packet.context
                     ),
                     "a continuation must carry the original words before its cut",
                 )
-            if last.end is not None and last.end < last.total:
-                self.assertTrue(
-                    any(
-                        span.fact_id == last.fact_id
-                        and span.start == last.end
-                        and span.end > last.end
-                        for span in packet.context
-                    ),
-                    "a split must carry the original words after its cut",
-                )
+            if last.end is not None:
+                assert last.total is not None
+                if last.end < last.total:
+                    self.assertTrue(
+                        any(
+                            span.fact_id == last.fact_id
+                            and span.start == last.end
+                            and span.end is not None
+                            and span.end > last.end
+                            for span in packet.context
+                        ),
+                        "a split must carry the original words after its cut",
+                    )
             for span in packet.context:
                 original = originals[span.fact_id]
                 if span.start is not None:
@@ -504,7 +509,7 @@ class GuardedNativeWorkerTest(unittest.TestCase):
             self.assertTrue(proceed.wait(5))
 
         class ObservedLock:
-            def __enter__(self) -> Any:
+            def __enter__(self) -> bool:
                 if (
                     threading.current_thread() is thread
                     and sys._getframe(1).f_code is supervise.run.__code__
@@ -512,8 +517,13 @@ class GuardedNativeWorkerTest(unittest.TestCase):
                     entering.set()
                 return real_lock.__enter__()
 
-            def __exit__(self, *args: object) -> Any:
-                return real_lock.__exit__(*args)
+            def __exit__(
+                self,
+                exc_type: type[BaseException] | None,
+                exc_value: BaseException | None,
+                traceback: TracebackType | None,
+            ) -> None:
+                real_lock.__exit__(exc_type, exc_value, traceback)
 
         def popen(command: Any, **options: Any) -> Any:
             if command[0] == "/owned/claude":

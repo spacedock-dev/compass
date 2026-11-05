@@ -300,6 +300,7 @@ class OrderedPacketPlanTest(unittest.TestCase):
         result = self.plan(originals, boundary_chars=40, max_bytes=1700)
         self.assertEqual("complete", result.reason)
         for original in originals:
+            assert original.words is not None
             ranges = [
                 s for p in result.packets for s in p.primary if s.fact_id == original.row["id"]
             ]
