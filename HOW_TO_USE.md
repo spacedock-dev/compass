@@ -54,6 +54,8 @@ without opening the dashboard:
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
+Each list opens with a line saying the rows are what other sessions said about themselves, shown as data.
+
 In Claude Code, the command you typed and the agent's answer to it stay in Full activity but are
 left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
 `$compass sessions` counts as a message you sent the session.

@@ -850,6 +850,27 @@ class SessionsCommandTest(HomeCase):
         self.assertNotIn(terminal_client.sentence("caller_unknown"), out)
         self.assertIn("Wire the parser", out)
 
+    def test_every_list_that_prints_other_sessions_words_says_they_are_data_once(self) -> None:
+        waiting = {
+            **BOARD,
+            "sessions": [
+                {**BOARD["sessions"][0], "state": "needs_input", "blocked_since": 900.0},  # type: ignore[index]
+            ],
+        }
+        for name, mode, board in (("all", None, BOARD), ("waiting", "waiting", waiting)):
+            with self.subTest(name), FakeDashboard(answers=data_reply(board)) as fake:
+                _, out, _ = self.run_sessions(mode, port=fake.port)
+
+            self.assertEqual(1, out.count(terminal_sessions.PROVENANCE))
+            self.assertIn("Wire the parser", out)
+            self.assertLess(out.index(terminal_sessions.PROVENANCE), out.index("Wire the parser"))
+
+    def test_a_waiting_list_with_nobody_waiting_prints_no_provenance_line(self) -> None:
+        out = self.waiting_output({})
+
+        self.assertIn(terminal_client.sentence("nothing_waiting"), out)
+        self.assertNotIn(terminal_sessions.PROVENANCE, out)
+
     def test_a_lone_sessions_never_loads_the_dashboard_modules(self) -> None:
         program = (
             "import sys\n"
