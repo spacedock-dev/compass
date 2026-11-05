@@ -490,6 +490,22 @@ class APromptSurfaceReadsTheLatestTypedPromptTest(_Case):
         info = claude_data.analyze_transcript(self.config, self.state, path)
         self.assertEqual(LATER, info["last_prompt"])
 
+    def test_a_second_collection_of_an_unchanged_long_turn_reads_nothing_back(self) -> None:
+        # Every collection runs this; during a long turn the tail holds no typed prompt, so the
+        # judgement comes from a cached forward read that an unchanged file does not repeat.
+        self.session.asked(FIRST)
+        for n in range(6):
+            self.session.bash(f"pytest tests/test_{n}.py", "1 passed")
+        self.session._last_prompt(FIRST)
+        path = self.save()
+        self.config = dataclasses.replace(self.config, tail_bytes=600)
+        forward = mock.Mock(wraps=claude_data._advance_prompts)
+        with mock.patch.object(claude_data, "_advance_prompts", forward):
+            first = claude_data.analyze_transcript(self.config, self.state, path)
+            second = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertEqual((FIRST, FIRST), (first["last_prompt"], second["last_prompt"]))
+        self.assertEqual(1, forward.call_count)
+
     def test_a_long_turn_the_tail_starts_inside_keeps_the_readers_last_prompt(self) -> None:
         self.session.asked(FIRST)
         for n in range(6):

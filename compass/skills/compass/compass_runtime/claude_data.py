@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import glob
 import hashlib
-import itertools
 import json
 import os
 import re
-from typing import TYPE_CHECKING, Any, cast
+import threading
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
@@ -21,7 +22,7 @@ from compass_runtime import sessions as runtime_sessions
 from compass_runtime import state as runtime_state
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Mapping
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -1067,68 +1068,126 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
                     pending.pop(c.get("tool_use_id"), None)
     if pending:
         info["pending_input_tool"] = max(pending.values(), key=lambda p: p["ts"] or 0)
-    info["last_prompt"] = last_prompt.value(config, path)
+    info["last_prompt"] = last_prompt.value(path)
     return info
 
 
 _UNSET: Any = object()
 
 
-def _typed_prompts(config: RuntimeConfig, path: str) -> Iterator[tuple[bool, str]]:
-    """Each prompt the reader typed, newest first: whether it is Compass's command, its words."""
-    for raw in runtime_io.reverse_lines(config, path, contains=b'"user"'):
-        if not raw.startswith(b"{") or b'"user"' not in raw:
-            continue
+@dataclass(frozen=True)
+class _PromptRead:
+    """Where a forward read of one transcript's typed prompts stopped, and what it found."""
+
+    identity: tuple[int, int]
+    offset: int
+    # "compass" or "person": the newest typed prompt so far, else None.
+    governing: str | None = None
+    # The newest `lastPrompt` a reader's prompt governs, else `_UNSET`.
+    judged: Any = _UNSET
+    # The newest reader's prompt's own words, the fallback when no `last-prompt` follows it.
+    words: str | None = None
+
+
+_PROMPT_LOCK = threading.Lock()
+_PROMPT_CACHE: dict[str, _PromptRead] = {}
+# Bounded like `compass_turns`' cache; an evicted file is read again from its start.
+_PROMPT_CACHE_FILES: Final = 256
+
+
+def _advance_prompts(path: str, held: _PromptRead) -> _PromptRead:
+    """Read on from `held`: each complete line once, parsing typed prompts and `last-prompt`."""
+    governing, judged, words, offset = held.governing, held.judged, held.words, held.offset
+    with open(path, "rb") as source:
+        source.seek(offset)
+        for raw in source:
+            if not raw.endswith(b"\n"):
+                break  # a line still being written is read whole next time
+            offset += len(raw)
+            if b'"last-prompt"' not in raw and (
+                b'"user"' not in raw or b'"toolUseResult"' in raw or b'"isMeta":true' in raw
+            ):
+                continue
+            try:
+                record = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            if record.get("type") == "last-prompt":
+                if governing == "person":
+                    judged = record.get("lastPrompt")
+            elif records.compass_command_record(record):
+                governing = "compass"
+            elif records.person_prompt_record(record):
+                governing = "person"
+                text = records.extract_text(records.message_dict(record).get("content")).strip()
+                words = text[: records.LAST_PROMPT_CAP_CHARS * 4]
+    return _PromptRead(held.identity, offset, governing, judged, words)
+
+
+def _prompt_read(path: str) -> _PromptRead | None:
+    """The cached forward read of a transcript's typed prompts, advanced to its current end."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    identity = (info.st_dev, info.st_ino)
+    with _PROMPT_LOCK:
+        held = _PROMPT_CACHE.get(path)
+    if held is None or held.identity != identity or info.st_size < held.offset:
+        held = _PromptRead(identity, 0)
+    if info.st_size > held.offset:
         try:
-            record = json.loads(raw)
-        except ValueError:
-            continue
-        if records.compass_command_record(record):
-            yield True, ""
-        elif records.person_prompt_record(record):
-            yield False, records.extract_text(records.message_dict(record).get("content")).strip()
+            held = _advance_prompts(path, held)
+        except OSError:
+            return None
+        with _PROMPT_LOCK:
+            _PROMPT_CACHE.pop(path, None)
+            _PROMPT_CACHE[path] = held
+            while len(_PROMPT_CACHE) > _PROMPT_CACHE_FILES:
+                _PROMPT_CACHE.pop(next(iter(_PROMPT_CACHE)))
+    return held
 
 
 class _LastPrompt:
-    """Which `last-prompt` record is the reader's, in one tail read and at most one backward one.
+    """Which `last-prompt` record is the reader's: the tail decides when it can.
 
     Claude Code writes `last-prompt` records that repeat the latest typed prompt, during a turn and
     after it stops, and name no prompt (`leafUuid` is the newest record of any kind). So the typed
     prompt before one in record order says whose it is, and one that follows Compass's own command
-    is not the reader's: the value falls back to the reader's latest prompt, or nothing. The prompt
-    that governs a record can lie before the tail: a typed command's skill body alone can push the
-    command out of it, which is how a command-only session published the command.
+    is not the reader's: the value falls back to the reader's latest prompt, or nothing. That prompt
+    can lie before the tail (a command's skill body alone pushed it out on three real sessions), so
+    when the tail cannot decide, a cached forward read of the whole file does. It reads each line
+    once per file, never backward: this runs on every collection, and during a long turn the tail
+    holds no prompt on every one of them, on transcripts measured up to 361 MiB.
     """
 
     def __init__(self) -> None:
         # "compass" or "person" once a typed prompt is seen in the tail, else None.
         self.governing: str | None = None
-        self.prompts = 0
         self.accepted: Any = _UNSET  # the newest value a reader's prompt in the tail governs
-        self.before: Any = _UNSET  # the newest value seen before any typed prompt in the tail
+        self.before = False  # whether a `last-prompt` came before any typed prompt in the tail
 
     def visit(self, record: dict[str, Any], kind: Any) -> None:
         if kind == "user" and records.compass_command_record(record):
-            self.governing, self.prompts = "compass", self.prompts + 1
+            self.governing = "compass"
         elif kind == "user" and records.person_prompt_record(record):
-            self.governing, self.prompts = "person", self.prompts + 1
+            self.governing = "person"
         elif kind == "last-prompt" and self.governing is None:
-            self.before = record.get("lastPrompt")
+            self.before = True
         elif kind == "last-prompt" and self.governing == "person":
             self.accepted = record.get("lastPrompt")
 
-    def value(self, config: RuntimeConfig, path: str) -> Any:
+    def value(self, path: str) -> Any:
         if self.accepted is not _UNSET:
             return self.accepted
-        if self.before is _UNSET and self.governing != "compass":
+        if not self.before and self.governing != "compass":
             return None
-        if self.before is not _UNSET:
-            governor = next(
-                itertools.islice(_typed_prompts(config, path), self.prompts, None), None
-            )
-            if governor is not None and not governor[0]:
-                return self.before
-        return next((words for compass, words in _typed_prompts(config, path) if not compass), None)
+        read = _prompt_read(path)
+        if read is None:
+            return None
+        return read.judged if read.judged is not _UNSET else read.words
 
 
 def head_cwd(config: RuntimeConfig, path: str) -> str:
