@@ -241,6 +241,26 @@ class OutlineFactBoundsTest(unittest.TestCase):
                 self.assertTrue(result.limited)
                 self.assertIsNone(result.graph)
 
+    def test_input_json_mapping_cannot_enter_retained_extras(self) -> None:
+        result = self.outline._merge_facts(
+            None, (), extras={"input_json": "owned raw command sentinel"}
+        )
+        self.assertTrue(result.limited)
+        self.assertIsNone(result.graph)
+
+    def test_pending_call_cannot_enter_retained_extras(self) -> None:
+        pending = self.source.PendingCall(
+            "parent",
+            100,
+            "/synthetic",
+            "call-1",
+            "Bash",
+            '{"command":"owned raw command sentinel"}',
+        )
+        result = self.outline._merge_facts(None, (), extras=pending)
+        self.assertTrue(result.limited)
+        self.assertIsNone(result.graph)
+
     def test_measurement_counts_slots_dicts_keys_proxies_and_fixed_hash_state(self) -> None:
         @dataclasses.dataclass
         class Checkpoint:

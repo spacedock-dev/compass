@@ -33,8 +33,9 @@ class _FactLimits:
 class _FactObservation:
     """Transient adapter input; authority is (dependency revision, observation offset).
 
-    A retirement has no entry. Replacements supply retirements and upserts separately,
-    including retirements for ids never emitted. Position remains the native source order.
+    A retirement has no entry. Replacement adapters retire only old_ids minus new_ids,
+    then upsert new_ids, including same-id updates exactly once: a same-authority tombstone
+    wins over an upsert. Retirements include ids never emitted. Position is native order.
     """
 
     fact_id: str
@@ -75,7 +76,9 @@ class _FactAdmission:
     reason: str | None = None
 
 
-_FACT_FORBIDDEN_FIELDS = frozenset({"words", "raw", "raw_record", "fragment", "input"})
+_FACT_FORBIDDEN_FIELDS = frozenset(
+    {"words", "raw", "raw_record", "fragment", "input", "input_json"}
+)
 _FACT_HASH_TYPE = type(hashlib.sha256())
 _FACT_LIMITS = _FactLimits()
 
@@ -103,6 +106,7 @@ def _fact_storage(item: object) -> int | None:
             session_source.SourcePage,
             session_source.SourceCursor,
             session_source.SourceSnapshot,
+            session_source.PendingCall,
         ),
     ):
         return None
