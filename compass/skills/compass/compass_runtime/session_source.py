@@ -174,6 +174,8 @@ class SourcePage:
     replacement_observations: tuple[int, ...] = ()
     # Ordinary physical observations stay at zero; isolated dependency replay pages advance it.
     classification_revision: int = 0
+    # Opt-in summary observation: canonical body fallback when the bounded head has no field.
+    head_fallback: tuple[str | None, float | None] = (None, None)
 
 
 @dataclass(frozen=True)
@@ -2229,7 +2231,45 @@ def _stale(path: str, harness: str, sid: str, error: _SourceChangedError) -> Sou
     return SourcePage("stale", harness, sid, snapshot=_metadata(cursor, (), parent))
 
 
-def read(
+def _summary_head(
+    config: RuntimeConfig, path: str, budget: _Budget
+) -> tuple[tuple[str, float | None], Stamp, bool]:
+    """The canonical head fields, using one job-metered pass over the same bounded chunks.
+
+    Unlike the ordinary head helpers, a clipped allowance cannot certify missing metadata.
+    No source record escapes this scan; the caller retains only directory, time and version.
+    """
+    cwd, start = "", None
+    with runtime_io._open_binary(path, follow_links=True) as handle:  # noqa: SLF001
+        stamp = _stamp(os.fstat(handle.fileno()))
+        for _ in range(config.claude_cwd_scan_lines):
+            if budget.reason is not None:
+                return (cwd, start), stamp, False
+            raw = budget.line(handle, config.claude_cwd_line_bytes)
+            if not raw:
+                break
+            if (
+                len(raw) < config.claude_cwd_line_bytes
+                and not raw.endswith(b"\n")
+                and handle.tell() < stamp[2]
+            ):
+                return (cwd, start), stamp, False
+            try:
+                row = records.as_dict(json.loads(raw.decode("utf-8", "replace")))
+            except ValueError:
+                continue
+            if not cwd and isinstance(row.get("cwd"), str):
+                cwd = row["cwd"]
+            if start is None:
+                start = records.parse_ts(row.get("timestamp"))
+            if cwd and start is not None:
+                break
+        if _stamp(os.stat(path)) != stamp:
+            raise _SourceChangedError
+    return (cwd, start), stamp, True
+
+
+def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classification context
     config: RuntimeConfig,
     path: str,
     harness: str,
@@ -2239,8 +2279,14 @@ def read(
     newest: bool = False,
     max_bytes: int | None = None,
     deadline: float | None = None,
+    observed_writes: set[str] | None = None,
+    known_head: tuple[str, float | None] | None = None,
 ) -> SourcePage:
-    """Read complete JSONL lines in file order, sharing one allowance across owned streams."""
+    """Read owned streams in one allowance; optionally carry canonical withdrawal names.
+
+    The opt-in set is both prior classification context and an observation sink. A collecting
+    caller must reconcile its earlier facts when it grows; an ordinary cursor is unchanged.
+    """
     if harness not in record_pages.HARNESSES:
         return SourcePage("unsupported", harness, sid, notes=("no paged record for this harness",))
     now = time.monotonic()
@@ -2258,9 +2304,20 @@ def read(
         parent = _read_stream(
             config, path, "parent", harness, sid, budget, old.get("parent"), newest=newest
         )
+        parent.known_head = known_head
         children, unread = _read_children(config, path, harness, sid, budget, old, newest=newest)
         return replace(
-            _finish(config, path, harness, sid, [parent, *children], unread, after, budget),
+            _finish(
+                config,
+                path,
+                harness,
+                sid,
+                [parent, *children],
+                unread,
+                after,
+                budget,
+                observed_writes=observed_writes,
+            ),
             bytes_read=budget.used,
         )
     except _SourceChangedError as error:
@@ -2327,6 +2384,7 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
     budget: _Budget,
     *,
     outline: bool = False,
+    observed_writes: set[str] | None = None,
 ) -> SourcePage:
     parent = streams[0]
     known_head = parent.known_head
@@ -2343,7 +2401,8 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
     regions: list[UnreadRegion] = []
     # The project's own check scripts, from the same read a published fact uses. A page holds only
     # its own rows, so a write on an earlier page is seen by the work tree's bytes alone.
-    observed_writes: set[str] | None = set() if outline else None
+    if outline:
+        observed_writes = set()
     declared = (
         context._declared_scripts(  # noqa: SLF001
             config,
@@ -2351,7 +2410,8 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
             session_dir,
             parent.rows,
             [stream.rows for stream in streams[1:]],
-            prior_writes=after.listing_writes if after else frozenset(),
+            prior_writes=(after.listing_writes if after else frozenset())
+            | frozenset(observed_writes or ()),
             known_start=(known_head[1],) if known_head is not None else None,
             observed_writes=observed_writes,
         )
@@ -2450,6 +2510,12 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
             )
             if replacement[0]
         ),
+        head_fallback=(
+            next((row["cwd"] for row in parent.rows if isinstance(row.get("cwd"), str)), None),
+            context._oldest_at(parent.rows),  # noqa: SLF001
+        )
+        if observed_writes is not None and not outline
+        else (None, None),
     )
 
 
