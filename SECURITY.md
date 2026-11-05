@@ -87,8 +87,8 @@ The posture rests on two invariants:
    no network on Compass's own account: the hand-off request in Hand-off requests below writes one
    line to a socket on this machine, and what travels afterwards travels on the receiving session's
    own connection, which is why it is named here rather than counted above.
-2. Read-only against harness stores. They are opened read-only and never written. Seventeen endpoints
-   mutate, and seven of them only in memory: `POST /api/notify` updates needs-input state, and
+2. Read-only against harness stores. They are opened read-only and never written. The mutating
+   endpoints change Compass's own state. These mutate only in memory: `POST /api/notify` updates needs-input state, and
    `POST /api/usage` stores a quota figure a harness published to its own status-line command.
    `POST /api/events/<harness>` also mutates in memory only, behind the capability described under
    Known and accepted, and so do `POST /api/ask`, `POST /api/answer` and `POST /api/ask/withdraw`,
@@ -98,7 +98,7 @@ The posture rests on two invariants:
    timestamp for the whole board, never written to disk, and a body that names a session is refused
    rather than stripped. Delivery records below is where that refusal is stated. The long
    poll that delivers an answer, `GET /api/ask/<id>`, drops that question from memory once it has,
-   which is the delivery completing rather than a change a caller asked for. Ten write to disk.
+   which is the delivery completing rather than a change a caller asked for. Other endpoints write to disk.
    `POST /api/dismiss` writes the sessions you marked handled,
    `POST /api/annotate` writes the goal you typed or explicitly adopted and the expected outcome lines you typed against a session, including a line you added from a later direction you gave and the settlement of those directions, and
    `POST /api/reading` writes a model's reading of that session back into the same annotation
@@ -215,7 +215,10 @@ The posture rests on two invariants:
    or a reader wrote. It is loopback-only, enforces Host/Origin and fetch-site checks, refuses a
    document navigation, and checks every value against its bounds before it writes any. A larger
    limit changes how much of a session the next press sends, never where it goes or who it goes to,
-   which the press's own disclosure still names. The separate
+   which the press's own disclosure still names.
+   `POST /api/reading-long-discard` retires a verified-dead terminal job's superseded recovery marker without stopping a model or refunding calls.
+   It requires exact accounting and positive target-supersession proof; the
+   [long-analysis contract](#long-analysis) owns its uncertainty and retirement checks. The separate
    **summary store**, `compass-summaries.json` under the same home, holds model-written
    summaries keyed by harness and session, without a saved intent. Discard everything removes the
    discarded session's entry and no other (owner's ruling, 2026-10-21; it reversed the earlier rule
@@ -397,6 +400,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | The hook forwarders, the MCP server and the terminal client | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The terminal client reaches only the literal `127.0.0.1` with an integer port, ignores proxy settings and returns a redirect without following it, and discovers a dashboard from state file names and mtimes without opening a state file. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`; `test_terminal_client.RequestPathTest.test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.DiscoveryTest.test_no_state_file_is_ever_opened`; `test_terminal_sessions.SessionsPrintableTest.test_escape_sequences_and_bidi_controls_are_gone_from_every_printed_value`. None for the two JavaScript adapters. |
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, the page's switch beside the notice, and the refusals every press meets first (`--no-observer-model`, Pause model calls, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted Analyze press that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
+| The native long-source Git identity probes | `reading_source_collect` supplies the subprocess runner to the existing `ci_read.probe_session` / `git_status.identity` owner: fixed `rev-parse --verify --quiet HEAD` and `config --get remote.origin.url`, with hooks/fsmonitor disabled and optional locks off, in at most four admitted native directories. Each keeps the configured Git timeout (10 seconds by default); the full pair must fit remaining preparation time, with live checkpoints before and after each call. Elapsed work and retained inputs share the source account; Git I/O is not counted as native transcript bytes. Nothing leaves the machine from these probes. | `--no-git`, source cancellation/currentness and preparation/graph limits. Network CI acquisition remains separately governed by `--no-ci-read`. | `test_launch_and_send_pins.TheNativeLongGitIdentityTest.test_native_ci_probe_uses_only_fixed_git_identity_argv`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_caps_disabled_missing_identity_and_default_are_explicit`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_requires_remaining_timeout_and_checks_cancel_between_git_calls`; `test_reading_source_ci.FrozenCiBindingTest.test_current_input_graph_and_elapsed_probe_work_remain_in_original_allowance` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -1451,7 +1455,8 @@ session's harness and this machine. The page shows that route's disclosure, nami
 its vendor and whose capacity is spent. The route resolves the provider again from the payload's
 harness. If the provider the page named is no longer the one that would run, it answers 409 and
 writes no consent and reserves nothing; if no provider can read the session, it answers 503 with
-the reason. One model runs per press. If its CLI is missing at launch, or the call fails, no other
+the reason. Ordinary Analyze makes one model call per press. Explicit long analysis makes the
+bounded sequence described below on the same captured route. If its CLI is missing at launch, or the call fails, no other
 provider is tried.
 
 A press names the revision its page drew. The route checks it against the annotation store read
@@ -1462,6 +1467,99 @@ the same home made in between, or one landing between the check and the job, ans
 be made, the press answers 503 with `annotation-store-busy` (another dashboard held the store past
 the wait) or `annotation-store-unavailable` (the store cannot be read), never that the session has
 no words, and nothing is started or spent.
+
+### Long analysis
+
+Long analysis is a separate explicit press for native Claude Code session sources, including
+admitted subagent records. Its model is the disclosed requested-reading route, which may be
+Claude Code or Codex. Ordinary Analyze remains one call. The long preview reads saved intent,
+route settings and source metadata, not transcript bodies or remote CI checks, and reserves
+nothing. `GET /api/reading-long-plan` is loopback-only, refuses document navigation and invalid
+session queries, and is unavailable under `--no-annotations`. Start uses `POST /api/reading`
+with `mode: "long"` and the preview binding; it refreshes authority rather than trusting the
+preview. The [long-analysis design](docs/design-long-analysis.md) explains the evidence contract.
+These loopback and fresh-binding checks are not authentication against another local process.
+Such a process can request a bounded multi-call analysis under the same permission and quota
+gates; the page's separate button is not an additional security boundary.
+
+A plan permits at most 16 evidence calls and one final reconciliation call. Each prompt is
+bounded by the smaller of the saved prompt preference (512 KiB by default, at most 2 MiB) and
+the route's allowance. The aggregate input allocation is 16 MiB, counting repeated context each
+time it is sent. Each reply is bounded at 8,192 bytes. Every reserved call shares Analyze's
+100-attempt rolling twenty-four-hour cap; failures and refusals after reservation keep their
+charge. The final slot's ordinal is 17 even when fewer evidence calls ran. It is not a spend
+count. No automatic retry, resume, shortening or provider switch follows a failure.
+
+The native source and analysis share limits of 256 MiB of actual source I/O, including verification
+rereads, 512 source pages, a 256 MiB retained Python object graph and 1,048,576 graph objects.
+The graph limit is not a process RSS bound. Source collection, CI acquisition, prompt preparation
+and response processing share 60 seconds of accumulated preparation; model waits are excluded.
+The whole job has 30 minutes, and each model call retains its 180-second timeout. Before a call,
+the full timeout must fit the remaining job allowance. After the final response, currentness and
+publication still check the elapsed job deadline without reserving time for another call.
+
+The worker retains admitted raw records and verified words privately in memory while preparing
+the reading. Complete messages are masked and normalized before splitting, under the existing
+named-form and credential-shape rules, not a guarantee that every secret is removed. Ordinary
+message admission remains bounded at 256 Ki characters. A strict whole final reply still needs
+its existing 32 MiB parent-scan, 1 MiB record and 16,384-character word limits, and must fit as
+one complete row. Larger source and prompt limits do not waive those proofs. Candidate model
+prose is sent to the final call as explicitly untrusted navigation, remains unstored, and never
+becomes source evidence or a citable entry. Stored readings do
+not enter later prompts.
+
+Required source or evidence gaps withhold a new assessment. Where all evidence passes succeeded
+but the final prompt cannot restore every ordinary agent message, a partial reading may retain
+only original-supported local structural departures on outcome lines. It cannot establish that
+the whole goal was met, that something is absent, or that the agent's account is correct. The
+existing evidence and request-age guards still apply. A withheld or cancelled attempt leaves an
+older assessment visible; a qualified partial reading may replace it.
+
+Word-free markers live under `state_dir/reading-long-jobs/`, at most 128 files of 131,072 bytes
+each. They hold job and owner identifiers, process and publication identity, plan and binding
+hashes, times, pass state and bounded diagnostics, never source words, prompts or candidate
+prose. The permission SQLite store also holds job and per-pass bindings and reservation receipts
+for restart accounting, under its 30-day retention. These identifiers are not anonymous data.
+Accounting distinguishes exact totals, known minimums and unknown counts; prompt and reply
+allocations are not provider tokens, prices or network receipts. Recovery never restores model
+execution authority. A live or uncertain owner, unreadable receipt or unresolved cleanup remains
+uncertain rather than becoming permission to restart or a claim of zero spending.
+
+`GET /api/reading-long-history` reads a session's bounded recovery metadata. It has the preview's
+loopback, document-navigation and exact harness/sid query checks, and is unavailable under
+`--no-annotations`. A read never probes owner liveness, starts recovery or mutates a marker.
+The page reads only on an explicit open or Refresh recovery records, not polling or Resume
+model calls. Missing or incomplete history is not a zero-charge receipt.
+
+`POST /api/reading-long-discard` accepts exactly `harness`, `sid`, `job` (32 lowercase hex
+characters), `press: true` and integer `observer_model: 1`, under the reading body's existing
+size and loopback/fetch guards. It works while paused because it authorizes no call. The server
+checks the marker's session association, then requires a verified-dead terminal owner, exact
+accounting and a positively superseded annotation target under its publication locks. An active
+or uncertain owner, bare Clear or missing record cannot authorize retirement. A successful
+`discarded: true` may still carry `receipt-unresolved`: the marker was removed, but local cleanup
+is unconfirmed. It does not erase spend receipts, write a new reading or stop a process. Refused
+or lost responses remain uncertain and are never retried automatically.
+
+Serving startup injects independent dashboard-owner and process-existence probes after the
+daemon fork. Without them, history remains readable but discard refuses. POSIX checks process
+existence with signal zero, treating missing processes as absent and permission failures as
+present; other failures are unknown. Windows uses a synchronization-only process handle and a
+zero-time wait, never `os.kill(pid, 0)`, which can terminate a Windows process. An inaccessible
+handle is unknown. Neither a reused PID nor missing dashboard state alone proves death.
+
+When process cleanup cannot be confirmed, the long job retains its slot and the page says
+"Analysis cleanup unconfirmed". This is not completion or permission to start another job.
+Cancel remains an explicit request, and a previous reading remains visible. The ordinary
+single-call job's historical slot-release exception described below does not authorize long
+jobs to release an unresolved child.
+
+The same Pause, Cancel, model-off, source-currentness and target-publication barriers apply to
+every call. Current CI uses the existing bounded owner and its off switches; verified inputs with no
+applicable pull-request binding permit a reading without claiming CI was read, while unknown required
+context refuses before paid evidence calls. Synthetic sources and fake transports verify these
+application boundaries, not model accuracy on real long sessions. Existing qualification and
+accepted raw-data/privacy limitations remain unchanged.
 
 ### Observer model calls
 
@@ -1601,7 +1699,9 @@ after those passes, without dropping an entry or exceeding the prompt bound. Com
 records measure the full masked, folded length; a cropped prompt row labels its actual excerpt
 length and that total. Neither count is inferred for a legacy record. These counts stay in memory
 and are stripped from page responses with the words. Amended 2026-10-28 by the owner: a press's bounds are the reader's, set on the Settings screen
-and stored in `compass-settings.json` (`settings`). The prompt bound is
+and stored in `compass-settings.json` (`settings`). These source/selection settings describe
+ordinary Analyze; explicit long analysis uses its separate cumulative source limits above and
+shares the saved per-prompt ceiling. The prompt bound is
 `settings.analyze_prompt_bytes`, 512 KiB by default, optionally up to 2 MiB, never under the 16 KiB it was; the messages and checks a press keeps are `settings.analyze_record_events`, 2,000 by default
 and never under the project page's 100; the checks and written files it lists are
 `settings.analyze_listed_checks`, 1,000 by default and never under the page's 12; and the
@@ -4198,8 +4298,11 @@ The rule here is an allowlist rather than a prohibition, for the reason DEC-13 g
 store: a flat "never" the code already breaks is a contract narrower than the system, and a reader
 who finds the counter-example stops believing the rest of the document. So the honest form is a list
 of named reads. Of an observed session's tool calls, the runtime parses the input at exactly the
-places below and nowhere else, and each reduces what it read to a bounded summary at parse time
-rather than keeping anything raw. One further read exists and is governed elsewhere: the ask lane's
+places below and nowhere else, and each reduces what it read to a bounded summary at parse time.
+Long analysis also retains its admitted native records privately in memory while these same
+canonical readers run, under the [long-analysis source and graph limits](#long-analysis); it
+does not store that raw corpus or add a new interpretation of tool payloads. One further read
+exists and is governed elsewhere: the ask lane's
 own `ask_operator` tool parses the arguments of the call a session makes to Compass, which is a
 tool Compass owns rather than one it observed, and The ask lane states its bounds:
 
@@ -4269,6 +4372,13 @@ is that read's one look at a `write_stdin` call's `arguments`, parsed only to as
 read only to ask whether a `write_stdin` call in it sends anything but an empty `chars`; nothing of
 the script is kept. Every read of a call's `output` is counted the same way.
 The prototype has no additional switch that disables just these dispatch reads.
+
+The inventory also counts unrelated keys with the same spelling so new reads cannot hide behind
+them. Long coordinator, worker, reconciliation and diagnostic `input` fields are closed call
+measurements, not tool payloads. `reading_final_call` reads the saved revision's legacy `output`
+line. `reading_ci_acquire` handles stdout/stderr streams of Compass's supervised CI commands;
+the existing `ci_read` owner parses those responses. None is an additional native tool-input
+or tool-output interpretation.
 
 A shape match is a different kind of read from those. It happens in the hook, inside
 the operator's own harness process, against a payload that process already has, and what it keeps is
@@ -4734,15 +4844,15 @@ that was.
 saying the machine's network may read the board, and there is no second gate behind it: everything
 the paragraph below grants another account on the machine, a non-default bind grants anything that
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
-project paths. Writing is the twenty-three POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
+project paths. Writing is the twenty-four POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Three of the twenty-three store nothing durable of their own: `POST /api/direction` returns the whole text
+somebody other than you. Three of the twenty-four store nothing durable of their own: `POST /api/direction` returns the whole text
 of a direction a session's user gave, which `/api/project-context` names by its first sentence,
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
 message's published title of at most 112 characters, and `POST /api/live-monitor` holds the Live
 monitor's lease in memory only. All three answer only a loopback peer, so a non-default bind does not widen them;
-the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty-one of them, for the reason the
+the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty-two of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client

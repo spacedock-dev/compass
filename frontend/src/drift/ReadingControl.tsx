@@ -1,3 +1,5 @@
+import { longCleanupUnresolved } from '../api/longProgress';
+import { LongProgress } from './LongProgress';
 import { SampleBeside } from '../sample/SampleMark';
 import { Card } from '../ui/card';
 import { useEffect, type ReactNode } from 'react';
@@ -29,6 +31,8 @@ import {
   RERUN_STALE,
   READINGS_OFF,
   MODEL_PAUSE_EXPLANATION,
+  LONG_INTERRUPTED,
+  LONG_INCOMPLETE,
   WHY_OFF,
 } from './sentences';
 import { Why } from './Why';
@@ -53,6 +57,30 @@ export function ReadingCount({ count }: { readonly count: number }) {
   if (count < 1) return null;
   return (
     <p className="next-cockpit-reading-count">{`${String(count)} drift check${count === 1 ? '' : 's'} requested`}</p>
+  );
+}
+
+/* Pending directions retain the exact long interruption/incomplete accounts; ordinary outcomes keep their layout. */
+export function ReadingOutcome({
+  longOnly = false,
+  unless = '',
+}: {
+  readonly longOnly?: boolean;
+  readonly unless?: string;
+}) {
+  const { model } = useDrift();
+  const stored = String(model.annotation?.['reading_withheld'] || '');
+  const long = stored === LONG_INTERRUPTED;
+  if (!stored || stored === unless || (longOnly && !long && stored !== LONG_INCOMPLETE))
+    return null;
+  const age = withheldAge(model.annotation, model.generated);
+  return (
+    <p
+      className="next-cockpit-reading-why next-cockpit-reading-outcome"
+      {...(long ? { 'data-next-long-interrupted': '' } : {})}
+    >
+      {`${age ? `Last analysis, ${age}: ` : 'Last analysis: '}${stored}`}
+    </p>
   );
 }
 
@@ -136,6 +164,7 @@ export function JobBox({
   const held = ctx.drift.cancels.get(key);
   const mine = held && held.job === job['id'] ? held : null;
   const finishing = job['cancelling'] === true || Boolean(mine?.pending);
+  const blocked = longCleanupUnresolved(job);
   return (
     <Card
       variant="reading-job"
@@ -152,12 +181,12 @@ export function JobBox({
           tabIndex={-1}
           data-next-focus={`reading:${key}`}
         >
-          {again ? JOB_TITLE_AGAIN : JOB_TITLE}
+          {blocked ? 'Analysis cleanup unconfirmed' : again ? JOB_TITLE_AGAIN : JOB_TITLE}
         </span>
         <ActionButton
           weight="secondary"
           label="Cancel"
-          busyLabel="Cancelling…"
+          busyLabel={blocked ? 'Cancel requested…' : 'Cancelling…'}
           pendingKey={`reading-cancel:${key}`}
           inert={finishing}
           action="reading-cancel"
@@ -168,24 +197,30 @@ export function JobBox({
           }}
         />
       </div>
-      <ol className="next-cockpit-reading-steps">
-        {steps.map((step, index) => {
-          const state = at < 0 || index > at ? 'todo' : index < at ? 'done' : 'active';
-          return (
-            <li
-              // The steps are the server's, in its order, with no ids of their own.
-              key={index}
-              className="next-cockpit-reading-step"
-              data-state={state}
-              {...(state === 'active' ? { 'aria-current': 'step' as const } : {})}
-            >
-              <span className="next-cockpit-reading-step-mark" aria-hidden="true" />
-              <span>{String((step as Row | null)?.['text'] || '')}</span>
-            </li>
-          );
-        })}
-      </ol>
-      <p className="next-cockpit-reading-job-note">{running ? JOB_NOTE_SO_FAR : JOB_NOTE}</p>
+      {job['mode'] === 'long' ? (
+        <LongProgress job={job} />
+      ) : (
+        <ol className="next-cockpit-reading-steps">
+          {steps.map((step, index) => {
+            const state = at < 0 || index > at ? 'todo' : index < at ? 'done' : 'active';
+            return (
+              <li
+                // The steps are the server's, in its order, with no ids of their own.
+                key={index}
+                className="next-cockpit-reading-step"
+                data-state={state}
+                {...(state === 'active' ? { 'aria-current': 'step' as const } : {})}
+              >
+                <span className="next-cockpit-reading-step-mark" aria-hidden="true" />
+                <span>{String((step as Row | null)?.['text'] || '')}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {!blocked ? (
+        <p className="next-cockpit-reading-job-note">{running ? JOB_NOTE_SO_FAR : JOB_NOTE}</p>
+      ) : null}
       {mine?.failed && !finishing ? (
         <p className="next-cockpit-reading-why">{CANCEL_FAILED}</p>
       ) : null}
@@ -357,14 +392,7 @@ export function ReadingControl({
   /* What the last press came to when it was withheld, from the store, so a reload and another tab say the same.
      Not announced here: the job's end already said it once through the persistent region. Left out when the
      inert line above already carries the same sentence. */
-  const stored = String(annotation?.['reading_withheld'] || '');
-  const age = withheldAge(annotation, model.generated);
-  const outcome =
-    stored && !(inert && String(pressed?.['sentence'] || '') === stored) ? (
-      <p className="next-cockpit-reading-why next-cockpit-reading-outcome">
-        {`${age ? `Last analysis, ${age}: ` : 'Last analysis: '}${stored}`}
-      </p>
-    ) : null;
+  const outcome = <ReadingOutcome unless={inert ? String(pressed?.['sentence'] || '') : ''} />;
   /* Every account of a press -- why it cannot run, what the last one came to, what this tab's press was
      answered with -- sits directly under the button's row, before the hint and the disclosure. */
   const accounts = (

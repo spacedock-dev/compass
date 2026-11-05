@@ -147,6 +147,34 @@ export const CLAIM_UNCITED =
 /* Why a stored row is `not verifiable`, token to sentence (`reading.WHY_TOKENS`). Consulted only where the
    page's own derivation left a `not verifiable` row without a reason: the live rules stay authoritative, and
    a stored reason never overrides a result derived from evidence the page holds. */
+export const LONG_RECONCILIATION_COVERAGE =
+  'Some agent messages could not fit the final comparison. This line cannot be judged from that partial comparison.';
+/* Exact closed backend recovery sentence; ordinary withheld prose remains server-owned. */
+export const LONG_INTERRUPTED =
+  'Compass stopped before this analysis outcome was saved. No new result is shown. Any recorded calls remain counted, and a fresh press is the only retry.';
+export const LONG_INTERRUPTED_OLDER = 'Earlier reading, saved before the interrupted analysis.';
+export const LONG_INCOMPLETE =
+  'Long analysis could not cover the saved work well enough to produce a new result. Any recorded calls remain counted, and a fresh press is the only retry.';
+export const LONG_WITHHELD = {
+  'long-incomplete': LONG_INCOMPLETE,
+  'long-interrupted': LONG_INTERRUPTED,
+} as const;
+export const LONG_LATEST_OLDER = 'Earlier reading, saved before the latest long analysis.';
+export const LONG_STAGE = {
+  source: 'Long analysis: collecting source.',
+  evidence: 'Long analysis: reading evidence.',
+  reconciliation: 'Long analysis: final comparison.',
+  publication: 'Long analysis: saving outcome.',
+} as const;
+export const LONG_OUTCOME = {
+  pending: 'Long analysis has no saved outcome yet.',
+  completed: 'Long analysis saved a result. Its findings apply only to the work it could assess.',
+  partial: 'Long analysis saved a partial result. Some saved work could not be assessed.',
+  withheld: 'Long analysis did not produce a new result.',
+  cancelled: 'The long analysis was cancelled. No new result is shown.',
+  interrupted: LONG_INTERRUPTED,
+} as const;
+
 export const STORED_WHY: Readonly<Record<string, string>> = {
   'not-asked': NOT_ASKED,
   unreadable: MALFORMED,
@@ -166,6 +194,7 @@ export const STORED_WHY: Readonly<Record<string, string>> = {
   'claim-record-unread': CLAIM_RECORD_UNREAD,
   [RECORDED_WRITE]: RECORDED_WRITE_UNHELD,
   [RECORDED_COMMAND]: RECORDED_COMMAND_UNHELD,
+  'long-reconciliation-coverage': LONG_RECONCILIATION_COVERAGE,
 };
 
 /* The harness's own "goal met" verdict, and Compass's test of it (`reading.GOAL_VERDICT_*`). The verdict is
@@ -732,3 +761,6 @@ export const noticeDestination = (destination: string): string =>
   `Words go to: ${destination || 'destination not published'}`;
 export const noticeToolOutput = (destination: string): string =>
   `Tool output goes to: ${destination}`;
+
+export const LONG_CLEANUP_UNRESOLVED =
+  'Compass could not confirm that the analysis process ended. It may still be running. No new result was saved. Recorded calls remain counted.';

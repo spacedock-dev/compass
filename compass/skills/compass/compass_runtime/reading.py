@@ -51,14 +51,15 @@ import shutil
 import threading
 import time
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
-from . import analyze_diagnostics, ci_read, observer, records, supervise
+from . import analyze_diagnostics, ci_read, observer, reading_long_progress, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 
     from . import reading_policy
     from .config import RuntimeConfig
@@ -330,6 +331,9 @@ WHY_RECORDED_WRITE = "recorded-write"
 # drops a passing command from a departure, so the row needs its own token to keep it.
 # [DEC-17](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-forbidden-push-that-ran-carries-its-departure)  # noqa: E501
 WHY_RECORDED_COMMAND = "recorded-command"
+# The long final packet omitted already-mapped agent context: only guarded local
+# structural departures can stand; other clauses cannot establish reassurance/absence.
+WHY_LONG_RECONCILIATION_COVERAGE = "long-reconciliation-coverage"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
@@ -350,6 +354,7 @@ WHY_TOKENS = (
     WHY_CLAIM_RECORD_UNREAD,
     WHY_RECORDED_WRITE,
     WHY_RECORDED_COMMAND,
+    WHY_LONG_RECONCILIATION_COVERAGE,
 )
 
 # Rule 7 turns on who wrote an evidence entry, so the answer is a closed
@@ -734,6 +739,8 @@ WITHHELD_CLAUDE_OPTION = "claude-option-refused"
 WITHHELD_NOTHING_TYPED = "nothing-typed"
 WITHHELD_DISCARDED = "discarded"
 WITHHELD_INTERRUPTED = "interrupted"
+WITHHELD_LONG_INTERRUPTED = "long-interrupted"
+WITHHELD_LONG_INCOMPLETE = "long-incomplete"
 WITHHELD_UNSTOPPED = "unstopped"
 WITHHELD_JOB_UNRECORDED = "job-unrecorded"
 WITHHELD_STOPPING = "stopping"
@@ -922,6 +929,14 @@ WITHHELD = {
     # Recorded at the next start for a job whose spend was committed when the
     # dashboard stopped (DRC-4686, Q2). The attempt counts because it was
     # charged, and a silent loss would leave the count short of the budget.
+    WITHHELD_LONG_INTERRUPTED: (
+        "Compass stopped before this analysis outcome was saved. No new result is shown. "
+        "Any recorded calls remain counted, and a fresh press is the only retry."
+    ),
+    WITHHELD_LONG_INCOMPLETE: (
+        "Long analysis could not cover the saved work well enough to produce a new result. "
+        "Any recorded calls remain counted, and a fresh press is the only retry."
+    ),
     WITHHELD_INTERRUPTED: (
         "The analysis stopped because Compass stopped before it finished. Nothing was "
         "produced, the attempt still counts, and a fresh press is the only retry."
@@ -1258,8 +1273,8 @@ class Selection:
     is given from 1, and the ledger and the selected slice are the same tuple
     type, so a caller confusing the two produced citations that resolved to the
     wrong entries -- fully rule-3 compliant, and a departure against an entry
-    the model never saw (DRC-4544 item 1). Only `build_prompt` constructs one
-    in production, so the type says which list the numbering belongs to.
+    the model never saw (DRC-4544 item 1). The prompt renderers (`build_prompt`
+    and `reading_passes`) construct it from their actual numbered rows.
     """
 
     entries: tuple[LedgerEntry, ...]
@@ -1470,6 +1485,11 @@ class Job:
     # because the result it would discard is already being stored.
     sealed: bool = False
     notice: reading_policy.Notice | None = None
+    # Encoded private snapshots cannot share mutable dictionaries with a caller.
+    _long_plan: str | None = field(default=None, repr=False)
+    _long_progress: str | None = field(default=None, repr=False)
+    _long_stop: str = field(default="", repr=False)
+    _long_blocked: str = field(default="", repr=False)
 
 
 # Beside `_IN_FLIGHT` and under its lock rather than in a registry of its own:
@@ -1478,10 +1498,27 @@ class Job:
 _JOBS: dict[tuple[str, str], Job] = {}
 
 
-def start_job(
-    config: RuntimeConfig, session_key: str, *, provider: str, label: str, now: float
+def _start_job(
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str | None = None,
+    long_plan: str | None = None,
 ) -> Job | None:
-    """Take the slot and register a job for it, or None when the slot is held."""
+    """Take the shared slot, or None when held; optionally use a prepared long ID.
+
+    None keeps ordinary ID minting. A supplied ID identifies the UI job only:
+    it grants no durable registration, live handle, permission, source access,
+    or launch authority. The long-job protocol independently refuses replay.
+    """
+    if prepared_job_id is not None and (
+        not isinstance(prepared_job_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", prepared_job_id) is None
+    ):
+        raise ValueError("Invalid prepared reading job identity")
     key = (str(config.state_dir), session_key)
     harness, _, sid = session_key.partition(":")
     with _FLIGHT_LOCK:
@@ -1489,7 +1526,7 @@ def start_job(
             return None
         _IN_FLIGHT.add(key)
         job = Job(
-            id=secrets.token_hex(8),
+            id=secrets.token_hex(8) if prepared_job_id is None else prepared_job_id,
             harness=harness,
             sid=sid,
             provider=provider,
@@ -1497,9 +1534,122 @@ def start_job(
             phase=PHASE_PREPARING,
             started_at=now,
             phase_at=now,
+            _long_plan=long_plan,
+            _long_progress=json.dumps(reading_long_progress.initial(json.loads(long_plan)))
+            if long_plan is not None
+            else None,
         )
         _JOBS[key] = job
         return job
+
+
+def start_job(
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str | None = None,
+) -> Job | None:
+    """Take the shared slot. A prepared identity alone conveys no long authority."""
+    return _start_job(
+        config,
+        session_key,
+        provider=provider,
+        label=label,
+        now=now,
+        prepared_job_id=prepared_job_id,
+    )
+
+
+def _start_long_job(
+    config: RuntimeConfig,
+    session_key: str,
+    *,
+    provider: str,
+    label: str,
+    now: float,
+    prepared_job_id: str,
+    plan: Any,
+) -> Job | None:
+    """Private long-control admission: publish mode and the plan in the first snapshot."""
+    # Copy first, then validate exactly the immutable bytes this slot will retain.
+    encoded = json.dumps(plan)
+    reading_long_progress.initial(json.loads(encoded))
+    return _start_job(
+        config,
+        session_key,
+        provider=provider,
+        label=label,
+        now=now,
+        prepared_job_id=prepared_job_id,
+        long_plan=encoded,
+    )
+
+
+def _long_snapshot(job: Job) -> dict[str, Any]:
+    if job._long_plan is None:  # noqa: SLF001 - this registry owns Job snapshots
+        return {}
+    try:
+        plan = json.loads(job._long_plan)  # noqa: SLF001 - registry-owned snapshot
+        value = json.loads(job._long_progress or "null")  # noqa: SLF001 - registry-owned snapshot
+        checked = reading_long_progress.validate(value, plan=plan)
+    except (ValueError, TypeError, RecursionError):
+        checked = None
+    blocked = {"blocked_reason": job._long_blocked} if job._long_blocked else {}  # noqa: SLF001
+    if checked is None:
+        return {"mode": "long", "plan": None, "progress": None, **blocked}
+    return {
+        "mode": "long",
+        "plan": plan,
+        "progress": checked,
+        **blocked,
+    }
+
+
+def block_long_job(config: RuntimeConfig, session_key: str, expected_job: Job) -> bool:
+    """Publish unresolved cleanup for this exact long owner, even after Cancel/seal.
+
+    This never releases ownership or asserts a stopped process. A stale owner
+    cannot block a replacement job, and ordinary snapshots remain unchanged.
+    """
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if running is not expected_job or running._long_plan is None:  # noqa: SLF001
+            return False
+        running._long_blocked = "cleanup-unresolved"  # noqa: SLF001
+        return True
+
+
+def update_long_progress(
+    config: RuntimeConfig,
+    session_key: str,
+    expected_job: Job,
+    value: Any,
+    *,
+    job_id: str,
+    plan: Any,
+) -> bool:
+    """Replace only the current unsealed owner's closed snapshot; perform no I/O."""
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if (
+            running is not expected_job
+            or running.id != job_id
+            or running.cancelled_at is not None
+            or running.sealed
+            or running._long_blocked  # noqa: SLF001
+        ):
+            return False
+        before = _long_snapshot(running)
+        if before.get("plan") is None or before["plan"] != plan:
+            return False
+        checked = reading_long_progress.validate(value, plan=before["plan"])
+        if checked is None or not reading_long_progress.follows(before["progress"], checked):
+            return False
+        running._long_progress = json.dumps(checked)  # noqa: SLF001 - registry-owned snapshot
+        return True
 
 
 def job(config: RuntimeConfig, session_key: str) -> Job | None:
@@ -1538,7 +1688,9 @@ def cancel_job(
     """
     with _FLIGHT_LOCK:
         running = _JOBS.get((str(config.state_dir), session_key))
-        if running is None or running.id != job_id or running.sealed:
+        if (
+            running is None or running.id != job_id or running.sealed or running._long_stop  # noqa: SLF001 - already invalidated long owner retains its cause
+        ):
             return False, None
         if running.cancelled_at is None:
             running.cancelled_at = now
@@ -1549,8 +1701,10 @@ def cancel_job(
 def hand_over(job: Job, group: Any) -> bool:
     """Give the job its CLI's group. True when a Cancel already asked for it."""
     with _FLIGHT_LOCK:
+        if job._long_blocked:  # noqa: SLF001 - preserve the original uncertain process owner
+            return True
         job.group = group
-        return job.cancelled_at is not None
+        return job.cancelled_at is not None or bool(job._long_stop)  # noqa: SLF001
 
 
 def commit_job(job: Job) -> bool:
@@ -1560,7 +1714,32 @@ def commit_job(job: Job) -> bool:
     this answer, and spends nothing, or wholly after it, and is charged.
     """
     with _FLIGHT_LOCK:
-        return job.cancelled_at is None
+        return job.cancelled_at is None and not job._long_stop and not job._long_blocked  # noqa: SLF001
+
+
+def stop_long_job(
+    config: RuntimeConfig, session_key: str, expected_job: Job, *, reason: str
+) -> tuple[bool, Any]:
+    """Latch an external long-job invalidation before looking up its process.
+
+    The handover and charge guards see the same latch. This is not an accepted
+    reader Cancel; the original closed cause survives a later Resume.
+    """
+    if reason not in ("intent-changed", "permission-changed"):
+        raise ValueError("Invalid long stop cause")
+    with _FLIGHT_LOCK:
+        running = _JOBS.get((str(config.state_dir), session_key))
+        if running is not expected_job or running._long_plan is None or running.sealed:  # noqa: SLF001
+            return False, None
+        if not running._long_stop:  # noqa: SLF001
+            running._long_stop = reason  # noqa: SLF001
+        return True, running.group
+
+
+def long_stop_reason(job: Job) -> str:
+    """Return only the private, already-latched cause; perform no external work."""
+    with _FLIGHT_LOCK:
+        return "unstopped" if job._long_blocked else job._long_stop  # noqa: SLF001
 
 
 def job_cancelled(job: Job) -> bool:
@@ -1575,14 +1754,17 @@ def seal_job(job: Job) -> bool:
         return job.cancelled_at is not None
 
 
-def end_job(config: RuntimeConfig, session_key: str) -> None:
+def end_job(config: RuntimeConfig, session_key: str, *, expected_job: Job | None = None) -> None:
     """Remove the job, then give the slot back, as one step.
 
     The caller ends a job only after the CLI is reaped and its files removed,
     which `supervise.run` guarantees by returning only then.
+    Supplying an expected job leaves any replacement slot untouched.
     """
     key = (str(config.state_dir), session_key)
     with _FLIGHT_LOCK:
+        if expected_job is not None and _JOBS.get(key) is not expected_job:
+            return
         _JOBS.pop(key, None)
         _IN_FLIGHT.discard(key)
 
@@ -1595,6 +1777,7 @@ def published_jobs(config: RuntimeConfig) -> dict[str, dict[str, Any]]:
         return {
             key: {
                 "id": found.id,
+                **_long_snapshot(found),
                 "phase": found.phase,
                 "phase_at": found.phase_at,
                 "started_at": found.started_at,
@@ -1809,7 +1992,7 @@ def _request_identity(fact: Mapping[str, Any]) -> tuple[str, str, float] | None:
     at = valid_prompt_time(fact.get("at"))
     if (
         fact.get("type") != "user_message"
-        or not isinstance(source, dict)
+        or not isinstance(source, Mapping)
         or not isinstance(source.get("harness"), str)
         or not isinstance(source.get("sid"), str)
         or at is None
@@ -3223,9 +3406,18 @@ def _header(
 
 def _menu_row(index: int, row: LedgerEntry, *, whole: bool = False) -> str:
     """One numbered menu row, its summary or, `whole`, its words."""
+    return records.redact_secrets(render_admitted_row(index, row, whole=whole))
+
+
+def render_admitted_row(index: int, row: LedgerEntry, *, whole: bool = False) -> str:
+    """Serialize admitted fields without changing their text after a character-range cut.
+
+    Ordinary `build_prompt` applies its legacy final redaction in `_menu_row`; exact range
+    packets already received complete masked words and must preserve each supplied slice.
+    """
     tail = row.get("tail", "")
     text = _row_body(row) if whole else row["summary"]
-    return records.redact_secrets(
+    return (
         f"[{index}] {row['type']}{MENU_SEPARATOR}{row['source']}"
         f"{MENU_SEPARATOR}{text}"
         + (f"{MENU_SEPARATOR}output tail, untrusted: {tail}" if tail else "")
@@ -3631,7 +3823,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         # needs to escape this boundary.
         return "", Selection(
             (),
-            diagnostic=_selection_diagnostic(citable, (), (), expanded=False) if measure else None,
+            diagnostic=selection_diagnostic(citable, (), (), expanded=False) if measure else None,
             unread_failures=tuple(failures),
             unread_checks=tuple(checks),
             asked_output=posed,
@@ -3734,7 +3926,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     return header + body, Selection(
         printed,
         diagnostic=(
-            _selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
+            selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
             if measure
             else None
         ),
@@ -3749,7 +3941,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     )
 
 
-def _selection_diagnostic(
+def selection_diagnostic(
     eligible: Sequence[LedgerEntry],
     selected: Sequence[LedgerEntry],
     rendered: Sequence[str],

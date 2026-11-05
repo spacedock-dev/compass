@@ -1943,6 +1943,7 @@ class ServeOwnsReadingJobsTest(unittest.TestCase):
             mock.patch.object(lifecycle, "run_producer"),
             mock.patch.object(supervise, "kill_all", side_effect=lambda: events.append("kill_all")),
             mock.patch.object(reading_jobs, "recover", side_effect=recovered) as recover,
+            mock.patch.object(lifecycle, "_recover_long_jobs"),
         ):
             lifecycle.serve(
                 config,
@@ -2074,6 +2075,13 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         self.assertEqual(0, server.wait(timeout=15), "a SIGTERM before the serve loop was dropped")
         self.assertFalse(self.state.exists(), "a stopped server left its state file")
 
+    def test_sigterm_during_long_recovery_still_stops_and_removes_state(self) -> None:
+        server, _ = self._start_ignoring("SIGTERM", stall_in="long-recover")
+        self.assertTrue(self.state.exists())
+        os.kill(server.pid, signal.SIGTERM)
+        self.assertEqual(0, server.wait(timeout=15))
+        self.assertFalse(self.state.exists())
+
     def test_sigterm_while_the_producer_thread_starts_still_stops_it(self) -> None:
         """DRC-4737 follow-up: a `kill` inside `Thread.start` must still exit 0.
 
@@ -2134,7 +2142,10 @@ def parked(real):
         return real(*args, **kwargs)
     return park
 
-if step == "recover":
+if step == "long-recover":
+    from compass_runtime import reading_long_recovery
+    reading_long_recovery.recover = parked(reading_long_recovery.recover)
+elif step == "recover":
     reading_jobs.recover = parked(reading_jobs.recover)
 elif step == "producer":
     import threading

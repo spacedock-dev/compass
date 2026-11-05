@@ -206,6 +206,45 @@ decision, retained browser namespace, and route grammar live in
 The [React frontend record](design-frontend-migration.md) owns the frontend's boundaries, the
 behavior inventory it preserved and the browser measurements.
 
+### Long-analysis owners
+
+The explicit long mode shares `reading.py`'s ledger, parser, resolver and assessment shape,
+`reading_policy.py`'s transactional permission/quota owner, and `annotations.py`'s publication
+barriers. It does not call legacy `produce` to rebuild a different menu. The
+[long-analysis design](design-long-analysis.md) owns the decisions behind this split.
+
+| Modules | Responsibility |
+|---|---|
+| `reading_source_inventory.py`, `reading_source_stream.py` | Freeze admitted native Claude parent/child endpoints; page and verify source records under bounded I/O. Neither a filesystem path supplied by the browser nor timestamps supply physical source order. |
+| `reading_source.py`, `reading_source_collect.py` | Project complete native records through the canonical private project-context owner; retain canonical facts, exact physical origins, request-source proofs and current-CI inputs on one cumulative snapshot account. |
+| `reading_source_words.py`, `reading_source_final.py`, `reading_goal_proof.py` | Join and mask complete admitted message words; prove the strict newest final against the frozen parent; restore a complete adopted-goal source. Metadata alone cannot mint whole-text proof. |
+| `reading_preparation.py`, `reading_ci_acquire.py` | Extend the source account across native preparation, retained graphs and bounded CI acquisition. CI uses `ci_read`'s real schema/fact owner and supervised commands; model waits are outside preparation time. |
+| `reading_pass_types.py`, `reading_pass_context.py`, `reading_passes.py` | Closed plan/observation types, immutable validated intent/provenance/safety context, and exact packet/range planning. Own UTF-8 fit and the prompt/Selection match. |
+| `reading_maps.py`, `reading_map_call.py`, `reading_map_series.py` | Parse closed original-bound candidate hypotheses; invoke one supplied model; execute one planned sequence with per-pass captures, bounded candidates and explicit gaps. No assessment publication. |
+| `reading_reconcile_packet.py`, `reading_final_call.py` | Restore original evidence into a fresh final menu; use the existing reading parser/resolver and full frozen guards, with conservative partial criteria where final agent text is incomplete. |
+| `reading_native.py` | Join source identities/proofs into frozen reading inputs, preflight mandatory originals, and format qualified results with existing assessment owners. |
+| `reading_long_plan.py`, `reading_long_preview.py`, `reading_long_admission.py` | Production limits and advisory descriptor; metadata-only HTTP preview/closed ingress; actual refreshed intent, route, slot and permission admission. Preview never grants execution authority. |
+| `reading_long_jobs.py`, `reading_long_markers.py`, `reading_long_inspection.py` | Private job/allocation bindings; durable word-free pass markers; read-only marker/SQLite accounting comparison with exact, minimum and unknown outcomes. Policy owns charge transactions. |
+| `reading_long_control.py`, `reading_long_context.py`, `reading_long_execution.py` | Register an active owner/publish validated progress; recheck route, intent, permission, cancellation and deadlines; construct one registered Guard with a final check at runner entry. |
+| `reading_long_worker.py`, `reading_long_reconcile.py` | Bind native source, real CI and shared preparation to guarded map calls, then one reserved final call and qualified assessment candidate. Source predicates remain available to the publication barrier. |
+| `reading_long_progress.py`, `reading_long_diagnostics.py` | Closed progress and word-free measurements. Evidence ordinals, actual charges and final reconciliation remain separate; stop causes use known stage and closed reasons. |
+| `reading_long_finalize.py`, `reading_long_cleanup.py` | Publish a qualified result or measured withheld outcome under marker/permission/target barriers; issue a cleanup receipt before releasing the slot. |
+| `reading_long_recovery.py`, `reading_long_history.py` | Conservative startup handling of dead owners and read-only bounded accounting history. Neither restores model execution authority or infers zero spending from missing records. |
+| `reading_long_coordinator.py` | Server-owned press worker over the admitted job: collect, map, reconcile, publish and clean up. Owns Cancel and stop forwarding; `http_api` dispatches and `lifecycle` keeps startup/shutdown ownership. |
+
+The coordinator consumes `Application` only as a typing boundary. Source and preparation owners
+do not import the coordinator or HTTP. Model transport still goes through `observer`, the actual
+Guard and `supervise`; long analysis adds no second subprocess policy. Runtime inventory and
+import-graph tests check the shipped files and permitted dependencies.
+
+`Application.long_recovery_probes` is an optional pair of injected callbacks, unset during
+assembly. `lifecycle.serve` attaches the dashboard-owner and independent process-existence
+probes after the daemon fork. HTTP can inspect history without them, but cannot discard a
+marker. This keeps lifecycle ownership out of HTTP imports and makes missing services a refusal,
+not evidence of owner death. Windows probes use synchronization-only handles and zero-time waits;
+the POSIX signal-zero check is not used there. Startup recovery runs once in the serving process,
+never on a board poll or Resume model calls.
+
 ## R-2: Dependencies run inward, and the test enforces it
 
 Lower layers never import higher ones. `config` imports no runtime module at all; `cli` may import

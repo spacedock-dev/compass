@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 /* The sample fixture ships inside the page, so a longer sample makes every page load larger.
    docs/design-sample-session.md#how-big-it-may-be owns both bounds and why; raise either only there. */
-const PAGE_MAX_BYTES = 1_884_747 + 400 * 1024;
+const PAGE_MAX_BYTES = 1_884_747 + 432 * 1024;
 const FIXTURE_MAX_BYTES = 250_000;
 
 const root = new URL('../../', import.meta.url);

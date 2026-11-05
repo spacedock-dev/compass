@@ -528,7 +528,7 @@ pill. It never appears on a Sessions row, raises no notification, and never feed
 Drift marks show departures already on record, from a
 reader-requested reading or the optional unasked lane. With nothing typed the block says there is nothing to read against; with the observer
 model off it gives that reason; otherwise it states what a reading may and may not read and offers
-one control, `Analyze drift`. When it cannot run it stays on the page, refuses the press, and
+the ordinary one-call control, `Analyze drift`. When it cannot run it stays on the page, refuses the press, and
 names one next step, and a press on it opens "Why Analyze is off" with the whole reason, except where no reader is available on this machine: then the reason stands
 where the control would be. An acceptance of each provider's checks enables that control (the
 captain's of Codex's case review on 2026-09-14; the owner's of Claude Code on 2026-10-02, after its
@@ -646,6 +646,56 @@ the triggering entry and age, and What the analysis read counts new work since t
 The box offers Cancel, which stops the call and records a cancelled attempt that still counts, or one that spent nothing when it landed before anything was sent. A failed request says its result could
 not be confirmed and is never retried automatically. The counter reports recorded model requests, so a refusal before the model runs
 does not increase it.
+
+### Long analysis
+
+For native Claude Code session sources, `Long analysis options` offers a separate explicit
+`Start long analysis` press. Its preview names the saved intent, route, source metadata, limits
+and current shared allowance. Opening it reads no transcript bodies, fetches no CI checks and
+reserves no calls. Start refreshes the binding; the preview is neither a source-completeness
+claim nor a guarantee that the whole plan can run. The model provider is the disclosed route,
+which may be Claude Code or Codex; other harness sources do not support this mode.
+
+If Start first saves a drafted goal, that press runs no analysis. Refresh the long preview,
+review the saved intent and reading window, then press `Start long analysis` again.
+
+The plan permits at most 16 sequential evidence calls and one final reconciliation call. Each
+prompt uses the smaller of the saved ceiling (512 KiB by default, at most 2 MiB) and the route
+allowance. All prompts together are bounded at 16 MiB, including repeated context; each reply
+at 8,192 bytes. Every reserved call consumes the same 100-attempt rolling daily Analyze allowance,
+including failures and late refusals. A final slot numbered 17 is not 17 spent calls. There is
+no automatic retry, resume, shortening or provider fallback.
+
+Source collection and analysis share 256 MiB of actual native I/O including verification rereads,
+512 pages, a 256 MiB retained object graph and 1,048,576 graph objects (not process RSS), and
+60 seconds of preparation and response processing excluding model waits. The whole job has
+30 minutes; each model call retains its 180-second timeout. Progress separates source work,
+planned and ended evidence passes, reconciliation and actual charge accounting. Exact totals,
+known minimums and unknown counts remain distinct; allocations are not provider usage receipts.
+
+Complete admitted messages are masked before splitting. Candidates from evidence passes are
+unstored hypotheses, sent to the final call as untrusted navigation; final citations bind original
+evidence. Source or pass gaps withhold a new
+reading. A qualified partial reading may retain supported local departures on outcome lines,
+with Can't tell elsewhere; it cannot establish global reassurance or absence. Strict whole-final
+and adopted-goal proofs remain required, so larger limits do not make every session readable.
+Synthetic application tests do not establish the model's accuracy on long sessions.
+
+The server runs the requested job across browser reloads, but never starts long analysis on its
+own. Cancel requests a stop for that job; Pause and the model off switch stop further calls. A withheld,
+cancelled or failed attempt leaves the older reading visible beside the latest outcome; a
+qualified partial reading may replace it. Restart markers hold word-free identity, plan and
+accounting metadata, not prompts or permission to resume. Refresh the preview before another
+explicit Start. Unknown accounting or unconfirmed cleanup stays unknown.
+
+`Unfinished long analysis records` reads the selected session's recovery metadata only on an
+explicit open or `Refresh recovery records`, including while model calls are paused. Recorded
+state does not prove owner liveness. `Check and discard superseded record` asks the server to
+prove a dead terminal owner, exact accounting and a superseded target; it cannot stop a model or
+refund calls. A lost or refused reply stays uncertain and never retries automatically. A marker
+may be removed while its receipt cleanup remains unconfirmed. `Analysis cleanup unconfirmed`
+keeps the long job blocked and the previous reading visible; it is not completion or permission
+to start another job.
 
 ## Notifications
 
@@ -894,6 +944,25 @@ Paths 2 and 3 are complementary and can both be installed. Keep `Notification` o
 | `POST /api/live-monitor` | Start, beat, answer or stop the Live monitor's lease for one Claude Code session. Body is `{"harness", "sid", "action", "tab_id"}`, where `action` is `start` (also `"observer_model": 1` and optionally `"visible"`), `beat` (optionally `"visible"`), `confirm` (with `"answer"`, `yes` or `no`) or `stop`. Answers `{"ok", "reason", "state"}`. Loopback-only, refused as a document navigation. A start is refused for an ended or unknown session, another harness, the sample, paused model calls and `--no-observer-model`; the lease is held in memory and a visible tab that stops beating is dropped after about 50 seconds. |
 | `POST /api/summary`, `/api/summary/cancel`, `/api/summary/delete` | Start, cancel or delete one Claude Code session summary. A start is `{"harness", "sid", "action", "origin"}`, where `action` is `start`, `update` or `rerun` and `origin` is `press` or `open` (an open only starts); `{"consent": "off"}` or `"on"` is Turn off summaries or Turn summaries on for every session. A start answers 403 with `model-calls-paused` while model calls are paused, even at the cap; 429 with `daily-cap` at the 200-call rolling cap, even with summaries off; 403 with `summaries-off` while summaries are off; and 503 with `run-disabled` under `--no-observer-model`. Cancel and delete take `{"harness", "sid"}`. Loopback-only, with Host, Origin and fetch-site checks, and a document navigation is refused before the body is read; the summary is kept in its own store, not with your annotations. |
 | `GET /api/settings`, `POST /api/settings` | Read, or change some of, the reading limits on the Settings screen. A change is `{"values": {key: integer or null}}`, null restoring the default; every value is checked against its bounds before any is written. Loopback-only, same origin checks. |
+
+`GET /api/reading-long-plan?harness=...&sid=...` returns the advisory `long_plan` without reading
+transcript bodies or reserving a call. It is loopback-only, refuses document navigation, requires
+exactly one harness and session id, and answers 503 under `--no-annotations`. Long Start uses the
+existing `POST /api/reading` with `mode: "long"`, the preview's `plan_binding`, saved
+`expected_revision`, exact provider/model/words and tool destinations, and the ordinary explicit
+press fields. It cannot be combined with consent, CI-setting or unasked-grant mutations. A stale
+preview or revision refuses rather than running ordinary Analyze; a successful response names
+the server-owned job, not a completed assessment.
+
+`GET /api/reading-long-history?harness=...&sid=...` returns bounded `long_history` metadata under
+the same read guards as the preview. It neither mutates records nor infers owner liveness.
+`POST /api/reading-long-discard` accepts exactly `harness`, `sid`, `job` (32 lowercase hex),
+`press: true` and integer `observer_model: 1`. It is loopback-only and checks session attribution,
+owner death, exact accounting and target supersession again under the server's locks. Success is
+200 with `discarded: true`; `receipt-unresolved` can still mean some local cleanup was not
+confirmed. A retained record answers 409 with a closed refusal reason, unavailable discard
+answers 503, and malformed input is refused. Neither route calls a model, refunds a call or
+resumes analysis. Missing annotations disable both; missing serving-owner probes disable discard.
 
 ## Interpretation notes (share with the user if asked)
 

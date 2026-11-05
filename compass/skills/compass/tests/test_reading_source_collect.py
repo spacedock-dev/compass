@@ -1,0 +1,438 @@
+"""A bounded private collector must verify a complete native corpus before projection."""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import json
+import math
+from dataclasses import replace
+from typing import Any
+from unittest import mock
+
+from compass_runtime import project_context as context
+from compass_runtime import reading, reading_source
+from compass_runtime import reading_source_collect as collector
+from compass_runtime import reading_source_inventory as inventory_source
+from compass_runtime import reading_source_stream as raw_source
+
+from . import test_reading_source as source_tests
+from .test_claude_checks import SHORT, SID, Transcript, hook_stdout
+
+
+class BoundedReadingCollectionFixture(source_tests.CompleteReadingSourceFixture):
+    def setUp(self) -> None:
+        super().setUp()
+
+    def module(self) -> Any:
+        self.assertIsNotNone(
+            importlib.util.find_spec("compass_runtime.reading_source_collect"),
+            "bounded verified canonical collection is not implemented",
+        )
+        return importlib.import_module("compass_runtime.reading_source_collect")
+
+    def inventory(self, **options: Any) -> inventory_source.Inventory:
+        return inventory_source.freeze(
+            str(self.path),
+            "claude",
+            SHORT,
+            max_entries=options.get("max_entries", 100),
+            max_streams=10,
+            max_seconds=1,
+        )
+
+    def collect(
+        self,
+        *,
+        inventory: inventory_source.Inventory | None = None,
+        limits: collector.Limits | None = None,
+        **options: Any,
+    ) -> collector.Collection:
+        module = self.module()
+        return collector.collect(
+            self.config,
+            inventory or self.inventory(),
+            ancillary=module.Ancillary(self.scan.session_dir, self.scan.declared),
+            limits=limits or module.Limits(),
+            page_bytes=options.pop("page_bytes", 127),
+            **options,
+        )
+
+
+class BoundedReadingCollectionTest(BoundedReadingCollectionFixture):
+    def test_tiny_pages_preserve_combined_history_and_exact_rich_oracle(self) -> None:
+        parent = Transcript(self.root)
+        parent.prompt("Update the widget and check delegated work.")
+        parent.bash("pytest tests/widget.py", "1 failed", is_error=True)
+        parent.write(str(self.root / "src/widget.py"))
+        parent.bash("pytest tests/widget.py", "1 passed")
+        parent.write(str(self.root / "src/later.py"))
+        pending = parent.call("Bash", {"command": "pytest tests/widget.py"})
+        rewrite = parent.call("Bash", {"command": "ruff check src"})
+        parent.hook_rewrite(rewrite, hook_stdout("rtk ruff check src"))
+        parent.result(rewrite, "2 failed", is_error=False)
+        parent.save(self.path)
+        self.scan = context._live_check_scan(self.config, str(self.path))
+        expected, press = self.expected()
+        result = self.collect()
+        self.assertEqual("", result.reason)
+        self.assertTrue(result.source_verified)
+        self.assertIsNotNone(result.evidence)
+        assert result.evidence is not None
+        self.assertEqual(expected, result.evidence.facts)
+        self.assertEqual(press, result.evidence.press)
+        output = source_tests.CompleteReadingSourceTest.output(press)
+        actual = source_tests.CompleteReadingSourceTest.output(result.evidence.press)
+        self.assertEqual(output, actual)
+        options: source_tests.LedgerOptions = {
+            "tool_output": output.tails,
+            "changed_after": output.changed_after,
+            "read_incomplete": output.read_incomplete,
+            "read_agent_words": True,
+        }
+        self.assertEqual(
+            reading.build_ledger(expected, "claude", SHORT, **options),
+            reading.build_ledger(result.evidence.facts, "claude", SHORT, **options),
+        )
+        self.assertEqual(
+            reading.recorded_from(expected, "claude", SHORT, tool_output=output),
+            reading.recorded_from(result.evidence.facts, "claude", SHORT, tool_output=actual),
+        )
+        pending_fact = next(
+            f for f in result.evidence.facts if f.get("branch", {}).get("record_id") == pending
+        )
+        self.assertEqual("not-recorded", pending_fact["result"])
+        self.assertEqual(3, len(pending_fact["runs"]))
+        self.assertTrue(pending_fact["earlier_failed"])
+        self.assertEqual(
+            "not-recorded",
+            next(
+                f["result"]
+                for f in result.evidence.facts
+                if f.get("branch", {}).get("record_id") == rewrite
+            ),
+        )
+        self.assertTrue(any(f.get("before_last_change") for f in result.evidence.facts))
+        self.assertFalse(any("CHILD PRIVATE PROSE" in str(f) for f in result.evidence.facts))
+        total = sum(stream.cursor.frozen.end_offset for stream in self.inventory().streams)
+        self.assertEqual(3 * total, result.usage.source_bytes)
+        self.assertGreater(result.usage.source_pages, 30)
+        self.assertGreater(result.usage.retained_bytes, total)
+        self.assertGreater(result.usage.retained_units, len(parent.rows))
+
+    def test_verification_and_page_costs_are_reserved_before_reading(self) -> None:
+        module = self.module()
+        inventory = self.inventory()
+        total = sum(s.cursor.frozen.end_offset for s in inventory.streams)
+        pages = sum(
+            3 * max(1, math.ceil(s.cursor.frozen.end_offset / 127)) for s in inventory.streams
+        )
+        cases = (
+            (replace(module.Limits(), source_bytes=3 * total - 1), "source_bytes"),
+            (replace(module.Limits(), source_pages=pages - 1), "source_pages"),
+            (replace(module.Limits(), retained_bytes=1), "retained_bytes"),
+            (replace(module.Limits(), retained_units=1), "retained_units"),
+            (replace(module.Limits(), prepare_ms=0), "time"),
+        )
+        for limits, reason in cases:
+            with (
+                self.subTest(reason=reason),
+                mock.patch.object(
+                    raw_source, "read", side_effect=AssertionError("must reserve before reading")
+                ),
+            ):
+                result = self.collect(inventory=inventory, limits=limits)
+            self.assertIsNone(result.evidence)
+            self.assertEqual(reason, result.reason)
+            self.assertEqual(0, result.usage.source_bytes)
+
+    def test_retained_raw_parsed_and_projection_state_must_fit_together(self) -> None:
+        module = self.module()
+        result = self.collect(limits=replace(module.Limits(), retained_bytes=20_000))
+        self.assertIsNone(result.evidence)
+        self.assertEqual("retained_bytes", result.reason)
+        self.assertGreater(result.usage.source_bytes, 0)
+        self.assertLessEqual(result.usage.retained_bytes, 20_000)
+        with mock.patch.object(
+            reading_source,
+            "from_complete_scan",
+            return_value=reading_source.CanonicalEvidence(
+                ({"huge": "x" * 40_000},),
+                context._press(context._tally_from_scan(self.scan)),
+            ),
+        ) as project:
+            projection = self.collect(limits=replace(module.Limits(), retained_bytes=60_000))
+        self.assertTrue(project.called)
+        self.assertIsNone(projection.evidence)
+        self.assertEqual("retained_bytes", projection.reason)
+
+    def test_unknown_inventory_and_permanent_raw_gaps_never_project(self) -> None:
+        self.module()
+        with mock.patch.object(
+            reading_source, "from_complete_scan", side_effect=AssertionError("gap")
+        ):
+            unknown = self.collect(inventory=self.inventory(max_entries=0))
+            self.assertEqual("inventory", unknown.reason)
+            self.assertTrue(unknown.inventory_gaps)
+            with self.path.open("ab") as target:
+                target.write(b'{"unfinished":')
+            partial = self.collect()
+        self.assertIsNone(partial.evidence)
+        self.assertEqual("source_gap", partial.reason)
+        self.assertTrue(
+            any(gap.gap.reason == "unfinished_line" and gap.gap.permanent for gap in partial.gaps)
+        )
+        self.assertFalse(partial.source_verified)
+
+    def test_rewrite_after_baseline_refuses_all_provisional_rows(self) -> None:
+        self.module()
+        original = raw_source.read
+        changed = False
+
+        def read(cursor: Any, **options: Any) -> Any:
+            nonlocal changed
+            page = original(cursor, **options)
+            if cursor.phase == "records" and not changed:
+                data = self.path.read_bytes()
+                self.path.write_bytes(data.replace(b"Check the parent", b"Other the parent", 1))
+                changed = True
+            return page
+
+        with mock.patch.object(raw_source, "read", side_effect=read):
+            result = self.collect()
+        self.assertIsNone(result.evidence)
+        self.assertEqual("source_changed", result.reason)
+        self.assertTrue(any(gap.gap.reason == "source_changed" for gap in result.gaps))
+
+    def test_cancellation_is_checked_after_pages_and_after_projection(self) -> None:
+        self.module()
+        stopped = False
+        original = raw_source.read
+
+        def read(cursor: Any, **options: Any) -> Any:
+            nonlocal stopped
+            page = original(cursor, **options)
+            stopped = True
+            return page
+
+        with mock.patch.object(raw_source, "read", side_effect=read):
+            result = self.collect(cancelled=lambda: stopped)
+        self.assertEqual("cancelled", result.reason)
+        self.assertEqual(1, result.usage.source_pages)
+        stopped = False
+        project = reading_source.from_complete_scan
+
+        def materialize(*args: Any, **kwargs: Any) -> Any:
+            nonlocal stopped
+            value = project(*args, **kwargs)
+            stopped = True
+            return value
+
+        with mock.patch.object(reading_source, "from_complete_scan", side_effect=materialize):
+            result = self.collect(cancelled=lambda: stopped)
+        self.assertEqual("cancelled", result.reason)
+        self.assertIsNone(result.evidence)
+
+    def test_no_progress_stops_once_and_ancillary_work_never_rescans(self) -> None:
+        self.module()
+        with mock.patch.object(
+            raw_source, "read", return_value=raw_source.Page("limited", "baseline")
+        ) as read:
+            result = self.collect()
+        self.assertEqual("no_progress", result.reason)
+        self.assertEqual(1, read.call_count)
+        with (
+            mock.patch.object(context, "_live_check_scan", side_effect=AssertionError("rescan")),
+            mock.patch.object(context, "_session_directory", side_effect=AssertionError("head")),
+            mock.patch.object(
+                context, "_declared_scripts", side_effect=AssertionError("declarations")
+            ),
+            mock.patch.object(context, "_CiBinding", side_effect=AssertionError("live CI")),
+        ):
+            result = self.collect()
+        self.assertIsNotNone(result.evidence)
+
+    def test_deadline_is_checked_after_page_and_projection(self) -> None:
+        self.module()
+        now = 0.0
+        original = raw_source.read
+
+        def read(cursor: Any, **options: Any) -> Any:
+            nonlocal now
+            page = original(cursor, **options)
+            now = 61.0
+            return page
+
+        with mock.patch.object(raw_source, "read", side_effect=read):
+            result = self.collect(clock=lambda: now)
+        self.assertEqual("time", result.reason)
+        self.assertEqual(1, result.usage.source_pages)
+        self.assertIsNone(result.evidence)
+        now = 0.0
+        original_project = reading_source.from_complete_scan
+
+        def project(*args: Any, **kwargs: Any) -> Any:
+            nonlocal now
+            evidence = original_project(*args, **kwargs)
+            now = 61.0
+            return evidence
+
+        with mock.patch.object(reading_source, "from_complete_scan", side_effect=project):
+            result = self.collect(clock=lambda: now)
+        self.assertEqual("time", result.reason)
+        self.assertTrue(result.source_verified)
+        self.assertIsNone(result.evidence)
+
+    def test_verified_bytes_do_not_prove_named_missing_child(self) -> None:
+        self.module()
+        parent = Transcript(self.root)
+        parent.prompt("Delegate the check.")
+        call = parent.call(
+            "Agent", {"prompt": "Check missing work", "subagent_type": "general-purpose"}
+        )
+        parent.result(call, "done", tool_use_result={"agentId": "deadbeef"})
+        parent.save(self.path)
+        result = self.collect()
+        self.assertTrue(result.source_verified)
+        self.assertEqual("native_incomplete", result.reason)
+        self.assertIsNone(result.evidence)
+
+    def test_default_resource_limits_reach_a_native_check_beyond_64_mib(self) -> None:
+        module = self.module()
+        padding = (
+            json.dumps(
+                {
+                    "type": "progress",
+                    "data": {"type": "synthetic-padding", "padding": "x" * (8 * 1024 * 1024)},
+                }
+            ).encode()
+            + b"\n"
+        )
+        with self.path.open("ab") as source:
+            for _ in range(9):
+                source.write(padding)
+            decisive_offset = source.tell()
+            late = Transcript(self.root)
+            late.calls, late.seconds = 100, 100
+            call = late.bash("pytest tests/test_beyond64.py", "1 failed", is_error=True)
+            for row in late.rows:
+                source.write((json.dumps(row) + "\n").encode())
+        del padding
+        self.assertGreater(decisive_offset, 64 * 1024 * 1024)
+        frozen = self.inventory()
+        ancillary = module.Ancillary(self.scan.session_dir, self.scan.declared)
+        # Real default Limits and page caps, with host speed removed from this
+        # numeric-admission regression. Dedicated deadline tests exercise the
+        # unchanged 60-second ceiling; the owned calibration uses a real clock.
+        result = module.collect(self.config, frozen, ancillary=ancillary, clock=lambda: 0.0)
+        self.assertEqual("", result.reason)
+        self.assertTrue(result.source_verified)
+        self.assertIsNotNone(result.evidence)
+        check = next(
+            fact
+            for fact in result.evidence.facts
+            if fact.get("branch", {}).get("record_id") == call
+        )
+        self.assertEqual("failed", check["result"])
+        self.assertEqual({"harness": "claude", "sid": SHORT}, check["source_session"])
+        self.assertEqual("exact", check["evidence"]["confidence"])
+        self.assertEqual(
+            3 * sum(stream.cursor.frozen.end_offset for stream in frozen.streams),
+            result.usage.source_bytes,
+        )
+        self.assertGreater(result.usage.retained_bytes, 32 * 1024 * 1024)
+        self.assertLessEqual(result.usage.retained_bytes, 256 * 1024 * 1024)
+        self.assertLessEqual(result.usage.source_bytes, 256 * 1024 * 1024)
+        self.assertLessEqual(result.usage.retained_units, collector.Limits().retained_units)
+        self.assertLessEqual(result.usage.source_pages, 512)
+        self.assertEqual("scan-limit", result.final["outcome"])
+        del result
+        lower = module.collect(
+            self.config,
+            frozen,
+            ancillary=ancillary,
+            limits=replace(module.Limits(), retained_bytes=32 * 1024 * 1024),
+            clock=lambda: 0.0,
+        )
+        self.assertEqual("retained_bytes", lower.reason)
+        self.assertIsNone(lower.evidence)
+        self.assertLessEqual(lower.usage.retained_bytes, 32 * 1024 * 1024)
+        with self.assertRaises(ValueError):
+            module.Limits(retained_bytes=256 * 1024 * 1024 + 1)
+
+    def test_default_object_headroom_keeps_dense_middle_check_and_genuine_final(self) -> None:
+        self.path = self.root / (SID + ".jsonl")
+        for count in (1000, 3000):
+            with self.subTest(checks=count):
+                parent = Transcript(self.root)
+                parent.prompt("Audit every original check and preserve the middle failure.")
+                decisive = ""
+                for index in range(count):
+                    failed = index == count // 2
+                    call = parent.bash(
+                        f"pytest tests/dense_{index}.py",
+                        "1 failed" if failed else "1 passed",
+                        is_error=failed,
+                    )
+                    if failed:
+                        decisive = call
+                final_words = "The recorded checks are ready to inspect."
+                final = parent._entry("assistant", [{"type": "text", "text": final_words}])
+                final["message"]["stop_reason"] = "end_turn"
+                parent.save(self.path)
+                frozen = self.inventory()
+                # Actual numeric defaults; isolate admission from host speed.
+                # The owned dense calibration separately measures a real clock.
+                result = collector.collect(
+                    self.config,
+                    frozen,
+                    ancillary=collector.Ancillary(str(self.root)),
+                    clock=lambda: 0.0,
+                )
+                self.assertEqual("", result.reason)
+                self.assertTrue(result.source_verified)
+                assert result.evidence is not None
+                checks = [fact for fact in result.evidence.facts if fact.get("subject") == "check"]
+                self.assertEqual(count, len(checks))
+                self.assertEqual(count + 2, len(result.evidence.facts))
+                self.assertEqual(
+                    count + 2, len({fact["fact_id"] for fact in result.evidence.facts})
+                )
+                middle = next(fact for fact in checks if fact["branch"]["record_id"] == decisive)
+                self.assertEqual("failed", middle["result"])
+                self.assertEqual({"harness": "claude", "sid": SHORT}, middle["source_session"])
+                self.assertEqual("exact", middle["evidence"]["confidence"])
+                assert result.final is not None
+                self.assertEqual(
+                    ("whole", final_words), (result.final["outcome"], result.final["words"])
+                )
+                self.assertIn(
+                    result.final["fact_id"], {fact["fact_id"] for fact in result.evidence.facts}
+                )
+                self.assertEqual(3 * self.path.stat().st_size, result.usage.source_bytes)
+                self.assertGreater(result.usage.retained_units, 65_536)
+                limits = collector.Limits()
+                self.assertLessEqual(result.usage.retained_units, limits.retained_units)
+                self.assertLessEqual(result.usage.retained_bytes, limits.retained_bytes)
+                if count == 1000:
+                    limited = collector.collect(
+                        self.config,
+                        frozen,
+                        ancillary=collector.Ancillary(str(self.root)),
+                        limits=replace(limits, retained_units=65_536),
+                        clock=lambda: 0.0,
+                    )
+                    self.assertEqual("retained_units", limited.reason)
+                    self.assertIsNone(limited.evidence)
+                    self.assertIsNone(limited.final)
+                    self.assertIsNone(limited.snapshot)
+
+    def test_object_ceiling_remains_finite_and_other_resource_defaults_are_unchanged(self) -> None:
+        limits = collector.Limits()
+        self.assertEqual(1_048_576, limits.retained_units)
+        self.assertEqual(
+            (256 * 1024 * 1024, 256 * 1024 * 1024, 60_000, 512),
+            (limits.retained_bytes, limits.source_bytes, limits.prepare_ms, limits.source_pages),
+        )
+        with self.assertRaises(ValueError):
+            replace(limits, retained_units=limits.retained_units + 1)

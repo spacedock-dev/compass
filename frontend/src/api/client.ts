@@ -1,3 +1,5 @@
+import type { ReadingLongHistoryBody, ReadingLongDiscardBody } from './longHistory';
+import type { ReadingLongPlanBody } from './longPlan';
 import { dataPath } from './bootstrap';
 import type {
   AnnotateReceipt,
@@ -213,6 +215,24 @@ export function createApiClient(deps: { readonly fetch: FetchLike }) {
       body: SessionIdentity & { readonly fact_ids: readonly string[] },
       signal?: AbortSignal,
     ) => post<DirectionBatchReceipt>('/api/direction', body, signal),
+    getReadingLongHistory: (identity: SessionIdentity, signal?: AbortSignal) =>
+      get<ReadingLongHistoryBody>(
+        `/api/reading-long-history?harness=${encodeURIComponent(identity.harness)}&sid=${encodeURIComponent(identity.sid)}`,
+        signal,
+      ),
+    postReadingLongDiscard: (
+      body: SessionIdentity & {
+        readonly job: string;
+        readonly press: true;
+        readonly observer_model: 1;
+      },
+      signal?: AbortSignal,
+    ) => post<ReadingLongDiscardBody>('/api/reading-long-discard', body, signal),
+    getReadingLongPlan: (identity: SessionIdentity, signal?: AbortSignal) =>
+      get<ReadingLongPlanBody>(
+        `/api/reading-long-plan?harness=${encodeURIComponent(identity.harness)}&sid=${encodeURIComponent(identity.sid)}`,
+        signal,
+      ),
     postReading: (body: ReadingRequest | UnaskedGrantRequest, signal?: AbortSignal) =>
       post<ReadingReceipt>('/api/reading', body, signal),
     /* "Find goal": the reader's prompts read for a goal, on one press (docs/design-reading-a-session.md). */

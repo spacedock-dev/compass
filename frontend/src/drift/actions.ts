@@ -1,3 +1,5 @@
+import type { LongPlanDescriptor } from '../api/longPlan';
+import { isSampleSession } from '../intent/liveMonitor';
 import { resumeModelCalls, setCiRead, turnOffReadings } from '../api/readings';
 import { nextNumber } from '../api/bootstrap';
 import { compatSessKey } from '../api/identity';
@@ -15,7 +17,7 @@ import {
   refresh,
 } from '../intent/context';
 import { foundGoal, intentKey } from '../intent/derive';
-import { saveFoundGoal } from '../intent/save';
+import { adoptPrompt, saveFoundGoal } from '../intent/save';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
 import { isRecord, type Row } from '../observed';
@@ -67,7 +69,12 @@ function pressDetails(ctx: DriftCtx, identity: SessionIdentity) {
 export interface Drawn {
   readonly route: Row | null;
   readonly revision: number;
+  readonly longPlan?: LongPlanDescriptor;
+  readonly focusKey?: string;
 }
+
+const SAVED_LONG_GOAL =
+  'Your goal was saved. Refresh the long preview to review its saved intent and reading window before starting.';
 
 /* The sentence for a receiver that moved between the draw and the press, or nothing where it did not. The
    provider and the model say who reads it. */
@@ -90,6 +97,7 @@ export async function askForReading(
   const read = pressDetails(ctx, identity);
   if (!read) return;
   const { session, input, payload } = read;
+  if (drawn.longPlan && (isSampleSession(session) || payload['annotate'] !== true)) return;
   const key = compatSessKey(session);
   /* A press in flight, or a running job, is the answer to a second press: nothing is sent. */
   if (
@@ -125,7 +133,24 @@ export async function askForReading(
   const route = drawn.route;
   if (!route || !live) return;
   const liveRevision = nextNumber(annotationOf(session)?.['revision']) || 0;
-  const moved = movedSince(route, live) || (liveRevision !== drawn.revision ? KEEP_REFUSED : '');
+  const plan = drawn.longPlan;
+  const longMoved =
+    plan &&
+    (!plan.can_start ||
+      !plan.supported ||
+      !plan.binding ||
+      plan.intent.revision !== drawn.revision ||
+      !plan.route ||
+      ['provider', 'model', 'harness', 'destination', 'words_destination', 'ci_read'].some(
+        (field) =>
+          String((plan.route as unknown as Row)[field] || '') !== String(live[field] || ''),
+      ));
+  const moved =
+    (longMoved
+      ? 'Refresh the long preview before starting; the saved intent or destination changed.'
+      : '') ||
+    movedSince(route, live) ||
+    (liveRevision !== drawn.revision ? KEEP_REFUSED : '');
   if (moved) {
     held.requests.set(key, { ...request, pending: false, message: moved });
     if (moved === KEEP_REFUSED) {
@@ -161,9 +186,42 @@ export async function askForReading(
       return;
     }
     expected = nextNumber(annotationOf(fresh.session)?.['revision']) || 0;
+    if (plan) {
+      pendingEnd(intent, control, press);
+      held.requests.set(key, {
+        ...request,
+        pending: false,
+        message: SAVED_LONG_GOAL,
+      });
+      held.notify();
+      return;
+    }
   }
   const reading = intentForReading(shell, identity);
   const adoption = reading?.adoption ?? {};
+  if (plan && typeof adoption['adopt'] === 'string') {
+    let adopted: boolean | 'unconfirmed' = 'unconfirmed';
+    try {
+      adopted = await adoptPrompt(intent, identity, session, adoption['adopt'], press.signal, null);
+    } catch {
+      // A lost response cannot establish whether the source goal was saved.
+    } finally {
+      pendingEnd(intent, control, press);
+    }
+    held.requests.set(key, {
+      ...request,
+      pending: false,
+      message:
+        adopted === true
+          ? SAVED_LONG_GOAL
+          : adopted === 'unconfirmed'
+            ? 'Saving your goal was not confirmed. Check your saved intent and refresh the long preview. Nothing was analyzed.'
+            : 'Your goal could not be saved, so nothing was analyzed. Check your intent before trying again.',
+      refusal: adopted !== true,
+    });
+    held.notify();
+    return;
+  }
   const note: Record<string, unknown> & { pending: boolean; message: string } = {
     ...(request?.notice !== undefined ? { notice: request.notice } : {}),
     pending: true,
@@ -181,7 +239,15 @@ export async function askForReading(
       observer_model: 1,
       ...adoption,
       expected_revision: expected,
-      ...(provider === 'claude' ? { model: String(route['model'] || '') } : {}),
+      ...(provider === 'claude' || plan ? { model: String(route['model'] || '') } : {}),
+      ...(plan
+        ? {
+            mode: 'long',
+            plan_binding: plan.binding,
+            destination: plan.route?.destination,
+            words_destination: plan.route?.words_destination,
+          }
+        : {}),
     };
     const reply = answered(
       await shell.runtime.client.postReading(body as unknown as ReadingRequest, press.signal),
@@ -220,6 +286,13 @@ export async function askForReading(
       pendingEnd(intent, control, press);
       held.notify();
       await refresh(intent);
+      return;
+    }
+    if (plan && !reply.ok) {
+      note.message =
+        reply.status === 409
+          ? 'Long analysis did not start. Refresh the long preview before trying again.'
+          : 'Could not confirm whether long analysis started. Check its status before refreshing the preview.';
       return;
     }
     if (status === 409 && answer?.['reason'] === 'provider-changed') {
@@ -315,7 +388,7 @@ export async function askForReading(
   } finally {
     note.pending = false;
     pendingEnd(intent, control, press);
-    requestFocus(ctx, `reading:${key}`);
+    requestFocus(ctx, drawn.focusKey ?? `reading:${key}`);
   }
 }
 

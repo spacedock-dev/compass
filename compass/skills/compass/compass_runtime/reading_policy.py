@@ -8,16 +8,20 @@ See [DEC-21](docs/design-reading-a-session.md#dec-21-a-reading-works-the-first-t
 from __future__ import annotations
 
 import contextlib
+import json
 import math
 import os
+import stat
 import time
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+import uuid
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, cast
 
-from . import analyze_diagnostics, supervise
+from . import analyze_diagnostics, reading_long_jobs, supervise
 from . import io as runtime_io
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
     from .config import RuntimeConfig
@@ -68,6 +72,52 @@ NOTICE_KINDS = ("reading", "goal", "summary", "monitor")
 CONTENT_CHANGED = "What a reading sends has changed since you allowed this, so allow it again."
 
 
+@dataclass(frozen=True)
+class LongPermission:
+    """A long job's permission snapshot, independent of content and Summary epochs."""
+
+    lineage: str
+    epoch: int
+
+
+def _valid_long_permission(value: Any) -> bool:
+    return (
+        type(value) is LongPermission
+        and isinstance(value.lineage, str)
+        and len(value.lineage) == 32
+        and all(char in "0123456789abcdef" for char in value.lineage)
+        and type(value.epoch) is int
+        and 0 <= value.epoch < 2**63
+    )
+
+
+def _long_permission_schema(db: Any) -> LongPermission:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS long_permission "
+        "(id INTEGER PRIMARY KEY CHECK(id=1), lineage TEXT NOT NULL, epoch INTEGER NOT NULL)"
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO long_permission (id, lineage, epoch) VALUES (1, ?, 0)",
+        (uuid.uuid4().hex,),
+    )
+    for table in ("permission", "provider_permission"):
+        for event in ("INSERT", "UPDATE"):
+            # These fire in older builds too. As with `_off`, a zero beside an
+            # Allow is not a global pause; Summary's own switch is independent.
+            db.execute(
+                f"CREATE TRIGGER IF NOT EXISTS long_permission_off_{table}_{event.lower()} "  # noqa: S608 - fixed identifiers
+                f"AFTER {event} ON {table} WHEN NEW.allowed = 0 "
+                "AND NOT EXISTS (SELECT 1 FROM permission WHERE allowed = 1) "
+                "AND NOT EXISTS (SELECT 1 FROM provider_permission WHERE allowed = 1) "
+                "BEGIN UPDATE long_permission SET epoch = epoch + 1 WHERE id = 1; END"
+            )
+    row = db.execute("SELECT lineage, epoch FROM long_permission WHERE id=1").fetchone()
+    token = LongPermission(*row)
+    if not _valid_long_permission(token):
+        raise ValueError("Invalid long-reading permission lineage")
+    return token
+
+
 class Notice(TypedDict):
     kind: str
     provider: str
@@ -107,6 +157,289 @@ class Status(TypedDict):
 
 
 PERMISSION_TABLES = frozenset({"permission", "provider_permission"})
+
+
+@dataclass(frozen=True)
+class LongReservation:
+    """Only a fresh reservation authorizes launch; charge evidence is True or unknown."""
+
+    outcome: str
+    status: Status
+    charged: bool | None = None
+
+    @property
+    def launch(self) -> bool:
+        return self.outcome == "reserved"
+
+
+@dataclass(frozen=True)
+class LongRegistration:
+    outcome: str
+    status: Status
+    live: reading_long_jobs.LiveJob | None = None
+
+    @property
+    def launch(self) -> bool:
+        return False
+
+
+_PASS_REQUEST_FIELDS = frozenset(
+    {
+        "version",
+        "job_id",
+        "started_at",
+        "ordinal",
+        "kind",
+        "max_evidence_passes",
+        "plan_sha256",
+        "prompt_sha256",
+        "prompt_bytes",
+        "destination_sha256",
+        "provider",
+        "content",
+    }
+)
+
+
+def _hex(value: Any, size: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == size
+        and all(c in "0123456789abcdef" for c in value)
+    )
+
+
+def _pass_request(value: Any, now: float) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != _PASS_REQUEST_FIELDS:
+        return None
+    if (
+        any(
+            type(value[key]) is not int
+            for key in (
+                "version",
+                "ordinal",
+                "max_evidence_passes",
+                "prompt_bytes",
+                "content",
+            )
+        )
+        or value["version"] != 1
+        or not 1 <= value["max_evidence_passes"] <= 16
+        or not 1 <= value["ordinal"] <= value["max_evidence_passes"] + 1
+        or not 0 < value["prompt_bytes"] < 2**53
+        or value["content"] not in (REQUESTED_WORDS_CONTENT_VERSION, CONTENT_VERSION)
+        or value["provider"] not in PROVIDERS
+        or not _hex(value["job_id"], 32)
+        or not all(
+            _hex(value[key], 64)
+            for key in (
+                "plan_sha256",
+                "prompt_sha256",
+                "destination_sha256",
+            )
+        )
+        or type(value["started_at"]) not in (int, float)
+        or not math.isfinite(value["started_at"])
+        or not 0 < value["started_at"] <= now
+    ):
+        return None
+    kind = "reconciliation" if value["ordinal"] == value["max_evidence_passes"] + 1 else "evidence"
+    return dict(value) if value["kind"] == kind else None
+
+
+def _pass_ledger(db: Any, now: float) -> float:
+    """Keep absence conservative after pruning, SQL deletion or a missing table."""
+    columns = {row[1] for row in db.execute("PRAGMA table_info(long_permission)")}
+    if "pass_ledger_since" not in columns:
+        db.execute("ALTER TABLE long_permission ADD COLUMN pass_ledger_since REAL")
+    since = db.execute("SELECT pass_ledger_since FROM long_permission WHERE id=1").fetchone()[0]
+    if since is None:
+        # Not IF NOT EXISTS: an orphaned ledger is uncertainty, not a new ledger.
+        db.execute(
+            "CREATE TABLE long_pass_reservations (job TEXT NOT NULL, ordinal INTEGER NOT NULL, "
+            "binding TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(job, ordinal))"
+        )
+        db.execute("UPDATE long_permission SET pass_ledger_since=0 WHERE id=1")
+    elif type(since) not in (int, float) or not math.isfinite(since) or since < 0:
+        raise ValueError("Invalid long-pass ledger watermark")
+    # A direct DELETE, including a prune, loses charge evidence. Fence starts
+    # at or before that receipt, even when clocks/timestamps are equal.
+    db.execute(
+        "CREATE TRIGGER IF NOT EXISTS long_pass_deleted AFTER DELETE ON long_pass_reservations "
+        "BEGIN UPDATE long_permission SET pass_ledger_since=max(pass_ledger_since, OLD.at) "
+        "WHERE id=1; END"
+    )
+    db.execute("DELETE FROM long_pass_reservations WHERE at <= ?", (now - JOB_LEDGER_SEC,))
+    db.execute(
+        "UPDATE long_permission SET pass_ledger_since=max(pass_ledger_since, ?) WHERE id=1",
+        (now - JOB_LEDGER_SEC,),
+    )
+    return float(
+        db.execute("SELECT pass_ledger_since FROM long_permission WHERE id=1").fetchone()[0]
+    )
+
+
+def validate_long_request(value: Any, *, now: float) -> dict[str, Any] | None:
+    """Copy closed pass metadata for durable markers; grants no reservation authority."""
+    return _pass_request(value, now)
+
+
+def _reserve_pass(
+    db: Any,
+    answer: Status,
+    now: float,
+    request: dict[str, Any],
+    live: reading_long_jobs.LiveJob | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> LongReservation:
+    since = _pass_ledger(db, now)
+    if live is not None:
+        reason = _registered_pass_reason(db, now, live, request, since)
+        if reason:
+            db.execute("COMMIT")
+            return LongReservation("refused", {**answer, "reason": reason})
+    row = db.execute(
+        "SELECT binding, at FROM long_pass_reservations WHERE job=? AND ordinal=?",
+        (request["job_id"], request["ordinal"]),
+    ).fetchone()
+    binding = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    if row is not None:
+        # A corrupt row is not authoritative charge evidence for either binding.
+        stored = _pass_request(json.loads(row[0]), now)
+        if (
+            stored is None
+            or type(row[1]) not in (int, float)
+            or not math.isfinite(row[1])
+            or row[1] <= 0
+        ):
+            raise ValueError("Invalid long-pass receipt")
+        same = stored == request
+        reason = "already-reserved" if same else "reservation-conflict"
+        db.execute("COMMIT")
+        return LongReservation(
+            "already-reserved" if same else "conflict", {**answer, "reason": reason}, True
+        )
+    if request["started_at"] <= since:
+        db.execute("COMMIT")
+        return LongReservation("unknown", {**answer, "reason": "pass-ledger-unknown"})
+    if answer["reason"]:
+        db.execute("COMMIT")
+        return LongReservation("refused", answer)
+    job_ms = 0
+    if live is not None:
+        value = reading_long_jobs.live_header(live)
+        if value is None:
+            raise ValueError("Invalid live job")
+        receipts = _registered_receipts(db, live, value, now)
+        reason = reading_long_jobs.allocations(request, value, receipts)
+        if reason:
+            db.execute("COMMIT")
+            return LongReservation("refused", {**answer, "reason": reason})
+        job_ms = value["plan"]["limits"]["job_ms"]
+    db.execute(
+        "INSERT INTO long_pass_reservations VALUES (?, ?, ?, ?)",
+        (request["job_id"], request["ordinal"], binding, now),
+    )
+    # The receipt and spend commit together under the existing supervision
+    # admission barrier. Shutdown rolls back both; replay never reaches it.
+    charged = _commit_charge(db, answer, now, "", live=live, job_ms=job_ms, cancelled=cancelled)
+    return (
+        LongReservation("refused", charged)
+        if charged["reason"]
+        else LongReservation("reserved", charged, True)
+    )
+
+
+def _registered_pass_reason(
+    db: Any, now: float, live: reading_long_jobs.LiveJob, request: dict[str, Any], pass_since: float
+) -> str:
+    value = reading_long_jobs.live_header(live)
+    if value is None:
+        return "invalid-live-job"
+    if not reading_long_jobs.matches(request, value, live.prepared.job_id):
+        return "job-binding-changed"
+    if value["started_at"] <= pass_since:
+        return "pass-ledger-unknown"
+    since = reading_long_jobs.ledger(db, now, JOB_LEDGER_SEC)
+    return reading_long_jobs.registered(db, live, value, since)
+
+
+def _registered_receipts(
+    db: Any, live: reading_long_jobs.LiveJob, value: dict[str, Any], now: float
+) -> list[dict[str, Any]]:
+    receipts: list[dict[str, Any]] = []
+    for ordinal, binding, at in db.execute(
+        "SELECT ordinal, binding, at FROM long_pass_reservations WHERE job=? LIMIT 18",
+        (live.prepared.job_id,),
+    ):
+        checked = _pass_request(json.loads(binding), now)
+        if (
+            checked is None
+            or checked["ordinal"] != ordinal
+            or not reading_long_jobs.matches(checked, value, live.prepared.job_id)
+            or type(at) not in (int, float)
+            or not math.isfinite(at)
+            or at <= 0
+        ):
+            raise ValueError("Incomplete registered pass receipts")
+        receipts.append(checked)
+    if len(receipts) > value["plan"]["max_calls"]:
+        raise ValueError("Invalid registered pass count")
+    return receipts
+
+
+def _register_job(
+    db: Any, answer: Status, now: float, job: reading_long_jobs.PreparedJob
+) -> LongRegistration:
+    value = reading_long_jobs.header(job)
+    if value is None:
+        raise ValueError("Invalid registration")
+    pass_since = _pass_ledger(db, now)
+    since = reading_long_jobs.ledger(db, now, JOB_LEDGER_SEC)
+    if value["started_at"] <= since:
+        outcome = "job-ledger-unknown"
+    elif value["started_at"] <= pass_since:
+        outcome = "pass-ledger-unknown"
+    elif answer["reason"]:
+        outcome = answer["reason"]
+    else:
+        outcome = reading_long_jobs.register(db, job, value, since)
+    db.execute("COMMIT")
+    if outcome == "registered":
+        return LongRegistration(outcome, answer, reading_long_jobs.activate(job))
+    return LongRegistration(outcome, {**answer, "reason": outcome})
+
+
+def _long_operation(  # noqa: PLR0913 - cancellation joins the existing atomic reservation boundary
+    db: Any,
+    answer: Status,
+    now: float,
+    operation: str,
+    permission: LongPermission | None,
+    captured: LongPermission | None,
+    request: dict[str, Any] | None,
+    job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None,
+    *,
+    cancelled: Callable[[], bool] | None,
+) -> LongRegistration | LongReservation:
+    if not _valid_long_permission(captured) or permission != captured:
+        answer["reason"] = answer["reason"] or "permission-changed"
+    elif job is not None and not _job_permission_matches(job, captured):
+        answer["reason"] = answer["reason"] or "job-binding-changed"
+    elif not answer["off"]:
+        if operation == "register-long-job":
+            if not isinstance(job, reading_long_jobs.PreparedJob):
+                raise ValueError("Invalid prepared job")
+            return _register_job(db, answer, now, job)
+        if request is not None:
+            live = job if isinstance(job, reading_long_jobs.LiveJob) else None
+            return _reserve_pass(db, answer, now, request, live, cancelled)
+    db.execute("COMMIT")
+    return (
+        LongRegistration("refused", answer)
+        if operation == "register-long-job"
+        else LongReservation("refused", answer)
+    )
 
 
 def store_path(config: RuntimeConfig) -> Path:
@@ -432,7 +765,7 @@ def _change_permissions(
         # the legacy row's write above fires, as for an older build's off.
 
 
-def _transaction(
+def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same reservation transaction
     config: RuntimeConfig,
     now: float,
     operation: str | Notice,
@@ -441,9 +774,14 @@ def _transaction(
     job_id: str = "",
     today: Mapping[str, str] | None = None,
     content: int = CONTENT_VERSION,
-) -> tuple[Status, Notice | None]:
+    *,
+    long_permission: LongPermission | None = None,
+    long_request: dict[str, Any] | None = None,
+    long_job: reading_long_jobs.PreparedJob | reading_long_jobs.LiveJob | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[Status, Notice | None, LongPermission | LongReservation | LongRegistration | None]:
     if not math.isfinite(now) or now <= 0:
-        return _answer(reason="store-unavailable"), None
+        return _answer(reason="store-unavailable"), None, None
     wait = READ_WAIT_SEC if operation == "read" else WRITE_WAIT_SEC
     with contextlib.closing(_connect(config, wait)) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -520,6 +858,18 @@ def _transaction(
                 "DELETE FROM permission_disclosure; END"
             )
         _notice_schema(db)
+        permission = (
+            _long_permission_schema(db)
+            if operation
+            in (
+                "capture-long",
+                "reserve-long",
+                "reserve-long-pass",
+                "register-long-job",
+                "reserve-registered-pass",
+            )
+            else None
+        )
         allowed = _allowed(db)
         db.execute("DELETE FROM spends WHERE at <= ?", (now - DAY_SEC,))
         db.execute("DELETE FROM spend_jobs WHERE at <= ?", (now - JOB_LEDGER_SEC,))
@@ -544,13 +894,42 @@ def _transaction(
             notices=_notices(db),
         )
         recorded = _store_notice(db, answer, operation)
-        if operation == "reserve" and not answer["reason"]:
-            return _commit_charge(db, answer, now, job_id), None
+        if operation in ("reserve-long-pass", "register-long-job", "reserve-registered-pass"):
+            result = _long_operation(
+                db,
+                answer,
+                now,
+                operation,
+                permission,
+                long_permission,
+                long_request,
+                long_job,
+                cancelled=cancelled,
+            )
+            return result.status, None, result
+        if (
+            operation == "reserve-long"
+            and not answer["reason"]
+            and (not _valid_long_permission(long_permission) or permission != long_permission)
+        ):
+            answer["reason"] = "permission-changed"
+        if operation in ("reserve", "reserve-long") and not answer["reason"]:
+            return _commit_charge(db, answer, now, job_id), None, None
         db.execute("COMMIT")
-        return answer, recorded
+        captured = permission if operation == "capture-long" and not answer["reason"] else None
+        return answer, recorded, captured
 
 
-def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
+def _commit_charge(
+    db: Any,
+    answer: Status,
+    now: float,
+    job_id: str,
+    *,
+    live: reading_long_jobs.LiveJob | None = None,
+    job_ms: int = 0,
+    cancelled: Callable[[], bool] | None = None,
+) -> Status:
     """Insert the charge and its job, and commit, unless the runner has shut.
 
     Under the lock a shutdown takes (DRC-4712). The wait for SQLite's write
@@ -561,6 +940,12 @@ def _commit_charge(db: Any, answer: Status, now: float, job_id: str) -> Status:
         if not open_:
             db.execute("ROLLBACK")
             return {**answer, "reason": "stopping"}
+        if live is not None and (reason := reading_long_jobs.deadline_reason(live, job_ms)):
+            db.execute("ROLLBACK")
+            return {**answer, "reason": reason}
+        if cancelled is not None and cancelled():
+            db.execute("ROLLBACK")
+            return {**answer, "reason": "cancelled"}
         db.execute("INSERT INTO spends VALUES (?)", (now,))
         if job_id:
             db.execute("INSERT OR IGNORE INTO spend_jobs VALUES (?, ?)", (job_id, now))
@@ -740,6 +1125,275 @@ def reserve(
     return _run(config, now, "reserve", provider, job_id=job_id, today=today, content=content)
 
 
+def capture_long_permission(config: RuntimeConfig, *, now: float) -> LongPermission | None:
+    """Capture once at long-job start; failure is not permission to use ordinary reserve."""
+    if config.model_calls_disabled:
+        return None
+    try:
+        return cast(
+            "LongPermission | None", _transaction(config, now, "capture-long", LEGACY_PROVIDER)[2]
+        )
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return None
+
+
+def _long_permission_reason(db: Any, permission: LongPermission) -> str:
+    """Permission only, in the caller's already-held SQLite snapshot."""
+    row = db.execute("SELECT lineage, epoch FROM long_permission WHERE id=1").fetchone()
+    if row is None or not _valid_long_permission(current := LongPermission(*row)):
+        return "store-unavailable"
+    if current != permission:
+        return "permission-changed"
+    if _permission_tables(db) != PERMISSION_TABLES:
+        return "store-unavailable"
+    values = [
+        value
+        for table in sorted(PERMISSION_TABLES)
+        for (value,) in db.execute(f"SELECT allowed FROM {table}")  # noqa: S608 - fixed tables
+    ]
+    if any(type(value) is not int or value not in (0, 1) for value in values):
+        return "store-unavailable"
+    return "model-calls-paused" if 0 in values and 1 not in values else ""
+
+
+def long_permission_reason(config: RuntimeConfig, permission: LongPermission) -> str:
+    """Read the captured permission without recapture, schema writes or quota admission.
+
+    A committed last-budget call must still pass its execution checks. This
+    checks only current permission; it grants no reservation or launch.
+    """
+    if config.model_calls_disabled:
+        return "run-disabled"
+    if not _valid_long_permission(permission):
+        return "permission-changed"
+    path = store_path(config)
+    try:
+        if runtime_io.sqlite_module is None or path.is_symlink() or not path.is_file():
+            return "store-unavailable"
+        with contextlib.closing(
+            runtime_io.sqlite_module.connect(
+                path.absolute().as_uri() + "?mode=ro",
+                uri=True,
+                timeout=READ_WAIT_SEC,
+                isolation_level=None,
+            )
+        ) as db:
+            db.execute("BEGIN")
+            return _long_permission_reason(db, permission)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return "store-unavailable"
+
+
+@contextlib.contextmanager
+def long_publication_permission(config: RuntimeConfig, permission: LongPermission) -> Iterator[str]:
+    """Fence a short final publication against current and legacy SQL off writes.
+
+    The caller holds marker publication lock first, then this SQLite writer
+    fence, then the annotation lock. Only an empty reason permits publication.
+    Do not run source/model work, recapture permission, reserve, or call policy
+    writers inside this context. It neither creates/migrates the database nor
+    checks quota: the last allowed charge still permits its result to publish.
+
+    BEGIN IMMEDIATE orders SQL writers, including old builds' off triggers.
+    Path identity is rechecked after waiting, but arbitrary external file
+    replacement during the caller's body is not serialized by SQLite locks.
+    Caller exceptions propagate normally; closing rolls back the unwritten
+    transaction. No execution or reservation authority is yielded.
+    """
+    if config.model_calls_disabled or not _valid_long_permission(permission):
+        yield "run-disabled" if config.model_calls_disabled else "permission-changed"
+        return
+    held = contextlib.ExitStack()
+    reason = "store-unavailable"
+    try:
+        path = store_path(config)
+        before = path.lstat()
+        if runtime_io.sqlite_module is not None and stat.S_ISREG(before.st_mode):
+            db = held.enter_context(
+                contextlib.closing(
+                    runtime_io.sqlite_module.connect(
+                        path.absolute().as_uri() + "?mode=rw",
+                        uri=True,
+                        timeout=WRITE_WAIT_SEC,
+                        isolation_level=None,
+                    )
+                )
+            )
+            db.execute("BEGIN IMMEDIATE")
+            after = path.lstat()
+            if stat.S_ISREG(after.st_mode) and (before.st_dev, before.st_ino) == (
+                after.st_dev,
+                after.st_ino,
+            ):
+                reason = _long_permission_reason(db, permission)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        held.close()
+        reason = "store-unavailable"
+    try:
+        yield reason
+    finally:
+        held.close()
+
+
+def reserve_long(
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    now: float,
+    provider: str = LEGACY_PROVIDER,
+    job_id: str = "",
+    destination: str = "",
+    content: int = CONTENT_VERSION,
+) -> Status:
+    """Charge only while the captured permission still holds under the SQLite write lock."""
+    today = {provider: destination}
+    if config.model_calls_disabled:
+        return status(config, now=now, provider=provider, destinations=today, content=content)
+    try:
+        return _transaction(
+            config,
+            now,
+            "reserve-long",
+            provider,
+            job_id=job_id,
+            today=today,
+            content=content,
+            long_permission=permission,
+        )[0]
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _answer(reason="store-unavailable")
+
+
+def reserve_long_pass(
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    request: Any,
+    now: float,
+) -> LongReservation:
+    """Atomically reserve a composite slot once; identical replay never authorizes launch.
+
+    The caller owns the frozen job start, actual final prompt/destination/plan
+    hashes and counts. They are binding metadata, not permission or evidence
+    that those inputs were checked. Never change a start to reuse a lost key.
+    There is no negative historical charge claim: absent evidence is unknown.
+    """
+    checked = _pass_request(request, now)
+    if checked is None:
+        return LongReservation("refused", _answer(reason="invalid-long-request"))
+    if config.model_calls_disabled:
+        return LongReservation("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "reserve-long-pass",
+            checked["provider"],
+            content=checked["content"],
+            long_permission=permission,
+            long_request=checked,
+        )
+        return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongReservation("unknown", _answer(reason="store-unavailable"))
+
+
+def prepare_long_job(
+    *,
+    permission: LongPermission,
+    binding: Any,
+    call_timeout_ms: int,
+    clock: Callable[[], float] = time.monotonic,
+) -> reading_long_jobs.PreparedJob | None:
+    """Mint a bounded header identity and capture live time once; grants no execution."""
+    if not _valid_long_permission(permission):
+        return None
+    return reading_long_jobs.prepare(
+        binding, permission.lineage, permission.epoch, call_timeout_ms, clock
+    )
+
+
+def _job_permission_matches(job: Any, permission: Any) -> bool:
+    value = (
+        reading_long_jobs.live_header(job)
+        if isinstance(job, reading_long_jobs.LiveJob)
+        else reading_long_jobs.header(job)
+    )
+    return (
+        value is not None
+        and _valid_long_permission(permission)
+        and (value["lineage"], value["epoch"]) == (permission.lineage, permission.epoch)
+    )
+
+
+def register_long_job(
+    config: RuntimeConfig, *, permission: LongPermission, job: Any, now: float
+) -> LongRegistration:
+    """Persist one immutable job; only a fresh registration returns a live admission handle."""
+    value = reading_long_jobs.header(job)
+    if value is None or value["started_at"] > now:
+        return LongRegistration("conflict", _answer(reason="invalid-long-job"))
+    if config.model_calls_disabled:
+        return LongRegistration("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "register-long-job",
+            value["provider"],
+            content=value["content"],
+            long_permission=permission,
+            long_job=job,
+        )
+        return (
+            result if isinstance(result, LongRegistration) else LongRegistration("refused", answer)
+        )
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongRegistration("unknown", _answer(reason="store-unavailable"))
+
+
+def reserve_registered_pass(
+    config: RuntimeConfig,
+    *,
+    permission: LongPermission,
+    job: Any,
+    request: Any,
+    now: float,
+    cancelled: Callable[[], bool] | None = None,
+) -> LongReservation:
+    """Admit one registered slot with aggregate allocations and a live final deadline check.
+
+    Only use the handle returned by fresh registration. A stored header or a
+    newly prepared replay is not a new monotonic window and cannot launch.
+    The optional cancellation callback runs once at fresh charge admission,
+    after SQLite and supervision lock waits. It must be a fast in-memory flag
+    read: no disk I/O, annotation/file locks, or model work. A later cancellation
+    cannot refund a committed charge; the caller still owns pre-spawn checks.
+    """
+    if reading_long_jobs.live_header(job) is None:
+        return LongReservation("refused", _answer(reason="invalid-live-job"))
+    checked = _pass_request(request, now)
+    if checked is None:
+        return LongReservation("refused", _answer(reason="invalid-long-request"))
+    if config.model_calls_disabled:
+        return LongReservation("refused", _answer(reason="run-disabled"))
+    try:
+        answer, _, result = _transaction(
+            config,
+            now,
+            "reserve-registered-pass",
+            checked["provider"],
+            content=checked["content"],
+            long_permission=permission,
+            long_request=checked,
+            long_job=job,
+            cancelled=cancelled,
+        )
+        return result if isinstance(result, LongReservation) else LongReservation("refused", answer)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return LongReservation("unknown", _answer(reason="store-unavailable"))
+
+
 def charged(config: RuntimeConfig, job_id: str, *, started_at: Any, now: float) -> bool | None:
     """Whether the ledger holds a charge for this job, or None when it cannot say.
 
@@ -791,6 +1445,24 @@ class RefusedError(Exception):
         self.answer = answer
 
 
+class PromptPermit(Protocol):
+    """Reservation authority for this invocation, independent of historical charges."""
+
+    @property
+    def launch(self) -> bool: ...
+
+    @property
+    def fresh_charge(self) -> bool: ...
+
+    @property
+    def reason(self) -> str: ...
+
+
+_INVOKE_REFUSALS = frozenset(
+    {"intent-changed", "permission-changed", "job-deadline", "job-clock-invalid"}
+)
+
+
 class GuardedModel:
     """Reserve at the actual model seam, after eligibility and evidence checks."""
 
@@ -810,7 +1482,15 @@ class GuardedModel:
         unasked: bool = False,
         reserve_with: Callable[..., Status] | None = None,
         admit_prompt: Callable[[str], str | None] | None = None,
+        reserve_prompt: Callable[[str, int], PromptPermit] | None = None,
+        before_invoke: Callable[[], str | None] | None = None,
     ) -> None:
+        if before_invoke is not None and reserve_prompt is None:
+            raise ValueError("Before-invoke checks require prompt-aware reservation")
+        if reserve_prompt is not None and (
+            reserve_with is not None or before_reserve is not None or unasked
+        ):
+            raise ValueError("Prompt reservation requires its own requested-call reservation path")
         if reserve_with is not None and before_reserve is not None:
             # `before_reserve` returns the job id the charge is recorded under, and a ledger of
             # its own records none, so the pair would drop the marker's promise silently.
@@ -822,6 +1502,10 @@ class GuardedModel:
         # A ledger of its own for a caller that must not spend Analyze's budget: the Live monitor
         # charges `reserve_monitor` here, at the same seam and in the same order.
         self.reserve_with = reserve_with
+        self.reserve_prompt = reserve_prompt
+        # A current-context/deadline refusal after a fresh charge, not authority.
+        # Exceptions preserve the charge and never enter the model adapter.
+        self.before_invoke = before_invoke
         self.admit_prompt = admit_prompt
         self.reserved = False
         self.analyze_diagnostic: dict[str, Any] | None = None
@@ -880,7 +1564,7 @@ class GuardedModel:
         return None
 
     def _admission(self, prompt: str) -> str | None:
-        if self.admit_prompt is None:
+        if self.admit_prompt is None and self.reserve_prompt is None:
             return None
         # Pause/consent precede capacity work. The reservation transaction
         # authoritatively checks them again before committing a charge.
@@ -893,7 +1577,7 @@ class GuardedModel:
         )
         if answer["reason"]:
             raise RefusedError(answer)
-        refusal = self.admit_prompt(prompt)
+        refusal = self.admit_prompt(prompt) if self.admit_prompt is not None else None
         if refusal is not None:
             return refusal
         # Configuration reads can take time. Recheck the live gates before
@@ -904,7 +1588,7 @@ class GuardedModel:
         self.reserved = False
         self._model_invoked = False
         self.analyze_diagnostic = None
-        if self.admit_prompt is None or self.unasked:
+        if (self.admit_prompt is None and self.reserve_prompt is None) or self.unasked:
             return self._call(prompt, output_cap_bytes=output_cap_bytes)
         reset = getattr(self.admit_prompt, "reset", None)
         if callable(reset):
@@ -933,6 +1617,27 @@ class GuardedModel:
                 "model_invoked": self._model_invoked,
             }
 
+    def _reserve_call(self, prompt: str, output_cap_bytes: int) -> str | None:
+        if self.reserve_prompt is not None:
+            permit = self.reserve_prompt(prompt, output_cap_bytes)
+            # A committed charge survives a failed marker write. Replay's
+            # historical charge cannot count as this invocation's reservation.
+            self.reserved = permit.fresh_charge is True
+            answer = _answer(
+                reason=permit.reason
+                or ("" if permit.launch is True and self.reserved else "reservation-refused")
+            )
+        else:
+            answer = self._reserve()
+            self.reserved = not answer["reason"]
+        if self.reserved and self.on_reserved is not None:
+            self.on_reserved()
+        if answer["reason"] == "stopping":
+            return "closed"
+        if answer["reason"]:
+            raise RefusedError(answer)
+        return None
+
     def _call(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         if refusal := self._preflight():
             return "", refusal
@@ -945,14 +1650,10 @@ class GuardedModel:
             return self.model(prompt, output_cap_bytes=output_cap_bytes)
         if refusal := self._admission(prompt):
             return "", refusal
-        answer = self._reserve()
-        if answer["reason"] == "stopping":
-            return "", "closed"
-        if answer["reason"]:
-            raise RefusedError(answer)
-        self.reserved = True
-        if self.on_reserved is not None:
-            self.on_reserved()
+        if refusal := self._reserve_call(prompt, output_cap_bytes):
+            return "", refusal
+        if self.reserve_prompt is not None and (refusal := self._before_invoke()):
+            return "", refusal
         self._model_invoked = True
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
         # A last-moment managed-policy change can stop the child after the
@@ -960,6 +1661,21 @@ class GuardedModel:
         if outcome == "context-config":
             outcome = "context-config-after-reserve"
         return raw, outcome
+
+    def _before_invoke(self) -> str | None:
+        """Recheck after reservation callbacks; this is adapter entry, not child spawn."""
+        if refusal := self._preflight():
+            return refusal
+        if self.before_invoke is not None:
+            reason = self.before_invoke()
+            if reason is not None:
+                if not isinstance(reason, str) or reason not in _INVOKE_REFUSALS:
+                    raise ValueError("Invalid before-invoke refusal")
+                raise RefusedError(_answer(reason=reason))
+            # Context checks can block. A Cancel or destination change during
+            # them still prevents entry, without undoing the committed charge.
+            return self._preflight()
+        return None
 
 
 def note(
@@ -986,11 +1702,10 @@ def note(
         at=now,
     )
     try:
-        answer, recorded = (
-            _summary_transaction(config, now, notice)
-            if kind == "summary"
-            else _transaction(config, now, notice, provider)
-        )
+        if kind == "summary":
+            answer, recorded = _summary_transaction(config, now, notice)
+        else:
+            answer, recorded, _ = _transaction(config, now, notice, provider)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
         raise RefusedError(_answer(reason="store-unavailable")) from None
     if answer["reason"] == "store-unavailable":

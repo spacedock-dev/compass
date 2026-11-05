@@ -148,7 +148,7 @@
       "method": "GET",
       "name": "annotations-populated",
       "route": "/api/annotations",
-      "sha256": "fe53af73580dfb4560b25d8d8c017726e9304a5bf265d96ea40983596f5c18a3",
+      "sha256": "b19a81b0b14dd680eec72132f34c891c41770d283b5d2322289518582e7c9613",
       "status": 200
     },
     {

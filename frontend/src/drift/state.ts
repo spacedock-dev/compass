@@ -77,6 +77,13 @@ export interface JobSeen {
   id: string;
   drawn: boolean;
   reading: string;
+  long?: {
+    readonly startedAt: number | null;
+    readonly diagnostic: string;
+    readonly withheld: string;
+    stage: string | null;
+    blocked: boolean;
+  };
 }
 
 /* What a reply told the page that the next board will confirm or replace: the job a press started, the route

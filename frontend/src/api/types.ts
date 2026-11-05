@@ -252,6 +252,10 @@ export interface UnaskedGrantRequest extends SessionIdentity {
 }
 
 export interface ReadingRequest {
+  readonly mode?: 'long';
+  readonly plan_binding?: string;
+  readonly destination?: string;
+  readonly words_destination?: string;
   readonly harness: string;
   readonly sid: string;
   readonly provider: string;

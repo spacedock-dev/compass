@@ -158,10 +158,10 @@ the captured pages already are those boundaries.
 ## How big it may be
 
 The fixture ships inside `react.html`, and every install and every page load carries it, so its size is
-bounded before a sample is built, not measured after. The bounds were set on 2026-10-19, before this
+bounded before a sample is built, not measured after. The initial bounds were set on 2026-10-19, before this
 sample was captured:
 
-- The page may be at most 1,884,747 bytes, the page as built that day, plus 400 KiB: 2,294,347 bytes.
+- The page was limited to 1,884,747 bytes, the page as built that day, plus 400 KiB: 2,294,347 bytes.
 - The fixture may be at most 250,000 bytes of compact JSON. The page carries its script
   base64-encoded, so a fixture byte costs about four thirds of a page byte, and the step from the first
   sample's 75,130 bytes to the bound is at most about 233 KB of page, which leaves the rest of the
@@ -170,6 +170,23 @@ sample was captured:
 This sample's fixture is 139,981 bytes of compact JSON. `frontend/build/page-size.test.mjs` checks
 both, in `pnpm test`, which CI runs. Raising either is a decision to record here, with the measurement
 that justifies it.
+
+On 2026-11-05, the explicit long-analysis preview, progress, coverage and recovery controls raised
+the page built from source checkpoint `a027886b` (2,260,171 bytes) to the one built from
+`d090c5ff` (2,307,015 bytes): 46,844 bytes
+(2.07%). The page allowance is therefore increased by 32 KiB, to the same 1,884,747-byte baseline
+plus 432 KiB: 2,327,115 bytes, leaving 20,100 bytes above the measured build. The fixture
+allowance remains 250,000 bytes.
+
+The comparison used the same owned native session (32 entries, 3,207,429 source bytes), synthetic
+saved intent and warm backend caches, with ten alternating runs per version after two warmups.
+Both versions ran in the same headless Chromium 153.0.8010.12 process on a ten-core macOS machine,
+at 1440 × 1050; the recorded load averages were 4.98, 7.32 and 5.69. Median navigation through the
+common Analyze control becoming visible and fonts becoming ready was 250.550 ms before and
+209.750 ms after. Median opening of Drift settings through visibility and two animation frames
+was 274.949 ms before and 276.888 ms after. There were no model calls, JavaScript errors or
+external requests. These local measurements support this bounded allowance; they are not a
+service-level target or a claim that the page is generally faster.
 
 ## View only
 

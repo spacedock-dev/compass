@@ -344,6 +344,13 @@ describe('no adapter ever retries an action', () => {
         c.postReading({ ...identity, provider: 'claude', press: true, observer_model: 1 }),
       postReadingCancel: (c) =>
         c.postReadingCancel({ ...identity, job: 'j', press: true, observer_model: 1 }),
+      postReadingLongDiscard: (c) =>
+        c.postReadingLongDiscard({
+          ...identity,
+          job: '0'.repeat(32),
+          press: true,
+          observer_model: 1,
+        }),
       postGoalFind: (c) =>
         c.postGoalFind({ ...identity, provider: 'claude', press: true, observer_model: 1 }),
       postCorrection: (c) => c.postCorrection(identity),

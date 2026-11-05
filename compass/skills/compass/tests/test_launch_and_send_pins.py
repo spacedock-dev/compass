@@ -54,6 +54,7 @@ from compass_runtime import supervise as runtime_supervise
 from compass_runtime.state import build_runtime_state
 from compass_runtime.web import page as frontend_page
 
+from . import test_reading_source_ci as source_ci_tests
 from .support import SERVER_PATH, make_config, make_server, serve_until_closed
 from .test_claude_checks import SHORT
 from .test_copied_corrections import COPIED, NOW, _App
@@ -683,6 +684,34 @@ def acting_calls(source: str) -> set[str]:
     return found
 
 
+class TheNativeLongGitIdentityTest(unittest.TestCase):
+    def test_native_ci_probe_uses_only_fixed_git_identity_argv(self) -> None:
+        fixture = source_ci_tests.FrozenCiBindingTest()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        collected, calls = fixture.current_inputs()
+        self.assertEqual("", collected.reason)
+        prefix = (
+            "/owned/git",
+            "-c",
+            "core.fsmonitor=",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "--no-optional-locks",
+        )
+        self.assertEqual(
+            [
+                (*prefix, "rev-parse", "--verify", "--quiet", "HEAD"),
+                (*prefix, "config", "--get", "remote.origin.url"),
+            ],
+            calls,
+        )
+        # The actual collector fixture also checks the native cwd and the
+        # unchanged configured timeout on every call, with no source reread.
+        assert collected.snapshot is not None
+        self.assertEqual(collected.usage, collected.snapshot.account.usage)
+
+
 class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
     """The table in SECURITY.md cites tests by name, so a rename cannot leave it citing nothing.
 
@@ -725,6 +754,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
         "ci_read": "A press for a reading that reads a pull request's CI checks",
         "git_status": "The git probe",
         "project_scripts": "The git probe",
+        "reading_source_collect": "The native long-source Git identity probes",
         "observation": "The focus command",
         "focus": "The focus command",
         "notifications": "A native notification",
@@ -830,6 +860,7 @@ class ThePostRoutesAreTheListedOnesTest(unittest.TestCase):
             "/api/notify",
             "/api/reading",
             "/api/reading/cancel",
+            "/api/reading-long-discard",
             "/api/settings",
             "/api/shutdown",
             "/api/summary",

@@ -1,3 +1,6 @@
+import { LongHistoryControl } from './LongHistoryControl';
+import { LatestLongOutcome } from './LatestLongOutcome';
+import { LongPlanControl } from './LongPlanControl';
 import type { ReactNode } from 'react';
 import { UnaskedPermission } from './UnaskedPermission';
 import { DirectionQuestion } from '../intent/DirectionQuestion';
@@ -25,6 +28,7 @@ import {
   REFUSED_ID,
   JobBox,
   ReadingNotice,
+  ReadingOutcome,
   ReadingsOffAsk,
   WhatIsSent,
   type SteerSlot,
@@ -186,7 +190,10 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     <div className="contents" data-next-drift-body>
       <UnaskedPermission key={key} payload={payload} session={session} />
       {readable && job ? null : answer}
+      <LatestLongOutcome />
       <ReadingAllowance route={model.route} />
+      <LongPlanControl key={`long:${model.key}`} board={board} />
+      <LongHistoryControl key={`long-history:${model.key}`} />
       {area}
       <ReadingSection />
     </div>
@@ -248,21 +255,24 @@ function QuestionWithAnalysis({
       }
       before={job ? <JobBox job={job} running={running} again={kept} /> : null}
       after={
-        off ? (
-          <ReadingsOffAsk refusedId={!edited} />
-        ) : (
-          <>
-            <ReadingNotice />
-            {board.changed ? (
-              <p className="next-cockpit-reading-why next-cockpit-reading-change">
-                {board.changed}
-              </p>
-            ) : null}
-            {analyze && disclosure && !kept ? <WhatIsSent /> : null}
-            {annotation ? <ReadingCount count={count} /> : null}
-            {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
-          </>
-        )
+        <>
+          <ReadingOutcome longOnly />
+          {off ? (
+            <ReadingsOffAsk refusedId={!edited} />
+          ) : (
+            <>
+              <ReadingNotice />
+              {board.changed ? (
+                <p className="next-cockpit-reading-why next-cockpit-reading-change">
+                  {board.changed}
+                </p>
+              ) : null}
+              {analyze && disclosure && !kept ? <WhatIsSent /> : null}
+              {annotation ? <ReadingCount count={count} /> : null}
+              {!edited && reason ? <RefusedLine board={board} request={request} /> : null}
+            </>
+          )}
+        </>
       }
     />
   );

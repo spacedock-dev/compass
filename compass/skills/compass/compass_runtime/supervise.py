@@ -241,6 +241,9 @@ class Group:
         # reaped, when its id could name somebody else's group.
         self._lock = threading.Lock()
         self._reaped = False
+        # A successful runner cleanup, distinct from the PID-safety marker
+        # above, which can also be set on an unconfirmed group shutdown.
+        self._cleanup_complete = False
         # Set by a Cancel, from any thread; the call's own wait reads it.
         self._cancelled = threading.Event()
         # The output file and its bound, and whether the bound was passed.
@@ -270,6 +273,14 @@ class Group:
                 return True
             self._reaped = True
             return False
+
+    def cleanup_complete(self) -> bool:
+        """Read an owned completion fact without polling, reaping or signalling.
+
+        False includes unknown/failed cleanup. Only run() sets this after its
+        normal cleanup path returns; it says nothing about the model's output.
+        """
+        return self._cleanup_complete is True
 
     def _await_exit(self, timeout: float) -> bool:
         """For an exit `_state` cannot watch: poll, reaping and marking in one step.
@@ -378,6 +389,7 @@ class Group:
                 self._process.wait(timeout=max(0.0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired as exc:
                 raise UnstoppedError(self._process.pid) from exc
+            self._cleanup_complete = True
 
     def _wait_group(self, deadline: float) -> None:
         while True:
@@ -417,6 +429,7 @@ class Group:
                     raise UnstoppedError(self.pid) from exc
                 if active == 0:
                     self._reaped = True
+                    self._cleanup_complete = True
                     return
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -530,6 +543,7 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     timeout: float | None = None,
     check: bool = False,
     on_spawn: Callable[[Group], None] | None = None,
+    before_spawn: Callable[[], None] | None = None,
     output_limit: tuple[str, int] | None = None,
     output_limits: tuple[tuple[str, int], ...] = (),
 ) -> subprocess.CompletedProcess[Any]:
@@ -541,12 +555,17 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     would not exit, and `OversizedError` when the file `output_limit` names
     passed its size in bytes. Additional files in `output_limits` are watched
     independently, including stderr; they never replace `output_limit`.
+    `before_spawn` runs after blocking launch admission, immediately before spawn.
+    It must be cheap and nonblocking: it holds the global spawn lock and must
+    not acquire other locks or read external state. Raising prevents launch.
     """
     if subprocess.PIPE in (stdout, stderr):
         raise ValueError("supervise.run writes output to a file or nowhere, never a pipe")
     with _LOCK:
         if _SHUTDOWN.is_set():
             raise ClosedError("Compass is shutting down")
+        if before_spawn is not None:
+            before_spawn()
         group = _spawn(
             command,
             stdin=subprocess.PIPE if input is not None else None,
@@ -576,6 +595,7 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
         with _LOCK:
             _LIVE.discard(group)
         group.close()
+    group._cleanup_complete = True  # noqa: SLF001 - supervisor-owned post-cleanup fact
     if group._oversized:  # noqa: SLF001
         raise OversizedError(group.pid)
     if check and returncode:

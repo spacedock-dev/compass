@@ -9608,6 +9608,11 @@ rose from 3 to 451, and the reading drew None or low.
 
 ### Amended 2026-11-04: larger prompts need a route allowance
 
+The separate explicit [long-analysis mode](design-long-analysis.md) divides admitted native
+evidence across bounded calls and reconciles against originals. That record owns its planning,
+accounting and restart decisions. The intent, evidence and qualification rulings here still
+apply; neither a larger single prompt nor multiple calls makes model output proof.
+
 The stored prompt preference now ranges from 16 KiB to 2 MiB, with the default still 512 KiB.
 It limits one assembled Analyze prompt, not the outline or Summary's source coverage. Keeping
 the preference separate from admission lets a reader retain it across route changes: a small

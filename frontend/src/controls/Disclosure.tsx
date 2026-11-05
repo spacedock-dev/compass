@@ -50,6 +50,8 @@ export interface DisclosureProps {
    * written yet, and again each time this turns from false to true. A reader's own close holds while it stays
    * true, because the opening is an edge and not a state. Accordion only. */
   readonly openWhen?: boolean;
+  /** Accordion only: an explicit reader opening, never restoration, fragments or programmatic opening. */
+  readonly onOpenPress?: () => void;
   readonly children: ReactNode;
 }
 
@@ -73,6 +75,7 @@ function AccordionDisclosure({
   headerProps,
   openByDefault = false,
   openWhen = false,
+  onOpenPress,
   children,
 }: DisclosureProps) {
   const controls = useControls();
@@ -102,7 +105,10 @@ function AccordionDisclosure({
       multiple
       value={open ? [disclosureKey] : []}
       onValueChange={(value, detail) => {
-        if (detail.reason === 'trigger-press') controls.noteToggle();
+        if (detail.reason === 'trigger-press') {
+          controls.noteToggle();
+          if (!open && value.includes(disclosureKey)) onOpenPress?.();
+        }
         controls.disclosures.set(disclosureKey, value.includes(disclosureKey));
       }}
     >

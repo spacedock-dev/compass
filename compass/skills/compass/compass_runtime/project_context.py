@@ -524,7 +524,9 @@ def _instruction_event(
         return None
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
-    message = observer.parse_reader_record(record)
+    message = (
+        observer.parse_reader_record(record) if observer.reader_record_candidate(record) else None
+    )
     if message is None or message.get("role") != "user":
         return None
     at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
@@ -822,6 +824,22 @@ def _message_text_chars(record: Mapping[str, Any]) -> int:
         for block in content
         if isinstance(block, dict) and isinstance(block.get("text"), str)
     )
+
+
+def _ordinary_message_over_limit(record: dict[str, Any]) -> bool:
+    """Raw ordinary-message admission, before any canonical text redaction.
+
+    A resource candidate is a parent-file shape the canonical reader may redact.
+    Source identity refusal still belongs to the later exact word join; skipping
+    a foreign ID here would leave its canonical redaction unbounded.
+    """
+    reader = observer.reader_record_candidate(record)
+    agent = (
+        record.get("type") == "assistant"
+        and records.message_dict(record).get("model") != claude_data.SYNTHETIC_MODEL
+        and observer.message_record_role(record) == "assistant"
+    )
+    return (reader or agent) and _message_text_chars(record) > PRESS_TEXT_MAX_CHARS
 
 
 class _MessageRead:
@@ -5810,13 +5828,30 @@ class _CiBinding:
         self._shared = remotes
         self.goal_texts = tuple(text for text in goal_texts if text)
         self._remotes: dict[str, tuple[str, str]] = {}
+        self._frozen_remotes: dict[str, tuple[str, str]] | None = None
         # `ci_read.scan_records` reads Claude Code's `pr-link` rows and `gitOperation` results. A
         # Codex rollout writes neither, so a Codex poll binds through the goal's own link alone.
         self._records: tuple[tuple[tuple[str, int], ...], tuple[str, ...]] | None = (
             None if claude_records else ((), ())
         )
 
+    @classmethod
+    def frozen(
+        cls,
+        config: RuntimeConfig,
+        goal_texts: tuple[str, ...],
+        recorded: tuple[tuple[tuple[str, int], ...], tuple[str, ...]],
+        remotes: Mapping[str, tuple[str, str]],
+    ) -> _CiBinding:
+        """An independently owned binding with no lazy source or probe fallback."""
+        binding = cls(config, "", goal_texts, claude_records=False)
+        binding._records = recorded
+        binding._frozen_remotes = dict(remotes)
+        return binding
+
     def _remote(self, cwd: str) -> tuple[str, str]:
+        if self._frozen_remotes is not None:
+            return self._frozen_remotes.get(cwd, ("", ""))
         if cwd not in self._remotes:
             self._remotes[cwd] = ci_read.folder_remote(self._config, cwd, self._shared)
         return self._remotes[cwd]
@@ -5893,6 +5928,15 @@ CODEX_UNREAD_TOOL = "codex unread call"
 _CODEX_EDGES = _Edges(
     "codex", "Codex", "command", frozenset({CODEX_PATCH_TOOL}), False, False, False
 )
+
+
+class ToolReportLimitError(ValueError):
+    """A complete canonical listing cannot fit its caller's finite allowance."""
+
+    def __init__(self, eligible: int, limit: int) -> None:
+        super().__init__("complete canonical projection exceeds its allowance")
+        self.eligible = eligible
+        self.limit = limit
 
 
 class _Listing(NamedTuple):
@@ -6836,18 +6880,33 @@ class _ToolReportTally:
         return max(times) if times else None
 
     def entries(
-        self, sid: str, index: Any = None, cap: int = TOOL_REPORT_MAX_ENTRIES
+        self,
+        sid: str,
+        index: Any = None,
+        cap: int = TOOL_REPORT_MAX_ENTRIES,
+        *,
+        require_complete: bool = False,
     ) -> list[dict[str, Any]]:
         # Without a message index no position is published, and the live replay lists at every
         # step of its window, so the positions are not counted for it.
-        listing = self.listing(cap, positions=index is not None)
+        listing = self.listing(cap, positions=index is not None, require_complete=require_complete)
         return _assemble_entries(self.edges.harness, sid, index, listing)
 
-    def listing(self, cap: int = TOOL_REPORT_MAX_ENTRIES, *, positions: bool = True) -> _Listing:
+    def listing(
+        self,
+        cap: int = TOOL_REPORT_MAX_ENTRIES,
+        *,
+        positions: bool = True,
+        require_complete: bool = False,
+    ) -> _Listing:
         """The listed rows and, unless `positions` is off, the fixed positions, once per tally: it
-        adds to `scan`."""
+        adds to `scan`. Complete mode refuses before ranked display truncation."""
+        if require_complete and (type(cap) is not int or cap < 0):
+            raise ValueError("invalid complete listing allowance")
         histories = self._histories()
         candidates = self._ranked(histories)
+        if require_complete and len(candidates) > cap:
+            raise ToolReportLimitError(len(candidates), cap)
         last_pass_at = self._last_pass_at()
         for entry in candidates:
             if entry["subject"] == "check":
@@ -8040,11 +8099,35 @@ def _declared_scripts(
         loaded = project_scripts.load(began_in, start) if start is not None else None
         if loaded is not None and not loaded.files:
             loaded = None
-    listed = frozenset(
-        words
-        for entry in reader_checks.for_project(config, began_in, listed_entry_refusal)
-        if (words := _listed_words(entry))
+    return _declared_from_inputs(
+        began_in,
+        parent,
+        children,
+        loaded,
+        reader_checks.for_project(config, began_in, listed_entry_refusal),
+        prior_writes=prior_writes,
+        calls=calls,
     )
+
+
+def _declared_from_inputs(
+    began_in: str,
+    parent: list[dict[str, Any]],
+    children: Sequence[list[dict[str, Any]]],
+    loaded: project_scripts.Declarations | None,
+    entries: Sequence[str],
+    *,
+    prior_writes: frozenset[str] = frozenset(),
+    calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
+) -> project_scripts.Declarations | None:
+    """Apply whole-corpus withdrawals to acquired metadata, without source/git reads.
+
+    Checkout-root resolution is bounded filesystem metadata; acquisition of the
+    declaration bodies and reader listing belongs to the caller.
+    """
+    if loaded is not None and not loaded.files:
+        loaded = None
+    listed = frozenset(words for entry in entries if (words := _listed_words(entry)))
     scripts = frozenset(os.path.basename(w[0]) for w in listed if "/" in w[0])
     written = (
         _written_declaring_files(parent, children, also=scripts, listed=listed, calls=calls)
@@ -8302,6 +8385,10 @@ def _built_tally(
         goal_texts=goal_texts,
         remotes=remotes,
     )
+    return _tally_from_scan(scan)
+
+
+def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
     return _tally_of(
         scan.parent,
         scan.children,
@@ -9214,6 +9301,8 @@ def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> fl
     """Parent-only human boundary, excluding tool results and injected messages."""
     times = []
     for record in parent:
+        if observer.message_record_role(record) != "user":
+            continue
         message = observer.parse_message_record(record)
         if message is not None and message.get("role") == "user":
             text = str(message.get("text") or "")
@@ -9232,6 +9321,8 @@ def _delegated_last_turn_floor(parent: list[dict[str, Any]]) -> float:
     )
     directions = []
     for record in parent:
+        if observer.message_record_role(record) != "user":
+            continue
         message = observer.parse_message_record(record)
         if message is not None and message.get("role") == "user":
             text = str(message.get("text") or "")
@@ -9823,6 +9914,23 @@ def transcript_window_words(
     return [fact for key, (_, fact) in found.items() if key not in ambiguous]
 
 
+def _ordinary_word_fact(
+    config: RuntimeConfig, record: dict[str, Any], harness: str, sid: str
+) -> dict[str, Any] | None:
+    """The existing ordinary lookup's canonical identity, after raw-text admission."""
+    event = _instruction_event(config, record, harness, sid)
+    kind, fact_type = "steer", "user_message"
+    if event is None:
+        event = _agent_message_event(config, record, harness, sid)
+        kind, fact_type = "agent_say", "agent_message"
+    return _semantic_fact_from_event(event, kind, fact_type, "") if event is not None else None
+
+
+def _ordinary_word_signature(record: dict[str, Any]) -> str:
+    """Compare complete raw records, never their possibly equal masked text."""
+    return hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+
+
 def transcript_message_words(  # noqa: C901, PLR0912 - source identity and retention guards
     config: RuntimeConfig,
     path: str,
@@ -9872,18 +9980,13 @@ def transcript_message_words(  # noqa: C901, PLR0912 - source identity and reten
                         ambiguous.add(key)
                         found.pop(key, None)
                 continue
-            event = _instruction_event(config, record, harness, sid)
-            kind, fact_type = "steer", "user_message"
-            if event is None:
-                event = _agent_message_event(config, record, harness, sid)
-                kind, fact_type = "agent_say", "agent_message"
-            if event is None:
+            fact = _ordinary_word_fact(config, record, harness, sid)
+            if fact is None:
                 continue
-            fact = _semantic_fact_from_event(event, kind, fact_type, "")
             key = (fact["fact_id"], fact["at"])
             if key not in priorities or key in ambiguous:
                 continue
-            signature = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+            signature = _ordinary_word_signature(record)
             if key in signatures:
                 if signatures[key] != signature:
                     ambiguous.add(key)
@@ -9994,116 +10097,106 @@ def _final_source_sid(path: str, harness: str, sid: str) -> str:
     return sid
 
 
-def transcript_newest_final_words(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one bounded scan and its source guards
-    config: RuntimeConfig,
-    path: str,
-    harness: str,
-    sid: str,
+@dataclasses.dataclass
+class _FinalWordRead:
+    """Request-private strict-proof scratch, shared by live and retained readers."""
+
+    rows: dict[tuple[str, Any], Mapping[str, Any]]
+    harness: str
+    sid: str
+    source_sid: str
+    found: dict[tuple[str, Any], tuple[str, str, str | None]] = dataclasses.field(
+        default_factory=dict
+    )
+    signatures: dict[str, bytes] = dataclasses.field(default_factory=dict)
+    conflicted: set[str] = dataclasses.field(default_factory=set)
+    scanned_bytes: int = 0
+    failure: str = ""
+
+
+def _final_word_rows(
     wanted: Sequence[Mapping[str, Any]],
-    *,
-    expected_stamp: tuple[int, int, int, int] | None = None,
-) -> dict[str, Any]:
-    """The newest selected recorded final reply, whole, as private press-only words.
-
-    `wanted` is the selection the model is about to receive, so a record outside it is never
-    restored. A reply qualifies only on its own recorded `end_turn`, and only when it is the
-    unique newest such reply among the selected rows with no newer selected row the source
-    cannot prove non-final. The expected stamp is the source version the press read its facts
-    from; the file must match it before the scan and still after. The scan is memory-only,
-    newest first, and only a complete file within `FINAL_WORDS_SCAN_MAX_BYTES` qualifies;
-    nothing is cached or kept. A tail cannot prove an earlier duplicate is absent.
-
-    The result names no path, session or source fingerprint: only an outcome token, the
-    row's own identity and, on success, the words. Why whole words and why only this one:
-    docs/design-reading-a-session.md#amended-2026-10-05-owner-the-newest-recorded-final-reply-is-read-whole
-    """
-    rows = {
+) -> dict[tuple[str, Any], Mapping[str, Any]]:
+    return {
         (str(entry.get("id")), entry.get("at")): entry
         for entry in wanted
         if entry.get("type") == "agent_message" and entry.get("author") == "agent"
     }
-    if harness not in AGENT_MESSAGE_HARNESSES or not rows:
-        return {"outcome": "none"}
-    before = transcript_stamp(path)
-    if before is None or expected_stamp is None or before != expected_stamp:
-        return {"outcome": "source-moved"}
-    if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
-        return {"outcome": "scan-limit"}
-    source_sid = _final_source_sid(path, harness, sid)
-    # Words are None for a candidate too long for any prompt: still a final, never a copy.
-    found: dict[tuple[str, Any], tuple[str, str, str | None]] = {}
-    signatures: dict[str, bytes] = {}
-    conflicted: set[str] = set()
-    scanned_bytes = 0
-    try:
-        for raw in runtime_io.reverse_lines(
-            config, path, end_pos=before[2], max_bytes=FINAL_WORDS_SCAN_MAX_BYTES
+
+
+def _read_final_word_proof(  # noqa: C901, PLR0912 - preserve the strict raw-record admission guards
+    config: RuntimeConfig, proof: _FinalWordRead, lines: Iterable[bytes]
+) -> _FinalWordRead:
+    rows, found = proof.rows, proof.found
+    signatures, conflicted = proof.signatures, proof.conflicted
+    harness, sid, source_sid = proof.harness, proof.sid, proof.source_sid
+    for raw in lines:
+        # Every complete line contributes its bytes plus one separator; the final
+        # unterminated (or empty trailing) line contributes the extra one. The walker
+        # can stop silently on a short read or I/O error, so exhaustiveness is checked.
+        proof.scanned_bytes += len(raw) + 1
+        # JSON escapes can encode the assistant type or its key. Parse those
+        # candidates within the same record bound; literal-only tool artifacts
+        # still skip decoding. Representation cannot hide a parent or duplicate.
+        escaped = b"\\u" in raw
+        if b'"assistant"' not in raw and not escaped:
+            continue
+        if len(raw) > FINAL_WORDS_RECORD_MAX_BYTES:
+            # An escaped oversized shape may be an assistant record, but proving
+            # that would exceed the bound. Refuse it without decoding any words.
+            if escaped or _ASSISTANT_TYPE_RE.search(raw):
+                return dataclasses.replace(proof, failure="oversized")
+            continue
+        record = _json_dict(raw)
+        if record is None or record.get("type") != "assistant":
+            continue
+        # Normalization cannot merge distinct native parents sharing a display key.
+        # A complete scan must agree with the file identity, including unselected replies.
+        if (
+            source_sid != sid
+            and not record.get("isSidechain")
+            and not record.get("isMeta")
+            and not record.get("agentId")
+            and record.get("sessionId") != source_sid
         ):
-            # Every complete line contributes its bytes plus one separator; the final
-            # unterminated (or empty trailing) line contributes the extra one. The walker
-            # can stop silently on a short read or I/O error, so exhaustiveness is checked.
-            scanned_bytes += len(raw) + 1
-            # JSON escapes can encode the assistant type or its key. Parse those
-            # candidates within the same record bound; literal-only tool artifacts
-            # still skip decoding. Representation cannot hide a parent or duplicate.
-            escaped = b"\\u" in raw
-            if b'"assistant"' not in raw and not escaped:
+            return dataclasses.replace(proof, failure="unproven")
+        uuid = record.get("uuid")
+        signature = _final_signature(record)
+        if isinstance(uuid, str) and uuid:
+            previous = signatures.get(uuid)
+            if previous is not None:
+                if previous != signature:
+                    conflicted.add(uuid)
+                # Compare every duplicate for source conflicts, but recover its
+                # identity and words only once during this memory-only scan.
                 continue
-            if len(raw) > FINAL_WORDS_RECORD_MAX_BYTES:
-                # An escaped oversized shape may be an assistant record, but proving
-                # that would exceed the bound. Refuse it without decoding any words.
-                if escaped or _ASSISTANT_TYPE_RE.search(raw):
-                    return {"outcome": "oversized"}
-                continue
-            record = _json_dict(raw)
-            if record is None or record.get("type") != "assistant":
-                continue
-            # Normalization cannot merge distinct native parents sharing a display key.
-            # A complete scan must agree with the file identity, including unselected replies.
-            if (
-                source_sid != sid
-                and not record.get("isSidechain")
-                and not record.get("isMeta")
-                and not record.get("agentId")
-                and record.get("sessionId") != source_sid
-            ):
-                return {"outcome": "unproven"}
-            uuid = record.get("uuid")
-            signature = _final_signature(record)
-            if isinstance(uuid, str) and uuid:
-                previous = signatures.get(uuid)
-                if previous is not None:
-                    if previous != signature:
-                        conflicted.add(uuid)
-                    # Compare every duplicate for source conflicts, but recover its
-                    # identity and words only once during this memory-only scan.
-                    continue
-                signatures[uuid] = signature
-                if len(signatures) > FINAL_WORDS_UUIDS_MAX:
-                    return {"outcome": "scan-limit"}
-            # Identity needs only the existing bounded title/time/UUID; full words
-            # are measured separately and rejected before their expensive prose mask.
-            event = _agent_message_event(config, record, harness, sid)
-            if event is None:
-                continue
-            fact = _semantic_fact_from_event(event, _AGENT_SAY, "agent_message", "")
-            key = (str(fact["fact_id"]), fact["at"])
-            if key not in rows:
-                continue
-            status = _final_status(record, source_sid, uuid)
-            if key in found and found[key][0] != status:
-                status = "refused"
-            found[key] = (
-                status,
-                str(uuid or ""),
-                _agent_whole_words(record, len(raw)) if status == "final" else "",
-            )
-    except OSError:
-        return {"outcome": "source-moved"}
-    if transcript_stamp(path) != before:
-        return {"outcome": "source-moved"}
-    if scanned_bytes != before[2] + 1:
-        return {"outcome": "unproven"}
+            signatures[uuid] = signature
+            if len(signatures) > FINAL_WORDS_UUIDS_MAX:
+                return dataclasses.replace(proof, failure="scan-limit")
+        # Identity needs only the existing bounded title/time/UUID; full words
+        # are measured separately and rejected before their expensive prose mask.
+        event = _agent_message_event(config, record, harness, sid)
+        if event is None:
+            continue
+        fact = _semantic_fact_from_event(event, _AGENT_SAY, "agent_message", "")
+        key = (str(fact["fact_id"]), fact["at"])
+        if key not in rows:
+            continue
+        status = _final_status(record, source_sid, uuid)
+        if key in found and found[key][0] != status:
+            status = "refused"
+        found[key] = (
+            status,
+            str(uuid or ""),
+            _agent_whole_words(record, len(raw)) if status == "final" else "",
+        )
+    return proof
+
+
+def _final_word_outcome(  # noqa: PLR0911 - preserve the existing closed strict-proof outcomes
+    proof: _FinalWordRead,
+) -> dict[str, Any]:
+    rows, found, conflicted = proof.rows, proof.found, proof.conflicted
     finals = {
         key: found[key]
         for key in rows
@@ -10135,6 +10228,57 @@ def transcript_newest_final_words(  # noqa: C901, PLR0911, PLR0912, PLR0915 - on
     if not words:
         return {"outcome": "not-final"}
     return {"outcome": "whole", "fact_id": fact_id, "at": at, "words": words}
+
+
+def transcript_newest_final_words(  # noqa: PLR0911 - one bounded scan and its source guards
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    wanted: Sequence[Mapping[str, Any]],
+    *,
+    expected_stamp: tuple[int, int, int, int] | None = None,
+) -> dict[str, Any]:
+    """The newest selected recorded final reply, whole, as private press-only words.
+
+    `wanted` is the selection the model is about to receive, so a record outside it is never
+    restored. A reply qualifies only on its own recorded `end_turn`, and only when it is the
+    unique newest such reply among the selected rows with no newer selected row the source
+    cannot prove non-final. The expected stamp is the source version the press read its facts
+    from; the file must match it before the scan and still after. The scan is memory-only,
+    newest first, and only a complete file within `FINAL_WORDS_SCAN_MAX_BYTES` qualifies;
+    nothing is cached or kept. A tail cannot prove an earlier duplicate is absent.
+
+    The result names no path, session or source fingerprint: only an outcome token, the
+    row's own identity and, on success, the words. Why whole words and why only this one:
+    docs/design-reading-a-session.md#amended-2026-10-05-owner-the-newest-recorded-final-reply-is-read-whole
+    """
+    rows = _final_word_rows(wanted)
+    if harness not in AGENT_MESSAGE_HARNESSES or not rows:
+        return {"outcome": "none"}
+    before = transcript_stamp(path)
+    if before is None or expected_stamp is None or before != expected_stamp:
+        return {"outcome": "source-moved"}
+    if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
+        return {"outcome": "scan-limit"}
+    proof = _FinalWordRead(rows, harness, sid, _final_source_sid(path, harness, sid))
+    try:
+        proof = _read_final_word_proof(
+            config,
+            proof,
+            runtime_io.reverse_lines(
+                config, path, end_pos=before[2], max_bytes=FINAL_WORDS_SCAN_MAX_BYTES
+            ),
+        )
+    except OSError:
+        return {"outcome": "source-moved"}
+    if proof.failure:
+        return {"outcome": proof.failure}
+    if transcript_stamp(path) != before:
+        return {"outcome": "source-moved"}
+    if proof.scanned_bytes != before[2] + 1:
+        return {"outcome": "unproven"}
+    return _final_word_outcome(proof)
 
 
 def transcript_user_facts(

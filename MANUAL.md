@@ -91,6 +91,14 @@ Each tells you once what is sent and where, again if the destination or content 
 is disabled while paused, and keeps its saved answer through pause and resume. Unattended checks remain a separate opt-in. A model ID selects a
 reader, not proof of accuracy.
 
+Long analysis is a separate page action for native Claude Code sessions, with no new startup
+flag. Ordinary Analyze makes one call; an explicit long press allows at most 16 evidence calls
+and one final reconciliation call, each sharing the same Analyze rolling allowance. The saved
+prompt ceiling still applies within the route's allowance. Individual calls keep the 180-second
+timeout; the whole long job is bounded at 30 minutes. Pause, Cancel and `--no-observer-model`
+still stop calls. See [the workflow](HOW_TO_USE.md#analyze-a-session) and
+[the long-analysis contract](SECURITY.md#long-analysis) for source, preparation and storage limits.
+
 | Option | Behavior and default |
 |---|---|
 | `--observer-model` | Accepted and does nothing in this release; will be removed in a later release. Goal summaries need no flag and run on Summarize this session in Console. |
@@ -209,7 +217,8 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `ci-read-off` | One-line marker the page's pull request CI read switch leaves while it is off. It is removed when the switch goes back on. |
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
-| `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. |
+| `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. Long analysis adds word-free job and per-pass bindings and reservation receipts; these do not authorize resume. |
+| `reading-long-jobs/` | Word-free long-analysis owner, plan, pass and accounting markers under the state directory. Recovery preserves uncertain accounting and never resumes model calls. |
 | `reach_url`, `quiet_hours` | Optional plain-text defaults for reach and quiet hours. |
 
 See [local-store security](SECURITY.md#scope) for retention, permissions and other persistent data.

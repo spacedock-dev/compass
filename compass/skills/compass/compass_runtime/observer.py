@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from . import (
@@ -184,13 +185,34 @@ class ModelCaller(Protocol):
     def __call__(self, recent_text: str, entity_stage: str) -> str | None: ...
 
 
+@dataclass(frozen=True)
+class CheckedRunner:
+    """One explicit final runner check without hiding the supervised output limits."""
+
+    runner: Any
+    before_call: Callable[[], None]
+    before_spawn: Callable[[], None] | None = None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self.before_call()
+        if self.runner is supervise.run and self.before_spawn is not None:
+            kwargs["before_spawn"] = self.before_spawn
+        return self.runner(*args, **kwargs)
+
+
+def _supervised_runner(runner: Any) -> bool:
+    return runner is supervise.run or (
+        type(runner) is CheckedRunner and runner.runner is supervise.run
+    )
+
+
 def _spawn_hook(
     on_spawn: Callable[[supervise.Group], None] | None, runner: Any, output_path: str
 ) -> dict[str, Any]:
     # Only what the runner takes, so a runner injected with `subprocess.run`'s
     # signature, as the argv tests do, is still called with keywords it accepts.
     options: dict[str, Any] = {"on_spawn": on_spawn} if on_spawn is not None else {}
-    if runner is supervise.run:
+    if _supervised_runner(runner):
         options["output_limit"] = (output_path, OUTPUT_FILE_LIMIT_BYTES)
     return options
 
@@ -568,7 +590,7 @@ class PreparedClaude:
         exception_kind: str | None = None
         try:
             options = _spawn_hook(self.on_spawn, self.runner, self.output_path)
-            if self.runner is supervise.run and self.error_path:
+            if _supervised_runner(self.runner) and self.error_path:
                 options["output_limits"] = ((self.error_path, OUTPUT_FILE_LIMIT_BYTES),)
             result = self.runner(
                 command,
@@ -1089,28 +1111,40 @@ def _message_from(
     return {"role": "user", "text": body}
 
 
-def _claude_message(
-    record: dict[str, Any], record_type: str, cap: int, *, paste_tags: bool = False
-) -> dict[str, str] | None:
-    """One (role, text) pair from a Claude ``user``/``assistant`` record, or None.
+def _message_record_source(record: Any) -> tuple[Any, Any, str] | None:
+    """The native role/content/harness before text extraction or redaction.
 
-    A subagent's transcript is interleaved into its parent's file, and a
-    subagent's prompt is the parent agent's dispatch rather than the operator's.
-    Measured with this parser over the local Claude corpus, the record supplying
-    the goal was ``isSidechain`` on 74 of 394 sessions. Neither this function's
-    predecessor nor ``records._turn_signal`` tested the flag; ``isMeta``, which
-    both refuse, is the harness's own bookkeeping and goes with it.
+    Keep structural eligibility shared with ordinary admission. Claude sidechain
+    and meta records are the harness's/child's words, not the parent's message.
     """
-    if record.get("isSidechain") or record.get("isMeta"):
+    if not isinstance(record, dict):
         return None
-    message = records.message_dict(record)
-    return _message_from(
-        message.get("role") or record_type,
-        message.get("content"),
-        "claude",
-        cap,
-        paste_tags=paste_tags,
-    )
+    record_type = record.get("type")
+    if record_type == "message":
+        message = records.message_dict(record)
+        return message.get("role"), message.get("content"), _SHARED_MESSAGE_HARNESS
+    if record_type in ("user", "assistant"):
+        if record.get("isSidechain") or record.get("isMeta"):
+            return None
+        message = records.message_dict(record)
+        return message.get("role") or record_type, message.get("content"), "claude"
+    if record_type == "response_item":
+        payload = records.as_dict(record.get("payload"))
+        if payload.get("type") == "message":
+            return payload.get("role"), payload.get("content"), "codex"
+    return None
+
+
+def message_record_role(record: Any) -> str | None:
+    """Potential message authorship without inspecting, joining or masking text."""
+    source = _message_record_source(record)
+    if (
+        source is None
+        or source[0] not in ("user", "assistant")
+        or _blocks_carry_tool_result(source[1])
+    ):
+        return None
+    return str(source[0])
 
 
 def _parse_message_record(
@@ -1134,28 +1168,11 @@ def _parse_message_record(
     Guards every field the way the collectors guard theirs: untyped JSON from
     disk.
     """
-    if not isinstance(record, dict):
+    source = _message_record_source(record)
+    if source is None:
         return None
-    record_type = record.get("type")
-    if record_type == "message":
-        message = records.message_dict(record)
-        return _message_from(
-            message.get("role"),
-            message.get("content"),
-            _SHARED_MESSAGE_HARNESS,
-            cap,
-            paste_tags=paste_tags,
-        )
-    if record_type in ("user", "assistant"):
-        return _claude_message(record, record_type, cap, paste_tags=paste_tags)
-    if record_type == "response_item":
-        payload = records.as_dict(record.get("payload"))
-        if payload.get("type") != "message":
-            return None
-        return _message_from(
-            payload.get("role"), payload.get("content"), "codex", cap, paste_tags=paste_tags
-        )
-    return None
+    role, content, harness = source
+    return _message_from(role, content, harness, cap, paste_tags=paste_tags)
 
 
 def parse_message_record(
@@ -1192,6 +1209,19 @@ def _queued_prompt_text(prompt: Any) -> str:
     )
 
 
+def _queued_attachment(record: dict[str, Any]) -> dict[str, Any] | None:
+    if record.get("type") != "attachment" or record.get("isSidechain"):
+        return None
+    attachment = records.as_dict(record.get("attachment"))
+    if (
+        attachment.get("type") != "queued_command"
+        or attachment.get("commandMode") != "prompt"
+        or records.as_dict(attachment.get("origin")).get("kind") != "human"
+    ):
+        return None
+    return attachment
+
+
 def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
     """The reader's message the agent took in mid-turn, from its `queued_command` attachment.
 
@@ -1202,14 +1232,8 @@ def _absorbed_message(record: dict[str, Any], cap: int) -> dict[str, str] | None
     were the second, so the `queue-operation` rows alone would count the harness as the reader.
     `commandMode` must be `prompt` for the same reason: it is the reader's words, not a command.
     """
-    if record.get("type") != "attachment" or record.get("isSidechain"):
-        return None
-    attachment = records.as_dict(record.get("attachment"))
-    if (
-        attachment.get("type") != "queued_command"
-        or attachment.get("commandMode") != "prompt"
-        or records.as_dict(attachment.get("origin")).get("kind") != "human"
-    ):
+    attachment = _queued_attachment(record)
+    if attachment is None:
         return None
     message = _message_from("user", _queued_prompt_text(attachment.get("prompt")), "claude", cap)
     return None if message is None else {**message, "source": MID_TURN_SOURCE}
@@ -1325,6 +1349,15 @@ def _answer_message(record: dict[str, Any], cap: int) -> dict[str, str] | None:
     # The text reaches `_message_from` as a string, so its tool-result guard does not apply.
     message = _message_from("user", "; ".join(lines), "claude", cap)
     return None if message is None else {**message, "source": ANSWER_SOURCE}
+
+
+def reader_record_candidate(record: Any) -> bool:
+    """Whether native structure can carry a reader message, before text work."""
+    return isinstance(record, dict) and (
+        message_record_role(record) == "user"
+        or _queued_attachment(record) is not None
+        or question_result(record) is not None
+    )
 
 
 def parse_reader_record(

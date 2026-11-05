@@ -766,6 +766,11 @@ class Application:
         # the same reason: the assembly point owns which services exist. None
         # means no lane, which is the behaviour that shipped before history did.
         self.history_lane: HistoryLane | None = None
+        # Serving startup supplies the independent owner/process probes. Their absence
+        # permits history reads but never proves that a job may be discarded.
+        self.long_recovery_probes: (
+            tuple[Callable[[int], bool | None], Callable[[int], bool | None]] | None
+        ) = None
         # Attached only on the serving path and only with the switch on, for
         # `history_lane`'s reason and a larger one: `--diagnose` runs a
         # collection and must not start a `codex` subprocess while reporting

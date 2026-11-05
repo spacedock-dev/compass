@@ -1,3 +1,5 @@
+import { olderThanLongAttempt } from './longOutcome';
+import { LONG_LATEST_OLDER } from './sentences';
 import { SampleBeside } from '../sample/SampleMark';
 import { Button } from '../ui/button';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
@@ -39,6 +41,8 @@ import {
 import { fmtDur } from './route';
 import { clock } from '../observed';
 import {
+  LONG_INTERRUPTED,
+  LONG_INTERRUPTED_OLDER,
   CLAIM_LEAD,
   CLAIMS,
   clearedLine,
@@ -781,6 +785,14 @@ export function ReadingResult({
       ? driftAnswer(shape, entries, source.scan)
       : null;
   const coverage = coverageLimits(shape);
+  const interruptedAt = nextNumber(annotation['reading_withheld_at']);
+  const priorReadAt = nextNumber(raw['read_at']);
+  const olderInterrupted =
+    annotation['reading_withheld'] === LONG_INTERRUPTED &&
+    interruptedAt !== null &&
+    priorReadAt !== null &&
+    interruptedAt > priorReadAt;
+  const olderLong = olderThanLongAttempt(model.session, raw);
   const idle = idleLine(shape, raw);
   /* From the reading rather than from the live row. A reading describes the moment it was taken. */
   const arrived = arrivedLine(annotation, entries);
@@ -817,6 +829,11 @@ export function ReadingResult({
   return (
     <div className="next-session-drift-check next-cockpit-result gap-1" data-next-result>
       {question}
+      {olderLong || olderInterrupted ? (
+        <p className="next-cockpit-reading-why" data-next-long-older>
+          {olderLong ? LONG_LATEST_OLDER : LONG_INTERRUPTED_OLDER}
+        </p>
+      ) : null}
       {/* A marked reading's verdicts stay readable and are set aside: dimmed, never hidden, under the one
           message the level's slot holds. An unmarked reading's wrapper adds no box. */}
       <div
