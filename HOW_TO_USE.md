@@ -525,6 +525,9 @@ one-call action. Each reserved call in a long analysis counts against the same d
 The plan allows at most 16 evidence calls and one final reconciliation call, but progress and
 accounting report what actually ran, not that maximum.
 
+If Start first saves a drafted goal, that press runs no analysis. Refresh the long preview,
+review the saved intent and reading window, then press **Start long analysis** again.
+
 Cancel requests a stop for that job; Pause model calls stops further calls and stays paused until you resume.
 Neither a reload nor a failure starts another analysis. If an attempt is withheld, fails or is
 cancelled, the previous reading stays visible with the latest outcome beside it. A partial

@@ -6,7 +6,7 @@ The [reading design](design-reading-a-session.md) owns what may count as evidenc
 
 ## A plan is a bound, not a coverage claim
 
-The preview names the route, saved per-prompt ceiling and maximum calls before Start. It reads metadata rather than session bodies and reserves nothing. Start refreshes that authority. The native source collector then freezes the admitted streams and reads them under one cumulative allowance. Revalidation consumes that same allowance; wrapping a snapshot again cannot restore spent preparation time or I/O.
+The preview names the route, saved per-prompt ceiling and maximum calls before Start. It reads metadata rather than session bodies and reserves nothing. Start refreshes that authority. Saving a drafted goal changes the intent binding, so it finishes separately and requires a fresh preview before analysis starts. The native source collector then freezes the admitted streams and reads them under one cumulative allowance. Revalidation consumes that same allowance; wrapping a snapshot again cannot restore spent preparation time or I/O.
 
 The plan's `prepare_ms` measurement is `source-and-analysis-preparation`: source collection,
 CI acquisition, packet construction and response processing, with model waits excluded. It is
@@ -16,7 +16,7 @@ Actual packet planning happens once. Its exact evidence-call count is published 
 
 ## Original words remain the evidence
 
-Complete admitted messages are joined to their canonical source identity, masked and normalized before any cut. Ranges index the resulting Unicode characters; byte fitting measures the fully serialized UTF-8 prompt, including frozen intent and protocol text. Boundary context may appear in more than one prompt. It counts once toward primary coverage and every time toward transmitted input.
+Complete admitted messages are joined to their canonical source identity, masked and normalized before any cut. Ranges index the resulting Unicode characters; byte fitting measures the fully serialized UTF-8 prompt, including frozen intent and protocol text. Each evidence packet repeats up to 4,096 masked characters immediately before and after its primary span, including continuations of a split message. Adjacent atomic facts and strict final replies remain whole. Required context that cannot fit refuses the plan. This bounded context does not guarantee that the model understands every correction. Context does not advance primary range assignment; repeated text counts once toward unique text coverage and every time toward transmitted input.
 
 The source's physical order survives clock rollback. Original fact identities and timestamps remain unchanged, because request floors and the existing resolver still need them. Copied Compass corrections retain their derived authorship and cannot become independent person intent or support.
 
@@ -30,7 +30,7 @@ The final reply goes through the existing parser, resolver and full frozen-corpu
 
 ## Each call and publication have their own boundary
 
-Every actual reservation checks current permission, route, target and remaining job allowance. Failed calls and failures discovered after reservation retain their charge. Calls are sequential, with no automatic retry, shortening or provider fallback. Before a call there must be room for its full timeout; after the final response, publication checks the elapsed whole-job deadline without allocating another call.
+Every actual reservation checks current permission, route, target and remaining job allowance. Failed calls and failures discovered after reservation retain their charge. Calls are sequential, with no automatic retry, shortening or provider fallback. Before a call there must be room for its full timeout. The supervisor checks that allowance again after waiting for launch admission, immediately before spawn, using only owned monotonic state under its launch lock. After the final response, publication checks the elapsed whole-job deadline without allocating another call.
 
 The annotation publication owner checks the captured target again. A qualified partial reading may replace the old assessment. A withheld, cancelled or failed attempt leaves the old assessment available and records the latest outcome separately.
 

@@ -656,6 +656,9 @@ reserves no calls. Start refreshes the binding; the preview is neither a source-
 claim nor a guarantee that the whole plan can run. The model provider is the disclosed route,
 which may be Claude Code or Codex; other harness sources do not support this mode.
 
+If Start first saves a drafted goal, that press runs no analysis. Refresh the long preview,
+review the saved intent and reading window, then press `Start long analysis` again.
+
 The plan permits at most 16 sequential evidence calls and one final reconciliation call. Each
 prompt uses the smaller of the saved ceiling (512 KiB by default, at most 2 MiB) and the route
 allowance. All prompts together are bounded at 16 MiB, including repeated context; each reply
