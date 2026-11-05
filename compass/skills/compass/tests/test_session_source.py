@@ -457,6 +457,9 @@ class SessionSourceTest(unittest.TestCase):
         )
         self.assertEqual(0, checkpoint.calls[0].line.start)
         self.assertEqual(first.row_cursors[2].line_start, checkpoint.calls[0].rewrite.start)
+        self.assertEqual(
+            first.row_cursors[2].line_start, dict(page.observations)[page.entries[0].fact_id]
+        )
         self.assertNotIn("PRIVATE_ORIGINAL_INPUT", json.dumps(dataclasses.asdict(checkpoint)))
         budget = self.source._Budget(self.path.stat().st_size * 3, deadline, deadline)
         later = self.source._read_stream(
@@ -485,6 +488,7 @@ class SessionSourceTest(unittest.TestCase):
             budget,
         )
         self.assertEqual(["not-recorded"], [entry.result for entry in resumed.entries])
+        self.assertEqual(split, dict(resumed.observations)[resumed.entries[0].fact_id])
         self.assertEqual(self.read().entries, resumed.entries)
         self.assertEqual(page.positions, resumed.positions)
         finished = self.source._outline_checkpoint(
@@ -724,6 +728,72 @@ class SessionSourceTest(unittest.TestCase):
         self.assertFalse(continued.parent_complete)
         self.assertEqual(checkpoint.frontier.offset, continued.frontier.offset)
         self.assertIn("partial_line", [region.reason for region in again.coverage.unread])
+
+    def test_outline_tail_outcome_authority_is_later_than_a_revisited_prefix_result(self) -> None:
+        self.session.prompt("Run the owned check.")
+        call = self.session.call("Bash", {"command": "pytest tests"})
+        for number in range(4):
+            self.session.prompt(f"Before first result {number}. " + "padding " * 50)
+        earlier = len(self.session.rows)
+        self.session.result(call, "1 passed", is_error=False)
+        for number in range(8):
+            self.session.prompt(f"Before latest result {number}. " + "padding " * 50)
+        latest = len(self.session.rows)
+        self.session.result(call, "Exit code 1\n1 failed", is_error=True)
+        self.session.prompt("After the last result. " + "padding " * 130)
+        self.save()
+        lines = self.path.read_bytes().splitlines(keepends=True)
+        earlier_offset = sum(map(len, lines[:earlier]))
+        latest_offset = sum(map(len, lines[:latest]))
+        page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=6000,
+            opening_bytes=1800,
+            deadline=time.monotonic() + 30,
+        )
+        checks = [entry for entry in page.entries if entry.kind == "check"]
+        self.assertEqual(["failed"], [entry.result for entry in checks])
+        fact_id = checks[0].fact_id
+        self.assertEqual(latest_offset, dict(page.observations)[fact_id])
+        self.assertEqual(len(lines[0]), dict(page.positions)[fact_id][0])
+        for _poll in range(20):
+            prefix, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                after=checkpoint,
+                max_bytes=6000,
+                opening_bytes=1800,
+                deadline=time.monotonic() + 30,
+            )
+            if any(
+                entry.fact_id == fact_id and entry.result == "passed" for entry in prefix.entries
+            ):
+                self.assertEqual(earlier_offset, dict(prefix.observations)[fact_id])
+                self.assertIn(earlier_offset, prefix.replacement_observations)
+                break
+        else:
+            self.fail("the forward prefix never revisited the earlier passed result")
+
+    def test_refused_call_replacement_carries_the_result_observation_without_a_new_fact(
+        self,
+    ) -> None:
+        call = self.session.call("Bash", {"command": "pytest tests"})
+        self.save()
+        previous = self.read()
+        result_offset = self.path.stat().st_size
+        self.session.result(call, "Permission denied by reader.", is_error=True)
+        self.save()
+        page = self.read(after=previous.snapshot.cursor)
+        self.assertEqual((), page.entries)
+        self.assertEqual(
+            ((tuple(entry.fact_id for entry in previous.entries), ()),), page.replacements
+        )
+        self.assertEqual((result_offset,), page.replacement_observations)
 
     def test_outline_bootstrap_meters_first_latest_and_forward_middle_in_one_budget(self) -> None:
         for number in range(12):

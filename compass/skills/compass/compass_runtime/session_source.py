@@ -85,6 +85,8 @@ class PendingCall:
     fact_ids: tuple[str, ...] = ()
     # Physical line offset and call order within that line, even before a fact is emitted.
     position: tuple[int, int] = (-1, 0)
+    # The latest physical input/rewrite row, distinct from the original call's ordering position.
+    input_offset: int = -1
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,10 @@ class SourcePage:
     replacements: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = ()
     # Fact id -> (physical line offset, call order, fact order); server-only, not identity.
     positions: tuple[tuple[str, tuple[int, int, int]], ...] = ()
+    # Latest actual input/result row supporting each fact; offsets are local to its stream.
+    observations: tuple[tuple[str, int], ...] = ()
+    # Aligned with replacements, including a removal that emits no new fact.
+    replacement_observations: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -343,7 +349,12 @@ def _outline_pending(
         if held.call_id not in parsed:
             raise _SourceChangedError
         pending.append(
-            replace(parsed[held.call_id], position=held.position, fact_ids=held.fact_ids)
+            replace(
+                parsed[held.call_id],
+                position=held.position,
+                fact_ids=held.fact_ids,
+                input_offset=held.rewrite.start if held.rewrite else held.line.start,
+            )
         )
     return tuple(pending)
 
@@ -728,13 +739,16 @@ def _outline_preview(
 ) -> SourcePage:
     facts: dict[str, SourceEntry] = {}
     positions: dict[str, tuple[int, int, int]] = {}
+    observations: dict[str, int] = {}
     for page in pages:
         for old, _new in page.replacements:
             for fact_id in old:
                 facts.pop(fact_id, None)
                 positions.pop(fact_id, None)
+                observations.pop(fact_id, None)
         facts.update((entry.fact_id, entry) for entry in page.entries)
         positions.update(page.positions)
+        observations.update(page.observations)
     entries = tuple(sorted(facts.values(), key=lambda entry: positions[entry.fact_id]))
     gaps = tuple(
         region
@@ -765,6 +779,10 @@ def _outline_preview(
         bytes_read=budget.used,
         replacements=tuple(change for page in pages for change in page.replacements),
         positions=tuple((entry.fact_id, positions[entry.fact_id]) for entry in entries),
+        observations=tuple((entry.fact_id, observations[entry.fact_id]) for entry in entries),
+        replacement_observations=tuple(
+            value for page in pages for value in page.replacement_observations
+        ),
     )
 
 
@@ -939,6 +957,8 @@ class _StreamRead:
     verified: tuple[int, str] | None = None
     replacements: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
     fact_positions: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    fact_observations: dict[str, int] = field(default_factory=dict)
+    replacement_observations: list[int] = field(default_factory=list)
     known_head: tuple[str, float | None] | None = None
 
 
@@ -1087,6 +1107,7 @@ def _take(
             read.messages.append(entry)
             read.message_order[entry.fact_id] = len(read.rows) - 1
             read.fact_positions[entry.fact_id] = (before.line_start, -1, 0)
+            read.fact_observations[entry.fact_id] = before.line_start
 
 
 def _consume(
@@ -1391,19 +1412,31 @@ def _tools(
     # whose command changed here is reported with the resolved calls, which makes `compare` name its
     # earlier facts as changed and send the reader back to a full read.
     rewritten: list[str] = []
+    positions, result_rows, rewrite_rows = _rows_of(read.rows, sidechain)
+    # Classification uses the last result block, while scheduling deliberately uses its first row.
+    result_offsets = {
+        call_id: read.row_cursors[index].line_start
+        for index, row in enumerate(read.rows)
+        for call_id in context._tool_result_blocks([row], sidechain=sidechain)  # noqa: SLF001
+    }
     for call_id, call in calls.items():
         if call.name == "Bash" and call_id in rewrites:
             input_data = json.loads(call.input_json)
             if input_data.get("command") != rewrites[call_id]:
                 rewritten.append(call_id)
             calls[call_id] = replace(
-                call, input_json=json.dumps({**input_data, "command": rewrites[call_id]})
+                call,
+                input_json=json.dumps({**input_data, "command": rewrites[call_id]}),
+                input_offset=read.row_cursors[rewrite_rows[call_id]].line_start,
             )
-    positions, result_rows, rewrite_rows = _rows_of(read.rows, sidechain)
     calls.update(
         {
             call.call_id: replace(
-                call, position=(read.row_cursors[positions[call.call_id]].line_start, number)
+                call,
+                position=(read.row_cursors[positions[call.call_id]].line_start, number),
+                input_offset=read.row_cursors[
+                    rewrite_rows.get(call.call_id, positions[call.call_id])
+                ].line_start,
             )
             for number, call in enumerate(_pending_calls(read.rows, stream))
         }
@@ -1444,6 +1477,13 @@ def _tools(
             )
             read.replacements.append(
                 (call.fact_ids, tuple(e.fact_id for e in entries[first_entry:]))
+            )
+            observed = max(
+                call.input_offset, call.position[0], result_offsets.get(call.call_id, -1)
+            )
+            read.replacement_observations.append(observed)
+            read.fact_observations.update(
+                (entry.fact_id, observed) for entry in entries[first_entry:]
             )
             read.fact_positions.update(
                 (entry.fact_id, (*call.position, index))
@@ -1722,6 +1762,20 @@ def _finish(
             for stream in streams
             for fact_id, position in stream.fact_positions.items()
             if fact_id in entry_ids
+        ),
+        observations=tuple(
+            (fact_id, observed)
+            for stream in streams
+            for fact_id, observed in stream.fact_observations.items()
+            if fact_id in entry_ids
+        ),
+        replacement_observations=tuple(
+            observed
+            for stream in streams
+            for replacement, observed in zip(
+                stream.replacements, stream.replacement_observations, strict=True
+            )
+            if replacement[0]
         ),
     )
 
