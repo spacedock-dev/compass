@@ -6,6 +6,21 @@ license: Apache-2.0 AND OFL-1.1
 
 # Compass
 
+## Terminal actions
+
+When this skill is invoked with an action word from the table, run that action's command and
+nothing else. Do not start the dashboard or open a browser. Print the command's standard output
+verbatim in one code block, with nothing before or after it. If the command exits non-zero, print
+the one sentence it wrote to standard error verbatim in the same way instead.
+
+| Action | Command |
+|---|---|
+| `sessions` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions` |
+| `sessions waiting` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions waiting` |
+
+Resolve `<skill-dir>` to the directory holding this `SKILL.md`, as `## Start` does. On native
+Windows, write `python` (or `py -3`) for `python3`, as `## Start` says.
+
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a
 goal and press `Analyze drift`. The `How Intent and drift works` entry in the Intent card's `More` menu explains the steps, the
 reading's limits and what a goal with no expected outcome line is read against.
