@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import glob
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -20,7 +21,7 @@ from compass_runtime import sessions as runtime_sessions
 from compass_runtime import state as runtime_state
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -1018,10 +1019,7 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
     # The type of the newest conversation record so far, in file order: the
     # context `is_turn_stop_record` reads a summary in.
     conversation: str | None = None
-    # Whether the newest prompt so far is Compass's own command. Its `last-prompt` records repeat
-    # the command and name no prompt (`leafUuid` is the newest record of any kind), so only their
-    # order says which prompt they follow: those before the reader's next prompt are not read.
-    in_compass_turn = False
+    last_prompt = _LastPrompt()
     for line in runtime_io.read_tail(config, path):
         if not line or line[0] != "{":
             continue
@@ -1040,14 +1038,8 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
             info["turn_stop_sid"] = d["sessionId"]
         if t in ("user", "assistant"):  # a tuple: `t` may be any JSON value
             conversation = t
-        if t == "user" and records.compass_command_record(d):
-            in_compass_turn = True
-        elif t == "user" and records.person_prompt_record(d):
-            in_compass_turn = False
-        if t == "last-prompt":
-            if not in_compass_turn:
-                info["last_prompt"] = d.get("lastPrompt")
-        elif t == "assistant":
+        last_prompt.visit(d, t)
+        if t == "assistant":
             if ep:
                 info["last_assistant_ts"] = max(info["last_assistant_ts"], ep)
             msg = records.message_dict(d)
@@ -1075,7 +1067,68 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
                     pending.pop(c.get("tool_use_id"), None)
     if pending:
         info["pending_input_tool"] = max(pending.values(), key=lambda p: p["ts"] or 0)
+    info["last_prompt"] = last_prompt.value(config, path)
     return info
+
+
+_UNSET: Any = object()
+
+
+def _typed_prompts(config: RuntimeConfig, path: str) -> Iterator[tuple[bool, str]]:
+    """Each prompt the reader typed, newest first: whether it is Compass's command, its words."""
+    for raw in runtime_io.reverse_lines(config, path, contains=b'"user"'):
+        if not raw.startswith(b"{") or b'"user"' not in raw:
+            continue
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if records.compass_command_record(record):
+            yield True, ""
+        elif records.person_prompt_record(record):
+            yield False, records.extract_text(records.message_dict(record).get("content")).strip()
+
+
+class _LastPrompt:
+    """Which `last-prompt` record is the reader's, in one tail read and at most one backward one.
+
+    Claude Code writes `last-prompt` records that repeat the latest typed prompt, during a turn and
+    after it stops, and name no prompt (`leafUuid` is the newest record of any kind). So the typed
+    prompt before one in record order says whose it is, and one that follows Compass's own command
+    is not the reader's: the value falls back to the reader's latest prompt, or nothing. The prompt
+    that governs a record can lie before the tail: a typed command's skill body alone can push the
+    command out of it, which is how a command-only session published the command.
+    """
+
+    def __init__(self) -> None:
+        # "compass" or "person" once a typed prompt is seen in the tail, else None.
+        self.governing: str | None = None
+        self.prompts = 0
+        self.accepted: Any = _UNSET  # the newest value a reader's prompt in the tail governs
+        self.before: Any = _UNSET  # the newest value seen before any typed prompt in the tail
+
+    def visit(self, record: dict[str, Any], kind: Any) -> None:
+        if kind == "user" and records.compass_command_record(record):
+            self.governing, self.prompts = "compass", self.prompts + 1
+        elif kind == "user" and records.person_prompt_record(record):
+            self.governing, self.prompts = "person", self.prompts + 1
+        elif kind == "last-prompt" and self.governing is None:
+            self.before = record.get("lastPrompt")
+        elif kind == "last-prompt" and self.governing == "person":
+            self.accepted = record.get("lastPrompt")
+
+    def value(self, config: RuntimeConfig, path: str) -> Any:
+        if self.accepted is not _UNSET:
+            return self.accepted
+        if self.before is _UNSET and self.governing != "compass":
+            return None
+        if self.before is not _UNSET:
+            governor = next(
+                itertools.islice(_typed_prompts(config, path), self.prompts, None), None
+            )
+            if governor is not None and not governor[0]:
+                return self.before
+        return next((words for compass, words in _typed_prompts(config, path) if not compass), None)
 
 
 def head_cwd(config: RuntimeConfig, path: str) -> str:

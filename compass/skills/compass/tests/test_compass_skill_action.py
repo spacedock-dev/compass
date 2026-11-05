@@ -17,6 +17,7 @@ nothing here keys on attribution. Every text is placeholder prose.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -417,6 +418,87 @@ class TheTypedCommandIsNotTheReadersMessageTest(_Case):
         line = claude_data.session_instruction(self.config, self.state, path)
         assert line is not None
         self.assertEqual(("asked", FIRST), (line["label"], line["text"]))
+
+
+class APromptSurfaceReadsTheLatestTypedPromptTest(_Case):
+    """Interactive Claude Code keeps writing `last-prompt` after a turn stops, repeating the latest
+    typed prompt, and the skill body after a typed command can push the command out of the tail
+    the collector reads. Whether a `last-prompt` is the reader's is decided by the typed prompt
+    before it in record order, wherever that prompt lies."""
+
+    def turn_duration(self) -> None:
+        self.session.rows.append(
+            {
+                "type": "system",
+                "subtype": "turn_duration",
+                "isSidechain": False,
+                "isMeta": False,
+                "sessionId": self.session.rows[-1]["sessionId"],
+                "timestamp": self.session._stamp(),
+                "uuid": f"u{len(self.session.rows)}",
+            }
+        )
+
+    def command_only_after_the_tail_start(self) -> str:
+        """The command, its turn, the turn stop, `turn_duration` and a trailing `last-prompt`,
+        read with a tail that begins just after the command's skill body, as on a real session."""
+        self.session.compass("sessions waiting")
+        self.turn_duration()
+        self.session._last_prompt(f"{COMMAND} sessions waiting")
+        path = self.save()
+        body = next(i for i, row in enumerate(self.session.rows) if row.get("isMeta"))
+        lines = Path(path).read_bytes().split(b"\n")
+        start = sum(len(line) + 1 for line in lines[: body + 1])
+        self.config = dataclasses.replace(self.config, tail_bytes=os.path.getsize(path) - start)
+        return path
+
+    def test_a_trailing_last_prompt_after_a_command_only_session_publishes_nothing(self) -> None:
+        path = self.command_only_after_the_tail_start()
+        info = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertIsNone(info["last_prompt"])
+        self.assertIsNone(claude_data.session_instruction(self.config, self.state, path))
+        self.assertIsNone(claude_data.session_title(self.config, self.state, path))
+
+    def test_a_trailing_last_prompt_after_the_command_falls_back_to_the_readers_prompt(
+        self,
+    ) -> None:
+        self.session.asked(FIRST)
+        path = self.command_only_after_the_tail_start()
+        info = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertEqual(FIRST, info["last_prompt"])
+        line = claude_data.session_instruction(self.config, self.state, path)
+        assert line is not None
+        self.assertEqual(("asked", FIRST), (line["label"], line["text"]))
+        self.assertEqual(FIRST, claude_data.session_title(self.config, self.state, path))
+
+    def test_a_trailing_last_prompt_read_whole_after_the_command_falls_back_too(self) -> None:
+        self.session.asked(FIRST)
+        self.session.compass()
+        self.turn_duration()
+        self.session._last_prompt(f"{COMMAND} sessions")
+        info = claude_data.analyze_transcript(self.config, self.state, self.save())
+        self.assertEqual(FIRST, info["last_prompt"])
+
+    def test_a_prompt_typed_after_the_command_outranks_the_commands_last_prompt(self) -> None:
+        # The command's trailing `last-prompt` is in the tail and the command is not; the reader's
+        # next prompt is in the tail with no `last-prompt` after it yet.
+        before = os.path.getsize(self.command_only_after_the_tail_start())
+        self.session.prompt(LATER)
+        path = self.save()
+        grown = self.config.tail_bytes + os.path.getsize(path) - before
+        self.config = dataclasses.replace(self.config, tail_bytes=grown)
+        info = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertEqual(LATER, info["last_prompt"])
+
+    def test_a_long_turn_the_tail_starts_inside_keeps_the_readers_last_prompt(self) -> None:
+        self.session.asked(FIRST)
+        for n in range(6):
+            self.session.bash(f"pytest tests/test_{n}.py", "1 passed")
+        self.session._last_prompt(FIRST)
+        path = self.save()
+        self.config = dataclasses.replace(self.config, tail_bytes=600)
+        info = claude_data.analyze_transcript(self.config, self.state, path)
+        self.assertEqual(FIRST, info["last_prompt"])
 
 
 class AnOpeningCommandIsSkippedNotAControlTest(_Case):
