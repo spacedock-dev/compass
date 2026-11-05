@@ -2325,11 +2325,13 @@ def _summary_head(
 
 
 def _validate_prefix_stream(
-    path: str, harness: str, old: StreamCursor, budget: _Budget
+    path: str, harness: str, old: StreamCursor, budget: _Budget, *, replaying: bool = False
 ) -> StreamCursor:
     follow = old.stream == "parent" and harness not in observer.DIRECTION_HARNESSES
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         stamp = _stamp(os.fstat(source.fileno()))
+        if replaying and stamp != old.stamp:
+            raise _SourceChangedError
         if stamp[:2] != old.stamp[:2] or stamp[2] < old.stamp[2]:
             raise _SourceChangedError
         if old.verify_hash is not None and stamp != old.stamp:
@@ -2377,11 +2379,18 @@ def _validate_prefixes(
     """Validate changed streams incrementally before releasing any new facts."""
     paths = {"parent": path}
     paths.update((_child_stream(path, child), child) for child in children)
+    if cursor.replaying and set(paths) != {stream.stream for stream in cursor.streams}:
+        raise _SourceChangedError
     streams = []
     for old in cursor.streams:
         if old.stream not in paths:
             raise _SourceChangedError
-        streams.append(_validate_prefix_stream(paths[old.stream], harness, old, budget))
+        if cursor.replaying:
+            streams.append(
+                _validate_prefix_stream(paths[old.stream], harness, old, budget, replaying=True)
+            )
+        else:
+            streams.append(_validate_prefix_stream(paths[old.stream], harness, old, budget))
     for stream in streams:
         if _stamp(os.stat(paths[stream.stream])) != stream.stamp:
             raise _SourceChangedError

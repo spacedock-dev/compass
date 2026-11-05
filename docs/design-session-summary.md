@@ -1399,8 +1399,8 @@ swapped in after admission, as the published tool report's child reads are; the 
 links exactly where that report's transcript read does.
 
 Generic continuation keeps a word-free SHA-256 state for each consumed range. An unchanged-size
-mtime change refuses the cursor, including a metadata-only touch. On growth, it rereads the entire
-consumed range before emitting further facts; the check can span calls, each returning no entries,
+mtime change refuses the cursor, including a metadata-only touch. Outside classification replay,
+growth triggers a reread of the entire consumed range before emitting further facts; the check can span calls, each returning no entries,
 incomplete coverage and a continuation until it finishes. Each reread spends the same byte/time
 allowance as new records. The cost of one append is proportional to the consumed range, including
 skipped oversized lines; `newest` verifies only the range it actually consumed. A stamp change during

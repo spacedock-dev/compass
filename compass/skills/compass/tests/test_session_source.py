@@ -1444,6 +1444,59 @@ class SessionSourceTest(unittest.TestCase):
         self.assertEqual((), page.entries)
         self.assertIsNone(page.next)
 
+    def test_generic_replay_append_after_progress_stales_at_any_allowance(self) -> None:
+        reset = self.generic_reset_page()
+        progress = self.read(after=reset.next, max_bytes=1400, deadline=time.monotonic() + 30)
+        self.assertGreater(progress.next.streams[0].offset, 0)
+        self.assertTrue(progress.next.replaying)
+        self.assertEqual(reset.next.withdrawals, progress.next.withdrawals)
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        for allowance in (0, 1, 1400, 100000):
+            with self.subTest(allowance=allowance):
+                page = self.read(after=progress.next, max_bytes=allowance)
+                self.assertEqual("stale", page.state)
+                self.assertEqual((), page.entries)
+                self.assertIsNone(page.next)
+
+    def test_generic_replay_refuses_new_child_inventory_before_emitting(self) -> None:
+        reset = self.generic_reset_page()
+        progress = self.read(after=reset.next, max_bytes=1400, deadline=time.monotonic() + 30)
+        self.assertGreater(progress.next.streams[0].offset, 0)
+        child = Transcript(self.root)
+        child.prompt("Synthetic new child.")
+        for row in child.rows:
+            row["isSidechain"] = True
+        self.save_outline_child(child, "agent-ab12.jsonl")
+        page = self.read(after=progress.next, max_bytes=0)
+        self.assertEqual("stale", page.state)
+        self.assertEqual((), page.entries)
+        self.assertIsNone(page.next)
+
+    def test_prefix_verification_retains_withdrawals_after_replay(self) -> None:
+        reset = self.generic_reset_page()
+        cursor = reset.next
+        for _ in range(100):
+            page = self.read(after=cursor, max_bytes=1400, deadline=time.monotonic() + 30)
+            self.assertEqual("ok", page.state)
+            if page.next is None:
+                break
+            cursor = page.next
+        self.assertIsNone(page.next)
+        completed = page.snapshot.cursor
+        self.assertFalse(completed.replaying)
+        self.assertEqual(reset.next.withdrawals, completed.withdrawals)
+        with self.path.open("ab") as output:
+            output.write(b"{}\n")
+        checking = self.read(after=completed, max_bytes=1)
+        self.assertEqual("ok", checking.state)
+        self.assertEqual((), checking.entries)
+        self.assertFalse(checking.reset)
+        self.assertFalse(checking.coverage.complete)
+        self.assertEqual(completed.withdrawals, checking.next.withdrawals)
+        self.assertFalse(checking.next.replaying)
+        self.assertEqual(checking.next, checking.snapshot.cursor)
+
     def collect_outline_with_authority(
         self, budget: int = 4000
     ) -> tuple[dict[str, Any], list[Any]]:
