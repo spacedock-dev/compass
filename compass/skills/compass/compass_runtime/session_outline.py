@@ -592,7 +592,7 @@ def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]
 
 
 def _project_parent(
-    graph: _FactGraph, progress: _Progress, config: RuntimeConfig, sid: str
+    graph: _FactGraph, progress: _Progress, config: RuntimeConfig, harness: str, sid: str
 ) -> dict[str, Any]:
     entries = _ordered_entries(graph)
     checkpoint, coverage = progress.checkpoint, progress.coverage
@@ -620,7 +620,7 @@ def _project_parent(
                     gap=bool(coverage and coverage.unread),
                 )
                 entries = entries[len(groups[0]) :]
-    page = session_source.SourcePage("ok", "claude", sid, entries, coverage)
+    page = session_source.SourcePage("ok", harness, sid, entries, coverage)
     return build(page, config, opening, breaks=frozenset(breaks))
 
 
@@ -628,6 +628,7 @@ def _limit_parent(
     previous: _FactGraph | None,
     identity: tuple[object, ...],
     config: RuntimeConfig,
+    harness: str,
     sid: str,
     *,
     reason: str = "outline_state_limit",
@@ -642,12 +643,21 @@ def _limit_parent(
     coverage = (
         replace(coverage, complete=False, unread=(*coverage.unread, region))
         if coverage
-        else session_source.SourceCoverage(False, None, 0, 0, (region,), "read", "read")
+        else session_source.SourceCoverage(
+            False,
+            None,
+            0,
+            0,
+            (region,),
+            "read" if harness == "claude" else "not_read",
+            "read" if harness == "claude" else "not_admitted",
+            () if harness == "claude" else session_source._CODEX_NOTES,  # noqa: SLF001
+        )
     )
     answer = (
         dict(old.result[0])
         if old
-        else build(session_source.SourcePage("ok", "claude", sid, coverage=coverage), config)
+        else build(session_source.SourcePage("ok", harness, sid, coverage=coverage), config)
     )
     public_coverage = asdict(coverage)
     public_coverage["unread"] = list(public_coverage["unread"])
@@ -662,25 +672,26 @@ def _limit_parent(
 def _advance_parent(
     config: RuntimeConfig,
     path: str,
+    harness: str,
     sid: str,
     identity: tuple[object, ...],
     previous: _FactGraph | None,
 ) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], _FactGraph | None]:
     old = previous.extras if previous and isinstance(previous.extras, _Progress) else None
-    refusal, refusal_graph = _limit_parent(previous, identity, config, sid)
+    refusal, refusal_graph = _limit_parent(previous, identity, config, harness, sid)
     if refusal_graph is None:
         return refusal, None
     page, checkpoint = session_source._read_outline(  # noqa: SLF001
         config,
         path,
-        "claude",
+        harness,
         sid,
         after=old.checkpoint if old else None,
         opening_bytes=min(config.session_outline_head_bytes, config.session_outline_max_bytes // 2),
         deadline=time.monotonic() + config.session_outline_max_seconds,
     )
     if page.state == "limited":
-        return _limit_parent(previous, identity, config, sid)
+        return _limit_parent(previous, identity, config, harness, sid)
     if page.state != "ok" or checkpoint is None:
         return (build(page, config), _plan(page, config)), None
     plan = _plan(page, config)  # Only this transient word-bearing page may supply an exact plan.
@@ -705,12 +716,12 @@ def _advance_parent(
     )
     admitted = _merge_facts(previous, _observations(page), extras=progress, limits=working)
     if admitted.limited or admitted.graph is None:
-        return _limit_parent(previous, identity, config, sid)
-    answer = _project_parent(admitted.graph, progress, config, sid)
+        return _limit_parent(previous, identity, config, harness, sid)
+    answer = _project_parent(admitted.graph, progress, config, harness, sid)
     progress = replace(progress, result=(answer, plan))
     published = _merge_facts(admitted.graph, (), extras=progress, limits=working)
     if published.limited or published.graph is None:
-        return _limit_parent(previous, identity, config, sid)
+        return _limit_parent(previous, identity, config, harness, sid)
     # Do not cache an evidence-free time cut; retain an accepted prefix across time cuts.
     empty = not previous and not published.graph.facts and not checkpoint.accepted
     return progress.result, None if empty else published.graph
@@ -727,13 +738,14 @@ def _cached_parent(
     config: RuntimeConfig,
     state: RuntimeState,
     path: str,
+    harness: str,
     sid: str,
     key: str,
     stamps: object,
     bounds: tuple[object, ...],
-    cached: object,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     identity = (key, stamps, bounds)
+    cached = state.session_outlines.get(key)
     previous = (
         cached
         if isinstance(cached, _FactGraph)
@@ -743,13 +755,13 @@ def _cached_parent(
     )
     if previous and isinstance(previous.extras, _Progress) and previous.extras.terminal:
         return previous.extras.result
-    result, graph = _advance_parent(config, path, sid, identity, previous)
+    result, graph = _advance_parent(config, path, harness, sid, identity, previous)
     try:
-        unchanged = session_source.source_stamps(path, "claude") == stamps
+        unchanged = session_source.source_stamps(path, harness) == stamps
     except OSError:
         unchanged = False
     if not unchanged:
-        return build(session_source.SourcePage("stale", "claude", sid), config), None
+        return build(session_source.SourcePage("stale", harness, sid), config), None
     if graph is not None:
         runtime_state.bounded_put(
             state.session_outlines, key, graph, limit=config.session_outline_cache_limit
@@ -791,8 +803,8 @@ def for_session_with_plan(
             ),
         )
         cached = state.session_outlines.get(key)
-        if harness == "claude" and len(stamps) == 1:
-            return _cached_parent(config, state, path, sid, key, stamps, bounds, cached)
+        if harness in ("claude", "codex") and len(stamps) == 1:
+            return _cached_parent(config, state, path, harness, sid, key, stamps, bounds)
         if isinstance(cached, _FactGraph):
             cached = None
         if cached is not None and cached[0] == (stamps, bounds):

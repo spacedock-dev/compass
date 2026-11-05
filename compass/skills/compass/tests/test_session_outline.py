@@ -885,6 +885,106 @@ class SessionOutlineTest(unittest.TestCase):
             self.assertIsNotNone(plan)
             self.assertFalse(plan["complete"])
 
+    def test_codex_polls_accumulate_person_only_in_order_with_one_byte_budget(self) -> None:
+        rows = []
+        for number in range(12):
+            rows.extend(
+                [
+                    test_record_pages.RecordPagesTest.record(
+                        number * 3,
+                        harness="codex",
+                        text=f"Owned person phase {number}. " + "PERSON_PRIVATE_SENTINEL " * 8,
+                    ),
+                    test_record_pages.RecordPagesTest.record(
+                        number * 3 + 1,
+                        harness="codex",
+                        role="assistant",
+                        text="ASSISTANT_PRIVATE_SENTINEL " * 8,
+                    ),
+                    {
+                        "type": "response_item",
+                        "timestamp": "2026-10-01T00:00:00Z",
+                        "payload": {
+                            "type": "function_call",
+                            "name": "shell_command",
+                            "call_id": f"call-{number}",
+                            "arguments": '{"command":"TOOL_PRIVATE_SENTINEL pytest tests"}',
+                        },
+                    },
+                ]
+            )
+        self.path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        config = dataclasses.replace(
+            self.config,
+            session_outline_max_bytes=2400,
+            session_outline_head_bytes=700,
+            session_outline_max_blocks=64,
+        )
+        whole = self.source.read(
+            config, str(self.path), "codex", "root", max_bytes=self.path.stat().st_size + 1
+        )
+        expected = [entry.fact_id for entry in whole.entries]
+        self.assertEqual(12, len(expected))
+        meter = test_session_source.SessionSourceTest()
+        meter.source = self.source
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            meter._meter_source_reads() as reads,
+        ):
+            for _poll in range(30):
+                before = reads[0]
+                result, plan = self.outline.for_session_with_plan(
+                    config, self.state, "codex", "root"
+                )
+                self.assertIsNone(plan)
+                self.assertLessEqual(reads[0] - before, 2400)
+                ids = [block["prompt"]["fact_id"] for block in result["blocks"]]
+                self.assertTrue({expected[0], expected[-1]} <= set(ids))
+                if result["coverage"]["complete"]:
+                    break
+            self.assertTrue(
+                result["coverage"]["complete"], "unchanged Codex polls never fill the middle"
+            )
+            self.assertEqual(expected, [block["prompt"]["fact_id"] for block in result["blocks"]])
+            self.assertEqual("not_read", result["coverage"]["agent_replies"])
+            self.assertEqual("not_admitted", result["coverage"]["checks_and_files"])
+            self.assertEqual(
+                ["codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted"],
+                result["coverage"]["notes"],
+            )
+            self.assertTrue(all(block["counts"]["checks"] == 0 for block in result["blocks"]))
+            self.assertLessEqual(reads[0] - before, 2400)
+            retained = next(iter(self.state.session_outlines.values()))
+            self.assertIsNotNone(self.outline._measure_facts(retained, self.outline._FACT_LIMITS))
+            self.assertNotIn("ASSISTANT_PRIVATE_SENTINEL", repr(retained))
+            self.assertNotIn("TOOL_PRIVATE_SENTINEL", repr(retained))
+            self.assertNotIn("PERSON_PRIVATE_SENTINEL " * 8, repr(retained))
+            before = reads[0]
+            again, plan = self.outline.for_session_with_plan(config, self.state, "codex", "root")
+            self.assertIs(result, again)
+            self.assertIsNone(plan)
+            self.assertEqual(before, reads[0])
+
+    def test_codex_cold_state_refusal_preserves_person_only_admission_flags(self) -> None:
+        self.path.write_text(
+            json.dumps(test_record_pages.RecordPagesTest.record(0, harness="codex")) + "\n"
+        )
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.outline, "_FACT_LIMITS", self.outline._FactLimits(bytes=1)),
+        ):
+            answer, plan = self.outline.for_session_with_plan(
+                self.config, self.state, "codex", "root"
+            )
+        self.assertEqual("outline_state_limit", answer["reason"])
+        self.assertIsNone(plan)
+        self.assertEqual("not_read", answer["coverage"]["agent_replies"])
+        self.assertEqual("not_admitted", answer["coverage"]["checks_and_files"])
+        self.assertEqual(
+            ["codex_agent_words_not_admitted", "codex_checks_and_files_not_admitted"],
+            answer["coverage"]["notes"],
+        )
+
     def test_plan_shares_outline_read_cache_and_config_invalidation(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Read the synthetic record.")
