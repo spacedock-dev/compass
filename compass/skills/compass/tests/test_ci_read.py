@@ -854,7 +854,9 @@ class _PressCase(unittest.TestCase):
         self.handler = types.SimpleNamespace(
             server=types.SimpleNamespace(application=self.application)
         )
-        self.hooks = types.SimpleNamespace(cancelled=lambda: False, ci_spawned=lambda _group: None)
+        self.hooks = types.SimpleNamespace(
+            cancelled=lambda: False, ci_spawned=lambda _group: None, capture=lambda _value: None
+        )
 
     def boom(self) -> Any:
         return mock.patch.multiple(

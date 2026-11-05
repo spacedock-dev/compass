@@ -1074,7 +1074,11 @@ class APressOnAHarnessWithNoRecordSaysSo(AntigravityHome):
         with mock.patch.object(reading, "produce", return_value=(None, "x", False)) as produce:
             compose: Any = http_api._RequestHandler._compose_reading
             compose(
-                handler, row, {"revisions": list(self.REVISIONS)}, {}, SimpleNamespace(phase=None)
+                handler,
+                row,
+                {"revisions": list(self.REVISIONS)},
+                {},
+                SimpleNamespace(phase=None, capture=lambda _value: None),
             )
         self.assertEqual(
             reading.WITHHELD_NO_RECORD_READER, produce.call_args.kwargs["record_withheld"]

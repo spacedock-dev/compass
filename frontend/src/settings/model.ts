@@ -1,4 +1,5 @@
 import type { SettingLimit, SettingsBody } from '../api/types';
+import { capacityPreview } from '../api/promptCapacity';
 
 /* What the Settings screen says about each limit, and the unit a reader types it in. The bounds and
    defaults are never here: they arrive with every answer, so a server that moves one moves the screen. A
@@ -14,7 +15,7 @@ interface Copy {
 const COPY: Readonly<Record<string, Copy>> = {
   analyze_prompt_bytes: {
     label: 'Prompt size',
-    help: "The most one Analyze drift prompt may hold. Every share of the prompt grows with it: your messages, the agent's messages and earlier turns. A bigger prompt reads more of a long session, but sends more to the model and takes longer.",
+    help: "The most one Analyze drift prompt may hold, including selected messages and evidence. A larger limit can include more text and take longer. This does not set the session outline's coverage or Summary's source coverage.",
     scale: 1024,
     unit: 'KB',
   },
@@ -129,10 +130,21 @@ function isLimit(value: unknown): value is SettingLimit {
 /** An answer the screen can draw from, or null: a body missing either half is not one. */
 export function settingsBody(body: unknown): SettingsBody | null {
   if (typeof body !== 'object' || body === null) return null;
-  const { values, limits } = body as Record<string, unknown>;
+  const { values, limits, capacities } = body as Record<string, unknown>;
   if (typeof values !== 'object' || values === null || Array.isArray(values)) return null;
   if (!Array.isArray(limits) || !limits.every(isLimit)) return null;
   const numbers = values as Record<string, unknown>;
   if (!limits.every((limit) => Number.isSafeInteger(numbers[limit.key]))) return null;
-  return { values: numbers as Record<string, number>, limits };
+  const routes =
+    typeof capacities === 'object' && capacities !== null && !Array.isArray(capacities)
+      ? (capacities as Record<string, unknown>)
+      : {};
+  return {
+    values: numbers as Record<string, number>,
+    limits,
+    capacities: {
+      claude: capacityPreview(routes['claude']),
+      codex: capacityPreview(routes['codex']),
+    },
+  };
 }

@@ -328,10 +328,41 @@ export interface SettingLimit {
   readonly maximum: number;
 }
 
+/** A route estimate, never an actual-input measurement or proof of model fit. */
+export interface PromptCapacityPreview {
+  readonly kind: 'capacity-preview';
+  readonly policy: 'analyze-context-v1';
+  readonly maximum_prompt_bytes: number;
+  readonly window_tokens: number | null;
+  readonly window_source: 'documented' | 'configured' | 'unknown';
+  readonly generation_reserve_tokens: number;
+  readonly cli_reserve_tokens: number;
+  readonly estimated_system_tokens: number;
+  readonly estimate_method: 'utf8-bytes-div-3' | 'legacy-byte-cap';
+  readonly fit_verified: false;
+  readonly policy_verified: false;
+  readonly configuration_reason:
+    | ''
+    | 'context-config'
+    | 'dynamic-policy'
+    | 'compaction-policy-conflict'
+    | 'fallback-policy-conflict';
+  readonly reason:
+    | 'estimated'
+    | 'context-config'
+    | 'context-no-room'
+    | 'context-dynamic'
+    | 'context-compaction'
+    | 'context-fallback'
+    | 'unavailable';
+  readonly can_lower_prompt_setting: boolean;
+}
+
 /** `GET /api/settings`, and the answer to every accepted `POST`: the values in force and their limits. */
 export interface SettingsBody {
   readonly values: Readonly<Record<string, number>>;
   readonly limits: readonly SettingLimit[];
+  readonly capacities?: Readonly<Record<'claude' | 'codex', PromptCapacityPreview | null>>;
 }
 
 /** A subset of the keys; `null` restores that key's default. */

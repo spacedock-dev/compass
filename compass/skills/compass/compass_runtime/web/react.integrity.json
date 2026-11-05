@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2253603,
+    "bytes": 2260171,
     "file": "react.html",
-    "sha256": "18f0f0925daa73939fad0c8960ff5ac087bb7bc2a3012f519106fcc9aabd9df3"
+    "sha256": "e2aecfcab2859aea0729e15cad2124e3ee0cac9993171776bf213282ea88f219"
   },
   "format": 1,
   "frontend": "react",
@@ -294,6 +294,10 @@
         "sha256": "96808d8981454c2071617d8d467557ac38ff3e0533cba842c434b668e7e0627c"
       },
       {
+        "file": "frontend/src/api/promptCapacity.ts",
+        "sha256": "4fbd8e2840a95e00fa017b861f5e1c389fcf6700b7602189e4cc0f806f26936c"
+      },
+      {
         "file": "frontend/src/api/readings.ts",
         "sha256": "560c2583a57ad51e20f44d8f058963ab774bd2ef548c4846c87cf90c326361e3"
       },
@@ -303,7 +307,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "02eea961bed5c1d9cafdb4c9803d3cf28ea23689b2234ef6c3c1072712cca7fd"
+        "sha256": "04939fb1acd7c2d57ff6a22cfdc62ff82fd0a1720a069bd102755701516f7c9a"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -563,7 +567,7 @@
       },
       {
         "file": "frontend/src/drift/DriftBody.tsx",
-        "sha256": "82b2ad38778bf906484755e9eb8ce115fa7d87bb46153319921db7ff745ba462"
+        "sha256": "af3b9e5a5a7c3906617c93c2ffa2abf9f202cbf8836d1221dbcc6066191b9bd7"
       },
       {
         "file": "frontend/src/drift/DriftHead.tsx",
@@ -608,6 +612,10 @@
       {
         "file": "frontend/src/drift/MonitorQuestion.tsx",
         "sha256": "911d4c8c366ccd847f5ae6575964a5321c327372bbae1918679569a383ee1169"
+      },
+      {
+        "file": "frontend/src/drift/ReadingAllowance.tsx",
+        "sha256": "83ba9e742a94694597af8759719920a71effe6b95c48d8ea6a635098eec0dc1c"
       },
       {
         "file": "frontend/src/drift/ReadingCapBanner.tsx",
@@ -1287,7 +1295,7 @@
       },
       {
         "file": "frontend/src/settings/SettingsView.tsx",
-        "sha256": "6f15aad5b1d17cefb464dcdc27690be38639a97e72c1b5561f7abeee160f8b3c"
+        "sha256": "dc5b72436d5d4caa86d8924af9a38a13a2c10e3f7606e2675dbf5aa770d16e0e"
       },
       {
         "file": "frontend/src/settings/index.ts",
@@ -1295,7 +1303,7 @@
       },
       {
         "file": "frontend/src/settings/model.ts",
-        "sha256": "2d01b351666ad1d638c5258ba3e89677c36f5f9954793c99c3e2c193cf7bd3f2"
+        "sha256": "a9d3246da256aa2fa38bc4b872b631139ae2ff28c18e221b4166cac929384faa"
       },
       {
         "file": "frontend/src/shell/Breadcrumb.tsx",

@@ -23,6 +23,7 @@ import os
 import re
 import time
 import uuid
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -187,7 +188,7 @@ def request_digest(
 
 
 def verified_transport_binding(
-    config: Any, verified: Any, observer: Any, *, claude_executor: Any = None
+    config: Any, verified: Any, observer: Any, *, claude_executor: Any = None, analyze: bool = False
 ) -> dict[str, Any]:
     """Bind the verified CLI and actual argv without launching a provider."""
     import score_abstention  # noqa: PLC0415 - operator CLI verification/capture
@@ -197,14 +198,19 @@ def verified_transport_binding(
     if destination != reading_route.VENDORS["claude"]:
         raise authority.LedgerError("the bound transport destination is not Anthropic")
     result = {
-        "reading": observer.claude_reading_provenance(config),
+        "reading": observer.claude_reading_provenance(config, analyze=analyze),
         "binary": verified.shown,
         "binary_sha256": verified.identity[-1],
         "cli_version": verified.version,
         "signature": verified.signature,
         "destination": destination,
         "argv_digest": score_abstention.argv_digest(
-            "claude", config, claude_executor=claude_executor
+            "claude",
+            config,
+            claude_executor=partial(
+                observer.claude_exec if claude_executor is None else claude_executor,
+                analyze=analyze,
+            ),
         ),
     }
     validate_transport_binding(result)

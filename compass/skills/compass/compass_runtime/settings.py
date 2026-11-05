@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from .config import RuntimeConfig
 
 STORE_FILENAME: Final = "compass-settings.json"
+ANALYZE_PROMPT_MIN_BYTES: Final = 16_384
 # A store of a few integers. Anything larger is not this file, and is not parsed.
 _MAX_STORE_BYTES: Final = 4096
 _LOCK_WAIT_SEC: Final = 2.0
@@ -55,12 +56,13 @@ class Limit(NamedTuple):
 
 
 # The old constants are the floors, so no setting can make a press read less than it used to.
-# The prompt's default is its ceiling, by the owner's choice (2026-10-28). The ceiling is 512 KiB,
-# about 130,000 tokens, which leaves a 200,000-token context room for the instructions and the
-# answer; a larger prompt would fail the press on such a model rather than read more. The record's
-# ceiling is well past the 187 messages and 385 entries the 18-hour session measured above held.
+# The prompt defaults to 512 KiB; 2 MiB is an opt-in stored preference. Actual admission is
+# independent: the assembled prompt must pass the selected route's estimated capacity policy.
+# Neither byte limit proves token fit. Changing routes never clamps a saved preference.
 LIMITS: Final = (
-    Limit("analyze_prompt_bytes", default=524_288, minimum=16_384, maximum=524_288),
+    Limit(
+        "analyze_prompt_bytes", default=524_288, minimum=ANALYZE_PROMPT_MIN_BYTES, maximum=2_097_152
+    ),
     Limit("analyze_record_events", default=2_000, minimum=100, maximum=20_000),
     Limit("analyze_listed_checks", default=1_000, minimum=12, maximum=5_000),
     Limit("analyze_scan_megabytes", default=512, minimum=8, maximum=1_024),

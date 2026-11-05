@@ -54,7 +54,7 @@ import unicodedata
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
-from . import ci_read, observer, records, supervise
+from . import analyze_diagnostics, ci_read, observer, records, supervise
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
@@ -741,7 +741,63 @@ WITHHELD_UNSTORED = "unstored"
 WITHHELD_CANCELLED = "cancelled"
 WITHHELD_CANCELLED_UNSENT = "cancelled-unsent"
 WITHHELD_OVERSIZED = "oversized"
+WITHHELD_CONTEXT_ADMISSION = "context-admission"
+WITHHELD_CONTEXT_SMALL_WINDOW = "context-small-window"
+WITHHELD_CONTEXT_CONFIG = "context-config"
+WITHHELD_CONTEXT_NO_ROOM = "context-no-room"
+WITHHELD_CONTEXT_DYNAMIC = "context-dynamic"
+WITHHELD_CONTEXT_COMPACTION = "context-compaction"
+WITHHELD_CONTEXT_FALLBACK = "context-fallback"
+WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
+WITHHELD_CONTEXT_LIMIT = "context-limit"
 WITHHELD = {
+    WITHHELD_CONTEXT_LIMIT: (
+        "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
+        "was counted, and no new analysis was saved. Reduce Prompt size in Settings if it is "
+        "above 16 KiB, or choose a route with a larger context window, before trying again. "
+        "Compass did not retry, shrink the prompt or switch "
+        "providers."
+    ),
+    WITHHELD_CONTEXT_SMALL_WINDOW: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route's allowance is below the smallest Prompt size "
+        "setting. A smaller actual reading may fit; choose a larger context window or change "
+        "its context configuration for this reading."
+    ),
+    WITHHELD_CONTEXT_ADMISSION: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "The assembled prompt exceeds this route's estimated "
+        "allowance. Lower Prompt size in Settings or choose a route with a larger context window."
+    ),
+    WITHHELD_CONTEXT_CONFIG: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Compass could not read this route's context controls. "
+        "Check the Claude managed settings and context configuration before trying again."
+    ),
+    WITHHELD_CONTEXT_NO_ROOM: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route's configured context window leaves no room "
+        "after reserved space. Choose a larger window or change its context configuration."
+    ),
+    WITHHELD_CONTEXT_DYNAMIC: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "This route uses managed policy that can change at launch. "
+        "Use a route whose context and model-switching controls Compass can check locally."
+    ),
+    WITHHELD_CONTEXT_COMPACTION: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Managed settings conflict with Analyze's compaction "
+        "control. Ask your administrator to allow compaction to remain disabled for Analyze."
+    ),
+    WITHHELD_CONTEXT_FALLBACK: (
+        "Nothing was sent to the model, and no Analyze attempt was counted. "
+        "Managed settings permit automatic model fallback. "
+        "Ask your administrator to disable fallback before running Analyze on this route."
+    ),
+    WITHHELD_CONTEXT_CHANGED: (
+        "The attempt was counted, but the model did not start because its configuration "
+        "could not pass the final check. Check the Claude managed settings before trying again."
+    ),
     WITHHELD_TURN_STOP: (
         "A turn stop was observed and no session end was, so there is no end for a "
         "reading to rest on. Nothing partial is offered instead."
@@ -1248,6 +1304,8 @@ class Selection:
     # `build_prompt` from what it printed, never from the ledger alone:
     # [DEC-23](docs/design-reading-a-session.md#amended-2026-11-01-owner-a-line-about-what-the-agent-tells-you-rests-on-its-message)  # noqa: E501
     agent_words_whole: bool = False
+    # Requested measurement only, from the actual rendering step, never source text.
+    diagnostic: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.asked_output is None:
@@ -3468,6 +3526,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     final_lookup: FinalLookup | None = None,
     message_lookup: MessageLookup | None = None,
     failures_only: bool = False,
+    measure: bool = False,
 ) -> tuple[str, Selection]:
     """The prompt, and exactly the entries it carried.
 
@@ -3572,6 +3631,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         # needs to escape this boundary.
         return "", Selection(
             (),
+            diagnostic=_selection_diagnostic(citable, (), (), expanded=False) if measure else None,
             unread_failures=tuple(failures),
             unread_checks=tuple(checks),
             asked_output=posed,
@@ -3657,10 +3717,11 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
             no_lines=not line_texts,
             failures_only=failures_only,
         )
-    body = "".join(
+    rendered = tuple(
         row_text(index, restored.get(id(row), row), whole=id(row) in whole)
         for index, row in enumerate(selected, start=1)
     )
+    body = "".join(rendered)
     taken = {id(row) for row in selected}
     printed = (
         _printed_messages(selected, whole, restored, wider_messages) if message_lookup else selected
@@ -3672,6 +3733,11 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     )
     return header + body, Selection(
         printed,
+        diagnostic=(
+            _selection_diagnostic(citable, printed, rendered, expanded=message_lookup is not None)
+            if measure
+            else None
+        ),
         unread_failures=tuple(entry for entry in failures if id(entry) not in taken),
         unread_checks=tuple(entry for entry in checks if id(entry) not in taken),
         asked_output=posed,
@@ -3681,6 +3747,48 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         newest_final=final_state,
         agent_words_whole=source_known and _agents_read_whole(citable, whole, restored),
     )
+
+
+def _selection_diagnostic(
+    eligible: Sequence[LedgerEntry],
+    selected: Sequence[LedgerEntry],
+    rendered: Sequence[str],
+    *,
+    expanded: bool,
+) -> dict[str, Any]:
+    """Counts within the eligible ledger, never a whole-source coverage claim.
+
+    Rendered rows include menu labels and escaping. Expansion/source character
+    counts exist only where printed-row metadata measured them; row words can
+    be longer than what was printed and must not be summed as evidence.
+    """
+    message_types = {"user_message", AGENT_MESSAGE_TYPE}
+    messages = [row for row in selected if row["type"] in message_types]
+
+    def characters(key: str) -> int | None:
+        if not expanded:
+            return None
+        total = 0
+        for row in messages:
+            value = row.get(key)
+            if type(value) is not int or value < 0:
+                return None
+            total += value
+        return total
+
+    return {
+        "eligible_entries": len(eligible),
+        "selected_entries": len(selected),
+        "eligible_messages": sum(row["type"] in message_types for row in eligible),
+        "selected_messages": len(messages),
+        "serialized_message_bytes": sum(
+            len(text.encode("utf-8", "replace"))
+            for row, text in zip(selected, rendered, strict=True)
+            if row["type"] in message_types
+        ),
+        "expanded_message_characters": characters("text_read"),
+        "selected_source_characters": characters("text_total"),
+    }
 
 
 def _printed_messages(
@@ -6913,7 +7021,7 @@ def record_withheld(context: Mapping[str, Any], harness: str, sid: str) -> str:
     return ""
 
 
-def produce(  # noqa: C901, PLR0911, PLR0913
+def produce(  # noqa: C901, PLR0911, PLR0913, PLR0915 - ordered gates and measured call seams
     config: RuntimeConfig,
     row: Mapping[str, Any],
     revisions: Sequence[Mapping[str, Any]],
@@ -6943,6 +7051,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     failures_only: bool = False,
     ci: Mapping[str, Any] | Callable[[], Mapping[str, Any] | None] | None = None,
     max_prompt_bytes: int | None = None,
+    on_diagnostic: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[Assessment | None, str, bool]:
     """One reading, or the reason there is none. Returns (assessment, why, spent).
 
@@ -7000,6 +7109,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     record that was never read withholds before the ledger, since an empty
     ledger would say it was read and held nothing.
     """
+    capture = analyze_diagnostics.Capture(on_diagnostic)
     goal, lines, scope, withheld = _readable(
         config,
         row,
@@ -7052,6 +7162,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913
     source_facts = _goal_source_candidates(row, facts, recovered_sources) if adopted else facts
     request_sources = listed_request_sources(facts, recovered_sources)
     source = adopted_prompt(latest, source_facts, harness, sid) if adopted else None
+    construction_started = capture.start()
     prompt, selected = build_prompt(
         ledger,
         goal=goal,
@@ -7067,7 +7178,9 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         # The rule says the ledger lists failures only, which is true of a lane that admitted
         # tool reports; on a route that sent none (Codex) no failed entry exists to qualify.
         failures_only=failures_only and admitted,
+        measure=on_diagnostic is not None,
     )
+    capture.prepared(prompt, selected.diagnostic, construction_started)
     if not selected.entries:
         return None, WITHHELD_LEDGER_EMPTY, False
     # The checks a grant would have sent are read from the facts; admitted, the
@@ -7104,7 +7217,10 @@ def produce(  # noqa: C901, PLR0911, PLR0913
         ),
     }
     coverage.update(_counted(command_counts_lookup))
-    raw, status = model(prompt, output_cap_bytes=REPLY_CAP_BYTES)
+    try:
+        raw, status = model(prompt, output_cap_bytes=REPLY_CAP_BYTES)
+    finally:
+        capture.called(model)
     # A reply that reached the cap is the one a cut can explain. The exec layer
     # decodes with "replace" and strips, so a cut reply can come back a little
     # under the cap: the slack is a run of indentation, not a second budget.
@@ -7250,6 +7366,15 @@ def _left_out(
 
 # The exec statuses that name their own cause, and whether each spent.
 _STATUS_FAILURES = {
+    "context-limit": (WITHHELD_CONTEXT_LIMIT, True),
+    "context-small-window": (WITHHELD_CONTEXT_SMALL_WINDOW, False),
+    "context-admission": (WITHHELD_CONTEXT_ADMISSION, False),
+    "context-config": (WITHHELD_CONTEXT_CONFIG, False),
+    "context-no-room": (WITHHELD_CONTEXT_NO_ROOM, False),
+    "context-dynamic": (WITHHELD_CONTEXT_DYNAMIC, False),
+    "context-compaction": (WITHHELD_CONTEXT_COMPACTION, False),
+    "context-fallback": (WITHHELD_CONTEXT_FALLBACK, False),
+    "context-config-after-reserve": (WITHHELD_CONTEXT_CHANGED, True),
     "unstopped": (WITHHELD_UNSTOPPED, True),
     "oversized": (WITHHELD_OVERSIZED, True),
     "closed": (WITHHELD_STOPPING, False),
@@ -7584,8 +7709,10 @@ class ClaudeReadingModel:
         runner: Any = supervise.run,
         binary_resolver: Any = shutil.which,
         on_spawn: Callable[[supervise.Group], None] | None = None,
+        analyze: bool = False,
     ) -> None:
         self.config = config
+        self.analyze = analyze
         self.runner = runner
         self.binary_resolver = binary_resolver
         # A reading job's seam: told the moment the CLI exists, which is when
@@ -7595,9 +7722,9 @@ class ClaudeReadingModel:
         self.diagnostic: dict[str, Any] | None = None
 
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
-        """The model's reply and a status of `ok`, `unavailable` or `failed`."""
+        """The reply/status, including an Analyze-only failed-CLI context hint."""
         self.diagnostic = None
-        return observer.claude_exec(
+        raw, status = observer.claude_exec(
             self.config,
             prompt,
             output_cap_bytes=output_cap_bytes,
@@ -7605,7 +7732,25 @@ class ClaudeReadingModel:
             binary_resolver=self.binary_resolver,
             on_spawn=self.on_spawn,
             on_diagnostic=self._diagnosed,
+            analyze=self.analyze,
         )
+        if self.analyze and status == "failed" and self._reported_context_limit():
+            return "", "context-limit"
+        return raw, status
+
+    def _reported_context_limit(self) -> bool:
+        diagnostic = self.diagnostic or {}
+        code = diagnostic.get("returncode")
+        return (
+            diagnostic.get("status") == "failed"
+            and type(code) is int
+            and code != 0
+            and diagnostic.get("reason") == "context-limit"
+        )
+
+    def provenance(self) -> dict[str, Any]:
+        """Describe this invocation's requested envelope, not a remote receipt."""
+        return observer.claude_reading_provenance(self.config, analyze=self.analyze)
 
     def _diagnosed(self, diagnostic: dict[str, Any]) -> None:
         self.diagnostic = diagnostic

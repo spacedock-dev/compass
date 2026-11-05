@@ -23,6 +23,22 @@
       "produced": false,
       "reason": "provider-changed",
       "route": {
+        "capacity": {
+          "can_lower_prompt_setting": true,
+          "cli_reserve_tokens": 16384,
+          "configuration_reason": "",
+          "estimate_method": "utf8-bytes-div-3",
+          "estimated_system_tokens": 58,
+          "fit_verified": false,
+          "generation_reserve_tokens": 128000,
+          "kind": "capacity-preview",
+          "maximum_prompt_bytes": 2097152,
+          "policy": "analyze-context-v1",
+          "policy_verified": false,
+          "reason": "estimated",
+          "window_source": "documented",
+          "window_tokens": 1000000
+        },
         "ci_read": "on",
         "destination": "Anthropic",
         "disclosure": "This session's own harness reads it. Sent: your goal, a bounded set of entries, and your messages and the agent's messages, whole or partial, within the prompt budget, and your expected outcome lines. The agent's newest final reply, as its transcript records one, goes whole, up to 16,384 characters. Tool output is included by default: a check's command, result and last 180 characters of output as printed, the paths of the files it wrote, the repository and number of a pull request it created, and the names of skills it used; agent messages may quote it. Other commands go too, with their output. To: Anthropic, off this machine, with credential shapes redacted, through your Claude Code CLI and its sign-in using claude-sonnet-5-5, spending your capacity. That CLI also sends its working directory, platform, shell, OS version, date and device identifier, and under a Claude account sign-in your email address and account ID. GitHub or GitLab: a request your goal or session names has checks read with your gh or glab login, sending repository and number or branch. --no-ci-read or the switch stops it. A reading is a model's account of the evidence, never a verification that the work was done.",
@@ -50,7 +66,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "3109",
+      "Content-Length": "3514",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

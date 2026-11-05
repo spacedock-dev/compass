@@ -20,7 +20,16 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
-from compass_runtime import cli, observer, project_context, reading, settings
+from compass_runtime import (
+    analyze_capacity,
+    claude_settings,
+    cli,
+    observer,
+    project_context,
+    reading,
+    reading_route,
+    settings,
+)
 
 from . import test_press_message_reach as reach_tests
 from .support import make_runtime, make_server, serve_until_closed
@@ -77,11 +86,25 @@ class StoreTest(unittest.TestCase):
         self.save({"analyze_prompt_bytes": 32_768})
         self.assertEqual(settings.DEFAULTS, self.save({"analyze_prompt_bytes": None}))
 
+    def test_opt_in_large_prompt_preferences_round_trip_and_keep_the_default(self) -> None:
+        limit = next(item for item in settings.LIMITS if item.key == "analyze_prompt_bytes")
+        self.assertEqual(2_097_152, limit.maximum)
+        self.assertEqual(524_288, limit.default)
+        for value in (513 * 1024, 2048 * 1024):
+            with self.subTest(value=value):
+                self.save({"analyze_prompt_bytes": value})
+                self.assertEqual(value, self.load().analyze_prompt_bytes)
+        before = Path(self.path).read_bytes()
+        with self.assertRaises(settings.InvalidSettingError):
+            self.save({"analyze_prompt_bytes": 2_097_153, "analyze_record_events": 1234})
+        self.assertEqual(before, Path(self.path).read_bytes())
+        self.assertEqual(524_288, self.save({"analyze_prompt_bytes": None}).analyze_prompt_bytes)
+
     def test_one_bad_value_writes_nothing(self) -> None:
         self.save({"analyze_listed_checks": 40})
         for bad in (
             {"analyze_listed_checks": 50, "analyze_prompt_bytes": 1},
-            {"analyze_listed_checks": 50, "analyze_prompt_bytes": 2_000_000},
+            {"analyze_listed_checks": 50, "analyze_prompt_bytes": 2_097_153},
             {"analyze_listed_checks": 50, "analyze_prompt_bytes": "65536"},
             {"analyze_listed_checks": 50, "analyze_prompt_bytes": True},
             {"analyze_listed_checks": 50, "analyze_prompt_bytes": 65_536.0},
@@ -154,7 +177,12 @@ class RoutesTest(unittest.TestCase):
         with self.serving() as port:
             status, body = self.request(port, "GET")
         self.assertEqual(200, status)
-        self.assertEqual(settings.published(settings.DEFAULTS), json.loads(body))
+        published = json.loads(body)
+        self.assertEqual(
+            settings.published(settings.DEFAULTS),
+            {key: published[key] for key in ("values", "limits")},
+        )
+        self.assertEqual({"claude", "codex"}, set(published["capacities"]))
 
     def test_post_saves_and_answers_what_is_now_in_force(self) -> None:
         with self.serving() as port:
@@ -163,6 +191,41 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual(75, json.loads(body)["values"]["analyze_listed_checks"])
         self.assertEqual(75, json.loads(after)["values"]["analyze_listed_checks"])
+
+    def test_get_post_publish_the_same_capacities_without_clamping_preference(self) -> None:
+        with (
+            mock.patch.object(
+                claude_settings,
+                "resolve",
+                return_value=claude_settings.Controls(deployment="direct"),
+            ) as controls,
+            self.serving() as port,
+        ):
+            status, posted = self.request(
+                port, "POST", {"values": {"analyze_prompt_bytes": 2_097_152}}
+            )
+            self.assertEqual(200, status)
+            _, fetched = self.request(port, "GET")
+            self.assertEqual(json.loads(posted), json.loads(fetched))
+            capacities = json.loads(fetched)["capacities"]
+            self.assertEqual(2_097_152, capacities["claude"]["maximum_prompt_bytes"])
+            self.assertEqual(524_288, capacities["codex"]["maximum_prompt_bytes"])
+            controls.return_value = claude_settings.Controls(
+                deployment="direct", window_limits=(145_000,)
+            )
+            _, reduced = self.request(port, "GET")
+            reduced_body = json.loads(reduced)
+            self.assertEqual(2_097_152, reduced_body["values"]["analyze_prompt_bytes"])
+            self.assertEqual(1674, reduced_body["capacities"]["claude"]["maximum_prompt_bytes"])
+            self.assertFalse(reduced_body["capacities"]["claude"]["can_lower_prompt_setting"])
+            self.assertEqual(2_097_152, settings.load(self.config).analyze_prompt_bytes)
+            admission = analyze_capacity.Admission(
+                "claude",
+                self.config.claude_reading_model,
+                observer.CLAUDE_READING_SYSTEM_PROMPT,
+                requested_maximum=settings.load(self.config).analyze_prompt_bytes,
+            )
+            self.assertIsNone(admission("small 界🙂"))
 
     def test_an_out_of_range_post_is_refused_and_writes_nothing(self) -> None:
         with self.serving() as port:
@@ -188,6 +251,124 @@ class RoutesTest(unittest.TestCase):
             )
         self.assertEqual(403, status)
         self.assertFalse(os.path.exists(settings.store_path(self.config)))
+
+
+class CapacityPreviewTest(unittest.TestCase):
+    def preview(self, **kwargs: Any) -> Any:
+        self.assertTrue(
+            hasattr(analyze_capacity, "preview"), "preview must not imply a measured empty prompt"
+        )
+        return analyze_capacity.preview(
+            "claude", "claude-sonnet-5-5", observer.CLAUDE_READING_SYSTEM_PROMPT, **kwargs
+        )
+
+    def test_preview_publishes_allowance_without_actual_input_or_admission_claims(self) -> None:
+        with mock.patch.object(
+            claude_settings, "resolve", return_value=claude_settings.Controls(deployment="direct")
+        ):
+            preview = self.preview()
+        self.assertEqual("estimated", preview["reason"])
+        self.assertEqual(2_097_152, preview["maximum_prompt_bytes"])
+        self.assertFalse(preview["fit_verified"])
+        self.assertFalse(preview["policy_verified"])
+        self.assertTrue(preview["can_lower_prompt_setting"])
+        for key in (
+            "allowed",
+            "prompt_bytes",
+            "estimated_input_tokens",
+            "estimated_total_tokens",
+            "requested_maximum",
+        ):
+            self.assertNotIn(key, preview)
+
+    def test_preview_preserves_unknown_gateway_dynamic_and_lower_controls(self) -> None:
+        cases = (
+            (claude_settings.Controls(deployment="gateway"), 524_288, "estimated"),
+            (
+                claude_settings.Controls(deployment="unknown", window_limits=(200_000,)),
+                166_674,
+                "estimated",
+            ),
+            (
+                claude_settings.Controls(deployment="direct", window_limits=(128_000,)),
+                0,
+                "context-no-room",
+            ),
+            (
+                claude_settings.Controls(deployment="direct", window_limits=(145_000,)),
+                1674,
+                "estimated",
+            ),
+            (claude_settings.Controls(refusal="dynamic-policy"), 0, "context-dynamic"),
+            (claude_settings.Controls(refusal="context-config"), 0, "context-config"),
+        )
+        for controls, maximum, reason in cases:
+            with (
+                self.subTest(reason=reason, maximum=maximum),
+                mock.patch.object(claude_settings, "resolve", return_value=controls),
+            ):
+                preview = self.preview()
+                self.assertEqual(maximum, preview["maximum_prompt_bytes"])
+                self.assertEqual(reason, preview["reason"])
+                self.assertEqual(maximum >= 16_384, preview["can_lower_prompt_setting"])
+
+    def test_tiny_window_admits_small_actual_text_and_refuses_without_bad_setting_advice(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            claude_settings,
+            "resolve",
+            return_value=claude_settings.Controls(deployment="direct", window_limits=(145_000,)),
+        ):
+            admission = analyze_capacity.Admission(
+                "claude",
+                "claude-sonnet-5-5",
+                observer.CLAUDE_READING_SYSTEM_PROMPT,
+                requested_maximum=2_097_152,
+            )
+            self.assertIsNone(admission("small 界🙂"))
+            status = admission("x" * 2000)
+            self.assertEqual("context-small-window", status)
+            assert status is not None
+            self.assertNotIn("Lower Prompt size", reading.WITHHELD[status])
+
+    def test_selected_route_preview_uses_actual_provider_and_model(self) -> None:
+        with mock.patch.object(
+            claude_settings, "resolve", return_value=claude_settings.Controls(deployment="direct")
+        ) as controls:
+            route = reading_route.resolve(
+                "claude", binary_resolver=lambda name: f"/synthetic/{name}"
+            )
+            self.assertIn("capacity", route)
+            self.assertEqual(2_097_152, route["capacity"]["maximum_prompt_bytes"])
+            controls.assert_called_with(route["model"], environ=None, root=None)
+            codex = reading_route.resolve(
+                "codex", binary_resolver=lambda name: f"/synthetic/{name}"
+            )
+            self.assertEqual(524_288, codex["capacity"]["maximum_prompt_bytes"])
+            unasked = reading_route.resolve(
+                "claude", binary_resolver=lambda name: f"/synthetic/{name}", unasked=True
+            )
+            self.assertNotIn("capacity", unasked)
+
+    def test_future_model_preview_and_large_gateway_override_remain_conservative(self) -> None:
+        self.assertTrue(hasattr(analyze_capacity, "preview"))
+        for model, controls in (
+            ("claude-sonnet-6", claude_settings.Controls(deployment="direct")),
+            (
+                "claude-sonnet-5-5",
+                claude_settings.Controls(deployment="gateway", window_limits=(10_000_000,)),
+            ),
+        ):
+            with (
+                self.subTest(model=model),
+                mock.patch.object(claude_settings, "resolve", return_value=controls),
+            ):
+                preview = analyze_capacity.preview(
+                    "claude", model, observer.CLAUDE_READING_SYSTEM_PROMPT
+                )
+                self.assertEqual(524_288, preview["maximum_prompt_bytes"])
+                self.assertFalse(preview["fit_verified"])
 
 
 class ThePressReadsTheSettings(reach_tests.TheHttpPressAsksForItsOwnWindow):

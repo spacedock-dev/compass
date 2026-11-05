@@ -103,6 +103,22 @@
       "reading_jobs": {},
       "reading_routes": {
         "claude": {
+          "capacity": {
+            "can_lower_prompt_setting": false,
+            "cli_reserve_tokens": 16384,
+            "configuration_reason": "",
+            "estimate_method": "legacy-byte-cap",
+            "estimated_system_tokens": 0,
+            "fit_verified": false,
+            "generation_reserve_tokens": 128000,
+            "kind": "capacity-preview",
+            "maximum_prompt_bytes": 0,
+            "policy": "analyze-context-v1",
+            "policy_verified": false,
+            "reason": "unavailable",
+            "window_source": "unknown",
+            "window_tokens": null
+          },
           "ci_read": "on",
           "destination": "",
           "disclosure": "",
@@ -120,6 +136,22 @@
           "words_destination": ""
         },
         "codex": {
+          "capacity": {
+            "can_lower_prompt_setting": false,
+            "cli_reserve_tokens": 16384,
+            "configuration_reason": "",
+            "estimate_method": "legacy-byte-cap",
+            "estimated_system_tokens": 0,
+            "fit_verified": false,
+            "generation_reserve_tokens": 128000,
+            "kind": "capacity-preview",
+            "maximum_prompt_bytes": 0,
+            "policy": "analyze-context-v1",
+            "policy_verified": false,
+            "reason": "unavailable",
+            "window_source": "unknown",
+            "window_tokens": null
+          },
           "ci_read": "on",
           "destination": "",
           "disclosure": "",
@@ -625,7 +657,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "22971",
+      "Content-Length": "23817",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

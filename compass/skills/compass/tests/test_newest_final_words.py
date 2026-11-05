@@ -919,7 +919,13 @@ class OnlyTheRequestedPressReadsIt(unittest.TestCase):
             mock.patch.object(observer, "resolve_transcript", return_value=str(path)),
         ):
             compose: Any = http_api._RequestHandler._compose_reading
-            compose(handler, row, {"revisions": revisions}, {}, SimpleNamespace(phase=None))
+            compose(
+                handler,
+                row,
+                {"revisions": revisions},
+                {},
+                SimpleNamespace(phase=None, capture=lambda _value: None),
+            )
         stamp = project_context.transcript_stamp(str(path))
         reading.produce(
             config,
@@ -984,7 +990,7 @@ class OnlyTheRequestedPressReadsIt(unittest.TestCase):
             row,
             {"revisions": [{"n": 1, "at": epoch(5), "goal": "Fix the queue"}]},
             {},
-            SimpleNamespace(phase=None),
+            SimpleNamespace(phase=None, capture=lambda _value: None),
         )
         self.assertEqual(1, len(self.prompts), why)
         self.assertIn("Evidence sentence number 39", self.prompts[0])
@@ -1113,7 +1119,9 @@ class TheHttpPressStampsBeforeItReadsTheContext(unittest.TestCase):
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
         ):
             compose: Any = http_api._RequestHandler._compose_reading
-            return compose(handler, row, entry, {}, SimpleNamespace(phase=None))
+            return compose(
+                handler, row, entry, {}, SimpleNamespace(phase=None, capture=lambda _value: None)
+            )
 
     def test_a_file_that_moves_while_the_context_is_read_keeps_the_excerpt(self) -> None:
         def moving(*_args: Any) -> dict[str, Any]:

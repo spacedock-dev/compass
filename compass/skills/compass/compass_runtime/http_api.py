@@ -19,9 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import ParseResult, parse_qs, urlparse
 
-from compass_runtime import annotations as annotation_store
-from compass_runtime import asks as runtime_asks
 from compass_runtime import (
+    analyze_capacity,
     ci_read,
     copied_corrections,
     correction,
@@ -45,6 +44,8 @@ from compass_runtime import (
     summary_store,
     tripwires,
 )
+from compass_runtime import annotations as annotation_store
+from compass_runtime import asks as runtime_asks
 from compass_runtime import events as runtime_events
 from compass_runtime import io as runtime_io
 from compass_runtime import observer as runtime_observer
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from compass_runtime.aggregate import Application
+    from compass_runtime.config import RuntimeConfig
     from compass_runtime.interaction_prototype import InteractionPrototype
     from compass_runtime.observation import Observation
 
@@ -377,6 +379,21 @@ def _session_context(
 # is a 400 carrying such a route, and its note says to reload.
 # A settings body is a few keys and integers; anything near this is not one.
 SETTINGS_BODY_CAP_BYTES = 1024
+
+
+def published_settings(config: RuntimeConfig, value: settings.Settings) -> dict[str, Any]:
+    """Stored preferences and separate route estimates, identical on GET and POST."""
+    return {
+        **settings.published(value),
+        "capacities": {
+            "claude": analyze_capacity.preview(
+                "claude", config.claude_reading_model, runtime_observer.CLAUDE_READING_SYSTEM_PROMPT
+            ),
+            "codex": analyze_capacity.preview("codex", runtime_observer.OBSERVER_MODEL, ""),
+        },
+    }
+
+
 PAGE_OUTDATED_REASON = "page-outdated"
 PAGE_OUTDATED = (
     "This page is from an older version of Compass, so nothing was sent. Reload the page "
@@ -1866,7 +1883,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if not self._local_ok():
             self.send_error(403)
             return
-        published = settings.published(settings.load(self.server.application.config))
+        config = self.server.application.config
+        published = published_settings(config, settings.load(config))
         self._send(json.dumps(published, separators=(",", ":")).encode(), "application/json")
 
     def _annotations(self) -> None:
@@ -2144,7 +2162,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(503, "the settings store could not be written")
             return
         self._send(
-            json.dumps(settings.published(saved), separators=(",", ":")).encode(),
+            json.dumps(published_settings(config, saved), separators=(",", ":")).encode(),
             "application/json",
         )
 
@@ -4055,8 +4073,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 # The job's phases, each told where it really begins (DRC-4686).
                 on_phase=hooks.phase,
                 max_prompt_bytes=limits.analyze_prompt_bytes,
+                on_diagnostic=hooks.capture,
                 **self._reading_arguments(
-                    row, entry, route, hooks, limits.analyze_scan_megabytes * 1024 * 1024
+                    row,
+                    entry,
+                    route,
+                    hooks,
+                    limits.analyze_scan_megabytes * 1024 * 1024,
+                    limits.analyze_prompt_bytes,
                 ),
             )
             assessment = outcome[0]
@@ -4080,6 +4104,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         route: runtime_reading_route.Route,
         hooks: runtime_reading_jobs.Hooks,
         scan_bytes: int | None = None,
+        prompt_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Everything `produce` takes beyond the record, from the route that ran."""
         application = self.server.application
@@ -4149,11 +4174,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             ),
             "model": reading_policy.GuardedModel(
                 application.config,
-                (
-                    runtime_reading.ClaudeReadingModel
-                    if route["provider"] == runtime_reading_route.CLAUDE
-                    else runtime_reading.CodexReadingModel
-                )(application.config, on_spawn=hooks.spawned),
+                runtime_reading.ClaudeReadingModel(
+                    application.config, on_spawn=hooks.spawned, analyze=True
+                )
+                if route["provider"] == runtime_reading_route.CLAUDE
+                else runtime_reading.CodexReadingModel(application.config, on_spawn=hooks.spawned),
                 application.clock,
                 provider=route["provider"],
                 destination=route["words_destination"],
@@ -4164,6 +4189,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 before_reserve=hooks.before_reserve,
                 cancelled=hooks.cancelled,
                 content=_press_content(route["harness"]),
+                admit_prompt=analyze_capacity.Admission(
+                    route["provider"],
+                    route["model"],
+                    runtime_observer.CLAUDE_READING_SYSTEM_PROMPT
+                    if route["provider"] == runtime_reading_route.CLAUDE
+                    else "",
+                    requested_maximum=prompt_bytes
+                    if prompt_bytes is not None
+                    else settings.DEFAULTS.analyze_prompt_bytes,
+                ),
             ),
         }
 

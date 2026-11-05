@@ -1406,6 +1406,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # shape belongs with the producer, and it stays a DAG: `reading`
         # imports neither this module nor `state`.
         "compass_runtime.annotations": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.reading",
@@ -1428,16 +1429,26 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.sessions",
             "compass_runtime.state",
         },
+        # Pure byte/estimated-context policy; no route discovery or execution.
+        "compass_runtime.reading_capacity": set(),
+        "compass_runtime.analyze_diagnostics": set(),
+        "compass_runtime.analyze_capacity": {
+            "compass_runtime.claude_settings",
+            "compass_runtime.reading_capacity",
+            "compass_runtime.settings",
+        },
         # The durable permission and budget: config names its store, io owns
         # optional SQLite loading, and the runner says whether Compass is
         # stopping. It reaches no session or model producer.
         "compass_runtime.reading_policy": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.io",
             # Whether Compass is stopping, so a call it cannot send is not charged.
             "compass_runtime.supervise",
         },
         "compass_runtime.reading": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.config",
             "compass_runtime.observer",
             "compass_runtime.reading_policy",
@@ -1465,6 +1476,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # store and reads the job registry beside the slot in `reading`. The
         # application it runs over is a protocol, so it never imports upward.
         "compass_runtime.reading_jobs": {
+            "compass_runtime.analyze_diagnostics",
             "compass_runtime.annotations",
             "compass_runtime.config",
             "compass_runtime.io",
@@ -1480,7 +1492,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Who reads a session: each provider's gate, then its CLI on PATH. It
         # validates the model floor in `config`, reaches ids in `observer` and never
         # a producer, and uses credential shapes in `records` so no key names a host.
+        "compass_runtime.claude_settings": set(),
         "compass_runtime.reading_route": {
+            "compass_runtime.analyze_capacity",
+            "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.annotations",
             "compass_runtime.observer",
@@ -1488,8 +1503,10 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.ci_read",
         },
         "compass_runtime.observer": {
+            "compass_runtime.claude_settings",
             "compass_runtime.config",
             "compass_runtime.io",
+            "compass_runtime.reading_capacity",
             "compass_runtime.reading_policy",
             "compass_runtime.records",
             "compass_runtime.spacedock",
@@ -1560,6 +1577,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.analyze_capacity",
+            "compass_runtime.config",
             # Deterministic grouping belongs only to the focused context answer.
             "compass_runtime.session_outline",
             # Stored summaries on the focused answer, and `POST /api/summary/delete`.

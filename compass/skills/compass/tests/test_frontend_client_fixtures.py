@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import socket
 import subprocess
@@ -137,6 +138,10 @@ class ClientContractFixtureTest(unittest.TestCase):
 
     def committed(self) -> dict[str, bytes]:
         return {path.name: path.read_bytes() for path in sorted(FIXTURES.glob("*.json"))}
+
+    def test_capacity_previews_do_not_depend_on_the_generators_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "100000"}):
+            self.assertEqual(self.generated, regen.generate())
 
     def test_every_committed_file_is_what_the_live_server_produces(self) -> None:
         committed = self.committed()

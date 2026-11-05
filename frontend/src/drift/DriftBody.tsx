@@ -48,6 +48,7 @@ import { useFollowCorrection } from './useFollowCorrection';
 import { useRunBoard } from './useRunBoard';
 import { Why } from './Why';
 import { READING_NOT_A_VERIFICATION } from '../intent/logModel';
+import { ReadingAllowance } from './ReadingAllowance';
 
 /* The Drift section's body, in the page's order: the answer in one sentence, the level, the one control (or the question before it, or the
    result that stands in its place), what analysis does, what the session launched, and a reading this build
@@ -185,6 +186,7 @@ export function DriftBody({ primary }: { readonly primary: boolean }) {
     <div className="contents" data-next-drift-body>
       <UnaskedPermission key={key} payload={payload} session={session} />
       {readable && job ? null : answer}
+      <ReadingAllowance route={model.route} />
       {area}
       <ReadingSection />
     </div>

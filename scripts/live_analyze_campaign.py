@@ -43,6 +43,7 @@ class LiveTransport:
         on_diagnostic: Any = None,
         system_prompt: str | None = None,
         timeout: float | None = None,
+        analyze: bool = False,
     ) -> tuple[str, str]:
         from compass_runtime import supervise  # noqa: PLC0415 - exact production default seam
 
@@ -66,7 +67,7 @@ class LiveTransport:
         if not self.pinned_binary("claude"):
             raise abstention_ledger.LedgerError("the verified live binary changed before reserve")
         producer = analyze_campaign.verified_transport_binding(
-            config, self.verified, self.observer, claude_executor=self.inner
+            config, self.verified, self.observer, claude_executor=self.inner, analyze=analyze
         )
         source = analyze_campaign.runtime_source_digest(self.source)
         request = analyze_campaign.request_digest(prompt, producer, source, output_cap_bytes)
@@ -80,6 +81,7 @@ class LiveTransport:
             on_spawn=on_spawn,
             runner=supervise.run,
             binary_resolver=self.pinned_binary,
+            analyze=analyze,
         )
         if status != "ok":
             self.campaign.settle(charge, "unusable")

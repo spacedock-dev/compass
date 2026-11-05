@@ -80,7 +80,7 @@ class ThePressMeasuresTheMessageTail(checks.ClaudeChecksTestCase):
                         ]
                     },
                     {},
-                    SimpleNamespace(phase=None),
+                    SimpleNamespace(phase=None, capture=lambda _value: None),
                 )
                 self.assertEqual("", why)
                 self.assertTrue(spent)

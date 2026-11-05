@@ -179,7 +179,13 @@ class ThePressRecoversOnlyListedWindowWords(unittest.TestCase):
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
         ):
             compose: Any = http_api._RequestHandler._compose_reading
-            compose(handler, row, {"revisions": revisions}, {}, SimpleNamespace(phase=None))
+            compose(
+                handler,
+                row,
+                {"revisions": revisions},
+                {},
+                SimpleNamespace(phase=None, capture=lambda _value: None),
+            )
         reading.produce(
             self.config,
             row,
@@ -232,7 +238,7 @@ class ThePressRecoversOnlyListedWindowWords(unittest.TestCase):
                         {"harness": harness, "sid": "s1", "state": "working"},
                         {"revisions": [{"n": 1, "at": 50, "goal": "Check queue"}]},
                         {},
-                        SimpleNamespace(phase=None),
+                        SimpleNamespace(phase=None, capture=lambda _value: None),
                     )
                 self.assertEqual(1, len(prompts))
                 self.assertIn("PRESERVE FULL INSTRUCTION", prompts[0])

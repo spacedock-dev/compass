@@ -4,7 +4,7 @@
     "error_page": "stdlib error pages are recorded by status, not by text, because their wording differs between Python releases",
     "headers": "Date, Server and Connection are dropped; Content-Length is dropped from error pages",
     "json_body": "bodies are re-serialised with sorted keys; the wire order is not kept",
-    "reading_route": "the CLI lookup is pinned to a present binary, which is a machine fact; the destination is the route's own resolution against an empty environment and no settings files, which is the shipped default and names the vendor"
+    "reading_route": "the CLI lookup is pinned to a present binary, which is a machine fact; the destination is the route's own resolution against an empty environment and no settings files, which is the shipped default and names the vendor; capacity controls use the real resolver with a synthetic Linux account and empty settings root, independent of the host environment"
   },
   "placeholders": {
     "{capability}": "the focus capability the page was served with; a per-process secret",
@@ -302,35 +302,35 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "a4f521b5efea6004e2f350bee40b4b056259d07eab38b96faa25da07d9b4c4c1",
+      "sha256": "c6660a6f7ecce81ea2375532e71607bb16d4c58bb6419d4f4348c8b56ea3ce49",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "6d714c42b3aeb61a323e9c20c42d6a4bd418af41f91cd35ddaf8658d9c2dd9f7",
+      "sha256": "60c419e3ea5025656faf1686f488bf785e5bb7d897f7e45bf60cd8364169cd7b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "50fa25f1317333092efa54d2840320f3ff742a6c97b6bc8c7c1e92cd154b5866",
+      "sha256": "2a37020bea654ffeda6c8a15712add29dd7e8ad46aa5d883fed31e1336a0853b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-session-states",
       "route": "/api/data",
-      "sha256": "ae0113791261d1d025e1814f00e91d13e0d1aab3a0d4cb91df4b8e6427d4ad73",
+      "sha256": "9f5069344cf7a4f5d0708f79b3f04e7d1d29e44ed683887de9d2e7591832f81e",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "7a933f6540f53be3748cf1eef7303f59f24122dc5928c407b63f203e64162f0c",
+      "sha256": "971852967409b3e6e24d6ed77a6505c21d97b7ed6722f134c5db03aee0e149a0",
       "status": 200
     },
     {
@@ -519,7 +519,7 @@
       "method": "POST",
       "name": "reading-destination-changed",
       "route": "/api/reading",
-      "sha256": "04cc5808c4b658a7dd4b9743ea469c0303b2f9e91850510ed215574ce8d838af",
+      "sha256": "e78bac5fb7b762589cab42fd57d1909e5f4dcaa301eb7bdcebc61110decfeaef",
       "status": 409
     },
     {
@@ -554,21 +554,21 @@
       "method": "POST",
       "name": "reading-off",
       "route": "/api/reading",
-      "sha256": "a8910e03efefcfc04bcb2a43ddd52febdf69b13a3e1d6ab47642d684ea328055",
+      "sha256": "0014955a05e6f06248c350b26e86a2ada11feae00859ae044076db7b2309d6a6",
       "status": 403
     },
     {
       "method": "POST",
       "name": "reading-page-outdated",
       "route": "/api/reading",
-      "sha256": "4bc2411b92b936d026715b45fc22da0aa8720097ceec10214dc2d1d8edd85c03",
+      "sha256": "46aae5496354f05b19e0ecf2dc426fc14f19e882c84ee419098145dc776610c0",
       "status": 400
     },
     {
       "method": "POST",
       "name": "reading-provider-changed",
       "route": "/api/reading",
-      "sha256": "9360f507f8fd3f024229e3278836e2c5fb262021251b15313e6d13f1ba7e64d0",
+      "sha256": "d39f8f52a9569266f231c93314d10baca64ad827fd6e0025006b67b07a658655",
       "status": 409
     },
     {
@@ -582,7 +582,7 @@
       "method": "POST",
       "name": "reading-stale-model",
       "route": "/api/reading",
-      "sha256": "4f2f83cd9c4df0a516e703092a18963cdf96909d6a45f49490faa49513508227",
+      "sha256": "69598ba5572f426bccc32e00b0f5f28bdbfc4c748e422c0bc5ab25929a1e05f5",
       "status": 409
     },
     {

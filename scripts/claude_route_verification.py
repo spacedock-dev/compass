@@ -857,7 +857,9 @@ def install_native_guard() -> Iterator[dict[str, Any]]:
         binary_resolver: Any = shutil.which,
         on_spawn: Any = None,
         on_diagnostic: Any = None,
+        analyze: bool = False,
     ) -> tuple[str, str]:
+        _require(analyze is False, "native route authority permits only analyze=False")
         _require(
             captured
             and config is captured["application"].config
@@ -893,6 +895,7 @@ def install_native_guard() -> Iterator[dict[str, Any]]:
                 binary_resolver=binary_resolver,
                 on_spawn=on_spawn,
                 on_diagnostic=on_diagnostic,
+                analyze=analyze,
             )
         except BaseException:
             current.settle_transport(charge, "failed", output_digest=sha(b""))

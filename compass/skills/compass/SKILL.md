@@ -567,9 +567,17 @@ An older reading says coverage was not recorded. A tail starting inside the inte
 every intent row "may be in the part not read"; claims stay independent. On Claude Code an Analyze
 press reads the session's messages back to the window start where it can, and says where it stopped
 when it cannot. How much a press keeps and sends is set on the page's Settings screen: the largest
-prompt (512 KB by default), how many of the session's messages and checks it keeps (2,000), how
+prompt (512 KB by default, optionally up to 2,048 KB), how many of the session's messages and checks it keeps (2,000), how
 many checks and written files it lists (1,000), and how much of the session's and its subagents'
-transcripts it scans for them (512 MB), which is where delegated work runs its tests. The project
+transcripts it scans for them (512 MB), which is where delegated work runs its tests. Prompt size
+limits one Analyze drift prompt, not the outline or Summary's source coverage. Settings shows
+each route's estimated allowance separately from the saved limit. The session's Next Analyze
+prompt line shows the current route's allowance outside any stored assessment; it describes the
+next press, not what an earlier reading covered. Neither estimate confirms model availability
+or fit. An assembled prompt above that allowance is refused before a model call,
+without automatically shortening it or switching providers. A smaller actual prompt may still
+pass when the saved limit is higher. Unknown or unusable estimates say so, and a tiny allowance
+does not ask you to save below the 16 KB minimum. The project
 page keeps its own 100 events and 12 checks and scans 8 MB. A check that `&&` joins ahead of a later
 check whose own summary ends the output counts as passed, since the later one only ran because the
 earlier one exited 0. Checks separated by `;`, each cut by `tail`, each take their own summary line

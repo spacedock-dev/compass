@@ -25,6 +25,22 @@
       "produced": false,
       "reason": "page-outdated",
       "route": {
+        "capacity": {
+          "can_lower_prompt_setting": true,
+          "cli_reserve_tokens": 16384,
+          "configuration_reason": "",
+          "estimate_method": "utf8-bytes-div-3",
+          "estimated_system_tokens": 58,
+          "fit_verified": false,
+          "generation_reserve_tokens": 128000,
+          "kind": "capacity-preview",
+          "maximum_prompt_bytes": 2097152,
+          "policy": "analyze-context-v1",
+          "policy_verified": false,
+          "reason": "estimated",
+          "window_source": "documented",
+          "window_tokens": 1000000
+        },
         "ci_read": "on",
         "destination": "Anthropic",
         "disclosure": "",
@@ -43,7 +59,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "743",
+      "Content-Length": "1148",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
