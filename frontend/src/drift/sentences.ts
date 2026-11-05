@@ -565,9 +565,11 @@ export const READING_DEFINITION =
 export const REVISION_DEFINITION = 'Each save is kept on its own.';
 
 export const OFFER =
-  'A reading is a model’s account of the evidence on this page: the observed record in this session’s activity and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or what you saw on your screen.';
+  'A reading is a model’s account of the evidence on this page: the observed record in this session’s activity, except entries marked as Compass’s answer, and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or what you saw on your screen.';
+/* The mark on what the agent ran and said after the reader typed a Compass command in the session. */
+export const COMPASS_ANSWER = 'Compass’s answer, not read';
 export const SCOPE =
-  'What it reads is the evidence on this page: the observed record in this session’s activity and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.';
+  'What it reads is the evidence on this page: the observed record in this session’s activity, except entries marked as Compass’s answer, and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.';
 
 export const PRESS_LINES: Readonly<Record<string, string>> = {
   'idle-unknown': 'Analyze opens while this session runs.',

@@ -16,6 +16,17 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-05, the reading-scope sentence leaves out what Compass answered. The two sentences that say what a
+reading reads (the offer before a first reading and the scope after one) now say the observed record in the
+session's activity "except entries marked as Compass's answer", because the server marks what the agent ran and
+said after the reader typed a Compass command and no reading reads it
+([the ruling](design-reading-a-session.md#dec-16-compass-does-not-write-into-a-session)). The retired page's
+words for both are recorded in `frontend/test/golden/e2e/drift-parity.json`, in 19 places, and the page departs
+from them. No golden file is changed. Only the on-demand `frontend/e2e/drift-parity.mjs` reads that file, and
+nothing in CI or the pre-PR list does, so no test turns red; the sentence in `frontend/e2e/session-first-view.mjs`
+is updated to the new words, and a run of `drift-parity.mjs` will show the 19 differences. The `Drift/A Compass skill action` stories hold the label, the summary
+count and the card that stays current.
+
 2026-11-02, a Codex session is read at a turn stop
 ([the amendment](design-reading-a-session.md#amended-2026-11-02-owner-codexs-recorded-turn-finish-is-a-turn-stop)).
 The retired page read a turn stop on Claude Code alone and said "Codex sessions can be analyzed only while a

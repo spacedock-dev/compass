@@ -18,6 +18,7 @@ nothing here keys on attribution. Every text is placeholder prose.
 from __future__ import annotations
 
 import dataclasses
+import http.client
 import json
 import os
 import re
@@ -49,6 +50,7 @@ from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 from . import test_reading, test_reading_source_final
+from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
 from .test_slash_command_direction import CAVEAT, Session, local_command, prompt_command
 
@@ -306,6 +308,26 @@ class _Case(unittest.TestCase):
         )
         return list(context["semantic"]["facts"])
 
+    def served(self, path: str) -> dict[str, Any]:
+        """What the board's own page routes answer for the session, over a socket."""
+        self.save()
+        httpd = make_server(application=self.application())
+        thread = serve_until_closed(httpd)
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            connection.request("GET", path)
+            body = connection.getresponse().read()
+            connection.close()
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+        return cast("dict[str, Any]", json.loads(body))
+
+    def served_facts(self) -> list[dict[str, Any]]:
+        """The facts the page reads for the session: Full activity, the Drift card."""
+        context = self.served(f"/api/project-context?project=billing&session=claude:{SHORT}")
+        return list(context["semantic"]["facts"])
+
     def read_facts(self) -> list[dict[str, Any]]:
         """The facts a reading and the Live monitor read, the way `/api/reading` gets them."""
         self.save()
@@ -553,6 +575,34 @@ class TheTurnItOpensIsNotEvidenceTest(_Case):
         self.assertTrue(any(RUN in summary for summary in published), published)
         self.assertNotIn(f"{COMMAND} sessions", published)
 
+    def test_the_page_is_told_which_facts_are_compass_s_turn(self) -> None:
+        self.session.compass()
+        marked = {
+            str(fact.get("summary")): fact.get(reading.COMPASS_TURN_FLAG)
+            for fact in self.served_facts()
+        }
+        self.assertIs(True, marked[ECHOED])
+        self.assertIs(True, next(v for k, v in marked.items() if RUN in k))
+        # The reader's own work, before the command, carries no mark at all.
+        self.assertIsNone(marked["The retry handler is in place."])
+        self.assertIsNone(marked["pytest tests/test_retry.py"])
+
+    def test_a_message_the_reader_sent_while_the_turn_ran_is_not_marked(self) -> None:
+        self.session.compass(stop=False)
+        self.session.asked("Also cover the retry path with a test.")
+        marked = {
+            str(fact.get("summary")): fact.get(reading.COMPASS_TURN_FLAG)
+            for fact in self.served_facts()
+        }
+        self.assertIsNone(marked["Also cover the retry path with a test."])
+
+    def test_the_record_page_route_publishes_the_mark_too(self) -> None:
+        self.session.compass()
+        page = self.served(f"/api/session-record?project=billing&session=claude:{SHORT}")
+        marked = {str(e.get("summary")): e.get(reading.COMPASS_TURN_FLAG) for e in page["entries"]}
+        self.assertIs(True, marked[ECHOED])
+        self.assertIsNone(marked["The retry handler is in place."])
+
     def test_a_readings_ledger_holds_nothing_from_the_turn(self) -> None:
         self.session.compass()
         ledger = reading.build_ledger(
@@ -715,7 +765,8 @@ class TheStoryReadsWhatTheServerPublishesTest(_Case):
     """`DriftCompassSkillAction` is drawn from this file: the facts the board publishes for a
     session whose latest message is a Compass skill action, and the outline the server makes for
     it. A server that again publishes the command as the reader's message, or opens a phase for
-    it, changes this file and the story asserts against the change. Regenerate with
+    it, changes this file and the story asserts against the change. The facts are what the page's own
+    route answers, so each carries the mark of Compass's turn. Regenerate with
     `COMPASS_WRITE_STORY_FIXTURE=1`."""
 
     def collected(self) -> dict[str, Any]:
@@ -726,7 +777,7 @@ class TheStoryReadsWhatTheServerPublishesTest(_Case):
         self.session.bash("pytest tests/test_retry.py", "5 passed")
         self.session.said("The retry handler is in place.")
         self.session.compass()
-        facts = [project_context.for_page(fact) for fact in self.published()]
+        facts = self.served_facts()
         outline = session_outline.build(self.page(), self.config)
         return {"facts": facts, "outline": outline}
 

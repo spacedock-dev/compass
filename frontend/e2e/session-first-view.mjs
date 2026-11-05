@@ -202,7 +202,7 @@ try {
     await page.getByText('The agent messages.', { exact: true }).waitFor({ state: 'visible' });
     await page
       .getByText(
-        'What it reads is the evidence on this page: the observed record in this session’s activity and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.',
+        'What it reads is the evidence on this page: the observed record in this session’s activity, except entries marked as Compass’s answer, and the goal and output you saved, and nothing else. It does not read a diff, a file, a test or a deliverable, replies from git, gh or connected tools, or your screen.',
         { exact: true },
       )
       .waitFor({ state: 'visible' });

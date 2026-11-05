@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2308915,
+    "bytes": 2309591,
     "file": "react.html",
-    "sha256": "66535d51fb903d931b18ca7a912abdbf609bde18ccb47f2af3680d97f60000b6"
+    "sha256": "fa988a01bcfd8c812323869dcd5bd0277bd90c47a6ffe9a8ed21cdaa79c3519c"
   },
   "format": 1,
   "frontend": "react",
@@ -559,7 +559,7 @@
       },
       {
         "file": "frontend/src/drift/ActivityHead.tsx",
-        "sha256": "8d0c541105678aa9868376a2c1de5bf20e599ed94bb40b1b68ebc7d3e66fd9e2"
+        "sha256": "c4383a1dc8d05f223d642099bd2bee08a17453cb7d7c23e474865b92f4f16d35"
       },
       {
         "file": "frontend/src/drift/ActivityMarks.tsx",
@@ -779,7 +779,7 @@
       },
       {
         "file": "frontend/src/drift/result.ts",
-        "sha256": "146bf36524af59e2675e8abc76543da809962dc3119d5631dad0f9d7bdd5199b"
+        "sha256": "fc7d7d7ab8db589869004d2d3e1ad15c4d61a2e52affebe0bc10522dcc770f4a"
       },
       {
         "file": "frontend/src/drift/route.ts",
@@ -787,7 +787,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "8d6ac81b65c3a529d9987e7974749bbdbb2000d4ddde8e0c3250c73fe15fec26"
+        "sha256": "f5fe2b9da00f2c5c320c18d33a762b62921e70a180cd626e749156f4ccf244a0"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -815,7 +815,7 @@
       },
       {
         "file": "frontend/src/drift/workList.ts",
-        "sha256": "5b971c06a1951288cf8a332ff8b851083a0afe0aa14bf7d8c697a04a5c74533b"
+        "sha256": "31cb8b1eb7b10fe9a58a207fb9d84a637643433f641cb3dfcdade9d961c4a3c6"
       },
       {
         "file": "frontend/src/intent/ActionButton.tsx",
@@ -963,7 +963,7 @@
       },
       {
         "file": "frontend/src/intent/work.ts",
-        "sha256": "1d90b56da94052dd729769933e2a6782e252607ccfe1a2e62d378581fd47d72c"
+        "sha256": "dee29e01b4243fc3a4bdeb4267c6e997213df1d1fe1f4f32cdf78f8cfa4d1565"
       },
       {
         "file": "frontend/src/lib/utils.ts",
