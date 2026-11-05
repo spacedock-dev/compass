@@ -6945,7 +6945,9 @@ loaded:
   `accept` from a rule whose source is `command`, the skill.
 - In the same session, `python3 -c "<code>"` followed by the two script paths and `--sessions`, the
   `sessions` command with `--stop` added, and the `sessions` command joined to a `touch` with `&&`
-  were each denied, and none of them ran.
+  were each denied, and none of them ran. So were the `sessions` command behind a `PYTHONPATH=`
+  assignment, behind `env PYTHONPATH=`, with its output redirected to a file, piped to `tee`, and
+  with a `$(…)` substitution appended.
 - A deny rule for the command in local settings overrode the skill: the action was denied.
 
 Rejected: the glob `Bash(python3 *launch.py* *server.py* --sessions*)`, the rule that led to the
