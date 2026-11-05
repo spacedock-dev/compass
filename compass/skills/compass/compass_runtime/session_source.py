@@ -1151,7 +1151,8 @@ def _outline_reconcile(
         raise ValueError("outline_dependency_limit")
     changed = (
         list(new)
-        if written != known and not initial_complete
+        if (written != known or (previous is not None and current.head != previous.head))
+        and not initial_complete
         else [
             key
             for key, call in new.items()
@@ -1572,6 +1573,7 @@ class _StreamRead:
     fact_observations: dict[str, int] = field(default_factory=dict)
     replacement_observations: list[int] = field(default_factory=list)
     known_head: tuple[str, float | None] | None = None
+    head_pending: bool = False
     outline: bool = False
     withdrawals: frozenset[str] = frozenset()
     dependency_ids: frozenset[str] = frozenset()
@@ -2039,18 +2041,22 @@ def _outline_track_call(
 ) -> None:
     if not read.outline:
         return
-    if call.call_id in read.dependency_ids or any(
-        entries
-        != _classify(
-            _StreamRead(read.cursor, read.start, read.path),
-            call,
-            results,
-            position,
-            sid,
-            session_dir,
-            _without_dependencies(declared, steering=steering),
+    if (
+        read.head_pending
+        or call.call_id in read.dependency_ids
+        or any(
+            entries
+            != _classify(
+                _StreamRead(read.cursor, read.start, read.path),
+                call,
+                results,
+                position,
+                sid,
+                session_dir,
+                _without_dependencies(declared, steering=steering),
+            )
+            for steering in (False, True)
         )
-        for steering in (False, True)
     ):
         read.dependency_calls.append(
             replace(call, fact_ids=tuple(entry.fact_id for entry in entries))
@@ -2426,6 +2432,11 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
     )
     for stream_read in streams:
         stream_read.outline = outline
+        # Parent head fallback can resolve after a child or earlier zero-emission call. Keep
+        # only verified call locators until that canonical classification context is known.
+        stream_read.head_pending = outline and (
+            known_head is None or not known_head[0] or known_head[1] is None
+        )
         stream_read.withdrawals = frozenset(observed_writes or ())
         tools, held = (
             _tools(stream_read, after.pending if after else (), sid, session_dir, budget, declared)

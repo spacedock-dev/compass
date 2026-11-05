@@ -1549,6 +1549,13 @@ revision-zero facts. A later result for a replayed call requests a newer replay;
 stay at zero. Replacements retire only old ids absent from the new result, then upsert new ids.
 This prevents an older opening revisit from overwriting a newer result in the tail.
 
+The canonical parent directory or first stamped record can appear after earlier calls were read.
+While either is unknown, the source retains bounded, verified call locators even for calls that
+emit no facts. When that parent metadata resolves, it queues those calls across admitted streams
+for the same replay. This repairs check admission and file identities under the discovered context;
+it does not add a head scan or another read allowance. Permanently absent metadata keeps the
+canonical unknown-context result, subject to the same dependency and checkpoint caps.
+
 Native EOF is not completion while replay remains. Checkpoint `done` means no more work can be
 attempted for that source generation; `complete` additionally requires every admitted stream to
 finish without permanent gaps and every classification update to settle. A stopped stream or a

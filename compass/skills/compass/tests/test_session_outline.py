@@ -910,6 +910,42 @@ class SessionOutlineTest(unittest.TestCase):
             self.assertNotIn(forbidden, repr(graph))
         return answers
 
+    def test_cached_late_parent_head_matches_all_canonical_fields_and_order(self) -> None:
+        self._declaration_record(typecheck="tsc --noEmit")
+        for missing in ("cwd", "timestamp"):
+            self.state = build_runtime_state(self.config, started=1)
+            transcript = Transcript(self.root)
+            transcript.prompt("Owned late head.")
+            if missing == "cwd":
+                transcript.bash(f"cd {self.root} && pnpm typecheck", "1 passed")
+                transcript.write(str(self.root / "src/early.py"))
+                transcript.bash("pytest tests/direct.py", "1 passed")
+            for number in range(55):
+                transcript.prompt(f"Before metadata {number}. " + "padding " * 20)
+            for row in transcript.rows:
+                row.pop(missing, None)
+            transcript.prompt("First canonical metadata.")
+            for number in range(8):
+                transcript.prompt(f"After metadata {number}. " + "padding " * 20)
+            transcript.save(self.path)
+            if missing == "timestamp":
+                child = Transcript(self.root)
+                child.bash("pnpm typecheck", "1 passed")
+                child.write(str(self.root / "src/child.py"))
+                for row in child.rows:
+                    row["isSidechain"] = True
+                child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+            with self.subTest(missing=missing):
+                self._settle_declaration_outline()
+                whole = self.source.read(
+                    self.config, str(self.path), "claude", "root", max_bytes=100000
+                )
+                graph = next(iter(self.state.session_outlines.values()))
+                self.assertEqual(
+                    tuple(dataclasses.replace(entry, words=None) for entry in whole.entries),
+                    self.outline._ordered_entries(graph),
+                )
+
     def test_cached_declaration_withdrawal_matches_whole_source_after_replay(self) -> None:
         transcript = self._declaration_record(typecheck="tsc --noEmit")
         transcript.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")

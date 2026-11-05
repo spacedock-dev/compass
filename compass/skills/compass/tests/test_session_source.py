@@ -1326,6 +1326,98 @@ class SessionSourceTest(unittest.TestCase):
         )
         return facts, pages
 
+    def test_outline_late_parent_cwd_replays_zero_fact_calls_and_file_identity(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned late cwd.")
+        self.session.bash(f"cd {self.root} && pnpm typecheck", "1 passed")
+        self.session.write(str(self.root / "src/early.py"))
+        self.session.bash("pytest tests/direct.py", "1 passed")
+        for number in range(55):
+            self.session.prompt(f"Before cwd {number}. " + "padding " * 20)
+        for row in self.session.rows:
+            row.pop("cwd", None)
+        self.session.prompt("First canonical cwd.")
+        for number in range(8):
+            self.session.prompt(f"After cwd {number}. " + "padding " * 20)
+        self.save()
+        whole = self.read()
+        self.assertTrue(whole.coverage.complete)
+        facts, pages = self.collect_outline_with_authority()
+        self.assertFalse(any(entry.title == "pnpm typecheck" for entry in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertEqual(
+            ["src/early.py"], [entry.path for entry in facts.values() if entry.kind == "file"]
+        )
+        self.assertTrue(any(page.classification_revision > 0 for page in pages))
+
+    def test_outline_late_parent_first_timestamp_replays_earlier_child_calls(self) -> None:
+        self.prepare_outline_declarations()
+        for number in range(55):
+            self.session.prompt(f"Before first stamp {number}. " + "padding " * 20)
+        for row in self.session.rows:
+            row.pop("timestamp", None)
+        self.session.prompt("First canonical parent timestamp.")
+        for number in range(8):
+            self.session.prompt(f"After timestamp {number}. " + "padding " * 20)
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pnpm typecheck", "1 passed")
+        child.write(str(self.root / "src/child.py"))
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        whole = self.read()
+        self.assertTrue(whole.coverage.complete)
+        self.assertEqual(
+            ["pnpm typecheck"], [entry.title for entry in whole.entries if entry.kind == "check"]
+        )
+        facts, pages = self.collect_outline_with_authority()
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertTrue(any(page.classification_revision > 0 for page in pages))
+
+    def test_outline_permanently_unknown_head_keeps_canonical_result_without_replay(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned absent cwd.")
+        self.session.bash(f"cd {self.root} && pnpm typecheck", "1 passed")
+        self.session.bash("pytest tests/direct.py", "1 passed")
+        for number in range(20):
+            self.session.prompt(f"No metadata {number}. " + "padding " * 20)
+        for row in self.session.rows:
+            row.pop("cwd", None)
+        self.save()
+        facts, pages = self.collect_outline_with_authority()
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        self.assertTrue(all(page.classification_revision == 0 for page in pages))
+
+    def test_outline_unknown_head_zero_fact_calls_obey_dependency_limit(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.bash(f"cd {self.root} && pnpm typecheck", "1 passed")
+        for row in self.session.rows:
+            row.pop("cwd", None)
+        self.save()
+        with mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0):
+            page, checkpoint = self.source._read_outline(
+                self.config, str(self.path), "claude", "root"
+            )
+        self.assertEqual("limited", page.state)
+        self.assertTrue(checkpoint.dependency_limited)
+        self.assertFalse(checkpoint.complete)
+        self.assertTrue(checkpoint.done)
+        self.assertIn("outline_dependency_limit", [gap.reason for gap in page.coverage.unread])
+
+    def test_outline_known_head_direct_calls_need_no_context_dependency(self) -> None:
+        self.session.prompt("Owned known metadata.")
+        self.session.bash("pytest tests/direct.py", "1 passed")
+        self.save()
+        with mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0):
+            page, checkpoint = self.source._read_outline(
+                self.config, str(self.path), "claude", "root"
+            )
+        self.assertEqual("ok", page.state)
+        self.assertTrue(checkpoint.complete)
+        self.assertEqual((), checkpoint.dependencies)
+        self.assertEqual(self.read().entries, page.entries)
+
     def test_outline_declaring_file_write_reconciles_earlier_and_later_checks(self) -> None:
         self.prepare_outline_declarations()
         self.session.prompt("Owned declaration reconciliation.")
