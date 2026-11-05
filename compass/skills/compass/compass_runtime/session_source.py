@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import time
+from bisect import bisect_right
 from dataclasses import asdict, dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -171,6 +172,172 @@ class SourceChange:
     kind: str
     changed: tuple[tuple[str, str], ...] = ()
     appended: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _OutlineLine:
+    start: int
+    end: int
+    digest: str
+
+
+@dataclass(frozen=True)
+class _OutlineCall:
+    call_id: str
+    line: _OutlineLine
+    rewrite: _OutlineLine | None
+    position: tuple[int, int]
+    fact_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OutlineCheckpoint:
+    """Bounded parent-call locators, with no classifier inputs or generic source cursor.
+
+    This primitive does not yet carry a scanning frontier or resume an outline. A caller must
+    keep its transient source page separate and use the same poll budget for rehydration.
+    """
+
+    identity: str
+    stamp: Stamp
+    calls: tuple[_OutlineCall, ...]
+
+
+_OUTLINE_PENDING_LIMIT = 256
+_OUTLINE_CHECKPOINT_BYTES = 8 * 1024 * 1024
+
+
+def _outline_checkpoint(
+    path: str,
+    harness: str,
+    sid: str,
+    read: _StreamRead,
+    pending: tuple[PendingCall, ...],
+    after: OutlineCheckpoint | None = None,
+) -> OutlineCheckpoint:
+    """Discard raw pending inputs while the canonical parser's line boundaries are available."""
+    identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
+    if read.cursor.stream != "parent" or (
+        after and (after.identity != identity or after.stamp != read.cursor.stamp)
+    ):
+        raise _SourceChangedError
+    if len(pending) > _OUTLINE_PENDING_LIMIT:
+        raise ValueError("outline_state_limit")
+    calls = {call.call_id: call for call in after.calls} if after else {}
+    for call_id in read.result_calls:
+        calls.pop(call_id, None)
+    previous = {call.call_id: call for call in after.calls} if after else {}
+    positions, _results, rewrites = _rows_of(read.rows, False)
+    ends = [end for end, _digest in read.boundaries]
+
+    def locator(row: int) -> _OutlineLine:
+        start = read.row_cursors[row].line_start
+        index = bisect_right(ends, start)
+        end, digest = read.boundaries[index]
+        return _OutlineLine(start, end, digest)
+
+    for call in pending:
+        if call.stream != "parent":
+            raise _SourceChangedError
+        old = previous.get(call.call_id)
+        row = positions.get(call.call_id)
+        line = locator(row) if row is not None else old.line if old else None
+        if line is None:
+            raise _SourceChangedError
+        rewrite = rewrites.get(call.call_id)
+        calls[call.call_id] = _OutlineCall(
+            call.call_id,
+            line,
+            locator(rewrite) if rewrite is not None else old.rewrite if old else None,
+            call.position,
+            call.fact_ids,
+        )
+    if len(calls) > _OUTLINE_PENDING_LIMIT:
+        raise ValueError("outline_state_limit")
+    checkpoint = OutlineCheckpoint(identity, read.cursor.stamp, tuple(calls.values()))
+    if len(json.dumps(asdict(checkpoint)).encode("utf-8")) > _OUTLINE_CHECKPOINT_BYTES:
+        raise ValueError("outline_state_limit")
+    return checkpoint
+
+
+def _outline_pending(
+    path: str,
+    harness: str,
+    sid: str,
+    checkpoint: OutlineCheckpoint,
+    read: _StreamRead,
+    budget: _Budget,
+) -> tuple[PendingCall, ...] | None:
+    """Rehydrate only calls touched by these rows; None means the shared budget cannot fit them.
+
+    Budget exhaustion is retryable, not a permanent input gap. The future row-admission caller
+    must reserve room or defer the triggering row, and must not classify it with missing input.
+    """
+    if (
+        checkpoint.identity != record_pages._identity(path, harness, sid)  # noqa: SLF001
+        or checkpoint.stamp != read.cursor.stamp
+        or read.cursor.stream != "parent"
+    ):
+        raise _SourceChangedError
+    calls, results, rewrites = _rows_of(read.rows, False)
+    touched = (results.keys() | rewrites.keys()) - calls.keys()
+    selected = [call for call in checkpoint.calls if call.call_id in touched]
+    if not selected:
+        return ()
+    lines = dict.fromkeys(
+        line for call in selected for line in (call.line, call.rewrite) if line is not None
+    )
+    if sum(line.end - line.start for line in lines) > budget.remaining or budget.reason:
+        return None
+    rows = _outline_rows(path, harness, checkpoint.stamp, tuple(lines), budget)
+    if rows is None:
+        return None
+    pending = []
+    for held in selected:
+        source_rows = [rows[held.line]]
+        if held.rewrite is not None:
+            source_rows.append(rows[held.rewrite])
+        parsed = {call.call_id: call for call in _pending_calls(source_rows, "parent")}
+        if held.call_id not in parsed:
+            raise _SourceChangedError
+        pending.append(
+            replace(parsed[held.call_id], position=held.position, fact_ids=held.fact_ids)
+        )
+    return tuple(pending)
+
+
+def _outline_rows(
+    path: str, harness: str, stamp: Stamp, lines: tuple[_OutlineLine, ...], budget: _Budget
+) -> dict[_OutlineLine, dict[str, Any]] | None:
+    """Read and verify selected input lines using the caller's remaining allowance."""
+    rows: dict[_OutlineLine, dict[str, Any]] = {}
+    follow = harness not in observer.DIRECTION_HARNESSES
+    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or _stamp(info) != stamp:
+            raise _SourceChangedError
+        for line in lines:
+            source.seek(line.start)
+            raw = bytearray()
+            while len(raw) < line.end - line.start and budget.reason is None:
+                chunk = budget.line(source, min(64 * 1024, line.end - line.start - len(raw)))
+                if not chunk:
+                    raise _SourceChangedError
+                raw.extend(chunk)
+            if len(raw) != line.end - line.start:
+                return None
+            if hashlib.sha256(raw).hexdigest() != line.digest:
+                raise _SourceChangedError
+            try:
+                row = json.loads(raw)
+            except (ValueError, RecursionError) as error:
+                raise _SourceChangedError from error
+            if not isinstance(row, dict):
+                raise _SourceChangedError
+            rows[line] = row
+        if _stamp(os.stat(path)) != stamp:
+            raise _SourceChangedError
+    return rows
 
 
 class _SourceChangedError(ValueError):

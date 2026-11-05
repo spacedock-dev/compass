@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -205,6 +206,263 @@ class SessionSourceTest(unittest.TestCase):
         self.save()
         self.changes(previous, "changed_earlier", "check_result")
         self.assertEqual("passed", self.read(after=previous.snapshot.cursor).entries[0].result)
+
+    def test_outline_checkpoint_rehydrates_only_the_touched_call_without_retaining_input(
+        self,
+    ) -> None:
+        sentinel = "PRIVATE_INPUT_MUST_NOT_SURVIVE"
+        untouched = self.session.call("Read", {"file_path": str(self.root / sentinel)})
+        call = self.session.call("Bash", {"command": f"pytest tests # {sentinel}"})
+        self.save()
+        split = self.path.stat().st_size
+        self.session.result(call, "1 passed", is_error=False)
+        self.save()
+        deadline = time.monotonic() + 30
+        first_budget = self.source._Budget(split, deadline, deadline)
+        first = self.source._read_stream(
+            self.config,
+            str(self.path),
+            "parent",
+            "claude",
+            "root",
+            first_budget,
+            None,
+            newest=False,
+        )
+        page = self.source._finish(
+            self.config, str(self.path), "claude", "root", [first], [], None, first_budget
+        )
+        checkpoint = self.source._outline_checkpoint(
+            str(self.path), "claude", "root", first, page.snapshot.cursor.pending
+        )
+        self.assertEqual({untouched, call}, {item.call_id for item in checkpoint.calls})
+        retained = json.dumps(dataclasses.asdict(checkpoint))
+        for prohibited in (sentinel, "input_json", "fragment", "words", "cwd", "command"):
+            self.assertNotIn(prohibited, retained)
+        self.assertFalse(any(isinstance(value, bytes) for value in dataclasses.astuple(checkpoint)))
+
+        # The result scan, prior boundary verification, and input reread share this one budget.
+        allowance = self.path.stat().st_size * 2
+        budget = self.source._Budget(allowance, deadline, deadline)
+        actual_bytes = 0
+        open_binary = self.source.runtime_io._open_binary
+
+        def counted_open(*args: Any, **kwargs: Any) -> Any:
+            handle = open_binary(*args, **kwargs)
+            proxy = mock.MagicMock(wraps=handle)
+            proxy.__enter__.return_value = proxy
+            proxy.__exit__.side_effect = handle.__exit__
+
+            def count(method: Any, size: int = -1) -> bytes:
+                nonlocal actual_bytes
+                raw: bytes = method(size)
+                actual_bytes += len(raw)
+                return raw
+
+            proxy.readline.side_effect = lambda size=-1: count(handle.readline, size)
+            proxy.read.side_effect = lambda size=-1: count(handle.read, size)
+            return proxy
+
+        with mock.patch.object(self.source.runtime_io, "_open_binary", side_effect=counted_open):
+            later = self.source._read_stream(
+                self.config,
+                str(self.path),
+                "parent",
+                "claude",
+                "root",
+                budget,
+                first.cursor,
+                newest=False,
+            )
+            pending = self.source._outline_pending(
+                str(self.path), "claude", "root", checkpoint, later, budget
+            )
+        self.assertIsNotNone(pending)
+        self.assertEqual((call,), tuple(item.call_id for item in pending))
+        self.assertEqual(budget.used, actual_bytes)
+        self.assertLessEqual(actual_bytes, allowance)
+        self.assertGreater(actual_bytes, self.path.stat().st_size - split)
+        resumed = self.source._finish(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            [later],
+            [],
+            dataclasses.replace(page.snapshot.cursor, pending=pending),
+            budget,
+        )
+        checks = [entry for entry in resumed.entries if entry.kind == "check"]
+        self.assertEqual(["passed"], [entry.result for entry in checks])
+        self.assertEqual(
+            [entry.fact_id for entry in self.read().entries if entry.kind == "check"],
+            [entry.fact_id for entry in checks],
+        )
+        self.assertEqual(page.positions, resumed.positions)
+        self.assertEqual(
+            (
+                (
+                    tuple(entry.fact_id for entry in page.entries),
+                    tuple(entry.fact_id for entry in checks),
+                ),
+            ),
+            resumed.replacements,
+        )
+        continued = self.source._outline_checkpoint(
+            str(self.path), "claude", "root", later, resumed.snapshot.cursor.pending, checkpoint
+        )
+        self.assertEqual((untouched,), tuple(item.call_id for item in continued.calls))
+        self.assertEqual((), continued.calls[0].fact_ids)
+
+    def test_outline_checkpoint_defers_unfit_inputs_and_rejects_invalid_locators(self) -> None:
+        call = self.session.call("Bash", {"command": "pytest tests"})
+        self.save()
+        split = self.path.stat().st_size
+        self.session.result(call, "1 passed", is_error=False)
+        self.save()
+        deadline = time.monotonic() + 30
+        first_budget = self.source._Budget(split, deadline, deadline)
+        first = self.source._read_stream(
+            self.config,
+            str(self.path),
+            "parent",
+            "claude",
+            "root",
+            first_budget,
+            None,
+            newest=False,
+        )
+        page = self.source._finish(
+            self.config, str(self.path), "claude", "root", [first], [], None, first_budget
+        )
+        checkpoint = self.source._outline_checkpoint(
+            str(self.path), "claude", "root", first, page.snapshot.cursor.pending
+        )
+        retained = json.dumps(dataclasses.asdict(checkpoint))
+        allowance = self.path.stat().st_size * 2
+        budget = self.source._Budget(allowance, deadline, deadline)
+        later = self.source._read_stream(
+            self.config,
+            str(self.path),
+            "parent",
+            "claude",
+            "root",
+            budget,
+            first.cursor,
+            newest=False,
+        )
+        # An exhausted poll defers rehydration without spending a new allowance or dropping input.
+        needed = checkpoint.calls[0].line.end - checkpoint.calls[0].line.start
+        short = self.source._Budget(needed - 1, deadline, deadline)
+        self.assertIsNone(
+            self.source._outline_pending(str(self.path), "claude", "root", checkpoint, later, short)
+        )
+        self.assertEqual(0, short.used)
+        self.assertEqual(retained, json.dumps(dataclasses.asdict(checkpoint)))
+        self.assertEqual(
+            (),
+            self.source._outline_pending(
+                str(self.path),
+                "claude",
+                "root",
+                checkpoint,
+                first,
+                self.source._Budget(0, deadline, deadline),
+            ),
+        )
+        for limit in ("_OUTLINE_PENDING_LIMIT", "_OUTLINE_CHECKPOINT_BYTES"):
+            with (
+                mock.patch.object(self.source, limit, 0),
+                self.assertRaisesRegex(ValueError, "outline_state_limit"),
+            ):
+                self.source._outline_checkpoint(
+                    str(self.path), "claude", "root", first, page.snapshot.cursor.pending
+                )
+        with self.assertRaises(self.source._SourceChangedError):
+            self.source._outline_pending(
+                str(self.path), "claude", "other", checkpoint, later, budget
+            )
+        damaged = dataclasses.replace(
+            checkpoint,
+            calls=(
+                dataclasses.replace(
+                    checkpoint.calls[0],
+                    line=dataclasses.replace(checkpoint.calls[0].line, digest="0" * 64),
+                ),
+            ),
+        )
+        with self.assertRaises(self.source._SourceChangedError):
+            self.source._outline_pending(
+                str(self.path),
+                "claude",
+                "root",
+                damaged,
+                later,
+                self.source._Budget(allowance, deadline, deadline),
+            )
+
+    def test_outline_checkpoint_locates_latest_rewrite_for_a_later_result(self) -> None:
+        call = self.session.call("Bash", {"command": "echo PRIVATE_ORIGINAL_INPUT"})
+        self.session.hook_rewrite(call, hook_stdout("pytest tests"))
+        self.session.hook_rewrite(call, hook_stdout("rtk pytest tests"))
+        self.save()
+        split = self.path.stat().st_size
+        self.session.result(call, "1 failed", is_error=False)
+        self.save()
+        deadline = time.monotonic() + 30
+        first_budget = self.source._Budget(split, deadline, deadline)
+        first = self.source._read_stream(
+            self.config,
+            str(self.path),
+            "parent",
+            "claude",
+            "root",
+            first_budget,
+            None,
+            newest=False,
+        )
+        page = self.source._finish(
+            self.config, str(self.path), "claude", "root", [first], [], None, first_budget
+        )
+        checkpoint = self.source._outline_checkpoint(
+            str(self.path), "claude", "root", first, page.snapshot.cursor.pending
+        )
+        self.assertEqual(0, checkpoint.calls[0].line.start)
+        self.assertEqual(first.row_cursors[2].line_start, checkpoint.calls[0].rewrite.start)
+        self.assertNotIn("PRIVATE_ORIGINAL_INPUT", json.dumps(dataclasses.asdict(checkpoint)))
+        budget = self.source._Budget(self.path.stat().st_size * 3, deadline, deadline)
+        later = self.source._read_stream(
+            self.config,
+            str(self.path),
+            "parent",
+            "claude",
+            "root",
+            budget,
+            first.cursor,
+            newest=False,
+        )
+        pending = self.source._outline_pending(
+            str(self.path), "claude", "root", checkpoint, later, budget
+        )
+        self.assertIsNotNone(pending)
+        self.assertEqual("rtk pytest tests", json.loads(pending[0].input_json)["command"])
+        resumed = self.source._finish(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            [later],
+            [],
+            dataclasses.replace(page.snapshot.cursor, pending=pending),
+            budget,
+        )
+        self.assertEqual(["not-recorded"], [entry.result for entry in resumed.entries])
+        self.assertEqual(self.read().entries, resumed.entries)
+        self.assertEqual(page.positions, resumed.positions)
+        finished = self.source._outline_checkpoint(
+            str(self.path), "claude", "root", later, resumed.snapshot.cursor.pending, checkpoint
+        )
+        self.assertEqual((), finished.calls)
 
     def test_a_hook_rewrite_on_a_later_page_reads_as_the_whole_file_does(self) -> None:
         for split_result in (False, True):
