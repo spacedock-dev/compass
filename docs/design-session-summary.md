@@ -1477,6 +1477,13 @@ Focused freshness checks still have their own bounded read. They may report that
 unknown even when the earlier summary job collected its source completely; that does not change
 the saved summary's coverage.
 
+The page names source collection separately from model windows: complete source coverage can
+coexist with unsummarized gaps, and a job's finished-part count does not count successful prose or
+unique entries. Fragment windows can cite the same original entry; missing legacy spans remain
+unknown. A summary's prefix omission and a departure before that prefix make no claim about the
+outline's coverage. Completing the outline on a later update leaves the saved summary's gaps,
+freshness warning, citations and open disclosures intact.
+
 ### Bounds and focused grouping
 
 These are implementation allowances for reading and deterministic grouping, not the model-summary
