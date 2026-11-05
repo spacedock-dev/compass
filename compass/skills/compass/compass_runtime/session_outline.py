@@ -566,10 +566,15 @@ def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]
     for (old, new), observed in zip(page.replacements, page.replacement_observations, strict=True):
         for fact_id in old:
             if fact_id not in new:
-                yield _FactObservation(fact_id, None, (-1, 0, 0), (0, observed))
+                yield _FactObservation(
+                    fact_id, None, (-1, 0, 0), (page.classification_revision, observed)
+                )
     for entry in entries.values():
         yield _FactObservation(
-            entry.fact_id, entry, positions[entry.fact_id], (0, observations[entry.fact_id])
+            entry.fact_id,
+            entry,
+            positions[entry.fact_id],
+            (page.classification_revision, observations[entry.fact_id]),
         )
 
 
@@ -710,11 +715,7 @@ def _advance_parent(
     ):
         plan = old.result[1]
     coverage = replace(page.coverage, complete=checkpoint.complete) if page.coverage else None
-    terminal = all(
-        current.stopped
-        or (current.frontier is not None and current.frontier.offset == current.stamp[2])
-        for current in (checkpoint, *(child for _, child in checkpoint.children))
-    )
+    terminal = checkpoint.done
     progress = _Progress(identity, checkpoint, coverage, ({}, plan), terminal)
     # Reserve half the combined graph budget for a sticky refusal and its prior projection.
     working = replace(

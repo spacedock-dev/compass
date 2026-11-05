@@ -19,13 +19,14 @@ from typing import TYPE_CHECKING, Any
 from unittest import mock
 from urllib.parse import urlparse
 
-from compass_runtime import http_api, observer, summary_store
+from compass_runtime import http_api, observer, project_scripts, reader_checks, summary_store
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 from . import test_record_pages, test_session_source
 from .support import make_server, poll_fast
 from .test_claude_checks import Transcript, hook_stdout
+from .test_project_script_checks import git, package
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -856,6 +857,199 @@ class SessionOutlineTest(unittest.TestCase):
                 pending.extend(value.values())
             elif isinstance(value, (tuple, list)):
                 pending.extend(value)
+
+    def _declaration_record(self, **scripts: str) -> Transcript:
+        project_scripts.reset()
+        self.addCleanup(project_scripts.reset)
+        self.config = dataclasses.replace(
+            self.config,
+            git_probe_enabled=True,
+            session_outline_max_bytes=4000,
+            session_outline_head_bytes=1400,
+            session_outline_max_blocks=64,
+        )
+        git(self.root, "init", "-q")
+        (self.root / "package.json").write_text(package(**scripts))
+        git(self.root, "add", "package.json")
+        git(self.root, "commit", "-q", "-m", "owned base")
+        transcript = Transcript(self.root)
+        transcript.prompt("Owned classification reconciliation.")
+        return transcript
+
+    def _settle_declaration_outline(self) -> list[dict[str, Any]]:
+        whole = self.source.read(self.config, str(self.path), "claude", "root", max_bytes=100000)
+        self.assertTrue(whole.coverage.complete)
+        expected = self.outline.build(whole, self.config)
+        meter = test_session_source.SessionSourceTest()
+        meter.source = self.source
+        answers = []
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            meter._meter_source_reads() as reads,
+        ):
+            for _poll in range(100):
+                before = reads[0]
+                answer, plan = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                self.assertLessEqual(reads[0] - before, self.config.session_outline_max_bytes)
+                answers.append(answer)
+                if answer["coverage"]["complete"]:
+                    break
+            self.assertTrue(answer["coverage"]["complete"], "classification replay never settled")
+            self.assertEqual(expected["blocks"], answer["blocks"])
+            self.assertIsNotNone(plan)
+            self.assertFalse(plan["complete"])
+            before = reads[0]
+            again, _ = self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            self.assertIs(answer, again)
+            self.assertEqual(before, reads[0])
+        graph = next(iter(self.state.session_outlines.values()))
+        self.assertIsNotNone(self.outline._measure_facts(graph, self.outline._FACT_LIMITS))
+        for forbidden in ("input_json", "words=", "fragment=", "SourcePage(", "SourceCursor("):
+            self.assertNotIn(forbidden, repr(graph))
+        return answers
+
+    def test_cached_declaration_withdrawal_matches_whole_source_after_replay(self) -> None:
+        transcript = self._declaration_record(typecheck="tsc --noEmit")
+        transcript.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        transcript.write(str(self.root / "src/keep.py"))
+        for number in range(6):
+            transcript.prompt(f"Before declaring write {number}. " + "padding " * 80)
+        transcript.write(str(self.root / "package.json"))
+        for number in range(6):
+            transcript.prompt(f"After declaring write {number}. " + "padding " * 80)
+        transcript.bash("pnpm typecheck", "1 passed")
+        transcript.save(self.path)
+        answers = self._settle_declaration_outline()
+        self.assertTrue(
+            any(
+                check["title"] == "pnpm typecheck"
+                for block in answers[0]["blocks"]
+                for check in block["checks"]
+            )
+        )
+        self.assertEqual(
+            ["pytest tests/direct.py"],
+            [check["title"] for block in answers[-1]["blocks"] for check in block["checks"]],
+        )
+        self.assertEqual(2, sum(block["counts"]["files"] for block in answers[-1]["blocks"]))
+
+    def test_cached_withdrawal_restores_a_previously_unemitted_check(self) -> None:
+        transcript = self._declaration_record(test="echo skipped")
+        transcript.bash("pnpm test", "1 passed")
+        for number in range(6):
+            transcript.prompt(f"Before declaration removal {number}. " + "padding " * 80)
+        transcript.write(str(self.root / "package.json"))
+        for number in range(6):
+            transcript.prompt(f"After declaration removal {number}. " + "padding " * 80)
+        transcript.save(self.path)
+        answers = self._settle_declaration_outline()
+        self.assertFalse(any(block["checks"] for block in answers[0]["blocks"]))
+        self.assertEqual(
+            ["pnpm test"],
+            [check["title"] for block in answers[-1]["blocks"] for check in block["checks"]],
+        )
+
+    def test_cached_withdrawal_preserves_unaffected_latest_failure(self) -> None:
+        transcript = self._declaration_record(typecheck="tsc --noEmit")
+        self.config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
+        direct = transcript.call("Bash", {"command": "pytest tests/direct.py"})
+        transcript.bash("pnpm typecheck", "1 passed")
+        for number in range(4):
+            transcript.prompt(f"Before earlier result {number}. " + "padding " * 80)
+        transcript.result(direct, "1 passed")
+        transcript.write(str(self.root / "package.json"))
+        for number in range(10):
+            transcript.prompt(f"Before tail failure {number}. " + "padding " * 80)
+        transcript.result(direct, "Exit code 1\n1 failed", is_error=True)
+        transcript.prompt("After the latest direct result. " + "padding " * 130)
+        transcript.save(self.path)
+        for answer in self._settle_declaration_outline():
+            self.assertEqual(
+                ["failed"],
+                [
+                    check["result"]
+                    for block in answer["blocks"]
+                    for check in block["checks"]
+                    if check["title"] == "pytest tests/direct.py"
+                ],
+            )
+
+    def test_cached_replayed_call_accepts_a_later_result(self) -> None:
+        transcript = self._declaration_record(typecheck="tsc --noEmit")
+        call = transcript.call("Bash", {"command": "pnpm typecheck"})
+        for number in range(6):
+            transcript.prompt(f"Before unrelated withdrawal {number}. " + "padding " * 80)
+        transcript.write(str(self.root / reader_checks.FILENAME))
+        for number in range(10):
+            transcript.prompt(f"Before later result {number}. " + "padding " * 80)
+        transcript.result(call, "1 passed")
+        for number in range(8):
+            transcript.prompt(f"After later result {number}. " + "padding " * 80)
+        transcript.save(self.path)
+        answers = self._settle_declaration_outline()
+        results = [
+            [check["result"] for block in answer["blocks"] for check in block["checks"]]
+            for answer in answers
+        ]
+        self.assertIn(["not-recorded"], results)
+        self.assertEqual(["passed"], results[-1])
+        graph = next(iter(self.state.session_outlines.values()))
+        checks = [fact for fact in graph.facts.values() if fact.kind == "check"]
+        self.assertTrue(checks)
+        self.assertTrue(all(fact.authority[0] > 0 for fact in checks))
+
+    def test_cached_native_eof_keeps_polling_until_classification_settles(self) -> None:
+        transcript = self._declaration_record(typecheck="tsc --noEmit")
+        transcript.bash("pnpm typecheck", "1 passed")
+        transcript.prompt("Pad 0. " + "padding " * 50)
+        transcript.write(str(self.root / "package.json"))
+        transcript.prompt("Final. " + "padding " * 200)
+        transcript.save(self.path)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            self.outline.for_session_with_plan(self.config, self.state, "claude", "root")
+            pending, _ = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+            graph = next(iter(self.state.session_outlines.values()))
+            checkpoint = graph.extras.checkpoint
+            self.assertEqual(checkpoint.stamp[2], checkpoint.frontier.offset)
+            self.assertTrue(checkpoint.replay)
+            self.assertFalse(pending["coverage"]["complete"])
+            self.assertIn(
+                "classification_pending", [gap["reason"] for gap in pending["coverage"]["unread"]]
+            )
+        answers = self._settle_declaration_outline()
+        self.assertFalse(any(block["checks"] for block in answers[-1]["blocks"]))
+        graph = next(iter(self.state.session_outlines.values()))
+        self.assertTrue(graph.retired)
+        self.assertTrue(all(authority[0] > 0 for authority in graph.retired.values()))
+
+    def test_cached_dependency_limit_is_terminal_without_claiming_completion(self) -> None:
+        transcript = self._declaration_record(typecheck="tsc --noEmit")
+        transcript.bash("pnpm typecheck", "1 passed")
+        transcript.save(self.path)
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0),
+        ):
+            answer, _ = self.outline.for_session_with_plan(
+                self.config, self.state, "claude", "root"
+            )
+            self.assertFalse(answer["coverage"]["complete"])
+            self.assertIn(
+                "outline_dependency_limit", [gap["reason"] for gap in answer["coverage"]["unread"]]
+            )
+            with mock.patch.object(
+                self.source,
+                "_read_outline",
+                side_effect=AssertionError("terminal refusal must not reread"),
+            ):
+                again, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+            self.assertIs(answer, again)
 
     def test_cold_later_failure_survives_revisiting_earlier_pass(self) -> None:
         transcript = Transcript(self.root)

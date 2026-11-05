@@ -192,6 +192,7 @@ describe('the outline card model', () => {
       'outline_boundary_limit',
       'outline_state_limit',
       'outline_stream_limit',
+      'outline_dependency_limit',
     ]) {
       const notes = coverageNotes(
         { ...CLAUDE, complete: false, unread: [{ reason }, { reason: 'bytes' }] },
@@ -240,7 +241,11 @@ describe('the outline card model', () => {
     expect(noOutline(outline({ state: 'unavailable', reason: 'time' }), 'x')).toMatch(
       /time.*next update/,
     );
-    for (const reason of ['outline_state_limit', 'outline_stream_limit']) {
+    for (const reason of [
+      'outline_state_limit',
+      'outline_stream_limit',
+      'outline_dependency_limit',
+    ]) {
       expect(noOutline(outline({ state: 'unavailable', reason }), 'x')).toMatch(/outline limit/);
       expect(noOutline(outline({ state: 'unavailable', reason }), 'x')).not.toMatch(
         /next update|could not find/,

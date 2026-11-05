@@ -604,6 +604,28 @@ export const PermanentLimitKeepsKnownWork: Story = {
   },
 };
 
+export const DependencyLimitKeepsKnownWork: Story = {
+  render: () => (
+    <OutlinePage
+      outline={claudeOutline({
+        coverage: {
+          ...claudeOutline().coverage,
+          complete: false,
+          unread: [{ reason: 'outline_dependency_limit' }, { reason: 'bytes' }],
+        },
+      })}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    await within(region).findByText(
+      'Compass reached an outline limit. Some recorded work is not included.',
+    );
+    await expect(region.querySelectorAll('[data-next-outline-block]')).toHaveLength(2);
+    await expect(region).not.toHaveTextContent(/try to read more|reads again/);
+  },
+};
+
 export const Updating: Story = {
   render: () => (
     <OutlinePage outline={{ ...staleOutline(), state: 'unavailable', reason: 'outline_busy' }} />

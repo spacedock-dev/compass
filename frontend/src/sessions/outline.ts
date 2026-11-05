@@ -71,7 +71,12 @@ export function noOutline(outline: Outline, harness: string): string {
     return 'Compass is updating this outline. It will be checked again on the next update.';
   if (outline.reason === 'time')
     return 'Compass ran out of time while reading the outline. It will try again on the next update.';
-  if (outline.reason === 'outline_state_limit' || outline.reason === 'outline_stream_limit')
+  if (
+    outline.reason !== null &&
+    ['outline_state_limit', 'outline_stream_limit', 'outline_dependency_limit'].includes(
+      outline.reason,
+    )
+  )
     return 'Compass reached an outline limit. A complete outline is not available for this record.';
   if (outline.reason === 'session_not_matched')
     return 'Compass could not match this page to exactly one session, so it read no record for an outline.';
@@ -94,7 +99,11 @@ export function coverageNotes(coverage: OutlineCoverage | null, more: number): s
       notes.push('The outline has no checks or files: they are not outlined for this harness.');
   }
   const reasons = new Set(coverage?.unread.map((region) => region.reason));
-  const resourceLimit = reasons.has('outline_state_limit') || reasons.has('outline_stream_limit');
+  const resourceLimit = [
+    'outline_state_limit',
+    'outline_stream_limit',
+    'outline_dependency_limit',
+  ].some((reason) => reasons.has(reason));
   const readLimit = [
     'oversized_line',
     'outline_line_limit',
