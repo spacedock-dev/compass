@@ -139,6 +139,9 @@ class SourceCursor:
     # The names of the files a listing depends on that an earlier page saw the session write. A
     # page holds only its own rows, and no work tree byte comparison covers a listing.
     listing_writes: frozenset[str] = frozenset()
+    # Generic classification replay retains canonical dependency names, never call inputs.
+    withdrawals: frozenset[str] = frozenset()
+    replaying: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,6 +184,8 @@ class SourcePage:
     classification_revision: int = 0
     # Opt-in summary observation: canonical body fallback when the bounded head has no field.
     head_fallback: tuple[str | None, float | None] = (None, None)
+    # Discard every earlier generic page before accepting this page and continuing its cursor.
+    reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -2406,6 +2411,84 @@ def _validation_page(cursor: SourceCursor, harness: str, sid: str, budget: _Budg
     )
 
 
+_SOURCE_WITHDRAWAL_LIMIT = 512
+_SOURCE_WITHDRAWAL_BYTES = 64 * 1024
+
+
+def _verify_replay_generation(after: SourceCursor | None, streams: list[_StreamRead]) -> None:
+    if (
+        after
+        and after.replaying
+        and tuple((s.cursor.stream, s.cursor.stamp) for s in streams)
+        != tuple((s.stream, s.stamp) for s in after.streams)
+    ):
+        raise _SourceChangedError
+
+
+def _classification_page(
+    page: SourcePage, after: SourceCursor | None, written: set[str]
+) -> SourcePage:
+    """Invalidate an obsolete generic prefix and replay with bounded, word-free context."""
+    if page.snapshot is None or page.coverage is None:
+        return page
+    if len(written) > _SOURCE_WITHDRAWAL_LIMIT or sum(len(w.encode()) for w in written) > (
+        _SOURCE_WITHDRAWAL_BYTES
+    ):
+        return replace(
+            page,
+            state="limited",
+            entries=(),
+            next=None,
+            snapshot=None,
+            coverage=replace(
+                page.coverage,
+                complete=False,
+                unread=(*page.coverage.unread, UnreadRegion(0, 0, "classification_state_limit")),
+            ),
+            replacements=(),
+            positions=(),
+            observations=(),
+            replacement_observations=(),
+            reset=True,
+        )
+    cursor = replace(
+        page.snapshot.cursor,
+        withdrawals=frozenset(written),
+        replaying=bool(after and after.replaying and page.next is not None),
+    )
+    if after and written != set(after.withdrawals) and any(s.offset for s in after.streams):
+        cursor = SourceCursor(
+            cursor.identity,
+            tuple(StreamCursor(s.stream, s.stamp) for s in cursor.streams),
+            session_dir=cursor.session_dir,
+            listing_writes=cursor.listing_writes,
+            withdrawals=frozenset(written),
+            replaying=True,
+        )
+        metadata = _metadata(cursor, (), _StreamRead(cursor.streams[0], 0))
+        return SourcePage(
+            "ok",
+            page.harness,
+            page.sid,
+            coverage=replace(
+                page.coverage,
+                complete=False,
+                starts_at=None,
+                start_offset=0,
+                end_offset=0,
+                unread=(UnreadRegion(0, 0, "classification_pending"),),
+            ),
+            next=metadata.cursor,
+            snapshot=metadata,
+            reset=True,
+        )
+    return replace(
+        page,
+        snapshot=replace(page.snapshot, cursor=cursor),
+        next=cursor if page.next is not None else None,
+    )
+
+
 def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classification context
     config: RuntimeConfig,
     path: str,
@@ -2421,8 +2504,11 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
 ) -> SourcePage:
     """Read owned streams in one allowance; optionally carry canonical withdrawal names.
 
-    The opt-in set is both prior classification context and an observation sink. A collecting
-    caller must reconcile its earlier facts when it grows; an ordinary cursor is unchanged.
+    Generic callers must clear accumulated facts when `reset` is true, then continue `next`.
+    A later recorded declaration write restarts classification under the union of withdrawals;
+    every replay read spends this call's byte/time allowance. `limited` stops without a complete
+    result when classification metadata exceeds its cap. The opt-in `observed_writes` sink
+    leaves reconciliation to its collecting caller instead, preserving the summary contract.
     """
     if harness not in record_pages.HARNESSES:
         return SourcePage("unsupported", harness, sid, notes=("no paged record for this harness",))
@@ -2472,18 +2558,23 @@ def read(  # noqa: PLR0913 - existing reader inputs plus opt-in summary classifi
             track_prefix=observed_writes is None,
             admitted=admitted_children,
         )
+        _verify_replay_generation(after, [parent, *children])
+        written = (
+            set(after.withdrawals if after else ()) if observed_writes is None else observed_writes
+        )
+        page = _finish(
+            config,
+            path,
+            harness,
+            sid,
+            [parent, *children],
+            unread,
+            after,
+            budget,
+            observed_writes=written,
+        )
         return replace(
-            _finish(
-                config,
-                path,
-                harness,
-                sid,
-                [parent, *children],
-                unread,
-                after,
-                budget,
-                observed_writes=observed_writes,
-            ),
+            _classification_page(page, after, written) if observed_writes is None else page,
             bytes_read=budget.used,
         )
     except _SourceChangedError as error:
@@ -2593,6 +2684,7 @@ def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline track
             parent.rows,
             [stream.rows for stream in streams[1:]],
             prior_writes=(after.listing_writes if after else frozenset())
+            | (after.withdrawals if after else frozenset())
             | frozenset(observed_writes or ()),
             known_start=(known_head[1],) if known_head is not None else None,
             observed_writes=observed_writes,
