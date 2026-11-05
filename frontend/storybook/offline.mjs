@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { openPage } from '../e2e/support/browser.mjs';
+import { openDevelopmentStorybookPage, waitForDevelopmentStorybookReady } from './browser.mjs';
 const root = resolve('.storybook-build');
 const types = {
   '.html': 'text/html',
@@ -100,13 +101,11 @@ try {
     }, 100);
   });
   devBrowser = await chromium.launch({ headless: true });
-  const opened = await openPage(devBrowser, 'http://127.0.0.1:6006', { nativeWebSockets: true });
+  const opened = await openDevelopmentStorybookPage(devBrowser, 'http://127.0.0.1:6006');
   try {
-    // Reproduces the proxy-induced one-second UniversalStore timeout on a fast developer machine.
-    const session = await opened.context.newCDPSession(opened.page);
-    await session.send('Emulation.setCPUThrottlingRate', { rate: 6 });
     await opened.page.goto('http://127.0.0.1:6006/?path=/story/ui-button--pending');
     await opened.page.frameLocator('iframe').getByRole('button', { name: 'Saving…' }).waitFor();
+    await waitForDevelopmentStorybookReady(opened.page);
     assert.deepEqual(opened.log.externalRequests, [], 'Development Storybook must stay offline');
     assert.deepEqual(
       opened.log.consoleErrors,
