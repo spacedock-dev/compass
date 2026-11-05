@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { LONG_PLAN } from '../test/longPlan';
 import { DriftScenario, readingScenario } from './drift.scenario';
 
@@ -48,6 +48,68 @@ const unavailable = {
   gets: 0,
 };
 const idle = readingScenario([]);
+const adoptionPreview = { descriptor: LONG_PLAN, gets: 0 };
+const adoptionReading = readingScenario([]);
+const adoption = {
+  posts: [] as Record<string, unknown>[],
+  refreshedPlan: {
+    ...LONG_PLAN,
+    binding: 'b'.repeat(64),
+    intent: { ...LONG_PLAN.intent, revision: 4, start_at: 100 },
+  },
+};
+export const DraftedGoalSavesThenRequiresFreshPreview: Story = {
+  args: {
+    scenario: {
+      longPlan: adoptionPreview,
+      reading: adoptionReading,
+      goalAdoption: adoption,
+      session: {
+        annotation_goal: '',
+        annotation_goal_source: '',
+        first_prompt: 'Ship the queue',
+        first_prompt_at: 100,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const root = await canvas.findByRole('region', { name: 'Drift' });
+    await userEvent.click(
+      await within(root).findByRole('button', { name: 'Long analysis options' }),
+    );
+    await userEvent.click(await within(root).findByRole('button', { name: 'Start long analysis' }));
+    await waitFor(() =>
+      expect(root).toHaveTextContent('Your goal was saved. Refresh the long preview'),
+    );
+    await expect(root).toHaveTextContent('reading window');
+    await expect(adoptionReading.posts).toHaveLength(0);
+    await expect(adoption.posts).toHaveLength(1);
+    await expect(adoption.posts[0]).toMatchObject({
+      adopt: 'first-prompt',
+      expected_prompt: 'Ship the queue',
+      expected_prompt_at: 100,
+      expected_revision: 3,
+    });
+    await expect(adoptionPreview.gets).toBe(1);
+    await expect(
+      canvasElement.querySelector('textarea[data-next-cockpit-held-kind="goal"]'),
+    ).toHaveValue('Ship the queue');
+    await userEvent.click(
+      await within(root).findByRole('button', { name: 'Refresh long preview' }),
+    );
+    await waitFor(() => expect(root).toHaveTextContent('Saved intent revision: 4'));
+    await expect(adoptionReading.posts).toHaveLength(0);
+    await userEvent.click(await within(root).findByRole('button', { name: 'Start long analysis' }));
+    await waitFor(() => expect(adoptionReading.posts).toHaveLength(1));
+    await expect(adoptionReading.posts[0]).toMatchObject({
+      mode: 'long',
+      expected_revision: 4,
+      plan_binding: adoption.refreshedPlan.binding,
+    });
+    await expect(adoptionReading.posts[0]).not.toHaveProperty('adopt');
+  },
+};
 export const UnavailablePreviewDoesNotStart: Story = {
   args: { scenario: { longPlan: unavailable, reading: idle } },
   play: async ({ canvasElement }) => {

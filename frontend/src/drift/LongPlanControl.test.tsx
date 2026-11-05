@@ -22,6 +22,110 @@ async function opened(over: Record<string, unknown> = {}, reply = { ok: true, pr
 }
 
 describe('explicit long preview and Start', () => {
+  it('adopts a drafted source goal first and starts only after a fresh preview and another press', async () => {
+    const session = { first_prompt: 'Ship the queue', first_prompt_at: 100 };
+    let saved = false;
+    const fresh = {
+      ...LONG_PLAN,
+      binding: 'b'.repeat(64),
+      intent: { ...LONG_PLAN.intent, revision: 4 },
+    };
+    const page = mountDrift({
+      store: { goal: '', lines: ['Tests pass'], revision: 3 },
+      session,
+      payload: { reading_routes: { claude: { ...ROUTE, ci_read: 'on' } } },
+      routes: {
+        '/api/reading-long-plan': () => json({ ok: true, long_plan: saved ? fresh : LONG_PLAN }),
+        '/api/annotate': () => {
+          saved = true;
+          page.state.data = driftBoard({
+            session,
+            store: {
+              goal: 'Ship the queue',
+              lines: ['Tests pass'],
+              revision: 4,
+              goal_source: 'first-prompt',
+              goal_source_at: 100,
+            },
+            payload: { reading_routes: { claude: { ...ROUTE, ci_read: 'on' } } },
+          });
+          return json({
+            ok: true,
+            outcome: 'stored',
+            persisted: true,
+            revision: 4,
+            saved_revision: 4,
+          });
+        },
+        '/api/reading': () => json({ ok: true, produced: false }),
+      },
+    });
+    await page.settle();
+    await press(screen.getByRole('button', { name: 'Long analysis options' }));
+    await page.settle();
+    await press(screen.getByRole('button', { name: 'Start long analysis' }));
+    await page.settle();
+    expect(readingPosts(page)).toEqual([]);
+    const saves = page.state.requests.filter((r) => r.path === '/api/annotate');
+    expect(saves).toHaveLength(1);
+    expect(saves[0]?.body).toEqual({
+      harness: 'claude',
+      sid: 's1',
+      adopt: 'first-prompt',
+      expected_prompt: 'Ship the queue',
+      expected_prompt_at: 100,
+      expected_revision: 3,
+    });
+    expect(
+      screen.getAllByText(/Your goal was saved. Refresh the long preview/).length,
+    ).toBeGreaterThan(0);
+    expect(gets(page)).toHaveLength(1);
+    await press(screen.getByRole('button', { name: 'Refresh long preview' }));
+    await page.settle();
+    expect(readingPosts(page)).toEqual([]);
+    await press(screen.getByRole('button', { name: 'Start long analysis' }));
+    await page.settle();
+    expect(readingPosts(page)).toHaveLength(1);
+    expect(readingPosts(page)[0]?.body).toMatchObject({
+      mode: 'long',
+      expected_revision: 4,
+      plan_binding: fresh.binding,
+    });
+    expect(readingPosts(page)[0]?.body).not.toHaveProperty('adopt');
+  });
+
+  it.each(['refused', 'lost'] as const)(
+    'does not start or claim a saved goal when adoption is %s',
+    async (outcome) => {
+      const page = mountDrift({
+        store: { goal: '', lines: ['Tests pass'], revision: 3 },
+        payload: { reading_routes: { claude: { ...ROUTE, ci_read: 'on' } } },
+        routes: {
+          '/api/reading-long-plan': () => json({ ok: true, long_plan: LONG_PLAN }),
+          '/api/annotate': () =>
+            outcome === 'lost'
+              ? Promise.reject(new Error('lost response'))
+              : json({ ok: false, persisted: false }, 409),
+        },
+      });
+      await page.settle();
+      await press(screen.getByRole('button', { name: 'Long analysis options' }));
+      await page.settle();
+      await press(screen.getByRole('button', { name: 'Start long analysis' }));
+      await page.settle();
+      expect(readingPosts(page)).toEqual([]);
+      expect(gets(page)).toHaveLength(1);
+      expect(screen.queryByText(/Your goal was saved/)).toBeNull();
+      expect(
+        screen.getAllByText(
+          outcome === 'lost'
+            ? /Saving your goal was not confirmed/
+            : /Your goal could not be saved/,
+        ).length,
+      ).toBeGreaterThan(0);
+    },
+  );
+
   it('labels the retained allowance as the preview snapshot after the live allowance changes', async () => {
     const page = await opened();
     await page.poll(

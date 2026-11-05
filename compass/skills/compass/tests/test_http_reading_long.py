@@ -278,6 +278,51 @@ class LongReadingHTTPTest(unittest.TestCase):
         self.assertEqual(before, reading_policy.store_path(self.config).read_bytes())
         self.assertEqual([], self.fixture.outcomes)
 
+    def test_long_adoption_cannot_mutate_saved_intent_bound_to_its_preview(self) -> None:
+        sid = "abc123ab"
+        row = {
+            "harness": "claude",
+            "sid": sid,
+            "activity": "working",
+            "first_prompt": "Ship the queue",
+            "first_prompt_at": 100.0,
+        }
+        annotations_store.annotate(
+            self.config, self.state, "claude", sid, goal="", output="Tests pass", now=10.0
+        )
+        board = json.dumps(
+            {"sessions": [row], "reading": reading_policy.status(self.config, now=self.app.clock())}
+        ).encode()
+        self.state.snapshot.publish((self.config.window_hours, False), board)
+        before = annotations_store.find(annotations_store.load(self.config), "claude", sid)
+        with (
+            mock.patch.object(reading_route, "resolve", return_value=self.route),
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.app, "collect_json", return_value=("owned", board)),
+            self.fixture._serving(self.app) as port,
+        ):
+            status, body = self.get(port, query=f"harness=claude&sid={sid}")
+            preview = json.loads(body)["long_plan"]
+            self.assertEqual(200, status)
+            self.assertTrue(preview["can_start"])
+            status, body = self.fixture._post(
+                port,
+                self.press(
+                    sid=sid,
+                    plan_binding=preview["binding"],
+                    adopt="first-prompt",
+                    expected_prompt="Ship the queue",
+                    expected_prompt_at=100.0,
+                ),
+            )
+        after = annotations_store.find(annotations_store.load(self.config), "claude", sid)
+        self.assertEqual(
+            before, after, "a long request must not invalidate its binding by adopting"
+        )
+        self.assertEqual(409, status)
+        self.assertEqual("plan-changed", json.loads(body)["reason"])
+        self.assertEqual([], self.fixture.outcomes)
+
     def test_stale_intent_route_or_binding_refuses_without_keeping_or_adopting(self) -> None:
         with (
             mock.patch.object(reading_route, "resolve", return_value=self.route),

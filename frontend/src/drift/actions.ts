@@ -17,7 +17,7 @@ import {
   refresh,
 } from '../intent/context';
 import { foundGoal, intentKey } from '../intent/derive';
-import { saveFoundGoal } from '../intent/save';
+import { adoptPrompt, saveFoundGoal } from '../intent/save';
 import { intentForReading } from '../intent/api';
 import { KEEP_REFUSED } from '../intent/sentences';
 import { isRecord, type Row } from '../observed';
@@ -72,6 +72,9 @@ export interface Drawn {
   readonly longPlan?: LongPlanDescriptor;
   readonly focusKey?: string;
 }
+
+const SAVED_LONG_GOAL =
+  'Your goal was saved. Refresh the long preview to review its saved intent and reading window before starting.';
 
 /* The sentence for a receiver that moved between the draw and the press, or nothing where it did not. The
    provider and the model say who reads it. */
@@ -188,7 +191,7 @@ export async function askForReading(
       held.requests.set(key, {
         ...request,
         pending: false,
-        message: 'Your goal was saved. Refresh the long preview before starting.',
+        message: SAVED_LONG_GOAL,
       });
       held.notify();
       return;
@@ -196,6 +199,29 @@ export async function askForReading(
   }
   const reading = intentForReading(shell, identity);
   const adoption = reading?.adoption ?? {};
+  if (plan && typeof adoption['adopt'] === 'string') {
+    let adopted: boolean | 'unconfirmed' = 'unconfirmed';
+    try {
+      adopted = await adoptPrompt(intent, identity, session, adoption['adopt'], press.signal, null);
+    } catch {
+      // A lost response cannot establish whether the source goal was saved.
+    } finally {
+      pendingEnd(intent, control, press);
+    }
+    held.requests.set(key, {
+      ...request,
+      pending: false,
+      message:
+        adopted === true
+          ? SAVED_LONG_GOAL
+          : adopted === 'unconfirmed'
+            ? 'Saving your goal was not confirmed. Check your saved intent and refresh the long preview. Nothing was analyzed.'
+            : 'Your goal could not be saved, so nothing was analyzed. Check your intent before trying again.',
+      refusal: adopted !== true,
+    });
+    held.notify();
+    return;
+  }
   const note: Record<string, unknown> & { pending: boolean; message: string } = {
     ...(request?.notice !== undefined ? { notice: request.notice } : {}),
     pending: true,

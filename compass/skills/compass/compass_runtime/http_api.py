@@ -2713,7 +2713,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         if payload.get("mode") == "long":
             preview = reading_long_preview.describe(application, payload["harness"], payload["sid"])
-            changed = reading_long_preview.changed(payload, preview)
+            # Adoption must finish before the preview is bound to saved intent.
+            # Refuse here, before legacy Keep/adoption can mutate that intent.
+            changed = "adopt" in payload or reading_long_preview.changed(payload, preview)
             if changed:
                 self._send(
                     json.dumps({"ok": False, "produced": False, "reason": "plan-changed"}).encode(),

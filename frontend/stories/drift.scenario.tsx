@@ -139,6 +139,10 @@ export interface Scenario {
     readonly discard: { readonly body: unknown; readonly status: number };
   };
   readonly longPlan?: { readonly descriptor: unknown; gets: number };
+  readonly goalAdoption?: {
+    readonly posts: Record<string, unknown>[];
+    readonly refreshedPlan: unknown;
+  };
   readonly reading?: ReadingScenario;
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
   readonly lease?: LeaseScenario;
@@ -271,6 +275,8 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     let reading = scenario.payload?.['reading'] ?? POLICY;
     if (scenario.reading) scenario.reading.posts.length = 0;
     if (scenario.longPlan) scenario.longPlan.gets = 0;
+    if (scenario.goalAdoption) scenario.goalAdoption.posts.length = 0;
+    let adoptedGoal: Record<string, unknown> | null = null;
     if (scenario.longHistory) {
       scenario.longHistory.gets = 0;
       scenario.longHistory.posts.length = 0;
@@ -300,7 +306,29 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
         }
         if (url.startsWith('/api/reading-long-plan')) {
           if (scenario.longPlan) scenario.longPlan.gets += 1;
-          return json({ ok: true, long_plan: scenario.longPlan?.descriptor ?? null });
+          return json({
+            ok: true,
+            long_plan: adoptedGoal
+              ? scenario.goalAdoption?.refreshedPlan
+              : (scenario.longPlan?.descriptor ?? null),
+          });
+        }
+        if (scenario.goalAdoption && url.startsWith('/api/annotate')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          scenario.goalAdoption.posts.push(body);
+          adoptedGoal = {
+            annotation_goal: body['expected_prompt'],
+            annotation_goal_source: body['adopt'],
+            annotation_goal_source_at: body['expected_prompt_at'],
+            annotation_revision: 4,
+          };
+          return json({
+            ok: true,
+            persisted: true,
+            outcome: 'stored',
+            revision: 4,
+            saved_revision: 4,
+          });
         }
         if (url.startsWith('/api/reading') && scenario.readingStoreRefusal) {
           scenario.readingStoreRefusal.posts += 1;
@@ -406,6 +434,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
                 reading_eligibility: ELIGIBLE,
                 ...(scenario.unsaved ? {} : SAVED),
                 ...(scenario.session ?? {}),
+                ...(adoptedGoal ?? {}),
                 ...(marked === null ? {} : { annotation_not_accurate: marked }),
               },
             ],
