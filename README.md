@@ -163,6 +163,7 @@ line. See [HOW_TO_USE.md](HOW_TO_USE.md) for one procedure per task.
 | `compass` | Live agent-cartography dashboard: maps sessions, subagents, task progress, ETAs, and token rate across ten coding-agent harnesses, with input-wait notifications (native on macOS, browser notifications elsewhere) | `/compass:compass` |
 
 In Codex, invoke it as `$compass`. In any harness you can also just ask: "open compass" or "monitor my agents".
+Add `sessions` or `sessions waiting` (`/compass:compass sessions`, `$compass sessions`) to list your sessions in the session you typed it in, without opening the dashboard. The answer becomes part of that session's context and goes to its model provider: [what that includes](SECURITY.md#what-can-reach-into-a-session).
 
 ## 3. How it works
 

@@ -43,6 +43,38 @@ Use the same interpreter every time. The one that started the server is recorded
 and a second Python on the PATH is the usual reason a hook works from one shell and not another. On
 native Windows `python3` is not a reliable spelling; use `python` or `py -3`.
 
+## Ask Compass from inside a session
+
+Type an action after the skill's name to get the list of your sessions in the session you are in,
+without opening the dashboard:
+
+| Harness | Type | Prints |
+|---|---|---|
+| Claude Code | `/compass:compass sessions` | Every session the board holds, as `--sessions` does |
+| Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
+| Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
+
+Both read a running dashboard and never start one. With none running, the answer is one sentence
+saying so, and starting it is a separate step ([the start command](#find-the-copy-your-commands-will-run)
+finds the path). The CLI runs this exact command, so you can check what the agent should print:
+
+```bash
+python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
+```
+
+What to expect:
+
+- The first use asks you to approve the command, on every OS. Choosing "don't ask again" saves that
+  exact command, with the plugin's install path in it, to your own settings. A plugin update that
+  moves the install path makes it ask once more.
+- The agent prints the answer in one code block and adds nothing.
+- The answer is now part of that session's context. The agent reads it on every later turn, and it
+  goes to that session's model provider. `sessions` lists the titles, goals and pending questions
+  of sessions from every harness, so a Codex or Cursor session's words can reach the provider of the
+  Claude Code session you typed this into. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
+  has the full account. To keep a list out of a session, run the command above in a terminal instead.
+- On native Windows, the agent writes `python` or `py -3` where this page writes `python3`.
+
 ## When `python3` is older than 3.12
 
 Every hook, the MCP server and the start command run through `launch.py`, so an older `python3`
