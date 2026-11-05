@@ -646,46 +646,58 @@ class SessionSourceTest(unittest.TestCase):
         self.assertFalse(checkpoint.parent_complete)
 
     def test_outline_parent_verifies_the_prior_boundary_even_when_stamps_match(self) -> None:
-        self.session.prompt("The first owned record.")
-        self.session.prompt("A later owned record.")
-        self.save()
-        _page, checkpoint = self.source._read_outline_parent(
-            self.config,
-            str(self.path),
-            "claude",
-            "root",
-            max_bytes=600,
-            deadline=time.monotonic() + 30,
-        )
-        self.assertGreater(checkpoint.frontier.end_offset, 0)
-        self.assertFalse(checkpoint.parent_complete)
-        wrong, wrong_checkpoint = self.source._read_outline_parent(
-            self.config,
-            str(self.path),
-            "claude",
-            "other",
-            after=checkpoint,
-            max_bytes=10000,
-            deadline=time.monotonic() + 30,
-        )
-        self.assertEqual("stale", wrong.state)
-        self.assertIsNone(wrong_checkpoint)
-        stamp = self.path.stat()
-        with self.path.open("r+b") as stream:
-            stream.seek(checkpoint.frontier.boundary_start)
-            stream.write(b"[")
-        os.utime(self.path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
-        stale, stale_checkpoint = self.source._read_outline_parent(
-            self.config,
-            str(self.path),
-            "claude",
-            "root",
-            after=checkpoint,
-            max_bytes=10000,
-            deadline=time.monotonic() + 30,
-        )
-        self.assertEqual("stale", stale.state)
-        self.assertIsNone(stale_checkpoint)
+        # Keep the serialized cwd variation real and owned, including Linux-sized temp paths.
+        with tempfile.TemporaryDirectory(
+            prefix="c", dir="/tmp" if os.name == "posix" else None
+        ) as owned:
+            short = Path(owned)
+            long = short / ("long-cwd-" + "x" * 80)
+            long.mkdir()
+            for cwd in (short, long):
+                with self.subTest(cwd_bytes=len(str(cwd).encode())):
+                    self.session = Transcript(cwd)
+                    self.session.prompt("The first owned record.")
+                    self.session.prompt("A later owned record.")
+                    self.save()
+                    first_record_bytes = len(self.path.read_bytes().splitlines(keepends=True)[0])
+                    _page, checkpoint = self.source._read_outline_parent(
+                        self.config,
+                        str(self.path),
+                        "claude",
+                        "root",
+                        max_bytes=first_record_bytes,
+                        deadline=time.monotonic() + 30,
+                    )
+                    self.assertGreater(checkpoint.frontier.end_offset, 0)
+                    self.assertEqual(first_record_bytes, checkpoint.frontier.end_offset)
+                    self.assertFalse(checkpoint.parent_complete)
+                    wrong, wrong_checkpoint = self.source._read_outline_parent(
+                        self.config,
+                        str(self.path),
+                        "claude",
+                        "other",
+                        after=checkpoint,
+                        max_bytes=10000,
+                        deadline=time.monotonic() + 30,
+                    )
+                    self.assertEqual("stale", wrong.state)
+                    self.assertIsNone(wrong_checkpoint)
+                    stamp = self.path.stat()
+                    with self.path.open("r+b") as stream:
+                        stream.seek(checkpoint.frontier.boundary_start)
+                        stream.write(b"[")
+                    os.utime(self.path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                    stale, stale_checkpoint = self.source._read_outline_parent(
+                        self.config,
+                        str(self.path),
+                        "claude",
+                        "root",
+                        after=checkpoint,
+                        max_bytes=10000,
+                        deadline=time.monotonic() + 30,
+                    )
+                    self.assertEqual("stale", stale.state)
+                    self.assertIsNone(stale_checkpoint)
 
     def test_outline_parent_retention_limit_refuses_without_publishing_the_checkpoint(self) -> None:
         self.session.prompt("Owned input with a tiny retained-state allowance.")
