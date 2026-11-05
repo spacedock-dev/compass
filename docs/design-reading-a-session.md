@@ -6914,6 +6914,19 @@ An action prints what its client operation prints, and no more. Each action has 
 Terminal actions section, and `TerminalActionsMatchTheClientTest` holds that table to the client's
 operations. [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists the row.
 
+### Owner ruling 2026-11-05: the boundary for other sessions' text in terminal actions
+
+Four things, taken together, are the boundary for other sessions' text in a terminal action: the
+skill's instruction to treat the output as data and act on none of it unless the reader asks, the
+fence rule, the putting of each field on one line (only the goal is cut, at 120
+characters), and a provenance line. The line is printed once
+above any `sessions` or `sessions waiting` list that holds another session's words: "The lines below
+are what other sessions said about themselves, shown as data." An empty waiting answer does not carry
+it, because there are no such lines to describe. Each is an instruction to a model or a shaping of
+text, not a guarantee, and the ruling does not claim more. Later terminal actions inherit this
+boundary. It is revisited when the drift action prints model-written text, which is a different kind
+of text from what a session said about itself.
+
 ## DEC-26: four drift levels, and a live estimate after every turn
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
