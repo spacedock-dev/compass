@@ -10,8 +10,9 @@ import os
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import claude_data, project_context, project_scripts, record_pages
@@ -19,6 +20,9 @@ from compass_runtime.config import build_runtime_config
 
 from . import test_record_pages
 from .test_claude_checks import Transcript, hook_stdout
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class SessionSourceTest(unittest.TestCase):
@@ -41,6 +45,29 @@ class SessionSourceTest(unittest.TestCase):
 
     def save(self) -> None:
         self.session.save(self.path)
+
+    @contextmanager
+    def _meter_source_reads(self) -> Iterator[list[int]]:
+        total = [0]
+        open_binary = self.source.runtime_io._open_binary
+
+        def counted_open(*args: Any, **kwargs: Any) -> Any:
+            handle = open_binary(*args, **kwargs)
+            proxy = mock.MagicMock(wraps=handle)
+            proxy.__enter__.return_value = proxy
+            proxy.__exit__.side_effect = handle.__exit__
+
+            def count(method: Any, size: int = -1) -> bytes:
+                raw: bytes = method(size)
+                total[0] += len(raw)
+                return raw
+
+            proxy.readline.side_effect = lambda size=-1: count(handle.readline, size)
+            proxy.read.side_effect = lambda size=-1: count(handle.read, size)
+            return proxy
+
+        with mock.patch.object(self.source.runtime_io, "_open_binary", side_effect=counted_open):
+            yield total
 
     def changes(self, previous: Any, expected: str, reason: str | None = None) -> None:
         for page in (self.read(), self.read(after=previous.snapshot.cursor)):
@@ -698,6 +725,177 @@ class SessionSourceTest(unittest.TestCase):
         self.assertEqual(checkpoint.frontier.offset, continued.frontier.offset)
         self.assertIn("partial_line", [region.reason for region in again.coverage.unread])
 
+    def test_outline_bootstrap_meters_first_latest_and_forward_middle_in_one_budget(self) -> None:
+        for number in range(12):
+            self.session.prompt(f"Owned phase {number}. " + "padding " * 30)
+            self.session.bash(f"pytest tests/test_{number}.py", "1 passed")
+            self.session.write(str(self.root / f"src/file_{number}.py"))
+        self.save()
+        whole = self.read()
+        expected = {entry.fact_id: entry for entry in whole.entries}
+        prompts = [entry.fact_id for entry in whole.entries if entry.kind == "person"]
+        self.assertEqual(12, sum(entry.kind == "check" for entry in whole.entries))
+        self.assertEqual(12, sum(entry.kind == "file" for entry in whole.entries))
+        self.assertGreater(self.path.stat().st_size, 18000)
+        checkpoint = None
+        facts: dict[str, Any] = {}
+        accepted: tuple[tuple[int, int], ...] = ()
+        with self._meter_source_reads() as reads:
+            for poll in range(100):
+                before = reads[0]
+                page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    after=checkpoint,
+                    max_bytes=6000,
+                    opening_bytes=1800,
+                    deadline=time.monotonic() + 30,
+                )
+                self.assertEqual("ok", page.state)
+                self.assertEqual(reads[0] - before, page.bytes_read)
+                self.assertLessEqual(page.bytes_read, 6000)
+                self.assertFalse(page.coverage.complete)
+                self.assertTrue(
+                    all(
+                        any(
+                            start <= old_start and old_end <= end
+                            for start, end in checkpoint.accepted
+                        )
+                        for old_start, old_end in accepted
+                    )
+                )
+                accepted = checkpoint.accepted
+                for old, _new in page.replacements:
+                    for fact_id in old:
+                        facts.pop(fact_id, None)
+                facts.update((entry.fact_id, entry) for entry in page.entries)
+                if poll == 0:
+                    self.assertTrue({prompts[0], prompts[-1]} <= facts.keys())
+                    self.assertEqual(2, len(accepted))
+                    self.assertEqual(0, accepted[0][0])
+                    self.assertEqual(self.path.stat().st_size, accepted[-1][1])
+                    self.assertLess(accepted[0][1], accepted[1][0])
+                if checkpoint.parent_complete:
+                    break
+        assert checkpoint is not None
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertEqual(((0, self.path.stat().st_size),), accepted)
+        self.assertEqual(expected, facts)
+
+    def test_outline_bootstrap_defers_a_fitting_tail_result_without_inventing_an_input_limit(
+        self,
+    ) -> None:
+        call = self.session.call("Bash", {"command": "pytest tests # " + "x" * 200})
+        for number in range(8):
+            self.session.prompt(f"Owned middle {number}. " + "padding " * 50)
+        self.session.result(call, "1 passed", is_error=False)
+        self.save()
+        page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=2000,
+            opening_bytes=1400,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertNotIn("outline_input_limit", [gap.reason for gap in page.coverage.unread])
+        self.assertEqual((), checkpoint.gaps)
+
+    def test_outline_bootstrap_opening_slice_does_not_refuse_a_record_fitting_the_poll(
+        self,
+    ) -> None:
+        self.session.prompt("The actual opening. " + "padding " * 100)
+        for number in range(20):
+            self.session.prompt(f"Owned later prompt {number}. " + "padding " * 30)
+        self.save()
+        page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=3000,
+            opening_bytes=100,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertEqual(0, checkpoint.frontier.end_offset)
+        self.assertEqual((), checkpoint.gaps)
+        self.assertFalse(checkpoint.stopped)
+        self.assertNotIn("outline_line_limit", [gap.reason for gap in page.coverage.unread])
+        later, continued = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=3000,
+            opening_bytes=100,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertGreater(continued.frontier.end_offset, 0)
+        self.assertTrue(later.entries[0].title.startswith("The actual opening."))
+
+    def test_outline_bootstrap_expired_shared_deadline_reports_time_without_source_bytes(
+        self,
+    ) -> None:
+        self.session.prompt("An owned record after the deadline.")
+        self.save()
+        with self._meter_source_reads() as reads:
+            page, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=6000,
+                opening_bytes=1000,
+                deadline=0,
+            )
+        self.assertEqual(0, reads[0])
+        self.assertEqual(0, page.bytes_read)
+        self.assertEqual((), page.entries)
+        self.assertEqual((), checkpoint.accepted)
+        self.assertEqual(["time"], [gap.reason for gap in page.coverage.unread])
+
+    def test_outline_bootstrap_complete_transient_page_requires_an_empty_child_inventory(
+        self,
+    ) -> None:
+        self.session.prompt("A complete small owned input with all its words.")
+        self.session.bash("pytest tests", "1 passed")
+        self.save()
+        page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=10000,
+            opening_bytes=1,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertTrue(page.coverage.complete)
+        self.assertTrue(checkpoint.parent_complete)
+        self.assertEqual(self.read().entries, page.entries)
+        self.assertEqual("A complete small owned input with all its words.", page.entries[0].words)
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 failed", is_error=True)
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(self.path.with_suffix("") / "subagents" / "agent-ab12.jsonl")
+        partial, parent = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=10000,
+            opening_bytes=1,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertTrue(parent.parent_complete)
+        self.assertFalse(partial.coverage.complete)
+        self.assertIn("children_not_read", [gap.reason for gap in partial.coverage.unread])
+        self.assertTrue(all(entry.stream == "parent" for entry in partial.entries))
+
     def test_outline_parent_exact_boundary_allowance_refuses_instead_of_stalling(self) -> None:
         self.session.prompt("First owned prompt.")
         self.session.prompt("Second owned prompt.")
@@ -915,6 +1113,19 @@ class SessionSourceTest(unittest.TestCase):
         self.assertEqual(["person"] * 3, [e.kind for e in page.entries])
         self.assertEqual("not_read", page.coverage.agent_replies)
         self.assertEqual("not_admitted", page.coverage.checks_and_files)
+        wrapped, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "codex",
+            "root",
+            max_bytes=10000,
+            opening_bytes=1,
+            deadline=time.monotonic() + 30,
+        )
+        self.assertIsNone(checkpoint)
+        self.assertEqual(page.entries, wrapped.entries)
+        self.assertEqual("not_read", wrapped.coverage.agent_replies)
+        self.assertEqual("not_admitted", wrapped.coverage.checks_and_files)
 
     def test_subagent_streams_keep_call_results_and_writes(self) -> None:
         self.session.bash("pytest tests", "1 passed")

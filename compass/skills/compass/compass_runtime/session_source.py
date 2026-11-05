@@ -217,6 +217,7 @@ class OutlineCheckpoint:
     listing_writes: tuple[str, ...] = ()
     stopped: bool = False
     head_unknown: bool = False
+    accepted: tuple[tuple[int, int], ...] = ()
 
     @property
     def parent_complete(self) -> bool:
@@ -328,7 +329,7 @@ def _outline_pending(
     lines = dict.fromkeys(
         line for call in selected for line in (call.line, call.rewrite) if line is not None
     )
-    if sum(line.end - line.start for line in lines) > budget.remaining or budget.reason:
+    if sum(line.end - line.start for line in lines) > budget.available or budget.reason:
         return None
     rows = _outline_rows(path, harness, checkpoint.stamp, tuple(lines), budget)
     if rows is None:
@@ -400,7 +401,7 @@ def _outline_scan(
     held: dict[str, PendingCall] = {}
     allowance = budget.used + budget.remaining
     while read.cursor.offset < read.cursor.stamp[2]:
-        if budget.remaining <= 0 or time.monotonic() >= budget.scan_deadline:
+        if budget.available <= 0 or time.monotonic() >= budget.scan_deadline:
             break
         before, row = read.cursor, len(read.rows)
         read.unread = [region for region in read.unread if region.reason not in {"bytes", "time"}]
@@ -408,7 +409,14 @@ def _outline_scan(
         if read.cursor.fragment:
             if read.cursor.offset == read.cursor.stamp[2]:
                 read.cursor = replace(read.cursor, fragment=b"")
-            elif before.end_offset == read.start and budget.reason == "bytes":
+            elif (
+                before.end_offset == read.start
+                and budget.reason == "bytes"
+                and read.cursor.offset
+                - read.cursor.line_start
+                + (before.end_offset - before.boundary_start if before.boundary_digest else 0)
+                >= allowance
+            ):
                 read.cursor = replace(read.cursor, fragment=b"", skipping=True)
             else:
                 _outline_defer(read, before, row)
@@ -433,9 +441,13 @@ def _outline_scan(
                 for line in (call.line, call.rewrite)
                 if line is not None
             }
+            prior_boundary = (
+                before.end_offset - before.boundary_start if before.boundary_digest else 0
+            )
             minimum = (
                 read.cursor.end_offset
-                - before.boundary_start
+                - before.end_offset
+                + prior_boundary
                 + sum(line.end - line.start for line in lines)
             )
             if budget.reason == "time" or minimum <= allowance:
@@ -453,7 +465,13 @@ def _outline_scan(
 
 
 def _outline_parent_page(
-    config: RuntimeConfig, path: str, sid: str, checkpoint: OutlineCheckpoint, budget: _Budget
+    config: RuntimeConfig,
+    path: str,
+    sid: str,
+    checkpoint: OutlineCheckpoint,
+    budget: _Budget,
+    *,
+    newest: bool = False,
 ) -> tuple[SourcePage, OutlineCheckpoint]:
     frontier = checkpoint.frontier
     old = (
@@ -475,19 +493,27 @@ def _outline_parent_page(
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
-        boundary_bytes = old.end_offset - old.boundary_start
-        allowance = budget.used + budget.remaining
-        # Exhausting this poll's remainder is retryable. Refuse only when a whole poll cannot
-        # verify the boundary and, while source remains, admit even one new byte.
-        stopped = (
-            checkpoint.stopped
-            or boundary_bytes > allowance
-            or (boundary_bytes == allowance and old.offset < old.stamp[2])
-        )
-        verified = None if stopped else _verify(source, old, budget)
-        if verified is not None and verified != old.boundary_digest:
-            raise _SourceChangedError
-        read = _StreamRead(old, old.end_offset, path, initial=old)
+        verified: str | None
+        if newest:
+            read = _StreamRead(StreamCursor("parent", checkpoint.stamp), 0, path)
+            _window_start(source, read, budget)
+            old = read.cursor
+            read.initial = old
+            stopped, verified = False, ""
+        else:
+            boundary_bytes = old.end_offset - old.boundary_start
+            allowance = budget.used + budget.remaining
+            # Exhausting this poll's remainder is retryable. Refuse only when a whole poll cannot
+            # verify the boundary and, while source remains, admit even one new byte.
+            stopped = (
+                checkpoint.stopped
+                or boundary_bytes > allowance
+                or (boundary_bytes == allowance and old.offset < old.stamp[2])
+            )
+            verified = None if stopped else _verify(source, old, budget)
+            if verified is not None and verified != old.boundary_digest:
+                raise _SourceChangedError
+            read = _StreamRead(old, old.end_offset, path, initial=old)
         pending = (
             _outline_scan(config, source, read, checkpoint, budget, sid)
             if verified is not None
@@ -597,13 +623,14 @@ def _read_outline_parent(
     after: OutlineCheckpoint | None = None,
     max_bytes: int | None = None,
     deadline: float | None = None,
+    budget: _Budget | None = None,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
     """Internal parent-only admission. Full words in the returned page are transient."""
     if harness != "claude":
         return SourcePage("unsupported", harness, sid), None
     now = time.monotonic()
     end = now + config.session_source_page_max_seconds if deadline is None else deadline
-    budget = _Budget(
+    budget = budget or _Budget(
         max(0, config.session_source_page_max_bytes if max_bytes is None else max_bytes),
         end,
         now + max(0.0, end - now) * (1 - config.session_source_classify_share),
@@ -641,6 +668,190 @@ def _read_outline_parent(
     except OSError:
         return SourcePage(
             "stale" if after else "unavailable", harness, sid, bytes_read=budget.used
+        ), None
+
+
+def _outline_intervals(
+    prior: tuple[tuple[int, int], ...], pages: list[SourcePage]
+) -> tuple[tuple[int, int], ...]:
+    intervals = list(prior)
+    for page in pages:
+        coverage = page.coverage
+        if coverage is None:
+            continue
+        cursor = coverage.start_offset
+        for gap in sorted(coverage.unread, key=lambda region: region.start_offset):
+            if gap.stream != "parent" or gap.reason in {"bytes", "time", "before_window"}:
+                continue
+            start, end = max(cursor, gap.start_offset), min(coverage.end_offset, gap.end_offset)
+            if start < end:
+                if cursor < start:
+                    intervals.append((cursor, start))
+                cursor = end
+        if cursor < coverage.end_offset:
+            intervals.append((cursor, coverage.end_offset))
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _outline_missing(
+    accepted: tuple[tuple[int, int], ...], size: int, gaps: tuple[UnreadRegion, ...], reason: str
+) -> list[UnreadRegion]:
+    unread = []
+    cursor = 0
+    for start, end in (*accepted, (size, size)):
+        for gap in sorted(gaps, key=lambda region: region.start_offset):
+            lower, upper = max(cursor, gap.start_offset), min(start, gap.end_offset)
+            if lower < upper:
+                if cursor < lower:
+                    unread.append(UnreadRegion(cursor, lower, reason))
+                unread.append(UnreadRegion(lower, upper, gap.reason))
+                cursor = upper
+        if cursor < start:
+            unread.append(UnreadRegion(cursor, start, reason))
+        cursor = end
+    return unread
+
+
+def _outline_preview(
+    pages: list[SourcePage],
+    checkpoint: OutlineCheckpoint,
+    budget: _Budget,
+    *,
+    complete: bool,
+    children: bool,
+) -> SourcePage:
+    facts: dict[str, SourceEntry] = {}
+    positions: dict[str, tuple[int, int, int]] = {}
+    for page in pages:
+        for old, _new in page.replacements:
+            for fact_id in old:
+                facts.pop(fact_id, None)
+                positions.pop(fact_id, None)
+        facts.update((entry.fact_id, entry) for entry in page.entries)
+        positions.update(page.positions)
+    entries = tuple(sorted(facts.values(), key=lambda entry: positions[entry.fact_id]))
+    gaps = tuple(
+        region
+        for page in pages
+        if page.coverage
+        for region in page.coverage.unread
+        if region.stream == "parent" and region.reason not in {"bytes", "time", "before_window"}
+    )
+    unread = _outline_missing(
+        checkpoint.accepted, checkpoint.stamp[2], gaps, budget.reason or "bytes"
+    )
+    if children:
+        unread.append(UnreadRegion(0, 0, "children_not_read", "children"))
+    coverage = SourceCoverage(
+        complete,
+        entries[0].fact_id if entries and not complete else None,
+        checkpoint.accepted[0][0] if checkpoint.accepted else 0,
+        checkpoint.accepted[-1][1] if checkpoint.accepted else 0,
+        tuple(unread),
+        "read",
+        "read",
+        ("children_not_read",) if children else (),
+    )
+    return replace(
+        pages[0],
+        entries=entries,
+        coverage=coverage,
+        bytes_read=budget.used,
+        replacements=tuple(change for page in pages for change in page.replacements),
+        positions=tuple((entry.fact_id, positions[entry.fact_id]) for entry in entries),
+    )
+
+
+def _outline_bootstrap(
+    config: RuntimeConfig,
+    path: str,
+    sid: str,
+    after: OutlineCheckpoint | None,
+    budget: _Budget,
+    opening_bytes: int,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    stamps = source_stamps(path, "claude")
+    stamp = stamps[0][1]
+    if stamp is None:
+        raise OSError("missing parent")
+    cold_long = after is None and stamp[2] > budget.remaining
+    if cold_long:
+        budget.read_limit = budget.used + min(budget.remaining, max(0, opening_bytes))
+    try:
+        page, checkpoint = _read_outline_parent(
+            config, path, "claude", sid, after=after, budget=budget
+        )
+    finally:
+        budget.read_limit = None
+    if checkpoint is None or page.state != "ok":
+        return page, checkpoint
+    pages = [page]
+    if cold_long and budget.reason is None:
+        tail, _tail_checkpoint = _outline_parent_page(
+            config, path, sid, checkpoint, budget, newest=True
+        )
+        pages.append(tail)
+    latest = source_stamps(path, "claude")
+    if latest[0][1] != stamp:
+        raise _SourceChangedError
+    children = len(stamps) > 1 or len(latest) > 1
+    checkpoint = replace(
+        checkpoint, accepted=_outline_intervals(after.accepted if after else (), pages)
+    )
+    _outline_bound(checkpoint)
+    complete = after is None and len(pages) == 1 and checkpoint.parent_complete and not children
+    return _outline_preview(
+        pages, checkpoint, budget, complete=complete, children=children
+    ), checkpoint
+
+
+def _read_outline(
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    *,
+    after: OutlineCheckpoint | None = None,
+    max_bytes: int | None = None,
+    opening_bytes: int | None = None,
+    deadline: float | None = None,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    """Cold opening/tail preview, then forward parent pages; no retained words or child coverage."""
+    if harness != "claude":
+        return read(config, path, harness, sid, max_bytes=max_bytes, deadline=deadline), None
+    now = time.monotonic()
+    end = now + config.session_outline_max_seconds if deadline is None else deadline
+    budget = _Budget(
+        max(0, config.session_outline_max_bytes if max_bytes is None else max_bytes),
+        end,
+        now + max(0.0, end - now) * (1 - config.session_source_classify_share),
+    )
+    try:
+        return _outline_bootstrap(
+            config,
+            path,
+            sid,
+            after,
+            budget,
+            config.session_outline_head_bytes if opening_bytes is None else opening_bytes,
+        )
+    except _SourceChangedError:
+        return SourcePage("stale", harness, sid, bytes_read=budget.used), None
+    except OSError:
+        return SourcePage(
+            "stale" if after else "unavailable", harness, sid, bytes_read=budget.used
+        ), None
+    except ValueError as error:
+        if str(error) != "outline_state_limit":
+            raise
+        return SourcePage(
+            "limited", harness, sid, notes=("outline_state_limit",), bytes_read=budget.used
         ), None
 
 
@@ -686,15 +897,25 @@ class _Budget:
     # Scanning stops here so classifying what was scanned can finish by `deadline`.
     scan_deadline: float
     used: int = 0
+    # Optional absolute spent-byte ceiling for one phase; it never replaces the poll allowance.
+    read_limit: int | None = None
+
+    @property
+    def available(self) -> int:
+        return (
+            self.remaining
+            if self.read_limit is None
+            else min(self.remaining, max(0, self.read_limit - self.used))
+        )
 
     @property
     def reason(self) -> str | None:
         if time.monotonic() >= self.scan_deadline:
             return "time"
-        return "bytes" if self.remaining <= 0 else None
+        return "bytes" if self.available <= 0 else None
 
     def line(self, source: BinaryIO, count: int) -> bytes:
-        raw = source.readline(min(count, max(0, self.remaining)))
+        raw = source.readline(min(count, max(0, self.available)))
         self.remaining -= len(raw)
         self.used += len(raw)
         return raw
