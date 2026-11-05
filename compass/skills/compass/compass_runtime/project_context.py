@@ -8065,7 +8065,7 @@ def _only_steered(steered: frozenset[str]) -> project_scripts.Declarations | Non
     )
 
 
-def _declared_scripts(
+def _declared_scripts(  # noqa: PLR0913 - existing inputs plus an opt-in outline metadata sink
     config: RuntimeConfig,
     transcript_path: str,
     began_in: str,
@@ -8075,6 +8075,7 @@ def _declared_scripts(
     prior_writes: frozenset[str] = frozenset(),
     calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
     known_start: tuple[float | None] | None = None,
+    observed_writes: set[str] | None = None,
 ) -> project_scripts.Declarations | None:
     """What counts as a check beyond the closed list for the session, or None where nothing can.
 
@@ -8089,11 +8090,14 @@ def _declared_scripts(
 
     `known_start` is supplied by a reader that already admitted the head under its own budget.
     Its single value may be None: an unknown head time must not fall back to this page's time.
+    `observed_writes` optionally collects the full canonical withdrawal identities for bounded
+    outline reconciliation; it changes neither returned declarations nor ordinary pagination.
     """
     if not began_in:
-        steered = _steered_writes(
-            _written_declaring_files(parent, children, calls=calls) | prior_writes
-        )
+        written = _written_declaring_files(parent, children, calls=calls) | prior_writes
+        if observed_writes is not None:
+            observed_writes.update(written)
+        steered = _steered_writes(written)
         return _only_steered(steered)
     loaded: project_scripts.Declarations | None = None
     # `--no-git` means no git command runs in any repository, and this reader runs git reads of
@@ -8115,6 +8119,7 @@ def _declared_scripts(
         reader_checks.for_project(config, began_in, listed_entry_refusal),
         prior_writes=prior_writes,
         calls=calls,
+        observed_writes=observed_writes,
     )
 
 
@@ -8127,6 +8132,7 @@ def _declared_from_inputs(
     *,
     prior_writes: frozenset[str] = frozenset(),
     calls: Sequence[tuple[float, str, str, str, dict[str, Any], str]] | None = None,
+    observed_writes: set[str] | None = None,
 ) -> project_scripts.Declarations | None:
     """Apply whole-corpus withdrawals to acquired metadata, without source/git reads.
 
@@ -8141,6 +8147,8 @@ def _declared_from_inputs(
         _written_declaring_files(parent, children, also=scripts, listed=listed, calls=calls)
         | prior_writes
     )
+    if observed_writes is not None:
+        observed_writes.update(written)
     # A listing the reader never made is not withdrawn, and the page does not say it was.
     wrote_listing = reader_checks.FILENAME in written and bool(listed)
     steered = _steered_writes(written)

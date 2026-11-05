@@ -172,6 +172,8 @@ class SourcePage:
     observations: tuple[tuple[str, int], ...] = ()
     # Aligned with replacements, including a removal that emits no new fact.
     replacement_observations: tuple[int, ...] = ()
+    # Ordinary physical observations stay at zero; isolated dependency replay pages advance it.
+    classification_revision: int = 0
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,8 @@ class _OutlineCall:
     rewrite: _OutlineLine | None
     position: tuple[int, int]
     fact_ids: tuple[str, ...]
+    result: _OutlineLine | None = None
+    revision: int = 0
 
 
 @dataclass(frozen=True)
@@ -229,6 +233,11 @@ class OutlineCheckpoint:
     children: tuple[tuple[str, OutlineCheckpoint], ...] = ()
     inventory: tuple[tuple[str, Stamp | None], ...] = ()
     next_stream: int = 0
+    withdrawals: tuple[str, ...] = ()
+    dependencies: tuple[_OutlineCall, ...] = ()
+    replay: tuple[tuple[str, str], ...] = ()
+    classification_revision: int = 0
+    dependency_limited: bool = False
 
     @property
     def parent_complete(self) -> bool:
@@ -240,13 +249,100 @@ class OutlineCheckpoint:
 
     @property
     def complete(self) -> bool:
-        return self.parent_complete and all(child.parent_complete for _, child in self.children)
+        return (
+            not self.replay
+            and not self.dependency_limited
+            and self.parent_complete
+            and all(child.parent_complete for _, child in self.children)
+        )
+
+    @property
+    def done(self) -> bool:
+        return self.dependency_limited or (
+            not self.replay
+            and all(
+                current.stopped
+                or (current.frontier is not None and current.frontier.offset == current.stamp[2])
+                for current in (self, *(child for _, child in self.children))
+            )
+        )
 
 
 _OUTLINE_PENDING_LIMIT = 256
 _OUTLINE_CHECKPOINT_BYTES = 8 * 1024 * 1024
 _OUTLINE_STREAM_LIMIT = 128
 _OUTLINE_INVENTORY_ENTRIES = 4096
+_OUTLINE_DEPENDENCY_LIMIT = 4096
+_OUTLINE_WITHDRAWAL_LIMIT = 512
+
+
+def _outline_call_offset(call: _OutlineCall) -> int:
+    return max(line.start for line in (call.line, call.rewrite, call.result) if line is not None)
+
+
+def _outline_merge_dependencies(
+    previous: tuple[_OutlineCall, ...],
+    incoming: tuple[_OutlineCall, ...],
+) -> tuple[_OutlineCall, ...]:
+    merged = {call.call_id: call for call in previous}
+    for call in incoming:
+        old = merged.get(call.call_id)
+        if old is None or _outline_call_offset(call) >= _outline_call_offset(old):
+            merged[call.call_id] = replace(
+                call,
+                fact_ids=tuple(dict.fromkeys((*(old.fact_ids if old else ()), *call.fact_ids))),
+                revision=max(call.revision, old.revision if old else 0),
+            )
+    if len(merged) > _OUTLINE_DEPENDENCY_LIMIT:
+        raise ValueError("outline_dependency_limit")
+    return tuple(merged.values())
+
+
+def _outline_locator(read: _StreamRead, row: int) -> _OutlineLine:
+    start = read.row_cursors[row].line_start
+    ends = [end for end, _digest in read.boundaries]
+    end, digest = read.boundaries[bisect_right(ends, start)]
+    return _OutlineLine(start, end, digest)
+
+
+def _outline_dependencies(
+    read: _StreamRead, after: OutlineCheckpoint | None
+) -> tuple[_OutlineCall, ...]:
+    positions, _results, rewrites = _rows_of(read.rows, read.cursor.stream != "parent")
+    result_rows = {
+        call_id: index
+        for index, row in enumerate(read.rows)
+        for call_id in context._tool_result_blocks([row], sidechain=read.cursor.stream != "parent")  # noqa: SLF001
+    }
+    previous = {call.call_id: call for call in (*after.calls, *after.dependencies)} if after else {}
+    incoming = []
+    for call in read.dependency_calls:
+        old = previous.get(call.call_id)
+        row = positions.get(call.call_id)
+        line = _outline_locator(read, row) if row is not None else old.line if old else None
+        if line is None:
+            raise _SourceChangedError
+        rewrite, result = rewrites.get(call.call_id), result_rows.get(call.call_id)
+        incoming.append(
+            _OutlineCall(
+                call.call_id,
+                line,
+                _outline_locator(read, rewrite)
+                if rewrite is not None
+                else old.rewrite
+                if old
+                else None,
+                call.position,
+                call.fact_ids,
+                _outline_locator(read, result)
+                if result is not None
+                else old.result
+                if old
+                else None,
+                old.revision if old else 0,
+            )
+        )
+    return _outline_merge_dependencies(after.dependencies if after else (), tuple(incoming))
 
 
 def _outline_checkpoint(
@@ -282,34 +378,35 @@ def _outline_checkpoint(
         calls.pop(call_id, None)
     previous = {call.call_id: call for call in after.calls} if after else {}
     positions, _results, rewrites = _rows_of(read.rows, read.cursor.stream != "parent")
-    ends = [end for end, _digest in read.boundaries]
-
-    def locator(row: int) -> _OutlineLine:
-        start = read.row_cursors[row].line_start
-        index = bisect_right(ends, start)
-        end, digest = read.boundaries[index]
-        return _OutlineLine(start, end, digest)
-
     for call in pending:
         if call.stream != read.cursor.stream:
             raise _SourceChangedError
         old = previous.get(call.call_id)
         row = positions.get(call.call_id)
-        line = locator(row) if row is not None else old.line if old else None
+        line = _outline_locator(read, row) if row is not None else old.line if old else None
         if line is None:
             raise _SourceChangedError
         rewrite = rewrites.get(call.call_id)
         calls[call.call_id] = _OutlineCall(
             call.call_id,
             line,
-            locator(rewrite) if rewrite is not None else old.rewrite if old else None,
+            _outline_locator(read, rewrite)
+            if rewrite is not None
+            else old.rewrite
+            if old
+            else None,
             call.position,
             call.fact_ids,
         )
     if len(calls) > _OUTLINE_PENDING_LIMIT:
         raise ValueError("outline_state_limit")
     checkpoint = OutlineCheckpoint(
-        identity, read.cursor.stamp, tuple(calls.values()), stream=read.cursor.stream
+        identity,
+        read.cursor.stamp,
+        tuple(calls.values()),
+        stream=read.cursor.stream,
+        dependencies=_outline_dependencies(read, after),
+        withdrawals=tuple(sorted(read.withdrawals)),
     )
     _outline_bound(checkpoint)
     return checkpoint
@@ -367,7 +464,8 @@ def _outline_pending(
         raise _SourceChangedError
     calls, results, rewrites = _rows_of(read.rows, checkpoint.stream != "parent")
     touched = (results.keys() | rewrites.keys()) - calls.keys()
-    selected = [call for call in checkpoint.calls if call.call_id in touched]
+    available = {call.call_id: call for call in (*checkpoint.calls, *checkpoint.dependencies)}
+    selected = [call for call in available.values() if call.call_id in touched]
     if not selected:
         return ()
     lines = dict.fromkeys(
@@ -488,7 +586,9 @@ def _outline_scan(
         if harness == "codex":
             continue
         remaining = replace(
-            checkpoint, calls=tuple(c for c in checkpoint.calls if c.call_id not in held)
+            checkpoint,
+            calls=tuple(c for c in checkpoint.calls if c.call_id not in held),
+            dependencies=tuple(c for c in checkpoint.dependencies if c.call_id not in held),
         )
         pending = _outline_pending(read.path, harness, sid, remaining, read, budget)
         if pending is None:
@@ -623,11 +723,12 @@ def _outline_parent_page(
         (old,),
         pending,
         head[0],
-        listing_writes=frozenset(checkpoint.listing_writes),
+        listing_writes=frozenset(checkpoint.listing_writes) | frozenset(checkpoint.withdrawals),
     )
     read.known_head = head
+    read.dependency_ids = frozenset(call.call_id for call in checkpoint.dependencies)
     if parent is None:
-        page = _finish(config, path, harness, sid, [read], [], transient, budget)
+        page = _finish(config, path, harness, sid, [read], [], transient, budget, outline=True)
     else:
         parent_path, parent_checkpoint = parent
         parent_read = _StreamRead(StreamCursor("parent", parent_checkpoint.stamp), 0, parent_path)
@@ -636,10 +737,19 @@ def _outline_parent_page(
             transient,
             session_dir=parent_checkpoint.head[0],
             listing_writes=frozenset(parent_checkpoint.listing_writes)
-            | frozenset(checkpoint.listing_writes),
+            | frozenset(checkpoint.listing_writes)
+            | frozenset(parent_checkpoint.withdrawals),
         )
         page = _finish(
-            config, parent_path, harness, sid, [parent_read, read], [], transient, budget
+            config,
+            parent_path,
+            harness,
+            sid,
+            [parent_read, read],
+            [],
+            transient,
+            budget,
+            outline=True,
         )
     snapshot = page.snapshot
     if snapshot is None:
@@ -894,10 +1004,19 @@ def _outline_bootstrap(
         return page, checkpoint
     pages = [page]
     if cold_long and budget.reason is None:
-        tail, _tail_checkpoint = _outline_parent_page(
+        tail, tail_checkpoint = _outline_parent_page(
             config, path, sid, checkpoint, budget, newest=True, harness=harness
         )
         pages.append(tail)
+        checkpoint = replace(
+            checkpoint,
+            dependencies=_outline_merge_dependencies(
+                checkpoint.dependencies, tail_checkpoint.dependencies
+            ),
+            withdrawals=tuple(
+                sorted(set(checkpoint.withdrawals) | set(tail_checkpoint.withdrawals))
+            ),
+        )
     children = len(stamps) > 1
     checkpoint = replace(
         checkpoint, accepted=_outline_intervals(after.accepted if after else (), pages)
@@ -990,7 +1109,150 @@ def _outline_unread(checkpoint: OutlineCheckpoint, reason: str) -> tuple[UnreadR
             )
         )
         regions.extend(gap for gap in current.gaps if gap.start_offset == gap.end_offset)
+    if checkpoint.replay:
+        regions.append(UnreadRegion(0, 0, "classification_pending", "classification"))
     return tuple(regions)
+
+
+def _outline_dependency_map(
+    checkpoint: OutlineCheckpoint | None,
+) -> dict[tuple[str, str], _OutlineCall]:
+    if checkpoint is None:
+        return {}
+    return {
+        (current.stream, call.call_id): call
+        for current in (checkpoint, *(child for _, child in checkpoint.children))
+        for call in current.dependencies
+    }
+
+
+def _outline_reconcile(
+    previous: OutlineCheckpoint | None,
+    current: OutlineCheckpoint,
+    *,
+    initial_complete: bool = False,
+) -> OutlineCheckpoint:
+    known = set(previous.withdrawals if previous else ())
+    written = known | set(current.withdrawals)
+    for _, child in current.children:
+        written.update(child.withdrawals)
+    if len(written) > _OUTLINE_WITHDRAWAL_LIMIT:
+        raise ValueError("outline_dependency_limit")
+    old, new = _outline_dependency_map(previous), _outline_dependency_map(current)
+    if len(new) > _OUTLINE_DEPENDENCY_LIMIT:
+        raise ValueError("outline_dependency_limit")
+    changed = (
+        list(new)
+        if written != known and not initial_complete
+        else [
+            key
+            for key, call in new.items()
+            if key in old
+            and old[key].revision
+            and _outline_call_offset(call) > _outline_call_offset(old[key])
+        ]
+    )
+    revision = max(
+        current.classification_revision, previous.classification_revision if previous else 0
+    )
+    return replace(
+        current,
+        withdrawals=tuple(sorted(written)),
+        replay=tuple(dict.fromkeys((*current.replay, *changed))),
+        classification_revision=revision + bool(changed),
+    )
+
+
+def _outline_replay(
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    checkpoint: OutlineCheckpoint,
+    budget: _Budget,
+) -> tuple[SourcePage, OutlineCheckpoint]:
+    stream, call_id = checkpoint.replay[0]
+    owner_path, owner = next(
+        (p, state)
+        for p, state in ((path, checkpoint), *checkpoint.children)
+        if state.stream == stream
+    )
+    held = next(call for call in owner.dependencies if call.call_id == call_id)
+    lines = tuple(
+        dict.fromkeys(line for line in (held.line, held.rewrite, held.result) if line is not None)
+    )
+    required = sum(line.end - line.start for line in lines)
+    if required > budget.used + budget.remaining:
+        raise ValueError("outline_dependency_limit")
+    if required > budget.available or budget.reason:
+        return SourcePage("ok", harness, sid), checkpoint
+    source = _outline_rows(owner_path, harness, owner.stamp, lines, budget, stream=stream)
+    if source is None or time.monotonic() >= budget.deadline:
+        return SourcePage("ok", harness, sid), checkpoint
+    rows = [source[line] for line in sorted(lines, key=lambda line: line.start)]
+    call = next((call for call in _pending_calls(rows, stream) if call.call_id == call_id), None)
+    if call is None:
+        raise _SourceChangedError
+    call = replace(call, position=held.position, fact_ids=held.fact_ids)
+    declared = context._declared_scripts(  # noqa: SLF001
+        config,
+        path,
+        checkpoint.head[0],
+        rows if stream == "parent" else [],
+        [] if stream == "parent" else [rows],
+        prior_writes=frozenset(checkpoint.withdrawals),
+        known_start=(checkpoint.head[1],),
+    )
+    if time.monotonic() >= budget.deadline:
+        return SourcePage("ok", harness, sid), checkpoint
+    read = _StreamRead(StreamCursor(stream, owner.stamp), 0, owner_path)
+    entries = tuple(
+        _classify(
+            read,
+            call,
+            context._tool_result_blocks(rows, sidechain=stream != "parent"),  # noqa: SLF001
+            -1,
+            sid,
+            checkpoint.head[0],
+            declared,
+        )
+    )
+    if time.monotonic() >= budget.deadline:
+        return SourcePage("ok", harness, sid), checkpoint
+    revision = checkpoint.classification_revision
+    ids = tuple(entry.fact_id for entry in entries)
+    updated = replace(held, fact_ids=ids, revision=revision)
+    owner = replace(
+        owner,
+        dependencies=tuple(
+            updated if item.call_id == call_id else item for item in owner.dependencies
+        ),
+    )
+    checkpoint = (
+        replace(checkpoint, dependencies=owner.dependencies)
+        if stream == "parent"
+        else replace(
+            checkpoint,
+            children=tuple(
+                (p, owner if state.stream == stream else state) for p, state in checkpoint.children
+            ),
+        )
+    )
+    offset = _outline_call_offset(held)
+    page = SourcePage(
+        "ok",
+        harness,
+        sid,
+        entries=entries,
+        positions=tuple(
+            (entry.fact_id, (*held.position, index)) for index, entry in enumerate(entries)
+        ),
+        observations=tuple((entry.fact_id, offset) for entry in entries),
+        replacements=((held.fact_ids, ids),),
+        replacement_observations=(offset,),
+        classification_revision=revision,
+    )
+    return page, replace(checkpoint, replay=checkpoint.replay[1:])
 
 
 def _outline_advance(
@@ -1075,9 +1337,18 @@ def _outline_streams(
     opening_bytes: int,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
     inventory = _outline_stamps(path, harness, deadline=budget.deadline)
-    if after is not None and after.inventory != inventory:
+    checkpoint: OutlineCheckpoint | None
+    if after is not None and (
+        after.inventory != inventory
+        or after.identity != record_pages._identity(path, harness, sid)  # noqa: SLF001
+        or after.stream != "parent"
+    ):
         raise _SourceChangedError
-    if after is None:
+    if after is not None and after.dependency_limited:
+        page, checkpoint = SourcePage("limited", harness, sid), after
+    elif after is not None and after.replay:
+        page, checkpoint = _outline_replay(config, path, harness, sid, after, budget)
+    elif after is None:
         page, checkpoint = _outline_bootstrap(
             config, path, sid, None, budget, opening_bytes, harness, inventory
         )
@@ -1095,6 +1366,11 @@ def _outline_streams(
         page, checkpoint = _outline_advance(config, path, harness, sid, after, budget)
     if checkpoint is None:
         return page, None
+    checkpoint = _outline_reconcile(
+        after,
+        checkpoint,
+        initial_complete=bool(after is None and page.coverage and page.coverage.complete),
+    )
     _outline_bound(checkpoint)
     if _outline_stamps(path, harness, deadline=budget.deadline) != inventory:
         raise _SourceChangedError
@@ -1156,7 +1432,12 @@ def _read_outline(
             "stale" if after else "unavailable", harness, sid, bytes_read=budget.used
         ), None
     except ValueError as error:
-        if str(error) not in {"outline_state_limit", "outline_stream_limit", "time"}:
+        if str(error) not in {
+            "outline_state_limit",
+            "outline_stream_limit",
+            "outline_dependency_limit",
+            "time",
+        }:
             raise
         coverage = SourceCoverage(
             False,
@@ -1168,6 +1449,24 @@ def _read_outline(
             "read" if harness == "claude" else "not_admitted",
             () if harness == "claude" else _CODEX_NOTES,
         )
+        stopped = None
+        if str(error) == "outline_dependency_limit":
+            inventory = _outline_stamps(path, harness, deadline=budget.deadline)
+            stopped = after or OutlineCheckpoint(
+                record_pages._identity(path, harness, sid),  # noqa: SLF001
+                _stamp(os.stat(path)),
+                (),
+                inventory=inventory,
+            )
+            stopped = replace(
+                stopped,
+                dependency_limited=True,
+                replay=(),
+                gaps=(
+                    *stopped.gaps,
+                    UnreadRegion(0, 0, "outline_dependency_limit", "classification"),
+                ),
+            )
         return SourcePage(
             "limited",
             harness,
@@ -1175,7 +1474,7 @@ def _read_outline(
             notes=(str(error),),
             bytes_read=budget.used,
             coverage=coverage,
-        ), None
+        ), stopped
 
 
 class _SourceChangedError(ValueError):
@@ -1265,6 +1564,10 @@ class _StreamRead:
     fact_observations: dict[str, int] = field(default_factory=dict)
     replacement_observations: list[int] = field(default_factory=list)
     known_head: tuple[str, float | None] | None = None
+    outline: bool = False
+    withdrawals: frozenset[str] = frozenset()
+    dependency_ids: frozenset[str] = frozenset()
+    dependency_calls: list[PendingCall] = field(default_factory=list)
 
 
 def _verify(source: BinaryIO, old: StreamCursor, budget: _Budget) -> str | None:
@@ -1697,6 +2000,55 @@ def _classify(
     return entries
 
 
+def _without_dependencies(
+    declared: project_scripts.Declarations | None,
+    *,
+    steering: bool,
+) -> project_scripts.Declarations:
+    # A counterfactual using the same classifier, including future script-shell withdrawal.
+    steered = frozenset(
+        project_scripts.SCRIPT_SHELL_PREFIX + manager
+        for managers in project_scripts.SCRIPT_SETTING_FILES.values()
+        for manager in managers
+    )
+    empty = declared or project_scripts.Declarations("", "", {}, {}, {})
+    return replace(
+        empty.without(frozenset(project_scripts.DECLARING_FILES), withdraw_listing=True),
+        listing_writes=empty.listing_writes | (steered if steering else frozenset()),
+        memo={},
+    )
+
+
+def _outline_track_call(
+    read: _StreamRead,
+    call: PendingCall,
+    entries: list[SourceEntry],
+    results: dict[str, Any],
+    position: int,
+    sid: str,
+    session_dir: str,
+    declared: project_scripts.Declarations | None,
+) -> None:
+    if not read.outline:
+        return
+    if call.call_id in read.dependency_ids or any(
+        entries
+        != _classify(
+            _StreamRead(read.cursor, read.start, read.path),
+            call,
+            results,
+            position,
+            sid,
+            session_dir,
+            _without_dependencies(declared, steering=steering),
+        )
+        for steering in (False, True)
+    ):
+        read.dependency_calls.append(
+            replace(call, fact_ids=tuple(entry.fact_id for entry in entries))
+        )
+
+
 def _tools(
     read: _StreamRead,
     previous: tuple[PendingCall, ...],
@@ -1779,6 +2131,16 @@ def _tools(
                 _classify(
                     read, call, results, positions.get(call.call_id, -1), sid, session_dir, declared
                 )
+            )
+            _outline_track_call(
+                read,
+                call,
+                entries[first_entry:],
+                results,
+                positions.get(call.call_id, -1),
+                sid,
+                session_dir,
+                declared,
             )
             read.replacements.append(
                 (call.fact_ids, tuple(e.fact_id for e in entries[first_entry:]))
@@ -1954,7 +2316,7 @@ def _assert_unchanged(streams: list[_StreamRead]) -> None:
             raise _SourceChangedError
 
 
-def _finish(
+def _finish(  # noqa: PLR0913 - existing reader inputs plus opt-in outline tracking
     config: RuntimeConfig,
     path: str,
     harness: str,
@@ -1963,6 +2325,8 @@ def _finish(
     unread: list[UnreadRegion],
     after: SourceCursor | None,
     budget: _Budget,
+    *,
+    outline: bool = False,
 ) -> SourcePage:
     parent = streams[0]
     known_head = parent.known_head
@@ -1979,6 +2343,7 @@ def _finish(
     regions: list[UnreadRegion] = []
     # The project's own check scripts, from the same read a published fact uses. A page holds only
     # its own rows, so a write on an earlier page is seen by the work tree's bytes alone.
+    observed_writes: set[str] | None = set() if outline else None
     declared = (
         context._declared_scripts(  # noqa: SLF001
             config,
@@ -1988,11 +2353,14 @@ def _finish(
             [stream.rows for stream in streams[1:]],
             prior_writes=after.listing_writes if after else frozenset(),
             known_start=(known_head[1],) if known_head is not None else None,
+            observed_writes=observed_writes,
         )
         if harness == "claude"
         else None
     )
     for stream_read in streams:
+        stream_read.outline = outline
+        stream_read.withdrawals = frozenset(observed_writes or ())
         tools, held = (
             _tools(stream_read, after.pending if after else (), sid, session_dir, budget, declared)
             if harness == "claude"

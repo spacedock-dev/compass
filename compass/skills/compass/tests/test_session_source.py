@@ -16,11 +16,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
-from compass_runtime import claude_data, project_context, project_scripts, record_pages
+from compass_runtime import (
+    claude_data,
+    project_context,
+    project_scripts,
+    reader_checks,
+    record_pages,
+)
 from compass_runtime.config import build_runtime_config
 
 from . import test_record_pages
 from .test_claude_checks import Transcript, hook_stdout
+from .test_project_script_checks import git, package
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1253,6 +1260,307 @@ class SessionSourceTest(unittest.TestCase):
         self.assertEqual("stale", page.state)
         self.assertEqual(0, page.bytes_read)
         self.assertIsNone(continued)
+
+    def prepare_outline_declarations(self) -> None:
+        project_scripts.reset()
+        self.addCleanup(project_scripts.reset)
+        self.config = dataclasses.replace(self.config, git_probe_enabled=True)
+        git(self.root, "init", "-q")
+        (self.root / "package.json").write_text(package(typecheck="tsc --noEmit"))
+        git(self.root, "add", "package.json")
+        git(self.root, "commit", "-q", "-m", "owned base")
+
+    def collect_outline_with_authority(
+        self, budget: int = 4000
+    ) -> tuple[dict[str, Any], list[Any]]:
+        outline = importlib.import_module("compass_runtime.session_outline")
+        facts: dict[str, Any] = {}
+        authorities: dict[str, tuple[int, int]] = {}
+        checkpoint = None
+        pages = []
+        with self._meter_source_reads() as reads:
+            for _ in range(100):
+                before = reads[0]
+                page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    after=checkpoint,
+                    max_bytes=budget,
+                    opening_bytes=1400,
+                    deadline=time.monotonic() + 30,
+                )
+                self.assertIsNotNone(checkpoint)
+                self.assertEqual(reads[0] - before, page.bytes_read)
+                self.assertLessEqual(page.bytes_read, budget)
+                self.assert_outline_checkpoint_private(checkpoint)
+                revision = getattr(page, "classification_revision", 0)
+                self.assertIsNotNone(outline._measure_facts(checkpoint, outline._FactLimits()))
+                if checkpoint.replay:
+                    self.assertFalse(checkpoint.complete)
+                    self.assertFalse(checkpoint.done)
+                    self.assertIn(
+                        "classification_pending", [gap.reason for gap in page.coverage.unread]
+                    )
+                for (old, new), offset in zip(
+                    page.replacements, page.replacement_observations, strict=True
+                ):
+                    for fact_id in set(old) - set(new):
+                        authority = (revision, offset)
+                        if authority >= authorities.get(fact_id, (-1, -1)):
+                            facts.pop(fact_id, None)
+                            authorities[fact_id] = authority
+                observed = dict(page.observations)
+                for entry in page.entries:
+                    authority = (revision, observed[entry.fact_id])
+                    if authority >= authorities.get(entry.fact_id, (-1, -1)):
+                        facts[entry.fact_id] = entry
+                        authorities[entry.fact_id] = authority
+                pages.append(page)
+                if checkpoint.complete:
+                    break
+        assert checkpoint is not None
+        self.assertTrue(
+            checkpoint.complete, "classification replay must settle under bounded polls"
+        )
+        return facts, pages
+
+    def test_outline_declaring_file_write_reconciles_earlier_and_later_checks(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned declaration reconciliation.")
+        self.session.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        self.session.write(str(self.root / "src/keep.py"))
+        for number in range(6):
+            self.session.prompt(f"Before declaring write {number}. " + "padding " * 80)
+        self.session.write(str(self.root / "package.json"))
+        for number in range(6):
+            self.session.prompt(f"After declaring write {number}. " + "padding " * 80)
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        whole = self.read()
+        facts, pages = self.collect_outline_with_authority()
+        self.assertTrue(any(entry.title == "pnpm typecheck" for entry in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        self.assertEqual(
+            ["pytest tests/direct.py"],
+            [entry.title for entry in facts.values() if entry.kind == "check"],
+        )
+        self.assertTrue(any(entry.path == "src/keep.py" for entry in facts.values()))
+        self.assertTrue(any(getattr(page, "classification_revision", 0) > 0 for page in pages))
+
+    def test_outline_declared_check_without_write_matches_whole_source(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned unchanged declaration.")
+        self.session.bash("pnpm typecheck", "1 passed")
+        for number in range(12):
+            self.session.prompt(f"Unchanged phase {number}. " + "padding " * 80)
+        self.save()
+        facts, _pages = self.collect_outline_with_authority()
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        self.assertEqual(
+            ["pnpm typecheck"], [entry.title for entry in facts.values() if entry.kind == "check"]
+        )
+
+    def test_outline_child_write_withdraws_parent_and_sibling_declarations(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned parent check.")
+        self.session.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        self.save()
+        sibling = Transcript(self.root)
+        sibling.bash("pnpm typecheck", "1 passed")
+        self.save_outline_child(sibling, "agent-ab12.jsonl")
+        writer = Transcript(self.root)
+        writer.write(str(self.root / "package.json"))
+        self.save_outline_child(writer, "agent-cd34.jsonl")
+        facts, pages = self.collect_outline_with_authority()
+        self.assertTrue(any(entry.title == "pnpm typecheck" for entry in pages[0].entries))
+        self.assertTrue(any(entry.title == "pnpm typecheck" for entry in pages[1].entries))
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        self.assertEqual(
+            ["pytest tests/direct.py"],
+            [entry.title for entry in facts.values() if entry.kind == "check"],
+        )
+
+    def test_outline_listed_script_and_listing_writes_reconcile_prior_checks(self) -> None:
+        self.prepare_outline_declarations()
+        store = Path(reader_checks.store_path(self.config))
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(json.dumps({"projects": {str(self.root): ["./check.sh"]}}))
+        for written in ("check.sh", reader_checks.FILENAME):
+            with self.subTest(written=written):
+                self.session = Transcript(self.root)
+                self.session.prompt("Owned listed check.")
+                self.session.bash("./check.sh; pytest tests/direct.py", "1 passed")
+                for number in range(6):
+                    self.session.prompt(f"Before listed write {number}. " + "padding " * 80)
+                self.session.write(str(self.root / written))
+                for number in range(6):
+                    self.session.prompt(f"After listed write {number}. " + "padding " * 80)
+                self.session.bash("./check.sh", "ok")
+                self.save()
+                facts, pages = self.collect_outline_with_authority()
+                self.assertTrue(any(entry.title == "./check.sh" for entry in pages[0].entries))
+                self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+
+    def test_outline_withdrawal_does_not_promote_an_older_unaffected_pass(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned mixed authority.")
+        direct = self.session.call("Bash", {"command": "pytest tests/direct.py"})
+        self.session.bash("pnpm typecheck", "1 passed")
+        for number in range(4):
+            self.session.prompt(f"Before earlier result {number}. " + "padding " * 80)
+        self.session.result(direct, "1 passed")
+        self.session.write(str(self.root / "package.json"))
+        for number in range(10):
+            self.session.prompt(f"Before tail failure {number}. " + "padding " * 80)
+        self.session.result(direct, "Exit code 1\n1 failed", is_error=True)
+        self.session.prompt("After the latest direct result. " + "padding " * 130)
+        self.save()
+        facts, pages = self.collect_outline_with_authority(budget=6000)
+        self.assertEqual(
+            ["failed"],
+            [entry.result for entry in pages[0].entries if entry.title == "pytest tests/direct.py"],
+        )
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        for page in pages:
+            if page.classification_revision:
+                self.assertTrue(
+                    all(entry.title != "pytest tests/direct.py" for entry in page.entries)
+                )
+
+    def test_outline_replayed_conditional_call_accepts_a_later_valid_result(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned future result.")
+        call = self.session.call("Bash", {"command": "pnpm typecheck"})
+        for number in range(6):
+            self.session.prompt(f"Before unrelated withdrawal {number}. " + "padding " * 80)
+        self.session.write(str(self.root / reader_checks.FILENAME))
+        for number in range(10):
+            self.session.prompt(f"Before later result {number}. " + "padding " * 80)
+        self.session.result(call, "1 passed")
+        for number in range(8):
+            self.session.prompt(f"After later result {number}. " + "padding " * 80)
+        self.save()
+        facts, pages = self.collect_outline_with_authority()
+        replayed = [
+            (page.classification_revision, entry.result)
+            for page in pages
+            if page.classification_revision
+            for entry in page.entries
+            if entry.title == "pnpm typecheck"
+        ]
+        self.assertEqual(["not-recorded", "passed"], [result for _, result in replayed])
+        self.assertLess(replayed[0][0], replayed[1][0])
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+
+    def test_outline_dependency_cap_is_explicit_and_sticky(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned limited declaration.")
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        with mock.patch.object(self.source, "_OUTLINE_DEPENDENCY_LIMIT", 0):
+            page, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=4000,
+            )
+        self.assertEqual("limited", page.state)
+        self.assertIsNotNone(checkpoint)
+        self.assertTrue(checkpoint.done)
+        self.assertFalse(checkpoint.complete)
+        self.assertIn("outline_dependency_limit", [gap.reason for gap in page.coverage.unread])
+        again, continued = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=4000,
+        )
+        self.assertEqual("limited", again.state)
+        self.assertEqual(0, again.bytes_read)
+        self.assertEqual(checkpoint, continued)
+
+    def test_outline_script_shell_withdrawal_is_carried_and_reconciled(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned script-shell withdrawal.")
+        self.session.bash("pnpm typecheck; pytest tests/direct.py", "1 passed")
+        for number in range(6):
+            self.session.prompt(f"Before shell write {number}. " + "padding " * 80)
+        self.session.write(str(self.root / "pnpm-workspace.yaml"), "scriptShell: /bin/sh")
+        for number in range(6):
+            self.session.prompt(f"After shell write {number}. " + "padding " * 80)
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        facts, pages = self.collect_outline_with_authority()
+        self.assertTrue(any(entry.title == "pnpm typecheck" for entry in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        self.assertEqual(
+            ["pytest tests/direct.py"],
+            [entry.title for entry in facts.values() if entry.kind == "check"],
+        )
+
+    def test_outline_replay_rejects_another_harness_or_session_identity(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned replay identity.")
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.save()
+        _page, checkpoint = self.source._read_outline(
+            self.config, str(self.path), "claude", "root", max_bytes=4000
+        )
+        checkpoint = dataclasses.replace(
+            checkpoint,
+            replay=(("parent", checkpoint.dependencies[0].call_id),),
+            classification_revision=1,
+        )
+        for harness, sid in (("codex", "root"), ("claude", "other")):
+            with self.subTest(harness=harness, sid=sid):
+                page, refused = self.source._read_outline(
+                    self.config, str(self.path), harness, sid, after=checkpoint, max_bytes=4000
+                )
+                self.assertEqual("stale", page.state)
+                self.assertEqual((), page.entries)
+                self.assertIsNone(refused)
+
+    def test_outline_complete_cold_page_keeps_exact_plan_without_redundant_replay(self) -> None:
+        self.prepare_outline_declarations()
+        self.session.prompt("Owned complete classification.")
+        self.session.bash("pnpm typecheck", "1 passed")
+        self.session.write(str(self.root / reader_checks.FILENAME))
+        self.save()
+        page, checkpoint = self.source._read_outline(
+            self.config, str(self.path), "claude", "root", max_bytes=4000
+        )
+        self.assertTrue(page.coverage.complete)
+        self.assertTrue(checkpoint.complete)
+        self.assertEqual((), checkpoint.replay)
+        self.assertEqual(self.read().entries, page.entries)
+
+    def test_outline_withdrawal_reconciles_a_previously_unemitted_closed_list_fallback(
+        self,
+    ) -> None:
+        self.prepare_outline_declarations()
+        (self.root / "package.json").write_text(package(test="echo skipped"))
+        git(self.root, "add", "package.json")
+        git(self.root, "commit", "-q", "-m", "owned ordinary script")
+        project_scripts.reset()
+        self.session.prompt("Owned closed-list fallback.")
+        self.session.bash("pnpm test", "1 passed")
+        for number in range(6):
+            self.session.prompt(f"Before declaration removal {number}. " + "padding " * 80)
+        self.session.write(str(self.root / "package.json"))
+        for number in range(6):
+            self.session.prompt(f"After declaration removal {number}. " + "padding " * 80)
+        self.save()
+        facts, pages = self.collect_outline_with_authority()
+        self.assertFalse(any(entry.kind == "check" for entry in pages[0].entries))
+        self.assertEqual({entry.fact_id: entry for entry in self.read().entries}, facts)
+        self.assertEqual(
+            ["pnpm test"], [entry.title for entry in facts.values() if entry.kind == "check"]
+        )
 
     def test_outline_unreadable_child_keeps_an_explicit_terminal_gap(self) -> None:
         self.session.prompt("Owned parent.")
