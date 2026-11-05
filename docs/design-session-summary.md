@@ -1490,7 +1490,7 @@ job ceilings whose numbers still require measurement:
 | `session_source_line_max_bytes` | 16 MiB | Match the forward index's line skip before masking. |
 | `session_outline_max_bytes` | 2 MiB | One shared source-byte allowance per focused update, including opening, tail, boundary verification and input rehydration. |
 | `session_outline_head_bytes` | 256 KiB | Opening share of a long record's first update, capped at half that update's byte allowance. |
-| `session_outline_max_seconds` | 0.25 seconds | One cooperative deadline for a focused update, starting before resolution and slot admission. |
+| `session_outline_max_seconds` | 0.25 seconds | Cooperative source-work deadline, starting before resolution and slot admission; bounded final inventory validation is described below. |
 | `session_outline_max_blocks` | 20 | Keep recent turns in a bounded focused response. |
 | `session_outline_highlights` | 3 | Bound each block's failures, folders and check examples separately. |
 | `session_outline_cache_limit` | 16 | Bound recently focused session slots and active updates, also capped at 16 by the outline owner. |
@@ -1554,6 +1554,13 @@ attempted for that source generation; `complete` additionally requires every adm
 finish without permanent gaps and every classification update to settle. A stopped stream or a
 resource refusal can therefore be done and incomplete. `classification_pending` is a zero-width
 classification marker: check counts may change, but it does not claim unread source bytes.
+
+The source and cache each finish with a full inventory comparison under a separate, fixed 25 ms
+validation-only allowance. This permits validating a bounded row whose parsing or masking finished
+after its cooperative work deadline. The stream and directory-entry caps still apply, and this
+allowance admits no additional transcript content. A changed source or an incomplete validation
+still refuses publication; optional summary planning cannot erase valid outline progress merely
+by exhausting the earlier work deadline.
 
 Time cuts retain accepted progress and remain retryable. Only a cold cut with no source bytes,
 accepted intervals, facts or children is discarded. A candidate refused by a source checkpoint or
@@ -2116,7 +2123,10 @@ It is `session_summary.plan` run on one transient, word-bearing source page from
 update, so it costs no second transcript read, no grant and no model call. The resulting plan is
 cached beside the outline under the same stamps, bounds and eviction. Accumulated display facts
 cannot reconstruct the full words a summary plans over. Later pages keep a prior plan when the new
-one is absent or partial with no larger part count. `parts` is the retained windows plus one lede
+one is absent or partial with no larger part count. A partial page with more than one configured
+summary window of message words, or no work time left, defers that optional estimate. The prior
+valid plan remains, or the card uses its entry-count fallback until a plan is available. Small
+complete source pages still supply exact plans. `parts` is the retained windows plus one lede
 (zero for no entries) and `windows` is `parts - 1`. `reason` is the token the 422 preflight would give for these entries
 (`planned_calls`, `planned_bytes`, ...) or null. `largest_read` is exactly the 422 refusal's
 object, so the largest read allowed has one shape wherever it appears, rather than a second
