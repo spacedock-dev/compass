@@ -21,7 +21,7 @@ from compass_runtime import http_api, observer, summary_store
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from . import test_record_pages
+from . import test_record_pages, test_session_source
 from .support import make_server, poll_fast
 from .test_claude_checks import Transcript
 
@@ -509,7 +509,7 @@ class SessionOutlineTest(unittest.TestCase):
             ),
         )
 
-    def test_an_opening_failure_fixed_in_a_group_the_head_read_dropped_is_unknown(self) -> None:
+    def test_a_fix_in_an_admitted_hidden_opening_group_stays_known(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Synthetic first request.")
         transcript.bash("pytest tests", "1 failed", is_error=True)
@@ -527,26 +527,25 @@ class SessionOutlineTest(unittest.TestCase):
         first = result["blocks"][0]
         self.assertTrue(first["opening"])
         self.assertEqual(
-            (0, 1), (first["counts"]["checks_failed"], first["counts"]["checks_unknown"])
+            (0, 0), (first["counts"]["checks_failed"], first["counts"]["checks_unknown"])
         )
+        self.assertEqual(1, first["counts"]["checks_fixed"])
 
-    def test_the_head_read_spends_what_the_window_left_of_one_budget(self) -> None:
+    def test_all_parent_poll_reads_share_one_actual_byte_allowance(self) -> None:
         self._large()
         config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
-        deadlines: list[float] = []
-        real = self.source.read
-
-        def spy(*args: Any, **kwargs: Any) -> Any:
-            deadlines.append(kwargs["deadline"])
-            return real(*args, **kwargs)
-
+        meter = test_session_source.SessionSourceTest()
+        meter.source = self.source
         with (
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
-            mock.patch.object(self.source, "read", side_effect=spy),
+            meter._meter_source_reads() as reads,
         ):
-            self.outline.for_session_with_plan(config, self.state, "claude", "root")
-        self.assertEqual(2, len(deadlines))
-        self.assertEqual(deadlines[0], deadlines[1])
+            for _poll in range(4):
+                before = reads[0]
+                result, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+                self.assertGreater(reads[0] - before, 0)
+                self.assertLessEqual(reads[0] - before, 6000)
+                self.assertTrue(result["blocks"][0]["opening"])
 
     def test_block_cap_keeps_the_opening_and_the_newest_and_counts_dropped_blocks(self) -> None:
         self.path.write_text(
@@ -580,7 +579,8 @@ class SessionOutlineTest(unittest.TestCase):
         config = dataclasses.replace(self.config, session_outline_max_bytes=6000)
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
             result, _plan = self.outline.for_session_with_plan(config, self.state, "claude", "root")
-        self.assertIn("before_window", [r["reason"] for r in result["coverage"]["unread"]])
+        self.assertTrue(result["coverage"]["unread"])
+        self.assertGreater(result["coverage"]["unread"][0]["start_offset"], 0)
         first, *rest = result["blocks"]
         self.assertTrue(first["opening"])
         self.assertTrue(first["prompt"]["title"].startswith("Synthetic request number 0:"))
@@ -637,7 +637,9 @@ class SessionOutlineTest(unittest.TestCase):
         self._large(3)
         with (
             mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
-            mock.patch.object(self.source, "read", wraps=self.source.read) as read,
+            mock.patch.object(
+                self.source, "_read_outline", wraps=self.source._read_outline
+            ) as read,
         ):
             result, _plan = self.outline.for_session_with_plan(
                 self.config, self.state, "claude", "root"
@@ -668,7 +670,7 @@ class SessionOutlineTest(unittest.TestCase):
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
             first = self.outline.for_session(self.config, self.state, "claude", "root")
             with mock.patch.object(
-                self.source, "read", side_effect=AssertionError("cache must stat only")
+                self.source, "_read_outline", side_effect=AssertionError("cache must stat only")
             ):
                 self.assertIs(
                     first, self.outline.for_session(self.config, self.state, "claude", "root")
@@ -743,6 +745,146 @@ class SessionOutlineTest(unittest.TestCase):
             self.assertIs(result, again)
             self.assertEqual(expected["blocks"], again["blocks"])
 
+    def test_impossible_retained_metadata_limit_never_retries_source_reads(self) -> None:
+        self._large()
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.outline, "_FACT_LIMITS", self.outline._FactLimits(bytes=1)),
+            mock.patch.object(
+                self.source, "_read_outline", wraps=self.source._read_outline
+            ) as read,
+        ):
+            for _poll in range(3):
+                answer, _ = self.outline.for_session_with_plan(
+                    self.config, self.state, "claude", "root"
+                )
+                self.assertEqual("outline_state_limit", answer["reason"])
+                self.assertFalse(answer["coverage"]["complete"])
+            self.assertEqual(0, read.call_count)
+
+    def test_refused_parent_growth_keeps_known_facts_and_stops_unchanged_reads(self) -> None:
+        self._large()
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1800
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            first, _ = self.outline.for_session_with_plan(config, self.state, "claude", "root")
+            graph = next(iter(self.state.session_outlines.values()))
+            before = graph.extras.checkpoint
+            limits = dataclasses.replace(self.outline._FACT_LIMITS, facts=len(graph.facts))
+            with mock.patch.object(self.outline, "_FACT_LIMITS", limits):
+                limited, _ = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                self.assertEqual("outline_state_limit", limited["reason"])
+                self.assertEqual(first["blocks"], limited["blocks"])
+                retained = next(iter(self.state.session_outlines.values()))
+                self.assertIs(before, retained.extras.checkpoint)
+                self.assertIsNotNone(self.outline._measure_facts(retained, limits))
+                with mock.patch.object(
+                    self.source,
+                    "_read_outline",
+                    side_effect=AssertionError("unchanged refusal must not read"),
+                ):
+                    again, _ = self.outline.for_session_with_plan(
+                        config, self.state, "claude", "root"
+                    )
+                self.assertIs(limited, again)
+
+    def test_parent_cache_graph_retains_no_transcript_payload_objects(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Synthetic opening. " + "PRIVATE-UNRETAINED-SENTINEL " * 100)
+        transcript.call("Bash", {"command": "pytest tests", "private": "PRIVATE-INPUT-SENTINEL"})
+        for number in range(20):
+            transcript.prompt(f"Later {number}. " + "padding " * 50)
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=4000
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            self.outline.for_session_with_plan(config, self.state, "claude", "root")
+        graph = next(iter(self.state.session_outlines.values()))
+        self.assertIsNotNone(self.outline._measure_facts(graph, self.outline._FACT_LIMITS))
+        self.assertNotIn("PRIVATE-INPUT-SENTINEL", repr(graph))
+        self.assertNotIn("PRIVATE-UNRETAINED-SENTINEL " * 10, repr(graph))
+        pending = [graph]
+        while pending:
+            value = pending.pop()
+            self.assertNotIsInstance(
+                value,
+                (
+                    self.source.SourcePage,
+                    self.source.SourceEntry,
+                    self.source.SourceCursor,
+                    self.source.SourceSnapshot,
+                    bytes,
+                ),
+            )
+            if dataclasses.is_dataclass(value):
+                for field in dataclasses.fields(value):
+                    self.assertNotIn(field.name, {"words", "input_json", "fragment"})
+                    pending.append(getattr(value, field.name))
+            elif isinstance(value, (dict, MappingProxyType)):
+                pending.extend(value.values())
+            elif isinstance(value, (tuple, list)):
+                pending.extend(value)
+
+    def test_cold_later_failure_survives_revisiting_earlier_pass(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Run the owned check.")
+        call = transcript.call("Bash", {"command": "pytest tests"})
+        for number in range(4):
+            transcript.prompt(f"Before first result {number}. " + "padding " * 50)
+        transcript.result(call, "1 passed", is_error=False)
+        for number in range(8):
+            transcript.prompt(f"Before latest result {number}. " + "padding " * 50)
+        transcript.result(call, "Exit code 1\n1 failed", is_error=True)
+        transcript.prompt("After the last result. " + "padding " * 130)
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1800
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(20):
+                answer, plan = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                checks = [check for block in answer["blocks"] for check in block["checks"]]
+                self.assertEqual(["failed"], [check["result"] for check in checks])
+                if answer["coverage"]["complete"]:
+                    break
+            self.assertTrue(answer["coverage"]["complete"])
+            self.assertIsNotNone(plan)
+            self.assertFalse(plan["complete"])
+
+    def test_cold_denial_tombstone_prevents_replayed_call_resurrection(self) -> None:
+        transcript = Transcript(self.root)
+        transcript.prompt("Run the owned check.")
+        call = transcript.call("Bash", {"command": "pytest tests"})
+        for number in range(4):
+            transcript.prompt(f"Before first result {number}. " + "padding " * 50)
+        transcript.result(call, "1 passed", is_error=False)
+        for number in range(8):
+            transcript.prompt(f"Before latest result {number}. " + "padding " * 50)
+        transcript.result(call, "Permission denied by reader.", is_error=True)
+        transcript.prompt("After the last result. " + "padding " * 130)
+        transcript.save(self.path)
+        config = dataclasses.replace(
+            self.config, session_outline_max_bytes=6000, session_outline_head_bytes=1800
+        )
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            for _poll in range(20):
+                answer, plan = self.outline.for_session_with_plan(
+                    config, self.state, "claude", "root"
+                )
+                checks = [check for block in answer["blocks"] for check in block["checks"]]
+                self.assertEqual([], checks)
+                if answer["coverage"]["complete"]:
+                    break
+            self.assertTrue(answer["coverage"]["complete"])
+            self.assertIsNotNone(plan)
+            self.assertFalse(plan["complete"])
+
     def test_plan_shares_outline_read_cache_and_config_invalidation(self) -> None:
         transcript = Transcript(self.root)
         transcript.prompt("Read the synthetic record.")
@@ -754,7 +896,9 @@ class SessionOutlineTest(unittest.TestCase):
             session_summary_call_timeout=61,
         )
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
-            with mock.patch.object(self.source, "read", wraps=self.source.read) as read:
+            with mock.patch.object(
+                self.source, "_read_outline", wraps=self.source._read_outline
+            ) as read:
                 outline, plan = self.outline.for_session_with_plan(
                     config, self.state, "claude", "root"
                 )
@@ -775,7 +919,9 @@ class SessionOutlineTest(unittest.TestCase):
             changed = dataclasses.replace(config, session_summary_max_seconds=60)
             _, plan = self.outline.for_session_with_plan(changed, self.state, "claude", "root")
             self.assertEqual(1, plan["minutes"])
-            self.assertNotIn('"words":', json.dumps(self.state.session_outlines))
+            self.assertIsNotNone(
+                self.outline._measure_facts(self.state.session_outlines, self.outline._FACT_LIMITS)
+            )
 
     def test_plan_off_a_partial_read_counts_the_whole_job_call_ceiling(self) -> None:
         transcript = Transcript(self.root)
@@ -880,7 +1026,9 @@ class SessionOutlineTest(unittest.TestCase):
                     observer, "codex_exec", side_effect=AssertionError("no model")
                 ) as codex,
             ):
-                with mock.patch.object(self.source, "read", wraps=self.source.read) as source_read:
+                with mock.patch.object(
+                    self.source, "_read_outline", wraps=self.source._read_outline
+                ) as source_read:
                     result = self.request(
                         handler, f"/api/project-context?project=synthetic&session={harness}:root"
                     )

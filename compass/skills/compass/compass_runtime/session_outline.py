@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -308,10 +308,11 @@ class _Opening:
 
 def _groups(
     entries: Iterable[session_source.SourceEntry],
+    breaks: frozenset[str] = frozenset(),
 ) -> list[list[session_source.SourceEntry]]:
     groups: list[list[session_source.SourceEntry]] = []
     for entry in entries:
-        if entry.kind == "person" or not groups:
+        if entry.kind == "person" or entry.fact_id in breaks or not groups:
             groups.append([])
         groups[-1].append(entry)
     return groups
@@ -434,7 +435,11 @@ def _block(
 
 
 def build(
-    page: session_source.SourcePage, config: RuntimeConfig, opening: _Opening | None = None
+    page: session_source.SourcePage,
+    config: RuntimeConfig,
+    opening: _Opening | None = None,
+    *,
+    breaks: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """One block per person's message, opening with the session's first one.
 
@@ -442,7 +447,7 @@ def build(
     it. The first part is always shown; the block cap bounds the newest parts after it. A window
     that began after the start with no `opening` has no first part to show.
     """
-    groups = _groups(page.entries)
+    groups = _groups(page.entries, breaks)
     head = opening
     # A window that began after byte zero has no known first prompt: when the head read found none
     # (a first line past its budget), the window's first part is an ordinary part, not the opening.
@@ -564,6 +569,153 @@ def _plan(page: session_source.SourcePage, config: RuntimeConfig) -> dict[str, A
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _Progress:
+    identity: tuple[object, ...]
+    checkpoint: session_source.OutlineCheckpoint | None
+    coverage: session_source.SourceCoverage | None
+    result: tuple[dict[str, Any], dict[str, Any] | None]
+    terminal: bool = False
+
+
+def _observations(page: session_source.SourcePage) -> Iterator[_FactObservation]:
+    for (old, new), observed in zip(page.replacements, page.replacement_observations, strict=True):
+        for fact_id in old:
+            if fact_id not in new:
+                yield _FactObservation(fact_id, None, (-1, 0, 0), (0, observed))
+    for entry, (fact_id, position), (observed_id, observed) in zip(
+        page.entries, page.positions, page.observations, strict=True
+    ):
+        if entry.fact_id != fact_id or observed_id != fact_id or observed < 0:
+            raise ValueError("missing source observation")
+        yield _FactObservation(fact_id, entry, position, (0, observed))
+
+
+def _project_parent(
+    graph: _FactGraph, progress: _Progress, config: RuntimeConfig, sid: str
+) -> dict[str, Any]:
+    entries = _ordered_entries(graph)
+    checkpoint, coverage = progress.checkpoint, progress.coverage
+    opening = None
+    breaks: set[str] = set()
+    if checkpoint and checkpoint.accepted:
+        for start, _end in checkpoint.accepted[1:]:
+            following = next(
+                (entry for entry in entries if graph.facts[entry.fact_id].position[0] >= start),
+                None,
+            )
+            if following:
+                breaks.add(following.fact_id)
+        if checkpoint.accepted[0][0] == 0:
+            prefix = [
+                entry
+                for entry in entries
+                if graph.facts[entry.fact_id].position[0] < checkpoint.accepted[0][1]
+            ]
+            groups = _groups(prefix)
+            if groups:
+                opening = _Opening(
+                    tuple(groups[0]),
+                    partial=len(groups) == 1 and not checkpoint.parent_complete,
+                    gap=bool(coverage and coverage.unread),
+                )
+                entries = entries[len(groups[0]) :]
+    page = session_source.SourcePage("ok", "claude", sid, entries, coverage)
+    return build(page, config, opening, breaks=frozenset(breaks))
+
+
+def _limit_parent(
+    previous: _FactGraph | None,
+    identity: tuple[object, ...],
+    config: RuntimeConfig,
+    sid: str,
+    *,
+    reason: str = "outline_state_limit",
+) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], _FactGraph | None]:
+    old = previous.extras if previous and isinstance(previous.extras, _Progress) else None
+    coverage = old.coverage if old else None
+    start = (
+        old.checkpoint.frontier.offset if old and old.checkpoint and old.checkpoint.frontier else 0
+    )
+    end = old.checkpoint.stamp[2] if old and old.checkpoint else start
+    region = session_source.UnreadRegion(start, end, reason)
+    coverage = (
+        replace(coverage, complete=False, unread=(*coverage.unread, region))
+        if coverage
+        else session_source.SourceCoverage(False, None, 0, 0, (region,), "read", "read")
+    )
+    answer = (
+        dict(old.result[0])
+        if old
+        else build(session_source.SourcePage("ok", "claude", sid, coverage=coverage), config)
+    )
+    public_coverage = asdict(coverage)
+    public_coverage["unread"] = list(public_coverage["unread"])
+    public_coverage["notes"] = list(public_coverage["notes"])
+    answer.update(reason=reason, coverage=public_coverage)
+    result = (answer, old.result[1] if old else None)
+    progress = _Progress(identity, old.checkpoint if old else None, coverage, result, terminal=True)
+    admitted = _merge_facts(previous, (), extras=progress, limits=_FACT_LIMITS)
+    return result, admitted.graph if not admitted.limited else None
+
+
+def _advance_parent(
+    config: RuntimeConfig,
+    path: str,
+    sid: str,
+    identity: tuple[object, ...],
+    previous: _FactGraph | None,
+) -> tuple[tuple[dict[str, Any], dict[str, Any] | None], _FactGraph | None]:
+    old = previous.extras if previous and isinstance(previous.extras, _Progress) else None
+    refusal, refusal_graph = _limit_parent(previous, identity, config, sid)
+    if refusal_graph is None:
+        return refusal, None
+    page, checkpoint = session_source._read_outline(  # noqa: SLF001
+        config,
+        path,
+        "claude",
+        sid,
+        after=old.checkpoint if old else None,
+        opening_bytes=min(config.session_outline_head_bytes, config.session_outline_max_bytes // 2),
+        deadline=time.monotonic() + config.session_outline_max_seconds,
+    )
+    if page.state == "limited":
+        return _limit_parent(previous, identity, config, sid)
+    if page.state != "ok" or checkpoint is None:
+        return (build(page, config), _plan(page, config)), None
+    plan = _plan(page, config)  # Only this transient word-bearing page may supply an exact plan.
+    if (
+        old
+        and old.result[1]
+        and plan
+        and not plan["complete"]
+        and old.result[1]["parts"] >= plan["parts"]
+    ):
+        plan = old.result[1]
+    coverage = (
+        replace(page.coverage, complete=checkpoint.parent_complete) if page.coverage else None
+    )
+    terminal = checkpoint.stopped or bool(
+        checkpoint.frontier and checkpoint.frontier.offset == checkpoint.stamp[2]
+    )
+    progress = _Progress(identity, checkpoint, coverage, ({}, plan), terminal)
+    # Reserve half the combined graph budget for a sticky refusal and its prior projection.
+    working = replace(
+        _FACT_LIMITS, bytes=_FACT_LIMITS.bytes // 2, objects=_FACT_LIMITS.objects // 2
+    )
+    admitted = _merge_facts(previous, _observations(page), extras=progress, limits=working)
+    if admitted.limited or admitted.graph is None:
+        return _limit_parent(previous, identity, config, sid)
+    answer = _project_parent(admitted.graph, progress, config, sid)
+    progress = replace(progress, result=(answer, plan))
+    published = _merge_facts(admitted.graph, (), extras=progress, limits=working)
+    if published.limited or published.graph is None:
+        return _limit_parent(previous, identity, config, sid)
+    # Do not cache an evidence-free time cut; retain an accepted prefix across time cuts.
+    empty = not previous and not published.graph.facts and not checkpoint.accepted
+    return progress.result, None if empty else published.graph
+
+
 def for_session(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
 ) -> dict[str, Any]:
@@ -571,15 +723,49 @@ def for_session(
     return for_session_with_plan(config, state, harness, sid)[0]
 
 
+def _cached_parent(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    path: str,
+    sid: str,
+    key: str,
+    stamps: object,
+    bounds: tuple[object, ...],
+    cached: object,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    identity = (key, stamps, bounds)
+    previous = (
+        cached
+        if isinstance(cached, _FactGraph)
+        and isinstance(cached.extras, _Progress)
+        and cached.extras.identity == identity
+        else None
+    )
+    if previous and isinstance(previous.extras, _Progress) and previous.extras.terminal:
+        return previous.extras.result
+    result, graph = _advance_parent(config, path, sid, identity, previous)
+    try:
+        unchanged = session_source.source_stamps(path, "claude") == stamps
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        return build(session_source.SourcePage("stale", "claude", sid), config), None
+    if graph is not None:
+        runtime_state.bounded_put(
+            state.session_outlines, key, graph, limit=config.session_outline_cache_limit
+        )
+    return result
+
+
 def for_session_with_plan(
     config: RuntimeConfig, state: RuntimeState, harness: str, sid: str
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Cache word-free grouping by transcript stamps; no grants or model seams are involved."""
-    if harness not in session_source.HARNESSES:
-        return build(session_source.SourcePage("unsupported", harness, sid), config), None
-    path = observer.resolve_transcript(config, state, harness, sid)
+    supported = harness in session_source.HARNESSES
+    path = observer.resolve_transcript(config, state, harness, sid) if supported else None
     if path is None:
-        return build(session_source.SourcePage("unavailable", harness, sid), config), None
+        unavailable = "unavailable" if supported else "unsupported"
+        return build(session_source.SourcePage(unavailable, harness, sid), config), None
     key = f"{os.path.abspath(path)}\0{harness}\0{sid}"
     with state.session_outline_lock:
         try:
@@ -598,8 +784,17 @@ def for_session_with_plan(
             config.session_summary_max_bytes_sent,
             config.session_summary_max_seconds,
             config.session_summary_call_timeout,
+            tuple(
+                (name, getattr(config, name))
+                for name in config.__dataclass_fields__
+                if name.startswith("session_summary_")
+            ),
         )
         cached = state.session_outlines.get(key)
+        if harness == "claude" and len(stamps) == 1:
+            return _cached_parent(config, state, path, sid, key, stamps, bounds, cached)
+        if isinstance(cached, _FactGraph):
+            cached = None
         if cached is not None and cached[0] == (stamps, bounds):
             result: tuple[dict[str, Any], dict[str, Any] | None] = cached[1]
             return result
