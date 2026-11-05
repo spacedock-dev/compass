@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import heapq
 import importlib
 import json
 import os
@@ -965,6 +966,321 @@ class SessionSourceTest(unittest.TestCase):
         self.assertFalse(partial.coverage.complete)
         self.assertIn("children_not_read", [gap.reason for gap in partial.coverage.unread])
         self.assertTrue(all(entry.stream == "parent" for entry in partial.entries))
+
+    def save_outline_child(self, child: Transcript, name: str = "agent-ab12.jsonl") -> Path:
+        path = self.path.with_suffix("") / "subagents" / name
+        for row in child.rows:
+            row["isSidechain"] = True
+        child.save(path)
+        return path
+
+    def test_outline_children_progress_fairly_with_canonical_facts_and_one_budget(self) -> None:
+        for number in range(10):
+            self.session.prompt(f"Owned parent phase {number}. " + "padding " * 60)
+            self.session.bash(f"pytest tests/parent_{number}.py", "1 passed")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child_first.py", "1 failed", is_error=True)
+        call = child.call("Bash", {"command": "pytest tests/old.py"})
+        for number in range(5):
+            child.prompt(f"PRIVATE_CHILD_PADDING {number}. " + "private " * 100)
+        child.hook_rewrite(call, hook_stdout("pytest tests/new.py"))
+        for number in range(5):
+            child.prompt(f"PRIVATE_CHILD_AFTER_REWRITE {number}. " + "private " * 100)
+        child.result(call, "1 passed")
+        child.bash("pytest tests/backward.py", "1 passed")
+        child.rows[-2]["timestamp"] = child.rows[0]["timestamp"]
+        self.save_outline_child(child)
+        sibling = Transcript(self.root)
+        sibling.bash("pytest tests/sibling.py", "1 passed")
+        self.save_outline_child(sibling, "workflows/owned/agent-ab12.jsonl")
+        whole = self.read()
+        self.assertTrue(whole.coverage.complete)
+        facts: dict[str, Any] = {}
+        positions: dict[str, Any] = {}
+        checkpoint = None
+        progressed: set[str] = set()
+        held_child = False
+        with self._meter_source_reads() as reads:
+            for poll in range(80):
+                before = reads[0]
+                page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    after=checkpoint,
+                    max_bytes=2800,
+                    opening_bytes=900,
+                    deadline=time.monotonic() + 30,
+                )
+                self.assertIsNotNone(checkpoint)
+                self.assertTrue(
+                    hasattr(checkpoint, "children"), "sanitized child frontiers are missing"
+                )
+                self.assertEqual("ok", page.state)
+                self.assertEqual(reads[0] - before, page.bytes_read)
+                self.assertLessEqual(page.bytes_read, 2800)
+                self.assert_outline_checkpoint_private(checkpoint)
+                self.assertNotIn("PRIVATE_CHILD_PADDING", repr(checkpoint))
+                progressed.update(entry.stream for entry in page.entries)
+                held_child |= any(state.calls for _, state in checkpoint.children)
+                for old, _new in page.replacements:
+                    for fact_id in old:
+                        facts.pop(fact_id, None)
+                facts.update((entry.fact_id, entry) for entry in page.entries)
+                positions.update(page.positions)
+                if poll == 2:
+                    self.assertEqual(
+                        {"parent", "agent-ab12", "workflows/owned/agent-ab12"}, progressed
+                    )
+                if checkpoint.complete:
+                    break
+        assert checkpoint is not None
+        self.assertTrue(checkpoint.complete)
+        self.assertTrue(held_child)
+        self.assertEqual({entry.fact_id: entry for entry in whole.entries}, facts)
+        streams = ["parent", *sorted({entry.stream for entry in facts.values()} - {"parent"})]
+        groups = [
+            sorted(
+                (entry for entry in facts.values() if entry.stream == stream),
+                key=lambda entry: positions[entry.fact_id],
+            )
+            for stream in streams
+        ]
+        self.assertEqual(whole.entries, tuple(heapq.merge(*groups, key=lambda entry: entry.at)))
+        self.assertEqual(self.source.source_stamps(str(self.path), "claude"), checkpoint.inventory)
+
+    def test_outline_child_changes_and_inventory_changes_reject_the_generation(self) -> None:
+        self.session.prompt("Owned parent request.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        child_path = self.save_outline_child(child)
+        for change in ("append", "inventory"):
+            with self.subTest(change=change):
+                _page, checkpoint = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    max_bytes=3000,
+                )
+                if change == "append":
+                    child.bash("pytest tests/later.py", "1 passed")
+                    self.save_outline_child(child)
+                else:
+                    self.save_outline_child(child, "agent-cd34.jsonl")
+                page, refused = self.source._read_outline(
+                    self.config,
+                    str(self.path),
+                    "claude",
+                    "root",
+                    after=checkpoint,
+                    max_bytes=3000,
+                )
+                self.assertEqual("stale", page.state)
+                self.assertIsNone(refused)
+                self.assertEqual(0, page.bytes_read)
+        self.assertTrue(child_path.is_file())
+
+    def test_outline_child_inventory_refuses_links_and_has_a_finite_cap(self) -> None:
+        self.session.prompt("Owned parent request.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        child_path = self.save_outline_child(child)
+        link = child_path.with_name("agent-dead.jsonl")
+        link.symlink_to(child_path)
+        _page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=3000,
+        )
+        self.assertTrue(hasattr(checkpoint, "children"), "bounded child inventory is missing")
+        self.assertEqual([str(child_path)], [path for path, _ in checkpoint.children])
+        with mock.patch.object(self.source, "_OUTLINE_STREAM_LIMIT", 1):
+            limited, refused = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=3000,
+            )
+        self.assertEqual("limited", limited.state)
+        self.assertIsNone(refused)
+        self.assertIn("outline_stream_limit", [gap.reason for gap in limited.coverage.unread])
+        self.assertFalse(limited.coverage.complete)
+
+    def test_outline_child_collection_shares_one_checkpoint_byte_cap(self) -> None:
+        self.session.prompt("Owned short parent.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        with mock.patch.object(self.source, "_OUTLINE_CHECKPOINT_BYTES", 1800):
+            allowed, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=3000,
+            )
+            self.assertEqual("ok", allowed.state)
+            self.assertIsNotNone(checkpoint)
+            for number in range(3):
+                self.save_outline_child(child, f"agent-{number:080x}.jsonl")
+            refused, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=3000,
+            )
+        self.assertEqual("limited", refused.state)
+        self.assertIsNone(checkpoint)
+        self.assertIn("outline_state_limit", [gap.reason for gap in refused.coverage.unread])
+
+    def test_outline_inventory_change_during_read_refuses_candidate(self) -> None:
+        self.session.prompt("Owned parent.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        read_page = self.source._outline_parent_page
+
+        def changed(*args: Any, **kwargs: Any) -> Any:
+            result = read_page(*args, **kwargs)
+            self.save_outline_child(child)
+            return result
+
+        with mock.patch.object(self.source, "_outline_parent_page", side_effect=changed):
+            page, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                max_bytes=3000,
+            )
+        self.assertEqual("stale", page.state)
+        self.assertIsNone(checkpoint)
+
+    def test_outline_inventory_does_not_enumerate_linked_directories(self) -> None:
+        self.session.prompt("Owned parent.")
+        self.save()
+        directory = self.path.with_suffix("") / "subagents"
+        directory.mkdir(parents=True)
+        external = self.root / "owned-external"
+        external.mkdir()
+        (external / "agent-ab12.jsonl").write_text("PRIVATE_EXTERNAL_SENTINEL")
+        scan = os.scandir
+        visited: list[str] = []
+
+        def recording(path: str) -> Any:
+            visited.append(os.path.realpath(path))
+            return scan(path)
+
+        for target in (directory / "workflows", directory / "workflows" / "linked"):
+            with self.subTest(target=target):
+                target.parent.mkdir(exist_ok=True)
+                target.symlink_to(external, target_is_directory=True)
+                with mock.patch.object(self.source.os, "scandir", side_effect=recording):
+                    stamps = self.source._outline_stamps(
+                        str(self.path),
+                        "claude",
+                        deadline=time.monotonic() + 30,
+                    )
+                self.assertEqual(1, len(stamps))
+                self.assertNotIn(str(external), visited)
+                target.unlink()
+
+    def test_outline_child_unfinished_eof_remains_explicit_and_does_not_spin(self) -> None:
+        self.session.prompt("Owned parent.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        path = self.save_outline_child(child)
+        path.write_bytes(path.read_bytes().rstrip(b"\n"))
+        checkpoint = None
+        for _ in range(3):
+            page, checkpoint = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                after=checkpoint,
+                max_bytes=3000,
+            )
+        assert checkpoint is not None
+        self.assertFalse(checkpoint.complete)
+        self.assertIn(
+            ("agent-ab12", "partial_line"),
+            [(gap.stream, gap.reason) for gap in page.coverage.unread],
+        )
+        self.assertEqual(0, page.bytes_read)
+
+    def test_outline_child_link_swapped_after_admission_is_not_followed(self) -> None:
+        self.session.prompt("Owned parent.")
+        self.save()
+        child = Transcript(self.root)
+        child.bash("pytest tests/child.py", "1 passed")
+        path = self.save_outline_child(child)
+        _page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=3000,
+        )
+        open_binary = self.source.runtime_io._open_binary
+
+        def swapped(candidate: str, **kwargs: Any) -> Any:
+            if candidate == str(path):
+                saved = path.with_suffix(".saved")
+                path.rename(saved)
+                path.symlink_to(saved)
+            return open_binary(candidate, **kwargs)
+
+        with mock.patch.object(self.source.runtime_io, "_open_binary", side_effect=swapped):
+            page, continued = self.source._read_outline(
+                self.config,
+                str(self.path),
+                "claude",
+                "root",
+                after=checkpoint,
+                max_bytes=3000,
+            )
+        self.assertEqual("stale", page.state)
+        self.assertEqual(0, page.bytes_read)
+        self.assertIsNone(continued)
+
+    def test_outline_unreadable_child_keeps_an_explicit_terminal_gap(self) -> None:
+        self.session.prompt("Owned parent.")
+        self.save()
+        directory = self.path.with_suffix("") / "subagents" / "agent-dead.jsonl"
+        directory.mkdir(parents=True)
+        _page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            max_bytes=3000,
+        )
+        page, checkpoint = self.source._read_outline(
+            self.config,
+            str(self.path),
+            "claude",
+            "root",
+            after=checkpoint,
+            max_bytes=3000,
+        )
+        self.assertIsNotNone(checkpoint, "unchanged unreadable child needs a retained gap")
+        self.assertFalse(checkpoint.complete)
+        self.assertTrue(checkpoint.children[0][1].stopped)
+        self.assertIn(
+            ("agent-dead", "unreadable_subagent"),
+            [(gap.stream, gap.reason) for gap in page.coverage.unread],
+        )
 
     def test_outline_parent_exact_boundary_allowance_refuses_instead_of_stalling(self) -> None:
         self.session.prompt("First owned prompt.")

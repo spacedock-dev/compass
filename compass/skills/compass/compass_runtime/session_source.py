@@ -22,7 +22,7 @@ from . import observer, project_scripts, record_pages, records, transcripts
 from . import project_context as context
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
     from typing import BinaryIO
 
     from .config import RuntimeConfig
@@ -210,7 +210,7 @@ class _OutlineFrontier:
 
 @dataclass(frozen=True)
 class OutlineCheckpoint:
-    """Bounded parent-call locators, with no classifier inputs or generic source cursor.
+    """Bounded stream locators and child inventory, without classifier inputs or generic cursors.
 
     A caller must keep its transient source page separate from retained outline state.
     """
@@ -225,6 +225,10 @@ class OutlineCheckpoint:
     stopped: bool = False
     head_unknown: bool = False
     accepted: tuple[tuple[int, int], ...] = ()
+    stream: str = "parent"
+    children: tuple[tuple[str, OutlineCheckpoint], ...] = ()
+    inventory: tuple[tuple[str, Stamp | None], ...] = ()
+    next_stream: int = 0
 
     @property
     def parent_complete(self) -> bool:
@@ -234,9 +238,15 @@ class OutlineCheckpoint:
             and not self.gaps
         )
 
+    @property
+    def complete(self) -> bool:
+        return self.parent_complete and all(child.parent_complete for _, child in self.children)
+
 
 _OUTLINE_PENDING_LIMIT = 256
 _OUTLINE_CHECKPOINT_BYTES = 8 * 1024 * 1024
+_OUTLINE_STREAM_LIMIT = 128
+_OUTLINE_INVENTORY_ENTRIES = 4096
 
 
 def _outline_checkpoint(
@@ -250,14 +260,16 @@ def _outline_checkpoint(
     """Discard raw pending inputs while the canonical parser's line boundaries are available."""
     identity = record_pages._identity(path, harness, sid)  # noqa: SLF001
     if (
-        read.cursor.stream != "parent"
-        or (after and (after.identity != identity or after.stamp != read.cursor.stamp))
-        or (
-            harness == "codex"
-            and (
-                pending
-                or (after and (after.calls or after.head != ("", None) or after.listing_writes))
-            )
+        after
+        and (
+            after.identity != identity
+            or after.stamp != read.cursor.stamp
+            or after.stream != read.cursor.stream
+        )
+    ) or (
+        harness == "codex"
+        and (
+            pending or (after and (after.calls or after.head != ("", None) or after.listing_writes))
         )
     ):
         raise _SourceChangedError
@@ -269,7 +281,7 @@ def _outline_checkpoint(
     for call_id in read.result_calls:
         calls.pop(call_id, None)
     previous = {call.call_id: call for call in after.calls} if after else {}
-    positions, _results, rewrites = _rows_of(read.rows, False)
+    positions, _results, rewrites = _rows_of(read.rows, read.cursor.stream != "parent")
     ends = [end for end, _digest in read.boundaries]
 
     def locator(row: int) -> _OutlineLine:
@@ -279,7 +291,7 @@ def _outline_checkpoint(
         return _OutlineLine(start, end, digest)
 
     for call in pending:
-        if call.stream != "parent":
+        if call.stream != read.cursor.stream:
             raise _SourceChangedError
         old = previous.get(call.call_id)
         row = positions.get(call.call_id)
@@ -296,15 +308,17 @@ def _outline_checkpoint(
         )
     if len(calls) > _OUTLINE_PENDING_LIMIT:
         raise ValueError("outline_state_limit")
-    checkpoint = OutlineCheckpoint(identity, read.cursor.stamp, tuple(calls.values()))
+    checkpoint = OutlineCheckpoint(
+        identity, read.cursor.stamp, tuple(calls.values()), stream=read.cursor.stream
+    )
     _outline_bound(checkpoint)
     return checkpoint
 
 
-def _outline_bound(checkpoint: OutlineCheckpoint) -> None:
+def _outline_metadata(checkpoint: OutlineCheckpoint) -> dict[str, Any]:
     # Hash state is fixed-size and opaque. Never deepcopy/serialize a hashlib object or raw input.
     frontier = checkpoint.frontier
-    metadata = asdict(replace(checkpoint, frontier=None))
+    metadata = asdict(replace(checkpoint, frontier=None, children=()))
     if frontier is not None:
         metadata["frontier"] = {
             "offset": frontier.offset,
@@ -315,7 +329,20 @@ def _outline_bound(checkpoint: OutlineCheckpoint) -> None:
             "line_hash": frontier.line_hash.digest(),
             "discarding": frontier.discarding,
         }
-    if len(json.dumps(metadata).encode("utf-8")) > _OUTLINE_CHECKPOINT_BYTES:
+    return metadata
+
+
+def _outline_bound(checkpoint: OutlineCheckpoint) -> None:
+    if len(checkpoint.children) + 1 > _OUTLINE_STREAM_LIMIT:
+        raise ValueError("outline_stream_limit")
+    size = len(json.dumps(_outline_metadata(checkpoint)).encode("utf-8"))
+    for path, child in checkpoint.children:
+        if child.children or child.inventory:
+            raise ValueError("outline_state_limit")
+        size += len(json.dumps((path, _outline_metadata(child))).encode("utf-8")) + 2
+        if size > _OUTLINE_CHECKPOINT_BYTES:
+            raise ValueError("outline_state_limit")
+    if size > _OUTLINE_CHECKPOINT_BYTES:
         raise ValueError("outline_state_limit")
 
 
@@ -335,10 +362,10 @@ def _outline_pending(
     if (
         checkpoint.identity != record_pages._identity(path, harness, sid)  # noqa: SLF001
         or checkpoint.stamp != read.cursor.stamp
-        or read.cursor.stream != "parent"
+        or read.cursor.stream != checkpoint.stream
     ):
         raise _SourceChangedError
-    calls, results, rewrites = _rows_of(read.rows, False)
+    calls, results, rewrites = _rows_of(read.rows, checkpoint.stream != "parent")
     touched = (results.keys() | rewrites.keys()) - calls.keys()
     selected = [call for call in checkpoint.calls if call.call_id in touched]
     if not selected:
@@ -348,7 +375,9 @@ def _outline_pending(
     )
     if sum(line.end - line.start for line in lines) > budget.available or budget.reason:
         return None
-    rows = _outline_rows(path, harness, checkpoint.stamp, tuple(lines), budget)
+    rows = _outline_rows(
+        path, harness, checkpoint.stamp, tuple(lines), budget, stream=checkpoint.stream
+    )
     if rows is None:
         return None
     pending = []
@@ -356,7 +385,7 @@ def _outline_pending(
         source_rows = [rows[held.line]]
         if held.rewrite is not None:
             source_rows.append(rows[held.rewrite])
-        parsed = {call.call_id: call for call in _pending_calls(source_rows, "parent")}
+        parsed = {call.call_id: call for call in _pending_calls(source_rows, checkpoint.stream)}
         if held.call_id not in parsed:
             raise _SourceChangedError
         pending.append(
@@ -371,11 +400,17 @@ def _outline_pending(
 
 
 def _outline_rows(
-    path: str, harness: str, stamp: Stamp, lines: tuple[_OutlineLine, ...], budget: _Budget
+    path: str,
+    harness: str,
+    stamp: Stamp,
+    lines: tuple[_OutlineLine, ...],
+    budget: _Budget,
+    *,
+    stream: str = "parent",
 ) -> dict[_OutlineLine, dict[str, Any]] | None:
     """Read and verify selected input lines using the caller's remaining allowance."""
     rows: dict[_OutlineLine, dict[str, Any]] = {}
-    follow = harness not in observer.DIRECTION_HARNESSES
+    follow = stream == "parent" and harness not in observer.DIRECTION_HARNESSES
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or _stamp(info) != stamp:
@@ -458,7 +493,7 @@ def _outline_scan(
         pending = _outline_pending(read.path, harness, sid, remaining, read, budget)
         if pending is None:
             # A fresh poll needs the preceding boundary, this row and its touched source inputs.
-            _calls, results, rewrites = _rows_of(read.rows[row:], False)
+            _calls, results, rewrites = _rows_of(read.rows[row:], read.cursor.stream != "parent")
             lines = {
                 line
                 for call in checkpoint.calls
@@ -482,7 +517,9 @@ def _outline_scan(
             _outline_defer(read, before, row)
             read.cursor = end
             read.unread.append(
-                UnreadRegion(before.end_offset, end.end_offset, "outline_input_limit")
+                UnreadRegion(
+                    before.end_offset, end.end_offset, "outline_input_limit", read.cursor.stream
+                )
             )
         else:
             held.update((call.call_id, call) for call in pending)
@@ -498,13 +535,15 @@ def _outline_parent_page(
     *,
     newest: bool = False,
     harness: str = "claude",
+    parent: tuple[str, OutlineCheckpoint] | None = None,
 ) -> tuple[SourcePage, OutlineCheckpoint]:
+    """Read one native stream; a child supplies its real parent's classification context."""
     frontier = checkpoint.frontier
     old = (
-        StreamCursor("parent", checkpoint.stamp)
+        StreamCursor(checkpoint.stream, checkpoint.stamp)
         if frontier is None
         else StreamCursor(
-            "parent",
+            checkpoint.stream,
             checkpoint.stamp,
             offset=frontier.offset,
             end_offset=frontier.end_offset,
@@ -515,13 +554,13 @@ def _outline_parent_page(
             skipping=frontier.discarding,
         )
     )
-    follow = harness not in observer.DIRECTION_HARNESSES
+    follow = checkpoint.stream == "parent" and harness not in observer.DIRECTION_HARNESSES
     with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
         verified: str | None
         if newest:
-            read = _StreamRead(StreamCursor("parent", checkpoint.stamp), 0, path)
+            read = _StreamRead(StreamCursor(checkpoint.stream, checkpoint.stamp), 0, path)
             _window_start(source, read, budget)
             old = read.cursor
             read.initial = old
@@ -546,7 +585,9 @@ def _outline_parent_page(
             else ()
         )
     if stopped and not checkpoint.stopped:
-        read.unread.append(UnreadRegion(old.end_offset, old.stamp[2], "outline_boundary_limit"))
+        read.unread.append(
+            UnreadRegion(old.end_offset, old.stamp[2], "outline_boundary_limit", checkpoint.stream)
+        )
     head_unknown = (
         checkpoint.head_unknown
         or read.cursor.skipping
@@ -585,7 +626,21 @@ def _outline_parent_page(
         listing_writes=frozenset(checkpoint.listing_writes),
     )
     read.known_head = head
-    page = _finish(config, path, harness, sid, [read], [], transient, budget)
+    if parent is None:
+        page = _finish(config, path, harness, sid, [read], [], transient, budget)
+    else:
+        parent_path, parent_checkpoint = parent
+        parent_read = _StreamRead(StreamCursor("parent", parent_checkpoint.stamp), 0, parent_path)
+        parent_read.known_head = parent_checkpoint.head
+        transient = replace(
+            transient,
+            session_dir=parent_checkpoint.head[0],
+            listing_writes=frozenset(parent_checkpoint.listing_writes)
+            | frozenset(checkpoint.listing_writes),
+        )
+        page = _finish(
+            config, parent_path, harness, sid, [parent_read, read], [], transient, budget
+        )
     snapshot = page.snapshot
     if snapshot is None:
         raise _SourceChangedError
@@ -619,7 +674,9 @@ def _outline_parent_page(
             if read.cursor.offset == checkpoint.stamp[2]
             else budget.reason or "bytes"
         )
-        unread.append(UnreadRegion(read.cursor.end_offset, checkpoint.stamp[2], reason))
+        unread.append(
+            UnreadRegion(read.cursor.end_offset, checkpoint.stamp[2], reason, checkpoint.stream)
+        )
     coverage = SourceCoverage(
         False,
         page.entries[0].fact_id if page.entries else None,
@@ -698,7 +755,10 @@ def _read_outline_parent(
 
 
 def _outline_intervals(
-    prior: tuple[tuple[int, int], ...], pages: list[SourcePage]
+    prior: tuple[tuple[int, int], ...],
+    pages: list[SourcePage],
+    *,
+    stream: str = "parent",
 ) -> tuple[tuple[int, int], ...]:
     intervals = list(prior)
     for page in pages:
@@ -707,7 +767,7 @@ def _outline_intervals(
             continue
         cursor = coverage.start_offset
         for gap in sorted(coverage.unread, key=lambda region: region.start_offset):
-            if gap.stream != "parent" or gap.reason in {"bytes", "time", "before_window"}:
+            if gap.stream != stream or gap.reason in {"bytes", "time", "before_window"}:
                 continue
             start, end = max(cursor, gap.start_offset), min(coverage.end_offset, gap.end_offset)
             if start < end:
@@ -726,7 +786,12 @@ def _outline_intervals(
 
 
 def _outline_missing(
-    accepted: tuple[tuple[int, int], ...], size: int, gaps: tuple[UnreadRegion, ...], reason: str
+    accepted: tuple[tuple[int, int], ...],
+    size: int,
+    gaps: tuple[UnreadRegion, ...],
+    reason: str,
+    *,
+    stream: str = "parent",
 ) -> list[UnreadRegion]:
     unread = []
     cursor = 0
@@ -735,11 +800,11 @@ def _outline_missing(
             lower, upper = max(cursor, gap.start_offset), min(start, gap.end_offset)
             if lower < upper:
                 if cursor < lower:
-                    unread.append(UnreadRegion(cursor, lower, reason))
-                unread.append(UnreadRegion(lower, upper, gap.reason))
+                    unread.append(UnreadRegion(cursor, lower, reason, stream))
+                unread.append(UnreadRegion(lower, upper, gap.reason, stream))
                 cursor = upper
         if cursor < start:
-            unread.append(UnreadRegion(cursor, start, reason))
+            unread.append(UnreadRegion(cursor, start, reason, stream))
         cursor = end
     return unread
 
@@ -811,8 +876,8 @@ def _outline_bootstrap(
     budget: _Budget,
     opening_bytes: int,
     harness: str,
+    stamps: tuple[tuple[str, Stamp | None], ...],
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
-    stamps = source_stamps(path, harness)
     stamp = stamps[0][1]
     if stamp is None:
         raise OSError("missing parent")
@@ -833,10 +898,7 @@ def _outline_bootstrap(
             config, path, sid, checkpoint, budget, newest=True, harness=harness
         )
         pages.append(tail)
-    latest = source_stamps(path, harness)
-    if latest[0][1] != stamp:
-        raise _SourceChangedError
-    children = len(stamps) > 1 or len(latest) > 1
+    children = len(stamps) > 1
     checkpoint = replace(
         checkpoint, accepted=_outline_intervals(after.accepted if after else (), pages)
     )
@@ -845,6 +907,215 @@ def _outline_bootstrap(
     return _outline_preview(
         pages, checkpoint, budget, complete=complete, children=children
     ), checkpoint
+
+
+def _outline_candidates(path: str) -> Iterator[str]:
+    """Stream the two admitted layouts without glob's eager directory match list."""
+    directory = os.path.join(path[: -len(".jsonl")], "subagents")
+    if not path.endswith(".jsonl") or os.path.islink(directory) or not os.path.isdir(directory):
+        return
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            yield entry.path
+            if entry.name != "workflows" or not entry.is_dir(follow_symlinks=False):
+                continue
+            with os.scandir(entry.path) as workflows:
+                for workflow in workflows:
+                    yield workflow.path
+                    if not workflow.is_dir(follow_symlinks=False):
+                        continue
+                    with os.scandir(workflow.path) as children:
+                        for child in children:
+                            yield child.path
+
+
+def _outline_stamps(
+    path: str, harness: str, *, deadline: float
+) -> tuple[tuple[str, Stamp | None], ...]:
+    """Bounded cache/source inventory; refusal raises ValueError with the coverage reason."""
+    inventory: list[tuple[str, Stamp | None]] = [(path, _stamp(os.stat(path)))]
+    if harness != "claude":
+        return tuple(inventory)
+    for count, candidate in enumerate(_outline_candidates(path), 1):
+        if time.monotonic() >= deadline:
+            raise ValueError("time")
+        if count > _OUTLINE_INVENTORY_ENTRIES:
+            raise ValueError("outline_stream_limit")
+        if not context._admitted_subagent_paths(path, (candidate,)):  # noqa: SLF001
+            continue
+        if len(inventory) >= _OUTLINE_STREAM_LIMIT:
+            raise ValueError("outline_stream_limit")
+        try:
+            stamp = _stamp(os.stat(candidate, follow_symlinks=False))
+        except OSError:
+            stamp = None
+        inventory.append((candidate, stamp))
+    return (inventory[0], *sorted(inventory[1:]))
+
+
+def _outline_child(path: str, child: str, stamp: Stamp | None, sid: str) -> OutlineCheckpoint:
+    stream = _child_stream(path, child)
+    return OutlineCheckpoint(
+        record_pages._identity(child, "claude", sid),  # noqa: SLF001
+        stamp or (0, 0, 0, 0),
+        (),
+        stream=stream,
+        gaps=() if stamp else (UnreadRegion(0, 0, "unreadable_subagent", stream),),
+        stopped=stamp is None,
+    )
+
+
+def _outline_unread(checkpoint: OutlineCheckpoint, reason: str) -> tuple[UnreadRegion, ...]:
+    regions = []
+    for current in (checkpoint, *(child for _, child in checkpoint.children)):
+        frontier = current.frontier
+        missing_reason = (
+            "children_not_read"
+            if current.stream != "parent" and frontier is None
+            else "outline_line_limit"
+            if frontier is not None and frontier.discarding
+            else "partial_line"
+            if frontier is not None
+            and frontier.offset == current.stamp[2]
+            and frontier.end_offset < frontier.offset
+            else reason
+        )
+        regions.extend(
+            _outline_missing(
+                current.accepted,
+                current.stamp[2],
+                current.gaps,
+                missing_reason,
+                stream=current.stream,
+            )
+        )
+        regions.extend(gap for gap in current.gaps if gap.start_offset == gap.end_offset)
+    return tuple(regions)
+
+
+def _outline_advance(
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    checkpoint: OutlineCheckpoint,
+    budget: _Budget,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    streams = [(path, checkpoint), *checkpoint.children]
+    # One stream gets the poll's full allowance; round-robin avoids both starvation and
+    # a per-stream quota too small to fit a verified boundary plus one classifier input.
+    index = None
+    for step in range(len(streams)):
+        candidate = (checkpoint.next_stream + step) % len(streams)
+        current = streams[candidate][1]
+        if not current.stopped and (
+            current.frontier is None or current.frontier.offset < current.stamp[2]
+        ):
+            index = candidate
+            break
+    if index is None:
+        return SourcePage("ok", harness, sid), checkpoint
+    stream_path, current = streams[index]
+    if index == 0:
+        page, advanced = _read_outline_parent(
+            config,
+            path,
+            harness,
+            sid,
+            after=current,
+            budget=budget,
+        )
+    else:
+        try:
+            page, advanced = _outline_parent_page(
+                config,
+                stream_path,
+                sid,
+                current,
+                budget,
+                harness=harness,
+                parent=(path, checkpoint),
+            )
+        except OSError:
+            advanced = replace(
+                current,
+                stopped=True,
+                gaps=(
+                    *current.gaps,
+                    UnreadRegion(
+                        current.frontier.end_offset if current.frontier else 0,
+                        current.stamp[2],
+                        "unreadable_subagent",
+                        current.stream,
+                    ),
+                ),
+            )
+            page = SourcePage("limited", harness, sid)
+    if advanced is None or page.state not in {"ok", "limited"}:
+        return page, None
+    advanced = replace(
+        advanced, accepted=_outline_intervals(current.accepted, [page], stream=current.stream)
+    )
+    if index == 0:
+        checkpoint = replace(advanced, children=checkpoint.children, inventory=checkpoint.inventory)
+    else:
+        children = list(checkpoint.children)
+        children[index - 1] = (stream_path, advanced)
+        checkpoint = replace(checkpoint, children=tuple(children))
+    return page, replace(checkpoint, next_stream=(index + 1) % len(streams))
+
+
+def _outline_streams(
+    config: RuntimeConfig,
+    path: str,
+    harness: str,
+    sid: str,
+    after: OutlineCheckpoint | None,
+    budget: _Budget,
+    opening_bytes: int,
+) -> tuple[SourcePage, OutlineCheckpoint | None]:
+    inventory = _outline_stamps(path, harness, deadline=budget.deadline)
+    if after is not None and after.inventory != inventory:
+        raise _SourceChangedError
+    if after is None:
+        page, checkpoint = _outline_bootstrap(
+            config, path, sid, None, budget, opening_bytes, harness, inventory
+        )
+        if checkpoint is not None:
+            checkpoint = replace(
+                checkpoint,
+                inventory=inventory,
+                next_stream=1 if len(inventory) > 1 else 0,
+                children=tuple(
+                    (child, _outline_child(path, child, stamp, sid))
+                    for child, stamp in inventory[1:]
+                ),
+            )
+    else:
+        page, checkpoint = _outline_advance(config, path, harness, sid, after, budget)
+    if checkpoint is None:
+        return page, None
+    _outline_bound(checkpoint)
+    if _outline_stamps(path, harness, deadline=budget.deadline) != inventory:
+        raise _SourceChangedError
+    previous = page.coverage
+    coverage = SourceCoverage(
+        bool(after is None and checkpoint.complete and previous and previous.complete),
+        previous.starts_at if previous else None,
+        checkpoint.accepted[0][0] if checkpoint.accepted else 0,
+        checkpoint.accepted[-1][1] if checkpoint.accepted else 0,
+        _outline_unread(checkpoint, budget.reason or "bytes"),
+        "read" if harness == "claude" else "not_read",
+        "read" if harness == "claude" else "not_admitted",
+        (
+            ("children_not_read",)
+            if any(not child.parent_complete for _, child in checkpoint.children)
+            else ()
+        )
+        if harness == "claude"
+        else _CODEX_NOTES,
+    )
+    return replace(page, coverage=coverage, bytes_read=budget.used), checkpoint
 
 
 def _read_outline(
@@ -858,7 +1129,7 @@ def _read_outline(
     opening_bytes: int | None = None,
     deadline: float | None = None,
 ) -> tuple[SourcePage, OutlineCheckpoint | None]:
-    """Cold opening/tail preview, then forward parent pages; no retained words or child coverage."""
+    """Cold parent opening/tail preview, then fair bounded stream pages; no retained words."""
     if harness not in HARNESSES:
         return read(config, path, harness, sid, max_bytes=max_bytes, deadline=deadline), None
     now = time.monotonic()
@@ -869,14 +1140,14 @@ def _read_outline(
         now + max(0.0, end - now) * (1 - config.session_source_classify_share),
     )
     try:
-        return _outline_bootstrap(
+        return _outline_streams(
             config,
             path,
+            harness,
             sid,
             after,
             budget,
             config.session_outline_head_bytes if opening_bytes is None else opening_bytes,
-            harness,
         )
     except _SourceChangedError:
         return SourcePage("stale", harness, sid, bytes_read=budget.used), None
@@ -885,10 +1156,25 @@ def _read_outline(
             "stale" if after else "unavailable", harness, sid, bytes_read=budget.used
         ), None
     except ValueError as error:
-        if str(error) != "outline_state_limit":
+        if str(error) not in {"outline_state_limit", "outline_stream_limit", "time"}:
             raise
+        coverage = SourceCoverage(
+            False,
+            None,
+            0,
+            0,
+            (UnreadRegion(0, 0, str(error), "children"),),
+            "read" if harness == "claude" else "not_read",
+            "read" if harness == "claude" else "not_admitted",
+            () if harness == "claude" else _CODEX_NOTES,
+        )
         return SourcePage(
-            "limited", harness, sid, notes=("outline_state_limit",), bytes_read=budget.used
+            "limited",
+            harness,
+            sid,
+            notes=(str(error),),
+            bytes_read=budget.used,
+            coverage=coverage,
         ), None
 
 
@@ -1621,6 +1907,11 @@ def read(
         return SourcePage("stale" if after else "unavailable", harness, sid, bytes_read=budget.used)
 
 
+def _child_stream(path: str, child: str) -> str:
+    subagents = os.path.join(path[: -len(".jsonl")], "subagents")
+    return os.path.splitext(os.path.relpath(child, subagents))[0].replace(os.sep, "/")
+
+
 def _read_children(
     config: RuntimeConfig,
     path: str,
@@ -1634,11 +1925,10 @@ def _read_children(
     streams: list[_StreamRead] = []
     unread: list[UnreadRegion] = []
     children = context._admitted_subagent_paths(path, None) if harness == "claude" else []  # noqa: SLF001
-    subagents = os.path.join(path[: -len(".jsonl")], "subagents")
     for child in sorted(children):
         # Admission accepts `subagents/` and `subagents/workflows/<wf>/`, so one agent id can
         # appear twice; the relative path keeps their fact ids and cursors apart.
-        stream = os.path.splitext(os.path.relpath(child, subagents))[0].replace(os.sep, "/")
+        stream = _child_stream(path, child)
         try:
             child_read = _read_stream(
                 config, child, stream, harness, sid, budget, old.get(stream), newest=newest
