@@ -12,7 +12,8 @@ suites is several times slower than a plain one on Pythons without `sysmon`.
 
 A run holds a lock in the git common directory, so a second worktree's run waits for the first
 instead of contending with it: concurrent suites manufacture port, lifecycle and timeout failures
-(AGENTS.md, "Parallel Work").
+(AGENTS.md, "Parallel Work"). The wait is bounded by `--wait-timeout`; a run that gives up names
+every check it did not run and exits with `WAIT_TIMED_OUT`.
 """
 
 from __future__ import annotations
@@ -62,6 +63,11 @@ VERSION_DIFF = (
 # agy has been measured hanging for over ten minutes with no output; a hung validator must not
 # hold the lock forever.
 NATIVE_TIMEOUT = 180.0
+# Long enough to sit behind a whole `--all` run on a busy machine without giving up on a holder
+# that is still working; a holder past that is more likely suspended or hung (no other step has a
+# timeout), and the person waiting should hear so. Chosen, not measured.
+DEFAULT_WAIT_TIMEOUT = 30 * 60.0
+WAIT_TIMED_OUT = 75  # EX_TEMPFAIL: nothing failed, try again later.
 
 KNOWN_OUTPUTS = frozenset(
     {
@@ -79,6 +85,10 @@ KNOWN_OUTPUTS = frozenset(
 
 class ScopeError(Exception):
     """The diff could not be classified; the run fails open to every lane."""
+
+
+class LockTimeoutError(TimeoutError):
+    """The lock was still held when the wait ran out; distinct from a check's own timeout."""
 
 
 @dataclass(frozen=True)
@@ -417,24 +427,29 @@ def hold_lock(
     on_wait: Callable[[str], object] | None = None,
     poll: float = 1.0,
     timeout: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], object] = time.sleep,
 ) -> Iterator[None]:
     """Hold an exclusive lock on `path`, waiting for any other holder; released on any exit.
 
     Polls a non-blocking lock rather than blocking, so a wait can be announced once and bounded.
-    The lock is the operating system's, so a run killed outright leaves nothing to clean up.
+    The lock is the operating system's, released when its holder exits however it exits, so a dead
+    holder's lock is never stale and there is nothing to recover or steal. Only the record of who
+    held it outlives the holder, and the next holder overwrites it. A live holder is never taken
+    from: a suspended or hung run is what `timeout` is for.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = None if timeout is None else time.monotonic() + timeout
+    deadline = None if timeout is None else clock() + timeout
     with path.open("a+", encoding="utf-8") as handle:
         announced = False
         while not _try_lock(handle):
             if not announced and on_wait is not None:
                 on_wait(_holder(path))
             announced = True
-            if deadline is not None and time.monotonic() >= deadline:
+            if deadline is not None and clock() >= deadline:
                 message = f"{path} is still held by {_holder(path)}"
-                raise TimeoutError(message)
-            time.sleep(poll)
+                raise LockTimeoutError(message)
+            sleep(poll if deadline is None else max(0.0, min(poll, deadline - clock())))
         try:
             handle.seek(0)
             handle.truncate()
@@ -518,9 +533,37 @@ def _ci_only(lanes: Lanes) -> list[str]:
     return lines
 
 
+def _seconds(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        value = -1.0
+    if not 0 <= value < float("inf"):
+        message = f"expected a number of seconds, 0 or more: {text!r}"
+        raise argparse.ArgumentTypeError(message)
+    return value
+
+
+def _duration(seconds: float) -> str:
+    return f"{seconds / 60:g} min" if seconds >= 60 else f"{seconds:g} s"
+
+
+def _gave_up(error: LockTimeoutError, items: list[Item], seconds: float) -> int:
+    pending = [item.text for item in items if item.reason is None]
+    print(f"\nGave up after {_duration(seconds)}: {error}.")
+    print("Nothing ran. Stop that run or wait for it, then run this again.")
+    print(f"Not run ({len(pending)}):")
+    for text in pending:
+        print(f"  not run  {text}")
+    return WAIT_TIMED_OUT
+
+
 def main(
     argv: list[str] | None = None,
     classify: Callable[[str], tuple[dict[str, str], list[str], list[str]]] = classify,
+    lock: Callable[[], Path] = lock_path,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], object] = time.sleep,
 ) -> int:
     """Plan the run, print it, and unless `--dry-run` run it under the repository lock."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -529,6 +572,13 @@ def main(
     parser.add_argument("--coverage", action="store_true", help="add the coverage runs")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; run nothing")
     parser.add_argument("-j", "--jobs", type=int, help="workers for each Python suite")
+    parser.add_argument(
+        "--wait-timeout",
+        type=_seconds,
+        default=DEFAULT_WAIT_TIMEOUT,
+        metavar="SECONDS",
+        help="how long to wait for another worktree's run before giving up (1800; 0 never waits)",
+    )
     args = parser.parse_args(argv)
 
     outputs: dict[str, str] = {}
@@ -568,10 +618,24 @@ def main(
     if args.dry_run:
         return 0
 
-    path = lock_path()
+    return _run_locked(items, lock(), args.wait_timeout, clock, sleep)
+
+
+def _run_locked(
+    items: list[Item],
+    path: Path,
+    wait: float,
+    clock: Callable[[], float],
+    sleep: Callable[[float], object],
+) -> int:
+    def announce(who: str) -> None:
+        print(f"\nWaiting up to {_duration(wait)} for {path} ({who}) ...", flush=True)
+
     try:
-        with hold_lock(path, on_wait=lambda who: print(f"\nWaiting for {path} ({who}) ...")):
+        with hold_lock(path, on_wait=announce, timeout=wait, clock=clock, sleep=sleep):
             return _execute(items, ROOT)
+    except LockTimeoutError as error:
+        return _gave_up(error, items, wait)
     except KeyboardInterrupt:
         print("\nInterrupted; the lock is released.")
         return 130
