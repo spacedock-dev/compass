@@ -67,8 +67,8 @@ board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) 
 
 Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
 print the same list into that session, where the agent can read it too. The skill pre-approves
-those two commands and no others, so they run without a permission prompt. A line above the listed sessions says they are what other sessions said
-about themselves, and the list goes to that session's model provider with the rest of its context, as
+those two commands and no others, so they run without a permission prompt. A line above the listed
+sessions says they are what other sessions said about themselves, and the list goes to that session's model provider with the rest of its context, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out. Compass leaves the command you
 typed, and the agent's answer to it, out of what it reads about the session, and the session page
 labels that answer. Codex's `$compass` is not recognised that way yet.

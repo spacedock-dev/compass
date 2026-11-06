@@ -6934,9 +6934,10 @@ of text from what a session said about itself.
 The skill's frontmatter carries `allowed-tools` with one rule per row of its Terminal actions table,
 each naming that row's command exactly, with Claude Code's `${CLAUDE_SKILL_DIR}` standing for the
 install path. While the skill is active, Claude Code runs those commands without a permission
-prompt. This reverses the owner's 2026-11-05 decision, taken when the first action shipped, that the
-skill carry no pre-approval. That had left the reader a prompt on every use, or a "don't ask again"
-that offers `python3 *`.
+prompt. This reverses the owner's choice when the `sessions` action first shipped, on 2026-11-05,
+that the skill carry no pre-approval. That choice was recorded on the pull request that shipped the
+action rather than here, and it left the reader a prompt on every use, or a "don't ask again" that
+offers `python3 *`.
 
 Measured on Claude Code 2.1.318 on macOS, headless in default permission mode with no user settings
 loaded:
@@ -6950,8 +6951,8 @@ loaded:
   with a `$(…)` substitution appended.
 - A deny rule for the command in local settings overrode the skill: the action was denied.
 
-Rejected: the glob `Bash(python3 *launch.py* *server.py* --sessions*)`, the rule that led to the
-2026-11-05 ruling. It also approved `python3 -c "<code>" x/launch.py y/server.py --sessions`, because
+Rejected: the glob `Bash(python3 *launch.py* *server.py* --sessions*)`, measured before that first
+choice. It also approved `python3 -c "<code>" x/launch.py y/server.py --sessions`, because
 a wildcard can swallow an interpreter flag and its code. A prefix rule, `…--sessions:*`, anchors at
 the start but approves any flag after the action. Neither is admitted:
 `scripts/validate_plugins.py` accepts only exact launcher commands at `${CLAUDE_SKILL_DIR}` with no
@@ -6960,7 +6961,9 @@ A later action gains its rule with its row.
 
 What this does not change: an action still prints into the session and reaches its model provider,
 as the 2026-11-03 amendment says, and the 2026-11-05 boundary for other sessions' text stands. A
-spelling other than the table's, such as `python` on Windows, still asks. Codex and Antigravity load
+spelling other than the table's, such as `python` on Windows, is not pre-approved, so every use
+there asks. A reader's deny rule names one install path, so it has to be written again when a plugin
+update moves that path. Codex and Antigravity load
 the skill and ignore the key.
 
 ## DEC-26: four drift levels, and a live estimate after every turn
