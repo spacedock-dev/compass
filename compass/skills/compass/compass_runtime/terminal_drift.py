@@ -1099,7 +1099,6 @@ class _Run:
         """Wait for `job` to leave the board, then show what it stored, or why it stored none."""
         job_id = str(job.get("id"))
         began = self.clock()
-        started_at = _number(job.get("started_at"))
         seen = _assessment(row)
         said = ""
         payload: Mapping[str, Any] | None = None
@@ -1121,10 +1120,32 @@ class _Run:
                 self.sleep(POLL_SEC)
         except KeyboardInterrupt:
             return self.cancel(job_id)
-        row = _row_of(payload, self.harness, self.sid) or row
+        return self.ended(
+            payload, _row_of(payload, self.harness, self.sid) or row, seen, job, adopted=adopted
+        )
+
+    def ended(
+        self,
+        payload: Mapping[str, Any],
+        row: Mapping[str, Any],
+        seen: str,
+        job: Mapping[str, Any],
+        *,
+        adopted: str | None,
+    ) -> int:
+        """What a job that left the board stored: a reading, a withhold, or nothing."""
+        started_at = _number(job.get("started_at"))
+        # Whether the press's adoption saved the draft is read from the board, never assumed: a
+        # job withheld before any model call (a route under managed policy, measured) has still
+        # saved it, and one refused earlier has not.
+        drafted = adopted is not None
+        if adopted is not None and row.get("annotation_goal_source") != adopted:
+            adopted = None
         withheld = _text(row.get("annotation_reading_withheld"))
         withheld_at = _number(row.get("annotation_reading_withheld_at"))
         if withheld and (started_at is None or (withheld_at or 0) >= started_at):
+            if drafted:
+                _emit(self.out, self.goal_line(payload, row))
             return self.refuse(printable(withheld))
         if _assessment(row) == seen or not _rec(row.get("annotation_assessment")):
             return self.refuse(NOTHING_PRODUCED)
@@ -1133,6 +1154,15 @@ class _Run:
         except Lost:
             context = None
         return self.show(payload, row, context, adopted=adopted)
+
+    @staticmethod
+    def goal_line(payload: Mapping[str, Any], row: Mapping[str, Any]) -> list[str]:
+        """The goal as the board holds it now, with where it came from."""
+        goal = printable(goal_text(row, payload))
+        source = goal_source_line(row, payload)
+        if not goal:
+            return []
+        return [f"Goal ({source}): {goal}" if source else f"Goal: {goal}"]
 
     @staticmethod
     def step(job: Mapping[str, Any]) -> str:

@@ -641,6 +641,88 @@ class SpendTest(unittest.TestCase):
         self.assertIn("The model did not answer.", err)
 
 
+DYNAMIC_POLICY = (
+    "Nothing was sent to the model, and no Analyze attempt was counted. "
+    "This route uses managed policy that can change at launch. "
+    "Use a route whose context and model-switching controls Compass can check locally."
+)
+
+
+class ManagedPolicyTest(unittest.TestCase):
+    """Measured on a real Claude Code session: a route under managed policy that can change at
+    launch publishes a `context-dynamic` allowance, the press starts a job, and the job ends
+    withheld before any model call. The press's adoption still saved the drafted goal."""
+
+    def board(self) -> FakeBoard:
+        row = a_row(
+            annotation_goal="",
+            annotation_revision=None,
+            annotation_goal_saved_at=None,
+            annotation_line_1="",
+            first_prompt="Teach the parser about tabs",
+            first_prompt_at=NOW - 4000,
+        )
+        payload = a_payload(row)
+        payload["reading_routes"]["claude"]["capacity"] = {
+            **CAPACITY,
+            "maximum_prompt_bytes": 0,
+            "reason": "context-dynamic",
+            "configuration_reason": "dynamic-policy",
+        }
+        board = FakeBoard(payload)
+        original = board._finish
+
+        def withheld() -> None:
+            original()
+            row = board.payload["sessions"][0]
+            row["annotation_assessment"] = None
+            row["annotation_reading_withheld"] = DYNAMIC_POLICY
+            row["annotation_reading_withheld_at"] = NOW + 2
+
+        board._finish = withheld  # type: ignore[method-assign]
+        return board
+
+    def test_a_person_reads_the_server_s_one_sentence_that_nothing_was_spent(self) -> None:
+        code, _out, err = drift(self.board())
+        self.assertEqual(1, code)
+        # Progress lines come first on stderr; the refusal is the one sentence that ends it.
+        self.assertEqual(DYNAMIC_POLICY, err.strip().splitlines()[-1])
+        self.assertEqual(1, err.count("Nothing was sent"))
+
+    def test_a_person_reads_why_before_the_press_in_the_allowance(self) -> None:
+        _code, out, _err = drift(self.board())
+        self.assertEqual(
+            "Next Analyze prompt: This route\u2019s policy can change when it starts, so its "
+            "allowance cannot be established. Check its managed settings or choose another route.",
+            out.splitlines()[0],
+        )
+
+    def test_a_person_reads_that_the_drafted_goal_was_saved_though_nothing_was_read(
+        self,
+    ) -> None:
+        _code, out, _err = drift(self.board())
+        self.assertIn("Goal (From your first prompt · saved): Teach the parser about tabs", out)
+        self.assertNotIn("reads against it", out)
+        self.assertNotIn("Level:", out)
+
+    def test_a_person_is_not_told_a_goal_was_saved_when_the_board_shows_it_was_not(
+        self,
+    ) -> None:
+        board = self.board()
+        finish = board._finish
+
+        def unsaved() -> None:
+            finish()
+            row = board.payload["sessions"][0]
+            row["annotation_goal"] = ""
+            row["annotation_goal_source"] = None
+
+        board._finish = unsaved  # type: ignore[method-assign]
+        _code, out, _err = drift(board)
+        self.assertNotIn("· saved", out)
+        self.assertIn("Goal (Drafted from your first prompt · not saved)", out)
+
+
 class OtherHarnessTest(unittest.TestCase):
     def test_a_person_on_another_harness_is_sent_to_the_session_page(self) -> None:
         row = a_row(harness="codex")
