@@ -15,9 +15,12 @@ port; after the review, dispatch a build-stage subagent into the same worktree f
    `pnpm test:stories` (in the suite) proves it. If the layer touches the web surface, run
    `pnpm build` before the suite: the suite includes `pnpm build:check`, which fails on a stale
    bundle, and the Mode 2 walk serves whatever `react.html` is in the worktree, so without the build
-   it reviews the old page. Then run the canonical pre-PR suite from **AGENTS.md, "Pre-PR Checks"**,
-   from there rather than from a copy. Give `scripts/run_tests.py` a `-j` share of the cores when
-   another suite is running.
+   it reviews the old page. While iterating, run the touched test modules and the checks that can
+   catch what changed, not the whole suite. A parity or shape test is held to a fixture built from a
+   captured real payload, as [planning](planning.md#2-plan-group-order-estimate-choose-models) says.
+   Run the canonical pre-PR suite from **AGENTS.md, "Pre-PR Checks"** once per pull request, through
+   `scripts/pre_pr.py`, which runs the part of that list the diff's lanes need. Give
+   `scripts/run_tests.py` a `-j` share of the cores when another suite is running.
 2. Invoke `sync-docs` in the layer that ships the behaviour, never once for the whole stack. The
    shipped `SKILL.md` and `HOW_TO_USE.md` change in the layer that ships what they describe. Never
    advance `COMPATIBILITY.md`'s `docs-synced-through` marker in a layer.
@@ -25,18 +28,39 @@ port; after the review, dispatch a build-stage subagent into the same worktree f
    `Mode 2: after development`. What this layer introduced goes to item 5; what predates it is filed
    with the base comparison that proves so. Two walks cost more than a page: the board opens a session
    page only for sessions observed in the last 24 hours, and some states appear only after an Analyze
-   press, which is a model call. When a walk needs a paid call or a fresh harness session, ask the
-   owner first; otherwise name the story or press test that stands in for it in the pull request.
+   press, which is a model call. When a walk needs a paid reading, or a harness session beyond the
+   real-session check below, ask the owner first; otherwise name the story or press test that stands
+   in for it in the pull request.
+
+   **Walk a real session at the first layer that makes a terminal or skill behaviour reachable**: a
+   new action word, a terminal command, or anything a session's own hook or tool call reaches. Do it
+   at that layer, not only at the final Verification walk. `scripts/session_smoke.py` starts a
+   spare-port board from the worktree, creates a headless Claude Code session in a scratch project
+   with a real first prompt, types each action into it, and prints the permission denials, the tool
+   commands and their results; it stops the board and kills what it started on every exit. On
+   2026-11-06 the two most expensive defects of the run passed about 9,000 tests and 19 review
+   agents, because every fixture agreed with itself: the full session UUID against the board's
+   8-character key, and a citation lost outside the context window. Both surfaced only in the final
+   walk, which cost a fix pull request, a CI cycle and about 40 minutes. The same recipe took minutes
+   once known. The helper refuses `drift again`, plain `drift` (a fresh session has no stored
+   reading, so it presses) and any action it cannot show is free, unless `--allow-spend` is passed;
+   ask the owner before passing it. Put its output summary in the pull request's Verification.
 4. Review the layer at the depth its tier sets, before it is submitted. Reviewing an open pull
    request costs a second CI cycle. Self-verify is the orchestrator's own read of the diff and the
-   checks; the other tiers are reviewer subagents at the review stage's model. Freeze the stack while
-   a reviewer is reading: a restack rewrites the layers above under them and turns correct findings
-   into false refutations. File what a review defers.
+   checks; the other tiers are reviewer subagents at the review stage's model. Spend the depth on the
+   layer that makes behaviour reachable, and review the combined diff of the layers below it there:
+   on 2026-11-06 layer D's full adversarial review found four defects in layer C's code that C's own
+   two-lens review had missed, once D made that code reachable without a prompt. Freeze the stack
+   while a reviewer is reading: a restack rewrites the layers above under them and turns correct
+   findings into false refutations. File what a review defers.
 5. Fix what the walk and the review found. One correction round per layer is the default; after a
    round with several fixes, re-check against a live board, because fix rounds here produce about
-   one new defect per four fixes. If `sync-docs`, the walk or a review changed a file, rebuild if the
-   change touched the web surface, and run the suite again. `test_documentation` asserts
-   `SKILL.md`, `SECURITY.md` and `README.md`.
+   one new defect per four fixes. The orchestrator makes a small fix (a few lines and its test)
+   inline: measured on 2026-11-06, an inline fix took about 5 minutes and a fresh builder round 20
+   to 45, most of it the full suite. A fix round runs the touched tests. If `sync-docs`, the walk or
+   a review changed a file, rebuild if the change touched the web surface, and run
+   `scripts/pre_pr.py` once before the pull request is submitted rather than once per fix.
+   `test_documentation` asserts `SKILL.md`, `SECURITY.md` and `README.md`.
 6. Make the rebuilt bundle the last commit of any web-surface layer: after the last source change,
    `pnpm build`, commit the built files, then `pnpm build:check`. Never resolve or compute the
    bundle by hand.
@@ -152,9 +176,12 @@ to every one.
   orchestrator walks it, and a fresh build-stage subagent takes steps 4.5 and 4.6.
 - Dispatch subagents from the repository root, at their stage's model and effort, and confirm each
   produced work before calling it running.
-- Release finished subagents when the harness supports it. Resume a builder for its correction
-  round rather than starting a fresh one: it keeps its context. Use only the agent lifecycle and
-  model-selection capabilities the current harness actually exposes.
+- Give every agent a hard timeout. A review pair once hung for 50 minutes with nothing to stop it.
+- Use unnamed agents for one-shot work (a lens, an arbiter, a deep dive), and stop each agent once
+  it has delivered (in Claude Code, `TaskStop`). Named agents could not acknowledge a shutdown
+  request, and they piled up. Resume a builder for its correction round rather than starting a
+  fresh one: it keeps its context. Use only the agent lifecycle and model-selection capabilities
+  the current harness actually exposes.
 - A loopback-port failure under concurrent suites is contention, not a regression: rerun that module
   alone before believing it.
 
@@ -163,5 +190,8 @@ to every one.
 - Never edit a version field. The Release workflow owns them.
 - Never resolve the built bundle textually; rebuild it from the sources.
 - Never trust an exit status from `gh stack sync` as proof that it pushed.
+- Never rewrite a branch (restack, rebase, amend, reset) while a suite or a review is running on
+  it. The orchestrator once rewrote a branch while a builder's suite ran on it; a verdict reached
+  that way describes a tree that is no longer there.
 - Never widen an issue's scope to make it feel complete. File the rest in the selected tracker.
 - Never promote a deferred review finding into the layer in flight when it costs another CI round.

@@ -33,6 +33,7 @@ with no callers got the same treatment as the one owning the built bundle.
 | Renders anything a person reads: `frontend/src`, a published row field, a threshold that gates a claim | Full walk | Full walk |
 | Changes what a collector publishes, without touching the page | The stages that render it | The same stages |
 | A doc claim about what the board shows or says | The one surface it describes | The same surface |
+| Makes a terminal or skill behaviour reachable: an action word, a terminal command, a hook a session fires | The stages it reports on | Those stages, and a real session (Mode 2, step 6) |
 | Runtime only, nothing published changes | Skip, and say in the report that you skipped it | Skip, and say so |
 | Prose with no claim about the board | Skip | Skip |
 
@@ -47,6 +48,8 @@ reader knows the walk was considered rather than forgotten.
   from `compass/skills/compass`.
 - `docs/promise-map.md` open. It is canonical for what the product promises at each stage of the
   reader's day, and for where each promise stops.
+- For a terminal or skill behaviour, a logged-in `claude` on PATH. `scripts/session_smoke.py`
+  drives it; Mode 2, step 6 says when.
 
 Never review on the port the operator is already using. Pick a spare one, and stop what you start.
 
@@ -189,6 +192,39 @@ rather than a suggestion for later.
 - **It predates your change**: file it, with the base comparison that proves it predates.
 - **You cannot tell**: say so, and file it as unsettled rather than guessing. A finding attributed to
   the wrong cause costs more than an unattributed one.
+
+### 6. Walk a real session when the change reaches one
+
+A browser shows the board. It does not show what a session sees when it types a skill action or
+runs a terminal command, and that path has its own ways to fail: a permission prompt the
+pre-approval did not cover, a key one surface publishes and another looks up, context a long
+session no longer holds. Walk it at the first layer that makes the behaviour reachable, not only in
+the final Verification walk:
+
+```bash
+python3 scripts/session_smoke.py --tree <worktree> sessions "sessions waiting"
+```
+
+It starts a board from the worktree on a spare port (4795 by default, never the operator's 4553),
+creates a headless Claude Code session in a scratch project with a real first prompt (a Compass
+command is never adopted as a goal), types each `/compass:compass <action>` into it, and prints the
+permission denials, the tool commands and their results. It stops the board and kills what it
+started on every exit. The skill's commands ask the newest-started board, so the helper refuses to
+go on if another board started after its own.
+
+Read the denials first: an action the skill pre-approves should run with none. Then read the tool
+result as rendered text, the way step 3 reads the screen.
+
+The helper refuses `drift again`, plain `drift` and any action it cannot show is free, unless
+`--allow-spend` is passed, because a fresh session has no stored reading and plain `drift` then
+presses one. That flag spends one of the operator's daily readings: ask before passing it.
+
+Measured on 2026-11-06: the two most expensive defects of a milestone passed about 9,000 tests and
+19 review agents, because every fixture agreed with itself. One was the full session UUID looked up
+against the board's 8-character key; the other a citation lost outside the context window. Both
+surfaced only in the final walk, which then cost a fix pull request, a CI cycle and about 40
+minutes, and the recipe that found them took minutes once known. Fixtures for a parity or shape
+test come from a captured real payload for the same reason.
 
 ## Behavioural testing first
 

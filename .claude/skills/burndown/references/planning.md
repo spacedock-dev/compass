@@ -29,14 +29,29 @@ last.
 - Review tier, from the table in **AGENTS.md, "Calibrating Effort"**: **self-verify** for a change
   with no user-visible behaviour change that nothing calls yet; **full adversarial** for the
   `Security` label, credential handling, data loss, or a change to a boundary `SECURITY.md` names
-  (such as the history prompt-text allowlist); **two lenses plus an arbiter** otherwise.
+  (such as the history prompt-text allowlist); **two lenses plus an arbiter** otherwise. Mark the
+  layer that makes a behaviour reachable (the one that wires a new action, command or route to a
+  person), because the review depth is spent there, on the combined diff of the layers it exposes,
+  as [delivery](delivery.md#4-build-a-layer) says. Code nothing calls is reviewed best once
+  something does: on 2026-11-06 the layer that made earlier code reachable without a prompt had its
+  review find four defects in that code which the earlier layer's own review had missed.
+- Real payloads. Where an issue carries a parity or shape test (the terminal against the page, a
+  hook payload against its parser, a key one surface publishes and another looks up), plan its
+  fixture from a captured real payload: `docs/captures/`, a recorded hook, or a run of
+  `scripts/session_smoke.py`. On 2026-11-06 the run's two most expensive defects, a full session
+  UUID looked up against the board's 8-character key and a citation lost outside the context
+  window, passed about 9,000 tests because every fixture had been written by the same hand as the
+  code and agreed with it.
 - Estimate. Most issues carry none. Use XS 1, S 2, M 3, L 5, mark an inferred estimate as yours,
   and let the adapter decide whether an approved repair can write it back. GitHub issues have no
   native estimate field; a plan estimate does not authorize creating a custom field or label.
 - Design reference. When the design-project read is unavailable, leave the issue out of the plan
   and say so, as [the design reference rules](design-reference.md#planning) direct.
 
-**Group.** Issues share one pull request when all of these hold: they change the same view or the
+**Group.** Prefer one pull request per conflict surface to one layer per issue: issues are units
+of reasoning, pull requests are units of merge risk (**AGENTS.md, "Calibrating Effort"**). On
+2026-11-06 four layers each paid a submit, a CI run and a review, and layers A and B, and C and D,
+merged together anyway. Issues share one pull request when all of these hold: they change the same view or the
 same contract (the same NUI amendment, the same drift block, the same route); no issue outside the
 group lies on a `blockedBy` path between two issues in it; they share a review tier; and their
 estimates sum to no more than 7 points (L 5 plus S 2). A tier is the merge-risk unit; an issue stays
