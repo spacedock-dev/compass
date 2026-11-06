@@ -358,7 +358,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: coverage-${{ github.run_id }}
+          # Named for the attempt, as the frontend summary is: a re-run that fails before writing the
+          # report finds no files, and `overwrite` then deletes nothing, leaving the earlier report.
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             coverage.json
             coverage-comment.md
@@ -386,7 +388,7 @@ jobs:
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: coverage-${{ github.run_id }}
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: coverage
       - name: Find existing coverage comment
         # hashFiles reads only the workspace, which is why the report is fetched there.
@@ -704,7 +706,10 @@ jobs:
         # actions/upload-artifact@v7 — pinned to immutable SHA.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: frontend-coverage-${{ github.run_id }}
+          # Named for the attempt, not with `overwrite`: an attempt that wrote no summary finds no
+          # files, and the action then deletes nothing, so a shared name would leave the earlier
+          # attempt's figures for the comment job to post.
+          name: frontend-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             coverage/frontend/coverage-summary.json
             coverage/frontend/comment.md
@@ -732,7 +737,7 @@ jobs:
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: frontend-coverage-${{ github.run_id }}
+          name: frontend-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: frontend-coverage
       - name: Find existing frontend coverage comment
         # hashFiles reads only the workspace, which is why the summary is fetched there.

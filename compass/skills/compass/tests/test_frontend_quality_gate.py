@@ -554,6 +554,32 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 )
                 self.assertRegex(step["uses"], r"@[0-9a-f]{40}$")
 
+    def test_the_coverage_comment_reads_only_its_own_attempts_summary(self) -> None:
+        """The summary artifact is named for the attempt, so a re-run never posts an earlier one's figures.
+
+        A re-run that fails before Vitest writes no summary, and actions/upload-artifact at the pinned
+        SHA neither uploads nor deletes when it finds no files (src/upload/upload-artifact.ts), so a
+        name shared across attempts would hand the comment job the earlier attempt's summary. Re-running
+        `frontend-coverage` re-runs the comment job in the same attempt; the comment job re-run alone
+        finds no summary for its attempt and posts nothing, which never gates.
+        """
+        upload = next(
+            s
+            for s in jobs()["frontend-coverage"]["steps"]
+            if "upload-artifact" in s.get("uses", "")
+        )
+        download = next(
+            s
+            for s in jobs()["frontend-coverage-comment"]["steps"]
+            if "download-artifact" in s.get("uses", "")
+        )
+        name = upload["with"]["name"]
+        self.assertEqual(name, download["with"]["name"])
+        self.assertIn("${{ github.run_id }}", name)
+        self.assertIn("${{ github.run_attempt }}", name)
+        self.assertEqual("always()", upload["if"], "a red threshold still reports its figures")
+        self.assertEqual("ignore", upload["with"]["if-no-files-found"])
+
     def test_each_frontend_job_runs_the_lifecycle_tests_once_and_no_browser_proof(self) -> None:
         """The browser proofs left the gate (owner, 2026-10-12): the UI is verified by the Storybook job.
 
@@ -662,7 +688,7 @@ class StorybookChromiumInstallTest(unittest.TestCase):
     every library Chromium needs was already on the image, and no story assertion reads a glyph. So
     nothing is installed from apt (owner ruling, 2026-11-06).
 
-    Nothing is restored from a cache (owner ruling, 2026-11-06). A restored entry's files run as they
+    Neither is restored from a cache (owner ruling, 2026-11-06). A restored entry's files run as they
     are, and the browser cache held the `chrome` binary the stories start. actions/cache also extracts
     with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and absolute member names, so an entry
     that third-party code shaped in one main-branch run could write outside its path as well.

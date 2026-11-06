@@ -322,6 +322,69 @@ class CoverageShardsTest(unittest.TestCase):
                     self.assertEqual(blocked, result.returncode != 0, result.stdout)
 
 
+class ArtifactRerunTest(unittest.TestCase):
+    """A job re-run in the same workflow run can upload its artifact, and no consumer reads an older one.
+
+    Artifacts belong to the run, not to an attempt. At the pinned actions/upload-artifact (v7,
+    src/upload/upload-artifact.ts) a name already in the run fails the upload unless `overwrite` is
+    true, and `overwrite` deletes the old artifact only when the new upload found files: a step that
+    finds none leaves the earlier attempt's artifact where a consumer can read it.
+    """
+
+    @staticmethod
+    def uploads() -> list[tuple[str, dict[str, Any]]]:
+        return [
+            (job_id, step)
+            for job_id, job in gate_jobs().items()
+            for step in job.get("steps", [])
+            if "upload-artifact" in step.get("uses", "")
+        ]
+
+    def test_every_upload_a_rerun_repeats_replaces_its_own_artifact(self) -> None:
+        uploads = self.uploads()
+        self.assertGreaterEqual(len(uploads), 3)
+        for job_id, step in uploads:
+            options = step["with"]
+            with self.subTest(job=job_id, artifact=options["name"]):
+                # A name carrying the attempt is new on every re-run; any other name is repeated, and
+                # only an upload that cannot find nothing and still pass replaces the earlier one.
+                if "${{ github.run_attempt }}" not in options["name"]:
+                    self.assertIs(True, options.get("overwrite"))
+                    self.assertEqual("error", options.get("if-no-files-found"))
+
+    def test_the_combine_job_reads_leg_data_only_after_every_leg_passed(self) -> None:
+        """A leg that goes red on a re-run uploads nothing, so its earlier data is still in the run.
+
+        That data is never combined: the leg's upload runs only after its suite passed, and the
+        combine job carries no status function, so a red leg skips it and the gate reads that red.
+        `continue-on-error` anywhere in a leg would let a red suite reach the upload as a success.
+        """
+        legs = gate_jobs()["test"]
+        self.assertNotIn("continue-on-error", legs)
+        for step in legs["steps"]:
+            with self.subTest(step=step.get("name") or step.get("uses")):
+                self.assertNotIn("continue-on-error", step)
+        upload = next(s for s in legs["steps"] if "upload-artifact" in s.get("uses", ""))
+        self.assertNotIn("if", upload, "a red leg must not upload")
+        self.assertIs(legs["steps"][-1], upload, "nothing after the upload can turn a leg red")
+        combine = gate_jobs()["coverage"]
+        self.assertIn("test", combine["needs"])
+        for function in ("always()", "failure()", "cancelled()"):
+            self.assertNotIn(function, combine["if"])
+
+    def test_the_combined_report_is_named_for_its_attempt(self) -> None:
+        upload = next(
+            s for s in gate_jobs()["coverage"]["steps"] if "upload-artifact" in s.get("uses", "")
+        )
+        # It uploads after a red threshold too, and a re-run that fails before writing the report
+        # finds no files, so a shared name would leave the earlier attempt's report for a reader.
+        self.assertEqual("always()", upload["if"])
+        self.assertEqual(
+            "coverage-${{ github.run_id }}-${{ github.run_attempt }}", upload["with"]["name"]
+        )
+        self.assertNotIn("overwrite", upload["with"], "the name is new on every attempt")
+
+
 WORKFLOWS = ROOT / ".github/workflows"
 REQUIRED = ("quality-gate.yml", "validate.yml", "version-guard.yml")
 PR_BASE = "${{ github.event.pull_request.base.sha }}"
