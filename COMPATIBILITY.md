@@ -201,10 +201,17 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 8b8eff39 (2026-11-06) -->
-<!-- Reconciled 24230e1b..8b8eff39: the drift view published for the terminal and held to the
-     page by a parity check, `--drift` and `--drift again`, the compass skill's in-session `drift`
-     and `drift again` actions with the typed-command guard, the rule that organization-managed
-     remote settings do not block a reading, the pre-approved in-session sessions list, and the
-     fixes to finding this session and keeping each line's citation. Six behavior pull requests
-     landed on 2026-11-06; each carried its own docs, and this pass found nothing stale. -->
+<!-- docs-synced-through: 0d6a42c5 (2026-11-07) -->
+<!-- Reconciled 8b8eff39..0d6a42c5: CI and test tooling, with no runtime change.
+     `scripts/pre_pr.py` runs the pre-PR checks for the lanes a change touches, behind a bounded
+     lock that stops a check's whole process group on macOS too; `ci_scope.py` runs a doc change
+     against only the Vitest files that read it, and macOS only for platform code; the required
+     workflows run on `merge_group`, and a pull request the queue ejects for a failed check goes
+     back in once; Storybook and the release check install Chromium with no host packages and
+     cache neither the browser nor the pnpm store, no job holding a write token restores a cache
+     or another run's artifact, and the release job installs its Python packages by hash; the test
+     runner retries a failed test once and runs `REAL_TIME_TESTS` modules alone, beside the
+     flaky-test ledger and `scripts/flaky_tally.py`; and the wall-clock tests that failed on busy
+     runners were fixed. Nineteen pull requests landed on 2026-11-06, each with its own docs; this
+     pass added the ledger's local-load table to the AGENTS.md doc map and `test_ci_read_gitlab`
+     to that table's supervise reap row. -->
