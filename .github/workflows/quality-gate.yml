@@ -10,7 +10,8 @@ name: Quality Gate
 # test job shape) and `coverage-report.yaml` (sticky PR coverage comment, gate
 # job, `coverage-exception` label escape hatch), simplified for a
 # single-component repository: everything runs in one workflow, so no
-# workflow_run indirection or artifact cross-downloads are needed.
+# workflow_run indirection is needed: its jobs hand results to one another as
+# artifacts within the run.
 
 # A push to main, the nightly schedule and a manual dispatch run every lane, macOS included, so
 # what a pull request's lanes skipped (a fail-open gap, platform drift) surfaces within a day.
@@ -263,9 +264,11 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Read-only, because this job restores the pip cache and runs the packages it installs: the sticky
+    # comment is posted by `coverage-comment`, which does neither.
     permissions:
       contents: read
-      pull-requests: write # sticky coverage comment (same-repo PRs only)
+      pull-requests: read # the coverage-exception label check
     steps:
       # `coverage report` reads the source files, so the tree is checked out where the legs had it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -334,15 +337,8 @@ jobs:
           fi
           cat coverage-report.txt
 
-      - name: Upload coverage artifact
-        # actions/upload-artifact@v7 — pinned to immutable SHA.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: coverage-${{ github.run_id }}
-          path: coverage.json
-          retention-days: 7
-
+      # Written here, before the upload, and posted by `coverage-comment`. Like the comment before it, it is
+      # not written when the threshold step fails.
       - name: Build coverage comment body
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
@@ -357,11 +353,44 @@ jobs:
             echo "_Threshold: \`fail_under\` in pyproject.toml · label \`coverage-exception\` to bypass (visible in PR timeline)._"
           } > coverage-comment.md
 
-      # Sticky comment: find-and-update rather than spam. Same-repo PRs only —
-      # fork PRs get a read-only token, and the gate itself never depends on
-      # the comment.
+      - name: Upload coverage artifact
+        # actions/upload-artifact@v7 — pinned to immutable SHA.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            coverage.json
+            coverage-comment.md
+          retention-days: 7
+
+  # Posts the report `coverage` wrote. A separate job so the write token never shares a job with the pip cache
+  # `coverage` restores or the packages it installs; it checks out nothing and runs only the pinned artifact and
+  # comment actions, as `frontend-coverage-comment` does. Sticky: find-and-update rather than spam. Same-repo
+  # PRs only, since a fork PR gets a read-only token, and it never gates: the threshold is enforced in `coverage`.
+  coverage-comment:
+    name: Coverage comment
+    needs: coverage
+    # `!cancelled()` rather than `always()`: a run superseded by a newer push must not post its older figures.
+    if: >-
+      !cancelled() && needs.coverage.result != 'skipped' && github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # sticky coverage comment (same-repo PRs only)
+    steps:
+      - name: Fetch the coverage report
+        id: fetch
+        continue-on-error: true
+        # actions/download-artifact@v8.0.1, the same pin as release.yml.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage
       - name: Find existing coverage comment
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        # hashFiles reads only the workspace, which is why the report is fetched there.
+        if: steps.fetch.outcome == 'success' && hashFiles('coverage/coverage-comment.md') != ''
         id: find-comment
         continue-on-error: true
         # peter-evans/find-comment@v4 — pinned to immutable SHA.
@@ -369,16 +398,15 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-includes: "<!-- coverage-marker -->"
-
       - name: Post coverage comment
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.find-comment.outcome == 'success'
         continue-on-error: true
         # peter-evans/create-or-update-comment@v5 — pinned to immutable SHA.
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
-          body-path: coverage-comment.md
+          body-path: coverage/coverage-comment.md
           edit-mode: replace
 
   # Coverage and its sticky comment stay Ubuntu-only; this job checks native
