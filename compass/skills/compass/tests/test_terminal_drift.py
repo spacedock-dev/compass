@@ -374,6 +374,31 @@ class NativeSessionIdTest(unittest.TestCase):
         self.assertIn("on the board, so nothing was read", err)
 
 
+class OutcomeLineSourceTest(unittest.TestCase):
+    def test_a_person_reads_the_entry_and_reason_an_outcome_line_rests_on(self) -> None:
+        """The page draws an outcome line with the entry it cites and the model's reason (measured on
+        a real reading, 2026-11-06: "Not reached at this stop", entry [2], and the reason)."""
+        line = {
+            "key": "goal",
+            "state": "not-reached",
+            "result": "not reached at this stop",
+            "why": "",
+            "numbers": ["2"],
+            "clause": "Create hello.py",
+            "detail": "hello.py was written, but the python3 run never happened.",
+        }
+        board = FakeBoard(
+            a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=a_view(lines=[line])
+        )
+
+        code, out, err = drift(board)
+
+        self.assertEqual(0, code, err)
+        outcome = next(text for text in out.splitlines() if "Create hello.py" in text)
+        self.assertIn("#2", outcome)
+        self.assertIn("hello.py was written, but the python3 run never happened.", outcome)
+
+
 class FreeReadTest(unittest.TestCase):
     def test_a_person_with_a_current_reading_reads_it_and_spends_nothing(self) -> None:
         board = stored()
