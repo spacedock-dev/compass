@@ -186,6 +186,7 @@ See [compass/skills/compass/SKILL.md](compass/skills/compass/SKILL.md) for data 
 
 The canonical pre-PR suite lives in [AGENTS.md](AGENTS.md#pre-pr-checks): lint, types,
 frontend lint, types and tests, the contract validator, tests under coverage, and the native plugin validators.
+`python3 scripts/pre_pr.py` runs the part of it a change can fail, and `--all` runs all of it.
 Contributors should start from [CONTRIBUTING.md](CONTRIBUTING.md), which walks through setting it up.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the cross-platform contract.

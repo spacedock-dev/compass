@@ -286,8 +286,9 @@ become covered, and check the record with `pnpm test:css:coverage`. The
 
 ## Before you open a PR
 
-Run the canonical pre-PR suite in [AGENTS.md](AGENTS.md#pre-pr-checks) and make sure it is clean.
-It is kept in one place deliberately. A second copy here would drift, and a contributor following a
+Run `python3 scripts/pre_pr.py` and make sure it is clean. It runs the checks from the canonical
+pre-PR suite in [AGENTS.md](AGENTS.md#pre-pr-checks) that the lanes your change touches can fail,
+and names every one it skips; `--all` runs the whole suite. The list is kept in one place deliberately. A second copy here would drift, and a contributor following a
 short copy passes locally and then fails the required gate.
 
 Finish with a docs pass. Invoke the `sync-docs` skill to reconcile the documentation against
@@ -613,7 +614,7 @@ Format: `<type>(<scope>): <description>`, where type is one of `feat`, `fix`, `d
 ## Pull requests
 
 1. Fork (or branch, for maintainers) and make your change.
-2. Run the pre-PR suite in [AGENTS.md](AGENTS.md#pre-pr-checks), then invoke the `sync-docs` skill.
+2. Run `python3 scripts/pre_pr.py` (the pre-PR suite in [AGENTS.md](AGENTS.md#pre-pr-checks)), then invoke the `sync-docs` skill.
 3. Open a PR against `main`. `main` is protected: PRs are required, the `validate`, `version-guard` and `quality-gate` checks must pass, history is linear (squash/rebase), all conversations must be resolved, and merged branches are deleted automatically.
 4. If your PR closes an issue, use an explicit `Closes #NNN` line, one line per issue. A comma-separated list does not autoclose.
 
