@@ -607,12 +607,15 @@ class FrontendWiringControlsTest(unittest.TestCase):
         job = jobs()["storybook"]
         self.assertEqual("Storybook (ubuntu-latest)", job["name"])
         self.assertEqual("ubuntu-latest", job["runs-on"])
-        self.assertLessEqual(job["timeout-minutes"], 15)
+        # The cold host-package install may take its whole step limit, and the other steps took
+        # about 4 minutes a run, so the job holds both with a margin and no more.
+        packages = next(s for s in job["steps"] if "install-deps" in s.get("run", ""))
+        self.assertGreaterEqual(job["timeout-minutes"], packages["timeout-minutes"] + 6)
+        self.assertLessEqual(job["timeout-minutes"], 20)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
-            "pnpm-lock.yaml",  # the pinned Playwright version, read for the cache key
             "pnpm exec playwright install chromium",
             "pnpm exec playwright install-deps chromium",
             "pnpm test:stories",
@@ -629,12 +632,16 @@ class FrontendWiringControlsTest(unittest.TestCase):
 
 @unittest.skipUnless(detector.BASH, "the shipped steps use Bash")
 class StorybookChromiumInstallTest(unittest.TestCase):
-    """The pinned Chromium comes from a cache keyed on the lockfile's Playwright version, and the host
-    packages install with a bound and one retry.
+    """Chromium and its host packages install fresh on every run, the packages bounded and retried once.
 
     Measured on the two timed-out runs (2026-11-06): the browser download took about 6 s on each, and
     the step spent its whole 5 minutes fetching nine font packages (21.9 MB) from the Ubuntu mirror at
     tens of KB/s. Every other library Chromium needs was already on the runner image.
+
+    Nothing is restored from a cache (owner ruling, 2026-11-06). A restored entry's files run as they
+    are, and the browser cache held the `chrome` binary the stories start. actions/cache also extracts
+    with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and absolute member names, so an entry
+    that third-party code shaped in one main-branch run could write outside its path as well.
     """
 
     @staticmethod
@@ -660,51 +667,38 @@ class StorybookChromiumInstallTest(unittest.TestCase):
             timeout=30,
         )
 
-    def read_version(self, cwd: Path) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
-        step = next(step for step in self.steps() if step.get("id") == "playwright")
-        with tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
-            output = Path(tmp) / "output"
-            output.touch()
-            result = self.run_step(step, cwd, {"GITHUB_OUTPUT": str(output)})
-            found = dict(line.split("=", 1) for line in output.read_text().split())
-        return result, found
-
-    def test_the_cache_key_is_the_playwright_version_the_lockfile_pins(self) -> None:
-        result, found = self.read_version(ROOT)
-        self.assertEqual(0, result.returncode, result.stderr)
-        pinned = json.loads((ROOT / "package.json").read_text())["devDependencies"]["playwright"]
-        self.assertEqual(pinned, found["version"])
+    def test_the_job_restores_and_saves_no_cache(self) -> None:
         steps = self.steps()
-        caches = [step for step in steps if step.get("uses", "").startswith("actions/cache@")]
-        # One entry per half: a hit never saves again, so a shared entry saved without packages
-        # would hit forever and fetch the fonts on every run.
+        # An allowlist rather than a ban on `actions/cache`: a third-party cache action, or
+        # `actions/setup-python` with `cache: pip`, restores through the same `tar -P` extraction.
+        # A new action fails here until someone has read what it restores.
         self.assertEqual(
-            ["~/.cache/ms-playwright", "~/.cache/playwright-apt/*.deb"],
-            [cache["with"]["path"] for cache in caches],
+            {"actions/checkout", "actions/setup-node", "pnpm/setup"},
+            {step["uses"].split("@")[0] for step in steps if "uses" in step},
         )
-        self.assertEqual(2, len({cache["with"]["key"] for cache in caches}), "separate entries")
-        self.assertIn("${{ steps.playwright.outputs.image }}", caches[1]["with"]["key"])
+        for step in steps:
+            for key, value in step.get("with", {}).items():
+                with self.subTest(step=step.get("uses"), key=key):
+                    # setup-node reads an explicit `cache: pnpm` before `package-manager-cache`
+                    # (v7.0.0 src/main.ts), so every cache input is held off, not just the one
+                    # that is set today.
+                    if "cache" in key:
+                        self.assertIs(False, value)
+        node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
+        self.assertIs(False, node["with"]["package-manager-cache"])
+        manager = next(s for s in steps if s.get("uses", "").startswith("pnpm/setup@"))
+        self.assertIs(False, manager["with"]["cache"])
+        # With nothing to restore, apt keeps its own archive directory: nothing points it at a path
+        # a cache used to fill.
+        packages = self.step_running("install-deps")["run"]
+        self.assertNotIn("Dir::Cache", packages)
+        self.assertNotIn(".cache", packages)
         browser = self.step_running("pnpm exec playwright install chromium")
-        for cache in caches:
-            self.assertRegex(cache["uses"], r"@[0-9a-f]{40}$")
-            self.assertIn("${{ steps.playwright.outputs.version }}", cache["with"]["key"])
-            self.assertNotIn(
-                "restore-keys", cache["with"], "another version's files are never restored"
-            )
-            self.assertLess(steps.index(cache), steps.index(browser))
+        self.assertLess(steps.index(browser), steps.index(self.step_running("install-deps")))
         self.assertLess(
             steps.index(self.step_running("install-deps")),
             steps.index(self.step_running("pnpm test:stories")),
         )
-
-    def test_a_lockfile_without_exactly_one_playwright_version_stops_the_job(self) -> None:
-        entry = "  playwright@{}:\n    resolution: {{integrity: sha512-x}}\n"
-        for body in ("lockfileVersion: '9.0'\n", entry.format("1.1.0") + entry.format("1.2.0")):
-            with self.subTest(body=body), tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
-                (Path(tmp) / "pnpm-lock.yaml").write_text(body)
-                result, found = self.read_version(Path(tmp))
-                self.assertNotEqual(0, result.returncode)
-                self.assertNotIn("version", found, "no cache key may be written")
 
     def install_deps(self, failures: int) -> tuple[int, list[str]]:
         """Run the shipped host-package step with `pnpm` failing its first `failures` calls."""
@@ -751,9 +745,10 @@ class StorybookChromiumInstallTest(unittest.TestCase):
                 self.assertEqual(len(attempts), len(bounds), "every attempt is bounded")
                 # Both attempts fit inside the step's own limit, so the retry can actually run.
                 self.assertLess(2 * max(bounds), limit)
-                # A retry resumes from the same mirror, so the cold path's real budget is the sum.
-                # It must not be less than the 300 s the old single `--with-deps` step had.
-                self.assertGreaterEqual(2 * min(bounds), 300)
+                # With no cache every run is cold, and a retry resumes from the same mirror, so the
+                # sum is the budget. Run 42181043035 fetched the fonts at about 46 KB/s, so 21.9 MB
+                # needs about 475 s; 2 x 210 s timed out on paper before it ever ran.
+                self.assertGreaterEqual(2 * min(bounds), 600)
 
     def test_no_frontend_job_can_fail_open(self) -> None:
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`
