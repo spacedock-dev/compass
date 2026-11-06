@@ -56,10 +56,8 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
     """The skill's Terminal actions table is held to the terminal client's own operations."""
 
     # The client answers these for a status line and for a person at a shell. Neither is a
-    # question to put to a session, so the skill offers no action for them. `--drift` is a
-    # question to put to a session, but its skill rows, their pre-approval and the SECURITY row
-    # arrive together in their own change, so it stands here until they do.
-    NOT_ACTIONS = ("--footer", "--version", "--drift")
+    # question to put to a session, so the skill offers no action for them.
+    NOT_ACTIONS = ("--footer", "--version")
     LAUNCHER = 'python3 "<skill-dir>/launch.py" "<skill-dir>/server.py"'
 
     @classmethod
