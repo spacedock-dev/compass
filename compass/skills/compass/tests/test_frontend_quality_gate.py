@@ -611,7 +611,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         # about 4 minutes a run, so the job holds both with a margin and no more.
         packages = next(s for s in job["steps"] if "install-deps" in s.get("run", ""))
         self.assertGreaterEqual(job["timeout-minutes"], packages["timeout-minutes"] + 6)
-        self.assertLessEqual(job["timeout-minutes"], 20)
+        self.assertLessEqual(job["timeout-minutes"], 25)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",

@@ -218,15 +218,22 @@ jobs:
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
       - name: Install Chromium's host packages, retried once
-        timeout-minutes: 11
+        timeout-minutes: 15
         run: |
           set -uo pipefail
-          BOUND=300
+          BOUND=420
           for attempt in 1 2; do
             if timeout --kill-after=10 "$BOUND" pnpm exec playwright install-deps chromium; then
               exit 0
             fi
             echo "::warning::Chromium's host packages did not install in $BOUND s (attempt $attempt of 2)."
+            # `timeout` stops pnpm, not the `sudo apt-get` it started, which kept the dpkg lock and
+            # failed the retry (run 42210422955). Killing them releases the lock with them; apt keeps
+            # the finished downloads, so the retry resumes rather than starting over.
+            # No `set -e` here, so pkill finding nothing to kill does not stop the retry.
+            sudo pkill -KILL -x apt-get
+            sudo pkill -KILL -x dpkg
+            sleep 2
             sudo dpkg --configure -a
           done
           echo "::error::Chromium's host packages did not install after two bounded attempts."
