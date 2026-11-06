@@ -8,6 +8,7 @@ import importlib.util
 import inspect
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -201,6 +202,19 @@ class ClaudeSettingsTest(unittest.TestCase):
             with self.subTest(document=document):
                 self.remote(document)
                 self.assertEqual("dynamic-policy", self.resolve().refusal)
+
+    def test_the_harmless_keys_are_the_six_the_owner_ruling_names(self) -> None:
+        ruling = (self.repo_root() / "docs/design-reading-a-session.md").read_text(encoding="utf-8")
+        heading = "### Owner ruling 2026-11-06: a remote settings cache is dynamic only when"
+        paragraph = ruling[ruling.index(heading) :].split("\n\n")
+        (named,) = (text for text in paragraph if "`_REMOTE_HARMLESS`" in text)
+        listed = named.split("`_REMOTE_HARMLESS`", 1)[1].split(")", 1)[0]
+        self.assertEqual(
+            set(re.findall(r"`([^`]+)`", listed)), set(claude_settings._REMOTE_HARMLESS)
+        )
+
+    def repo_root(self) -> Path:
+        return Path(__file__).resolve().parents[4]
 
     def test_an_unreadable_remote_settings_cache_still_refuses(self) -> None:
         target = self.root / "Users/r/.claude/remote-settings.json"

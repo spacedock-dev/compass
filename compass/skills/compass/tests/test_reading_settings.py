@@ -312,6 +312,31 @@ class CapacityPreviewTest(unittest.TestCase):
                 self.assertEqual(reason, preview["reason"])
                 self.assertEqual(maximum >= 16_384, preview["can_lower_prompt_setting"])
 
+    def preview_with_remote_cache(self, document: dict[str, Any]) -> Any:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        cache = root / "Users/r/.claude/remote-settings.json"
+        cache.parent.mkdir(parents=True)
+        cache.write_text(json.dumps(document), encoding="utf-8")
+        return self.preview(environ={"HOME": "/Users/r", "USER": "r"}, root=root)
+
+    def test_a_reader_with_an_org_cache_that_only_enables_channels_still_sees_an_allowance(
+        self,
+    ) -> None:
+        preview = self.preview_with_remote_cache({"channelsEnabled": True})
+        self.assertEqual("estimated", preview["reason"])
+        self.assertGreater(preview["maximum_prompt_bytes"], 0)
+        self.assertEqual("", preview["configuration_reason"])
+
+    def test_a_reader_with_an_org_cache_that_overrides_models_is_refused_as_before(self) -> None:
+        preview = self.preview_with_remote_cache({"modelOverrides": {"claude-sonnet-5-5": "x"}})
+        self.assertEqual(reading.WITHHELD_CONTEXT_DYNAMIC, preview["reason"])
+        self.assertEqual(0, preview["maximum_prompt_bytes"])
+        refusal, spent = reading._STATUS_FAILURES[preview["reason"]]
+        self.assertFalse(spent)
+        self.assertIn("managed policy that can change at launch", reading.WITHHELD[refusal])
+
     def test_tiny_window_admits_small_actual_text_and_refuses_without_bad_setting_advice(
         self,
     ) -> None:
