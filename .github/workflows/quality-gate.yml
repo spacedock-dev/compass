@@ -174,15 +174,26 @@ jobs:
         if: matrix.suite == 'scripts'
         run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
+  # The coverage run in parallel legs, split as runtime-floor splits the suites. In one job it was the
+  # longest in every gate run on 2026-11-06 (574 s on #803: the dashboard suite 166 s, then the script
+  # suite 367 s). Each leg uploads its data files and `coverage` below combines them and enforces the
+  # threshold once. The job keeps its id, so the aggregator reads one result for every leg.
   test:
-    name: Tests + coverage threshold
+    name: Tests under coverage (${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write # sticky coverage comment (same-repo PRs only)
+    strategy:
+      fail-fast: false # a red leg must not hide the others
+      matrix:
+        suite: [dashboard, scripts]
+        shard: [1, 2, 3]
+        exclude:
+          - suite: dashboard
+            shard: 2
+          - suite: dashboard
+            shard: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -202,18 +213,67 @@ jobs:
       # The default tracer cost 30 to 50 times the plain run on loop-heavy tests:
       # one scrub test took 106s under it and 2s under sysmon, and the two suites
       # took 246s and 410s here (2026-10-28).
-      - name: Run full unittest suite under coverage
+      - name: Dashboard suite under coverage
+        if: matrix.suite == 'dashboard'
         env:
           COVERAGE_CORE: sysmon
-        run: |
-          coverage erase
-          python3 scripts/run_tests.py --coverage --slowest 10 -s compass/skills/compass/tests -t .
-          python3 scripts/run_tests.py --coverage -s scripts/tests -t scripts/tests
-          coverage combine
+        run: python3 scripts/run_tests.py --coverage --slowest 10 -s compass/skills/compass/tests -t .
+      - name: Script suite shard under coverage
+        if: matrix.suite == 'scripts'
+        env:
+          COVERAGE_CORE: sysmon
+        run: python3 scripts/run_tests.py --coverage --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
-      # No `coverage report` here. It reads `fail_under` from pyproject and
-      # exits non-zero, and it ran BEFORE the label check below, so a PR
-      # carrying `coverage-exception` failed at this line and never reached the
+      # The data files record absolute source paths, which match in `coverage` because every
+      # ubuntu-latest checkout lands at the same workspace path.
+      - name: Upload this leg's coverage data
+        # actions/upload-artifact@v7 — pinned to immutable SHA.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-data-${{ matrix.suite }}-${{ matrix.shard }}
+          path: .coverage.*
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  coverage:
+    name: Tests + coverage threshold
+    needs: [changes, test]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # sticky coverage comment (same-repo PRs only)
+    steps:
+      # `coverage report` reads the source files, so the tree is checked out where the legs had it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install toolchain
+        run: python3 -m pip install -r requirements-dev.txt
+      - name: Fetch every leg's coverage data
+        # actions/download-artifact@v8.0.1, the same pin as release.yml.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: coverage-data-*
+          path: coverage-data
+          merge-multiple: true
+      - name: Combine the legs
+        run: |
+          set -euo pipefail
+          ls -a coverage-data
+          coverage combine coverage-data
+
+      # No `coverage report` before this. It reads `fail_under` from pyproject and
+      # exits non-zero, and when it ran BEFORE the label check below, a PR
+      # carrying `coverage-exception` failed there and never reached the
       # bypass. The threshold is enforced once, in the exception-aware step.
       #
       # The threshold lives in pyproject.toml ([tool.coverage.report]
@@ -235,7 +295,10 @@ jobs:
           fi
 
       - name: Coverage report and threshold
+        env:
+          EXCEPTION: ${{ steps.exception.outputs.has_exception || '0' }}
         run: |
+          set -euo pipefail
           coverage json -o coverage.json
           {
             echo "## Coverage"
@@ -243,11 +306,11 @@ jobs:
             coverage report --fail-under=0
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.exception.outputs.has_exception || '0' }}" != "0" ]; then
+          if [ "$EXCEPTION" != "0" ]; then
             echo "Threshold skipped (coverage-exception label)."
             coverage report --fail-under=0 > coverage-report.txt
           else
-            coverage report > coverage-report.txt
+            coverage report > coverage-report.txt || { cat coverage-report.txt; exit 1; }
           fi
           cat coverage-report.txt
 
@@ -664,9 +727,54 @@ jobs:
       - name: Build offline component stories
         timeout-minutes: 3
         run: pnpm build:storybook
-      - name: Install pinned Chromium and its host dependencies
+      # `--with-deps` timed out at 5 minutes on 2 of about 8 runs (2026-11-06). Both spent the whole step
+      # fetching nine font packages (21.9 MB) from the Ubuntu mirror at tens of KB/s; the browser itself
+      # downloaded in about 6 s, and every library Chromium needs was already on the image. So the browser
+      # is cached on its pinned version, and the host packages install apart, bounded and retried once.
+      - name: Read the pinned Playwright version from the lockfile
+        id: playwright
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n -E 's/^  playwright@([0-9][^:(]*):$/\1/p' pnpm-lock.yaml | sort -u)
+          if [ "$(printf '%s' "$VERSION" | grep -c .)" != "1" ]; then
+            echo "::error::Expected one pinned playwright version in pnpm-lock.yaml, found: '$VERSION'"
+            exit 1
+          fi
+          # The runner's own variable: the expression `env` context does not carry it.
+          printf 'version=%s\nimage=%s\n' "$VERSION" "${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+      # ImageOS keeps a distribution's packages from being offered to the next one. A stale package costs
+      # only a download: apt reuses a file only when its name and hash are the ones it asks for.
+      - name: Restore the pinned Chromium and its host packages
+        # actions/cache@v6.1.0 — pinned to immutable SHA. Saves only after a successful job.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright-apt/*.deb
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
+      - name: Install pinned Chromium
+        timeout-minutes: 3
+        run: pnpm exec playwright install chromium
+      # 120 s is about eight times a healthy install (14 s), and two attempts fit the step's limit. apt
+      # keeps its downloads in the cached directory, so a retry resumes and a warm run fetches nothing.
+      - name: Install Chromium's host packages, retried once
         timeout-minutes: 5
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          set -uo pipefail
+          ARCHIVES="$HOME/.cache/playwright-apt"
+          mkdir -p "$ARCHIVES/partial"
+          printf 'Dir::Cache::Archives "%s/";\n' "$ARCHIVES" \
+            | sudo tee /etc/apt/apt.conf.d/90-playwright-archives > /dev/null
+          for attempt in 1 2; do
+            if timeout --kill-after=10 120 pnpm exec playwright install-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Chromium's host packages did not install in 120 s (attempt $attempt of 2)."
+            sudo dpkg --configure -a
+          done
+          echo "::error::Chromium's host packages did not install after two bounded attempts."
+          exit 1
       - name: Component assertions and offline runtime proof
         timeout-minutes: 5
         run: pnpm test:stories
@@ -746,6 +854,7 @@ jobs:
       - typecheck
       - runtime-floor
       - test
+      - coverage
       - platform-tests
       - platform-tests-current
       - frontend
@@ -769,6 +878,7 @@ jobs:
           R_TYPECHECK: ${{ needs.typecheck.result }}
           R_FLOOR: ${{ needs.runtime-floor.result }}
           R_TEST: ${{ needs.test.result }}
+          R_COVERAGE: ${{ needs.coverage.result }}
           R_PLATFORM: ${{ needs.platform-tests.result }}
           R_PLATFORM_CURRENT: ${{ needs.platform-tests-current.result }}
           R_FRONTEND: ${{ needs.frontend.result }}
@@ -793,7 +903,7 @@ jobs:
           # failed upstream and GitHub cascaded it, which is a failure, not a pass.
           for row in "lint:$LINT:$R_LINT" "typecheck:$PYTHON:$R_TYPECHECK" \
                      "runtime-floor:$SUITES:$R_FLOOR" "test:$PYTHON:$R_TEST" \
-                     "platform-tests:$PYTHON:$R_PLATFORM" \
+                     "coverage:$PYTHON:$R_COVERAGE" "platform-tests:$PYTHON:$R_PLATFORM" \
                      "platform-tests-current:$PYTHON:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \

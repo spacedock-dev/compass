@@ -104,6 +104,7 @@ LANE_OF = {
     "R_TYPECHECK": "PYTHON",
     "R_FLOOR": "SUITES",
     "R_TEST": "PYTHON",
+    "R_COVERAGE": "PYTHON",
     "R_PLATFORM": "PYTHON",
     "R_PLATFORM_CURRENT": "PYTHON",
     "R_FRONTEND": "FRONTEND",
@@ -248,6 +249,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
             ("lint", "lint"),
             ("typecheck", "python"),
             ("test", "python"),
+            ("coverage", "python"),
             ("platform-tests", "python"),
             ("platform-tests-current", "python"),
             ("runtime-floor", "python_suites"),
@@ -266,6 +268,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "typecheck",
                 "runtime-floor",
                 "test",
+                "coverage",
                 "platform-tests",
                 "platform-tests-current",
                 "frontend",
@@ -278,6 +281,8 @@ class FrontendWiringControlsTest(unittest.TestCase):
         )
         self.assertNotIn("frontend-coverage-comment", aggregate["needs"], "the comment never gates")
         env = aggregate["steps"][0]["env"]
+        self.assertEqual("${{ needs.test.result }}", env["R_TEST"])
+        self.assertEqual("${{ needs.coverage.result }}", env["R_COVERAGE"])
         self.assertEqual("${{ needs.frontend.result }}", env["R_FRONTEND"])
         self.assertEqual("${{ needs.frontend-coverage.result }}", env["R_FRONTEND_COVERAGE"])
         self.assertEqual("${{ needs.frontend-production.result }}", env["R_FRONTEND_PRODUCTION"])
@@ -490,18 +495,141 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertEqual("Storybook (ubuntu-latest)", job["name"])
         self.assertEqual("ubuntu-latest", job["runs-on"])
         self.assertLessEqual(job["timeout-minutes"], 15)
-        commands = [step.get("run") for step in job["steps"]]
+        commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
-            "pnpm exec playwright install --with-deps chromium",
+            "pnpm-lock.yaml",  # the pinned Playwright version, read for the cache key
+            "pnpm exec playwright install chromium",
+            "pnpm exec playwright install-deps chromium",
             "pnpm test:stories",
         ]
-        self.assertEqual(ordered, [command for command in commands if command])
+        self.assertEqual(len(ordered), len(commands), commands)
+        for fragment, command in zip(ordered, commands, strict=True):
+            self.assertIn(fragment, command)
+        self.assertNotIn("--with-deps", json.dumps(job), "the host packages install on their own")
         for step in job["steps"]:
             if "run" in step:
                 self.assertGreater(step.get("timeout-minutes", 0), 0)
                 self.assertNotIn("if", step)
+
+
+@unittest.skipUnless(detector.BASH, "the shipped steps use Bash")
+class StorybookChromiumInstallTest(unittest.TestCase):
+    """The pinned Chromium comes from a cache keyed on the lockfile's Playwright version, and the host
+    packages install with a bound and one retry.
+
+    Measured on the two timed-out runs (2026-11-06): the browser download took about 6 s on each, and
+    the step spent its whole 5 minutes fetching nine font packages (21.9 MB) from the Ubuntu mirror at
+    tens of KB/s. Every other library Chromium needs was already on the runner image.
+    """
+
+    @staticmethod
+    def steps() -> list[dict[str, Any]]:
+        return cast("list[dict[str, Any]]", jobs()["storybook"]["steps"])
+
+    def step_running(self, fragment: str) -> dict[str, Any]:
+        matches = [step for step in self.steps() if fragment in step.get("run", "")]
+        self.assertEqual(1, len(matches), fragment)
+        return matches[0]
+
+    def run_step(
+        self, step: dict[str, Any], cwd: Path, env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [detector.BASH or "bash", "-c", step["run"]],
+            cwd=cwd,
+            env={**os.environ, **env},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+
+    def read_version(self, cwd: Path) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
+        step = next(step for step in self.steps() if step.get("id") == "playwright")
+        with tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
+            output = Path(tmp) / "output"
+            output.touch()
+            result = self.run_step(step, cwd, {"GITHUB_OUTPUT": str(output)})
+            found = dict(line.split("=", 1) for line in output.read_text().split())
+        return result, found
+
+    def test_the_cache_key_is_the_playwright_version_the_lockfile_pins(self) -> None:
+        result, found = self.read_version(ROOT)
+        self.assertEqual(0, result.returncode, result.stderr)
+        pinned = json.loads((ROOT / "package.json").read_text())["devDependencies"]["playwright"]
+        self.assertEqual(pinned, found["version"])
+        steps = self.steps()
+        cache = next(step for step in steps if step.get("uses", "").startswith("actions/cache@"))
+        self.assertRegex(cache["uses"], r"@[0-9a-f]{40}$")
+        self.assertIn("${{ steps.playwright.outputs.version }}", cache["with"]["key"])
+        self.assertIn("~/.cache/ms-playwright", cache["with"]["path"])
+        self.assertNotIn(
+            "restore-keys", cache["with"], "another version's browser is never restored"
+        )
+        browser = self.step_running("pnpm exec playwright install chromium")
+        self.assertLess(steps.index(cache), steps.index(browser))
+        self.assertLess(
+            steps.index(self.step_running("install-deps")),
+            steps.index(self.step_running("pnpm test:stories")),
+        )
+
+    def test_a_lockfile_without_exactly_one_playwright_version_stops_the_job(self) -> None:
+        entry = "  playwright@{}:\n    resolution: {{integrity: sha512-x}}\n"
+        for body in ("lockfileVersion: '9.0'\n", entry.format("1.1.0") + entry.format("1.2.0")):
+            with self.subTest(body=body), tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
+                (Path(tmp) / "pnpm-lock.yaml").write_text(body)
+                result, found = self.read_version(Path(tmp))
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotIn("version", found, "no cache key may be written")
+
+    def install_deps(self, failures: int) -> tuple[int, list[str]]:
+        """Run the shipped host-package step with `pnpm` failing its first `failures` calls."""
+        step = self.step_running("install-deps")
+        with tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            calls = Path(tmp) / "calls"
+            fakes = {
+                # Root is not available here: the fake swallows what the step pipes to it.
+                "sudo": "#!/bin/sh\ncat > /dev/null\n",
+                # Records the bound it was given, then runs the command without one.
+                "timeout": (
+                    '#!/bin/sh\nwhile [ "${1#-}" != "$1" ]; do shift; done\n'
+                    f'echo "bound $1" >> "{calls}"\nshift\nexec "$@"\n'
+                ),
+                "pnpm": (
+                    f'#!/bin/sh\necho "pnpm $*" >> "{calls}"\n'
+                    f'[ "$(grep -c "^pnpm" "{calls}")" -gt {failures} ]\n'
+                ),
+            }
+            for name, body in fakes.items():
+                (bin_dir / name).write_text(body)
+                (bin_dir / name).chmod(0o755)
+            result = self.run_step(
+                step,
+                Path(tmp),
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": tmp},
+            )
+            return result.returncode, calls.read_text().splitlines()
+
+    def test_the_host_packages_get_one_bounded_retry_and_no_more(self) -> None:
+        limit = self.step_running("install-deps")["timeout-minutes"] * 60
+        for failures, ok in ((0, True), (1, True), (2, False), (5, False)):
+            with self.subTest(failures=failures):
+                code, calls = self.install_deps(failures)
+                self.assertEqual(ok, code == 0, calls)
+                attempts = [line for line in calls if line.startswith("pnpm")]
+                self.assertEqual(min(failures + 1, 2), len(attempts), calls)
+                self.assertTrue(
+                    all(line == "pnpm exec playwright install-deps chromium" for line in attempts)
+                )
+                bounds = [int(line.split()[1]) for line in calls if line.startswith("bound")]
+                self.assertEqual(len(attempts), len(bounds), "every attempt is bounded")
+                # Both attempts fit inside the step's own limit, so the retry can actually run.
+                self.assertLess(2 * max(bounds), limit)
 
     def test_no_frontend_job_can_fail_open(self) -> None:
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`

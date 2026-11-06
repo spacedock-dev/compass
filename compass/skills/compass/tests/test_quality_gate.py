@@ -186,3 +186,109 @@ class QualityGateDetectorTest(unittest.TestCase):
             },
             found,
         )
+
+
+def gate_jobs() -> dict[str, Any]:
+    return dict(yaml.safe_load((ROOT / ".github/workflows/quality-gate.yml").read_text())["jobs"])
+
+
+class CoverageShardsTest(unittest.TestCase):
+    """The coverage run is split into parallel legs and its threshold is enforced once, after them.
+
+    In one job it was the longest in every gate run on 2026-11-06: 574 s on #803, the dashboard
+    suite 166 s and the script suite 367 s of it, serially.
+    """
+
+    def leg_steps(self) -> dict[str, dict[str, Any]]:
+        return {step["name"]: step for step in gate_jobs()["test"]["steps"] if "name" in step}
+
+    def test_the_legs_split_the_suites_as_the_runtime_floor_does(self) -> None:
+        legs, floor = gate_jobs()["test"], gate_jobs()["runtime-floor"]
+        self.assertEqual(floor["strategy"]["matrix"], legs["strategy"]["matrix"])
+        self.assertFalse(legs["strategy"]["fail-fast"], "a red leg must not hide the others")
+        steps = self.leg_steps()
+        dashboard = steps["Dashboard suite under coverage"]
+        scripts = steps["Script suite shard under coverage"]
+        self.assertEqual("matrix.suite == 'dashboard'", dashboard["if"])
+        self.assertEqual("matrix.suite == 'scripts'", scripts["if"])
+        for step in (dashboard, scripts):
+            self.assertIn("python3 scripts/run_tests.py --coverage", step["run"])
+            self.assertEqual("sysmon", step["env"]["COVERAGE_CORE"])
+            self.assertNotIn("coverage report", step["run"], "the threshold is enforced once")
+        self.assertIn("-s compass/skills/compass/tests -t .", dashboard["run"])
+        self.assertNotIn("--shard", dashboard["run"])
+        self.assertIn("-s scripts/tests -t scripts/tests", scripts["run"])
+        self.assertIn("--shard ${{ matrix.shard }}/3", scripts["run"])
+        # The shard count in the command is the count in the matrix, or a shard would never run.
+        shards = len(legs["strategy"]["matrix"]["shard"])
+        self.assertEqual(shards, int(scripts["run"].split("}}/")[1].split()[0]))
+        python = next(s for s in legs["steps"] if "setup-python" in s.get("uses", ""))
+        self.assertEqual("3.14", python["with"]["python-version"], "sysmon needs 3.14")
+        self.assertNotIn("permissions", legs, "the legs run tests with the read-only token")
+
+    def test_each_leg_uploads_its_own_coverage_data(self) -> None:
+        upload = next(
+            s for s in gate_jobs()["test"]["steps"] if "upload-artifact" in s.get("uses", "")
+        )
+        release = (ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn(upload["uses"], release, "the same pinned SHA release.yml uses")
+        options = upload["with"]
+        self.assertEqual("coverage-data-${{ matrix.suite }}-${{ matrix.shard }}", options["name"])
+        self.assertEqual(".coverage.*", options["path"])
+        self.assertTrue(options["include-hidden-files"], "the data files are dot files")
+        self.assertEqual("error", options["if-no-files-found"], "a leg that measured nothing")
+        self.assertTrue(options["overwrite"], "a re-run leg replaces its own data")
+
+    def test_one_job_combines_the_legs_and_enforces_the_threshold(self) -> None:
+        job = gate_jobs()["coverage"]
+        self.assertEqual("Tests + coverage threshold", job["name"])
+        self.assertEqual(["changes", "test"], job["needs"])
+        self.assertEqual("needs.changes.outputs.python == 'true'", job["if"])
+        self.assertEqual({"contents": "read", "pull-requests": "write"}, job["permissions"])
+        steps = job["steps"]
+        download = next(s for s in steps if "download-artifact" in s.get("uses", ""))
+        self.assertRegex(download["uses"], r"@[0-9a-f]{40}$")
+        self.assertEqual("coverage-data-*", download["with"]["pattern"])
+        self.assertTrue(download["with"]["merge-multiple"])
+        combine = next(s for s in steps if "coverage combine" in s.get("run", ""))
+        self.assertIn(download["with"]["path"], combine["run"])
+        label = next(s for s in steps if s.get("id") == "exception")
+        report = next(s for s in steps if "coverage report" in s.get("run", ""))
+        order = [steps.index(s) for s in (download, combine, label, report)]
+        self.assertEqual(sorted(order), order)
+        self.assertEqual(
+            "${{ steps.exception.outputs.has_exception || '0' }}", report["env"]["EXCEPTION"]
+        )
+
+    @unittest.skipUnless(BASH, "the shipped step uses Bash")
+    def test_the_threshold_blocks_unless_the_label_is_present(self) -> None:
+        report = next(
+            s for s in gate_jobs()["coverage"]["steps"] if "coverage report" in s.get("run", "")
+        )
+        with tempfile.TemporaryDirectory(prefix="bld-hyg-cov-") as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            # Below the threshold: a plain `coverage report` fails, as fail_under makes it.
+            fake = bin_dir / "coverage"
+            fake.write_text(
+                '#!/bin/sh\ncase "$*" in\n  "report --fail-under=0") echo TOTAL 1% ;;\n'
+                "  report) echo TOTAL 1%; exit 2 ;;\nesac\n"
+            )
+            fake.chmod(0o755)
+            for exception, blocked in (("0", True), ("1", False)):
+                with self.subTest(exception=exception):
+                    result = subprocess.run(
+                        [BASH or "bash", "-c", report["run"]],
+                        cwd=tmp,
+                        env={
+                            **os.environ,
+                            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                            "EXCEPTION": exception,
+                            "GITHUB_STEP_SUMMARY": str(Path(tmp) / "summary"),
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=30,
+                    )
+                    self.assertEqual(blocked, result.returncode != 0, result.stdout)
