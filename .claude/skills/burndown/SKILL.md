@@ -100,8 +100,9 @@ receipts and live background work. Stop before an operation whose required capab
 Execution needs TDD, `sync-docs`, `visual-review-and-fix`, DCO commits and the canonical
 **AGENTS.md, “Pre-PR Checks”** suite. Stacked delivery needs `gh-stack` v0.3.0 or later, the same
 version across worktrees. Missing browser automation degrades the walks: report which did not run.
-Design access is required only for issues carrying a design reference. Linear-only prerequisites
-live in its adapter; GitHub planning must not depend on them.
+The real-session check needs a logged-in `claude` on PATH; without one, say so in the pull request
+rather than skipping it silently. Design access is required only for issues carrying a design
+reference. Linear-only prerequisites live in its adapter; GitHub planning must not depend on them.
 
 The trunk is `main`. Code issues finish only when their change reaches `origin/main`; research
 and Verification issues may finish on their verified findings/verdict. Use native stack merges
