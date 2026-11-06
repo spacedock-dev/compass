@@ -1112,6 +1112,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.records",
         },
+        # The page's derivation of a reading's shape, ported for the terminal: the closed vocabularies
+        # and the stored reading's validators are spelt where the reading and the CI read own them.
+        "compass_runtime.drift_view": {
+            "compass_runtime.ci_read",
+            "compass_runtime.reading",
+            "compass_runtime.records",
+        },
         # The turns a typed Compass command opened, read from the transcript itself, as
         # `copied_corrections` reads it, so the frozen collector modules are not edited.
         "compass_runtime.compass_turns": {
