@@ -18,8 +18,17 @@ name: Release
 #                    The only job that installs frontend dependencies and runs them.
 #                    Rebuilds the React bundle from exactly the target and compares it
 #                    with the tracked artifact, lints, type-checks, tests, and runs the
-#                    Python-only installed proof. No release job restores or saves a cache,
-#                    so nothing another run wrote reaches it.
+#                    Python-only installed proof. Its pnpm/setup (v3.0.0) restores one cache
+#                    entry whatever `cache` says, with actions/cache and so with its `tar -P`
+#                    extraction: `lockfile-verified.jsonl`, where pnpm records which lockfile
+#                    passed its supply-chain policies, so a restored record lets pnpm skip
+#                    re-checking them. Its key is exact,
+#                    `pnpm-lockfile-verified-<os>-<arch>-<hash of pnpm-lock.yaml>`, and the
+#                    gate's frontend jobs on main use it too. When none was found, the post
+#                    step saves the one this job wrote, after the job's dependency code ran.
+#                    The lockfile's integrity hashes still pin package contents: a known
+#                    exposure, not an inert file. The pnpm store, Node, pip and Chromium are
+#                    not cached, and no other job here restores or saves a cache.
 #   verify-tree      the same (no credentials). The repository validation suite on the
 #                    target; it starts `node` whenever `node` is on PATH, so it cannot
 #                    share a job with the deploy key.
@@ -97,7 +106,8 @@ name: Release
 #     exists in one other job, `marketplace`, and the tap key in `homebrew`; each has
 #     `contents: read` and cannot touch this repository. Every job that runs dependency code has `contents: read` and a
 #     checkout with persist-credentials: false; tests pin that boundary
-#     (compass/skills/compass/tests/test_release_workflow.py).
+#     (compass/skills/compass/tests/test_release_workflow.py). The one third-party package
+#     `release` runs, PyYAML, is installed wheels-only and by hash from requirements-release.txt.
 #   - Tag names reach shell only through env: and are validated against a strict
 #     regex by release_transition.py before any use.
 #   - Every action is pinned to an immutable SHA; toolchain pins match quality-gate.yml.
@@ -211,9 +221,9 @@ jobs:
       # for word, so test_release_workflow.CiLimitsTest holds the limits equal. No host packages are
       # installed, as in the gate (owner ruling, 2026-11-06): every library Chromium needs is on the
       # image, and `install-deps` only added nine font packages that took about 10 minutes from the
-      # Ubuntu mirror. Nothing here restores a cache: a restored entry's files run as they are, and
-      # actions/cache extracts with `tar -P`, so an entry another run wrote could also put files anywhere
-      # the runner user can.
+      # Ubuntu mirror. The browser is not restored from a cache: a restored entry's files run as they are,
+      # and actions/cache extracts with `tar -P`, so an entry another run wrote could also put files
+      # anywhere the runner user can.
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
@@ -445,13 +455,15 @@ jobs:
       - name: Install release validation dependencies
         # An isolated environment called by explicit path, never put on PATH: a console
         # script in it must not shadow `git` or `gh` beside the key. Wheels only, so
-        # installing runs no build script. The archive proof runs under `-I`, which
-        # drops the user site, so the YAML dependency lives in this interpreter.
+        # installing runs no build script, and by hash, so a file added to a pinned release
+        # after the pin was made is refused (requirements-release.txt says how the hashes are
+        # made). The archive proof runs under `-I`, which drops the user site, so the YAML
+        # dependency lives in this interpreter.
         # The standalone public-note gate also runs on resume and imports YAML.
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/release-venv"
-          "$RUNNER_TEMP/release-venv/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: --requirement requirements-validation.txt
+          "$RUNNER_TEMP/release-venv/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --requirement requirements-release.txt
 
       - name: Prepare and validate the public release notes
         env:

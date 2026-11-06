@@ -15,6 +15,11 @@ on:
   # A merge queue entry: this is a required check, so it must report there too.
   merge_group:
 
+# Read-only, like every other workflow here. Without this the job got the repository's default
+# token, which can be write, beside the third-party code it installs and runs.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -45,7 +50,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install validation dependencies
-        run: python3 -m pip install -r requirements-validation.txt
+        # The release job's own install, on its Python, so a hash that no longer matches the pin
+        # fails here on the pull request that made it rather than at the next release, with the
+        # deploy key already on disk.
+        run: |
+          python3 -m pip install --only-binary=:all: --require-hashes -r requirements-release.txt
       - name: Validate plugin contracts
         run: python3 scripts/validate_plugins.py
       - name: Run validator unit tests

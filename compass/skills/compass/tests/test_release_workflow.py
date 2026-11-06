@@ -20,6 +20,8 @@ from typing import Any, cast
 
 import yaml
 
+from .test_workflow_caches import holds_write_credential
+
 ROOT = Path(__file__).resolve().parents[4]
 RELEASE = ROOT / ".github/workflows/release.yml"
 GATE = ROOT / ".github/workflows/quality-gate.yml"
@@ -190,7 +192,15 @@ class CiLimitsTest(unittest.TestCase):
 
 
 class NoCacheTest(unittest.TestCase):
-    """No release job restores or saves a cache, so nothing another run wrote reaches one.
+    """No release job uses a cache action, and the one entry a setup action restores is named.
+
+    pnpm/setup v3.0.0 restores `lockfile-verified.jsonl` in `verify-frontend` whatever its `cache`
+    input says, through @actions/cache and so the same `tar -P` extraction described below, and with
+    `install: false` its post step saves the log after the job's dependency code ran (its
+    src/lockfile-verification-cache/index.ts). The log records which lockfile passed pnpm's
+    supply-chain policies, so a restored one lets pnpm skip re-checking them: a known exposure,
+    named here so it is not mistaken for an inert file. Nothing else in this workflow restores or
+    saves an entry.
 
     actions/cache extracts an entry with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and
     absolute member names, so an entry writes wherever the runner user can before any later step can
@@ -199,6 +209,19 @@ class NoCacheTest(unittest.TestCase):
     the tag's ref) could have written the tag's own. A check of the restored `*.deb` files sees none of
     that. No host package is installed at all, so there is nothing a cache could have served.
     """
+
+    def test_the_only_restoring_setup_action_is_the_frontend_verifiers_pnpm(self) -> None:
+        for name, job in jobs().items():
+            for step in job["steps"]:
+                action = step.get("uses", "").split("@")[0]
+                with self.subTest(job=name, action=action):
+                    if action == "pnpm/setup":
+                        self.assertEqual("verify-frontend", name)
+                        self.assertIs(False, step["with"]["cache"], "the store is not restored")
+                    elif action == "actions/setup-node":
+                        self.assertIs(False, step["with"]["package-manager-cache"])
+                    elif action.startswith("actions/setup-"):
+                        self.assertNotIn("cache", step.get("with", {}))
 
     def test_no_job_uses_a_cache_action(self) -> None:
         for name, job in jobs().items():
@@ -214,6 +237,186 @@ class NoCacheTest(unittest.TestCase):
         (twin,) = [s for s in gate if "playwright install chromium" in s.get("run", "")]
         self.assertEqual(twin["run"], install["run"])
         self.assertEqual(twin["timeout-minutes"], install["timeout-minutes"])
+
+
+WORKFLOWS = ROOT / ".github/workflows"
+# `pip`, `pip3`, `pip3.12`, `python -m pip` and `uv pip`, with any global options before `install`.
+PIP_INSTALL = re.compile(r"\bpip[0-9.]*(?:\s+-\S+)*\s+install\b")
+# Installers with no `--require-hashes` of their own spelling, so none may run beside a credential.
+OTHER_INSTALLER = re.compile(r"(?<![\w.-])(?:uvx|pipx|uv\s+(?:sync|add|run|tool))(?![\w-])")
+COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
+INLINE_COMMENT = re.compile(r"(?:^|\s)#.*$")
+REQUIREMENT_FILE = re.compile(r"(?:--requirement|-r)[\s=]+(\S+)")
+HASH = re.compile(r"--hash=sha256:[0-9a-f]{64}\b")
+
+
+def privileged(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
+    """Whether a job holds a write token or a secret, such as a deploy key."""
+    # A secret in the workflow's own `env` or `defaults` reaches every job, which the cache check's
+    # job-level reading does not look for.
+    workflow_wide = {"env": workflow.get("env"), "defaults": workflow.get("defaults")}
+    return holds_write_credential(workflow, job) or "secrets." in serialized(workflow_wide)
+
+
+def pip_installs(job: dict[str, Any]) -> list[str]:
+    """Each pip install command on its own, so one command's flags cannot vouch for another's."""
+    found = []
+    for step in job.get("steps", []):
+        joined = code(step.get("run", "")).replace("\\\n", " ")
+        for line in joined.splitlines():
+            commands = COMMAND_SEPARATOR.split(INLINE_COMMENT.sub("", line))
+            found += [command.strip() for command in commands if PIP_INSTALL.search(command)]
+    return found
+
+
+def requirements(path: Path) -> dict[str, str]:
+    """`name==version` pins by normalized name, whatever hashes or markers follow them."""
+    text = path.read_text(encoding="utf-8").replace("\\\n", " ")
+    pins = {}
+    for line in text.splitlines():
+        match = re.match(r"^([A-Za-z0-9_.-]+)==([0-9][0-9A-Za-z.]*)", line.strip())
+        if match:
+            pins[re.sub(r"[-_.]+", "-", match.group(1)).lower()] = match.group(2)
+    return pins
+
+
+class HashPinnedInstallTest(unittest.TestCase):
+    """No pip install beside a write token or a deploy key admits a file by version alone.
+
+    PyPI lets a maintainer add files to an existing release, though never replace one, so a
+    version pin admits a more specific wheel uploaded later with a stolen credential. Pip prefers
+    it, and its code runs beside the credential. `--require-hashes` against a file listing every
+    file the version published when the pin was made admits none that came after.
+    """
+
+    def privileged_installs(self) -> dict[tuple[str, str], list[str]]:
+        found = {}
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            workflow = load(path)
+            for name, job in workflow["jobs"].items():
+                installs = pip_installs(job)
+                if installs and privileged(workflow, job):
+                    found[path.name, name] = installs
+        return found
+
+    def test_every_install_beside_a_write_token_or_key_requires_hashes(self) -> None:
+        found = self.privileged_installs()
+        # The one that must always be found, so a parser that stopped finding it cannot pass
+        # vacuously.
+        self.assertIn(("release.yml", "release"), found)
+        for (workflow, job), lines in found.items():
+            for line in lines:
+                with self.subTest(workflow=workflow, job=job, line=line):
+                    self.assertIn("--require-hashes", line)
+                    self.assertIn("--only-binary=:all:", line)
+                    files = REQUIREMENT_FILE.findall(line)
+                    self.assertTrue(files, "a hash pin lives in a requirements file")
+                    for name in files:
+                        self.assert_hashed(ROOT / name)
+
+    def assert_hashed(self, path: Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        entries = [
+            entry
+            for entry in re.split(r"(?<!\\)\n", text)
+            if entry.strip() and not entry.lstrip().startswith("#")
+        ]
+        self.assertTrue(entries, path.name)
+        for entry in entries:
+            with self.subTest(file=path.name, entry=entry.split()[0]):
+                self.assertRegex(entry.strip(), r"^[A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*[ ;\\]")
+                self.assertTrue(HASH.search(entry), "every requirement carries its hashes")
+                for option in re.findall(r"--[a-z-]+", entry):
+                    self.assertEqual("--hash", option, "no index, link or editable option")
+
+    def test_the_hashed_file_pins_what_its_source_pins(self) -> None:
+        # Generated from requirements-validation.txt (the command is in its header); a bump to the
+        # source that skipped regenerating would test one version and release another. A subset,
+        # not equality: a pin with dependencies brings their hashed pins into the generated file.
+        want = requirements(ROOT / "requirements-validation.txt")
+        got = requirements(ROOT / "requirements-release.txt")
+        self.assertTrue(want)
+        for name, version in want.items():
+            with self.subTest(name=name):
+                self.assertEqual(version, got.get(name))
+
+    def test_a_pull_request_check_installs_the_release_file_as_the_release_does(self) -> None:
+        # Otherwise only a release ever installs requirements-release.txt, and stale hashes would
+        # fail it at that point, after the verifiers and builds, with the deploy key on disk.
+        validate = load(WORKFLOWS / "validate.yml")
+        keys = cast("dict[Any, Any]", validate)
+        triggers = keys["on"] if "on" in keys else keys[True]  # YAML 1.1 reads a bare `on` as true
+        self.assertNotIn("paths", triggers["pull_request"] or {}, "it runs on every PR")
+        (line,) = [
+            command
+            for command in pip_installs(validate["jobs"]["validate"])
+            if "requirements-release.txt" in command
+        ]
+        self.assertIn("--require-hashes", line)
+        self.assertIn("--only-binary=:all:", line)
+        (step,) = [
+            s for s in validate["jobs"]["validate"]["steps"] if "setup-python" in s.get("uses", "")
+        ]
+        # The release job's interpreter: ubuntu-24.04's system Python.
+        self.assertEqual("3.12", step["with"]["python-version"])
+
+    def test_no_other_installer_runs_beside_a_write_token_or_key(self) -> None:
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            workflow = load(path)
+            for name, job in workflow["jobs"].items():
+                if not privileged(workflow, job):
+                    continue
+                for step in job.get("steps", []):
+                    with self.subTest(workflow=path.name, job=name, step=step.get("name")):
+                        self.assertIsNone(OTHER_INSTALLER.search(code(step.get("run", ""))))
+
+    def test_a_job_with_a_write_permission_or_a_secret_is_privileged(self) -> None:
+        read: dict[str, Any] = {"permissions": {"contents": "read"}}
+        self.assertFalse(privileged(read, {"steps": []}))
+        self.assertFalse(privileged({"permissions": "read-all"}, {"steps": []}))
+        self.assertTrue(privileged(read, {"permissions": {"pull-requests": "write"}}))
+        self.assertTrue(privileged(read, {"steps": [{"with": {"key": "${{ secrets.KEY }}"}}]}))
+        self.assertTrue(privileged({}, {"steps": []}), "the default token can be write")
+        self.assertTrue(privileged({"permissions": "write-all"}, {"steps": []}))
+        # A secret set for the whole workflow reaches every job in it.
+        self.assertTrue(privileged({**read, "env": {"T": "${{ secrets.X }}"}}, {"steps": []}))
+        self.assertTrue(
+            privileged(read, {"uses": "./.github/workflows/x.yml", "secrets": "inherit"})
+        )
+
+    def test_every_pip_install_is_found_and_judged_alone(self) -> None:
+        def found(run: str) -> list[str]:
+            return pip_installs({"steps": [{"run": run}]})
+
+        run = "# pip install x\npython -m pip install \\\n  --require-hashes -r a.txt"
+        (line,) = found(run)
+        self.assertIn("--require-hashes -r a.txt", line, "a continued line is one command")
+        for spelling in (
+            "pip install x",
+            "pip3 install x",
+            "pip3.12 install x",
+            "python -m pip install x",
+            "python -m pip --disable-pip-version-check install x",
+            "python -m pip -q install x",
+            "uv pip install x",
+        ):
+            with self.subTest(spelling=spelling):
+                self.assertEqual([spelling], found(spelling))
+        hashed = "pip install --only-binary=:all: --require-hashes -r requirements-release.txt"
+        for chained in ("&&", "||", ";", "|"):
+            with self.subTest(chained=chained):
+                self.assertEqual(
+                    [hashed, "pip install x"], found(f"{hashed} {chained} pip install x")
+                )
+        # A comment cannot vouch for the command it follows.
+        self.assertEqual(["pip install x"], found("pip install x  # --require-hashes -r a.txt"))
+        for other in ("uv sync", "uv add x", "uv run --with x y", "uv tool install x", "uvx x"):
+            with self.subTest(other=other):
+                self.assertIsNotNone(OTHER_INSTALLER.search(other))
+        for fine in ("uv pip compile a.txt", "echo uvicorn", "python -m venv v"):
+            with self.subTest(fine=fine):
+                self.assertIsNone(OTHER_INSTALLER.search(fine))
+        self.assertIsNotNone(OTHER_INSTALLER.search("pipx run x"))
 
 
 class CredentialBoundaryTest(unittest.TestCase):
@@ -557,7 +760,8 @@ class KeyJobWiringTest(unittest.TestCase):
         self.assertEqual(1, len(installs))
         line = next(part for part in installs[0].splitlines() if "pip install" in part)
         self.assertIn("--only-binary=:all:", line)
-        self.assertIn("--requirement requirements-validation.txt", line)
+        self.assertIn("--require-hashes", line)
+        self.assertIn("--requirement requirements-release.txt", line)
         for forbidden in ("--index-url", "--extra-index-url", "--find-links", "--user", "-i "):
             self.assertNotIn(forbidden, line)
         self.assertIn('"$RUNNER_TEMP/release-venv/bin/python" -m pip', line)
