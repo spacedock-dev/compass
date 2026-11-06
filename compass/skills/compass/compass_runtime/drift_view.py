@@ -1857,6 +1857,10 @@ def derive(session: dict[str, Json], payload: dict[str, Json], context: Json) ->
         "analysis": analysis,
         "estimate": estimate,
         "pill": pill,
+        # The page prefixes the answer with "So far:" on the reading's own scope, whether or not
+        # a level pill is drawn (a not_enough reading draws none), so it is published beside the
+        # pill, not inside it.
+        "so_far": parts.shape is not None and parts.shape.scope == "mid-flight",
         "stale": stale,
     }
 

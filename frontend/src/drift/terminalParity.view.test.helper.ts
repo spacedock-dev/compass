@@ -133,6 +133,8 @@ export function pageView(item: DriftCase): unknown {
           so_far: model.pillSoFar,
         }
       : null,
+    /* ReadingResult prefixes "So far:" on the shape's own scope, independent of any level pill. */
+    so_far: shape?.scope === 'mid-flight',
     stale: stale ? { kind: stale.kind, before: stale.before } : null,
     harness: model.harness,
     sid: String(session['sid']),

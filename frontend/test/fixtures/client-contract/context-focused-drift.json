@@ -397,6 +397,7 @@
               "reading": true,
               "revision": 1,
               "sid": "a1b2c3d4",
+              "so_far": false,
               "stale": null,
               "unsettled": true,
               "unsettled_count": 2,
@@ -498,7 +499,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8701",
+      "Content-Length": "8716",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

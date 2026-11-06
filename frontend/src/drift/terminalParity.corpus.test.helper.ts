@@ -917,6 +917,14 @@ function levelCases(): DriftCase[] {
       analysis: ANALYSIS(),
     }),
     build('a-finished-reading-of-a-finished-turn-does-not', ['L12'], { analysis: ANALYSIS() }),
+    build('a-mid-flight-reading-with-no-drawn-level-still-reads-so-far', ['L12'], {
+      reading: { scope: 'mid-flight' },
+      analysis: ANALYSIS({ level: 'not_enough' }),
+    }),
+    build('a-finished-session-reading-is-not-so-far', ['L12'], {
+      session: { state: 'idle', ended_at: 250 },
+      analysis: ANALYSIS(),
+    }),
     build('a-reading-is-stale-when-the-words-changed', ['W3'], {
       annotation: { revision: 4 },
       analysis: ANALYSIS(),
