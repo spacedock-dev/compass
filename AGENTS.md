@@ -203,9 +203,34 @@ git commit -s -m "feat(skill): add new capability to compass"
 
 ## Pre-PR Checks
 
-**This block is the canonical pre-PR suite.** Every other document points here rather than keeping
-its own copy — divergent copies are how the gate drifts. Run it locally before opening any PR; do
-not rely on CI to surface failures:
+**Run `python3 scripts/pre_pr.py` before opening any PR**; do not rely on CI to surface failures.
+It asks `scripts/ci_scope.py` which lanes the diff against the merge base with `origin/main` touches,
+uncommitted and untracked files included, and runs those lanes' commands from the list below:
+
+- Always: ruff, `ruff format --check`, mypy, `validate_plugins.py`, the two version checks (the
+  version diff against the working tree, so an uncommitted bump counts), and the dashboard suite.
+  With no Python suite lane on it also runs the validator and bump-version tests: that is what
+  `validate.yml` runs on such a pull request, as the backstop described below.
+- The pip install when `requirements-validation.txt` or `requirements-dev.txt` changed.
+- The scripts suite through `scripts/run_tests.py` when a Python suite lane is on. Both suites run
+  **without coverage**. CI enforces the threshold; `--coverage` adds the coverage runs, here and
+  for Vitest.
+- The pnpm steps when the frontend lane is on, the Vitest files `ci_scope.py` names in
+  `frontend_docs_tests` when it names any, and the `frontend-contract` job's commands when the
+  runtime changed.
+- Nothing for the macOS legs, the direct-launch smoke or `pnpm build:preview`, which CI runs. It
+  says so.
+
+It prints every command it skips and why, and the lanes CI will run. `--dry-run` prints that plan
+and runs nothing; `-j N` caps each suite's workers; `--base REF` diffs against another ref. A lane
+it does not know, from a newer `ci_scope.py`, runs the whole list. A run holds a lock in the git
+common directory, so a second worktree's run waits instead of contending (see
+[Parallel Work](#parallel-work)).
+
+**The block below is the canonical pre-PR suite**, and `python3 scripts/pre_pr.py --all` runs all of
+it in order. Every other document points here rather than keeping its own copy — divergent copies
+are how the gate drifts. `scripts/tests/test_pre_pr.py` parses this block and fails when it and
+`--all` differ, so a command added here needs its row in `pre_pr.py` too:
 
 **One documented short path.** If the diff touches *only* prose — `HOW_TO_USE.md`, `AGENTS.md`,
 `CLAUDE.md`, `CONTRIBUTING.md`, `COMPATIBILITY.md`, `CODE_OF_CONDUCT.md`,
@@ -213,7 +238,7 @@ not rely on CI to surface failures:
 then the measurable quality-gate jobs skip. CI applies the same rule (see Quality Gate), so
 the two agree by construction rather than by memory. Skipping those jobs is all the short path
 buys: **run the suite locally anyway**, because `validate.yml` is unfiltered by design and runs the
-same `unittest discover` on every PR. `validate_plugins.py` is not what catches a prose edit that
+same `unittest discover` on every PR. `scripts/pre_pr.py` does, for that reason. `validate_plugins.py` is not what catches a prose edit that
 breaks an assertion — measured, one stranded row in `docs/captures/README.md`, which the detector
 then called prose, left the validator at exit 0 and turned that suite red. **`SKILL.md` is not prose
 for this purpose**: `tests/test_documentation.py` asserts its `~/...` paths against
@@ -344,7 +369,8 @@ Run the full suite **once**, and confirm any failure in those modules by running
 before believing it. Report both results rather than the convenient one. A load average above about
 10 makes this near-certain. `scripts/run_tests.py` starts one worker per core by default, so a second
 worktree's suite running beside it oversubscribes the machine at once: give each `-j` a share of the
-cores rather than both the default.
+cores rather than both the default. `scripts/pre_pr.py` queues its runs behind one lock in the git
+common directory, so two worktrees' pre-PR runs never overlap; a suite started by hand takes no lock.
 
 **Build only the phase a test is exercising.** The study-guard tests added on 2026-10-06 took
 Windows script tests from 97 seconds to 1,007 seconds. Rebuilding a 190-call predecessor ledger
