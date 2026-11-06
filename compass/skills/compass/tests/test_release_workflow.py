@@ -8,8 +8,10 @@ or a package script shares a job with the key.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -172,22 +174,198 @@ class CiLimitsTest(unittest.TestCase):
         self.assertEqual(1, len(suite))
         self.assertEqual(max(ci["pnpm test"]), suite[0]["timeout-minutes"])
 
-    def test_the_chromium_install_is_split_in_ci_and_whole_here(self) -> None:
-        """The one browser step the two workflows no longer share, named so the pairing is not lost silently.
+    def test_the_chromium_install_runs_the_gates_split_steps_held_to_its_limits(self) -> None:
+        """The release installs the browser and its host packages as the Storybook job does.
 
-        The gate's Storybook job installs the cached browser and the host packages as two steps, the second
-        bounded and retried once, because `--with-deps` timed out on the Ubuntu mirror's font downloads. The
-        release keeps the single command, so the limit test above no longer pairs it with anything.
+        `--with-deps` timed out on the Ubuntu mirror's font downloads in the gate, and the release ran
+        the same single step with the same 5 minutes. Each split step must have a twin in CI, so the
+        limit test above holds them equal.
         """
         ci = self.ci_limits()
-        whole = "pnpm exec playwright install --with-deps chromium"
-        self.assertNotIn(whole, ci)
-        self.assertIn("pnpm exec playwright install chromium", ci)
-        self.assertEqual(1, [s.get("run") for s in steps("verify-frontend")].count(whole))
-        storybook = load(GATE)["jobs"]["storybook"]["steps"]
-        self.assertTrue(
-            any("playwright install-deps chromium" in s.get("run", "") for s in storybook)
+        release = [s for s in steps("verify-frontend") if "run" in s]
+        self.assertFalse(any("--with-deps" in s["run"] for s in release))
+        for fragment in (
+            "pnpm-lock.yaml",
+            "pnpm exec playwright install chromium",
+            "playwright install-deps chromium",
+        ):
+            (step,) = [s for s in release if fragment in s["run"]]
+            with self.subTest(fragment=fragment):
+                self.assertIn(self.command(step), ci, "no CI twin, so no limit is held equal")
+
+
+def gate_storybook_steps() -> list[dict[str, Any]]:
+    return cast("list[dict[str, Any]]", load(GATE)["jobs"]["storybook"]["steps"])
+
+
+FAKE_TOOLS = {
+    "sudo": 'exec "$@"\n',
+    # timeout [--kill-after=N] DURATION COMMAND...
+    "timeout": 'while [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n',
+    "apt-get": 'echo "$*" >> "$FAKE_LOG"\nexit "${FAKE_UPDATE_RC:-0}"\n',
+    # A fake archive is its own control file: `dpkg-deb -f FILE FIELD`.
+    "dpkg-deb": 'sed -n "s/^$3: //p" "$2" | grep .\n',
+    # `apt-cache show NAME=VERSION` prints the signed index's records for it from $FAKE_INDEX.
+    "apt-cache": 'awk -v want="$2" \'$1 == want { print "SHA256: " $2 }\' "$FAKE_INDEX"\n',
+    "sha256sum": (
+        'python3 -c "import hashlib,sys;'
+        'print(hashlib.sha256(open(sys.argv[1],\'rb\').read()).hexdigest(), sys.argv[1])" "$1"\n'
+    ),
+}
+
+
+class ReleaseHostPackageCacheTest(unittest.TestCase):
+    """verify-frontend reads the host packages main's gate runs saved, and never trusts them.
+
+    A tag run can restore what its own tag or the default branch saved, never a pull request's entry.
+    Main's entry is saved after third-party code has run in the gate's Storybook job, and apt passes a
+    cached archive of the expected size to dpkg without hashing it (measured on ubuntu:24.04: a
+    same-size archive with one byte changed reached dpkg, which failed on the corrupt data). So each
+    restored archive is kept only when Ubuntu's signed index lists its name and SHA-256.
+    """
+
+    def release_steps(self) -> list[dict[str, Any]]:
+        return steps("verify-frontend")
+
+    def step_running(self, fragment: str) -> dict[str, Any]:
+        matches = [s for s in self.release_steps() if fragment in s.get("run", "")]
+        self.assertEqual(1, len(matches), fragment)
+        return matches[0]
+
+    def test_the_release_only_restores_and_only_the_host_packages(self) -> None:
+        actions = [s.get("uses", "") for job in jobs().values() for s in job["steps"]]
+        for saving in ("actions/cache@", "actions/cache/save@"):
+            self.assertFalse(
+                [a for a in actions if a.startswith(saving)], "a release run never saves a cache"
+            )
+        restores = [
+            (name, step)
+            for name, job in jobs().items()
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/cache/restore@")
+        ]
+        self.assertEqual(["verify-frontend"], [name for name, _ in restores])
+        ((_, restore),) = restores
+        # The browser downloads in seconds and has no signed index to check it against.
+        self.assertNotIn("ms-playwright", restore["with"]["path"])
+        self.assertNotIn("restore-keys", restore["with"], "another version's files never restore")
+
+    def test_it_reads_the_entry_the_gates_storybook_job_saves(self) -> None:
+        gate = [s for s in gate_storybook_steps() if s.get("uses", "").startswith("actions/cache@")]
+        gate_apt = next(s for s in gate if "playwright-apt" in s["with"]["path"])
+        (restore,) = uses("verify-frontend", "actions/cache/restore")
+        self.assertEqual(gate_apt["with"]["path"], restore["with"]["path"])
+        self.assertEqual(gate_apt["with"]["key"], restore["with"]["key"])
+        self.assertEqual(gate_apt["uses"].split("@")[1], restore["uses"].split("@")[1])
+        # The key is built from the same step, so the release reads the version and image the same way.
+        gate_version = next(s for s in gate_storybook_steps() if s.get("id") == "playwright")
+        version = next(s for s in self.release_steps() if s.get("id") == "playwright")
+        self.assertEqual(gate_version["run"], version["run"])
+        install = self.step_running("playwright install-deps chromium")
+        gate_install = next(
+            s for s in gate_storybook_steps() if "install-deps chromium" in s.get("run", "")
         )
+        self.assertEqual(gate_install["run"], install["run"])
+
+    def test_the_check_runs_after_the_restore_and_before_apt_sees_an_archive(self) -> None:
+        listed = self.release_steps()
+        (restore,) = uses("verify-frontend", "actions/cache/restore")
+        check = self.step_running("apt-cache show")
+        order = [
+            listed.index(next(s for s in listed if s.get("id") == "playwright")),
+            listed.index(restore),
+            listed.index(check),
+            listed.index(self.step_running("pnpm exec playwright install chromium")),
+            listed.index(self.step_running("playwright install-deps chromium")),
+            listed.index(self.step_running("pnpm test:parser")),
+        ]
+        self.assertEqual(sorted(order), order)
+        self.assertGreater(check.get("timeout-minutes", 0), 0)
+
+    def run_check(
+        self, index: dict[str, str], archives: dict[str, bytes], update_rc: int = 0
+    ) -> tuple[subprocess.CompletedProcess[str], set[str], str]:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("the step is Bash")
+        with tempfile.TemporaryDirectory(prefix="rel-apt-") as tmp:
+            root = Path(tmp)
+            bindir = root / "bin"
+            bindir.mkdir()
+            for name, body in FAKE_TOOLS.items():
+                tool = bindir / name
+                tool.write_text("#!/bin/sh\n" + body)
+                tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
+            store = root / "home/.cache/playwright-apt"
+            store.mkdir(parents=True)
+            for filename, data in archives.items():
+                (store / filename).write_bytes(data)
+            (root / "index").write_text(
+                "".join(f"{spec} {digest}\n" for spec, digest in index.items())
+            )
+            log = root / "log"
+            log.touch()
+            result = subprocess.run(
+                [bash, "-c", self.step_running("apt-cache show")["run"]],
+                env={
+                    **os.environ,
+                    "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+                    "HOME": str(root / "home"),
+                    "FAKE_INDEX": str(root / "index"),
+                    "FAKE_LOG": str(log),
+                    "FAKE_UPDATE_RC": str(update_rc),
+                },
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            return result, {p.name for p in store.iterdir()}, log.read_text()
+
+    @staticmethod
+    def archive(name: str, version: str, arch: str = "all", extra: str = "") -> bytes:
+        return f"Package: {name}\nVersion: {version}\nArchitecture: {arch}\n{extra}".encode()
+
+    def test_only_archives_the_signed_index_vouches_for_survive(self) -> None:
+        genuine = self.archive("libx11-6", "2:1.8.7-1", "amd64")
+        tampered = self.archive("fonts-liberation", "1:2.1.5-3", extra="planted\n")
+        renamed = self.archive("fonts-noto-color-emoji", "2.042-1")
+        index = {
+            "libx11-6=2:1.8.7-1": hashlib.sha256(genuine).hexdigest(),
+            "fonts-liberation=1:2.1.5-3": hashlib.sha256(b"what Ubuntu signed").hexdigest(),
+            "fonts-noto-color-emoji=2.042-1": hashlib.sha256(renamed).hexdigest(),
+        }
+        result, kept, log = self.run_check(
+            index,
+            {
+                "libx11-6_2%3a1.8.7-1_amd64.deb": genuine,
+                "fonts-liberation_1%3a2.1.5-3_all.deb": tampered,
+                # A genuine archive under another package's name would install the wrong package.
+                "fonts-wqy-zenhei_0.9.45-8_all.deb": renamed,
+                "junk_1_all.deb": b"not an archive",
+            },
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"libx11-6_2%3a1.8.7-1_amd64.deb"}, kept)
+        self.assertIn("update", log, "the index is refreshed before it is trusted")
+        self.assertIn("Kept 1 of 4", result.stdout)
+
+    def test_an_index_that_cannot_refresh_drops_every_restored_archive(self) -> None:
+        genuine = self.archive("libx11-6", "2:1.8.7-1", "amd64")
+        result, kept, _ = self.run_check(
+            {"libx11-6=2:1.8.7-1": hashlib.sha256(genuine).hexdigest()},
+            {"libx11-6_2%3a1.8.7-1_amd64.deb": genuine},
+            update_rc=100,
+        )
+        self.assertEqual(0, result.returncode, "a cold install follows; the release is not stopped")
+        self.assertEqual(set(), kept)
+
+    def test_a_cache_miss_touches_nothing(self) -> None:
+        result, kept, log = self.run_check({}, {})
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(set(), kept)
+        self.assertEqual("", log, "no index refresh without an archive to check")
 
 
 class CredentialBoundaryTest(unittest.TestCase):
@@ -337,6 +515,12 @@ class VerificationJobTest(unittest.TestCase):
 
     def test_it_pins_the_gates_toolchain(self) -> None:
         gate = {step["uses"] for step in load(GATE)["jobs"]["frontend"]["steps"] if "uses" in step}
+        # The cache's restore half is a sub-action of the gate's pinned actions/cache, at its SHA.
+        gate |= {
+            step["uses"].replace("actions/cache@", "actions/cache/restore@")
+            for step in load(GATE)["jobs"]["storybook"]["steps"]
+            if step.get("uses", "").startswith("actions/cache@")
+        }
         for step in steps("verify-frontend"):
             if "uses" in step:
                 with self.subTest(action=step["uses"]):
@@ -807,7 +991,10 @@ class GateParityTest(unittest.TestCase):
             "pnpm typecheck",
             "pnpm test",
             "pnpm build:check",
-            "pnpm exec playwright install --with-deps chromium",
+            "pnpm-lock.yaml",  # the pinned Playwright version, read for the cache key
+            "apt-cache show",  # the restored host packages, checked against the signed index
+            "pnpm exec playwright install chromium",
+            "pnpm exec playwright install-deps chromium",
             "pnpm test:parser",
             "pnpm test:installed",
             "git status --porcelain",
