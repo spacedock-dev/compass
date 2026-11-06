@@ -51,12 +51,18 @@ last.
 **Group.** Prefer one pull request per conflict surface to one layer per issue: issues are units
 of reasoning, pull requests are units of merge risk (**AGENTS.md, "Calibrating Effort"**). On
 2026-11-06 four layers each paid a submit, a CI run and a review, and layers A and B, and C and D,
-merged together anyway. Issues share one pull request when all of these hold: they change the same view or the
-same contract (the same NUI amendment, the same drift block, the same route); no issue outside the
-group lies on a `blockedBy` path between two issues in it; they share a review tier; and their
-estimates sum to no more than 7 points (L 5 plus S 2). A tier is the merge-risk unit; an issue stays
-the reconcile unit. A self-verify issue groups only with other self-verify issues. Keep a
+merged together anyway. Issues share one pull request when all of these hold: they change the same
+view or the same contract (the same NUI amendment, the same drift block, the same route); no issue
+outside the group lies on a `blockedBy` path between two issues in it; they share a review tier; and
+their estimates sum to no more than 7 points (L 5 plus S 2). A tier is the merge-risk unit; an issue
+stays the reconcile unit. A self-verify issue groups only with other self-verify issues. Keep a
 full-adversarial issue out of a group that would inflate its review with unrelated UI diff.
+
+One exception overrides the tier rules: code that nothing calls yet groups with the issue that makes
+it reachable, whatever their tiers, and the group is reviewed at the higher tier, as
+[delivery](delivery.md#4-build-a-layer) reviews them. That is the C and D pair above: two lenses
+for C, full adversarial for D. The 7-point cap still holds; above it they stay two layers, and the
+lower one waits unsubmitted for the review of the one above.
 
 **Arrange.**
 

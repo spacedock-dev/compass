@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import session_smoke
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[2]
 SESSION_ID = "0b8c2f4e-7d1a-4c55-9e3b-5a6f7d8e9f01"
@@ -100,17 +100,28 @@ class FakeWorld:
         self.first_prompt = session_smoke.Completed(0, json.dumps({"session_id": SESSION_ID}), "")
         self.stream = SESSIONS_STREAM
         self.action_error: BaseException | None = None
+        self.daemon = session_smoke.Completed(0, f"Compass running on {port}", "")
+        self.stop_error: BaseException | None = None
+        self.homes: list[str | None] = []
+        self.newest_homes: list[str] = []
+        self.warmed: list[tuple[int, int]] = []
         self.out = io.StringIO()
         self.err = io.StringIO()
 
-    def run(self, argv: Sequence[str], cwd: Path | None, timeout: float) -> session_smoke.Completed:
+    def run(
+        self, argv: Sequence[str], cwd: Path | None, timeout: float, env: Mapping[str, str]
+    ) -> session_smoke.Completed:
         del timeout
         self.calls.append(list(argv))
         self.cwds.append(cwd)
+        self.homes.append(env.get("COMPASS_HOME"))
         if "--daemon" in argv:
-            self.answering.add(self.port)
-            return session_smoke.Completed(0, f"Compass running on {self.port}", "")
+            if self.daemon.returncode == 0:
+                self.answering.add(self.port)
+            return self.daemon
         if "--stop" in argv:
+            if self.stop_error is not None:
+                raise self.stop_error
             self.answering.discard(self.port)
             return session_smoke.Completed(0, "stopped", "")
         if "--resume" in argv:
@@ -123,11 +134,22 @@ class FakeWorld:
         return session_smoke.Deps(
             run=self.run,
             probe=lambda port: port in self.answering,
-            newest=lambda _tree: self.newest_port,
+            newest=self.newest,
+            warm=self.warm,
             sleep=lambda _seconds: None,
             out=self.out,
             err=self.err,
         )
+
+    def newest(self, tree: Path, home: str) -> int | None:
+        del tree
+        self.newest_homes.append(home)
+        return self.newest_port
+
+    def warm(self, port: int, timeout: float) -> bool:
+        del timeout
+        self.warmed.append((port, len(self.claude_calls())))
+        return True
 
     def claude_calls(self) -> list[list[str]]:
         return [call for call in self.calls if call and call[0] == "claude"]
@@ -178,6 +200,21 @@ class RefusalTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(world.calls, [], "the helper stops only a board it started")
 
+    def test_a_first_prompt_that_invokes_a_skill_is_refused_because_it_skips_admission(
+        self,
+    ) -> None:
+        for task in ("/compass:compass drift again", "  /compass:compass", "Open Compass for me"):
+            with self.subTest(task=task):
+                world = FakeWorld()
+                code = smoke(world, "--task", task, "sessions")
+                self.assertEqual(code, 2)
+                self.assertEqual(world.calls, [])
+                self.assertIn("--task", world.err.getvalue())
+
+    def test_a_skill_body_without_the_action_heading_lists_no_action(self) -> None:
+        text = "# Compass\n\n| `sessions` | `python3 x/server.py --sessions` |\n"
+        self.assertEqual(session_smoke.parse_actions(text), {})
+
 
 class SpendClassificationTest(unittest.TestCase):
     def test_the_shipped_table_lists_two_free_actions_and_two_that_spend(self) -> None:
@@ -190,6 +227,17 @@ class SpendClassificationTest(unittest.TestCase):
 
     def test_a_command_with_any_flag_the_helper_does_not_know_counts_as_spending(self) -> None:
         self.assertTrue(session_smoke.spends('python3 "x/launch.py" "x/server.py" --brand-new'))
+
+    def test_only_the_known_free_arguments_are_free(self) -> None:
+        for command in (
+            'python3 "x/launch.py" "x/server.py" drift',
+            'python3 "x/launch.py" "x/server.py" --sessions --drift',
+            'python3 "x/launch.py" "x/server.py" --drift waiting',
+            'python3 "x/launch.py" "x/server.py"',
+            "python3 --sessions",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(session_smoke.spends(command))
 
 
 class RunTest(unittest.TestCase):
@@ -237,6 +285,47 @@ class RunTest(unittest.TestCase):
         self.assertEqual(start[1], str(ROOT / "compass/skills/compass/launch.py"))
         self.assertEqual(start[2], str(ROOT / "compass/skills/compass/server.py"))
         self.assertEqual(start[start.index("--port") + 1], "4795")
+
+    def test_the_board_the_session_and_the_lookup_share_one_scratch_compass_home(self) -> None:
+        world = FakeWorld()
+        code = smoke(world, "sessions")
+        self.assertEqual(code, 0, world.err.getvalue())
+        homes = set(world.homes)
+        self.assertEqual(len(homes), 1, homes)
+        (home,) = homes
+        self.assertIsNotNone(home)
+        self.assertNotEqual(home, str(Path.home() / ".compass"))
+        self.assertEqual(set(world.newest_homes), {home})
+        self.assertFalse(Path(str(home)).exists(), "the scratch home is removed after the run")
+
+    def test_the_newest_board_is_checked_again_before_every_action(self) -> None:
+        world = FakeWorld()
+        seen: list[int] = []
+
+        def newest(tree: Path, home: str) -> int | None:
+            del tree, home
+            seen.append(1)
+            return world.port if len(seen) < 3 else 4600
+
+        deps = world.deps()
+        deps = session_smoke.Deps(
+            deps.run, deps.probe, newest, deps.warm, deps.sleep, deps.out, deps.err
+        )
+        code = session_smoke.main(["--tree", str(ROOT), "sessions", "sessions waiting"], deps)
+        self.assertEqual(code, 1)
+        prompts = [call[2] for call in world.claude_calls()]
+        self.assertEqual(
+            prompts[1:], ["/compass:compass sessions"], "the second action is not sent"
+        )
+        self.assertIn("4600", world.err.getvalue())
+
+    def test_the_board_is_read_once_before_the_session_so_its_first_collection_is_done(
+        self,
+    ) -> None:
+        world = FakeWorld()
+        code = smoke(world, "sessions")
+        self.assertEqual(code, 0, world.err.getvalue())
+        self.assertEqual(world.warmed, [(world.port, 0)])
 
     def test_spending_actions_run_with_the_flag(self) -> None:
         world = FakeWorld()
@@ -287,6 +376,21 @@ class CleanupTest(unittest.TestCase):
         self.assertIn("4600", world.err.getvalue())
         self.assert_board_stopped(world)
 
+    def test_a_board_this_run_did_not_start_is_never_stopped(self) -> None:
+        world = FakeWorld()
+        world.daemon = session_smoke.Completed(1, "", "Address already in use")
+        code = smoke(world, "sessions")
+        self.assertEqual(code, 1)
+        self.assertEqual(world.board_calls("--stop"), [], "a sibling's board may hold the port")
+        self.assertIn("Address already in use", world.err.getvalue())
+
+    def test_a_stop_that_fails_prints_how_to_stop_the_board_by_hand(self) -> None:
+        world = FakeWorld()
+        world.stop_error = TimeoutError("python3 ran past 60 s")
+        code = smoke(world, "sessions")
+        self.assertEqual(code, 1)
+        self.assertIn("--stop --port 4795", world.err.getvalue())
+
     def test_a_board_that_never_answers_is_still_stopped(self) -> None:
         world = FakeWorld()
         deps = world.deps()
@@ -294,6 +398,7 @@ class CleanupTest(unittest.TestCase):
             run=deps.run,
             probe=lambda _port: False,
             newest=deps.newest,
+            warm=deps.warm,
             sleep=deps.sleep,
             out=deps.out,
             err=deps.err,
@@ -319,7 +424,7 @@ class RunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             pid_file = Path(scratch) / "pid"
             done = session_smoke.run_command(
-                ["sh", "-c", f"sleep 30 & echo $! > {pid_file}; echo ran"], None, 10.0
+                ["sh", "-c", f"sleep 30 & echo $! > {pid_file}; echo ran"], None, 10.0, {}
             )
             self.assertEqual(done.stdout.strip(), "ran")
             pid = int(pid_file.read_text(encoding="utf-8"))
@@ -332,7 +437,7 @@ class RunnerTest(unittest.TestCase):
             pid_file = Path(scratch) / "pid"
             with self.assertRaises(TimeoutError):
                 session_smoke.run_command(
-                    ["sh", "-c", f"echo $$ > {pid_file}; sleep 30"], None, 0.5
+                    ["sh", "-c", f"echo $$ > {pid_file}; sleep 30"], None, 0.5, {}
                 )
             pid = int(pid_file.read_text(encoding="utf-8"))
         if not self.wait_gone(pid):
@@ -340,7 +445,7 @@ class RunnerTest(unittest.TestCase):
             self.fail("a command past its timeout was left running")
 
     def test_the_runner_closes_standard_input(self) -> None:
-        done = session_smoke.run_command(["sh", "-c", "cat; echo end"], None, 5.0)
+        done = session_smoke.run_command(["sh", "-c", "cat; echo end"], None, 5.0, {})
         self.assertEqual(done.stdout.strip(), "end", "a child reading stdin must see it closed")
 
 

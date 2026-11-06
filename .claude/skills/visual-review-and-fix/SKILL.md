@@ -37,7 +37,7 @@ with no callers got the same treatment as the one owning the built bundle.
 | Runtime only, nothing published changes | Skip, and say in the report that you skipped it | Skip, and say so |
 | Prose with no claim about the board | Skip | Skip |
 
-The fourth row is a real answer, not an escape. Say which mode you skipped and why, so the next
+The two Skip rows are a real answer, not an escape. Say which mode you skipped and why, so the next
 reader knows the walk was considered rather than forgotten.
 
 ## Prerequisites
@@ -63,7 +63,7 @@ verbatim, the shipped capability behind it, and the limit that keeps it honest. 
 `journey:*` label says which stage.
 
 If you cannot name the promise, the issue has no user-visible property to review and the calibration
-table's fourth row applies.
+table's "Runtime only" row applies.
 
 ### 2. Bring the surface up with real data
 
@@ -208,16 +208,21 @@ python3 scripts/session_smoke.py --tree <worktree> sessions "sessions waiting"
 It starts a board from the worktree on a spare port (4795 by default, never the operator's 4553),
 creates a headless Claude Code session in a scratch project with a real first prompt (a Compass
 command is never adopted as a goal), types each `/compass:compass <action>` into it, and prints the
-permission denials, the tool commands and their results. It stops the board and kills what it
-started on every exit. The skill's commands ask the newest-started board, so the helper refuses to
-go on if another board started after its own.
+permission denials, the tool commands and their results. The board, the session and its hooks share
+a scratch Compass home, so the operator's board receives none of the session's events and no other
+session's terminal client sees the spare board. The skill's commands ask the newest-started board,
+and the default port's board is always a candidate, so before each action the helper checks that
+its own board is still the newest and stops if it is not. It stops the board it started and kills
+each command's process group on every exit it can catch. A process that left its group survives
+that: check for leftovers as `AGENTS.md`, "Parallel Work" says.
 
 Read the denials first: an action the skill pre-approves should run with none. Then read the tool
 result as rendered text, the way step 3 reads the screen.
 
 The helper refuses `drift again`, plain `drift` and any action it cannot show is free, unless
 `--allow-spend` is passed, because a fresh session has no stored reading and plain `drift` then
-presses one. That flag spends one of the operator's daily readings: ask before passing it.
+presses one. Ask before passing that flag. The scratch home starts with model calls not allowed, so a
+press there stops at Compass's permission answer rather than spending.
 
 Measured on 2026-11-06: the two most expensive defects of a milestone passed about 9,000 tests and
 19 review agents, because every fixture agreed with itself. One was the full session UUID looked up
