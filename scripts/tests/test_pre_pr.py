@@ -603,6 +603,16 @@ class StoppedHolderTest(unittest.TestCase):
                         with contextlib.suppress(ProcessLookupError):
                             os.kill(pid, signal.SIGKILL)
 
+    @unittest.skipIf(sys.platform == "win32", "process groups are POSIX")
+    def test_stopping_a_check_whose_group_has_already_exited_does_not_crash(self) -> None:
+        """macOS answers killpg on a group whose only member is the exited, unreaped leader with
+        EPERM, not ESRCH (measured 2026-11-06; it ejected a merge-queue entry). Stopping such a
+        check must still succeed."""
+        process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+        time.sleep(0.5)
+        pre_pr._stop(process)
+        self.assertIsNotNone(process.returncode)
+
     def test_a_check_that_times_out_is_stopped_with_what_it_started(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             pids = Path(tmp) / "pids"
