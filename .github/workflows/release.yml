@@ -18,7 +18,8 @@ name: Release
 #                    The only job that installs frontend dependencies and runs them.
 #                    Rebuilds the React bundle from exactly the target and compares it
 #                    with the tracked artifact, lints, type-checks, tests, and runs the
-#                    Python-only installed proof.
+#                    Python-only installed proof. No release job restores or saves a cache,
+#                    so nothing another run wrote reaches it.
 #   verify-tree      the same (no credentials). The repository validation suite on the
 #                    target; it starts `node` whenever `node` is on PATH, so it cannot
 #                    share a job with the deploy key.
@@ -206,9 +207,34 @@ jobs:
       - name: Canonical rebuild and tracked artifact comparison
         timeout-minutes: 3
         run: pnpm build:check
-      - name: Install pinned Chromium and its host dependencies
-        timeout-minutes: 5
-        run: pnpm exec playwright install --with-deps chromium
+      # The gate's Storybook job installs Chromium this way, and both `run` steps below are its steps
+      # word for word, so test_release_workflow.CiLimitsTest holds the limits equal. `--with-deps` timed
+      # out at 5 minutes on 2 of about 8 gate runs (2026-11-06), fetching nine font packages from the
+      # Ubuntu mirror at tens of KB/s; the browser itself took about 6 s. Unlike the gate, nothing here
+      # restores a cache: actions/cache extracts with `tar -P`, so an entry another run wrote could put
+      # files anywhere the runner user can before any step checked them. The cold install is bounded.
+      - name: Install pinned Chromium
+        timeout-minutes: 3
+        run: pnpm exec playwright install chromium
+      - name: Install Chromium's host packages, retried once
+        timeout-minutes: 8
+        run: |
+          set -uo pipefail
+          BOUND=210
+          ARCHIVES="$HOME/.cache/playwright-apt"
+          mkdir -p "$ARCHIVES/partial"
+          echo "::notice::$(find "$ARCHIVES" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ') host packages restored from the cache."
+          printf 'Dir::Cache::Archives "%s/";\n' "$ARCHIVES" \
+            | sudo tee /etc/apt/apt.conf.d/90-playwright-archives > /dev/null
+          for attempt in 1 2; do
+            if timeout --kill-after=10 "$BOUND" pnpm exec playwright install-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Chromium's host packages did not install in $BOUND s (attempt $attempt of 2)."
+            sudo dpkg --configure -a
+          done
+          echo "::error::Chromium's host packages did not install after two bounded attempts."
+          exit 1
       - name: Hostile inline artifact parser browser proof
         timeout-minutes: 3
         run: pnpm test:parser

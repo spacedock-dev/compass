@@ -172,22 +172,50 @@ class CiLimitsTest(unittest.TestCase):
         self.assertEqual(1, len(suite))
         self.assertEqual(max(ci["pnpm test"]), suite[0]["timeout-minutes"])
 
-    def test_the_chromium_install_is_split_in_ci_and_whole_here(self) -> None:
-        """The one browser step the two workflows no longer share, named so the pairing is not lost silently.
+    def test_the_chromium_install_runs_the_gates_split_steps_held_to_its_limits(self) -> None:
+        """The release installs the browser and its host packages as the Storybook job does.
 
-        The gate's Storybook job installs the cached browser and the host packages as two steps, the second
-        bounded and retried once, because `--with-deps` timed out on the Ubuntu mirror's font downloads. The
-        release keeps the single command, so the limit test above no longer pairs it with anything.
+        `--with-deps` timed out on the Ubuntu mirror's font downloads in the gate, and the release ran
+        the same single step with the same 5 minutes. Each split step must have a twin in CI, so the
+        limit test above holds them equal.
         """
         ci = self.ci_limits()
-        whole = "pnpm exec playwright install --with-deps chromium"
-        self.assertNotIn(whole, ci)
-        self.assertIn("pnpm exec playwright install chromium", ci)
-        self.assertEqual(1, [s.get("run") for s in steps("verify-frontend")].count(whole))
-        storybook = load(GATE)["jobs"]["storybook"]["steps"]
-        self.assertTrue(
-            any("playwright install-deps chromium" in s.get("run", "") for s in storybook)
-        )
+        release = [s for s in steps("verify-frontend") if "run" in s]
+        self.assertFalse(any("--with-deps" in s["run"] for s in release))
+        for fragment in (
+            "pnpm exec playwright install chromium",
+            "playwright install-deps chromium",
+        ):
+            (step,) = [s for s in release if fragment in s["run"]]
+            with self.subTest(fragment=fragment):
+                self.assertIn(self.command(step), ci, "no CI twin, so no limit is held equal")
+
+
+class NoCacheTest(unittest.TestCase):
+    """No release job restores or saves a cache, so nothing another run wrote reaches one.
+
+    actions/cache extracts an entry with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and
+    absolute member names, so an entry writes wherever the runner user can before any later step can
+    check it: over `node_modules/.bin/playwright`, say. Main's gate runs third-party code before it
+    saves the host-package entry, and on a re-run `build-cli` (third-party PyInstaller dependencies, on
+    the tag's ref) could have written the tag's own. A check of the restored `*.deb` files sees none of
+    that. The cold host-package install is bounded and retried, at most 8 minutes of the job's 25.
+    """
+
+    def test_no_job_uses_a_cache_action(self) -> None:
+        for name, job in jobs().items():
+            for step in job["steps"]:
+                with self.subTest(job=name, step=step.get("name")):
+                    self.assertFalse(step.get("uses", "").startswith("actions/cache"))
+
+    def test_the_host_package_install_is_the_gates_step_word_for_word(self) -> None:
+        (install,) = [
+            s for s in steps("verify-frontend") if "install-deps chromium" in s.get("run", "")
+        ]
+        gate = load(GATE)["jobs"]["storybook"]["steps"]
+        (twin,) = [s for s in gate if "install-deps chromium" in s.get("run", "")]
+        self.assertEqual(twin["run"], install["run"])
+        self.assertEqual(twin["timeout-minutes"], install["timeout-minutes"])
 
 
 class CredentialBoundaryTest(unittest.TestCase):
@@ -807,7 +835,8 @@ class GateParityTest(unittest.TestCase):
             "pnpm typecheck",
             "pnpm test",
             "pnpm build:check",
-            "pnpm exec playwright install --with-deps chromium",
+            "pnpm exec playwright install chromium",
+            "pnpm exec playwright install-deps chromium",
             "pnpm test:parser",
             "pnpm test:installed",
             "git status --porcelain",
