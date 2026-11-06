@@ -1,0 +1,556 @@
+{
+  "comment": "Each route capacity preview and the lines the page's Next Analyze prompt allowance draws for it, one per paragraph. Written from the page: frontend/src/drift/ReadingAllowance.parity.test.tsx renders ReadingAllowance over each and must agree; compass_runtime/terminal_drift.py prints the same lines before a spending --drift. Never regenerate it from the Python port.",
+  "cases": [
+    {
+      "name": "one byte",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 1,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 1 byte.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "bytes under a kilobyte",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 512,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 512 bytes.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "one kilobyte exactly",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 1024,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 1 KB.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "a half-way thousandth rounds up",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 1088,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 1.063 KB.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "thousands are grouped",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 1234567,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 1,205.632 KB.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "half a megabyte",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 512 KB.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    },
+    {
+      "name": "an unknown window",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": null,
+        "window_source": "unknown",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "legacy-byte-cap",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 512 KB.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened.",
+        "Conservative estimate; this route’s context window is unknown."
+      ]
+    },
+    {
+      "name": "no room",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "context-config",
+        "reason": "context-no-room",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: The current context configuration leaves no room for this reading. Choose a larger context window."
+      ]
+    },
+    {
+      "name": "a dynamic policy",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "dynamic-policy",
+        "reason": "context-dynamic",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: This route’s policy can change when it starts, so its allowance cannot be established. Check its managed settings or choose another route."
+      ]
+    },
+    {
+      "name": "unchecked settings",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "context-config",
+        "reason": "context-config",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: The route’s context settings could not be checked. Check the managed settings before trying Analyze."
+      ]
+    },
+    {
+      "name": "a compaction conflict",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "compaction-policy-conflict",
+        "reason": "context-compaction",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Managed settings conflict with keeping compaction off for Analyze. Ask your administrator to resolve the conflict."
+      ]
+    },
+    {
+      "name": "a fallback conflict",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "fallback-policy-conflict",
+        "reason": "context-fallback",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Managed settings conflict with keeping automatic model switching off for Analyze. Ask your administrator to resolve the conflict."
+      ]
+    },
+    {
+      "name": "no route",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "unavailable",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. No reading route is selected."
+      ]
+    },
+    {
+      "name": "absent",
+      "capacity": null,
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "not an object",
+      "capacity": [],
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "an extra field",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false,
+        "words": "secret"
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a missing field",
+      "capacity": {
+        "kind": "capacity-preview",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a fit claimed verified",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": true,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "an estimate with a configuration reason",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "context-config",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "an estimate of nothing",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a refusal with an allowance",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "context-config",
+        "reason": "context-config",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a fractional count",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 10.5,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a boolean flag as a count",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": true,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "an unknown reason",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "later",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "an unknown window source",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 524288,
+        "window_tokens": 200000,
+        "window_source": "guessed",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Allowance unknown. This server did not provide a usable estimate."
+      ]
+    },
+    {
+      "name": "a whole count written with a decimal point",
+      "capacity": {
+        "kind": "capacity-preview",
+        "policy": "analyze-context-v1",
+        "maximum_prompt_bytes": 512.0,
+        "window_tokens": 200000,
+        "window_source": "documented",
+        "generation_reserve_tokens": 32000,
+        "cli_reserve_tokens": 8000,
+        "estimated_system_tokens": 4000,
+        "estimate_method": "utf8-bytes-div-3",
+        "fit_verified": false,
+        "policy_verified": false,
+        "configuration_reason": "",
+        "reason": "estimated",
+        "can_lower_prompt_setting": false
+      },
+      "lines": [
+        "Next Analyze prompt: Estimated allowance: 512 bytes.",
+        "These estimates do not confirm model availability or that a prompt will fit. An assembled prompt above this allowance is refused before a model call; it is not automatically shortened."
+      ]
+    }
+  ]
+}

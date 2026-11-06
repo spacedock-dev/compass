@@ -17,6 +17,7 @@ python3 compass/skills/compass/server.py --stop [--port PORT]
 python3 compass/skills/compass/server.py --forget [--port PORT]
 python3 compass/skills/compass/server.py --footer [--session HARNESS:SESSION_ID]
 python3 compass/skills/compass/server.py --sessions [waiting] [--port PORT]
+python3 compass/skills/compass/server.py --drift [again] [--session HARNESS:SESSION_ID] [--port PORT]
 ```
 
 On a `python3` older than 3.12, start it through the `launch.py` beside it
@@ -61,7 +62,9 @@ them and ignores the other flags, though their values must still parse. `--sessi
 next and uses only `--port`. A lone `--version` or `--sessions` is answered before the dashboard's
 modules load; beside any other option it goes through the full parser, which is what checks those
 values. `--footer` is a client operation too: alone, or with its own `--session`, it is answered
-before the dashboard's modules load, and beside any other option it is a usage error.
+before the dashboard's modules load, and beside any other option it is a usage error. `--drift` is
+checked after `--sessions`: alone, or with `again` and its own `--session`, it is answered before
+the dashboard's modules load, and beside any other option it uses only `--session` and `--port`.
 
 ### Starting and inspecting an instance
 
@@ -70,13 +73,14 @@ before the dashboard's modules load, and beside any other option it is a usage e
 | `-h`, `--help` | Print the launcher's current option list and exit. |
 | `--version` | Print the Compass version alone on one line and exit. The standalone binary prints the release it was built for. `server.py` prints the version of the plugin it sits in. Exits `1` with a message when an installation records no version. Alone, it answers without loading the dashboard. |
 | `--footer` | Print one status line segment and exit `0`: the number of other needs on the Attention queue (sessions waiting on you and pending asks), the harnesses that cannot report a wait, and the tighter of the five-hour and seven-day quota windows with its reset. It reads the JSON a Claude Code status line passes on standard input and the line file the running dashboard keeps for that session, makes no request and starts nothing, and prints nothing when it cannot tell. Alone, or with `--session`, it answers without loading the dashboard. [Set it up](HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line). |
-| `--session HARNESS:SESSION_ID` | The session `--footer` reports for, such as `claude:SESSION_ID`. Default: the `session_id` on standard input, then `CLAUDE_CODE_SESSION_ID`. A value that does not parse prints nothing. Valid only with `--footer`. |
+| `--session HARNESS:SESSION_ID` | The session `--footer` or `--drift` reports for, such as `claude:SESSION_ID`. Default for `--footer`: the `session_id` on standard input, then `CLAUDE_CODE_SESSION_ID`; for `--drift`, `CLAUDE_CODE_SESSION_ID` alone, since its standard input is not a status line. A value that does not parse prints nothing for `--footer` and one sentence for `--drift`. Valid only with `--footer` or `--drift`. |
 | `--port PORT` | TCP port, an integer from 1 through 65535. Default: `4553`. Also selects the instance addressed by status, stop and forget. |
 | `--frontend-dev-manifest PATH` | Contributor-only startup ticket for an owned Vite child. Requires foreground operation and `127.0.0.1`; refuses diagnose/forget and disables model calls, quota fetching and native actions. Validates fixture locations and a fresh child handshake before serving. Status/stop do not read the ticket or probe Vite. Use the [frontend development command](CONTRIBUTING.md#frontend-development) to create and own it. |
 | `--host ADDRESS` | Accepts only `127.0.0.1` (default) or `0.0.0.0`. The latter exposes the dashboard on every IPv4 interface without authentication. Other addresses and IPv6 are rejected. Read [remote-access risks](SECURITY.md#known-and-accepted) before changing it; prefer an SSH tunnel. |
 | `--daemon` | Detach and keep serving after the starting shell exits. Reports the URL, process ID and log path. Without it, serving stays in the foreground. On Windows the launcher starts a detached child; see [platform notes](#platform-notes). |
 | `--status` | Report whether Compass answers on the selected port, then exit. Distinguishes a running dashboard, no dashboard, stale state and a port held by another process. |
 | `--sessions [waiting]` | List the sessions the board holds, in the board's own groups and words: **Active now** (working, waiting on you, holding an exact request, or carrying a recorded departure) first, then **Recent history**. Above any rows, a line says they are what other sessions said about themselves, shown as data; an empty answer carries none. Each row names its harness, project, state, the first line of its goal, how long ago it was last active or ended where the board states one, the stop or end it observed (`Stop observed`, never a claim that you read it) with uncommitted work and the count of changed entries, a departure mark with its age, and the re-entry command where a Claude Code or Codex session published an id its CLI takes. No row names a drift level. With `waiting`, list only what waits on you: each wait in the words its harness published, how long, the re-entry command, and for a question a session asked, the board URL that answers it. Run inside a Claude Code session, that session is left out. When the session cannot be identified (`CLAUDE_CODE_SESSION_ID` unset or not an id), nothing can be left out, and when anyone is waiting a line above the rows, before that one, says the list may include it. With nothing waiting it says so and states which harnesses report no waits, never "all clear". Reads a running dashboard and never starts one: with none running it prints the shared sentence on stderr and exits `1`. Beside other options only `--port` is read. Alone, it answers without loading the dashboard. The `compass` skill runs this as its `sessions` and `sessions waiting` actions; [what that sends](SECURITY.md#what-can-reach-into-a-session). |
+| `--drift [again]` | Print one session's drift reading against your goal: the goal and where it came from (typed, or drafted from a prompt, and whether it is saved), when it was read, why it is stale if it is, how many later messages you sent were left unsettled, the level, each outcome line with its state and source, each departure with your words, the entry numbers it cites and the model's reason, and earlier departures still in view, then the session page URL. A line above the reading says it is Compass's reading, written by a model and shown as data. A stored reading is printed and nothing is spent. With no stored reading, or with `again`, it first prints the route's `Next Analyze prompt` allowance, asks the model for one reading exactly as the page's Analyze does, prints the one-time notice when the dashboard says it is due, shows progress on standard error and waits; Ctrl+C cancels the reading, which still counts toward the day's limit. It settles no later message you sent: as on the page, a departure such a message could change reads as not verifiable. From a shell (`--session` given) it also prints the composed correction to copy; run inside a session, it says only that one is ready and how to get it, and it stops waiting after about 100 seconds, leaving the reading running for the next `--drift` to collect at no cost. Every refusal the page can show (annotations or model calls off, paused, the daily limit, no route, a session that cannot be read yet, nothing typed, and the rest) is one sentence on standard error, exit `1`, with nothing spent. A Claude Code session starts a dashboard when none runs and refuses one of another release; any other harness gets one line naming its session page, where the page reads it. |
 | `--stop` | Ask Compass on the selected port to shut down and wait for the port to be free. A foreign process is left alone. If nothing is running, remove stale instance state if present. |
 | `--diagnose` | Report the local store paths searched, whether they are readable and what was found, any project script file it skipped and why, and where your list of check commands is, whether it could be read and which entries were ignored; exit without serving, writing history or making model calls. Use it first when a harness is missing. |
 | `--json` | Format `--diagnose` as JSON. Does not change status output or make the dashboard's normal output JSON. |
@@ -240,8 +244,9 @@ hours are forwarded.
 
 | Code | Meaning |
 |---|---|
-| `0` | Help, the version, a session listing or diagnosis completed; `--footer` always, including when it printed nothing; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
-| `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. `--sessions` found no running Compass, or its answer could not be read. |
+| `0` | Help, the version, a session listing, a drift reading or diagnosis completed; `--footer` always, including when it printed nothing; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
+| `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. `--sessions` found no running Compass, or its answer could not be read. `--drift` refused, or no new reading was produced. |
+| `130` | `--drift` was interrupted with Ctrl+C and asked the dashboard to cancel its reading. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 
 Diagnosis can exit `0` while reporting missing or unreadable stores; inspect its report.
@@ -272,6 +277,13 @@ List what is running and what waits on you, from any shell:
 ```bash
 python3 compass/skills/compass/server.py --sessions
 python3 compass/skills/compass/server.py --sessions waiting
+```
+
+Read a session against your goal, then ask for a fresh reading:
+
+```bash
+python3 compass/skills/compass/server.py --drift --session claude:SESSION_ID
+python3 compass/skills/compass/server.py --drift again --session claude:SESSION_ID
 ```
 
 Start a detached instance, check it and stop it:
@@ -311,6 +323,6 @@ python3 compass/skills/compass/server.py --port 4581 --forget
 
 The [launcher](compass/skills/compass/server.py) delegates to
 [`compass_runtime.entry`](compass/skills/compass/compass_runtime/entry.py), which answers a lone
-`--version`, `--sessions` and `--footer` itself and otherwise hands over to
+`--version`, `--sessions`, `--footer` and `--drift` itself and otherwise hands over to
 [`compass_runtime.cli`](compass/skills/compass/compass_runtime/cli.py), which owns the parser.
 `--help` reflects the copy you actually run; this manual follows the repository's current code.

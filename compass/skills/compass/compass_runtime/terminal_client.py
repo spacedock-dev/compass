@@ -5,8 +5,9 @@ this before `cli` is imported, so a short command never pays for the collectors.
 and what was rejected, is in
 [R-1](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
-This file sends no POST of its own. It holds the request path, discovery, the session rule, the
-version guard and the wording, for the operations that call them.
+It holds the request path, discovery, the session rule, the version guard and the wording, for
+the operations that call them. `--drift` is the one that spends: its rules live in the leaf
+`terminal_drift`, which this file hands the four exchanges it needs.
 
 `--footer` is the one operation that never reaches the dashboard. It runs on every status line
 refresh, so it reads what the dashboard already wrote and the JSON the status line
@@ -26,7 +27,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
-from compass_runtime import terminal_sessions
+from compass_runtime import terminal_drift, terminal_sessions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -48,6 +49,10 @@ REPLY_CAP_BYTES: Final = 1_048_576
 # 1 MiB reply cap above refuses an ordinary board. Sixteen times that holds the `?all=1` variant
 # the page never asks for with room to spare, and still bounds a hostile answer.
 DATA_CAP_BYTES: Final = 16_777_216
+# `--drift`'s exchanges. A press collects the board and verifies an adoption before it answers, and
+# so does the focused context, so five seconds can expire on a busy board; an expired press reads as
+# a lost answer, which is never retried, so this errs long.
+DRIFT_REQUEST_TIMEOUT_SEC: Final = 30.0
 STDIN_CAP_CHARS: Final = 65_536
 # A status line command is run on every refresh with its JSON written at once, so a quarter of a
 # second is generous for a producer that is alive and short enough that a pipe held open cannot
@@ -136,13 +141,20 @@ OPERATIONS = (
         "the ones waiting on you",
         ("waiting",),
     ),
+    Operation(
+        "--drift",
+        "print a session's drift reading against your goal, with --session or "
+        "CLAUDE_CODE_SESSION_ID; a stored reading costs nothing, and with none, or with "
+        "`again`, it asks the model for one and waits",
+        ("again",),
+    ),
 )
 OPTIONS = (
     Option(
         "--session",
         "HARNESS:SESSION_ID",
-        "the session --footer reports for, such as claude:SESSION_ID; "
-        "default: the status line's session_id, then CLAUDE_CODE_SESSION_ID",
+        "the session --footer or --drift reports for, such as claude:SESSION_ID; "
+        "default: the status line's session_id (--footer only), then CLAUDE_CODE_SESSION_ID",
     ),
 )
 
@@ -191,6 +203,32 @@ def parse_footer_args(argv: list[str]) -> tuple[bool, str | None]:
     return False, None
 
 
+def parse_drift_args(argv: list[str]) -> tuple[bool, bool, str | None]:
+    """Whether `argv` is exactly a drift request, whether it says `again`, and its `--session`.
+
+    `--drift` or `--drift=again` once, `again` at most once and only right after `--drift`, and
+    `--session X` or `--session=X` at most once, anywhere. Anything else is argparse's.
+    """
+    rest = list(argv)
+    again = False
+    if rest.count("--drift=again") == 1 and "--drift" not in rest:
+        rest.remove("--drift=again")
+        again = True
+    elif rest.count("--drift") == 1 and "--drift=again" not in rest:
+        at = rest.index("--drift")
+        again = rest[at + 1 : at + 2] == ["again"]
+        del rest[at : at + 2 if again else at + 1]
+    else:
+        return False, False, None
+    if not rest:
+        return True, again, None
+    if len(rest) == 1 and rest[0].startswith("--session="):
+        return True, again, rest[0][len("--session=") :]
+    if len(rest) == 2 and rest[0] == "--session" and not rest[1].startswith("--"):
+        return True, again, rest[1]
+    return False, False, None
+
+
 def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
     """The operation `argv` is, and the value it carries, when `argv` is exactly one operation.
 
@@ -209,12 +247,15 @@ def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
 
 
 def handles(argv: list[str]) -> bool:
-    return parse_footer_args(argv)[0] or claim(argv) is not None
+    return parse_footer_args(argv)[0] or parse_drift_args(argv)[0] or claim(argv) is not None
 
 
 def run(argv: list[str]) -> int:
     if parse_footer_args(argv)[0]:
         return run_footer(argv, os.environ, sys.stdin, sys.stdout)
+    drift, again, session = parse_drift_args(argv)
+    if drift:
+        return run_drift(again=again, session=session)
     claimed = claim(argv)
     if claimed is not None and claimed[0].flag == "--sessions":
         return run_sessions(claimed[1] or True)
@@ -380,7 +421,8 @@ def request(
     finally:
         conn.close()
     data: Any = None
-    if len(raw) <= limit and 200 <= status < 300:
+    # A refusal's body is read too: `--drift` says why a press was refused from its `reason`.
+    if len(raw) <= limit and (200 <= status < 300 or status >= 400):
         try:
             data = json.loads(raw)
         except (ValueError, RecursionError):
@@ -402,7 +444,8 @@ def post(
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
 ) -> Reply:
-    """Nothing calls this yet. The first operation that spends builds its body and its headers."""
+    """One JSON POST. `http.client` sends no `Sec-Fetch-*` header, which the press route reads
+    as a local process: the accepted exposure SECURITY.md names for a spend from this machine."""
     sent = {"Content-Type": "application/json", **(headers or {})}
     return request("POST", port, path, json.dumps(payload).encode(), headers=sent, timeout=timeout)
 
@@ -824,3 +867,72 @@ def run_sessions(
         return 1
     _emit(lines, sys.stdout)
     return 0
+
+
+class LoopbackBoard:
+    """The dashboard as `terminal_drift` reaches it: four exchanges, each over `request`.
+
+    A reply that never came is `terminal_drift.Lost`, so the drift rules never see a socket error.
+    """
+
+    def __init__(self, port: int) -> None:
+        self.port = port
+
+    def _read(self, path: str) -> Any:
+        try:
+            reply = get(self.port, path, timeout=DRIFT_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
+        except DashboardUnreachable as error:
+            raise terminal_drift.Lost(path) from error
+        return reply.data if reply.status == 200 else None
+
+    def data(self) -> Any:
+        return self._read("/api/data")
+
+    def context(self, project: str, session: str) -> Any:
+        from urllib.parse import quote  # noqa: PLC0415 — only a drift reaches this
+
+        query = f"project={quote(project, safe='')}&session={quote(session, safe='')}"
+        return self._read(f"/api/project-context?{query}")
+
+    def post(self, path: str, body: Mapping[str, Any]) -> tuple[int, Any]:
+        try:
+            reply = post(self.port, path, body, timeout=DRIFT_REQUEST_TIMEOUT_SEC)
+        except DashboardUnreachable as error:
+            raise terminal_drift.Lost(path) from error
+        return reply.status, reply.data
+
+
+def run_drift(
+    *,
+    again: bool = False,
+    session: str | None = None,
+    port: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """`--drift` and `--drift again`: name the session, find the dashboard, hand the rest over.
+
+    The session is `--session`, else `CLAUDE_CODE_SESSION_ID`; stdin is never read, since it is not
+    a status line here. Both refusals come before any dashboard is reached. A Claude Code session
+    may spend, so a missing dashboard is started and another release refused; any other harness is
+    only sent to its page, which needs a running board and starts none.
+    """
+    env = os.environ if environ is None else environ
+    named = resolve_session(session, env, None, payload={})
+    if isinstance(named, Unresolved):
+        print(named.message, file=sys.stderr)
+        return 1
+    spend = named.harness == "claude"
+    found = ensure_dashboard(state_home(env), port=port, spend=spend, own_version=release_version())
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    return terminal_drift.run(
+        named.harness,
+        named.sid,
+        again=again,
+        at_shell=named.source == "flag",
+        board=LoopbackBoard(found.port),
+        port=found.port,
+        out=sys.stdout,
+        err=sys.stderr,
+    )
