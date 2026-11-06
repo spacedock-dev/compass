@@ -265,7 +265,8 @@ class CoverageShardsTest(unittest.TestCase):
         self.assertEqual("Tests + coverage threshold", job["name"])
         self.assertEqual(["changes", "test"], job["needs"])
         self.assertEqual("needs.changes.outputs.python == 'true'", job["if"])
-        self.assertEqual({"contents": "read", "pull-requests": "write"}, job["permissions"])
+        # Read-only: the job restores the pip cache and runs what it installs (test_workflow_caches).
+        self.assertEqual({"contents": "read", "pull-requests": "read"}, job["permissions"])
         steps = job["steps"]
         download = next(s for s in steps if "download-artifact" in s.get("uses", ""))
         self.assertRegex(download["uses"], r"@[0-9a-f]{40}$")
@@ -275,7 +276,11 @@ class CoverageShardsTest(unittest.TestCase):
         self.assertIn(download["with"]["path"], combine["run"])
         label = next(s for s in steps if s.get("id") == "exception")
         report = next(s for s in steps if "coverage report" in s.get("run", ""))
-        order = [steps.index(s) for s in (download, combine, label, report)]
+        # The comment body is uploaded for `coverage-comment`, so it is written before the upload.
+        body = next(s for s in steps if "coverage-comment.md" in s.get("run", ""))
+        upload = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
+        self.assertIn("coverage-comment.md", upload["with"]["path"])
+        order = [steps.index(s) for s in (download, combine, label, report, body, upload)]
         self.assertEqual(sorted(order), order)
         self.assertEqual(
             "${{ steps.exception.outputs.has_exception || '0' }}", report["env"]["EXCEPTION"]

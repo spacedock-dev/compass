@@ -158,7 +158,7 @@ Editing it changes behavior or breaks a licence, silently.
 | `LICENSE`, `NOTICE` | Apache-2.0 text and its §4(d) attribution. Extensionless, so no `*.md` sweep reaches them — but a "tidy the docs" pass can. | None. Edits are legal changes. |
 | `.github/ISSUE_TEMPLATE/*.yml` | GitHub issue *forms*: prose inside a validated schema. | Edit `label` / `description` strings only; never touch keys, `id`s or `labels:`. Keep the harness options aligned with the registry, but do not delete the non-harness catch-all option. |
 | `.github/ISSUE_TEMPLATE/config.yml` | Chooser config. Its `name`/`about` strings do render, but the security-advisory URL is load-bearing. | None — and if it must change, keep it consistent with `SECURITY.md`. |
-| `coverage-comment.md` | Written by a CI step and read back by the next one; its marker comment must stay byte-identical to what the comment action matches on. Untracked. | Never. If it appears locally it is CI debris. |
+| `coverage-comment.md` | Written by the coverage job and read back from the run's artifact by the coverage comment job; its marker comment must stay byte-identical to what the comment action matches on. Untracked. | Never. If it appears locally it is CI debris. |
 | Markdown under `**/tests/**` or created by a fixture | Test input; its content is asserted on. | Never. New fixtures must live **outside** `compass/skills/`, or the validator will scan them and fail the build. |
 | `compass/commands/*.md` | Rejected outright by the validator as legacy commands. | Never create Markdown there. |
 | `.git/`, `.mypy_cache/`, `.ruff_cache/`, `__pycache__/`, `node_modules/`, `.venv/` | Not source. | Never. |

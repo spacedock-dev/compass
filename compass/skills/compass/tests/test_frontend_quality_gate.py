@@ -383,7 +383,8 @@ class FrontendWiringControlsTest(unittest.TestCase):
             },
             set(aggregate["needs"]),
         )
-        self.assertNotIn("frontend-coverage-comment", aggregate["needs"], "the comment never gates")
+        for comment in ("coverage-comment", "frontend-coverage-comment"):
+            self.assertNotIn(comment, aggregate["needs"], "a comment never gates")
         env = aggregate["steps"][0]["env"]
         self.assertEqual("${{ needs.test.result }}", env["R_TEST"])
         self.assertEqual("${{ needs.coverage.result }}", env["R_COVERAGE"])
@@ -511,12 +512,35 @@ class FrontendWiringControlsTest(unittest.TestCase):
             "thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 }", config
         )
 
-    def test_the_coverage_comment_holds_the_write_token_and_runs_no_code(self) -> None:
-        job = jobs()["frontend-coverage-comment"]
+    def test_each_coverage_comment_holds_the_write_token_and_runs_no_code(self) -> None:
+        for name, source in (
+            ("frontend-coverage-comment", "frontend-coverage"),
+            ("coverage-comment", "coverage"),
+        ):
+            with self.subTest(job=name):
+                self.assert_comment_job(name, source)
+
+    def assert_comment_job(self, name: str, source: str) -> None:
+        job = jobs()[name]
         self.assertEqual({"pull-requests": "write"}, job["permissions"])
-        self.assertEqual("frontend-coverage", job["needs"])
+        self.assertEqual(source, job["needs"])
+        # Superseded runs post nothing, and a skipped coverage job leaves nothing to post.
+        self.assertIn("!cancelled()", job["if"])
+        self.assertIn(f"needs.{source}.result != 'skipped'", job["if"])
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository", job["if"]
+        )
+        upload = next(
+            step for step in jobs()[source]["steps"] if "upload-artifact" in step.get("uses", "")
+        )
+        fetch = job["steps"][0]
+        self.assertEqual(upload["with"]["name"], fetch["with"]["name"], "the artifact it posts")
+        post = next(s for s in job["steps"] if "create-or-update-comment" in s.get("uses", ""))
+        folder, body = post["with"]["body-path"].split("/", 1)
+        self.assertEqual(fetch["with"]["path"], folder)
+        self.assertIn(body, upload["with"]["path"], "the body is in the artifact it fetched")
         for step in job["steps"]:
-            with self.subTest(step=step.get("name")):
+            with self.subTest(job=name, step=step.get("name")):
                 self.assertNotIn("run", step)
                 self.assertTrue(step.get("continue-on-error"), "the comment never gates")
                 action = step["uses"].split("@")[0]
