@@ -198,9 +198,10 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 24230e1b (2026-11-05) -->
-<!-- Reconciled ea215a7f..24230e1b: the follow-up repair docs, the 2.7.0 release, and the compass
-     skill's in-session sessions action with its privacy and approval notes, Compass's own typed
-     command and answer kept out of what it reads and labelled on the session page, the
-     sessions waiting caller notice and the provenance line. Six issues landed in four behavior
-     pull requests on 2026-11-05; the promise map gained the in-session action. -->
+<!-- docs-synced-through: 8b8eff39 (2026-11-06) -->
+<!-- Reconciled 24230e1b..8b8eff39: the drift view published for the terminal and held to the
+     page by a parity check, `--drift` and `--drift again`, the compass skill's in-session `drift`
+     and `drift again` actions with the typed-command guard, the rule that organization-managed
+     remote settings do not block a reading, the pre-approved in-session sessions list, and the
+     fixes to finding this session and keeping each line's citation. Six behavior pull requests
+     landed on 2026-11-06; each carried its own docs, and this pass found nothing stale. -->
