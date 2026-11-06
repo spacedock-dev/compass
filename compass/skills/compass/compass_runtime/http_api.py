@@ -27,6 +27,7 @@ from compass_runtime import (
     correction,
     departures,
     dismissals,
+    drift_view,
     entry_numbers,
     git_status,
     goal_find,
@@ -606,6 +607,54 @@ def _with_lease(
     raw_work = sources.get("work")
     work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
     work["live_monitor"] = published
+    return {**context, "sources": {**sources, "work": work}}
+
+
+def _with_drift_view(
+    application: Any,
+    context: dict[str, Any],
+    payload: dict[str, Any],
+    focus: tuple[str, str],
+    project: str,
+) -> dict[str, Any]:
+    """The focused session's Drift card answer, on `sources.work.drift_views` and on no row.
+
+    The page's own derivation (`drift_view`), held to the page by a parity check, so a terminal
+    prints what the card shows and not what the server's published fields alone would say: a level
+    the page withholds, a departure it demotes, an earlier departure it keeps in view. Not a row
+    field and not on `_session_context`, for the reason the levels are not
+    ([DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).
+
+    Called after `_with_lease`, because the view reads the lease, the levels and the line requests,
+    and after the copied and Compass-turn marks and the ordinals, because it counts and numbers the
+    facts as marked. Unlike `_with_levels` it has no harness gate: Codex gets its line states,
+    departures and earlier departures, and no level, which is what the page shows for the same
+    reading. It can never cost the page its context: a reading it cannot derive is left out.
+    """
+    harness, sid = focus
+    matching = [
+        row
+        for row in payload.get("sessions", [])
+        if row.get("harness") == harness
+        and row.get("sid") == sid
+        and project
+        in {str(row.get("project_key") or row.get("project") or ""), str(row.get("project") or "")}
+    ]
+    if len(matching) != 1:
+        return context
+    try:
+        view = drift_view.derive(matching[0], payload, context)
+    except Exception as exc:  # noqa: BLE001 - a reading this build cannot derive costs no context
+        runtime_io.diag(
+            f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
+            application.diagnostic_sink,
+        )
+        return context
+    raw_sources = context.get("sources")
+    sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
+    raw_work = sources.get("work")
+    work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
+    work["drift_views"] = [view]
     return {**context, "sources": {**sources, "work": work}}
 
 
@@ -1577,6 +1626,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
             result = _with_message_ordinals(application, result, focus)
             result = _with_levels(application, result, collected["sessions"], focus, project)
             result = _with_lease(application, result, collected["sessions"], focus)
+            # After the lease: the view reads it, with the levels, the line requests and the marks.
+            result = _with_drift_view(application, result, collected, focus, project)
             matching = [
                 row
                 for row in collected["sessions"]

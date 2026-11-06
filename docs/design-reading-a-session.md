@@ -8303,6 +8303,27 @@ Three cases the main rule left open, each said only where the page can show it i
 A departure that moved is named as replaced even where no correction was pasted, as the amendment on the
 edges of recognising a pasted correction records; the decision that stood here was reversed there.
 
+
+Amended 2026-11-06 (owner, the terminal shows what the page shows): the page's rules above were applied
+only in the page, so a terminal that printed the server's published fields would show a level and a
+departure the card holds back. The server now publishes the card's own answer for terminal surfaces as
+`sources.work.drift_views` (one row) on the focused `/api/project-context` answer, beside
+`analysis_levels` and `live_levels` and under the same placement rule: on no session row, and not on
+the reading route's context. It is a port of the page's derivation (`drift_view`), not a second
+opinion: the page writes the expected views from a named corpus and a seeded generated one, and the
+Vitest and Python suites both read them, so a change to the page's rules rewrites the expected values
+from the page and the port follows. What "the page" means for a terminal is the page as freshly
+loaded: no unsaved typing, only the focused context's entries, no Show-more pages, and the Live
+monitor counted on exactly while the server's lease stands, since a terminal has no tab to hold the
+switch. A citation outside the focused context's bound therefore reads as can't tell where a tab that
+pressed Show more may show the departure, which is the direction the shape contract calls safe. The
+field carries closed tokens, ids, numbers and the reader's own words, never a sentence of the page's.
+It has no harness gate: Codex gets its line states, departures and earlier departures, and no level,
+because no analysis level is computed for it. The page keeps its own implementation; making it read
+the server's field would change the bundle and the recorded oracles, and was left for later. The
+server and the page still differ over what counts as a later direction in two places (a person's gate
+decision, and the floor a reading's rescope uses when no goal is saved); the port follows the page.
+
 ### Amended 2026-10-21: a running turn is unfinished
 
 A reading taken mid-turn reported a departure because "the session ends with the probe still

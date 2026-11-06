@@ -55,7 +55,19 @@ export const RULES: readonly string[] = [
   'P2',
   'W1',
   'W2',
+  'W3',
+  'L1',
+  'L2',
+  'L3',
+  'L4',
+  'L5',
+  'L6',
+  'L7',
+  'L8',
+  'L9',
+  'L10',
   'L11',
+  'L12',
 ];
 
 interface Spec {
@@ -68,6 +80,12 @@ interface Spec {
   readonly payload?: Json;
   readonly work?: Json;
   readonly priors?: readonly Json[];
+  /** The server's analysis level row for the session, as `sources.work.analysis_levels` carries it. */
+  readonly analysis?: Json;
+  /** The server's live estimate row, as `sources.work.live_levels` carries it. */
+  readonly live?: Json;
+  /** The Live monitor's lease, as `sources.work.live_monitor` carries it. */
+  readonly lease?: Json;
 }
 
 const ROUTES = {
@@ -156,7 +174,17 @@ function build(name: string, rules: readonly string[], spec: Spec = {}): DriftCa
     rules,
     session,
     payload: { annotate: true, generated: 1000, reading_routes: ROUTES, ...spec.payload },
-    context: { semantic: { facts }, sources: { work: { ...spec.work } } },
+    context: {
+      semantic: { facts },
+      sources: {
+        work: {
+          ...(spec.analysis ? { analysis_levels: [{ ...identity, ...spec.analysis }] } : {}),
+          ...(spec.live ? { live_levels: [{ ...identity, ...spec.live }] } : {}),
+          ...(spec.lease ? { live_monitor: spec.lease } : {}),
+          ...spec.work,
+        },
+      },
+    },
   };
 }
 
@@ -729,11 +757,175 @@ export function namedCases(): DriftCase[] {
     build('a-saved-goal-is-not-a-draft', ['L11']),
     build('with-the-store-off-nothing-is-read', ['L11'], { payload: { annotate: false } }),
     build('a-session-with-no-reading-has-no-lines', ['S17'], { reading: null }),
+    ...levelCases(),
     build('an-empty-record-reads-as-empty', ['W1'], { facts: [] }),
     build('a-session-the-scan-left-out-reads-as-partial', ['W1'], {
       facts: [],
       work: { omitted: [{ harness: 'claude', sid: 's1' }] },
     }),
+  ];
+}
+
+const ANALYSIS = (over: Json = {}): Json => ({
+  read_at: 200,
+  revision_read: 3,
+  level: 'medium',
+  reasons: ['departure'],
+  cites: ['m1'],
+  ...over,
+});
+const LIVE = (over: Json = {}): Json => ({
+  level: 'high',
+  revision: 3,
+  computed_at: 180,
+  reasons: ['failed-check'],
+  cites: [],
+  ...over,
+});
+const LEASE = (over: Json = {}): Json => ({
+  on: true,
+  level: null,
+  label: 'Live monitor · Haiku',
+  now: 300,
+  ...over,
+});
+const CHECKED = (level: string): Json => ({ level, checked_at: 290, reason: 'Heading elsewhere' });
+const NO_DEPARTURE: Json = { criteria: { goal: goalRow({ cites: [] }) } };
+const NO_DRAFT: Json = {
+  goal: '',
+  revision: 0,
+  revision_count: 0,
+  at: null,
+  goal_saved_at: null,
+  window_start: null,
+};
+
+/* The level precedence and the stale note: which level the page shows, from what, and why none. */
+function levelCases(): DriftCase[] {
+  return [
+    build('a-departure-reading-draws-the-level-the-server-computed', ['L5', 'L9'], {
+      analysis: ANALYSIS(),
+    }),
+    build('a-level-above-low-needs-a-departure-the-page-kept', ['L9'], {
+      analysis: ANALYSIS(),
+      reading: NO_DEPARTURE,
+    }),
+    build('none-or-low-is-withheld-while-a-line-is-not-shown-by-a-check', ['L8'], {
+      annotation: LINE_1,
+      analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
+      reading: {
+        criteria: {
+          goal: goalRow({ result: CONSISTENT }),
+          line_1: { result: UNVERIFIABLE, clause: 'Run the tests' },
+        },
+      },
+    }),
+    build('none-or-low-stands-when-every-line-reads-consistent-on-a-source', ['L8'], {
+      analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
+      reading: { criteria: { goal: goalRow({ result: CONSISTENT }) } },
+    }),
+    build('an-unsupported-claim-withholds-none-or-low', ['L8'], {
+      analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
+      reading: {
+        criteria: {
+          goal: goalRow({ result: CONSISTENT }),
+          claims: { result: UNSUPPORTED, cites: ['m1'] },
+        },
+      },
+    }),
+    build('a-level-for-another-reading-time-is-not-drawn', ['L6'], {
+      analysis: ANALYSIS({ read_at: 199 }),
+    }),
+    build('a-level-for-another-revision-read-is-not-drawn', ['L6'], {
+      analysis: ANALYSIS({ revision_read: 2 }),
+    }),
+    build('a-level-name-the-page-does-not-know-is-not-drawn', ['L6'], {
+      analysis: ANALYSIS({ level: 'severe' }),
+    }),
+    build('a-reading-the-reader-marked-not-accurate-draws-no-level', ['L5'], {
+      annotation: { not_accurate: true },
+      analysis: ANALYSIS(),
+    }),
+    build('a-reading-of-replaced-words-yields-its-level-to-the-estimate', ['L7', 'L4'], {
+      annotation: { revision: 4 },
+      analysis: ANALYSIS(),
+      lease: LEASE(),
+      live: LIVE({ revision: 4 }),
+    }),
+    build('the-reading-that-stands-owns-the-slot-over-the-monitor', ['L10'], {
+      analysis: ANALYSIS(),
+      reading: NO_DEPARTURE,
+      lease: LEASE({ level: CHECKED('high') }),
+    }),
+    build('without-a-reading-the-monitor-level-is-the-pill', ['L2'], {
+      reading: null,
+      lease: LEASE({ level: CHECKED('high') }),
+      live: LIVE({ level: 'medium' }),
+    }),
+    build('the-monitor-replaces-the-estimate-while-it-stands', ['L2'], {
+      reading: null,
+      lease: LEASE({ level: CHECKED('none_or_low') }),
+      live: LIVE(),
+    }),
+    build('a-lease-that-is-off-leaves-the-estimate-off', ['L1'], {
+      reading: null,
+      lease: LEASE({ on: false, level: CHECKED('extreme') }),
+      live: LIVE(),
+    }),
+    build('with-no-lease-the-live-estimate-is-off', ['L1'], { reading: null, live: LIVE() }),
+    build('a-lease-with-no-completed-check-shows-the-estimate', ['L1', 'L2'], {
+      reading: null,
+      lease: LEASE(),
+      live: LIVE({ level: 'medium' }),
+    }),
+    build('a-live-level-that-asks-for-the-intent-first', ['L3'], {
+      reading: null,
+      lease: LEASE(),
+      live: LIVE({ level: 'no_live_level' }),
+    }),
+    build('a-live-row-measured-against-another-revision-is-not-drawn', ['L4'], {
+      reading: null,
+      lease: LEASE(),
+      live: LIVE({ revision: 2 }),
+    }),
+    build('codex-has-no-live-estimate-whatever-the-lease-says', ['L1'], {
+      harness: 'codex',
+      reading: null,
+      lease: LEASE({ level: CHECKED('high') }),
+      live: LIVE(),
+    }),
+    build('a-drafted-intent-draws-no-pill', ['L11'], {
+      reading: null,
+      annotation: NO_DRAFT,
+      session: { first_prompt: 'Ship the queue', first_prompt_at: 90 },
+      lease: LEASE(),
+      live: LIVE({ revision: 0 }),
+    }),
+    build('a-running-session-reads-so-far', ['L12'], {
+      session: { state: 'working', ended_at: null },
+      analysis: ANALYSIS(),
+    }),
+    build('a-reading-of-a-turn-still-open-reads-so-far', ['L12'], {
+      reading: { scope: 'mid-flight' },
+      analysis: ANALYSIS(),
+    }),
+    build('a-finished-reading-of-a-finished-turn-does-not', ['L12'], { analysis: ANALYSIS() }),
+    build('a-reading-is-stale-when-the-words-changed', ['W3'], {
+      annotation: { revision: 4 },
+      analysis: ANALYSIS(),
+    }),
+    build('a-reading-is-stale-when-work-landed-after-it-read', ['W3'], {
+      facts: [M1, fact('m5', 'agent_message', 195)],
+    }),
+    build('a-stale-reading-names-the-message-it-was-read-before', ['W3'], {
+      annotation: { settled_through: 300 },
+      facts: [M1, fact('u9', 'user_message', 210)],
+    }),
+    build('compass-s-own-turn-is-not-new-work', ['W3'], {
+      facts: [M1, fact('c9', 'agent_message', 195, { compass_turn: true })],
+    }),
+    build('a-reading-with-nothing-after-it-is-not-stale', ['W3']),
+    build('a-malformed-reading-has-no-stale-note', ['W3'], { reading: { surprise: true } }),
   ];
 }
 
@@ -765,6 +957,7 @@ function toFact(entry: GenEntry): Json {
     changed_after: entry.changedAfter,
     read_incomplete: entry.readIncomplete,
     evidence: TYPE_SOURCE(entry.source),
+    ...(entry.changedAfter && entry.copied ? { compass_turn: true } : {}),
   };
 }
 
@@ -860,6 +1053,63 @@ export function generatedCase(seed: number): DriftCase {
     { claude: {}, codex: {} },
     { claude: { provider: 'p' }, codex: { provider: 'p' } },
   ]);
+  const analysis =
+    reading !== null && rnd() < 0.7
+      ? [
+          {
+            harness,
+            sid: 's1',
+            read_at: rnd() < 0.85 ? (reading as Json)['read_at'] : 199,
+            revision_read: rnd() < 0.85 ? (reading as Json)['revision_read'] : 2,
+            level: pick(rnd, [
+              'none_or_low',
+              'medium',
+              'medium',
+              'high',
+              'extreme',
+              'not_enough',
+              'bogus',
+            ]),
+            reasons: pick(rnd, [
+              [],
+              ['departure'],
+              ['later-direction'],
+              ['failed-check', 'departure'],
+            ]),
+            cites: [],
+          },
+        ]
+      : undefined;
+  const live =
+    rnd() < 0.5
+      ? [
+          {
+            harness,
+            sid: 's1',
+            level: pick(rnd, ['none_or_low', 'medium', 'high', 'no_live_level', 'bogus']),
+            revision: pick(rnd, [3, 3, 2, null]),
+            computed_at: 180,
+            reasons: [],
+            cites: [],
+          },
+        ]
+      : undefined;
+  const lease = pick(rnd, [
+    undefined,
+    undefined,
+    { on: true, level: null, now: 300 },
+    {
+      on: true,
+      level: {
+        level: pick(rnd, ['none_or_low', 'high', 'not_enough', 'bogus']),
+        checked_at: 290,
+        reason: 'x',
+      },
+      now: 300,
+    },
+    { on: false, level: { level: 'high', checked_at: 290, reason: 'x' }, now: 300 },
+    { on: 'x' },
+  ]);
   return {
     name: `generated-${String(seed)}`,
     rules: [],
@@ -868,7 +1118,12 @@ export function generatedCase(seed: number): DriftCase {
     context: {
       semantic: { facts },
       sources: {
-        work: rnd() < 0.3 ? lineRequestsFor(harness) : {},
+        work: {
+          ...(rnd() < 0.3 ? lineRequestsFor(harness) : {}),
+          ...(analysis ? { analysis_levels: analysis } : {}),
+          ...(live ? { live_levels: live } : {}),
+          ...(lease ? { live_monitor: lease } : {}),
+        },
       },
     },
   };

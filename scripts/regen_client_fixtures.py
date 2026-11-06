@@ -1697,6 +1697,109 @@ def adoption_scenarios(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """A stored reading with a departure, and a direction given after the words were saved.
+
+    The page demotes that departure to "can't tell" (a later direction still unsettled), and
+    `drift_views` is the server's copy of that answer: the recorded pair is what the page's own
+    derivation is held to on the real server's bytes.
+    """
+    first_at, later_at = NOW - 3600, NOW - 1800
+    row = synthetic_row(
+        "claude",
+        "a1b2c3d4",
+        "alpha-app",
+        title="Retry work",
+        state="working",
+        age=5.0,
+        first_prompt=FIRST_PROMPT,
+        first_prompt_at=first_at,
+        last_prompt=LATER_PROMPT,
+        prompt_at=later_at,
+    )
+    entries = [
+        _transcript_entry("user", FIRST_PROMPT, first_at, 0),
+        _transcript_entry("assistant", "Done.", first_at + 60, 1),
+        _transcript_entry("user", LATER_PROMPT, later_at, 2),
+    ]
+    scope = "project=alpha-app&session=claude:a1b2c3d4"
+    # The reading cites a fact id, and a fact id is a hash of the record, so it is read from a
+    # probe of the same transcript. The probe is its own rig because a board once collected is
+    # held for the run, so the words saved afterwards would not reach it.
+    probe = Rig(scratch, "drift-view-probe", rows={"claude": [row], "codex": []})
+    try:
+        probe.write_transcript("a1b2c3d4", entries)
+        facts = probe.send(get("/api/project-context", scope))["body"]["semantic"]["facts"]
+    finally:
+        probe.close()
+    first = next(
+        fact for fact in facts if fact["type"] == "user_message" and fact["at"] == first_at
+    )
+    rig = Rig(scratch, "drift-view", rows={"claude": [row], "codex": []})
+    try:
+        rig.write_transcript("a1b2c3d4", entries)
+        # The store stamps its write from the wall clock, which would move the board's revision.
+        with mock.patch.object(annotation_store, "time", FrozenTime()):
+            saved = annotation_store.annotate(
+                rig.config,
+                rig.state,
+                "claude",
+                "a1b2c3d4",
+                goal="Add retry with backoff",
+                lines=[],
+                now=first_at - 60,
+            )
+            if saved != annotation_store.OUTCOME_STORED:
+                raise RuntimeError(saved)
+            stored = annotation_store.record_reading(
+                rig.config,
+                rig.state,
+                "claude",
+                "a1b2c3d4",
+                assessment={
+                    "revision_read": 1,
+                    "stamp": "",
+                    "cutoff": "",
+                    "scope": runtime_reading.SCOPE_LAST_TURN,
+                    "scope_text": runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_LAST_TURN],
+                    "ended_at_read": None,
+                    "read_at": NOW - 600,
+                    "evidence_through": NOW - 600,
+                    "revision_read_at": first_at - 60,
+                    "window_start": first_at - 60,
+                    "criteria": {
+                        "goal": {
+                            "result": runtime_reading.RESULT_DEPARTURE,
+                            "cites": (first["fact_id"],),
+                            "detail": "It asked for a different change",
+                            "why": runtime_reading.WHY_STANDS,
+                            "clause": "Add retry with backoff",
+                        }
+                    },
+                },
+            )
+            if stored != annotation_store.OUTCOME_STORED:
+                raise RuntimeError(stored)
+
+        recorder.capture(
+            rig,
+            "data-focused-drift",
+            get("/api/data"),
+            "The board with a stored reading on one session: the row the page derives the Drift "
+            "card from, beside the focused context captured next.",
+        )
+        recorder.capture(
+            rig,
+            "context-focused-drift",
+            get("/api/project-context", scope),
+            "The focused context of that session: sources.work.drift_views holds the Drift "
+            "card's answer. The reading departs, and a message the reader sent after saving "
+            "the words is still unsettled, so the departure reads as can't tell.",
+        )
+    finally:
+        rig.close()
+
+
 def tripwire_scenarios(recorder: Recorder, scratch: Scratch) -> None:
     key = "0" * 63 + "1"
     request = {"id": key, "stage": "review", "action": "remove", "expected_revision": ""}
@@ -1826,6 +1929,7 @@ SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
     copy_and_direction_scenarios,
     reading_scenarios,
     adoption_scenarios,
+    drift_view_scenario,
     tripwire_scenarios,
     focus_scenarios,
 )

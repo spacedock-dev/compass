@@ -15,7 +15,8 @@ loaded, by the owner's ruling of 2026-11-06: no unsaved typing, only the focused
 and no Show-more pages. It emits closed tokens, ids, numbers and the reader's own words, never a
 sentence of the page's; the terminal words its own output.
 
-Nothing calls this yet. The level, the live monitor and the published field are the next layer.
+`derive` is the whole answer, including the level and the stale note, and `http_api` publishes it on
+the focused context as `sources.work.drift_views`.
 
 The `shape_view` answer is the page's `readingShape` and `priorDepartures` with the model's draft
 and numbering around them. The rules it keeps, by the shape contract
@@ -33,7 +34,7 @@ import functools
 import math
 from typing import Any, TypeGuard
 
-from . import ci_read, reading, records
+from . import ci_read, levels, reading, records
 
 # The fields a row publishes under `annotation_`, in the order the page reads them
 # (`ANNOTATION_FIELDS` in `frontend/src/intent/annotation.ts`). A field missing here is one the page
@@ -199,6 +200,7 @@ class Entry:
     ordinal_sub: int | None
     source: str
     ci_counts: bool = False
+    compass_turn: bool = False
 
 
 def _position(value: Json) -> int | None:
@@ -274,6 +276,7 @@ def work_entries(session: dict[str, Json], semantic: Json) -> list[Entry]:
             ordinal=_position(fact.get("ordinal")),
             ordinal_sub=_position(fact.get("ordinal_sub")),
             source=_evidence_source(fact),
+            compass_turn=fact.get("compass_turn") is True,
         )
         for fact in mine
     ]
@@ -1285,6 +1288,8 @@ class Shape:
     departures: tuple[Criterion, ...]
     malformed: str
     window_start: float | None
+    revision_read: float | None = None
+    scope: str = ""
 
 
 def _window_partial(coverage: dict[str, Json] | None, window_start: float | None) -> bool:
@@ -1388,6 +1393,8 @@ def reading_shape(
         ),
         malformed="",
         window_start=window_start,
+        revision_read=revision_read,
+        scope=_text(source.get("scope")),
     )
 
 
@@ -1466,9 +1473,21 @@ def prior_departures(  # noqa: C901 - one continue per rule an earlier departure
 # --- the view -------------------------------------------------------------------------------------
 
 
-def shape_view(
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Parts:
+    """What the level and the stale note read beside the shape."""
+
+    annotate: bool
+    annotation: dict[str, Json] | None
+    entries: list[Entry]
+    shape: Shape | None
+    drafted: bool
+    harness: str
+
+
+def _read(
     session: dict[str, Json], payload: dict[str, Json], context: Json
-) -> dict[str, Json]:
+) -> tuple[dict[str, Json], _Parts]:
     """What the Drift card holds for a session on a fresh load, as tokens, numbers and the reader's
     words.
 
@@ -1513,7 +1532,7 @@ def shape_view(
     def numbers(ids: Any) -> list[str]:
         return [numbering.labels.get(entry_id, "") for entry_id in ids]
 
-    return {
+    view = {
         "harness": harness,
         "sid": _str(session.get("sid")),
         "annotate": annotate,
@@ -1563,3 +1582,281 @@ def shape_view(
             for prior in priors
         ],
     }
+    return view, _Parts(
+        annotate=annotate,
+        annotation=annotation,
+        entries=entries,
+        shape=shape,
+        drafted=draft is not None,
+        harness=harness,
+    )
+
+
+def shape_view(
+    session: dict[str, Json], payload: dict[str, Json], context: Json
+) -> dict[str, Json]:
+    """The shape alone: line states, departures and earlier departures, with no level."""
+    return _read(session, payload, context)[0]
+
+
+# --- the level ------------------------------------------------------------------------------------
+
+_LEVELS = (
+    levels.NONE_OR_LOW,
+    levels.MEDIUM,
+    levels.HIGH,
+    levels.EXTREME,
+    levels.NOT_ENOUGH,
+)
+# The levels that draw as a level: the page's `LEVEL_SCALE`. "Not enough recorded yet" never does.
+_LEVEL_SCALE = (levels.NONE_OR_LOW, levels.MEDIUM, levels.HIGH, levels.EXTREME)
+_ABOVE_LOW = (levels.MEDIUM, levels.HIGH, levels.EXTREME)
+# The one harness with a live estimate and a monitor: `live_estimate.HARNESSES`,
+# `live_lease.HARNESS`.
+_LIVE_HARNESS = "claude"
+REASON_LINE_NOT_SHOWN = "line-not-shown-by-a-check"
+REASON_CLAIM_NOT_SHOWN = "claim-not-shown"
+
+
+def _work_rows(context: Json, field: str, session: dict[str, Json]) -> dict[str, Json] | None:
+    """The first row of `sources.work.<field>` that names this session, as `workOf` reads it."""
+    rows = _work_block(context).get(field)
+    key = _session_key(session)
+    return next(
+        (
+            row
+            for row in (rows if isinstance(rows, list) else [])
+            if _truthy(row) and _session_key(row) == key
+        ),
+        None,
+    )
+
+
+def analysis_shown(shape: Shape) -> bool:
+    """Whether every row of the intent stands consistent on what it names.
+
+    The intent's rows only: the claims row is not the intent, and holding it to a consistent made
+    None or low unreachable.
+    """
+    intent = [row for row in shape.criteria if row.key != _CLAIMS]
+    return (
+        bool(intent)
+        and all(row.result == reading.RESULT_CONSISTENT and bool(row.rests_on) for row in intent)
+        and not any(
+            row.key == _CLAIMS and row.result == reading.RESULT_UNSUPPORTED
+            for row in shape.criteria
+        )
+    )
+
+
+def analysis_level(
+    session: dict[str, Json],
+    annotation: dict[str, Json] | None,
+    shape: Shape | None,
+    context: Json,
+) -> dict[str, Json] | None:
+    """`analysisLevel`: the server's level for the stored reading, as the page lets it stand.
+
+    It is drawn only for the reading the page shows, only while that reading read the saved
+    revision, and only for a reading the shape contract accepted. The page then holds the server's
+    level to its own rows: None or low beside a line the card cannot show as consistent would
+    reassure past what the rows say, and a level above None or low needs a departure the reading
+    carries, because the server also reads Medium from a contradicted claim or a pass followed by a
+    change, per the
+    [amendment](docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure).
+    Either holds the level at "not enough recorded yet", which owns the slot and draws no pill.
+    """
+    raw = _get(annotation, "assessment")
+    if (
+        not _is_record(raw)
+        or shape is None
+        or shape.malformed
+        or _get(annotation, "not_accurate") is True
+    ):
+        return None
+    read_at = _number(raw.get("read_at"))
+    row = _work_rows(context, "analysis_levels", session)
+    if (
+        read_at is None
+        or row is None
+        or _number(row.get("read_at")) != read_at
+        or _number(row.get("revision_read")) != _number(raw.get("revision_read"))
+    ):
+        return None
+    # A level for words the reader has replaced yields to the live estimate.
+    current = _number(_get(annotation, "revision"))
+    if current is not None and _number(raw.get("revision_read")) != current:
+        return None
+    served = _text(row.get("level"))
+    if served not in _LEVELS:
+        return None
+    level = served
+    tokens = [
+        _str(token) for token in (row["reasons"] if isinstance(row.get("reasons"), list) else [])
+    ]
+    if level == levels.NONE_OR_LOW and not analysis_shown(shape):
+        level = levels.NOT_ENOUGH
+        tokens.append(
+            REASON_CLAIM_NOT_SHOWN
+            if any(
+                row.key == _CLAIMS and row.result == reading.RESULT_UNSUPPORTED
+                for row in shape.criteria
+            )
+            else REASON_LINE_NOT_SHOWN
+        )
+    elif level in _ABOVE_LOW and not shape.departures:
+        level = levels.NOT_ENOUGH
+    return {"level": level, "reasons": list(dict.fromkeys(tokens)), "withheld": level != served}
+
+
+def lease_state(context: Json) -> dict[str, Json] | None:
+    """`parseLease`: the Live monitor's lease the server holds, or null when none is published."""
+    lease = _work_block(context).get("live_monitor")
+    return lease if _is_record(lease) and isinstance(lease.get("on"), bool) else None
+
+
+def monitor_level(lease: dict[str, Json] | None) -> str | None:
+    """`monitorLevel`: the level of the last completed Haiku check, only while the lease stands."""
+    row = lease.get("level") if lease and lease["on"] else None
+    level = _text(row.get("level")) if _is_record(row) else ""
+    return level if level in _LEVELS else None
+
+
+def live_estimate(
+    *,
+    live_on: bool,
+    monitor: str | None,
+    harness: str,
+    context: Json,
+    session: dict[str, Json],
+    annotation: dict[str, Json] | None,
+) -> dict[str, Json] | None:
+    """`liveEstimate`: Claude Code's only, and only while the lease stands.
+
+    The monitor's Haiku level replaces the estimate while it stands. A live row measured against
+    another revision is about words the card no longer shows.
+    """
+    if harness != _LIVE_HARNESS or not live_on:
+        return None
+    if monitor:
+        return {"level": monitor, "source": "monitor"}
+    row = _work_rows(context, "live_levels", session)
+    if row is None:
+        return None
+    level = _text(row.get("level"))
+    if level == levels.NO_LIVE_LEVEL:
+        return {"save": True}
+    if level not in _LEVELS or _number(row.get("revision")) != (
+        _number(_get(annotation, "revision")) or 0
+    ):
+        return None
+    return {"level": level, "source": "live"}
+
+
+def result_stale(
+    shape: Shape, raw: Json, annotation: dict[str, Json] | None, entries: list[Entry]
+) -> dict[str, Json] | None:
+    """`resultStale`: the two stale states, from the revision read and the newest entry it saw.
+
+    The words changing is one; new work is any entry after the reading's newest, or after when it
+    read where an older row stored no such time. Compass's answer to a command the reader typed is
+    not work the reading could have read.
+    """
+    held = [entry for entry in entries if not entry.compass_turn]
+    current = _number(_get(annotation, "revision"))
+    superseded = (
+        shape.revision_read is not None and current is not None and shape.revision_read != current
+    )
+    evidence = _number(_get(raw, "evidence_through"))
+    through = evidence if evidence is not None else _number(_get(raw, "read_at"))
+    newer = (
+        not superseded
+        and through is not None
+        and any((_number(entry.at) or 0) > through for entry in held)
+    )
+    if not superseded and not newer:
+        return None
+    read_at = _number(_get(raw, "read_at"))
+    after = (
+        next(
+            (
+                entry
+                for entry in held
+                if person_authored(entry) and (_number(entry.at) or 0) > read_at
+            ),
+            None,
+        )
+        if not superseded and read_at is not None
+        else None
+    )
+    return {
+        "kind": "intent" if superseded else "work",
+        "before": _number(after.at) if after else None,
+    }
+
+
+def derive(session: dict[str, Json], payload: dict[str, Json], context: Json) -> dict[str, Json]:
+    """The Drift card's whole answer for a fresh load: the shape, the level and the stale note.
+
+    The level is the page's precedence
+    ([DEC-27](docs/design-reading-a-session.md#amended-2026-10-21-a-level-needs-a-departure)): a
+    reading that stands owns the slot, with a level or with none, so the live estimate reads checks
+    and paths and never what the intent says, and draws no Medium beside a reading that found no
+    departure. A drafted intent draws no pill. The Live monitor counts as on exactly while the
+    server's lease stands, since a terminal has no tab to hold the switch.
+    """
+    view, parts = _read(session, payload, context)
+    lease = lease_state(context)
+    live_on = bool(lease and lease["on"])
+    analysis = (
+        analysis_level(session, parts.annotation, parts.shape, context) if parts.annotate else None
+    )
+    estimate = live_estimate(
+        live_on=live_on,
+        monitor=monitor_level(lease) if live_on else None,
+        harness=parts.harness,
+        context=context,
+        session=session,
+        annotation=parts.annotation,
+    )
+    shown = analysis if analysis is not None else estimate
+    pill = None
+    if shown and "level" in shown and not parts.drafted and shown["level"] in _LEVEL_SCALE:
+        pill = {
+            "level": shown["level"],
+            "source": "analysis" if analysis is not None else shown["source"],
+        }
+        state = session.get("state")
+        running = isinstance(state, str) and state != "idle" and _ended_at(session) is None
+        pill["so_far"] = bool(
+            running
+            or (
+                analysis is not None
+                and parts.shape is not None
+                and parts.shape.scope == "mid-flight"
+            )
+        )
+    raw = _get(parts.annotation, "assessment")
+    stale = (
+        result_stale(parts.shape, raw, parts.annotation, parts.entries)
+        if parts.annotate
+        and parts.shape is not None
+        and not parts.shape.malformed
+        and _truthy(raw)
+        and parts.annotation is not None
+        else None
+    )
+    return {
+        **view,
+        "live_on": live_on,
+        "revision": _number(_get(parts.annotation, "revision")),
+        "analysis": analysis,
+        "estimate": estimate,
+        "pill": pill,
+        "stale": stale,
+    }
+
+
+def _ended_at(session: dict[str, Json]) -> float | None:
+    at = _number(session.get("ended_at"))
+    return at if at is not None and at > 0 else None

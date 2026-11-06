@@ -181,23 +181,30 @@
     },
     {
       "method": "GET",
+      "name": "context-focused-drift",
+      "route": "/api/project-context",
+      "sha256": "40ac0cf4dc75ed8eb20ec86a276aba90647c3cd2a8844caeca6c0f15fb9bb2a2",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "9a1c7e6eca693ee39e4f17fd831084212bd28ab0e5f248a9f7508252e117333a",
+      "sha256": "12c6d25f882288b39a12df3df7bbe99b20f57629338d867cdd8dcc1a2b0276ee",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "7a0a3d645aae8703dc8d6c2d98f6307efc48216c650575d4146cf91e09d3a9a0",
+      "sha256": "96130df3b6f374889dbf1206d6fb75d343274c5bf8e77984e8069852bc7ec629",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-session",
       "route": "/api/project-context",
-      "sha256": "126655e7284ec50ce3f9f915a4f0283387f46c81c38ab2980a0209308e445831",
+      "sha256": "2aafe8b9b5cc041b55962d745ce83bd79f325696196fd30e8d572c5a2ad921e3",
       "status": 200
     },
     {
@@ -246,7 +253,7 @@
       "method": "GET",
       "name": "context-refresh-model-disabled",
       "route": "/api/project-context",
-      "sha256": "95878deada6258f68a9df0733f20e9969fd7b318ffff01a044b91269b9560fac",
+      "sha256": "07c82760d6de5d86cdde10a2ddd1f8f6b8deea5ea022292ff3a5e21e1688c8ae",
       "status": 200
     },
     {
@@ -282,6 +289,13 @@
       "name": "data-empty",
       "route": "/api/data",
       "sha256": "494fff95b3bf2aa3874024a81924574541926b9f237ba64f31447507fa7f17e2",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift",
+      "route": "/api/data",
+      "sha256": "79b13f33d5a812020438812f7c2161f8e24d5c3e609cf1664c49addaeaafa5ed",
       "status": 200
     },
     {

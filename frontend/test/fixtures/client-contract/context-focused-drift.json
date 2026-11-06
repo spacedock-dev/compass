@@ -1,0 +1,506 @@
+{
+  "format": 1,
+  "name": "context-focused-drift",
+  "notes": "The focused context of that session: sources.work.drift_views holds the Drift card's answer. The reading departs, and a message the reader sent after saving the words is still unsettled, so the departure reads as can't tell.",
+  "request": {
+    "body": null,
+    "headers": {},
+    "method": "GET",
+    "path": "/api/project-context",
+    "query": "project=alpha-app&session=claude:a1b2c3d4"
+  },
+  "response": {
+    "body": {
+      "child_assignments": [],
+      "events": [
+        {
+          "at": 1899998200.0,
+          "harness": "claude",
+          "intent_promotable": true,
+          "kind": "steer",
+          "phase": "user-role instruction",
+          "sid": "a1b2c3d4",
+          "source": "timestamped non-meta user-role record",
+          "title": "Keep the diff small and leave the tests alone."
+        },
+        {
+          "at": 1899996460.0,
+          "harness": "claude",
+          "kind": "agent_say",
+          "phase": "assistant message",
+          "record_id": "u1",
+          "sid": "a1b2c3d4",
+          "source": "timestamped top-level assistant text record",
+          "title": "Done."
+        },
+        {
+          "at": 1899996400.0,
+          "harness": "claude",
+          "intent_promotable": true,
+          "kind": "steer",
+          "phase": "user-role instruction",
+          "sid": "a1b2c3d4",
+          "source": "timestamped non-meta user-role record",
+          "title": "Add retry with backoff to the webhook handler."
+        }
+      ],
+      "focus": {
+        "harness": "claude",
+        "observed": false,
+        "sid": "a1b2c3d4"
+      },
+      "observer_model": {
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause model calls or --no-observer-model stops these calls.",
+        "enabled": false,
+        "max_prompt_bytes": 16384
+      },
+      "observers": [],
+      "project": "alpha-app",
+      "semantic": {
+        "contributors": [],
+        "facts": [
+          {
+            "actor_claim": "timestamped non-meta user-role record",
+            "at": 1899998200.0,
+            "evidence": {
+              "confidence": "exact",
+              "source": "timestamped non-meta user-role record"
+            },
+            "fact_id": "fact:4aae9c22a7d95d9a",
+            "intent_promoted": true,
+            "ordinal": 3,
+            "scope": "session",
+            "source_kind": "steer",
+            "source_session": {
+              "harness": "claude",
+              "sid": "a1b2c3d4"
+            },
+            "summary": "Keep the diff small and leave the tests alone.",
+            "type": "user_message",
+            "work_item_id": null
+          },
+          {
+            "actor_claim": "timestamped top-level assistant text record",
+            "at": 1899996460.0,
+            "branch": {
+              "harness": "claude",
+              "record_id": "u1",
+              "sid": "a1b2c3d4"
+            },
+            "evidence": {
+              "confidence": "exact",
+              "source": "timestamped top-level assistant text record"
+            },
+            "fact_id": "fact:97096f7eb5b6d42d",
+            "ordinal": 2,
+            "scope": "session",
+            "source_kind": "agent_say",
+            "source_session": {
+              "harness": "claude",
+              "sid": "a1b2c3d4"
+            },
+            "summary": "Done.",
+            "type": "agent_message",
+            "work_item_id": null
+          },
+          {
+            "actor_claim": "timestamped non-meta user-role record",
+            "at": 1899996400.0,
+            "evidence": {
+              "confidence": "exact",
+              "source": "timestamped non-meta user-role record"
+            },
+            "fact_id": "fact:1b3f7a63986acb47",
+            "intent_promoted": true,
+            "ordinal": 1,
+            "scope": "session",
+            "source_kind": "steer",
+            "source_session": {
+              "harness": "claude",
+              "sid": "a1b2c3d4"
+            },
+            "summary": "Add retry with backoff to the webhook handler.",
+            "type": "user_message",
+            "work_item_id": null
+          }
+        ],
+        "history": {
+          "cursors": {
+            "claude:a1b2c3d4": {
+              "at": 1899998200.0,
+              "event_id": "fact:4aae9c22a7d95d9a"
+            }
+          },
+          "event_count": 2,
+          "events": [
+            {
+              "at": 1899998200.0,
+              "event_id": "fact:4aae9c22a7d95d9a",
+              "event_type": "operator_direction",
+              "source_identity": "claude:a1b2c3d4",
+              "source_ref": "fact:4aae9c22a7d95d9a",
+              "summary": "Keep the diff small and leave the tests alone.",
+              "work_binding": null
+            },
+            {
+              "at": 1899996400.0,
+              "event_id": "fact:1b3f7a63986acb47",
+              "event_type": "operator_direction",
+              "source_identity": "claude:a1b2c3d4",
+              "source_ref": "fact:1b3f7a63986acb47",
+              "summary": "Add retry with backoff to the webhook handler.",
+              "work_binding": null
+            }
+          ],
+          "persisted": true,
+          "window_sec": 86400
+        },
+        "projections": {
+          "activity": {
+            "current_after": 1899999100.0,
+            "historical_dispatches": 0,
+            "historical_unresolved": 0,
+            "nodes": [],
+            "steering": [
+              {
+                "at": 1899998200.0,
+                "confidence": "derived-deterministic",
+                "derived_from": "fact:4aae9c22a7d95d9a",
+                "kind": "operator_intent",
+                "projection_id": "intent:473c716f5b018f13",
+                "summary": "Keep the diff small and leave the tests alone."
+              }
+            ]
+          },
+          "assignments": [],
+          "candidate_goal_shifts": [],
+          "command_attention": [],
+          "command_attention_coverage": {
+            "omitted": 0,
+            "scanned": 1,
+            "source": "bounded active-session final-output scan",
+            "state": "complete",
+            "total": 1
+          },
+          "operator_intents": [
+            {
+              "at": 1899998200.0,
+              "confidence": "derived-deterministic",
+              "derived_from": "fact:4aae9c22a7d95d9a",
+              "kind": "operator_intent",
+              "projection_id": "intent:473c716f5b018f13",
+              "summary": "Keep the diff small and leave the tests alone."
+            },
+            {
+              "at": 1899996400.0,
+              "confidence": "derived-deterministic",
+              "derived_from": "fact:1b3f7a63986acb47",
+              "kind": "operator_intent",
+              "projection_id": "intent:c23a27792d321270",
+              "summary": "Add retry with backoff to the webhook handler."
+            }
+          ],
+          "steering_episodes": [],
+          "trail_heads": []
+        },
+        "relations": [
+          {
+            "confidence": "exact",
+            "from": "intent:c23a27792d321270",
+            "provenance": "bounded semantic-line extraction",
+            "to": "fact:1b3f7a63986acb47",
+            "type": "derived_from"
+          },
+          {
+            "confidence": "exact",
+            "from": "intent:473c716f5b018f13",
+            "provenance": "bounded semantic-line extraction",
+            "to": "fact:4aae9c22a7d95d9a",
+            "type": "derived_from"
+          }
+        ],
+        "work_items": []
+      },
+      "sources": {
+        "gate": {
+          "live": 0,
+          "status_history": "unavailable",
+          "untimestamped_prepare": 0
+        },
+        "observer": {
+          "live": 0,
+          "omitted": [],
+          "unavailable": []
+        },
+        "outline": {
+          "basis": "grouping",
+          "blocks": [
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 1,
+                "checks": 0,
+                "checks_failed": 0,
+                "checks_fixed": 0,
+                "checks_unknown": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "opening": true,
+              "partial": false,
+              "prompt": {
+                "at": 1899996400.0,
+                "fact_id": "fact:1b3f7a63986acb47",
+                "title": "Add retry with backoff to the webhook handler."
+              },
+              "span": {
+                "entries": 2,
+                "first": "fact:1b3f7a63986acb47",
+                "from_at": 1899996400.0,
+                "last": "fact:97096f7eb5b6d42d",
+                "to_at": 1899996460.0
+              }
+            },
+            {
+              "checks": [],
+              "counts": {
+                "agent_messages": 0,
+                "checks": 0,
+                "checks_failed": 0,
+                "checks_fixed": 0,
+                "checks_unknown": 0,
+                "files": 0,
+                "subagent_entries": 0
+              },
+              "failures": [],
+              "folders": [],
+              "opening": false,
+              "partial": false,
+              "prompt": {
+                "at": 1899998200.0,
+                "fact_id": "fact:4aae9c22a7d95d9a",
+                "title": "Keep the diff small and leave the tests alone."
+              },
+              "span": {
+                "entries": 1,
+                "first": "fact:4aae9c22a7d95d9a",
+                "from_at": 1899998200.0,
+                "last": "fact:4aae9c22a7d95d9a",
+                "to_at": 1899998200.0
+              }
+            }
+          ],
+          "coverage": {
+            "agent_replies": "read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 890,
+            "notes": [],
+            "start_offset": 0,
+            "starts_at": null,
+            "unread": []
+          },
+          "harness": "claude",
+          "made_by": "compass",
+          "more_blocks": 0,
+          "reason": null,
+          "state": "ok"
+        },
+        "scope": "focused session",
+        "steer": {
+          "live": 2,
+          "omitted": [],
+          "unavailable": []
+        },
+        "summary": {
+          "exists": false,
+          "job": null,
+          "plan": {
+            "calls": 4,
+            "complete": true,
+            "largest_read": {
+              "bytes_sent": 786432,
+              "call_timeout": 180.0,
+              "calls": 37,
+              "seconds": 600.0,
+              "window_bytes": 16384,
+              "windows": 32
+            },
+            "minutes": 10,
+            "parts": 2,
+            "reason": null,
+            "windows": 1
+          },
+          "state": "absent"
+        },
+        "surrounding_active": 0,
+        "work": {
+          "analysis_levels": [
+            {
+              "cites": [],
+              "computed_at": 1900000000.0,
+              "harness": "claude",
+              "level": "not_enough",
+              "read_at": 1899999400.0,
+              "reasons": [
+                "line-not-shown-by-a-check",
+                "later-direction"
+              ],
+              "revision_read": 1,
+              "sid": "a1b2c3d4"
+            }
+          ],
+          "drift_views": [
+            {
+              "analysis": {
+                "level": "not_enough",
+                "reasons": [
+                  "line-not-shown-by-a-check",
+                  "later-direction"
+                ],
+                "withheld": false
+              },
+              "annotate": true,
+              "cited": [],
+              "departures": [],
+              "drafted": false,
+              "entry_count": 3,
+              "estimate": null,
+              "harness": "claude",
+              "limited": true,
+              "lines": [
+                {
+                  "cites": [
+                    "fact:1b3f7a63986acb47"
+                  ],
+                  "clause": "Add retry with backoff",
+                  "detail": "",
+                  "key": "goal",
+                  "limit": "",
+                  "numbers": [
+                    "1"
+                  ],
+                  "partial": false,
+                  "rests_on": "",
+                  "result": "not verifiable from available evidence",
+                  "state": "cant-tell",
+                  "unloaded": 0,
+                  "why": "baseline-open"
+                }
+              ],
+              "live_on": false,
+              "malformed": "",
+              "pill": null,
+              "priors": [],
+              "reading": true,
+              "revision": 1,
+              "sid": "a1b2c3d4",
+              "stale": null,
+              "unsettled": true,
+              "window_count": null
+            }
+          ],
+          "line_requests": [],
+          "live": 0,
+          "live_levels": [
+            {
+              "cites": [],
+              "computed_at": 1900000000.0,
+              "harness": "claude",
+              "level": "not_enough",
+              "reasons": [
+                "intent-names-no-folder",
+                "no-passing-check",
+                "later-direction"
+              ],
+              "revision": 1,
+              "rose_at": null,
+              "rose_from": null,
+              "sid": "a1b2c3d4"
+            }
+          ],
+          "live_monitor": {
+            "banner_due_at": null,
+            "confirm_by": null,
+            "deadline": null,
+            "destination": null,
+            "disclosure": null,
+            "interval_sec": 60.0,
+            "label": "Live monitor · Haiku",
+            "last_end": null,
+            "level": null,
+            "model": "claude-haiku-5-5",
+            "now": 1900000000.0,
+            "on": false,
+            "started_at": null,
+            "visible": false
+          },
+          "omitted": [],
+          "support": {
+            "collapsed_contributors": 0,
+            "dispatch_builds": 0,
+            "pending_subagents": 0,
+            "subagent_calls": 0,
+            "suppressed_tool_calls": 0,
+            "tool_calls": 0
+          },
+          "tool_reports": [
+            {
+              "background": 0,
+              "background_more": 0,
+              "background_unpaired": 0,
+              "check_runs": 0,
+              "ci_failed": 0,
+              "ci_not_recorded": 0,
+              "ci_passed": 0,
+              "command_failed": 0,
+              "command_not_recorded": 0,
+              "command_passed": 0,
+              "commands": 0,
+              "distinct_checks": 0,
+              "failed": 0,
+              "harness": "claude",
+              "last_changing_command_at": null,
+              "last_user_at": 1899998200.0,
+              "listed": 0,
+              "more": 0,
+              "not_recorded": 0,
+              "not_run": 0,
+              "other_commands": 0,
+              "outside_paths": 0,
+              "passed": 0,
+              "pull_requests": 0,
+              "read_only_commands": 0,
+              "shell_calls": 0,
+              "sid": "a1b2c3d4",
+              "skills_used": 0,
+              "subagent_transcripts": 0,
+              "subagent_transcripts_unread": 0,
+              "unknown_flags": 0,
+              "window_start": 1899996340.0,
+              "window_written_paths": 0,
+              "write_attempts": 0,
+              "written_paths": 0
+            }
+          ],
+          "unavailable": []
+        }
+      },
+      "workflow_discovery": {
+        "reason": "project root unavailable from observed sessions",
+        "source": "spacedock status --discover",
+        "state": "unavailable",
+        "workflows": []
+      }
+    },
+    "headers": {
+      "Cache-Control": "no-store",
+      "Content-Length": "8681",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}
