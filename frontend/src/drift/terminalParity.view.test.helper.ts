@@ -8,6 +8,7 @@ import type { Row } from '../observed';
 import { createAnnouncer } from '../shell/announcer';
 import { createFakeClock } from '../transport/testing';
 import { analysisRow, workObject } from './level';
+import { conflictCandidates } from '../intent/work';
 import { buildModel } from './model';
 import { monitorLevel, parseLease } from './monitor';
 import { resultStale, resultState } from './result';
@@ -134,6 +135,10 @@ export function pageView(item: DriftCase): unknown {
     reading: shape !== null,
     malformed: shape?.malformed ?? '',
     unsettled: model.unsettled,
+    /* The messages the direction question lists: the same open set that demotes, counted. */
+    unsettled_count: model.annotate
+      ? conflictCandidates(model.annotation, model.entries, session, model.draft).length
+      : 0,
     drafted: model.drafted,
     limited: model.limit !== '',
     entry_count: model.entryCount,

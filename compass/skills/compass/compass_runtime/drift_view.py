@@ -1539,6 +1539,10 @@ def _read(
         "reading": shape is not None,
         "malformed": shape.malformed if shape else "",
         "unsettled": unsettled,
+        # The messages the direction question lists: the open set that demotes, counted.
+        "unsettled_count": len(conflict_candidates(annotation, entries, session, draft))
+        if annotate
+        else 0,
         "drafted": draft is not None,
         "limited": limit,
         "entry_count": numbering.counted + numbering.earlier if read else None,

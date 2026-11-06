@@ -100,6 +100,18 @@ class LaterDirectionTwinsTest(unittest.TestCase):
         self.assertEqual("cant-tell", lines("later-directions-two-one-settled")["goal"]["state"])
         self.assertEqual("departs", lines("later-directions-two-both-settled")["goal"]["state"])
 
+    def test_the_unsettled_messages_are_counted_as_the_question_lists_them(self) -> None:
+        count = {
+            name: view(BY_NAME[name])["unsettled_count"]
+            for name in (
+                "later-directions-two-unsettled-are-counted",
+                "later-directions-two-one-settled",
+                "later-directions-two-both-settled",
+            )
+        }
+
+        self.assertEqual([2, 1, 0], list(count.values()))
+
     def test_a_codex_reading_is_demoted_by_the_same_direction(self) -> None:
         self.assertEqual("cant-tell", lines("codex-later-direction-unsettled")["goal"]["state"])
 

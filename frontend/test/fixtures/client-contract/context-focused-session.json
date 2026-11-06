@@ -127,6 +127,7 @@
               "sid": "a1b2c3d4",
               "stale": null,
               "unsettled": false,
+              "unsettled_count": 0,
               "window_count": null
             }
           ],
@@ -176,7 +177,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "2733",
+      "Content-Length": "2753",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

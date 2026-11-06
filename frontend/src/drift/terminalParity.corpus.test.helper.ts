@@ -390,6 +390,9 @@ export function namedCases(): DriftCase[] {
       annotation: { settled_through: 170 },
       facts: [M1, fact('u5', 'user_message', 160), fact('u6', 'user_message', 180)],
     }),
+    twin('later-directions-two-unsettled-are-counted', ['S7'], {
+      facts: [M1, fact('u5', 'user_message', 160), fact('u6', 'user_message', 180)],
+    }),
     twin('later-directions-two-both-settled', ['S7'], {
       annotation: { settled_through: 180 },
       facts: [M1, fact('u5', 'user_message', 160), fact('u6', 'user_message', 180)],
