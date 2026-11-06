@@ -207,37 +207,16 @@ jobs:
       - name: Canonical rebuild and tracked artifact comparison
         timeout-minutes: 3
         run: pnpm build:check
-      # The gate's Storybook job installs Chromium this way, and both `run` steps below are its steps
-      # word for word, so test_release_workflow.CiLimitsTest holds the limits equal. `--with-deps` timed
-      # out at 5 minutes on 2 of about 8 gate runs (2026-11-06), fetching nine font packages from the
-      # Ubuntu mirror at tens of KB/s; the browser itself took about 6 s. As in the gate, nothing here
-      # restores a cache: a restored entry's files run as they are, and actions/cache extracts with
-      # `tar -P`, so an entry another run wrote could also put files anywhere the runner user can. The
-      # cold install is bounded to cover the slowest measured mirror.
+      # The gate's Storybook job installs Chromium this way, and the `run` step below is its step word
+      # for word, so test_release_workflow.CiLimitsTest holds the limits equal. No host packages are
+      # installed, as in the gate (owner ruling, 2026-11-06): every library Chromium needs is on the
+      # image, and `install-deps` only added nine font packages that took about 10 minutes from the
+      # Ubuntu mirror. Nothing here restores a cache: a restored entry's files run as they are, and
+      # actions/cache extracts with `tar -P`, so an entry another run wrote could also put files anywhere
+      # the runner user can.
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
-      - name: Install Chromium's host packages, retried once
-        timeout-minutes: 15
-        run: |
-          set -uo pipefail
-          BOUND=420
-          for attempt in 1 2; do
-            if timeout --kill-after=10 "$BOUND" pnpm exec playwright install-deps chromium; then
-              exit 0
-            fi
-            echo "::warning::Chromium's host packages did not install in $BOUND s (attempt $attempt of 2)."
-            # `timeout` stops pnpm, not the `sudo apt-get` it started, which kept the dpkg lock and
-            # failed the retry (run 42210422955). Killing them releases the lock with them; apt keeps
-            # the finished downloads, so the retry resumes rather than starting over.
-            # No `set -e` here, so pkill finding nothing to kill does not stop the retry.
-            sudo pkill -KILL -x apt-get
-            sudo pkill -KILL -x dpkg
-            sleep 2
-            sudo dpkg --configure -a
-          done
-          echo "::error::Chromium's host packages did not install after two bounded attempts."
-          exit 1
       - name: Hostile inline artifact parser browser proof
         timeout-minutes: 3
         run: pnpm test:parser

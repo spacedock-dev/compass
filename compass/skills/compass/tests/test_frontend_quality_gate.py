@@ -607,23 +607,22 @@ class FrontendWiringControlsTest(unittest.TestCase):
         job = jobs()["storybook"]
         self.assertEqual("Storybook (ubuntu-latest)", job["name"])
         self.assertEqual("ubuntu-latest", job["runs-on"])
-        # The cold host-package install may take its whole step limit, and the other steps took
-        # about 4 minutes a run, so the job holds both with a margin and no more.
-        packages = next(s for s in job["steps"] if "install-deps" in s.get("run", ""))
-        self.assertGreaterEqual(job["timeout-minutes"], packages["timeout-minutes"] + 6)
-        self.assertLessEqual(job["timeout-minutes"], 25)
+        # The steps took about 4 minutes a run with nothing installed from apt.
+        self.assertLessEqual(job["timeout-minutes"], 15)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
             "pnpm exec playwright install chromium",
-            "pnpm exec playwright install-deps chromium",
             "pnpm test:stories",
         ]
         self.assertEqual(len(ordered), len(commands), commands)
         for fragment, command in zip(ordered, commands, strict=True):
             self.assertIn(fragment, command)
-        self.assertNotIn("--with-deps", json.dumps(job), "the host packages install on their own")
+        # No host packages: the image carries every library Chromium needs (owner ruling, 2026-11-06).
+        self.assertNotIn("--with-deps", json.dumps(job))
+        self.assertNotIn("install-deps", json.dumps(job))
+        self.assertNotIn("apt-get", json.dumps(job))
         for step in job["steps"]:
             if "run" in step:
                 self.assertGreater(step.get("timeout-minutes", 0), 0)
@@ -632,11 +631,12 @@ class FrontendWiringControlsTest(unittest.TestCase):
 
 @unittest.skipUnless(detector.BASH, "the shipped steps use Bash")
 class StorybookChromiumInstallTest(unittest.TestCase):
-    """Chromium and its host packages install fresh on every run, the packages bounded and retried once.
+    """Chromium installs fresh on every run, and no host package is installed.
 
-    Measured on the two timed-out runs (2026-11-06): the browser download took about 6 s on each, and
-    the step spent its whole 5 minutes fetching nine font packages (21.9 MB) from the Ubuntu mirror at
-    tens of KB/s. Every other library Chromium needs was already on the runner image.
+    Measured 2026-11-06: the browser download takes about 6 s. `install-deps` added only nine font
+    packages (21.9 MB) from the Azure Ubuntu mirror at about 35 KB/s, roughly 10 minutes a run, while
+    every library Chromium needs was already on the image, and no story assertion reads a glyph. So
+    nothing is installed from apt (owner ruling, 2026-11-06).
 
     Nothing is restored from a cache (owner ruling, 2026-11-06). A restored entry's files run as they
     are, and the browser cache held the `chrome` binary the stories start. actions/cache also extracts
@@ -652,20 +652,6 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         matches = [step for step in self.steps() if fragment in step.get("run", "")]
         self.assertEqual(1, len(matches), fragment)
         return matches[0]
-
-    def run_step(
-        self, step: dict[str, Any], cwd: Path, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [detector.BASH or "bash", "-c", step["run"]],
-            cwd=cwd,
-            env={**os.environ, **env},
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
 
     def test_the_job_restores_and_saves_no_cache(self) -> None:
         steps = self.steps()
@@ -688,67 +674,16 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         self.assertIs(False, node["with"]["package-manager-cache"])
         manager = next(s for s in steps if s.get("uses", "").startswith("pnpm/setup@"))
         self.assertIs(False, manager["with"]["cache"])
-        # With nothing to restore, apt keeps its own archive directory: nothing points it at a path
-        # a cache used to fill.
-        packages = self.step_running("install-deps")["run"]
-        self.assertNotIn("Dir::Cache", packages)
-        self.assertNotIn(".cache", packages)
         browser = self.step_running("pnpm exec playwright install chromium")
-        self.assertLess(steps.index(browser), steps.index(self.step_running("install-deps")))
-        self.assertLess(
-            steps.index(self.step_running("install-deps")),
-            steps.index(self.step_running("pnpm test:stories")),
-        )
+        self.assertLess(steps.index(browser), steps.index(self.step_running("pnpm test:stories")))
 
-    def install_deps(self, failures: int) -> tuple[int, list[str]]:
-        """Run the shipped host-package step with `pnpm` failing its first `failures` calls."""
-        step = self.step_running("install-deps")
-        with tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
-            bin_dir = Path(tmp) / "bin"
-            bin_dir.mkdir()
-            calls = Path(tmp) / "calls"
-            fakes = {
-                # Root is not available here: the fake swallows what the step pipes to it.
-                "sudo": "#!/bin/sh\ncat > /dev/null\n",
-                # Records the bound it was given, then runs the command without one.
-                "timeout": (
-                    '#!/bin/sh\nwhile [ "${1#-}" != "$1" ]; do shift; done\n'
-                    f'echo "bound $1" >> "{calls}"\nshift\nexec "$@"\n'
-                ),
-                "pnpm": (
-                    f'#!/bin/sh\necho "pnpm $*" >> "{calls}"\n'
-                    f'[ "$(grep -c "^pnpm" "{calls}")" -gt {failures} ]\n'
-                ),
-            }
-            for name, body in fakes.items():
-                (bin_dir / name).write_text(body)
-                (bin_dir / name).chmod(0o755)
-            result = self.run_step(
-                step,
-                Path(tmp),
-                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": tmp},
-            )
-            return result.returncode, calls.read_text().splitlines()
-
-    def test_the_host_packages_get_one_bounded_retry_and_no_more(self) -> None:
-        limit = self.step_running("install-deps")["timeout-minutes"] * 60
-        for failures, ok in ((0, True), (1, True), (2, False), (5, False)):
-            with self.subTest(failures=failures):
-                code, calls = self.install_deps(failures)
-                self.assertEqual(ok, code == 0, calls)
-                attempts = [line for line in calls if line.startswith("pnpm")]
-                self.assertEqual(min(failures + 1, 2), len(attempts), calls)
-                self.assertTrue(
-                    all(line == "pnpm exec playwright install-deps chromium" for line in attempts)
-                )
-                bounds = [int(line.split()[1]) for line in calls if line.startswith("bound")]
-                self.assertEqual(len(attempts), len(bounds), "every attempt is bounded")
-                # Both attempts fit inside the step's own limit, so the retry can actually run.
-                self.assertLess(2 * max(bounds), limit)
-                # With no cache every run is cold, and a retry resumes from the same mirror, so the
-                # sum is the budget. Run 42181043035 fetched the fonts at about 46 KB/s, so 21.9 MB
-                # needs about 475 s; 2 x 210 s timed out on paper before it ever ran.
-                self.assertGreaterEqual(2 * min(bounds), 600)
+    def test_nothing_is_installed_from_apt(self) -> None:
+        for step in self.steps():
+            with self.subTest(step=step.get("name")):
+                text = json.dumps(step)
+                self.assertNotIn("install-deps", text)
+                self.assertNotIn("apt-get", text)
+                self.assertNotIn("--with-deps", text)
 
     def test_no_frontend_job_can_fail_open(self) -> None:
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`

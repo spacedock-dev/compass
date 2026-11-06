@@ -182,10 +182,8 @@ class CiLimitsTest(unittest.TestCase):
         ci = self.ci_limits()
         release = [s for s in steps("verify-frontend") if "run" in s]
         self.assertFalse(any("--with-deps" in s["run"] for s in release))
-        for fragment in (
-            "pnpm exec playwright install chromium",
-            "playwright install-deps chromium",
-        ):
+        self.assertFalse(any("install-deps" in s["run"] for s in release))
+        for fragment in ("pnpm exec playwright install chromium",):
             (step,) = [s for s in release if fragment in s["run"]]
             with self.subTest(fragment=fragment):
                 self.assertIn(self.command(step), ci, "no CI twin, so no limit is held equal")
@@ -199,7 +197,7 @@ class NoCacheTest(unittest.TestCase):
     check it: over `node_modules/.bin/playwright`, say. Main's gate runs third-party code before it
     saves the host-package entry, and on a re-run `build-cli` (third-party PyInstaller dependencies, on
     the tag's ref) could have written the tag's own. A check of the restored `*.deb` files sees none of
-    that. The cold host-package install is bounded and retried, at most 11 minutes of the job's 25.
+    that. No host package is installed at all, so there is nothing a cache could have served.
     """
 
     def test_no_job_uses_a_cache_action(self) -> None:
@@ -208,12 +206,12 @@ class NoCacheTest(unittest.TestCase):
                 with self.subTest(job=name, step=step.get("name")):
                     self.assertFalse(step.get("uses", "").startswith("actions/cache"))
 
-    def test_the_host_package_install_is_the_gates_step_word_for_word(self) -> None:
+    def test_the_browser_install_is_the_gates_step_word_for_word(self) -> None:
         (install,) = [
-            s for s in steps("verify-frontend") if "install-deps chromium" in s.get("run", "")
+            s for s in steps("verify-frontend") if "playwright install chromium" in s.get("run", "")
         ]
         gate = load(GATE)["jobs"]["storybook"]["steps"]
-        (twin,) = [s for s in gate if "install-deps chromium" in s.get("run", "")]
+        (twin,) = [s for s in gate if "playwright install chromium" in s.get("run", "")]
         self.assertEqual(twin["run"], install["run"])
         self.assertEqual(twin["timeout-minutes"], install["timeout-minutes"])
 
@@ -836,7 +834,6 @@ class GateParityTest(unittest.TestCase):
             "pnpm test",
             "pnpm build:check",
             "pnpm exec playwright install chromium",
-            "pnpm exec playwright install-deps chromium",
             "pnpm test:parser",
             "pnpm test:installed",
             "git status --porcelain",

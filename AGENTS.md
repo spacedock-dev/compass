@@ -594,10 +594,10 @@ on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-enviro
 
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and
-runs the component assertions in pinned Chromium. It installs that browser fresh on every run, and the
-runner's host packages apart, bounded and retried once, because the combined `--with-deps` install timed
-out on the Ubuntu mirror's font downloads, with bounds that cover the slowest measured mirror. Neither
-is cached, and the job restores no cache of any kind: a restored entry's files run as they are (the
+runs the component assertions in pinned Chromium. It installs that browser fresh on every run and no
+host package: every library Chromium needs is on the runner image, and `install-deps` only added nine font
+packages that took about 10 minutes from the Ubuntu mirror while no story assertion reads a glyph. The
+browser is not cached, and the job restores no cache of any kind: a restored entry's files run as they are (the
 browser cache held the binary the stories start), and actions/cache extracts with `tar -P`, so an entry
 can also write outside its path. An entry saved after third-party code ran in a main-branch job could
 do either.
