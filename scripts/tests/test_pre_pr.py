@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -530,6 +533,93 @@ class DeadHolderTest(unittest.TestCase):
                 self.assertEqual(clock.now, 5)
             finally:
                 holder.kill()
+
+
+# A run whose one check starts a grandchild, as `run_tests.py` starts workers and pnpm starts node.
+STOPPED_HOLDER = textwrap.dedent(
+    """
+    import pathlib, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import pre_pr
+    grandchild = "import time; time.sleep(60)"
+    check = (
+        "import os, pathlib, subprocess, sys, time;"
+        f"g = subprocess.Popen([sys.executable, '-c', {grandchild!r}]);"
+        f"pathlib.Path({sys.argv[3]!r}).write_text(f'{{os.getpid()}} {{g.pid}}');"
+        "time.sleep(60)"
+    )
+    item = pre_pr.Item("check", argv=(sys.executable, "-c", check))
+    sys.exit(pre_pr._run_locked([item], pathlib.Path(sys.argv[2]), 0, time.monotonic, time.sleep))
+    """
+)
+
+
+def alive(pid: int) -> bool:
+    """Whether `pid` still exists a few seconds on: a check left running sleeps for a minute."""
+    # A process killed a moment ago lingers as a zombie until its new parent reaps it.
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+@unittest.skipIf(sys.platform == "win32", "process groups and these signals are POSIX")
+class StoppedHolderTest(unittest.TestCase):
+    """Stopping a run stops the check it was running, so the next run does not start beside it."""
+
+    def test_a_stopped_run_takes_its_check_down_before_freeing_the_lock(self) -> None:
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(signal=signum.name), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "pre-pr.lock"
+                pids = Path(tmp) / "pids"
+                holder = subprocess.Popen(
+                    [sys.executable, "-c", STOPPED_HOLDER, str(SCRIPTS), str(path), str(pids)],
+                    stdout=subprocess.DEVNULL,
+                )
+                started: list[int] = []
+                try:
+                    deadline = time.monotonic() + 30
+                    while len(started) < 2 and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                        with contextlib.suppress(OSError):
+                            started = [int(pid) for pid in pids.read_text(encoding="utf-8").split()]
+                    self.assertEqual(len(started), 2, "the check never started its grandchild")
+                    holder.send_signal(signum)
+                    self.assertNotEqual(holder.wait(timeout=30), 0)
+                    with pre_pr.hold_lock(path, timeout=0):
+                        self.assertEqual([pid for pid in started if alive(pid)], [])
+                finally:
+                    holder.kill()
+                    holder.wait(timeout=30)
+                    for pid in started:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
+
+    def test_a_check_that_times_out_is_stopped_with_what_it_started(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pids = Path(tmp) / "pids"
+            check = (
+                "import os, pathlib, subprocess, sys, time;"
+                "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']);"
+                f"pathlib.Path({str(pids)!r}).write_text(f'{{os.getpid()}} {{g.pid}}');"
+                "time.sleep(60)"
+            )
+            item = pre_pr.Item("check", argv=(sys.executable, "-c", check), timeout=3)
+            with redirect_stdout(io.StringIO()) as out:
+                code = pre_pr._run(item, Path(tmp))
+            started = [int(pid) for pid in pids.read_text(encoding="utf-8").split()]
+            try:
+                self.assertEqual(code, 124)
+                self.assertIn("timed out after 3 s", out.getvalue())
+                self.assertEqual([pid for pid in started if alive(pid)], [])
+            finally:
+                for pid in started:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
 
 
 if __name__ == "__main__":

@@ -23,10 +23,11 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -68,6 +69,10 @@ NATIVE_TIMEOUT = 180.0
 # timeout), and the person waiting should hear so. Chosen, not measured.
 DEFAULT_WAIT_TIMEOUT = 30 * 60.0
 WAIT_TIMED_OUT = 75  # EX_TEMPFAIL: nothing failed, try again later.
+# How long a stopped check gets to exit on SIGTERM before its process group is killed outright.
+STOP_GRACE = 5.0
+# What stops a run on POSIX besides Ctrl+C: `kill <pid>` and the terminal closing.
+STOP_SIGNALS = () if sys.platform == "win32" else (signal.SIGTERM, signal.SIGHUP)
 
 KNOWN_OUTPUTS = frozenset(
     {
@@ -482,15 +487,48 @@ def _run(item: Item, root: Path) -> int:
     # What the frontend's runtime tests start; CI sets it to the job's Python.
     env.setdefault("COMPASS_TEST_PYTHON", sys.executable)
     try:
-        return subprocess.run(  # noqa: S603 - argv built from the fixed command list
-            item.argv, cwd=root, env=env, check=False, timeout=item.timeout
-        ).returncode
+        # Its own session, so stopping it reaches what it started (suite workers, node) and not
+        # only the command itself. CI runs every check without a terminal too.
+        process = subprocess.Popen(  # noqa: S603 - argv built from the fixed command list
+            item.argv, cwd=root, env=env, start_new_session=sys.platform != "win32"
+        )
     except FileNotFoundError:
         print(f"    {item.argv[0]} was not found")
         return 127
+    try:
+        return process.wait(timeout=item.timeout)
     except subprocess.TimeoutExpired:
+        _stop(process)
         print(f"    timed out after {item.timeout:.0f} s")
         return 124
+    except BaseException:
+        _stop(process)
+        raise
+
+
+def _stop(process: subprocess.Popen[bytes]) -> None:
+    """Stop a check and everything it started before the lock is released to the next run.
+
+    SIGTERM to its process group, then SIGKILL to whatever is left, at once if a second interrupt
+    cuts the grace short. Windows has no process group here, so only the check itself is killed.
+    """
+    if sys.platform == "win32":
+        process.kill()
+        process.wait()
+        return
+    try:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        with suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=STOP_GRACE)
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def _interrupt(_signum: int, _frame: object) -> None:
+    raise KeyboardInterrupt
 
 
 def _execute(items: list[Item], root: Path) -> int:
@@ -551,7 +589,10 @@ def _duration(seconds: float) -> str:
 def _gave_up(error: LockTimeoutError, items: list[Item], seconds: float) -> int:
     pending = [item.text for item in items if item.reason is None]
     print(f"\nGave up after {_duration(seconds)}: {error}.")
-    print("Nothing ran. Stop that run or wait for it, then run this again.")
+    print(
+        "Nothing ran. Stop that run (Ctrl+C in its terminal, or `kill` its pid, which stops its"
+        " check too) or wait for it, then run this again."
+    )
     print(f"Not run ({len(pending)}):")
     for text in pending:
         print(f"  not run  {text}")
@@ -631,6 +672,9 @@ def _run_locked(
     def announce(who: str) -> None:
         print(f"\nWaiting up to {_duration(wait)} for {path} ({who}) ...", flush=True)
 
+    # Python's default for these exits at once, leaving the running check alive while the lock is
+    # free; as an interrupt they unwind through `_run`, which stops the check first.
+    previous = {signum: signal.signal(signum, _interrupt) for signum in STOP_SIGNALS}
     try:
         with hold_lock(path, on_wait=announce, timeout=wait, clock=clock, sleep=sleep):
             return _execute(items, ROOT)
@@ -639,6 +683,9 @@ def _run_locked(
     except KeyboardInterrupt:
         print("\nInterrupted; the lock is released.")
         return 130
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":
