@@ -611,12 +611,62 @@ def _with_lease(
     return {**context, "sources": {**sources, "work": work}}
 
 
+def _record_page(
+    application: Any,
+    matching: list[dict[str, Any]],
+    harness: str,
+    sid: str,
+    *,
+    cursor_key: bytes,
+    limit: int,
+    before: str | None,
+) -> dict[str, Any]:
+    """One page of a session's record as `/api/session-record` answers it, before `for_page`.
+
+    Shared with the Drift view, which reads the newest page the way the page does on opening a
+    session, so a message the focused context's bounded window left out is still there to cite.
+    """
+    result = record_pages.empty(harness, sid, "unavailable")
+    index = None
+    if len(matching) == 1:
+        path = runtime_observer.resolve_transcript(
+            application.config, application.state, harness, sid
+        )
+        result = record_pages.read(
+            application.config,
+            path or "",
+            harness,
+            sid,
+            cursor_key=cursor_key,
+            limit=limit,
+            before=before,
+        )
+        # After the page is read, so the index reaches at least as far as the page does.
+        if path and result["entries"]:
+            index = entry_numbers.message_index(
+                application.config, application.state, path, harness, sid
+            )
+    marked = compass_turns.mark(
+        application.config,
+        application.state,
+        {"semantic": {"facts": result["entries"]}},
+        matching,
+    )
+    marked = copied_corrections.mark(marked, matching)
+    result["entries"] = marked["semantic"]["facts"]
+    if index is not None:
+        # Each message's fixed number (DRC-4897), so a page of any age numbers it the same way.
+        result["entries"] = entry_numbers.with_message_ordinals(index, result["entries"])
+    return result
+
+
 def _with_drift_view(
     application: Any,
     context: dict[str, Any],
     payload: dict[str, Any],
     focus: tuple[str, str],
     project: str,
+    cursor_key: bytes,
 ) -> dict[str, Any]:
     """The focused session's Drift card answer, on `sources.work.drift_views` and on no row.
 
@@ -643,8 +693,20 @@ def _with_drift_view(
     ]
     if len(matching) != 1:
         return context
+    record: list[dict[str, Any]] | None = None
     try:
-        view = drift_view.derive(matching[0], payload, context)
+        page = _record_page(
+            application, matching, harness, sid, cursor_key=cursor_key, limit=50, before=None
+        )
+        record = page["entries"] if page.get("state") == "ok" else None
+    except Exception as exc:  # noqa: BLE001 - the page without its record still shows the context
+        runtime_io.diag(
+            f"Compass: the session record could not be read for the drift view "
+            f"({exc.__class__.__name__}).",
+            application.diagnostic_sink,
+        )
+    try:
+        view = drift_view.derive(matching[0], payload, context, record)
     except Exception as exc:  # noqa: BLE001 - a reading this build cannot derive costs no context
         runtime_io.diag(
             f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
@@ -1628,7 +1690,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             result = _with_levels(application, result, collected["sessions"], focus, project)
             result = _with_lease(application, result, collected["sessions"], focus)
             # After the lease: the view reads it, with the levels, the line requests and the marks.
-            result = _with_drift_view(application, result, collected, focus, project)
+            result = _with_drift_view(
+                application, result, collected, focus, project, self.server.record_cursor_key
+            )
             matching = [
                 row
                 for row in collected["sessions"]
@@ -1716,37 +1780,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 str(row.get("project") or ""),
             }
         ]
-        result = record_pages.empty(harness, sid, "unavailable")
-        index = None
-        if len(matching) == 1:
-            path = runtime_observer.resolve_transcript(
-                application.config, application.state, harness, sid
-            )
-            result = record_pages.read(
-                application.config,
-                path or "",
-                harness,
-                sid,
-                cursor_key=self.server.record_cursor_key,
-                limit=limit,
-                before=query.get("before", [None])[0],
-            )
-            # After the page is read, so the index reaches at least as far as the page does.
-            if path and result["entries"]:
-                index = entry_numbers.message_index(
-                    application.config, application.state, path, harness, sid
-                )
-        marked = compass_turns.mark(
-            application.config,
-            application.state,
-            {"semantic": {"facts": result["entries"]}},
+        result = _record_page(
+            application,
             matching,
+            harness,
+            sid,
+            cursor_key=self.server.record_cursor_key,
+            limit=limit,
+            before=query.get("before", [None])[0],
         )
-        marked = copied_corrections.mark(marked, matching)
-        result["entries"] = marked["semantic"]["facts"]
-        if index is not None:
-            # Each message's fixed number (DRC-4897), so a page of any age numbers it the same way.
-            result["entries"] = entry_numbers.with_message_ordinals(index, result["entries"])
         result = runtime_project_context.for_page(result)
         self._send(
             json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(),

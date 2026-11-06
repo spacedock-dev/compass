@@ -82,19 +82,21 @@ describe('the shape the terminal is held to', () => {
     });
 
     it('records the corpus the code builds, so a case cannot go stale in the file', () => {
-      const built = namedCases().map(({ name, rules, session, payload, context }) => ({
+      const built = namedCases().map(({ name, rules, session, payload, context, record }) => ({
         name,
         rules,
         session,
         payload,
         context,
+        record,
       }));
-      const held = cases.map(({ name, rules, session, payload, context }) => ({
+      const held = cases.map(({ name, rules, session, payload, context, record }) => ({
         name,
         rules,
         session,
         payload,
         context,
+        record,
       }));
       expect(JSON.parse(JSON.stringify(built))).toEqual(held);
     });

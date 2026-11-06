@@ -29,6 +29,9 @@ export interface DriftCase {
   readonly session: Json;
   readonly payload: Json;
   readonly context: Json;
+  /** The newest page of the session's record, which the page loads on opening the session and merges by
+      fact id with the context's facts. Absent for a page read before it landed. */
+  readonly record?: { readonly entries: readonly Json[] };
 }
 
 /* The rules the named cases must cover, each owned by one row of the shape contract or the earlier-departure
@@ -76,6 +79,8 @@ interface Spec {
   /** Merged over the default reading; `criteria` replaces the default rows whole. */
   readonly reading?: Json | null;
   readonly facts?: readonly Json[];
+  /** The record page's entries, as `/api/session-record` serves them; absent where none was read. */
+  readonly record?: readonly Json[];
   readonly session?: Json;
   readonly payload?: Json;
   readonly work?: Json;
@@ -173,6 +178,13 @@ function build(name: string, rules: readonly string[], spec: Spec = {}): DriftCa
     name,
     rules,
     session,
+    ...(spec.record
+      ? {
+          record: {
+            entries: spec.record.map((entry) => ({ source_session: identity, ...entry })),
+          },
+        }
+      : {}),
     payload: { annotate: true, generated: 1000, reading_routes: ROUTES, ...spec.payload },
     context: {
       semantic: { facts },
@@ -231,6 +243,86 @@ const PRIOR = (over: Json = {}): Json => ({
 });
 const T1 = check('t1', 120, 'failed');
 const T2 = check('t2', 170, 'passed');
+
+/* A line can rest on an agent message the focused context's bounded window no longer holds: the page finds it
+   in the newest page of the session's record, which it loads on opening the session. The text is the walk's
+   synthetic hello.py session, kept as it was recorded; the shape is trimmed to what the rule reads. */
+const HELLO_GOAL =
+  "Create hello.py that prints 'hello, compass', run it once with python3, and stop.";
+const HELLO_REASON =
+  'hello.py was written, but the python3 run never happened; the agent says it was blocked pending approval, so the run step of the goal is unfinished.';
+const HELLO_SAID = fact('a1', 'agent_message', 143, {
+  source_kind: 'agent_say',
+  summary: "I created `hello.py`, which contains `print('hello, compass')`.",
+});
+const HELLO_ASKED = fact('u0', 'user_message', 100, { source_kind: 'steer', summary: HELLO_GOAL });
+const HELLO_WROTE = fact('w0', 'tool_report', 138, {
+  source_kind: 'path_written',
+  subject: 'write',
+});
+const HELLO_LATER = fact('a2', 'agent_message', 300, {
+  source_kind: 'agent_say',
+  summary: 'I could not get a fresh drift reading.',
+});
+const helloGoal = (over: Json = {}): Json => ({
+  result: NOT_REACHED,
+  cites: ['a1'],
+  detail: HELLO_REASON,
+  clause: HELLO_GOAL,
+  ...over,
+});
+const MID_FLIGHT = {
+  scope: 'mid-flight',
+  scope_text:
+    'This covers only the work so far. The session was still running when it was read, so nothing here is a reading of how it ended.',
+};
+
+function recordCases(): DriftCase[] {
+  const running = { state: 'working', ended_at: null };
+  return [
+    build(
+      'a-line-on-an-agent-message-only-the-record-holds-is-not-reached-mid-flight',
+      ['S3', 'S4', 'S17', 'W1'],
+      {
+        annotation: { goal: HELLO_GOAL },
+        session: running,
+        facts: [HELLO_ASKED, HELLO_WROTE, HELLO_LATER],
+        record: [HELLO_LATER, HELLO_SAID, HELLO_ASKED],
+        reading: { ...MID_FLIGHT, criteria: { goal: helloGoal() } },
+      },
+    ),
+    build('the-same-line-without-the-record-cites-nothing-the-page-holds', ['S4', 'W1'], {
+      annotation: { goal: HELLO_GOAL },
+      session: running,
+      facts: [HELLO_ASKED, HELLO_WROTE, HELLO_LATER],
+      reading: { ...MID_FLIGHT, criteria: { goal: helloGoal() } },
+    }),
+    build(
+      'a-departure-on-an-agent-message-only-the-record-holds-stands-on-a-finished-session',
+      ['S4', 'S16', 'W1'],
+      {
+        annotation: { goal: HELLO_GOAL },
+        facts: [HELLO_ASKED, HELLO_WROTE, HELLO_LATER],
+        record: [HELLO_LATER, HELLO_SAID, HELLO_ASKED],
+        reading: {
+          criteria: {
+            goal: helloGoal({ result: DEPARTURE, detail: 'It stopped before the run.' }),
+          },
+        },
+      },
+    ),
+    build('a-record-entry-with-no-number-keeps-the-contexts-fixed-one', ['W1'], {
+      facts: [{ ...M1, ordinal: 7 }],
+      record: [M1],
+      reading: { criteria: { goal: goalRow() } },
+    }),
+    build('a-record-entry-wins-over-the-context-s-copy-of-the-same-fact', ['W1'], {
+      facts: [{ ...M1, ordinal: 7 }],
+      record: [{ ...M1, ordinal: 9 }],
+      reading: { criteria: { goal: goalRow() } },
+    }),
+  ];
+}
 
 export function namedCases(): DriftCase[] {
   return [
@@ -761,6 +853,7 @@ export function namedCases(): DriftCase[] {
     build('with-the-store-off-nothing-is-read', ['L11'], { payload: { annotate: false } }),
     build('a-session-with-no-reading-has-no-lines', ['S17'], { reading: null }),
     ...levelCases(),
+    ...recordCases(),
     build('an-empty-record-reads-as-empty', ['W1'], { facts: [] }),
     build('a-session-the-scan-left-out-reads-as-partial', ['W1'], {
       facts: [],

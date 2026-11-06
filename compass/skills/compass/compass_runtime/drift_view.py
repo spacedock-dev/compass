@@ -11,9 +11,11 @@ opinion: when the page's rules change, the page's expected values change first a
 It operates on the published JSON the page itself receives (the session row as `/api/data` publishes
 it, the payload bits the page reads, and the focused context's body), and each function is named for
 the page function it ports, so a reviewer can lay the two side by side. The page is taken as freshly
-loaded, by the owner's ruling of 2026-11-06: no unsaved typing, only the focused context's entries
-and no Show-more pages. It emits closed tokens, ids, numbers and the reader's own words, never a
-sentence of the page's; the terminal words its own output.
+loaded, by the owner's ruling of 2026-11-06: no unsaved typing, the focused context's entries beside
+the session record's newest page (which the page loads on opening a session, and which can hold a
+message the context's bounded window does not) and no Show-more pages after it. It emits closed
+tokens, ids, numbers and the reader's own words, never a sentence of the page's; the terminal words
+its own output.
 
 `derive` is the whole answer, including the level and the stale note, and `http_api` publishes it on
 the focused context as `sources.work.drift_views`.
@@ -248,6 +250,36 @@ def _evidence_source(fact: dict[str, Json]) -> str:
         for value in (evidence.get("source"), evidence.get("confidence"))
     )
     return " · ".join(part for part in parts if part)
+
+
+def merged_facts(semantic: Json, record: list[dict[str, Json]] | None) -> Json:
+    """`workSource`'s merge of the focused context's facts with the session record's newest page.
+
+    The context carries a bounded window of the session's facts, so a message the reading cites can
+    sit outside it and be found only in the record page the page loads when the session opens. The
+    record wins a conflict, but a page read while the server's message index was still building
+    carries no number, and the context's fixed one is not replaced by none. With no record the
+    context's own facts stand, as the page reads them before the record lands.
+    """
+    if record is None:
+        return semantic
+    facts = semantic.get("facts") if _is_record(semantic) else None
+    merged: dict[str, Json] = {
+        _text(fact.get("fact_id")): fact
+        for fact in (facts if isinstance(facts, list) else [])
+        if _is_record(fact)
+    }
+    for fact in record:
+        held = merged.get(_text(fact.get("fact_id")))
+        kept = held.get("ordinal") if held is not None else None
+        merged[_text(fact.get("fact_id"))] = (
+            {**fact, "ordinal": kept}
+            if fact.get("ordinal") is None
+            and isinstance(kept, (int, float))
+            and not isinstance(kept, bool)
+            else fact
+        )
+    return {"facts": list(merged.values())}
 
 
 def work_entries(session: dict[str, Json], semantic: Json) -> list[Entry]:
@@ -1486,21 +1518,25 @@ class _Parts:
 
 
 def _read(
-    session: dict[str, Json], payload: dict[str, Json], context: Json
+    session: dict[str, Json],
+    payload: dict[str, Json],
+    context: Json,
+    record: list[dict[str, Json]] | None = None,
 ) -> tuple[dict[str, Json], _Parts]:
     """What the Drift card holds for a session on a fresh load, as tokens, numbers and the reader's
     words.
 
     `session` is the row as `/api/data` publishes it, `payload` is that response's own body (the
     page reads `annotate` and `reading_routes` from it) and `context` the focused project context's
-    body. The page is taken as freshly loaded: no unsaved typing, only that context's entries, no
-    Show-more pages
+    body. `record` is the session record's newest page, which the page loads on opening the session
+    and merges with the context's facts; it is None where that page was not read. The page is taken
+    as freshly loaded: no unsaved typing, no Show-more pages beyond that first one
     ([DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)
     keeps the level off rows, so this is a view of the focused context only).
     """
     annotate = annotate_on(payload)
     annotation = annotation_of(session) if annotate else None
-    entries = work_entries(session, _get(context, "semantic"))
+    entries = work_entries(session, merged_facts(_get(context, "semantic"), record))
     state = source_state(entries, context, session)
     numbering = entry_numbering(session, entries, payload)
     harness = _text(session.get("harness"))
@@ -1799,7 +1835,12 @@ def result_stale(
     }
 
 
-def derive(session: dict[str, Json], payload: dict[str, Json], context: Json) -> dict[str, Json]:
+def derive(
+    session: dict[str, Json],
+    payload: dict[str, Json],
+    context: Json,
+    record: list[dict[str, Json]] | None = None,
+) -> dict[str, Json]:
     """The Drift card's whole answer for a fresh load: the shape, the level and the stale note.
 
     The level is the page's precedence
@@ -1809,7 +1850,7 @@ def derive(session: dict[str, Json], payload: dict[str, Json], context: Json) ->
     departure. A drafted intent draws no pill. The Live monitor counts as on exactly while the
     server's lease stands, since a terminal has no tab to hold the switch.
     """
-    view, parts = _read(session, payload, context)
+    view, parts = _read(session, payload, context, record)
     lease = lease_state(context)
     live_on = bool(lease and lease["on"])
     analysis = (

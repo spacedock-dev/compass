@@ -12,6 +12,7 @@ from __future__ import annotations
 import types
 import unittest
 from typing import Any
+from unittest import mock
 
 from compass_runtime import drift_view, http_api
 
@@ -78,7 +79,7 @@ class WhereTheViewRidesTest(unittest.TestCase):
         context = _context("codex")
 
         attached = http_api._with_drift_view(
-            _application(), context, _payload(row), ("codex", "s1"), "p"
+            _application(), context, _payload(row), ("codex", "s1"), "p", b"k"
         )
 
         (view,) = attached["sources"]["work"]["drift_views"]
@@ -87,12 +88,57 @@ class WhereTheViewRidesTest(unittest.TestCase):
         self.assertIsNone(view["analysis"])
         self.assertEqual(drift_view.derive(row, _payload(row), attached), view)
 
+    def test_a_line_resting_on_a_message_only_the_record_page_holds_keeps_it(self) -> None:
+        row = _row("claude")
+        row["annotation_assessment"]["criteria"]["goal"]["cites"] = ["m0"]
+        older = {**_context("claude")["semantic"]["facts"][0], "fact_id": "m0", "at": 120}
+        page = {"state": "ok", "entries": [older]}
+
+        with mock.patch.object(http_api, "_record_page", return_value=page) as read:
+            attached = http_api._with_drift_view(
+                _application(), _context("claude"), _payload(row), ("claude", "s1"), "p", b"k"
+            )
+
+        (view,) = attached["sources"]["work"]["drift_views"]
+        self.assertEqual(
+            ("departs", ["m0"]), (view["lines"][0]["state"], view["lines"][0]["cites"])
+        )
+        self.assertEqual(
+            (50, None), (read.call_args.kwargs["limit"], read.call_args.kwargs["before"])
+        )
+
+    def test_a_record_page_that_is_not_ok_is_not_merged(self) -> None:
+        row = _row("claude")
+        row["annotation_assessment"]["criteria"]["goal"]["cites"] = ["m0"]
+        older = {**_context("claude")["semantic"]["facts"][0], "fact_id": "m0", "at": 120}
+
+        with mock.patch.object(
+            http_api, "_record_page", return_value={"state": "stale", "entries": [older]}
+        ):
+            attached = http_api._with_drift_view(
+                _application(), _context("claude"), _payload(row), ("claude", "s1"), "p", b"k"
+            )
+
+        (view,) = attached["sources"]["work"]["drift_views"]
+        self.assertEqual("cant-tell", view["lines"][0]["state"])
+
+    def test_a_record_read_that_fails_leaves_the_view_built_from_the_context(self) -> None:
+        row = _row("claude")
+
+        with mock.patch.object(http_api, "_record_page", side_effect=OSError("gone")):
+            attached = http_api._with_drift_view(
+                _application(), _context("claude"), _payload(row), ("claude", "s1"), "p", b"k"
+            )
+
+        (view,) = attached["sources"]["work"]["drift_views"]
+        self.assertEqual("departs", view["lines"][0]["state"])
+
     def test_the_other_work_sources_beside_it_are_left_as_they_were(self) -> None:
         row = _row("claude")
         context = _context("claude")
 
         attached = http_api._with_drift_view(
-            _application(), context, _payload(row), ("claude", "s1"), "p"
+            _application(), context, _payload(row), ("claude", "s1"), "p", b"k"
         )
 
         self.assertEqual([], attached["sources"]["work"]["live_levels"])
@@ -103,7 +149,7 @@ class WhereTheViewRidesTest(unittest.TestCase):
         context = _context("claude")
 
         attached = http_api._with_drift_view(
-            _application(), context, _payload(row, dict(row)), ("claude", "s1"), "p"
+            _application(), context, _payload(row, dict(row)), ("claude", "s1"), "p", b"k"
         )
 
         self.assertNotIn("drift_views", attached["sources"]["work"])
@@ -112,7 +158,7 @@ class WhereTheViewRidesTest(unittest.TestCase):
         row = _row("claude", project="other")
 
         attached = http_api._with_drift_view(
-            _application(), _context("claude"), _payload(row), ("claude", "s1"), "p"
+            _application(), _context("claude"), _payload(row), ("claude", "s1"), "p", b"k"
         )
 
         self.assertNotIn("drift_views", attached["sources"]["work"])
@@ -127,7 +173,7 @@ class WhereTheViewRidesTest(unittest.TestCase):
         drift_view.derive = broken  # type: ignore[assignment]
         try:
             attached = http_api._with_drift_view(
-                _application(), _context("claude"), _payload(row), ("claude", "s1"), "p"
+                _application(), _context("claude"), _payload(row), ("claude", "s1"), "p", b"k"
             )
         finally:
             drift_view.derive = original

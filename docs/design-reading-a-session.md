@@ -8404,10 +8404,16 @@ the reading route's context. It is a port of the page's derivation (`drift_view`
 opinion: the page writes the expected views from a named corpus and a seeded generated one, and the
 Vitest and Python suites both read them, so a change to the page's rules rewrites the expected values
 from the page and the port follows. What "the page" means for a terminal is the page as freshly
-loaded: no unsaved typing, only the focused context's entries, no Show-more pages, and the Live
-monitor counted on exactly while the server's lease stands, since a terminal has no tab to hold the
-switch. A citation outside the focused context's bound therefore reads as can't tell where a tab that
-pressed Show more may show the departure, which is the direction the shape contract calls safe. The
+loaded: no unsaved typing, the focused context's entries merged by fact id with the newest page of the
+session's record (the fifty entries the page requests on opening a session, read the way
+`/api/session-record` serves them), no Show-more pages after it, and the Live monitor counted on exactly
+while the server's lease stands, since a terminal has no tab to hold the switch. A first version read
+the context alone, and the context carries only a bounded window of facts, so a line resting on an
+earlier agent message printed as can't tell, uncited, where the page drew it as not reached and cited the
+message (measured on a stored Claude Code reading, 2026-11-06). A citation older than that newest page
+still reads as can't tell where a tab that pressed Show more may show the departure, which is the
+direction the shape contract calls safe. A page that is not `ok` is not merged, as the page does not
+merge an errored one. The
 field carries closed tokens, ids, numbers and the reader's own words, never a sentence of the page's.
 It has no harness gate: Codex gets its line states, departures and earlier departures, and no level,
 because no analysis level is computed for it. The page keeps its own implementation; making it read
