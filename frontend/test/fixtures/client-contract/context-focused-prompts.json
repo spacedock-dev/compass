@@ -356,6 +356,32 @@
         "surrounding_active": 0,
         "work": {
           "analysis_levels": [],
+          "drift_views": [
+            {
+              "analysis": null,
+              "annotate": true,
+              "cited": [],
+              "departures": [],
+              "drafted": true,
+              "entry_count": 3,
+              "estimate": null,
+              "harness": "claude",
+              "limited": true,
+              "lines": [],
+              "live_on": false,
+              "malformed": "",
+              "pill": null,
+              "priors": [],
+              "reading": false,
+              "revision": null,
+              "sid": "a1b2c3d4",
+              "so_far": false,
+              "stale": null,
+              "unsettled": true,
+              "unsettled_count": 1,
+              "window_count": null
+            }
+          ],
           "line_requests": [],
           "live": 0,
           "live_levels": [
@@ -448,7 +474,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8060",
+      "Content-Length": "8418",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

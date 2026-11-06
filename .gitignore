@@ -5,6 +5,8 @@
 __pycache__/
 *.py[cod]
 .coverage
+# Per-worker files from scripts/run_tests.py --coverage, before `coverage combine` merges them.
+.coverage.*
 
 # Visibility 2x2 board: written by its save endpoint, not source
 docs/visibility-2x2/items.bak.json

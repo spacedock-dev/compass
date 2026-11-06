@@ -1116,6 +1116,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # and the stored reading's validators are spelt where the reading and the CI read own them.
         "compass_runtime.drift_view": {
             "compass_runtime.ci_read",
+            # The level names, spelt where the producer owns them.
+            "compass_runtime.levels",
             "compass_runtime.reading",
             "compass_runtime.records",
         },
@@ -1928,6 +1930,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            # The Drift card's answer, published on the focused context beside the levels.
+            "compass_runtime.drift_view",
             "compass_runtime.reading_long_admission",
             "compass_runtime.reading_long_coordinator",
             # Read-only history and explicit, attributed terminal marker discard.

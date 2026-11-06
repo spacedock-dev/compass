@@ -12,27 +12,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { contextKey } from '../api/identity';
-import { createHeld } from '../intent/held';
-import type { Row } from '../observed';
-import { createAnnouncer } from '../shell/announcer';
-import { createFakeClock } from '../transport/testing';
-import { buildModel } from './model';
-import { resultState } from './result';
-import {
-  ASSISTANT_ONLY,
-  BASELINE_OPEN,
-  CHECK_DOES_NOT_SHOW_IT,
-  CHECK_READ_INCOMPLETE,
-  CLAIM_UNCITED,
-  DERIVED_ONLY,
-  FAILED_CHECK_ON_RECORD,
-  FAILED_CHECK_UNREAD,
-  MALFORMED,
-  OWN_WORDS_ONLY,
-  STORED_WHY,
-  UNCITED,
-} from './sentences';
 import {
   generatedCases,
   GENERATED_FIRST_SEED,
@@ -41,103 +20,13 @@ import {
   RULES,
   type DriftCase,
 } from './terminalParity.corpus.test.helper';
+import { pageView } from './terminalParity.view.test.helper';
 
 const NAMED_FILE = new URL('../../test/fixtures/drift-parity.json', import.meta.url);
 const GENERATED_FILE = new URL(
   '../../test/fixtures/drift-parity-generated.json.gz',
   import.meta.url,
 );
-
-/* The page words a row's reason in sentences; the port says it as the closed token the producer stores, so a
-   sentence is mapped to its token here and an unfamiliar one fails the write rather than leaking through. */
-const WHY = new Map<string, string>([
-  [BASELINE_OPEN, 'baseline-open'],
-  [MALFORMED, 'malformed'],
-  [UNCITED, 'uncited'],
-  [CHECK_DOES_NOT_SHOW_IT, 'check-does-not-show-it'],
-  [CHECK_READ_INCOMPLETE, 'check-read-incomplete'],
-  [CLAIM_UNCITED, 'claim-uncited'],
-  [DERIVED_ONLY, 'board-quoting-itself'],
-  [ASSISTANT_ONLY, 'no-work-shown'],
-  [OWN_WORDS_ONLY, 'uncorroborated'],
-  [FAILED_CHECK_ON_RECORD, 'failed-check-on-record'],
-  [FAILED_CHECK_UNREAD, 'failed-check-unread'],
-]);
-for (const [token, sentence] of Object.entries(STORED_WHY)) {
-  if (!WHY.has(sentence)) WHY.set(sentence, token);
-}
-
-function whyToken(sentence: string): string {
-  if (!sentence) return '';
-  const token = WHY.get(sentence);
-  if (token === undefined) throw new Error(`no token for the reason: ${sentence}`);
-  return token;
-}
-
-function limitToken(sentence: string): string {
-  if (!sentence) return '';
-  return sentence === STORED_WHY['not-asked'] ? 'not-asked' : 'route';
-}
-
-/* What the Drift card would hold for the case's session on a fresh load, projected onto closed tokens, numbers
-   and the reader's own words. Nothing here is a sentence of the page's. */
-export function pageView(item: DriftCase): unknown {
-  const session = item.session as Row;
-  const payload = item.payload as Row;
-  const contexts = new Map([
-    [contextKey('p', session as never), { data: item.context as never, revision: 1, error: null }],
-  ]);
-  const model = buildModel({
-    session,
-    payload,
-    base: payload,
-    project: 'p',
-    projectKey: 'p',
-    contexts,
-    held: createHeld({ clock: createFakeClock(), announcer: createAnnouncer() }),
-    liveOn: false,
-  });
-  const numbers = (ids: readonly string[]): string[] => ids.map((id) => model.labels.get(id) ?? '');
-  const shape = model.shape;
-  const view = {
-    harness: model.harness,
-    sid: String(session['sid']),
-    annotate: model.annotate,
-    reading: shape !== null,
-    malformed: shape?.malformed ?? '',
-    unsettled: model.unsettled,
-    drafted: model.drafted,
-    limited: model.limit !== '',
-    entry_count: model.entryCount,
-    window_count: model.windowCount,
-    lines: (shape?.criteria ?? []).map((row) => ({
-      key: row.key,
-      state: resultState(row),
-      result: row.result,
-      why: whyToken(row.why),
-      rests_on: row.restsOn,
-      limit: limitToken(row.limit),
-      clause: row.clauseKnown ? row.clause : '',
-      detail: row.detail,
-      cites: [...row.citedIds],
-      numbers: numbers(row.citedIds),
-      unloaded: row.unloaded,
-      partial: Boolean(row.coverage),
-    })),
-    departures: (shape?.departures ?? []).map((row) => row.key),
-    cited: [...model.cited].sort(),
-    priors: model.priors.map((prior) => ({
-      key: prior.key,
-      read_at: prior.readAt,
-      answer: prior.answer,
-      cites: [...prior.cites],
-      numbers: numbers(prior.cites),
-      clause: prior.row.clause,
-      detail: prior.row.detail,
-    })),
-  };
-  return JSON.parse(JSON.stringify(view)) as unknown;
-}
 
 interface Recorded extends DriftCase {
   readonly expected: unknown;
