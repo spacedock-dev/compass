@@ -612,7 +612,6 @@ class FrontendWiringControlsTest(unittest.TestCase):
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
-            "pnpm-lock.yaml",  # the pinned Playwright version, read for the cache key
             "pnpm exec playwright install chromium",
             "pnpm exec playwright install-deps chromium",
             "pnpm test:stories",
@@ -629,12 +628,15 @@ class FrontendWiringControlsTest(unittest.TestCase):
 
 @unittest.skipUnless(detector.BASH, "the shipped steps use Bash")
 class StorybookChromiumInstallTest(unittest.TestCase):
-    """The pinned Chromium comes from a cache keyed on the lockfile's Playwright version, and the host
-    packages install with a bound and one retry.
+    """Chromium and its host packages install fresh on every run, the packages bounded and retried once.
 
     Measured on the two timed-out runs (2026-11-06): the browser download took about 6 s on each, and
     the step spent its whole 5 minutes fetching nine font packages (21.9 MB) from the Ubuntu mirror at
     tens of KB/s. Every other library Chromium needs was already on the runner image.
+
+    Nothing is restored from a cache (owner ruling, 2026-11-06). actions/cache extracts an entry with
+    `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and absolute member names, so an entry that
+    third-party code shaped in one main-branch run could plant files that every later run executes.
     """
 
     @staticmethod
@@ -660,51 +662,27 @@ class StorybookChromiumInstallTest(unittest.TestCase):
             timeout=30,
         )
 
-    def read_version(self, cwd: Path) -> tuple[subprocess.CompletedProcess[str], dict[str, str]]:
-        step = next(step for step in self.steps() if step.get("id") == "playwright")
-        with tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
-            output = Path(tmp) / "output"
-            output.touch()
-            result = self.run_step(step, cwd, {"GITHUB_OUTPUT": str(output)})
-            found = dict(line.split("=", 1) for line in output.read_text().split())
-        return result, found
-
-    def test_the_cache_key_is_the_playwright_version_the_lockfile_pins(self) -> None:
-        result, found = self.read_version(ROOT)
-        self.assertEqual(0, result.returncode, result.stderr)
-        pinned = json.loads((ROOT / "package.json").read_text())["devDependencies"]["playwright"]
-        self.assertEqual(pinned, found["version"])
+    def test_the_job_restores_and_saves_no_cache(self) -> None:
         steps = self.steps()
-        caches = [step for step in steps if step.get("uses", "").startswith("actions/cache@")]
-        # One entry per half: a hit never saves again, so a shared entry saved without packages
-        # would hit forever and fetch the fonts on every run.
-        self.assertEqual(
-            ["~/.cache/ms-playwright", "~/.cache/playwright-apt/*.deb"],
-            [cache["with"]["path"] for cache in caches],
-        )
-        self.assertEqual(2, len({cache["with"]["key"] for cache in caches}), "separate entries")
-        self.assertIn("${{ steps.playwright.outputs.image }}", caches[1]["with"]["key"])
+        for step in steps:
+            with self.subTest(step=step.get("name") or step.get("uses")):
+                # `actions/cache`, `actions/cache/restore` and `actions/cache/save` alike.
+                self.assertFalse(step.get("uses", "").startswith("actions/cache"))
+        node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
+        self.assertFalse(node["with"]["package-manager-cache"])
+        manager = next(s for s in steps if s.get("uses", "").startswith("pnpm/setup@"))
+        self.assertFalse(manager["with"]["cache"])
+        # With nothing to restore, apt keeps its own archive directory: nothing points it at a path
+        # a cache used to fill.
+        packages = self.step_running("install-deps")["run"]
+        self.assertNotIn("Dir::Cache", packages)
+        self.assertNotIn(".cache", packages)
         browser = self.step_running("pnpm exec playwright install chromium")
-        for cache in caches:
-            self.assertRegex(cache["uses"], r"@[0-9a-f]{40}$")
-            self.assertIn("${{ steps.playwright.outputs.version }}", cache["with"]["key"])
-            self.assertNotIn(
-                "restore-keys", cache["with"], "another version's files are never restored"
-            )
-            self.assertLess(steps.index(cache), steps.index(browser))
+        self.assertLess(steps.index(browser), steps.index(self.step_running("install-deps")))
         self.assertLess(
             steps.index(self.step_running("install-deps")),
             steps.index(self.step_running("pnpm test:stories")),
         )
-
-    def test_a_lockfile_without_exactly_one_playwright_version_stops_the_job(self) -> None:
-        entry = "  playwright@{}:\n    resolution: {{integrity: sha512-x}}\n"
-        for body in ("lockfileVersion: '9.0'\n", entry.format("1.1.0") + entry.format("1.2.0")):
-            with self.subTest(body=body), tempfile.TemporaryDirectory(prefix="bld-hyg-sb-") as tmp:
-                (Path(tmp) / "pnpm-lock.yaml").write_text(body)
-                result, found = self.read_version(Path(tmp))
-                self.assertNotEqual(0, result.returncode)
-                self.assertNotIn("version", found, "no cache key may be written")
 
     def install_deps(self, failures: int) -> tuple[int, list[str]]:
         """Run the shipped host-package step with `pnpm` failing its first `failures` calls."""

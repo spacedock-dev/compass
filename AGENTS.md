@@ -587,9 +587,11 @@ on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-enviro
 
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and
-runs the component assertions in pinned Chromium. It restores that browser from a cache keyed on the
-Playwright version in the lockfile, and installs the runner's host packages apart, from their own cache,
-bounded and retried once, because the combined `--with-deps` install timed out on the Ubuntu mirror's font downloads.
+runs the component assertions in pinned Chromium. It installs that browser fresh on every run, and the
+runner's host packages apart, bounded and retried once, because the combined `--with-deps` install timed
+out on the Ubuntu mirror's font downloads. Neither is cached: actions/cache extracts an entry with
+`tar -P`, so an entry saved after third-party code ran in a main-branch job could plant files that later
+runs execute, and the job restores no cache of any kind.
 Every frontend job, `frontend-contract` and
 `frontend-docs` are in the aggregator's `needs` (the comment job is not), and a skipped result passes
 only when its lane is off; for a macOS job, only when its lane and `platform` are not both on. The required status
