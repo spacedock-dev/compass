@@ -696,7 +696,13 @@ def _with_drift_view(
     record: list[dict[str, Any]] | None = None
     try:
         page = _record_page(
-            application, matching, harness, sid, cursor_key=cursor_key, limit=50, before=None
+            application,
+            matching,
+            harness,
+            sid,
+            cursor_key=cursor_key,
+            limit=record_pages.PAGE_SIZE,
+            before=None,
         )
         record = page["entries"] if page.get("state") == "ok" else None
     except Exception as exc:  # noqa: BLE001 - the page without its record still shows the context
@@ -1763,7 +1769,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "a bounded project and harness:session identity are required")
             return
         try:
-            limit = record_pages.page_limit(query.get("limit", ["50"])[0])
+            limit = record_pages.page_limit(query.get("limit", [str(record_pages.PAGE_SIZE)])[0])
         except ValueError:
             self.send_error(400, "limit must be an integer")
             return

@@ -967,12 +967,14 @@ def _outcome_line(row: Mapping[str, Any], line: LineView) -> str:
     named = f"{_label(line.key)} ({source})" if source else _label(line.key)
     # The claims row carries no words of the reader's, so the page draws it with no clause.
     said = "" if line.key == "claims" else f": {_clause(line.clause)}"
-    # The page draws a line it can state with the entries it cites and the model's reason; a
-    # "Can't tell" line it draws with the reason it cannot tell alone (`ReadingResult`), so a
-    # demoted departure's verdict is never shown under it.
+    # The page draws a line it can state with the entries it cites, and the model's reason only
+    # under a line not reached at this stop (`ReadingResult` `Qualifiers`); a "Can't tell" line it
+    # draws with the reason it cannot tell, so a demoted departure's verdict never shows under it.
     parts = [f"- {STATE_WORDS[line.state]} · {named}{said}"]
     if line.state != "cant-tell":
-        parts.extend([_entries(line.numbers), printable(line.detail)])
+        parts.append(_entries(line.numbers))
+    if line.state == "not-reached":
+        parts.append(printable(line.detail))
     text = " · ".join(part for part in parts if part)
     why = WHY_WORDS.get(line.why, "") if line.state == "cant-tell" else ""
     return f"{text} — {why}" if why else text

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import unittest
 from typing import Any
 
-from compass_runtime import drift_view
+from compass_runtime import drift_view, record_pages
 
 from .support import SERVER_PATH
 
@@ -212,3 +213,13 @@ class StaleReadingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecordPageSizeTest(unittest.TestCase):
+    def test_the_drift_view_merges_the_same_first_page_the_page_loads(self) -> None:
+        source = (
+            SERVER_PATH.parents[3] / "frontend" / "src" / "transport" / "record.ts"
+        ).read_text(encoding="utf-8")
+        match = re.search(r"RECORD_PAGE_SIZE = (\d+);", source)
+        assert match is not None
+        self.assertEqual(int(match.group(1)), record_pages.PAGE_SIZE)
