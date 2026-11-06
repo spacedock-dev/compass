@@ -113,7 +113,7 @@ LANES_OF = {
     "R_FLOOR": ("SUITES",),
     "R_TEST": ("PYTHON",),
     "R_PLATFORM": ("PYTHON", "PLATFORM"),
-    "R_PLATFORM_CURRENT": ("PYTHON", "PLATFORM"),
+    "R_PLATFORM_CURRENT": ("PYTHON",),
     "R_FRONTEND": ("FRONTEND",),
     "R_FRONTEND_MACOS": ("FRONTEND", "PLATFORM"),
     "R_FRONTEND_COVERAGE": ("FRONTEND",),
@@ -202,7 +202,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
 
     def test_a_macos_leg_may_skip_when_platform_is_off_and_not_when_it_is_on(self) -> None:
         macos = {name for name, owners in LANES_OF.items() if "PLATFORM" in owners}
-        self.assertEqual({"R_PLATFORM", "R_PLATFORM_CURRENT", "R_FRONTEND_MACOS"}, macos)
+        self.assertEqual({"R_PLATFORM", "R_FRONTEND_MACOS"}, macos)
         for name in sorted(macos):
             lanes = {**ALL_OFF, **dict.fromkeys(LANES_OF[name], "true")}
             ran = {
@@ -221,6 +221,17 @@ class FrontendAggregateControlsTest(unittest.TestCase):
                 self.assertEqual(0, self.aggregate(lanes=off, results=skipped).returncode)
                 # Both on and the leg skipped: a dependency died, which is a failure.
                 result = self.aggregate(lanes=lanes, results=skipped)
+                self.assertNotEqual(0, result.returncode, result.stdout)
+
+    def test_a_platform_answer_that_is_neither_true_nor_false_fails_the_gate(self) -> None:
+        # Every other lane fails closed on a missing output; a lost `platform` must not read as off.
+        python_only = {
+            name: ("skipped" if "PLATFORM" in owners else "success")
+            for name, owners in LANES_OF.items()
+        }
+        for value in ("", "True", "yes"):
+            with self.subTest(platform=value):
+                result = self.aggregate(lanes={**ALL_ON, "PLATFORM": value}, results=python_only)
                 self.assertNotEqual(0, result.returncode, result.stdout)
 
     def test_the_aggregate_reads_every_job_it_needs(self) -> None:
@@ -288,10 +299,20 @@ class FrontendWiringControlsTest(unittest.TestCase):
             [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
             platform["strategy"]["matrix"]["exclude"],
         )
-        # macOS on the newest stable CPython beside the 3.12 leg above: 3.12 takes the kqueue exit
-        # watch in supervise.py and 3.13 or newer takes `os.waitid`, so each branch runs on its own OS.
+        # The newest stable CPython on every Python change: on macOS beside the 3.12 leg above when
+        # `platform` is on (3.12 takes the kqueue exit watch in supervise.py and 3.13 or newer takes
+        # `os.waitid`, so each branch runs on its own OS), and on Linux otherwise, because no other
+        # job runs that interpreter.
         current = workflow_jobs["platform-tests-current"]
-        self.check_runners(current, ["macos-latest"])
+        self.check_runners(
+            current,
+            [
+                (
+                    "${{ needs.changes.outputs.platform == 'true' "
+                    "&& 'macos-latest' || 'ubuntu-latest' }}"
+                )
+            ],
+        )
         self.assertEqual(
             "3.15",
             next(s for s in current["steps"] if "setup-python" in s.get("uses", ""))["with"][
@@ -320,6 +341,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
             ("runtime-floor", "python_suites"),
             ("frontend-contract", "contract"),
             ("frontend-docs", "frontend_docs"),
+            ("platform-tests-current", "python"),
         ):
             with self.subTest(job=name):
                 self.assertEqual(
@@ -328,7 +350,6 @@ class FrontendWiringControlsTest(unittest.TestCase):
         # A macOS leg runs only where macOS can differ from the Linux run beside it.
         for name, lane in (
             ("platform-tests", "python"),
-            ("platform-tests-current", "python"),
             ("frontend-macos", "frontend"),
         ):
             with self.subTest(job=name):

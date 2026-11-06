@@ -460,7 +460,7 @@ is Sonnet 5.5. Reviewer acceptance and scored producer results retain their sepa
 
 ## Quality Gate
 
-Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.12 runtime floor (once) beside the whole suite there, run as parallel legs (`runtime-floor`: the dashboard suite and the script suite in three shards, one runner each), the same suite under `coverage` on 3.14 (for its `sysmon` tracer) with the `fail_under` threshold from `pyproject.toml` enforced once, and, when the change can behave differently on macOS, `platform-tests`, the same unit suite re-run natively on macOS on 3.12 with one dashboard leg and three script shards, plus `platform-tests-current`, the dashboard suite on macOS on Python 3.15 (macOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS) (Ubuntu is already covered by the two jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
+Every PR must pass the `quality-gate` required check (`.github/workflows/quality-gate.yml`): ruff with `select = ALL` (curated ignores documented in `pyproject.toml`), `ruff format --check`, `mypy --strict`, a direct-launch smoke test on the Python 3.12 runtime floor (once) beside the whole suite there, run as parallel legs (`runtime-floor`: the dashboard suite and the script suite in three shards, one runner each), the same suite under `coverage` on 3.14 (for its `sysmon` tracer) with the `fail_under` threshold from `pyproject.toml` enforced once, `platform-tests-current`, the dashboard suite on Python 3.15, which no other job runs, on every Python change, and, when the change can behave differently on macOS, `platform-tests`, the same unit suite re-run natively on macOS on 3.12 with one dashboard leg and three script shards, with `platform-tests-current` moved to macOS beside it (macOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS) (Ubuntu is already covered by the jobs before it). Python suite jobs use `scripts/run_tests.py`, one worker per core. The frontend suite has its own coverage threshold, 80% of statements, branches, functions and lines, set in `vitest.config.mts` and enforced by `Frontend tests + coverage threshold`. Each threshold only ratchets up; never lower one in a PR. A PR that must merge below either needs the `coverage-exception` label, which is visible in the PR timeline.
 
 **The required context always reports; its constituent jobs run by lane.** A `changes` job runs
 `scripts/ci_scope.py`, which decides which lanes the diff can affect, and each measurable job is
@@ -468,7 +468,7 @@ gated on its lane:
 
 | Lane | Jobs | Turned on by |
 |---|---|---|
-| `python` | lint, typecheck, `test` (coverage); with `platform`, `platform-tests` (macOS, 3.12) and `platform-tests-current` (macOS, 3.15) | any `.py` file, other code in the plugin roots and `scripts/`, `pyproject.toml`, the requirements files |
+| `python` | lint, typecheck, `test` (coverage), `platform-tests-current` (3.15: macOS with `platform`, Linux otherwise); with `platform`, `platform-tests` (macOS, 3.12) | any `.py` file, other code in the plugin roots and `scripts/`, `pyproject.toml`, the requirements files |
 | `lint` | lint alone | the `python` lane, or a Markdown file holding a Python block, which `ruff format` checks everywhere but `docs/plans/` |
 | `frontend` | `frontend` (Linux), `frontend-coverage`, `frontend-production`, `storybook`; with `platform`, `frontend-macos` | `frontend/`, the JS toolchain files, the built page under `web/`, every file `pnpm build` hashes into `react.integrity.json` (read from `package.mjs`, so `.gitattributes` too), docs a frontend file other than a Vitest test reads |
 | `contract` | `frontend-contract`: `pnpm test:dev`, the build tests and the Vitest files that name the runtime, on macOS with `platform` and on Linux otherwise | `server.py` or `compass_runtime/` outside `web/`, when the frontend lane is off |
@@ -478,8 +478,11 @@ gated on its lane:
 `platform` is not a lane but a switch on two of them: a macOS job runs only when its lane and
 `platform` are both on. It is on for the reviewed `PLATFORM_PATHS` in `scripts/ci_scope.py` (the
 launchers, the exit watch, the daemon, file locks, osascript notifications, the development server
-`pnpm test:dev` drives, Terminal automation and the harness drivers, and their tests), for the gate's
-own wiring and any unrecognised path, and for every run that is not a pull request.
+`pnpm test:dev` drives, Terminal automation and the harness drivers, and their tests; the scrub and
+footer timing bounds that failed only on the slower macOS runners; the shared test config, which takes
+`sys.platform`; and the toolchain and dependency pins the macOS legs install, whose native bindings
+differ per OS), for the gate's own wiring and any unrecognised path, and for every run that is not a
+pull request.
 
 **Push, nightly and manual runs run everything.** A push to main, the nightly `schedule` and a
 `workflow_dispatch` turn on every lane, macOS included, so a fail-open gap or platform drift that a
@@ -504,8 +507,8 @@ repeated them. `validate.yml` says the same thing at the step itself.
 
 **CI exercises macOS and Linux.** Windows is no longer exercised by CI for the dashboard unit
 suite or the frontend. When `platform` is on, `platform-tests` keeps the macOS dashboard leg on 3.12 and three script shards, and
-`platform-tests-current` adds a macOS dashboard leg on 3.15 (macOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS);
-the Linux coverage and runtime-floor jobs run both Python suites on every Python change.
+`platform-tests-current` runs its 3.15 dashboard leg on macOS (macOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS);
+otherwise that leg runs on Linux, and the Linux coverage and runtime-floor jobs run both Python suites on every Python change.
 
 `Frontend (ubuntu-latest)` runs on every frontend change. It uses pinned Node and pnpm for lint,
 strict types, the Node build tests and a clean preview build, checks the hand-written CSS record

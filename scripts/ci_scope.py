@@ -2,10 +2,11 @@
 """Decide which of the quality gate's lanes a pull request's changes can affect.
 
 `quality-gate.yml` and `validate.yml` both run this before anything measurable, and each job
-runs only when a lane it belongs to is on. There are three lanes:
+runs only when a lane it belongs to is on. There are six lanes:
 
-- ``python``: ruff, mypy, the coverage run and the macOS legs. On when Python or what the Python
-  suites assert on changed.
+- ``python``: ruff, mypy, the coverage run and the dashboard suite on the newest CPython (on macOS
+  when ``platform`` is on, on Linux otherwise). On when Python or what the Python suites assert on
+  changed.
 - ``frontend``: Biome, strict types, Vitest under coverage, the bundle rebuild and Storybook. On
   when the frontend's sources, its toolchain or a document its tests read changed.
 - ``python_suites``: the Python suites once on Linux, with no lint, types, coverage or macOS. On
@@ -125,11 +126,12 @@ BACKEND = (
 )
 # Code whose behaviour differs between macOS and Linux, so a Linux run cannot stand in for it.
 # Reviewed 2026-11-06 from a grep of the runtime, launchers and scripts for sys.platform, os.name,
-# kqueue, waitid, osascript, darwin, signals and process groups. Left out on purpose: `os.name` and
-# `win32` branches (no CI runner takes them), and modules that take the platform as an argument
-# (`config.platform_name`, `platform.system()` defaults in claude_settings and reading_route,
-# quota's keychain), whose tests pass both values on Linux. The nightly run catches what this
-# list misses.
+# kqueue, waitid, osascript, darwin, signals and process groups, and from the macOS-only failures
+# on record. Left out on purpose: `os.name` and `win32` branches (no CI runner takes them), and
+# modules that take the platform as an argument (`config.platform_name` in http_api, aggregate,
+# quota and observation; `platform.system()` defaults in claude_settings and reading_route), whose
+# tests pass "darwin" explicitly on Linux ([D-4](docs/design-cross-platform.md#d-4)). The nightly
+# run catches what this list misses.
 PLATFORM_PATHS = (
     # The launcher and its two byte-identical copies forward signals to the server.
     "compass/skills/compass/launch.py",
@@ -151,6 +153,22 @@ PLATFORM_PATHS = (
     "scripts/capture_focus_raise.py",
     "scripts/observe_journey.py",
     "scripts/ordinary_turn_driver.py",
+    # Timing bounds that passed on Linux and failed on the slower macOS runners: the scrub's
+    # (0.80 s, 1.20 s and 0.31 s, #745) and the footer's stalled-read deadline (0.352 s, #787).
+    "compass/skills/compass/compass_runtime/records.py",
+    "compass/skills/compass/compass_runtime/terminal_client.py",
+    "compass/skills/compass/tests/test_records.py",
+    "compass/skills/compass/tests/test_footer.py",
+    # The shared test config takes sys.platform, so the macOS legs run every default test as darwin.
+    "compass/skills/compass/tests/support.py",
+    # What the macOS legs install: the lockfile's per-OS native bindings (esbuild, rolldown, biome,
+    # lightningcss) and the Node that loads them, and the wheels requirements-validation.txt pins.
+    ".node-version",
+    ".npmrc",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "requirements-validation.txt",
     # The tests of the above, which are what the macOS legs run.
     "compass/skills/compass/tests/test_supervise.py",
     "compass/skills/compass/tests/test_lifecycle.py",

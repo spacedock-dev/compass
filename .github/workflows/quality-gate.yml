@@ -312,8 +312,9 @@ jobs:
   # Coverage and its sticky comment stay Ubuntu-only; this job checks native
   # macOS behavior without repeating the Ubuntu suite from `test` and
   # `runtime-floor`. Windows CI was retired after the frontend refactor. It runs
-  # only when `platform` is on: a change to the reviewed platform-sensitive paths,
-  # and every push to main and nightly run.
+  # only when `platform` is on: a change to a reviewed platform-sensitive path, the
+  # gate's own wiring or a path the detector does not recognise, and every push to
+  # main, nightly run and manual dispatch.
   platform-tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
@@ -361,21 +362,22 @@ jobs:
         if: matrix.suite == 'scripts'
         run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
-  # The dashboard suite on macOS beside the floor, pinned to 3.15 (the newest stable minor on
-  # 2026-11-02) and moved by hand when a new minor ships. supervise.py
-  # watches a session's exit with `os.waitid` wherever `os` has it and a kqueue exit filter
-  # otherwise. macOS gained `waitid` in 3.13, so the 3.12 leg above runs kqueue and this leg runs
-  # waitid. Without it the branch a Homebrew `python3` takes never ran on its own OS.
+  # The dashboard suite on 3.15 (the newest stable minor on 2026-11-02), moved by hand when a new
+  # minor ships. supervise.py watches a session's exit with `os.waitid` wherever `os` has it and a
+  # kqueue exit filter otherwise. macOS gained `waitid` in 3.13, so with `platform` on this leg runs
+  # on macOS and takes waitid beside the 3.12 kqueue leg above. With it off the leg runs on Linux,
+  # because no other job runs this interpreter and a change outside the platform list can still
+  # break on it.
   platform-tests-current:
     name: Tests (${{ matrix.os }}, Python 3.15, dashboard)
     needs: changes
-    if: needs.changes.outputs.python == 'true' && needs.changes.outputs.platform == 'true'
+    if: needs.changes.outputs.python == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: ["${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -902,6 +904,11 @@ jobs:
           fi
 
           # A macOS leg runs when its lane AND `platform` are on, so that conjunction is its lane.
+          # Like every lane, `platform` fails closed: a lost or garbled answer is not "off".
+          if [ "$PLATFORM" != "true" ] && [ "$PLATFORM" != "false" ]; then
+            echo "::error::The detector's platform answer is '$PLATFORM', not true or false."
+            exit 1
+          fi
           both() { if [ "$1" = "true" ] && [ "$2" = "true" ]; then echo true; else echo false; fi; }
           PYTHON_MACOS=$(both "$PYTHON" "$PLATFORM")
           FRONTEND_MACOS=$(both "$FRONTEND" "$PLATFORM")
@@ -912,7 +919,7 @@ jobs:
           for row in "lint:$LINT:$R_LINT" "typecheck:$PYTHON:$R_TYPECHECK" \
                      "runtime-floor:$SUITES:$R_FLOOR" "test:$PYTHON:$R_TEST" \
                      "platform-tests:$PYTHON_MACOS:$R_PLATFORM" \
-                     "platform-tests-current:$PYTHON_MACOS:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
+                     "platform-tests-current:$PYTHON:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
                      "frontend-macos:$FRONTEND_MACOS:$R_FRONTEND_MACOS" \
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \

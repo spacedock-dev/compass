@@ -57,7 +57,8 @@ guards three of them, the `SKILL.md` copy and both `pyproject.toml` fields; the 
 tests pin the CI interpreters, and the CLI script test pins the packaging refusal. The rest are on you.
 CI runs the dashboard suite on macOS twice, on 3.12 and on the newest stable CPython, because the exit
 watch in `supervise.py` takes a different branch on each. It does so for a change to the exit watch or
-other platform-sensitive code, and on every push to main and nightly run.
+other platform-sensitive code, and on every push to main and nightly run; any other Python change
+runs the newest-CPython leg on Linux.
 
 | Capability | macOS | Linux | Windows | WSL2 |
 |---|---|---|---|---|

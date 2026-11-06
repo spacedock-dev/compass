@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -272,6 +273,26 @@ class DocumentsTestsReadAreNotProseTest(unittest.TestCase):
             found,
         )
 
+    def test_the_citation_check_reads_every_citation_the_detector_sends_it(self) -> None:
+        # The detector runs the check alone for any `(docs/x.md#`; a citation the check's stricter
+        # pattern skips, such as `(docs/x.md#a "title")`, would then be checked by nothing.
+        source = (ROOT / CHECK).read_text(encoding="utf-8")
+        found = re.search(r"^const CITATION = /(.+)/g;$", source, re.MULTILINE)
+        self.assertIsNotNone(found, f"{CHECK} no longer declares CITATION where expected")
+        assert found is not None
+        check = re.compile(found.group(1).replace(r"\/", "/"))
+        skipped = '// (docs/x.md#a "title")\n'
+        self.assertNotEqual(
+            len(ci_scope.CITATION.findall(skipped)), len(check.findall(skipped)), "self-check"
+        )
+        unread = [
+            path.relative_to(ROOT).as_posix()
+            for path in ci_scope._sources(ROOT, "frontend")
+            if len(ci_scope.CITATION.findall(text := path.read_text(encoding="utf-8")))
+            != len(check.findall(text))
+        ]
+        self.assertEqual([], unread)
+
     def test_every_vitest_file_the_detector_names_is_one_vitest_runs(self) -> None:
         # The detector's notion of a Vitest file is vitest.config.mts's include globs.
         config = (ROOT / "vitest.config.mts").read_text(encoding="utf-8")
@@ -317,7 +338,7 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
             "compass/skills/compass/tests/test_sessions.py",
             "scripts/owned_observer.py",
             "frontend/src/main.tsx",
-            "pnpm-lock.yaml",
+            "requirements-dev.txt",
             "docs/design-reading-a-session.md",
         ):
             with self.subTest(path=path):
@@ -332,6 +353,27 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
             "compass/skills/compass/tests/test_supervise.py",
             "scripts/capture_terminal_identity.py",
             "frontend/dev/supervisor.mjs",
+            # Timing bounds that failed only on the slower macOS runners (#745, #787).
+            "compass/skills/compass/compass_runtime/records.py",
+            "compass/skills/compass/compass_runtime/terminal_client.py",
+            "compass/skills/compass/tests/test_records.py",
+            "compass/skills/compass/tests/test_footer.py",
+            # The shared test config takes sys.platform, so the macOS legs run every test as darwin.
+            "compass/skills/compass/tests/support.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual("true", lanes_of(path)["platform"])
+
+    def test_a_dependency_bump_runs_the_macos_legs_that_install_it(self) -> None:
+        # The lockfile pins per-OS native bindings (esbuild, rolldown, biome, lightningcss) and the
+        # macOS legs install requirements-validation.txt: only a macOS runner loads their darwin builds.
+        for path in (
+            "pnpm-lock.yaml",
+            "package.json",
+            ".node-version",
+            ".npmrc",
+            "pnpm-workspace.yaml",
+            "requirements-validation.txt",
         ):
             with self.subTest(path=path):
                 self.assertEqual("true", lanes_of(path)["platform"])
@@ -423,8 +465,11 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             {**ALL_OFF, "frontend": "true", "python_suites": "true"},
             ci_scope.decide("pull_request", base, head, self.tmp).outputs(),
         )
+        # Real SHAs, so only the event can be what turns every lane on.
         for event, b, h in (
             ("push", base, head),
+            ("schedule", base, head),
+            ("workflow_dispatch", base, head),
             ("pull_request", "", head),
             ("pull_request", "nope", head),
         ):
@@ -464,13 +509,13 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             )
         )
         with redirect_stdout(out):
-            ci_scope.main(["--root", str(ROOT), "--paths", "pnpm-lock.yaml"])
+            ci_scope.main(["--root", str(ROOT), "--paths", "frontend/src/main.tsx"])
         self.assertEqual(
             "python=false\nlint=false\nfrontend=true\ncontract=false\npython_suites=true\n"
             "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\n",
             output.read_text(encoding="utf-8"),
         )
-        self.assertIn("pnpm-lock.yaml: frontend", out.getvalue())
+        self.assertIn("frontend/src/main.tsx: frontend", out.getvalue())
 
 
 if __name__ == "__main__":
