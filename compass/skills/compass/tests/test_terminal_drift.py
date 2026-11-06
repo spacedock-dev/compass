@@ -22,6 +22,15 @@ if TYPE_CHECKING:
 
 from .support import SERVER_PATH
 
+RECORDED_CONTEXT = (
+    SERVER_PATH.parents[3]
+    / "frontend"
+    / "test"
+    / "fixtures"
+    / "client-contract"
+    / "context-focused-drift.json"
+)
+
 ROOT = SERVER_PATH.parents[3]
 ALLOWANCE = ROOT / "frontend" / "test" / "fixtures" / "prompt-allowance.json"
 
@@ -1005,6 +1014,49 @@ class AdapterTest(unittest.TestCase):
         view = a_view()
         view["lines"][0]["state"] = "maybe"
         self.assertTrue(terminal_drift.adapt(view).malformed)
+
+    def test_a_mid_flight_reading_with_no_drawn_level_reads_so_far(self) -> None:
+        # Measured on a live board: a not_enough reading draws no level pill, so `pill` is null, yet
+        # the page still leads its answer with "So far:" from the reading's own scope.
+        view = a_view()
+        view["pill"] = None
+        view["so_far"] = True
+        view["analysis"] = {"level": "not_enough", "reasons": [], "withheld": False}
+        adapted = terminal_drift.adapt(view)
+        self.assertTrue(adapted.so_far)
+        self.assertFalse(adapted.level_so_far)
+        row = {"harness": "claude", "sid": "abc"}
+        out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
+        self.assertIn(terminal_drift.SO_FAR_LINE, out)
+        self.assertIn("Level: Not enough recorded yet", out)
+        self.assertNotIn("Level: Not enough recorded yet so far", out)
+
+    def test_a_finished_reading_says_nothing_of_so_far_and_the_pill_keeps_its_own(self) -> None:
+        view = a_view()
+        view["pill"] = {"level": "medium", "source": "analysis", "so_far": True}
+        view["so_far"] = False
+        adapted = terminal_drift.adapt(view)
+        self.assertFalse(adapted.so_far)
+        self.assertTrue(adapted.level_so_far)
+        row = {"harness": "claude", "sid": "abc"}
+        out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
+        self.assertNotIn("So far:", out)
+        self.assertIn("Level: Medium so far", out)
+
+    def test_the_recorded_server_row_reads_through_adapt_and_render(self) -> None:
+        # The fixture is layer B's own recorded response, so this stays bound to what is published.
+        recorded = json.loads(RECORDED_CONTEXT.read_text(encoding="utf-8"))["response"]["body"]
+        found = terminal_drift.view_of(recorded, "claude", "a1b2c3d4")
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertIn("so_far", found)
+        adapted = terminal_drift.adapt(found)
+        self.assertEqual("", adapted.malformed)
+        self.assertEqual(found["so_far"] is True, adapted.so_far)
+        row = {"harness": "claude", "sid": "a1b2c3d4"}
+        out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
+        self.assertIn("Outcome lines:", out)
+        self.assertEqual(adapted.so_far, terminal_drift.SO_FAR_LINE in out)
 
 
 if __name__ == "__main__":

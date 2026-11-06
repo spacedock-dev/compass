@@ -172,6 +172,11 @@ STATE_WORDS: Final[dict[str, str]] = {
     "not-reached": "Not reached",
     "unshown": "Not shown",
 }
+# The page leads a mid-flight reading's answer with "So far:" so it never reads as how the session
+# ended. The terminal does not port the answer sentence, so it says the scope on its own line.
+SO_FAR_LINE: Final = (
+    "So far: this reading answers for the work up to now, not for how the session ended."
+)
 # Why a line reads "Can't tell", for the one reason the terminal itself explains: the later message
 # it leaves unsettled. Any other reason is on the session page.
 WHY_WORDS: Final[dict[str, str]] = {
@@ -300,7 +305,8 @@ class StaleView(NamedTuple):
 class View(NamedTuple):
     malformed: str
     level: str | None
-    so_far: bool
+    so_far: bool  # the reading's own scope: the page's "So far:" lead, drawn with or without a pill
+    level_so_far: bool  # the level pill's, which also reads a running session
     lines: tuple[LineView, ...]
     departures: tuple[str, ...]
     priors: tuple[PriorView, ...]
@@ -816,7 +822,7 @@ def adapt(view: Mapping[str, Any]) -> View:
         count = view.get("unsettled_count")
         departures = tuple(str(key) for key in view.get("departures") or [])
     except (KeyError, TypeError, AttributeError):
-        return View("unreadable", None, False, (), (), (), None, False, None)
+        return View("unreadable", None, False, False, (), (), (), None, False, None)
     malformed = _text(view.get("malformed"))
     unknown = (
         any(line.state not in STATE_WORDS for line in lines)
@@ -826,7 +832,8 @@ def adapt(view: Mapping[str, Any]) -> View:
     return View(
         malformed=malformed or ("unknown" if unknown else ""),
         level=level if isinstance(level, str) else None,
-        so_far=_rec(pill) and pill.get("so_far") is True,
+        so_far=view.get("so_far") is True,
+        level_so_far=_rec(pill) and pill.get("so_far") is True,
         lines=lines,
         departures=departures,
         priors=priors,
@@ -917,11 +924,13 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         lines.append(f"Read at {clock_text(read_at)}, {age} ago{so_far}")
     if view.stale is not None:
         lines.append(f"{stale_head(view.stale)} {again_hint}")
+    if view.so_far:
+        lines.append(SO_FAR_LINE)
     if said := unsettled_line(view):
         lines.append(said)
     lines.append(PROVENANCE)
     if view.level is not None:
-        lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.so_far else ''}")
+        lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
     if view.lines:
         lines.append("Outcome lines:")
         for line in view.lines:
