@@ -333,7 +333,7 @@ python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --status
 running, or that the port belongs to some other process — in which case it changes nothing. A start
 on a port that already runs a dashboard is refused and points at it.
 
-The server writes twelve files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
+The server writes thirteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
 `compass-<port>.json`, which records the running instance; `compass-<port>.log`, where a
 detached server's output goes; `compass-dismissals.json`, the sessions marked handled;
 `compass-annotations.json`, the goal and expected outcome lines you typed against a session, plus a
@@ -346,7 +346,9 @@ ended after a restart;
 `compass-settings.json`, the reading limits set on the Settings screen, only once one is changed;
 `semantic-work-history.json`, the project cockpit's own record of what a project's sessions were
 observed doing, bounded to a 24-hour window across at most 20 projects;
-`observer/<harness>_<sid>.json`, the sidecar an observer panel records when a reader opens one; and
+`observer/<harness>_<sid>.json`, the sidecar an observer panel records when a reader opens one;
+`compass-typed-presses.json`, the ids of the typed `drift` commands a press from inside a session
+started a reading on, and nothing else; and
 `compass-history.json`, the history of what the server observed, kept for up to 14 days. A store
 that cannot be read is discarded rather than repaired, the board starts empty, and the header names
 which reset it was; a settings file that cannot be read reads as the defaults instead. If you
