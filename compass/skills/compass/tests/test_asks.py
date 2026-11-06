@@ -159,21 +159,21 @@ class PendingAskTest(unittest.TestCase):
 
         def waiter() -> None:
             parked.set()
-            seen.append(ask.wait(timeout=5.0))
+            seen.append(ask.wait(timeout=30.0))
 
         thread = threading.Thread(target=waiter, daemon=True)
         thread.start()
-        self.assertTrue(parked.wait(timeout=2.0))
+        self.assertTrue(parked.wait(timeout=30.0))
         ask.resolve(0)
-        thread.join(timeout=2.0)
+        thread.join(timeout=30.0)
         self.assertEqual([("answered", 0)], seen)
 
     def test_wait_releases_the_lock_so_the_registry_stays_readable(self) -> None:
         """A waiter holding its lock across the wait would freeze the dashboard.
 
         The reader runs on its own thread so a regression fails the assertion at
-        one second rather than blocking until the waiter's own timeout and then
-        passing.
+        its bound rather than blocking until the waiter's own timeout and then
+        passing. The reader's bound must stay below the waiter's for that to hold.
         """
         registry = runtime_asks.AskRegistry()
         ask = make_ask()
@@ -183,7 +183,7 @@ class PendingAskTest(unittest.TestCase):
 
         def waiter() -> None:
             parked.set()
-            ask.wait(timeout=5.0)
+            ask.wait(timeout=60.0)
 
         def reader() -> None:
             # Both touch the ask's own condition lock, which is what `wait` must
@@ -197,13 +197,13 @@ class PendingAskTest(unittest.TestCase):
 
         waiting = threading.Thread(target=waiter, daemon=True)
         waiting.start()
-        self.assertTrue(parked.wait(timeout=2.0))
+        self.assertTrue(parked.wait(timeout=30.0))
         reading = threading.Thread(target=reader, daemon=True)
         reading.start()
-        self.assertTrue(read.wait(timeout=1.0), "a held ask lock froze the registry readers")
+        self.assertTrue(read.wait(timeout=30.0), "a held ask lock froze the registry readers")
         ask.decline()
-        waiting.join(timeout=2.0)
-        reading.join(timeout=2.0)
+        waiting.join(timeout=30.0)
+        reading.join(timeout=30.0)
 
 
 class AskRegistryTest(unittest.TestCase):
@@ -308,13 +308,13 @@ class AskRegistryTest(unittest.TestCase):
 
         def waiter() -> None:
             parked.set()
-            seen.append(ask.wait(timeout=5.0))
+            seen.append(ask.wait(timeout=30.0))
 
         thread = threading.Thread(target=waiter, daemon=True)
         thread.start()
-        self.assertTrue(parked.wait(timeout=2.0))
+        self.assertTrue(parked.wait(timeout=30.0))
         registry.decline_all()
-        thread.join(timeout=2.0)
+        thread.join(timeout=30.0)
         self.assertEqual([("declined", None)], seen)
         self.assertEqual(0, registry.count)
 
@@ -467,13 +467,13 @@ class WithdrawTest(unittest.TestCase):
 
         def waiter() -> None:
             parked.set()
-            seen.append(ask.wait(timeout=5.0))
+            seen.append(ask.wait(timeout=30.0))
 
         thread = threading.Thread(target=waiter, daemon=True)
         thread.start()
-        self.assertTrue(parked.wait(timeout=2.0))
+        self.assertTrue(parked.wait(timeout=30.0))
         self.assertTrue(registry.withdraw(ask.id))
-        thread.join(timeout=2.0)
+        thread.join(timeout=30.0)
         self.assertEqual([("declined", None)], seen)
 
 

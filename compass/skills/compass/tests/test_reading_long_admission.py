@@ -271,13 +271,13 @@ class LongAdmissionTest(unittest.TestCase):
         ):
             thread.start()
             try:
-                self.assertTrue(asked.wait(timeout=5))
+                self.assertTrue(asked.wait(timeout=30))
                 policy.set_consent(self.config, False, now=self.app.clock())
                 policy.resume(self.config, now=self.app.clock())
             finally:
                 reading.release(self.config, self.key)
                 running.done.set()
-                thread.join(timeout=5)
+                thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertEqual(1, len(results))
         self.assertEqual("permission-changed", results[0].reason)

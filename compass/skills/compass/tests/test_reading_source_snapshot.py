@@ -16,6 +16,11 @@ from compass_runtime import reading_source_stream as raw_source
 
 from . import test_reading_source_collect as collection_tests
 
+# How long a test waits for a step that happens at once on an idle runner, and how long a
+# fake holds a step the test releases: longer, so a step that blocks fails the wait instead.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
+
 
 class SourceSnapshotTest(collection_tests.BoundedReadingCollectionFixture):
     def snapshot(self, **options: Any) -> collector.Collection:
@@ -257,7 +262,7 @@ class SourceSnapshotTest(collection_tests.BoundedReadingCollectionFixture):
                     assert result.snapshot is not None
                     collector.revalidate(result.snapshot, clock=lambda: 0.0)
                 entered.set()
-                if not release.wait(timeout=5):
+                if not release.wait(HOLD_SEC):
                     raise AssertionError("test did not release the active verifier")
             return real_read(cursor, **options)
 
@@ -268,12 +273,12 @@ class SourceSnapshotTest(collection_tests.BoundedReadingCollectionFixture):
             assert result.snapshot is not None
             pending = pool.submit(collector.revalidate, result.snapshot, clock=lambda: 0.0)
             try:
-                self.assertTrue(entered.wait(timeout=5))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 with self.assertRaisesRegex(ValueError, "already active"):
                     collector.revalidate(result.snapshot, clock=lambda: 0.0)
             finally:
                 release.set()
-            checked = pending.result(timeout=5)
+            checked = pending.result(timeout=WAIT_SEC)
         self.assertEqual("", checked.reason)
         self.assertEqual(
             result.usage.source_bytes + result.snapshot.streams[0].frozen.end_offset,

@@ -20,6 +20,20 @@ from compass_runtime.state import build_runtime_state
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+# The relative cost of one lookup against twenty, measured on this thread's CPU.
+REAL_TIME_TESTS = True
+
+
+def out_of_time_reach(config: RuntimeConfig) -> RuntimeConfig:
+    """Every read's time budget pushed past any runner, so only the byte budgets cut a read.
+
+    The fixture is 71 MB, and the shipped 2 s direction scan crossed its deadline on a busy
+    runner partway through it. A test about a time budget sets that one itself.
+    """
+    budgets = [name for name in config.__dataclass_fields__ if name.endswith("_max_seconds")]
+    longer: dict[str, Any] = dict.fromkeys(budgets, 600.0)
+    return dataclasses.replace(config, **longer)
+
 
 class LongIntentSourcesTest(unittest.TestCase):
     temp: tempfile.TemporaryDirectory[str]
@@ -33,11 +47,13 @@ class LongIntentSourcesTest(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.root = Path(cls.temp.name)
         cls.path = cls.root / "long.jsonl"
-        cls.config = build_runtime_config(
-            environ={"HOME": str(cls.root), "COMPASS_HOME": str(cls.root / "state")},
-            platform_name="linux",
-            os_name="posix",
-            launcher_path=cls.root / "server.py",
+        cls.config = out_of_time_reach(
+            build_runtime_config(
+                environ={"HOME": str(cls.root), "COMPASS_HOME": str(cls.root / "state")},
+                platform_name="linux",
+                os_name="posix",
+                launcher_path=cls.root / "server.py",
+            )
         )
         cls.rows = [cls.record(n) for n in (1, 2, 3)]
         padding = (
@@ -122,19 +138,20 @@ class LongIntentSourcesTest(unittest.TestCase):
         ]
         ids = [str(fact["fact_id"]) for fact in facts]
         with mock.patch.object(observer, "resolve_transcript", return_value=str(path)):
-            start = time.monotonic()
+            # This thread's CPU, so another process's load cannot land on one side of the ratio.
+            start = time.thread_time()
             single = project_context.direction_lookup(
                 self.config, self.state, "claude", "long", ids[0]
             )
-            single_cost = time.monotonic() - start
-            start = time.monotonic()
+            single_cost = time.thread_time() - start
+            start = time.thread_time()
             with mock.patch.object(
                 record_pages, "scan_source", wraps=record_pages.scan_source
             ) as scan:
                 batch = project_context.direction_lookups(
                     self.config, self.state, "claude", "long", ids
                 )
-            batch_cost = time.monotonic() - start
+            batch_cost = time.thread_time() - start
         self.assertEqual(1, scan.call_count)
         self.assertEqual(
             [row["message"]["content"][0]["text"] for row in rows],

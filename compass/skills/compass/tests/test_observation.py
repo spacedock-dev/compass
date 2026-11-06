@@ -939,7 +939,7 @@ class WorkerLifecycleTest(ObservationTestCase):
         worker = coordinator._worker
         assert worker is not None
         self.assertTrue(worker.is_alive())
-        coordinator.stop(timeout=5)
+        coordinator.stop(timeout=30)
         self.assertFalse(worker.is_alive())
 
     def test_starting_twice_does_not_spawn_a_second_worker(self) -> None:
@@ -962,7 +962,7 @@ class WorkerLifecycleTest(ObservationTestCase):
         coordinator.start()
         worker = coordinator._worker
         assert worker is not None
-        worker.join(timeout=5)
+        worker.join(timeout=30)
         self.assertFalse(worker.is_alive())
         self.assertEqual(0, self.app.collected)
 
@@ -973,9 +973,10 @@ class WorkerLifecycleTest(ObservationTestCase):
         coordinator.stop(timeout=1)
 
     def test_the_worker_wakes_on_an_event_rather_than_waiting_out_its_interval(self) -> None:
-        # The producer interval is five seconds. If the wake did not work this
-        # would time out rather than fail, so the deadline is deliberately short.
-        coordinator = self.build()
+        # The producer interval is raised to an hour, so only the wake can collect
+        # inside the wait below. At its default of five seconds the wait had to
+        # stay under five, and a loaded runner missed it.
+        coordinator = self.build(stream_producer_interval_sec=3600.0)
         collected = threading.Event()
         real = self.app.collect_json
 
@@ -992,7 +993,7 @@ class WorkerLifecycleTest(ObservationTestCase):
         coordinator.start()
         try:
             coordinator.submit("claude", self.envelope())
-            self.assertTrue(collected.wait(timeout=3), "the coordinator did not wake on the event")
+            self.assertTrue(collected.wait(timeout=30), "the coordinator did not wake on the event")
         finally:
             coordinator.stop(timeout=5)
 
@@ -1067,9 +1068,9 @@ class AskWakeTest(ObservationTestCase):
     def test_note_ask_wakes_the_worker_rather_than_waiting_out_its_interval(self) -> None:
         # The producer interval is five seconds and the page's own fallback poll
         # is twenty, which is what a registered ask used to wait on: measured at
-        # 18.2 to 22.3 seconds from register to a published revision. A short
-        # deadline here means a regression times out rather than passing slowly.
-        coordinator = self.build()
+        # 18.2 to 22.3 seconds from register to a published revision. The interval
+        # is raised to an hour so a regression cannot pass on the periodic tick.
+        coordinator = self.build(stream_producer_interval_sec=3600.0)
         collected = threading.Event()
         real = self.app.collect_json
 
@@ -1085,7 +1086,7 @@ class AskWakeTest(ObservationTestCase):
         coordinator.start()
         try:
             coordinator.note_ask()
-            self.assertTrue(collected.wait(timeout=3), "the coordinator did not wake on the ask")
+            self.assertTrue(collected.wait(timeout=30), "the coordinator did not wake on the ask")
         finally:
             self.app.state.asks.withdraw(ask.id)
             coordinator.stop(timeout=5)
@@ -2557,13 +2558,13 @@ class GitProbeDispatchTest(ObservationTestCase):
 
         def blocking(_cwd: str) -> git_status.GitStatus | None:
             started.set()
-            release.wait(timeout=10.0)
+            release.wait(timeout=60.0)
             return git_status.GitStatus(dirty=True, changed=1)
 
         coordinator = self.build()
         coordinator._git_prober = blocking
         self.assertEqual("accepted", coordinator.submit("claude", self.end_envelope()))
-        self.assertTrue(started.wait(timeout=5.0), "the probe never started")
+        self.assertTrue(started.wait(timeout=30.0), "the probe never started")
         # submit() has already returned while the probe is still inside its call.
         self.assertIsNone(coordinator.git_for("claude", PREFIX))
         release.set()
@@ -2586,7 +2587,7 @@ class GitProbeDispatchTest(ObservationTestCase):
         coordinator = self.build()
         coordinator._git_prober = observing
         coordinator.submit("claude", self.end_envelope())
-        self.assertTrue(done.wait(timeout=5.0), "the probe never ran")
+        self.assertTrue(done.wait(timeout=30.0), "the probe never ran")
         self.assertEqual([False], held, "the probe ran while the lock was held")
 
     def test_one_probe_per_session_end_and_on_no_other_edge(self) -> None:

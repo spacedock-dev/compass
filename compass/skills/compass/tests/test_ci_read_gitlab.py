@@ -29,6 +29,9 @@ from .test_ci_read import ELSEWHERE_HEAD, SESSION_HEAD, ci_goal_row
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+# The verdict scan's linear-time guard is an elapsed bound.
+REAL_TIME_TESTS = True
+
 HOST = "gitlab.example.com"
 PROJECT = "acme/widgets"
 REPOSITORY = f"{HOST}/{PROJECT}"
@@ -783,9 +786,12 @@ class ADoneMergeRequestSettlesTheGoal(base.AClaudeCodeReadingProducer):
         self.assertNotEqual(reading.RESULT_CONSISTENT, row["result"])
 
     def test_a_long_dotted_token_in_a_verdict_is_matched_in_linear_time(self) -> None:
+        # Measured: a linear match of 40,000 characters took 3 ms, and an unbounded host pattern
+        # took 0.18 s at 4,000 characters and grows with the square. At this length a quadratic
+        # match runs for many seconds, so a five-second bound tells the two apart on a busy runner.
         started = time.monotonic()
-        self.assertEqual((), reading._verdict_prs("a." * 2000))
-        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertEqual((), reading._verdict_prs("a." * 20_000))
+        self.assertLess(time.monotonic() - started, 5.0)
         found = reading._verdict_prs(
             f"green on {MR_URL} and on gitlab.com/g/s/p/-/merge_requests/3"
         )

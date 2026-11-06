@@ -15,6 +15,10 @@ from compass_runtime import reading_policy as policy
 
 from . import test_reading_long_permission as permission_tests
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 class PublicationFenceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -89,10 +93,10 @@ class PublicationFenceTest(unittest.TestCase):
             with self.fence() as reason:
                 self.assertEqual("", reason)
                 waiting = pool.submit(pause)
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 self.assertFalse(waiting.done())
                 order.append("published")
-            self.assertTrue(waiting.result(timeout=5)["off"])
+            self.assertTrue(waiting.result(timeout=WAIT_SEC)["off"])
         self.assertEqual(["published", "pause-returned"], order)
         self.assertEqual("permission-changed", self.publish())
 
@@ -116,10 +120,10 @@ class PublicationFenceTest(unittest.TestCase):
             with self.fence() as reason:
                 self.assertEqual("", reason)
                 waiting = pool.submit(legacy_pause)
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 self.assertFalse(waiting.done())
                 order.append("published")
-            waiting.result(timeout=5)
+            waiting.result(timeout=WAIT_SEC)
         self.assertEqual(["published", "off-committed"], order)
         policy.resume(self.config, now=100)
         self.assertEqual("permission-changed", self.publish())
@@ -136,13 +140,13 @@ class PublicationFenceTest(unittest.TestCase):
             ):
                 waiting = pool.submit(self.publish)
                 try:
-                    self.assertTrue(entered.wait(2))
+                    self.assertTrue(entered.wait(WAIT_SEC))
                     self.assertFalse(waiting.done())
                     writer.execute("INSERT OR REPLACE INTO permission VALUES (1, 0)")
                     writer.execute("DELETE FROM permission WHERE allowed=0")
                 finally:
                     writer.execute("COMMIT")
-                self.assertEqual("permission-changed", waiting.result(timeout=5))
+                self.assertEqual("permission-changed", waiting.result(timeout=WAIT_SEC))
 
     def test_pause_first_and_same_epoch_off_cannot_publish(self) -> None:
         policy.set_consent(self.config, False, now=100)
@@ -165,14 +169,14 @@ class PublicationFenceTest(unittest.TestCase):
             ):
                 waiting = pool.submit(self.publish)
                 try:
-                    self.assertTrue(entered.wait(2))
+                    self.assertTrue(entered.wait(WAIT_SEC))
                     path.rename(path.with_suffix(".old"))
                     fresh = policy.capture_long_permission(self.config, now=100)
                     self.assertIsNotNone(fresh)
                     self.assertNotEqual(self.permission, fresh)
                 finally:
                     writer.execute("ROLLBACK")
-                self.assertEqual("store-unavailable", waiting.result(timeout=5))
+                self.assertEqual("store-unavailable", waiting.result(timeout=WAIT_SEC))
 
     def test_unknown_invalid_and_recreated_stores_never_create_or_refresh_authority(self) -> None:
         with self.fence(

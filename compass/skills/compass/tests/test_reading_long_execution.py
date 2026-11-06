@@ -34,6 +34,10 @@ from compass_runtime import reading_policy as policy
 from . import test_reading_long_context as context_tests
 from .test_reading_pass_types import diagnostic
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 class LongExecutionTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -342,13 +346,13 @@ class LongExecutionTest(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             with mock.patch.object(policy, "reserve_registered_pass", reserving), supervise._LOCK:
                 pending = pool.submit(self.call, guard)
-                self.assertTrue(entered.wait(5))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 self.assertEqual(
                     (True, None),
                     reading.cancel_job(self.config, self.fixture.key, self.active.job.id, now=101),
                 )
             with self.assertRaises(policy.RefusedError):
-                pending.result(timeout=5)
+                pending.result(timeout=WAIT_SEC)
         self.proof(0, invoked=False)
         self.assertEqual([], self.calls)
 

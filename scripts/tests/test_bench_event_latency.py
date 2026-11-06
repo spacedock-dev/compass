@@ -58,8 +58,10 @@ class WaitForPublishTest(unittest.TestCase):
             app.snapshot.revision = (1.0, 2)
 
         timer = unittest.mock.Mock(side_effect=flip)
+        # The sleep is patched, so a generous deadline costs nothing and a loaded
+        # runner cannot run out of it before the second poll.
         with unittest.mock.patch.object(time, "sleep", timer):
-            taken = bench._wait_for_publish(app, deadline=1.0)
+            taken = bench._wait_for_publish(app, deadline=30.0)
         self.assertIsNotNone(taken)
         assert taken is not None
         self.assertGreaterEqual(taken, 0.0)
@@ -80,7 +82,7 @@ class WaitForPublishTest(unittest.TestCase):
 
         sleeper = unittest.mock.Mock(side_effect=publish)
         with unittest.mock.patch.object(time, "sleep", sleeper):
-            self.assertIsNotNone(bench._wait_for_publish(app, deadline=1.0))
+            self.assertIsNotNone(bench._wait_for_publish(app, deadline=30.0))
 
 
 class ReportTest(unittest.TestCase):

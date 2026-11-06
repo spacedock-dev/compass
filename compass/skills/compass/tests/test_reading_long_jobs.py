@@ -243,7 +243,7 @@ class RegisteredLongJobTest(unittest.TestCase):
         barrier = threading.Barrier(2)
 
         def reserve(ordinal: int) -> Any:
-            barrier.wait(timeout=5)
+            barrier.wait(timeout=30)
             return self.reserve(job, ordinal)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
@@ -321,9 +321,9 @@ class RegisteredLongJobTest(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             with mock.patch.object(supervise, "admitting", admitting), supervise._LOCK:
                 pending = pool.submit(self.reserve, job)
-                self.assertTrue(entered.wait(5))
+                self.assertTrue(entered.wait(30))
                 self.clock[0] = 0.9
-            self.blocked(pending.result(timeout=5), "job-deadline")
+            self.blocked(pending.result(timeout=30), "job-deadline")
         self.assertEqual([(0,)], self.sql("SELECT count(*) FROM spends"))
         self.assertEqual([], self.sql("SELECT * FROM long_pass_reservations"))
 
@@ -352,11 +352,11 @@ class RegisteredLongJobTest(unittest.TestCase):
             ):
                 pending = pool.submit(self.reserve, job)
                 try:
-                    self.assertTrue(entered.wait(5))
+                    self.assertTrue(entered.wait(30))
                     self.clock[0] = 0.9
                 finally:
                     writer.execute("COMMIT")
-                self.blocked(pending.result(timeout=5), "job-deadline")
+                self.blocked(pending.result(timeout=30), "job-deadline")
         self.assertEqual([(0,)], self.sql("SELECT count(*) FROM spends"))
         self.assertEqual([], self.sql("SELECT * FROM long_pass_reservations"))
 

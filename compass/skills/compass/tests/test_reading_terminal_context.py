@@ -206,7 +206,7 @@ class TerminalContextTest(unittest.TestCase):
             input="",
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=5,
+            timeout=30,
             on_spawn=spawned,
         )
         with (
@@ -234,7 +234,7 @@ class TerminalContextTest(unittest.TestCase):
                 input="",
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5,
+                timeout=30,
                 on_spawn=spawned,
             )
         self.assertTrue(seen[0]._reaped)

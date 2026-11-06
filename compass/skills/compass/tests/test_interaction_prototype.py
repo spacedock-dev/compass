@@ -24,6 +24,9 @@ from compass_runtime import interaction_prototype as interaction
 
 from .support import PAGE_BYTES, build_app, make_server, poll_fast
 
+# The registration lease renews on a real timer.
+REAL_TIME_TESTS = True
+
 
 class FakeTmuxAdapter:
     """Exercise the registry over HTTP without requiring tmux on every runner."""
@@ -183,7 +186,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
         connection = http.client.HTTPConnection(
             "127.0.0.1",
             self.httpd.server_port,
-            timeout=2,
+            timeout=30,
         )
         raw = None if body is None else json.dumps(body).encode()
         headers = {"Content-Type": "application/json"} if raw is not None else {}
@@ -200,7 +203,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             connection.close()
 
     def _open_stream(self) -> socket.socket:
-        client = socket.create_connection(("127.0.0.1", self.httpd.server_port), timeout=2)
+        client = socket.create_connection(("127.0.0.1", self.httpd.server_port), timeout=30)
         request = (
             "GET /api/interaction/stream HTTP/1.1\r\n"
             f"Host: 127.0.0.1:{self.httpd.server_port}\r\n"
@@ -243,7 +246,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             ):
                 with self.subTest(name=name, headers=headers):
                     connection = http.client.HTTPConnection(
-                        "127.0.0.1", self.httpd.server_port, timeout=2
+                        "127.0.0.1", self.httpd.server_port, timeout=30
                     )
                     try:
                         connection.request("GET", "/assets/" + name, headers=headers)
@@ -264,7 +267,7 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
         try:
             for path in ("/assets/xterm.js", "/assets/xterm.css", "/assets/../observer.py"):
                 connection = http.client.HTTPConnection(
-                    "127.0.0.1", self.httpd.server_port, timeout=2
+                    "127.0.0.1", self.httpd.server_port, timeout=30
                 )
                 try:
                     connection.request("GET", path)
@@ -349,8 +352,9 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
         self.assertNotIn("must-not-select", reconnected_view["text"])
         self.assertEqual(0, self.adapter.capture_count)
 
-        # Hosted macOS runners can schedule the renewal after the old 120 ms sleep.
-        deadline = time.monotonic() + 2.0
+        # Hosted macOS runners can schedule the renewal after the old 120 ms sleep, and a loaded one
+        # after two seconds. The renewal is waited for, so the bound only ends a test that failed.
+        deadline = time.monotonic() + 30.0
         while True:
             _status, renewed = self._request("GET", "/api/interaction/state")
             if renewed["renewal_count"] >= 1 or time.monotonic() >= deadline:
@@ -510,7 +514,7 @@ class InteractionPrototypeDisabledTest(unittest.TestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=30)
 
             # When: request the interaction-state route.
             connection.request("GET", "/api/interaction/state")
@@ -609,7 +613,7 @@ class CollectedSessionOriginHTTPTest(unittest.TestCase):
         connection = http.client.HTTPConnection(
             "127.0.0.1",
             self.httpd.server_port,
-            timeout=2,
+            timeout=30,
         )
         raw = None if body is None else json.dumps(body).encode()
         headers = {"Content-Type": "application/json"} if raw is not None else {}

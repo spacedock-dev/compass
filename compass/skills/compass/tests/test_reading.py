@@ -38,6 +38,9 @@ from .recorded_name import original_product_name
 
 SESSION = {"harness": "claude", "sid": "S1"}
 NOW = 1_700_100_000.0
+# Building a long session's prompt, measured on this thread's CPU.
+REAL_TIME_TESTS = True
+
 SOFT_HYPHEN = "\u00ad"
 RTL_OVERRIDE = "\u202e"
 LINE_SEPARATOR = "\u2028"
@@ -1090,10 +1093,11 @@ class WhatTheReadingWasActuallyShown(unittest.TestCase):
         ledger = tuple(
             entry(id=f"f{i}", summary="s" * 180, at=1_700_000_000.0 + i) for i in range(2000)
         )
-        started = time.perf_counter()
+        started = time.thread_time()
         _, selected = reading.build_prompt(ledger, goal="g", lines=(), max_bytes=200_000)
-        # A prompt that waited seconds is the defect; a loaded runner can take a second.
-        self.assertLess(time.perf_counter() - started, 2.5)
+        # A prompt that waited seconds is the defect. Counted in this thread's CPU, so time a
+        # loaded runner spends on other work is not charged to the prompt.
+        self.assertLess(time.thread_time() - started, 2.5)
         self.assertGreater(len(selected.entries), 100)
 
     def test_the_reading_reads_the_most_recent_work_first(self) -> None:

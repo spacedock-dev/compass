@@ -273,7 +273,7 @@ class ApplicationIsolationTest(unittest.TestCase):
         self.assertEqual(7, data["summary"]["rate_per_min"])
 
     def _get(self, port: int, path: str) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("GET", path)
             response = conn.getresponse()
@@ -283,7 +283,7 @@ class ApplicationIsolationTest(unittest.TestCase):
 
     def _post(self, port: int, path: str, payload: dict[str, Any]) -> bytes:
         body = json.dumps(payload).encode()
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
             return conn.getresponse().read()

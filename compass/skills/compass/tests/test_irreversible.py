@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 SESSION = "abcdef12-3456-7890-abcd-ef1234567890"
 NOW = 1_700_000_000.0
 HOOK = Path(event_hook.__file__).resolve()
+# The hook runs as a real interpreter, and the guard that it never hangs is an elapsed bound.
+REAL_TIME_TESTS = True
 ROOT = HOOK.parents[3]
 
 
@@ -220,7 +222,7 @@ class CommandSocketTest(unittest.TestCase):
         pending.replace(target)
 
     def run_hook(
-        self, payload: Any, harness: str = "claude", *, driver: str = "", timeout: float = 3
+        self, payload: Any, harness: str = "claude", *, driver: str = "", timeout: float = 30
     ) -> subprocess.CompletedProcess[bytes]:
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); import event_hook\n"
@@ -264,22 +266,21 @@ class CommandSocketTest(unittest.TestCase):
             data=json.dumps(payload).encode(),
             headers={"X-Compass-Capability": self.coordinator.capability(harness)},
         )
-        with urllib.request.urlopen(request, timeout=2) as response:  # noqa: S310 — fixed loopback URL
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 — fixed loopback URL
             result: dict[str, Any] = json.loads(response.read())
             return result
 
     def timed_hook(
         self, driver: str, *, after_main: str = "", timeout: float | None = None
     ) -> subprocess.CompletedProcess[bytes]:
-        # 2 seconds, and the number is chosen by what it has to DISTINGUISH
+        # 4 seconds, and the number is chosen by what it has to DISTINGUISH
         # rather than by how prompt the hook ought to be.
         #
-        # The callers that must not time out inject a hang of 10 seconds or an
-        # unbounded spin, so every limit under 10 seconds has identical
-        # detection power and the only thing a tighter one buys is a flake. The
-        # old value was 0.25 (1.0 on Windows), and that split is itself the
-        # tell: it was tracking machine speed, not the property. It failed on a
-        # loaded macOS runner on 2026-09-21.
+        # The callers that must not time out inject a hang of 10 seconds, a
+        # matcher held 5 seconds, or an unbounded spin, so every limit under 5
+        # seconds has identical detection power and the only thing a tighter one
+        # buys is a flake. It was 0.25 (1.0 on Windows), which failed on a
+        # loaded macOS runner on 2026-09-21, and then 2.
         #
         # What makes a tight limit actively harmful here is that the failure is
         # **indistinguishable from the defect**. A hook that hung and a runner
@@ -293,17 +294,17 @@ class CommandSocketTest(unittest.TestCase):
         # code promises.
         #
         # Measured 2026-09-22 on an idle M-series desk, three samples: the value
-        # the budget actually bounds, `main_to_exit_ms`, ran 23 to 37 ms. So the
-        # old limit carried **6.8x** headroom over the worst sample and the new
-        # one carries **54x**. A hosted runner is several times slower than this
-        # desk before any parallel job load, which is the gap 6.8x does not
-        # cover. The figures are from this test's own C6_PHASE diagnostics and
-        # can be retaken the same way.
+        # the budget actually bounds, `main_to_exit_ms`, ran 23 to 37 ms. So 0.25
+        # carried **6.8x** headroom over the worst sample and 4 carries over
+        # **100x**. A hosted runner is several times slower than this desk before
+        # any parallel job load, which is the gap 6.8x does not cover. The
+        # figures are from this test's own C6_PHASE diagnostics and can be
+        # retaken the same way.
         #
         # The negative control goes the other way and passes its own short
         # timeout: it EXPECTS `TimeoutExpired`, so a shorter limit makes it more
         # certain rather than less.
-        limit = 2.0 if timeout is None else timeout
+        limit = 4.0 if timeout is None else timeout
         ready = Path(self.tmp.name, "hook-ready.json")
         phases = Path(self.tmp.name, "hook-phases.json")
         ready.unlink(missing_ok=True)
@@ -379,7 +380,9 @@ raise SystemExit(status)
         ) as proc:
             try:
                 while not ready.exists():
-                    if proc.poll() is not None or time.perf_counter() - started > 3:
+                    # Interpreter start and imports, outside the measured window: a
+                    # loaded runner can take seconds here without any hook defect.
+                    if proc.poll() is not None or time.perf_counter() - started > 30:
                         self.fail("hook did not reach its import/readiness boundary")
                     time.sleep(0.001)
                 setup = json.loads(ready.read_text())
@@ -604,7 +607,8 @@ raise SystemExit(status)
     def test_normal_matching_reports_its_real_scheduling_and_startup_phases(self) -> None:
         for _ in range(5):
             before = len(self.received)
-            proc = self.timed_hook("", timeout=3)
+            # No hang is injected here, so the limit only has to be met, not distinguish one.
+            proc = self.timed_hook("", timeout=30)
             self.assertEqual((0, b"", b""), (proc.returncode, proc.stdout, proc.stderr))
             self.assertEqual(before + int(self.last_phases["report_present"]), len(self.received))
             if self.last_phases["report_present"]:

@@ -169,7 +169,7 @@ class CompassServerTest(RuntimeTestCase):
         self.assertEqual([True], held, "popup fired while still holding hook_lock")
 
     def _post_notify(self, port: int, body: dict[str, Any]) -> bytes:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         conn.request(
             "POST",
             "/api/notify",
@@ -1061,7 +1061,7 @@ class HookOrderingTest(unittest.TestCase):
 
         def slow_lookup(*_args: object) -> bool:
             started.set()
-            release.wait(timeout=5)
+            release.wait(timeout=30)
             return False
 
         def request(payload: dict[str, Any]) -> Any:
@@ -1082,10 +1082,10 @@ class HookOrderingTest(unittest.TestCase):
             )
             thread = threading.Thread(target=notification.do_POST)
             thread.start()
-            self.assertTrue(started.wait(timeout=5))
+            self.assertTrue(started.wait(timeout=30))
             request({"session_id": session, "hook_event_name": "SessionEnd"}).do_POST()
             release.set()
-            thread.join(timeout=5)
+            thread.join(timeout=30)
 
         self.assertEqual({}, state_of().hook_notifications, "SessionEnd was undone")
 
@@ -1234,7 +1234,7 @@ class HookOrderingTest(unittest.TestCase):
 
         def slow_lookup(*_args: object) -> bool:
             started.set()
-            release.wait(timeout=5)
+            release.wait(timeout=30)
             return False
 
         def request(payload: dict[str, Any]) -> Any:
@@ -1255,11 +1255,11 @@ class HookOrderingTest(unittest.TestCase):
         ):
             thread = threading.Thread(target=first.do_POST)
             thread.start()
-            self.assertTrue(started.wait(timeout=5))
+            self.assertTrue(started.wait(timeout=30))
             with mock.patch.object(claude_data, "prefix_is_agent", lambda *_a: False):
                 request(second).do_POST()
             release.set()
-            thread.join(timeout=5)
+            thread.join(timeout=30)
         return dict(state_of().hook_notifications)
 
     def test_a_clearing_notification_does_not_drop_a_racing_permission_prompt(self) -> None:
@@ -1441,7 +1441,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, email.message.Message, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
@@ -1458,7 +1458,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
 
         def slow_lookup(*_: Any) -> tuple[bool, str]:
             entered.set()
-            self.assertTrue(release.wait(timeout=5), "test did not release notification")
+            self.assertTrue(release.wait(timeout=30), "test did not release notification")
             return True, "user-event"
 
         def post_notification() -> None:
@@ -1483,7 +1483,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             ):
                 worker = threading.Thread(target=post_notification)
                 worker.start()
-                self.assertTrue(entered.wait(timeout=5), "notification did not begin")
+                self.assertTrue(entered.wait(timeout=30), "notification did not begin")
                 code, _, body = self._response(
                     httpd.server_port,
                     "POST",
@@ -1493,7 +1493,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 self.assertEqual(200, code)
                 self.assertEqual({"ok": True, "cleared": "session_end"}, json.loads(body))
                 release.set()
-                worker.join(timeout=5)
+                worker.join(timeout=30)
             self.assertFalse(worker.is_alive())
             self.assertEqual([(200, b'{"ok":true,"superseded":true}')], notification)
             self.assertNotIn("12345678", state_of().hook_notifications)

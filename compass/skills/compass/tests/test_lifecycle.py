@@ -47,6 +47,11 @@ from .support import (
 if TYPE_CHECKING:
     import email.message
 
+# Servers, daemons and signals run as real processes, and their starts and exits are waited for.
+REAL_TIME_TESTS = True
+# `--diagnose` reads every harness store; three suites at once measured it past the old 30 s.
+DIAGNOSE_LIMIT_SEC = 120
+
 
 class InstalledContractCharacterizationTest(unittest.TestCase):
     """The installed executable contract that extraction must preserve."""
@@ -92,7 +97,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, email.message.Message, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
@@ -161,7 +166,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
-                timeout=30,
+                timeout=DIAGNOSE_LIMIT_SEC,
                 check=False,
             )
         self.assertEqual(0, proc.returncode, proc.stderr)
@@ -198,7 +203,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
-                            timeout=30,
+                            timeout=DIAGNOSE_LIMIT_SEC,
                             check=False,
                         )
                         self.assertEqual(expected, proc.returncode, proc.stderr)
@@ -721,6 +726,9 @@ class CompassServerTest(support.RuntimeTestCase):
             self.assertEqual(expected, code, state)
 
     def test_stop_instance_stops_a_running_server_over_http(self) -> None:
+        # The release wait is lifted from 5 s to a minute: the assertions that stop_instance is
+        # still waiting must not race its own timeout on a stalled test thread.
+        self.enterContext(config_patch(stop_release_timeout_sec=60.0))
         httpd = make_server()
         port = httpd.server_port
         loop_exited = threading.Event()
@@ -732,7 +740,7 @@ class CompassServerTest(support.RuntimeTestCase):
                 httpd.serve_forever(SERVE_POLL_INTERVAL)
             finally:
                 loop_exited.set()
-                allow_close.wait(timeout=10)
+                allow_close.wait(timeout=60)
                 httpd.server_close()
 
         thread = threading.Thread(target=serve_with_delayed_close, daemon=True)
@@ -743,7 +751,7 @@ class CompassServerTest(support.RuntimeTestCase):
         )
         try:
             stop_thread.start()
-            self.assertTrue(loop_exited.wait(timeout=5), "serve_forever did not stop")
+            self.assertTrue(loop_exited.wait(timeout=30), "serve_forever did not stop")
             self.assertFalse(
                 lifecycle.port_released(cfg(), port), "the delayed close lost its bind"
             )
@@ -752,7 +760,7 @@ class CompassServerTest(support.RuntimeTestCase):
                 "stop_instance returned before the listener released its port",
             )
             allow_close.set()
-            stop_thread.join(timeout=10)
+            stop_thread.join(timeout=30)
             self.assertFalse(stop_thread.is_alive(), "stop_instance did not notice the release")
             self.assertEqual(1, len(result))
             message, code = result[0]
@@ -1503,7 +1511,7 @@ class DaemonLifecycleTest(unittest.TestCase):
             "from compass_runtime import lifecycle\n"
             "lifecycle.daemon_redirect_stdio(sys.argv[1])\n"
             "print('DIAGNOSTIC_LINE_WRITTEN', flush=False)\n"
-            "time.sleep(10)\n"
+            "time.sleep(60)\n"
         )
         with tempfile.TemporaryDirectory() as tmp:
             log_file = os.path.join(tmp, "daemon.log")
@@ -1515,8 +1523,8 @@ class DaemonLifecycleTest(unittest.TestCase):
             }
             proc = subprocess.Popen([sys.executable, "-c", code, log_file], env=env)
             try:
-                # Wait briefly for process to redirect and print
-                deadline = time.monotonic() + 5.0
+                # Waits for the condition; a cold interpreter on a loaded runner takes seconds.
+                deadline = time.monotonic() + 30.0
                 content = ""
                 while time.monotonic() < deadline:
                     if os.path.exists(log_file):
@@ -1541,19 +1549,22 @@ class DaemonLifecycleTest(unittest.TestCase):
             flags = [sys.executable, self.SERVER, "--port", str(port)]
             proc = subprocess.Popen(flags, env=env)
             try:
-                deadline = time.monotonic() + 10.0
+                deadline = time.monotonic() + 60.0
+                kind = "closed"
                 while time.monotonic() < deadline:
-                    kind, _ = lifecycle.probe_port(port, timeout=0.5)
+                    kind, _ = lifecycle.probe_port(port, timeout=5)
                     if kind == "compass":
                         break
                     time.sleep(0.1)
-                self.assertEqual("compass", lifecycle.probe_port(port, timeout=1)[0])
+                # The probe that saw it serve, not a second one with a one-second answer budget.
+                self.assertEqual("compass", kind)
                 state_file = Path(tmp, f"compass-{port}.json")
                 self.assertTrue(state_file.exists(), "state file was not written")
 
                 # Send SIGTERM
                 proc.send_signal(signal.SIGTERM)
-                proc.wait(timeout=10)
+                # Measured past 10 s at a load average of 74, with three suites beside it.
+                proc.wait(timeout=60)
                 self.assertFalse(
                     state_file.exists(),
                     "state file was not removed after SIGTERM",
@@ -1856,12 +1867,12 @@ class ProducerTest(support.RuntimeTestCase):
         thread = threading.Thread(
             target=lifecycle.run_producer,
             args=(httpd,),
-            kwargs={"stop": stop, "interval": 30.0},
+            kwargs={"stop": stop, "interval": 600.0},
             daemon=True,
         )
         thread.start()
         stop.set()
-        thread.join(timeout=3)
+        thread.join(timeout=30)
         httpd.server_close()
         self.assertFalse(thread.is_alive(), "stop must not wait out the interval")
 
@@ -1884,7 +1895,7 @@ class ProducerTest(support.RuntimeTestCase):
             daemon=True,
         )
         thread.start()
-        thread.join(timeout=2)
+        thread.join(timeout=30)
         self.assertFalse(thread.is_alive(), "it must return, not spin or raise")
 
     def test_a_collection_error_does_not_kill_the_producer(self) -> None:
@@ -1998,7 +2009,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         time.sleep(1.0)
         self.assertIsNone(server.poll(), f"a server that ignored {name} exited on it")
         server.terminate()
-        self.assertEqual(0, server.wait(timeout=15))
+        self.assertEqual(0, server.wait(timeout=60))
 
     def _start_ignoring(
         self, name: str, *, stall_in: str | None = None
@@ -2041,7 +2052,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         self.addCleanup(server.wait)  # cleanups run last-first: reaped after the kill
         self.addCleanup(server.kill)
         self.state = home / f"compass-{port}.json"
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 60
         while not reached.exists() and server.poll() is None and time.monotonic() < deadline:
             time.sleep(0.05)
         self.assertTrue(reached.exists(), "the server never reached the point under test")
@@ -2058,7 +2069,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         server, _ = self._start_ignoring("SIGTERM")
         os.kill(server.pid, signal.SIGTERM)
         self.assertEqual(
-            0, server.wait(timeout=15), "an inherited ignore kept SIGTERM from stopping it"
+            0, server.wait(timeout=60), "an inherited ignore kept SIGTERM from stopping it"
         )
 
     def test_sigterm_between_the_state_file_and_the_serve_loop_still_stops_it(self) -> None:
@@ -2072,14 +2083,14 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         server, _ = self._start_ignoring("SIGTERM", stall_in="recover")
         self.assertTrue(self.state.exists(), "the state file precedes recovery")
         os.kill(server.pid, signal.SIGTERM)
-        self.assertEqual(0, server.wait(timeout=15), "a SIGTERM before the serve loop was dropped")
+        self.assertEqual(0, server.wait(timeout=60), "a SIGTERM before the serve loop was dropped")
         self.assertFalse(self.state.exists(), "a stopped server left its state file")
 
     def test_sigterm_during_long_recovery_still_stops_and_removes_state(self) -> None:
         server, _ = self._start_ignoring("SIGTERM", stall_in="long-recover")
         self.assertTrue(self.state.exists())
         os.kill(server.pid, signal.SIGTERM)
-        self.assertEqual(0, server.wait(timeout=15))
+        self.assertEqual(0, server.wait(timeout=60))
         self.assertFalse(self.state.exists())
 
     def test_sigterm_while_the_producer_thread_starts_still_stops_it(self) -> None:
@@ -2094,7 +2105,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         self.assertTrue(self.state.exists(), "the state file precedes the producer")
         os.kill(server.pid, signal.SIGTERM)
         self.assertEqual(
-            0, server.wait(timeout=15), "a SIGTERM while the producer started exited unclean"
+            0, server.wait(timeout=60), "a SIGTERM while the producer started exited unclean"
         )
         self.assertFalse(self.state.exists(), "a stopped server left its state file")
 
@@ -2104,7 +2115,7 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
         os.kill(server.pid, signal.SIGTERM)
         self.assertEqual(
             -signal.SIGTERM,
-            server.wait(timeout=15),
+            server.wait(timeout=60),
             "a SIGTERM during assembly was dropped",
         )
 
@@ -2138,7 +2149,7 @@ step, reached = sys.argv[2], Path(sys.argv[3])
 def parked(real):
     def park(*args, **kwargs):
         reached.write_text(step)
-        time.sleep(30)
+        time.sleep(120)
         return real(*args, **kwargs)
     return park
 
@@ -2169,12 +2180,12 @@ from compass_runtime import lifecycle, supervise
 
 lifecycle._register_sigterm_exit()
 cli_pid, done = sys.argv[2], sys.argv[3]
-script = "import os, time; open(%r, 'w').write(str(os.getpid())); time.sleep(60)" % cli_pid
+script = "import os, time; open(%r, 'w').write(str(os.getpid())); time.sleep(120)" % cli_pid
 threading.Thread(
-    target=lambda: supervise.run([sys.executable, "-c", script], timeout=60), daemon=True
+    target=lambda: supervise.run([sys.executable, "-c", script], timeout=120), daemon=True
 ).start()
 try:
-    time.sleep(60)
+    time.sleep(120)
 finally:
     supervise.kill_all()
     open(done, "w").write("cleaned up")
@@ -2212,15 +2223,16 @@ class ATerminalHangupStillCleansUpTest(unittest.TestCase):
             start_new_session=True,
         )
         self.addCleanup(daemon.kill)
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 60
         while not (cli_pid.exists() and cli_pid.read_text()) and time.monotonic() < deadline:
             time.sleep(0.05)
+        self.assertTrue(cli_pid.exists() and cli_pid.read_text(), "the CLI never started")
         pid = int(cli_pid.read_text())
         self.addCleanup(self._stop, pid)
         os.killpg(daemon.pid, sig)
-        daemon.wait(timeout=10)
+        daemon.wait(timeout=30)
         self.assertTrue(done.exists(), "the daemon died without running its cleanup")
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 30
         while support.process_alive(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
         self.assertFalse(support.process_alive(pid), "the CLI outlived the hangup")

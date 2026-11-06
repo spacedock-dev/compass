@@ -54,7 +54,7 @@ class LongReadingHTTPTest(unittest.TestCase):
         query: str = "harness=claude&sid=s1",
         headers: dict[str, str] | None = None,
     ) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("GET", "/api/reading-long-plan?" + query, headers=headers or {})
             response = conn.getresponse()

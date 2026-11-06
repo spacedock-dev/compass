@@ -1029,7 +1029,7 @@ class FetchLifecycleTest(unittest.TestCase):
             done.set()
 
         quota._spawn_thread(probe)
-        self.assertTrue(done.wait(timeout=5))
+        self.assertTrue(done.wait(timeout=30))
         self.assertEqual([True], seen)
 
 
@@ -1339,7 +1339,7 @@ class NoFetchWithoutConsentTest(RuntimeTestCase):
         return httpd, application
 
     def _get(self, port: int, path: str, headers: dict[str, str] | None = None) -> int:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         conn.request("GET", path, headers=headers or {})
         response = conn.getresponse()
         response.read()
@@ -1646,7 +1646,7 @@ class UsageEndpointTest(RuntimeTestCase):
     def _post(
         self, port: int, body: bytes, headers: dict[str, str] | None = None
     ) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         conn.request(
             "POST",
             "/api/usage",

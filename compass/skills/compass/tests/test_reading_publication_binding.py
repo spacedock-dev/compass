@@ -155,10 +155,10 @@ class LockedPublicationGuardTest(unittest.TestCase):
                 mock.patch.object(store, "_store_locks", waiting),
             ):
                 future = pool.submit(self.publish, guard)
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(30))
                 self.assertEqual([], observed)
                 self.assertFalse(future.done())
                 eligible[0] = False
-            self.assertEqual(store.OUTCOME_REFUSED, future.result(timeout=5))
+            self.assertEqual(store.OUTCOME_REFUSED, future.result(timeout=30))
         self.assertEqual([False], observed)
         self.assertEqual(before, self.fixture.fixture.fixture.path.read_bytes())

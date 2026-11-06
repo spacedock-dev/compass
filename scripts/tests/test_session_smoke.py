@@ -23,6 +23,9 @@ import session_smoke
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+# The runner's kill of what a command left behind is waited for.
+REAL_TIME_TESTS = True
+
 ROOT = Path(__file__).resolve().parents[2]
 SESSION_ID = "0b8c2f4e-7d1a-4c55-9e3b-5a6f7d8e9f01"
 
@@ -412,7 +415,10 @@ class CleanupTest(unittest.TestCase):
 @unittest.skipIf(os.name == "nt", "process groups are POSIX")
 class RunnerTest(unittest.TestCase):
     def wait_gone(self, pid: int) -> bool:
-        for _ in range(50):
+        # 25 s, not the 2.5 s it once allowed: a killed child is reaped by its new parent, and a
+        # loaded runner gets to that late. The orphan sleeps two minutes, so the wait still tells.
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
             try:
                 os.kill(pid, 0)
             except ProcessLookupError:
@@ -424,7 +430,7 @@ class RunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             pid_file = Path(scratch) / "pid"
             done = session_smoke.run_command(
-                ["sh", "-c", f"sleep 30 & echo $! > {pid_file}; echo ran"], None, 10.0, {}
+                ["sh", "-c", f"sleep 120 & echo $! > {pid_file}; echo ran"], None, 10.0, {}
             )
             self.assertEqual(done.stdout.strip(), "ran")
             pid = int(pid_file.read_text(encoding="utf-8"))

@@ -44,6 +44,9 @@ CHILD = "019a2b3c-0000-7000-8000-0000000000ff"
 GRANDCHILD = "019a2b3c-0000-7000-8000-0000000000fe"
 START = dt.datetime(2026, 10, 30, 3, 0, 0, tzinfo=dt.UTC)
 REMOTE = ("github.com", "acme/widgets")
+# Codex call parsing kept linear, measured on this thread's CPU.
+REAL_TIME_TESTS = True
+
 BOUND_GOAL = "https://github.com/acme/widgets/pull/7"
 # Text a patch carried. It must never reach anything Compass publishes.
 PATCH_BODY = "def handler():  # PATCHBODYMARKER"
@@ -1099,9 +1102,9 @@ class ACommandStillRunningAgesAPass(CodexChecksTestCase):
         self.rollout.output(call, self.PRINTED + "Process running with session ID 7\n" * 20000)
         for i in range(2000):
             self.rollout.command(f"ls dir{i}", "x")
-        began = time.perf_counter()
+        began = time.thread_time()
         found = project_context.codex_calls(self.rollout.rows)
-        self.assertLess(time.perf_counter() - began, 1.0)
+        self.assertLess(time.thread_time() - began, 1.0)
         self.assertEqual([], [call for call in found.calls if call[2].startswith("running:")])
 
 

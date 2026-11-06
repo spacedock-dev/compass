@@ -36,6 +36,11 @@ from .test_session_summary import Replies, entry
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+# How long a test waits for a job step that happens at once on an idle runner, and how long a
+# fake holds a step the test releases: longer, so a step that blocks fails the wait instead.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
+
 
 def wait_job(application: Any, harness: str, sid: str, *, timeout: float) -> None:
     job = application.state.summary_jobs[f"{harness}:{sid}"]
@@ -214,7 +219,7 @@ class SummaryJobTest(_SummaryCase):
             destination="Anthropic",
         )
         self.assertEqual(202, code, answer)
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         return answer
 
     def test_another_dashboard_stop_between_collection_check_and_progress_is_preserved(
@@ -274,7 +279,7 @@ class SummaryJobTest(_SummaryCase):
                         self.application, str(path), "claude", "root", action="start"
                     )
                     self.assertEqual(202, code, answer)
-                    wait_job(self.application, "claude", "root", timeout=5)
+                    wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
                 self.assertEqual([reason, reason], durable)
                 self.assertEqual([], model.prompts)
                 self.assertIsNone(summary_store.get(self.config, "claude", "root"))
@@ -348,19 +353,19 @@ class SummaryJobTest(_SummaryCase):
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             if replies.prompts:
                 entered.set()
-                self.assertTrue(release.wait(5))
+                self.assertTrue(release.wait(HOLD_SEC))
             return replies(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         try:
             self.assertTrue(self.jobs.cancel(self.application, "claude", "s1"))
         finally:
             release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         stored = summary_store.get(self.config, "claude", "s1")
         assert stored is not None
         self.assert_finished_prefix(stored.summary)
@@ -411,25 +416,25 @@ class SummaryJobTest(_SummaryCase):
                     destination="Anthropic",
                 )
                 self.assertEqual(202, code, answer)
-                wait_job(self.application, "claude", "s1", timeout=5)
+                wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
 
     def test_off_then_on_does_not_allow_a_late_reply(self) -> None:
         entered, release = threading.Event(), threading.Event()
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return Replies()(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         reading_policy.set_summary_consent(self.config, False, now=101.0)
         reading_policy.set_summary_consent(self.config, True, now=102.0)
         release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
         job = self.jobs.published(self.application, "claude", "s1")
         assert job is not None
@@ -475,17 +480,17 @@ class SummaryJobTest(_SummaryCase):
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return Replies()(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         self.jobs.delete(self.application, "claude", "s1")
         release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
         self.assertEqual("deleted", self.state.summary_jobs["claude:s1"].reason)
 
@@ -494,18 +499,18 @@ class SummaryJobTest(_SummaryCase):
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return Replies()(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         # Nothing was stored and a job was: stopped, which `absent` alone would not say.
         self.assertEqual("stopped", self.jobs.discard(self.application, "claude", "s1"))
         release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
         job = self.state.summary_jobs["claude:s1"]
         self.assertEqual(("discarded", "cancelled"), (job.reason, job.state))
@@ -572,14 +577,14 @@ class SummaryJobTest(_SummaryCase):
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             if replies.prompts:
                 entered.set()
-                self.assertTrue(release.wait(5))
+                self.assertTrue(release.wait(HOLD_SEC))
             return replies(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         directory = self.config.state_dir / self.jobs.MARKER_DIR
         path = next(directory.glob("*.json"))
         marker = json.loads(path.read_text())
@@ -587,7 +592,7 @@ class SummaryJobTest(_SummaryCase):
             self.jobs.cancel(self.application, "claude", "s1")
         finally:
             release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         marker["pid"] = 999999
         path.write_text(json.dumps(marker))
         _, restarted = make_runtime(state_home=self.home.name, state_dir=Path(self.home.name))
@@ -622,14 +627,14 @@ class SummaryJobTest(_SummaryCase):
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return Replies()(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         analyze = reading.start_job(
             self.config, "claude:s1", provider="claude", label="Claude", now=100.0
         )
@@ -650,13 +655,13 @@ class SummaryJobTest(_SummaryCase):
 
         try:
             thread = reading_jobs.launch(self.application, analyze, compose)
-            thread.join(5)
+            thread.join(WAIT_SEC)
             self.assertFalse(thread.is_alive())
             self.assertEqual(1, reading_policy.status(self.config, now=100.0)["used"])
             self.assertEqual(1, reading_policy.summary_status(self.config, now=100.0)["used"])
         finally:
             release.set()
-            wait_job(self.application, "claude", "s1", timeout=5)
+            wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
 
     def test_update_reads_only_new_entries_and_rerun_starts_fresh(self) -> None:
         self.run_job()
@@ -675,7 +680,7 @@ class SummaryJobTest(_SummaryCase):
             self.application, page, action="update", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertEqual(2, len(model.prompts))
         self.assertTrue(all("Request 1" not in prompt for prompt in model.prompts))
         stored = summary_store.get(self.config, "claude", "s1")
@@ -686,7 +691,7 @@ class SummaryJobTest(_SummaryCase):
             self.application, page, action="rerun", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertIn("Request 1", model.prompts[0])
 
     def test_marker_failure_refuses_without_charge_or_model_call(self) -> None:
@@ -731,19 +736,19 @@ class SummaryJobTest(_SummaryCase):
         def hold() -> None:
             with summary_jobs._LOCK:
                 held.set()
-                release.wait(5)
+                release.wait(HOLD_SEC)
 
         holder = threading.Thread(target=hold)
         holder.start()
         self.addCleanup(holder.join)
         self.addCleanup(release.set)
-        self.assertTrue(held.wait(5))
+        self.assertTrue(held.wait(WAIT_SEC))
         answer: list[Any] = []
         reader = threading.Thread(
             target=lambda: answer.append(self.jobs.published(self.application, "claude", "s1"))
         )
         reader.start()
-        reader.join(2)
+        reader.join(WAIT_SEC)
         self.assertFalse(reader.is_alive(), "board collection waited on the job lock")
         self.assertEqual("complete", answer[0]["state"])
 
@@ -765,7 +770,7 @@ class SummaryJobTest(_SummaryCase):
                 self.application, self.page, action="start", destination="Anthropic"
             )
             self.assertEqual(202, code, answer)
-            wait_job(self.application, "claude", "s1", timeout=5)
+            wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         return calls
 
     def test_real_summary_model_forwards_its_system_prompt_timeout_and_spawn_hook(self) -> None:
@@ -886,17 +891,17 @@ class SummaryJobTest(_SummaryCase):
             del prompt, output_cap_bytes
             self.state.summary_jobs["claude:s1"].group = Group()
             entered.set()
-            self.assertTrue(cancelled.wait(5))
+            self.assertTrue(cancelled.wait(HOLD_SEC))
             return "", "cancelled"
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=model, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         self.jobs.set_consent(self.application, False)
         self.assertTrue(cancelled.is_set())
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertEqual("summaries-off", self.state.summary_jobs["claude:s1"].reason)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
 
@@ -915,18 +920,18 @@ class SummaryJobTest(_SummaryCase):
 
         def held(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return model(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
             self.application, self.page, action="start", model=held, destination="Anthropic"
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         reading_policy.set_consent(self.config, False, now=102.0)
         self.jobs.stop_running(self.application, "model-calls-paused")
         release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         self.assertEqual(1, len(model.prompts))
         self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:s1"].reason)
         self.assertIsNone(summary_store.get(self.config, "claude", "s1"))
@@ -954,7 +959,7 @@ class SummaryJobTest(_SummaryCase):
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             if replies.prompts:
                 entered.set()
-                self.assertTrue(release.wait(5))
+                self.assertTrue(release.wait(HOLD_SEC))
             return replies(prompt, output_cap_bytes=output_cap_bytes)
 
         code, _ = self.jobs.start(
@@ -965,12 +970,12 @@ class SummaryJobTest(_SummaryCase):
             destination="Anthropic",
         )
         self.assertEqual(202, code)
-        self.assertTrue(entered.wait(5))
+        self.assertTrue(entered.wait(WAIT_SEC))
         try:
             self.jobs.cancel(self.application, "claude", "s1")
         finally:
             release.set()
-        wait_job(self.application, "claude", "s1", timeout=5)
+        wait_job(self.application, "claude", "s1", timeout=WAIT_SEC)
         stored = summary_store.get(self.config, "claude", "s1")
         assert stored is not None
         self.assertEqual(before.summary.lede, stored.summary.lede)

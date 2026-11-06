@@ -25,6 +25,8 @@ SID = "ses_" + "a" * 26
 OTHER = "ses_" + "a" * 25 + "b"
 TOKEN = "test-capability"  # noqa: S105 — local test sentinel
 NODE = shutil.which("node")
+# The adapter's HTTP deadline is measured as a real node process's wall-clock lifetime.
+REAL_TIME_TESTS = True
 RUNNER = r"""
 import {readFileSync, writeFileSync, unlinkSync} from "node:fs";
 import {pathToFileURL} from "node:url";
@@ -115,7 +117,7 @@ class OpenCodePluginTest(support.RuntimeTestCase):
             input=json.dumps(payload),
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=60,
             check=False,
             env={**os.environ, "COMPASS_HOME": str(self.home), "COMPASS_PORT": str(self.port)},
         )
@@ -220,9 +222,10 @@ class OpenCodePluginTest(support.RuntimeTestCase):
         # A deadline that resolves without destroying the socket holds the process
         # for this delay plus 0.25 s, and no deadline holds it for twice the delay.
         # The delay was 1.0 s against a 1.6 s bound, which a healthy Windows run
-        # crossed at 1.69 s (PR #456, run 36798591299). At 4.5 s, a 3.7 s bound
-        # leaves 3x that run's 1.02 s overhead and sits 1.1 s under either defect.
-        self.response_delay = 4.5
+        # crossed at 1.69 s (PR #456, run 36798591299), then 4.5 s against 3.7 s.
+        # The delay costs a healthy run nothing, so it is 20 s: a 15 s bound leaves
+        # a loaded runner's node startup room and sits 5 s under either defect.
+        self.response_delay = 20.0
         result = self.run_plugin(
             [
                 {"event": native("permission.asked"), "delay": 10},
@@ -231,7 +234,7 @@ class OpenCodePluginTest(support.RuntimeTestCase):
             settle=650,
         )
         self.assertLess(max(result["times"]), 100)
-        self.assertLess(result["elapsed"], 3.7, "HTTP deadline did not release the host socket")
+        self.assertLess(result["elapsed"], 15.0, "HTTP deadline did not release the host socket")
         self.assertEqual(
             ["input_requested", "input_resolved"], [r["body"]["event"] for r in self.records]
         )
@@ -306,10 +309,11 @@ class OpenCodePluginTest(support.RuntimeTestCase):
         self.state.unlink()
         os.mkfifo(self.state)
         result = self.run_plugin([{"event": native("permission.asked")}])
-        # A blocked FIFO read never ends, so the defect is the runner's 10 s
+        # A blocked FIFO read never ends, so the defect is the runner's 60 s
         # timeout; the healthy floor is 0.41 s plus the same node startup that
-        # cost 1.02 s on Windows above. 1.6 s left no room for a slow runner.
-        self.assertLess(result["elapsed"], 8.0)
+        # cost 1.02 s on Windows above. 1.6 s, then 8 s, left a loaded runner
+        # too little room.
+        self.assertLess(result["elapsed"], 30.0)
         self.assertEqual([], self.records)
 
     def test_request_overflow_never_claims_clearance_for_untracked_waits(self) -> None:

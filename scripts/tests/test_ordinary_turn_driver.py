@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,14 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ordinary_turn_driver as driver
+
+# Real stub processes under the driver's wall-time limit.
+REAL_TIME_TESTS = True
+
+# How long a test waits for a step that happens at once on an idle runner, and how long a
+# fake holds a step the test releases: longer, so a step that blocks fails the wait instead.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
 
 
 class FakeScope:
@@ -443,7 +452,7 @@ class OrdinaryControls(ControlFixture):
             scope: FakeScope, plan: driver.Plan, limits: driver.Limits
         ) -> driver.NativeCapture:
             entered.set()
-            if not release.wait(timeout=2):
+            if not release.wait(timeout=HOLD_SEC):
                 raise RuntimeError("fixture release missing")
             return original(scope, plan, limits)
 
@@ -457,12 +466,12 @@ class OrdinaryControls(ControlFixture):
             first = threading.Thread(target=run_first)
             first.start()
             try:
-                self.assertTrue(entered.wait(timeout=2))
+                self.assertTrue(entered.wait(timeout=WAIT_SEC))
                 with self.assertRaises(driver.RefusalError):
                     self.run_turn(dataclasses.replace(self.plan, ordinal=2))
             finally:
                 release.set()
-                first.join(timeout=2)
+                first.join(timeout=WAIT_SEC)
         self.assertFalse(first.is_alive())
         self.assertEqual([], errors)
         self.assertEqual(1, self.events.count("launch"))
@@ -806,8 +815,18 @@ class StubNativeProcess(ControlFixture):
         self.addCleanup(process.cleanup)
         # Two seconds, not 0.1: on a loaded runner the limit fired after the stub created its receipt and before it
         # wrote the PID, and the test read "" (Python 3.11 runtime floor, 2026-10-22). The receipt is also written by
-        # rename, so it is either absent or whole.
-        with self.assertRaises(driver.RefusalError):
+        # rename, so it is either absent or whole. Two Python starts can still outlast two seconds on a busy runner,
+        # so the driver's clock does not run until the receipt is there (or WAIT_SEC has really passed).
+        real = time.monotonic
+        held_at = real()
+
+        def after_the_receipt() -> float:
+            return held_at if not receipt.exists() and real() - held_at < WAIT_SEC else real()
+
+        with (
+            mock.patch.object(time, "monotonic", after_the_receipt),
+            self.assertRaises(driver.RefusalError),
+        ):
             process.run(plan, driver.Limits(seconds=2))
         self.assertTrue(process.cleanup())
         self.assertFalse(process.complete_descendant_proof)

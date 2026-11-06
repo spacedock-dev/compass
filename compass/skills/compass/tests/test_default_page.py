@@ -22,7 +22,7 @@ PAGE = b"<html>the page</html>"
 class PageRoutingTest(unittest.TestCase):
     @staticmethod
     def _get(port: int, path: str) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("GET", path)
             response = conn.getresponse()

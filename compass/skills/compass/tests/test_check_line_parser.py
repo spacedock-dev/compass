@@ -31,6 +31,9 @@ if TYPE_CHECKING:
 
 HALF_A, HALF_B = "EXAMPLEaa", "EXAMPLEbb"
 SECRET = f"{HALF_A} {HALF_B}"
+# A deep refused command line read in bounded time, on this thread's CPU.
+REAL_TIME_TESTS = True
+
 SENTINEL = "zzsentinel7"
 
 
@@ -654,10 +657,10 @@ class EveryUnterminatedConstructIsACallThatDidNotRun(CheckLineTestCase):
     def test_a_refused_deep_unquoted_call_still_ages_the_pass_and_is_bounded(self) -> None:
         deep = "pytest -q " + "$(echo " * 400 + HALF_A + ")" * 400
         self.session.bash("pytest", "5 passed", is_error=False)
-        started = time.perf_counter()
+        started = time.thread_time()
         self.session.bash(deep, "", is_error=False)
         text, checks, scan = self.published()
-        self.assertLess(time.perf_counter() - started, 2.0)
+        self.assertLess(time.thread_time() - started, 2.0)
         self.assertEqual(1, scan["not_run"])
         self.assertIs(True, checks[0]["changed_after"])
         self.assertNotIn(HALF_A, text)

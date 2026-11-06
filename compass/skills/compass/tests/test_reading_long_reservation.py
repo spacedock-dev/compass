@@ -19,6 +19,10 @@ from compass_runtime import supervise
 
 from .support import make_runtime
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 def request(**changes: Any) -> dict[str, Any]:
     return {
@@ -100,7 +104,7 @@ class LongReservationTest(unittest.TestCase):
         barrier = threading.Barrier(8)
 
         def reserve_once(_: int) -> Any:
-            barrier.wait(timeout=5)
+            barrier.wait(WAIT_SEC)
             return self.reserve()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -276,13 +280,13 @@ class LongReservationTest(unittest.TestCase):
             ):
                 pending = pool.submit(self.reserve)
                 try:
-                    self.assertTrue(entered.wait(5))
+                    self.assertTrue(entered.wait(WAIT_SEC))
                     writer.execute("INSERT OR REPLACE INTO permission VALUES (1, 0)")
                     writer.execute("DELETE FROM permission WHERE allowed=0")
                     writer.execute("DELETE FROM provider_permission WHERE allowed=0")
                 finally:
                     writer.execute("COMMIT")
-                self.assert_blocked(pending.result(timeout=5), "permission-changed")
+                self.assert_blocked(pending.result(timeout=WAIT_SEC), "permission-changed")
         self.assertEqual([(0,)], self.sql("SELECT count(*) FROM spends"))
 
     def test_disabled_or_corrupt_store_is_unknown_not_a_zero_charge(self) -> None:

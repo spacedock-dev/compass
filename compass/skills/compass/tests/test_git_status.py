@@ -483,7 +483,7 @@ class RemoteStampTest(unittest.TestCase):
             target=lambda: found.append(git_status.remote_stamp(str(self.root))), daemon=True
         )
         worker.start()
-        worker.join(5)
+        worker.join(30)
         if worker.is_alive():
             with contextlib.suppress(OSError):
                 os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
@@ -505,7 +505,7 @@ class RemoteStampTest(unittest.TestCase):
             target=lambda: found.append(git_status.remote_stamp(str(tree))), daemon=True
         )
         worker.start()
-        worker.join(5)
+        worker.join(30)
         if worker.is_alive():
             with contextlib.suppress(OSError):
                 os.close(os.open(gitdir / "commondir", os.O_WRONLY | os.O_NONBLOCK))

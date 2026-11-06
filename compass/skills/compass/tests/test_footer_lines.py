@@ -583,7 +583,7 @@ class CoordinatorRefreshTest(unittest.TestCase):
             coordinator.start()
             self.addCleanup(coordinator.stop)
 
-            self.assertTrue(touched.wait(5.0), "the idle worker never touched the footer lines")
+            self.assertTrue(touched.wait(30.0), "the idle worker never touched the footer lines")
 
     def test_a_writer_that_raises_cannot_stop_the_worker(self) -> None:
         calls = threading.Semaphore(0)
@@ -599,8 +599,8 @@ class CoordinatorRefreshTest(unittest.TestCase):
             coordinator.start()
             self.addCleanup(coordinator.stop)
 
-            self.assertTrue(calls.acquire(timeout=5.0))
-            self.assertTrue(calls.acquire(timeout=5.0), "the worker died after one failure")
+            self.assertTrue(calls.acquire(timeout=30.0))
+            self.assertTrue(calls.acquire(timeout=30.0), "the worker died after one failure")
 
     def test_no_writer_means_nothing_to_touch(self) -> None:
         coordinator = self.coordinator(None)

@@ -32,6 +32,9 @@ try:
 except ImportError:
     frontend_dev = None  # type: ignore[assignment]
 
+# The handshake's two-second elapsed deadline runs on the wall clock against a real listener.
+REAL_TIME_TESTS = True
+
 
 class FrontendDevelopmentTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -152,19 +155,23 @@ class FrontendDevelopmentTest(unittest.TestCase):
     def write_slow_response(
         handler: BaseHTTPRequestHandler, mode: str, body: bytes, stop: threading.Event
     ) -> None:
+        # Each drip outlasts the test's 30 s bound (45 s of headers, 40 s of chunk
+        # metadata), so a client whose deadline renewed on every byte is still
+        # reading at 30 s. The headers stay under http.client's 100-header limit,
+        # which would otherwise end the read at about 25 s with no deadline at all.
         with suppress(ConnectionError):
             if mode == "slow-headers":
                 handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
-                for index in range(16):
+                for index in range(90):
                     handler.wfile.write(f"X-Synthetic-{index}: drip\r\n".encode())
-                    if stop.wait(0.25):
+                    if stop.wait(0.5):
                         return
                 handler.wfile.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
             else:
                 handler.wfile.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
                 # read1 itself parses this chunk-size line: an idle timeout
                 # cannot bound bytes arriving continuously.
-                for byte in b"1;" + b"x" * 16:
+                for byte in b"1;" + b"x" * 158:
                     handler.wfile.write(bytes([byte]))
                     if stop.wait(0.25):
                         return
@@ -273,9 +280,11 @@ class FrontendDevelopmentTest(unittest.TestCase):
         started = time.monotonic()
         with self.assertRaises(RuntimeError):
             frontend_dev.admit(self.path, self.config())
+        # The deadline is two seconds; the drip outlasts 30, so this bound separates
+        # a held deadline from a renewed one with room for a loaded runner.
         self.assertLess(
             time.monotonic() - started,
-            3,
+            30,
             "continuous bytes must not renew the two-second elapsed deadline",
         )
         self.assertGreaterEqual(server.socket.fileno(), 0, "only the owned client may close")
@@ -348,7 +357,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
             ({"Origin": dev.vite_origin}, 403),
         ):
             with self.subTest(headers=headers):
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=30)
                 connection.request("GET", "/api/health", headers=headers)
                 response = connection.getresponse()
                 response.read()
@@ -427,11 +436,11 @@ class FrontendDevelopmentTest(unittest.TestCase):
             stderr=subprocess.PIPE,
         )
         try:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + 30
             body = b""
             while time.monotonic() < deadline:
                 if process.poll() is not None:
-                    _, stderr = process.communicate(timeout=2)
+                    _, stderr = process.communicate(timeout=30)
                     self.fail(stderr.decode())
                 try:
                     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
@@ -456,7 +465,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
             parser.feed(body.decode())
             self.assertEqual(64, len(parser.token))
             for token, want in ((parser.token, 200), ("0" * 64, 403), ("", 403)):
-                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
                 connection.request(
                     "POST",
                     "/api/focus",
@@ -475,7 +484,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
                 connection.close()
         finally:
             process.terminate()
-            process.communicate(timeout=5)
+            process.communicate(timeout=30)
 
 
 if __name__ == "__main__":

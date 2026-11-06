@@ -26,6 +26,9 @@ from .support import (
     runtime,
 )
 
+# The backward reader's linearity is a best-of-three timing ratio.
+REAL_TIME_TESTS = True
+
 CONFIG, STATE = make_runtime()
 
 
@@ -46,7 +49,7 @@ class CompassServerTest(RuntimeTestCase):
                     wait_for_pair = parse_count <= 2
                     if parse_count == 2:
                         parsed.set()
-                if wait_for_pair and not parsed.wait(timeout=5):
+                if wait_for_pair and not parsed.wait(timeout=30):
                     raise AssertionError("concurrent readers did not reach the metadata parser")
                 return {"value": value.get("value")}
 

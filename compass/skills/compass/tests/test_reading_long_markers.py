@@ -341,7 +341,7 @@ class LongMarkerTest(unittest.TestCase):
         barrier = threading.Barrier(2)
 
         def reserve(_: int) -> Any:
-            barrier.wait(timeout=5)
+            barrier.wait(timeout=30)
             return self.reserve(owner)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:

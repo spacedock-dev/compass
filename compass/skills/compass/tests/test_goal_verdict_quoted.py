@@ -21,6 +21,9 @@ from .test_claude_checks import SHORT, ClaudeChecksTestCase
 from .test_goal_verdict import GOAL, VERDICT_AT, goal_row
 from .test_reading_record_guards import write_fact
 
+# Scanning unbalanced quotes kept linear, measured on this thread's CPU.
+REAL_TIME_TESTS = True
+
 OUTPUT = "Ran 412 tests in 3.1s"
 
 
@@ -322,9 +325,9 @@ class AQuoteInARecordedChecksOutputIsSaidToBeThere(base.AClaudeCodeReadingProduc
     def test_unbalanced_quotes_are_scanned_in_linear_time(self) -> None:
         for unit in ("\u201c", "\u201c a", '\u201c"', '"', '" a'):
             with self.subTest(unit=unit):
-                started = time.monotonic()
+                started = time.thread_time()
                 self.assertEqual((), reading._quoted_spans(unit * 20000))
-                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertLess(time.thread_time() - started, 2.0)
 
     def test_a_span_naming_a_remote_job_is_left_to_the_ci_facts(self) -> None:
         for span in ("coverage-gate pass", "server-unittest pass", "ci/lint passed"):

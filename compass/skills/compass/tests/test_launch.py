@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import importlib.util
 import json
 import os
 import shutil
@@ -19,8 +20,12 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from .support import SERVER_PATH
+
+# Launchers, uv and scripts run as real processes, and their starts and exits are waited for.
+REAL_TIME_TESTS = True
 
 SKILL = SERVER_PATH.parent
 PLUGIN_ROOT = SKILL.parents[1]
@@ -311,13 +316,39 @@ class BelowTheFloorWithUvTest(LauncherTest):
         self.assertNotEqual(0, done.returncode)
         self.assertTrue(done.stderr.decode().startswith("Compass needs Python 3.12"))
 
-    def test_a_uv_that_hangs_does_not_hold_a_hook_past_its_five_second_budget(self) -> None:
-        self.fake_uv("sleep 30")
-        started = time.monotonic()
-        done = self.run_launcher(self.target(), stdin=SESSION_START)
-        self.assertLess(time.monotonic() - started, 4.5)
+    def test_a_uv_that_hangs_is_abandoned(self) -> None:
+        # The uv here sleeps 30 s, so a launcher that waited for it outlives the 20 s limit and
+        # fails. That limit only tells abandoned from waited; the budget is the test below. The
+        # sleep is named by path: the launcher's PATH is the fixture's bin alone, and a bare
+        # `sleep` there was not found, so the uv this test meant to hang exited at once.
+        sleep = shutil.which("sleep")
+        assert sleep is not None
+        self.fake_uv(f"exec {sleep} 30")
+        done = self.run_launcher(self.target(), stdin=SESSION_START, timeout=20)
         self.assertNotEqual(0, done.returncode)
         self.assertTrue(done.stderr.decode().startswith("Compass needs Python 3.12"))
+
+    def test_the_uv_lookup_is_bounded_well_inside_a_hooks_five_second_budget(self) -> None:
+        # Decided on the bound handed to the lookup, not on a stopwatch round a cold interpreter,
+        # which on a loaded runner measures the runner.
+        spec = importlib.util.spec_from_file_location("compass_launch_under_test", LAUNCHER)
+        assert spec is not None
+        assert spec.loader is not None
+        launch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launch)
+        seen: list[object] = []
+
+        def run(*_args: object, **kwargs: object) -> object:
+            seen.append(kwargs.get("timeout"))
+            raise subprocess.TimeoutExpired("uv", 0)
+
+        with (
+            mock.patch.object(shutil, "which", return_value="/opt/uv"),
+            mock.patch.object(subprocess, "run", run),
+        ):
+            self.assertIsNone(launch.find_new_python())
+        self.assertEqual([launch.UV_TIMEOUT_SECONDS], seen)
+        self.assertLessEqual(launch.UV_TIMEOUT_SECONDS, 2)
 
     @unittest.skipUnless(os.name == "posix", "process groups")
     def test_ctrl_c_lets_a_server_that_needs_a_second_to_shut_down_finish_cleanly(self) -> None:
@@ -332,7 +363,7 @@ class BelowTheFloorWithUvTest(LauncherTest):
             "    sys.exit(0)\n"
             "signal.signal(signal.SIGINT, stop)\n"
             f"open({str(ready)!r}, 'w').close()\n"
-            "time.sleep(30)\n",
+            "time.sleep(60)\n",
             encoding="utf-8",
         )
         proc = subprocess.Popen(
@@ -341,11 +372,13 @@ class BelowTheFloorWithUvTest(LauncherTest):
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        deadline = time.monotonic() + 10
+        # Two interpreters and a shell start before `ready`; a busy runner can take seconds.
+        deadline = time.monotonic() + 30
         while not ready.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
+        self.assertTrue(ready.exists(), "the server never installed its handler")
         os.killpg(proc.pid, signal.SIGINT)
-        stderr = proc.communicate(timeout=10)[1]
+        stderr = proc.communicate(timeout=30)[1]
         self.assertEqual(0, proc.returncode, stderr)
         self.assertTrue(done_mark.exists(), "the child was killed instead of shutting down")
         self.assertNotIn(b"Traceback", stderr)
@@ -368,7 +401,7 @@ class BelowTheFloorWithUvTest(LauncherTest):
         )
         child_pid = 0
         try:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 if pid_file.exists() and pid_file.read_text(encoding="utf-8"):
                     child_pid = int(pid_file.read_text(encoding="utf-8"))
@@ -376,9 +409,10 @@ class BelowTheFloorWithUvTest(LauncherTest):
                 time.sleep(0.05)
             self.assertTrue(child_pid, "the script never started")
             proc.send_signal(signal.SIGTERM)  # the launcher alone, not its process group
-            proc.wait(timeout=10)
+            proc.wait(timeout=30)
             gone = False
-            for _ in range(100):
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
                 try:
                     os.kill(child_pid, 0)
                 except ProcessLookupError:

@@ -435,7 +435,7 @@ class InstalledFrontendTest(unittest.TestCase):
                                 capture_output=True,
                                 text=True,
                                 env=env,
-                                timeout=10,
+                                timeout=60,
                                 check=False,
                             )
                             self.assertEqual(1, result.returncode)
@@ -449,7 +449,7 @@ class InstalledFrontendTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     env=env,
-                    timeout=10,
+                    timeout=60,
                     check=False,
                 )
                 self.assertIn(result.returncode, (0, 1))
@@ -566,7 +566,7 @@ class InstalledFrontendTest(unittest.TestCase):
                 assert proc.stderr is not None
                 raise AssertionError(f"launcher exited early: {proc.stderr.read()}")
             try:
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
                 try:
                     conn.request("GET", "/")
                     body = conn.getresponse().read()
@@ -621,7 +621,7 @@ class InstalledFrontendTest(unittest.TestCase):
                         ready = json.loads(ready_line)
                         self.assertTrue(ready["ready"])
                         self.assertTrue(Path(ready["runtime"]).is_relative_to(plugin.resolve()))
-                        conn = http.client.HTTPConnection("127.0.0.1", ready["port"], timeout=5)
+                        conn = http.client.HTTPConnection("127.0.0.1", ready["port"], timeout=30)
                         conn.request("GET", "/")
                         response = conn.getresponse()
                         body = response.read()
