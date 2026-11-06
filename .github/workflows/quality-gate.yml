@@ -301,7 +301,8 @@ jobs:
           EXCEPTION: ${{ steps.exception.outputs.has_exception || '0' }}
         run: |
           set -euo pipefail
-          coverage json -o coverage.json
+          # `json` enforces fail_under too, which would stop a labelled PR here, before the bypass.
+          coverage json -o coverage.json --fail-under=0
           {
             echo "## Coverage"
             echo '```'
@@ -745,34 +746,45 @@ jobs:
           fi
           # The runner's own variable: the expression `env` context does not carry it.
           printf 'version=%s\nimage=%s\n' "$VERSION" "${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
-      # ImageOS keeps a distribution's packages from being offered to the next one. A stale package costs
-      # only a download: apt reuses a file only when its name and hash are the ones it asks for.
-      - name: Restore the pinned Chromium and its host packages
+      # A cache hit never saves again, so the browser and the packages are kept apart: an entry saved
+      # without packages would otherwise hit forever and fetch the fonts every run.
+      - name: Restore the pinned Chromium
         # actions/cache@v6.1.0 — pinned to immutable SHA. Saves only after a successful job.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: |
-            ~/.cache/ms-playwright
-            ~/.cache/playwright-apt/*.deb
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
+          path: ~/.cache/ms-playwright
+          key: playwright-browser-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      # ImageOS keeps a distribution's packages from being offered to the next one. A stale package costs
+      # only a download: apt reuses a file only when its name and hash are the ones it asks for. With no
+      # package to save, this cache saves nothing and the next run tries again.
+      - name: Restore Chromium's host packages
+        # actions/cache@v6.1.0 — pinned to immutable SHA. Saves only after a successful job.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/playwright-apt/*.deb
+          key: playwright-apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
-      # 120 s is about eight times a healthy install (14 s), and two attempts fit the step's limit. apt
-      # keeps its downloads in the cached directory, so a retry resumes and a warm run fetches nothing.
+      # A healthy install takes 14 s. A retry resumes from the same mirror, so the cold path's budget is
+      # the sum of both bounds: 420 s, above the 300 s the old single `--with-deps` step had, and the
+      # step's limit leaves room for both. apt keeps its downloads in the cached directory, so a warm
+      # run fetches nothing.
       - name: Install Chromium's host packages, retried once
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           set -uo pipefail
+          BOUND=210
           ARCHIVES="$HOME/.cache/playwright-apt"
           mkdir -p "$ARCHIVES/partial"
+          echo "::notice::$(find "$ARCHIVES" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ') host packages restored from the cache."
           printf 'Dir::Cache::Archives "%s/";\n' "$ARCHIVES" \
             | sudo tee /etc/apt/apt.conf.d/90-playwright-archives > /dev/null
           for attempt in 1 2; do
-            if timeout --kill-after=10 120 pnpm exec playwright install-deps chromium; then
+            if timeout --kill-after=10 "$BOUND" pnpm exec playwright install-deps chromium; then
               exit 0
             fi
-            echo "::warning::Chromium's host packages did not install in 120 s (attempt $attempt of 2)."
+            echo "::warning::Chromium's host packages did not install in $BOUND s (attempt $attempt of 2)."
             sudo dpkg --configure -a
           done
           echo "::error::Chromium's host packages did not install after two bounded attempts."

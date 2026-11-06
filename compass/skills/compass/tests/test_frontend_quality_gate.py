@@ -562,15 +562,23 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         pinned = json.loads((ROOT / "package.json").read_text())["devDependencies"]["playwright"]
         self.assertEqual(pinned, found["version"])
         steps = self.steps()
-        cache = next(step for step in steps if step.get("uses", "").startswith("actions/cache@"))
-        self.assertRegex(cache["uses"], r"@[0-9a-f]{40}$")
-        self.assertIn("${{ steps.playwright.outputs.version }}", cache["with"]["key"])
-        self.assertIn("~/.cache/ms-playwright", cache["with"]["path"])
-        self.assertNotIn(
-            "restore-keys", cache["with"], "another version's browser is never restored"
+        caches = [step for step in steps if step.get("uses", "").startswith("actions/cache@")]
+        # One entry per half: a hit never saves again, so a shared entry saved without packages
+        # would hit forever and fetch the fonts on every run.
+        self.assertEqual(
+            ["~/.cache/ms-playwright", "~/.cache/playwright-apt/*.deb"],
+            [cache["with"]["path"] for cache in caches],
         )
+        self.assertEqual(2, len({cache["with"]["key"] for cache in caches}), "separate entries")
+        self.assertIn("${{ steps.playwright.outputs.image }}", caches[1]["with"]["key"])
         browser = self.step_running("pnpm exec playwright install chromium")
-        self.assertLess(steps.index(cache), steps.index(browser))
+        for cache in caches:
+            self.assertRegex(cache["uses"], r"@[0-9a-f]{40}$")
+            self.assertIn("${{ steps.playwright.outputs.version }}", cache["with"]["key"])
+            self.assertNotIn(
+                "restore-keys", cache["with"], "another version's files are never restored"
+            )
+            self.assertLess(steps.index(cache), steps.index(browser))
         self.assertLess(
             steps.index(self.step_running("install-deps")),
             steps.index(self.step_running("pnpm test:stories")),
@@ -630,6 +638,9 @@ class StorybookChromiumInstallTest(unittest.TestCase):
                 self.assertEqual(len(attempts), len(bounds), "every attempt is bounded")
                 # Both attempts fit inside the step's own limit, so the retry can actually run.
                 self.assertLess(2 * max(bounds), limit)
+                # A retry resumes from the same mirror, so the cold path's real budget is the sum.
+                # It must not be less than the 300 s the old single `--with-deps` step had.
+                self.assertGreaterEqual(2 * min(bounds), 300)
 
     def test_no_frontend_job_can_fail_open(self) -> None:
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`

@@ -268,11 +268,13 @@ class CoverageShardsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="bld-hyg-cov-") as tmp:
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
-            # Below the threshold: a plain `coverage report` fails, as fail_under makes it.
+            # Below the threshold. coverage applies fail_under to `json` as well as `report`
+            # (measured on 7.15.2: `coverage json` exited 2), so every call fails without the override.
             fake = bin_dir / "coverage"
             fake.write_text(
-                '#!/bin/sh\ncase "$*" in\n  "report --fail-under=0") echo TOTAL 1% ;;\n'
-                "  report) echo TOTAL 1%; exit 2 ;;\nesac\n"
+                '#!/bin/sh\ncase " $* " in\n  *" --fail-under=0 "*) echo TOTAL 1% ;;\n'
+                "  *) echo 'Coverage failure: total of 1 is less than fail-under=73'; exit 2 ;;\n"
+                "esac\n"
             )
             fake.chmod(0o755)
             for exception, blocked in (("0", True), ("1", False)):

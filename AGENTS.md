@@ -511,8 +511,8 @@ on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-enviro
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and
 runs the component assertions in pinned Chromium. It restores that browser from a cache keyed on the
-Playwright version in the lockfile, and installs the runner's host packages apart, bounded and retried
-once, because the combined `--with-deps` install timed out on the Ubuntu mirror's font downloads. All four
+Playwright version in the lockfile, and installs the runner's host packages apart, from their own cache,
+bounded and retried once, because the combined `--with-deps` install timed out on the Ubuntu mirror's font downloads. All four
 frontend jobs and `frontend-contract` are in the aggregator's `needs` (the comment job is not), and a skipped result passes only when its lane is off. The required status
 checks on main remain `validate`, `version-guard` and `quality-gate`. Native harness canary Node
 requirements remain independent of this build toolchain.
