@@ -627,7 +627,7 @@ Format: `<type>(<scope>): <description>`, where type is one of `feat`, `fix`, `d
 
 1. Fork (or branch, for maintainers) and make your change.
 2. Run `python3 scripts/pre_pr.py` (the pre-PR suite in [AGENTS.md](AGENTS.md#pre-pr-checks)), then invoke the `sync-docs` skill.
-3. Open a PR against `main`. `main` is protected: PRs are required, the `validate`, `version-guard` and `quality-gate` checks must pass, history is linear (squash/rebase), all conversations must be resolved, and merged branches are deleted automatically.
+3. Open a PR against `main`. `main` is protected: PRs are required, the `validate`, `version-guard` and `quality-gate` checks must pass, history is linear (squash/rebase), all conversations must be resolved, and merged branches are deleted automatically. When `main`'s ruleset requires a merge queue, merging adds the PR to the queue instead. The queue runs the same three checks on your PR combined with `main` and any PRs ahead of it, so you never update the branch by hand. A PR measured below the coverage threshold there needs its own `coverage-exception` label, even when the drop came from a labelled PR ahead of it. [AGENTS.md](AGENTS.md#parallel-work) says how to tell which rule is in force.
 4. If your PR closes an issue, use an explicit `Closes #NNN` line, one line per issue. A comma-separated list does not autoclose.
 
 ## Adding support for a new harness

@@ -199,6 +199,9 @@ git commit -s -m "feat(skill): add new capability to compass"
   issue, never comma-separated, so autoclose works.
 - PR titles must be ready for public release notes: plain shipped behavior, with no tracker brand, issue keys or tracker URLs. Generated notes copy these titles. Keep internal issue provenance in the PR body or development records.
 - After requesting a PR review, always check for Copilot inline review comments in addition to top-level reviews.
+- Land through the merge queue whenever `main`'s ruleset requires one: `gh pr merge <n>` then adds
+  the PR to the queue rather than merging it, and `gh pr update-branch` is never needed. Which rule
+  is in force, and how a stack lands, is in [Parallel Work](#parallel-work).
 - Never commit or push to another author's PR branch without explicit confirmation from the user.
 
 ## Pre-PR Checks
@@ -403,14 +406,28 @@ answer edits the test that asks for it and records the departure in
   range actually covers.
 - `config.py`, where every feature adds a threshold. Usually additive, occasionally not.
 
-**Merges serialize even when builds do not.** A ruleset requires branches be up to date, so landing
-one PR puts every sibling `BEHIND` and each needs `gh pr update-branch` plus a full CI re-run. Plan
-for one cycle per PR and pick the order deliberately: merge the branch that changes the shared file
-first, so the others resolve against it once instead of twice. A native GitHub stack (`gh stack`)
-avoids most of that: when `main` moves, `gh stack sync` rebases every layer and they re-run in
-parallel, one cycle for the stack, and `gh stack merge --squash` lands the layers atomically. Never
-run `gh pr update-branch` or `gh pr merge` on a stacked branch; the `burndown` skill owns the
-procedure.
+**Merges serialize even when builds do not, unless a merge queue serializes them for you.** Check
+which rule `main` has before landing anything:
+`gh api 'repos/{owner}/{repo}/rules/branches/main' --jq '.[].type'` lists `merge_queue` when a queue
+is required.
+
+- **With a merge queue,** no PR has to be up to date. `gh pr merge <n>` adds the PR to the queue
+  (or turns on auto-merge until its checks pass; never `--admin`, which skips the queue). The queue
+  builds it on top of `main` and every entry ahead of it, runs the required checks once on
+  that merged result (the `merge_group` runs), and lands it with the queue's own merge method,
+  squash. A sibling landing no longer puts the others behind, so never run `gh pr update-branch`.
+  `gh stack merge --squash` enqueues a whole stack; while it is queued `gh stack sync` skips the
+  queued branches and `gh stack modify` refuses. An entry whose group fails a check or conflicts
+  leaves the queue: fix it on its branch and enqueue it again.
+- **Without one,** the ruleset requires branches be up to date, so landing one PR puts every
+  sibling `BEHIND` and each needs `gh pr update-branch` plus a full CI re-run. Plan for one cycle
+  per PR. A native GitHub stack (`gh stack`) avoids most of that: when `main` moves,
+  `gh stack sync` rebases every layer and they re-run in parallel, one cycle for the stack, and
+  `gh stack merge --squash` lands the layers atomically.
+
+Either way, pick the order deliberately: land the branch that changes the shared file first, so the
+others resolve against it once instead of twice. Never run `gh pr update-branch` or `gh pr merge`
+on a stacked branch; the `burndown` skill owns the procedure.
 
 **A stale green will mislead you.** A CI run that finished before a branch update is still reported
 green. Check `mergeStateStatus` is `CLEAN` and that the checks belong to the current head before
@@ -459,8 +476,9 @@ Without that pass the lens count would have to rise to compensate.
 **One PR per conflict surface, not one per issue.** Issues are units of reasoning; PRs are units of
 merge risk. Five issues became five PRs on that run where three would have done. The only
 constraint that genuinely forces a split is that exactly one line of history may touch
-`compass_runtime/web/`: one PR, or one stack whose layers build on each other (see Parallel Work). Every extra PR costs a review, a fix round, a CI cycle, and — because a
-ruleset requires branches be up to date — a merge serialization that puts every sibling behind.
+`compass_runtime/web/`: one PR, or one stack whose layers build on each other (see Parallel Work).
+Every extra PR costs a review, a fix round, a CI cycle, and a place in the merge order: a merge queue run, or, while the ruleset requires branches be up to date instead,
+a merge serialization that puts every sibling behind.
 
 **Review the diff in the worktree before opening the PR.** Reviewing after means every PR runs CI
 twice: green, blocked by review, fixed, green again. That was roughly fifteen minutes per PR of
@@ -507,15 +525,17 @@ launchers, the exit watch, the daemon, file locks, osascript notifications, the 
 `pnpm test:dev` drives, Terminal automation and the harness drivers, and their tests; the scrub and
 footer timing bounds that failed only on the slower macOS runners; the shared test config, which takes
 `sys.platform`; and the toolchain and dependency pins the macOS legs install, whose native bindings
-differ per OS), for the gate's own wiring and any unrecognised path, and for every run that is not a
-pull request.
+differ per OS), for the gate's own wiring and any unrecognised path, and for every run that is
+neither a pull request nor a merge queue entry. A queue entry decides it from its paths, as a pull
+request does; the push to main once it lands turns it on.
 
 **Push, nightly and manual runs run everything.** A push to main, the nightly `schedule` and a
 `workflow_dispatch` turn on every lane, macOS included, so a fail-open gap or platform drift that a
 pull request's lanes skipped surfaces within a day rather than at release.
 
-The gate's own wiring (`quality-gate.yml`, `validate.yml`, `release.yml`, `scripts/ci_scope.py`)
-turns on both full lanes, and so does any path the script does not recognise. A move counts at both
+The gate's own wiring (`quality-gate.yml`, `validate.yml`, `release.yml`, `scripts/ci_scope.py`,
+`scripts/coverage_exception.py`) turns on both full lanes, and so does any path the script does not
+recognise. A move counts at both
 its old and its new path (`git diff --no-renames`), because something may still read the file where
 it was. The `quality-gate`
 job itself always runs and always reports, so branch protection is never left waiting. That is the
@@ -530,6 +550,19 @@ the gate runs no Python suite at all. That step is **not** a duplicate of the ga
 the detector called prose it is the only run of the suite, so deleting it would let a prose edit
 that breaks a test merge green. When the gate does run the suites it skips, because it only
 repeated them. `validate.yml` says the same thing at the step itself.
+
+**All three required workflows also run on `merge_group`,** so a merge queue entry reports every
+required check; one that never reported would hold the entry forever. The queue builds each entry
+on the head of the entry ahead of it, and `merge_group.base_sha` names that head, not `main`. So
+the detector and `version-guard` diff an entry against its merge base with the branch it lands on
+(`merge_group.base_ref`): a queue run turns on the lanes of every PR queued ahead of it as well as
+its own, and a version bump anywhere in that range fails it, whichever grouping rule the queue
+uses. The push to `main` once it lands runs every lane. `version-guard` keys its concurrency on
+the entry's own ref so entries never cancel each other. The `coverage-exception` label counts only
+on the entry's own PR, named by the queue's head ref (`scripts/coverage_exception.py`). An
+unlabelled PR queued behind a labelled one is measured on both and needs its own label, as it did
+before the queue once the labelled one landed. That check fails closed and warns, so a label it
+cannot read leaves the threshold in force and says why in the log.
 
 **CI exercises macOS and Linux.** Windows is no longer exercised by CI for the dashboard unit
 suite or the frontend. When `platform` is on, `platform-tests` keeps the macOS dashboard leg on 3.12 and three script shards, and

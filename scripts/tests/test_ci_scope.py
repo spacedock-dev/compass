@@ -116,6 +116,7 @@ class EachKindOfChangeRunsItsLaneTest(unittest.TestCase):
             ".github/workflows/frontend-build.yaml",
             ".github/actions/frontend-toolchain/action.yml",
             "scripts/ci_scope.py",
+            "scripts/coverage_exception.py",
             "frontend/test/terminal_backend.py",
         ):
             with self.subTest(path=path):
@@ -475,6 +476,85 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
         ):
             with self.subTest(event=event, base=b):
                 self.assertIs(ci_scope.EVERYTHING, ci_scope.decide(event, b, h, self.tmp))
+
+    def test_a_merge_queue_entry_is_classified_against_its_base_branch(self) -> None:
+        # Two entries queued one behind the other. The queue builds the second on the first's group
+        # head, which is what `merge_group.base_sha` names (measured on a public queue: the second
+        # entry's parent and the SHA in its ref were the first entry's head). Diffing from that SHA
+        # would see the second pull request alone; the entry is measured on both, so it is diffed
+        # against the base branch it will land on.
+        self.git("init", "-q", "-b", "main")
+        write_builder(self.tmp)
+        (self.tmp / "frontend").mkdir(exist_ok=True)
+        (self.tmp / "frontend/a.ts").write_text("1\n", encoding="utf-8")
+        (self.tmp / "docs").mkdir()
+        (self.tmp / "docs/notes.md").write_text("words\n", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        (self.tmp / "frontend/a.ts").write_text("2\n", encoding="utf-8")
+        self.git("commit", "-qam", "first pull request (#1)")
+        first = self.git("rev-parse", "HEAD")
+        (self.tmp / "docs/notes.md").write_text("more words\n", encoding="utf-8")
+        self.git("commit", "-qam", "second pull request (#2)")
+        second = self.git("rev-parse", "HEAD")
+        cwd = Path.cwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, cwd)
+        for base_ref in ("refs/heads/main", "main"):
+            with self.subTest(base_ref=base_ref):
+                decided = ci_scope.decide("merge_group", first, second, self.tmp, base_ref)
+                self.assertEqual(
+                    {**ALL_OFF, "frontend": "true", "python_suites": "true"}, decided.outputs()
+                )
+                self.assertEqual(
+                    ("docs/notes.md: prose", "frontend/a.ts: frontend"), decided.reasons
+                )
+        # A queue entry with no base branch, or no head, is as unknown as a pull request with none.
+        self.assertIs(ci_scope.EVERYTHING, ci_scope.decide("merge_group", first, second, self.tmp))
+        self.assertIs(
+            ci_scope.EVERYTHING, ci_scope.decide("merge_group", "", "", self.tmp, "refs/heads/main")
+        )
+
+    def test_a_merge_queue_entry_decides_platform_from_its_paths_as_a_pull_request_does(
+        self,
+    ) -> None:
+        # Not every lane, as a push is: the push to main once the entry lands runs macOS anyway.
+        # The entry ahead touches platform-sensitive code, so the entry behind it, measured on
+        # both, runs the macOS legs too.
+        self.git("init", "-q", "-b", "main")
+        write_builder(self.tmp)
+        runtime = self.tmp / "compass/skills/compass/compass_runtime"
+        runtime.mkdir(parents=True)
+        (runtime / "io.py").write_text("X = 1\n", encoding="utf-8")
+        (self.tmp / "docs").mkdir()
+        (self.tmp / "docs/notes.md").write_text("words\n", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        (self.tmp / "docs/notes.md").write_text("more words\n", encoding="utf-8")
+        self.git("commit", "-qam", "prose alone (#1)")
+        prose = self.git("rev-parse", "HEAD")
+        (runtime / "io.py").write_text("X = 2\n", encoding="utf-8")
+        self.git("commit", "-qam", "platform code (#2)")
+        platform = self.git("rev-parse", "HEAD")
+        (self.tmp / "docs/notes.md").write_text("even more words\n", encoding="utf-8")
+        self.git("commit", "-qam", "prose behind it (#3)")
+        behind = self.git("rev-parse", "HEAD")
+        cwd = Path.cwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, cwd)
+        main = "refs/heads/main"
+        self.assertEqual(
+            ALL_OFF,
+            ci_scope.decide(
+                "merge_group", self.git("rev-parse", "HEAD~3"), prose, self.tmp, main
+            ).outputs(),
+        )
+        self.assertEqual(
+            "true",
+            ci_scope.decide("merge_group", platform, behind, self.tmp, main).outputs()["platform"],
+        )
 
     def test_a_move_counts_where_the_file_left_as_well_as_where_it_went(self) -> None:
         self.git("init", "-q", "-b", "main")

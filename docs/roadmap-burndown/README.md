@@ -392,10 +392,12 @@ would be reviewing its own work.
   - Confirmed material findings routed back to `implementation` through the `feedback-to` edge with
     their evidence, classification and authorized disposition transported unchanged — never
     re-triaged, and never fixed here.
-  - CI green on the **current head**. After any sibling merge this PR goes `BEHIND` and needs a
-    **full CI re-run**: `gh pr update-branch` for a standalone PR, `gh stack sync` for a stacked
-    layer, never the former on a stack. The re-run is the point, because the previous green
-    belonged to a superseded head.
+  - CI green on the **current head**. While `main`'s ruleset requires branches be up to date, after
+    any sibling merge this PR goes `BEHIND` and needs a **full CI re-run**: `gh pr update-branch`
+    for a standalone PR, `gh stack sync` for a stacked layer, never the former on a stack. The
+    re-run is the point, because the previous green belonged to a superseded head. When the ruleset
+    requires a merge queue instead, nothing is updated: the queue runs the checks on the merged
+    result (AGENTS.md, Parallel Work).
   - A GO or NO-GO verdict with the findings that produced it.
   - On GO, the worktree removed **before** the branch is deleted. `gh pr merge --delete-branch`
     fails while a worktree still holds the branch, and the tempting unstick — `git reset --hard` in

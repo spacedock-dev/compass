@@ -139,9 +139,29 @@ parallel, which costs one CI cycle, not one per layer.
 part of it earlier (below) when a higher layer will take a while, or when a group outside the stack
 is waiting on a lower layer. Each landing is followed by step 6 for the issues it finished.
 
+**Know whether `main` has a merge queue** before landing:
+`gh api 'repos/{owner}/{repo}/rules/branches/main' --jq '.[].type'` lists `merge_queue` when the
+ruleset requires one. The commands below are the same either way; what they do differs.
+
+- **With a queue,** `gh stack merge` adds a stack's pull requests to the queue instead of merging
+  them, and so does `gh pr merge` for an independent pull request (on one whose checks are still
+  running it turns on auto-merge, which enqueues it once they pass; never on a stacked branch, see
+  below). Never pass `--admin`, which skips the queue. The queue builds
+  each entry on top of `main` and the entries ahead of it, runs the required checks on that result,
+  and lands it with its own merge method, squash. Nothing has to be up to date first, so never run
+  `gh pr update-branch`. Landing is done when the pull requests show `MERGED`, not when the command
+  returns: watch `gh pr view <n> --json state,mergeStateStatus`. While a stack is queued, `gh stack sync` skips its queued branches and `gh stack modify` refuses, so do
+  not restructure it until it lands or leaves the queue. An entry whose group fails a check or
+  conflicts is removed from the queue: fix it with the lower-layer procedure, wait for green on the
+  new head, and merge again.
+- **Without one,** the ruleset requires each branch be up to date, and `gh stack merge` merges at
+  once. A sibling landing first puts the stack behind: `gh stack sync` and a full CI re-run before
+  merging.
+
 **Merge only when every layer being landed is ready:** `git fetch origin main:main` first, because
 `gh stack view --json` judges `needsRebase` against your local `main` and does not fetch; then
-`gh stack view --json` shows no rebase needed; every layer's checks are green on its **current**
+`gh stack view --json` shows no rebase needed (with a queue, a textual conflict with `main` still
+needs one; being merely behind does not); every layer's checks are green on its **current**
 head SHA (a run that finished before a push still reports green); `mergeStateStatus` is `CLEAN`; and
 every review thread on every layer is resolved, because the ruleset requires thread resolution and
 one open thread fails the whole atomic merge. Read Copilot's inline comments, not only top-level
@@ -153,15 +173,20 @@ gh stack merge --squash --yes
 gh stack sync --prune
 ```
 
-Always pass `--squash`. Without it `gh stack merge` uses your last-used method, and the ruleset
-allows only squash and rebase. Squash is the repository's method: six native stacks, the largest
-fifteen layers, landed this way with verified signatures and one push run on `main` per stack.
+With a queue, `gh stack merge` returns once the stack is enqueued, not landed. Wait until every
+layer shows `MERGED` before running `gh stack sync --prune`, which skips queued branches and so
+prunes nothing earlier, and before step 6.
+
+Always pass `--squash`. Without a queue, `gh stack merge` otherwise uses your last-used method, and
+the ruleset allows only squash and rebase; with one, the queue's own method (squash) decides, and
+passing the flag keeps the command the same under either rule. Squash is the repository's method:
+six native stacks, the largest fifteen layers, landed this way with verified signatures and one push run on `main` per stack.
 
 **Land part of a stack:** `gh stack merge <pr> --squash --yes`, where `<pr>` is the highest layer to
 land. A bare number is read as a stack number first, so check in `gh stack view` that no stack has
-that number. GitHub rebases and retargets the rest, which changes their heads: `gh stack sync`, so
-the local branches and the pushed heads agree again, then wait for CI on the new heads before
-merging again.
+that number. Once those layers land, GitHub rebases and retargets the rest, which changes their
+heads: `gh stack sync`, so the local branches and the pushed heads agree again, then wait for CI on
+the new heads before merging again.
 
 **Never, on a stacked branch:** `gh pr merge` (it merges a layer into its parent branch, leaving
 its code off `main` even if tracker automation calls it finished), `gh pr update-branch`, a plain `git rebase origin/main`,
@@ -169,10 +194,11 @@ its code off `main` even if tracker automation calls it finished), `gh pr update
 request whose base is another feature branch but is not in a native stack gets closed when its base
 is deleted (#251 and #252); link it with `gh stack link` or do not create it.
 
-For an independent pull request: confirm `CLEAN` and current-head checks, then
-`gh pr merge <n> --squash --delete-branch`, after removing any worktree that holds the branch. The
-repository deletes a merged head branch on GitHub by itself; `--delete-branch` also removes the
-local one. If it is behind, `gh pr update-branch` and wait for the new run.
+For an independent pull request: confirm `CLEAN` and current-head checks, then remove any worktree
+that holds the branch. Without a queue, `gh pr merge <n> --squash --delete-branch`; if it is behind,
+`gh pr update-branch` and wait for the new run. With a queue, `gh pr merge <n> --squash` enqueues it
+and nothing needs updating; once it shows `MERGED`, delete the local branch. The repository deletes
+a merged head branch on GitHub by itself either way.
 
 ## Parallel work
 
