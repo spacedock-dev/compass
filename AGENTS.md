@@ -483,6 +483,9 @@ Add a row, or raise the count and last-seen date of the existing row, and name t
 a job or re-queuing a pull request without recording the failure is not allowed. Mark a row fixed
 with the pull request that removed the cause.
 
+A flake found only under local load, with its cause known but not fixed, goes in the ledger's
+second table with that cause. A review that finds one records it there before deferring the fix.
+
 `python3 scripts/flaky_tally.py` reads the last week of CI runs through `gh` and prints what the
 ledger is missing. It writes nothing. Its candidates from failed runs still need the module-alone
 check above.

@@ -155,14 +155,16 @@ class FrontendDevelopmentTest(unittest.TestCase):
     def write_slow_response(
         handler: BaseHTTPRequestHandler, mode: str, body: bytes, stop: threading.Event
     ) -> None:
-        # Each drip lasts 40 s in all, so a client whose deadline renewed on every
-        # byte would still be reading well past the test's 30 s bound.
+        # Each drip outlasts the test's 30 s bound (45 s of headers, 40 s of chunk
+        # metadata), so a client whose deadline renewed on every byte is still
+        # reading at 30 s. The headers stay under http.client's 100-header limit,
+        # which would otherwise end the read at about 25 s with no deadline at all.
         with suppress(ConnectionError):
             if mode == "slow-headers":
                 handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
-                for index in range(160):
+                for index in range(90):
                     handler.wfile.write(f"X-Synthetic-{index}: drip\r\n".encode())
-                    if stop.wait(0.25):
+                    if stop.wait(0.5):
                         return
                 handler.wfile.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
             else:

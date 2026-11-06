@@ -2656,7 +2656,7 @@ class SupervisedModelCallTest(unittest.TestCase):
                     "    out.write(chunk); out.flush()\n"
                     f"    open({str(peak_file) + '.part'!r}, 'w').write(str(n + 1))\n"
                     f"    os.replace({str(peak_file) + '.part'!r}, {str(peak_file)!r})\n"
-                    "    time.sleep(0.5)\n"
+                    "    time.sleep(0.05)\n"
                     "time.sleep(60)\n"
                 )
                 fake.chmod(0o700)
@@ -2665,9 +2665,9 @@ class SupervisedModelCallTest(unittest.TestCase):
                     config, "prompt", output_cap_bytes=64, binary_resolver=lambda _n, f=fake: str(f)
                 )
                 self.assertEqual(("", "oversized"), (output, status))
-                # The bound is checked every 10 ms and a chunk lands every 0.5 s, so ten chunks is
-                # seconds of stall: a runner that slow is not what this measures. The old 20 ms gap
-                # left the count to the scheduler.
+                # The bound is checked every 10 ms and a chunk lands every 50 ms, so ten chunks
+                # is a half-second stall. A 20 ms gap left the count to the scheduler, and a
+                # 0.5 s gap let a 1 s poll pass (measured: 0.1 s still peaked at only 7 to 8).
                 self.assertLess(time.monotonic() - started, 20)
                 self.assertLess(int(peak_file.read_text()), 10, "the flood ran far past the bound")
                 self.assertEqual([], sorted(p.name for p in config.state_dir.iterdir()))
