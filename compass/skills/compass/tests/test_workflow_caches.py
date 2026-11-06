@@ -120,6 +120,10 @@ class WriteCredentialRestoresNoCacheTest(unittest.TestCase):
                 # A read-only token, but a deploy key that writes to another repository.
                 ("release.yml", "marketplace"),
                 ("release.yml", "homebrew"),
+                # pull_request_target: a write token on a run a pull request starts.
+                ("requeue-after-ejection.yml", "decide"),
+                # No token at all, but the secret that enqueues.
+                ("requeue-after-ejection.yml", "enqueue"),
             },
             seen,
         )

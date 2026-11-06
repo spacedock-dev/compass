@@ -1,0 +1,99 @@
+name: Re-queue After Ejection
+
+# When the merge queue removes a pull request because a required check failed
+# or timed out, put it back in the queue once per head commit. A second failure
+# of the same commit stays out and gets one comment naming the failed jobs.
+# Manual removals, conflicts, merges and every other reason are left alone.
+# scripts/requeue_after_ejection.py makes the decision and documents where the
+# reason comes from; this file owns the credentials.
+#
+# Why `pull_request_target` `dequeued`: GitHub lists `dequeued` among its
+# activity types, and `_target` runs this file and the script as they are on
+# the default branch, with the base repository's token. Nothing from the pull
+# request is checked out or run. Fork pull requests are skipped (a fork cannot
+# be in this queue anyway), and so is any base other than the default branch,
+# which keeps `github.sha` the default branch's tip.
+#
+# Why a second credential: an enqueue made with GITHUB_TOKEN starts no
+# `merge_group` runs ("events triggered by the GITHUB_TOKEN will not create a
+# new workflow run"), so the entry would wait for checks until the queue times
+# it out. `enqueue` uses MERGE_QUEUE_TOKEN instead: a fine-grained token or
+# GitHub App token for this repository alone with Contents and Pull requests
+# write (enqueueing is a merge action). When it is unset, nothing is re-queued
+# and the run says so. The queue itself still merges as github-merge-queue[bot],
+# so the push to main runs its workflows as before.
+#
+# Permissions, by job:
+#   decide   contents: read       check out the default branch's script
+#            pull-requests: write read the timeline and comments, post one comment
+#            actions: read        list the failed merge_group runs and their jobs
+#   enqueue  none                 GITHUB_TOKEN is unused; only the secret enqueues
+#
+# Only the pull request's number, node id and head SHA, and the webhook's
+# reason, reach a script, and only through `env`. No cache is restored and no
+# artifact is downloaded.
+
+on:
+  pull_request_target:
+    types: [dequeued]
+
+permissions: {}
+
+concurrency:
+  group: requeue-after-ejection-${{ github.event.pull_request.number }}
+  # A run already commenting must finish, or the once-per-head marker is lost.
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    outputs:
+      action: ${{ steps.decide.outputs.action }}
+    steps:
+      - name: Check out the default branch's script
+        # actions/checkout@v7.0.1 — pinned to immutable SHA.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/requeue_after_ejection.py
+          sparse-checkout-cone-mode: false
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_REASON: ${{ github.event.reason }}
+          # Only whether it is set; the value never reaches this job's steps.
+          QUEUE_TOKEN_SET: ${{ secrets.MERGE_QUEUE_TOKEN != '' }}
+        run: python3 -I scripts/requeue_after_ejection.py
+
+  enqueue:
+    needs: decide
+    if: needs.decide.outputs.action == 'requeue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Put it back in the queue
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_QUEUE_TOKEN }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # expectedHeadOid refuses the enqueue if a commit landed after the decision.
+          ENQUEUE: >-
+            mutation($id: ID!, $oid: GitObjectID!) {
+            enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $oid})
+            { mergeQueueEntry { position } } }
+        run: gh api graphql -f query="$ENQUEUE" -f id="$PR_NODE_ID" -f oid="$HEAD_SHA"
