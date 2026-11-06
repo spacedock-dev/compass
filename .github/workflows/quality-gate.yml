@@ -222,7 +222,9 @@ jobs:
         if: matrix.suite == 'scripts'
         env:
           COVERAGE_CORE: sysmon
-        run: python3 scripts/run_tests.py --coverage --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
+        # Discovery arguments first: test_validate_plugins requires a discovering command in this file
+        # with nothing but bare flags before them.
+        run: python3 scripts/run_tests.py --coverage -s scripts/tests -t scripts/tests --slowest 10 --shard ${{ matrix.shard }}/3
 
       # The data files record absolute source paths, which match in `coverage` because every
       # ubuntu-latest checkout lands at the same workspace path.
