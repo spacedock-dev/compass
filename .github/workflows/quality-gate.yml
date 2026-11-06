@@ -773,7 +773,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The cold host-package install below may use its whole 11 minutes; the rest took about 4.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -799,22 +800,24 @@ jobs:
       # fetching nine font packages (21.9 MB) from the Ubuntu mirror at tens of KB/s; the browser itself
       # downloaded in about 6 s, and every library Chromium needs was already on the image. So the host
       # packages install apart, bounded and retried once.
-      # Neither half is cached (owner ruling, 2026-11-06). actions/cache extracts with `tar -P`, so an
-      # entry saved after third-party code ran in a main-branch job could carry `../` or absolute members
-      # that plant files later runs execute. This job holds no key, but a poisoned job still runs code.
-      # The cost is a fresh download every run: seconds on a healthy mirror, and up to both bounds below
-      # on a slow one. The job's 15 minutes hold that: its other steps took about 4 minutes a run.
+      # Neither half is cached (owner ruling, 2026-11-06), because a restored entry is trusted twice over.
+      # Its files run as they are: the browser cache held the `chrome` binary `pnpm test:stories` starts.
+      # And actions/cache extracts with `tar -P`, so an entry can also write outside the cached path. An
+      # entry saved after third-party code ran in a main-branch job could do either, so neither a member
+      # check nor dropping `restore-keys` would make one safe. This job holds no key, but it runs code.
+      # The cost is a fresh download every run. The browser comes from Playwright's CDN, about 6 s, in one
+      # attempt: a CDN stall past 3 minutes now fails the gate on any run, as it already does a release.
       - name: Install pinned Chromium
         timeout-minutes: 3
         run: pnpm exec playwright install chromium
-      # A healthy install takes 14 s. A retry resumes from the same mirror, so the cold path's budget is
-      # the sum of both bounds: 420 s, above the 300 s the old single `--with-deps` step had, and the
-      # step's limit leaves room for both.
+      # A healthy install takes 14 s. Every run is now cold, and run 42181043035 fetched the fonts at a
+      # steady 46 KB/s, so the 21.9 MB need about 475 s. A retry keeps the packages apt finished, so the
+      # budget is the sum of both bounds: 600 s, and the step's limit leaves room for both.
       - name: Install Chromium's host packages, retried once
-        timeout-minutes: 8
+        timeout-minutes: 11
         run: |
           set -uo pipefail
-          BOUND=210
+          BOUND=300
           for attempt in 1 2; do
             if timeout --kill-after=10 "$BOUND" pnpm exec playwright install-deps chromium; then
               exit 0

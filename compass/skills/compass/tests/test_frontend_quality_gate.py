@@ -607,7 +607,11 @@ class FrontendWiringControlsTest(unittest.TestCase):
         job = jobs()["storybook"]
         self.assertEqual("Storybook (ubuntu-latest)", job["name"])
         self.assertEqual("ubuntu-latest", job["runs-on"])
-        self.assertLessEqual(job["timeout-minutes"], 15)
+        # The cold host-package install may take its whole step limit, and the other steps took
+        # about 4 minutes a run, so the job holds both with a margin and no more.
+        packages = next(s for s in job["steps"] if "install-deps" in s.get("run", ""))
+        self.assertGreaterEqual(job["timeout-minutes"], packages["timeout-minutes"] + 6)
+        self.assertLessEqual(job["timeout-minutes"], 20)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
             "pnpm install --frozen-lockfile --ignore-scripts",
@@ -634,9 +638,10 @@ class StorybookChromiumInstallTest(unittest.TestCase):
     the step spent its whole 5 minutes fetching nine font packages (21.9 MB) from the Ubuntu mirror at
     tens of KB/s. Every other library Chromium needs was already on the runner image.
 
-    Nothing is restored from a cache (owner ruling, 2026-11-06). actions/cache extracts an entry with
-    `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and absolute member names, so an entry that
-    third-party code shaped in one main-branch run could plant files that every later run executes.
+    Nothing is restored from a cache (owner ruling, 2026-11-06). A restored entry's files run as they
+    are, and the browser cache held the `chrome` binary the stories start. actions/cache also extracts
+    with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and absolute member names, so an entry
+    that third-party code shaped in one main-branch run could write outside its path as well.
     """
 
     @staticmethod
@@ -664,14 +669,25 @@ class StorybookChromiumInstallTest(unittest.TestCase):
 
     def test_the_job_restores_and_saves_no_cache(self) -> None:
         steps = self.steps()
+        # An allowlist rather than a ban on `actions/cache`: a third-party cache action, or
+        # `actions/setup-python` with `cache: pip`, restores through the same `tar -P` extraction.
+        # A new action fails here until someone has read what it restores.
+        self.assertEqual(
+            {"actions/checkout", "actions/setup-node", "pnpm/setup"},
+            {step["uses"].split("@")[0] for step in steps if "uses" in step},
+        )
         for step in steps:
-            with self.subTest(step=step.get("name") or step.get("uses")):
-                # `actions/cache`, `actions/cache/restore` and `actions/cache/save` alike.
-                self.assertFalse(step.get("uses", "").startswith("actions/cache"))
+            for key, value in step.get("with", {}).items():
+                with self.subTest(step=step.get("uses"), key=key):
+                    # setup-node reads an explicit `cache: pnpm` before `package-manager-cache`
+                    # (v7.0.0 src/main.ts), so every cache input is held off, not just the one
+                    # that is set today.
+                    if "cache" in key:
+                        self.assertIs(False, value)
         node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
-        self.assertFalse(node["with"]["package-manager-cache"])
+        self.assertIs(False, node["with"]["package-manager-cache"])
         manager = next(s for s in steps if s.get("uses", "").startswith("pnpm/setup@"))
-        self.assertFalse(manager["with"]["cache"])
+        self.assertIs(False, manager["with"]["cache"])
         # With nothing to restore, apt keeps its own archive directory: nothing points it at a path
         # a cache used to fill.
         packages = self.step_running("install-deps")["run"]
@@ -729,9 +745,10 @@ class StorybookChromiumInstallTest(unittest.TestCase):
                 self.assertEqual(len(attempts), len(bounds), "every attempt is bounded")
                 # Both attempts fit inside the step's own limit, so the retry can actually run.
                 self.assertLess(2 * max(bounds), limit)
-                # A retry resumes from the same mirror, so the cold path's real budget is the sum.
-                # It must not be less than the 300 s the old single `--with-deps` step had.
-                self.assertGreaterEqual(2 * min(bounds), 300)
+                # With no cache every run is cold, and a retry resumes from the same mirror, so the
+                # sum is the budget. Run 42181043035 fetched the fonts at about 46 KB/s, so 21.9 MB
+                # needs about 475 s; 2 x 210 s timed out on paper before it ever ran.
+                self.assertGreaterEqual(2 * min(bounds), 600)
 
     def test_no_frontend_job_can_fail_open(self) -> None:
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`

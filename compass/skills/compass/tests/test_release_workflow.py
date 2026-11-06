@@ -892,26 +892,5 @@ class GateParityTest(unittest.TestCase):
         self.assertEqual({"TAG": "${{ github.ref_name }}"}, resolve["env"])
 
 
-class GateStorybookNoCacheTest(unittest.TestCase):
-    """The gate job whose Chromium steps the release mirrors restores no cache either.
-
-    actions/cache extracts with `tar -xf ARCHIVE -P -C WORKSPACE`, so an entry saved after third-party
-    code ran in a main-branch job can carry `../` or absolute members that land anywhere the runner user
-    can write, in every later run that restores it. The gate holds no key, but a poisoned job still runs
-    code, so the owner dropped both of the Storybook job's caches (2026-11-06) and kept the bounded
-    installs. CiLimitsTest pairs the install steps by command; this pins what surrounds them.
-    """
-
-    def test_the_storybook_job_uses_no_cache_action(self) -> None:
-        storybook = load(GATE)["jobs"]["storybook"]["steps"]
-        for step in storybook:
-            with self.subTest(step=step.get("name") or step.get("uses")):
-                self.assertFalse(step.get("uses", "").startswith("actions/cache"))
-        self.assertTrue(
-            any(s.get("run") == "pnpm exec playwright install chromium" for s in storybook),
-            "the browser still installs, now fresh on every run",
-        )
-
-
 if __name__ == "__main__":
     unittest.main()
