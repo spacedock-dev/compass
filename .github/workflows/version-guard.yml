@@ -35,6 +35,14 @@ name: Version Guard
 # Running on every base keeps each layer honest against its own parent: a bump
 # anywhere in a stack still fails at the layer that introduced it.
 #
+# On a merge queue entry (`merge_group`) there is no pull request: the entry's
+# head is compared against its merge base with the branch it lands on
+# (`merge_group.base_ref`), so a bump in any pull request queued ahead of it
+# fails the entry too. Not `merge_group.base_sha`: the queue builds an entry on
+# the head of the entry ahead of it, so that SHA would check this PR alone.
+# The concurrency group falls back to the entry's ref, unique per entry, so
+# queue entries never cancel each other; a pull request keeps its number.
+#
 # Deliberately exempt: files that don't exist at the
 # merge-base (initial add), and pushes to any branch (the release commit lands
 # directly on main via the Actions ruleset bypass, never through a PR).
@@ -50,12 +58,13 @@ name: Version Guard
 
 on:
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
 
 concurrency:
-  group: version-guard-${{ github.event.pull_request.number }}
+  group: version-guard-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -63,7 +72,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EVENT: ${{ github.event_name }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      GROUP_BASE_REF: ${{ github.event.merge_group.base_ref }}
     steps:
       - name: Checkout PR head
         # actions/checkout@v7.0.1 — pinned to immutable SHA.
@@ -71,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
           # The PR head itself — NOT the default merge ref (see header).
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           fetch-depth: 0
 
       - name: Check version fields against merge-base
@@ -79,8 +90,14 @@ jobs:
           set -euo pipefail
           FAIL=0
 
-          if ! MERGE_BASE=$(git merge-base "origin/$GITHUB_BASE_REF" "$HEAD_SHA"); then
-            echo "::error::cannot compute merge-base of origin/$GITHUB_BASE_REF and $HEAD_SHA — cannot compare version fields"
+          if [ "$EVENT" = "merge_group" ]; then
+            BRANCH="${GROUP_BASE_REF#refs/heads/}"
+            BASE="origin/${BRANCH:-?}"
+          else
+            BASE="origin/$GITHUB_BASE_REF"
+          fi
+          if ! MERGE_BASE=$(git merge-base "$BASE" "$HEAD_SHA"); then
+            echo "::error::cannot compute merge-base of $BASE and $HEAD_SHA — cannot compare version fields"
             exit 1
           fi
           echo "Comparing HEAD ($HEAD_SHA) against merge-base ($MERGE_BASE)"

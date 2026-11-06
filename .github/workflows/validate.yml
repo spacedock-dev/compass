@@ -12,6 +12,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A merge queue entry: this is a required check, so it must report there too.
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,7 +61,8 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.merge_group.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: python3 scripts/ci_scope.py
       # The backstop for a PR the quality gate runs no Python suite on, which is
       # a prose-only one. Then this is the only run, and deleting it would let a

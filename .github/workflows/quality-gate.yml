@@ -21,6 +21,10 @@ on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
+  # A merge queue entry. Required checks must report on it or the queue holds the entry forever.
+  # Its ref (`gh-readonly-queue/...`) is unique per entry, so the concurrency group below never
+  # lets one entry cancel another.
+  merge_group:
 
 concurrency:
   # The event is in the group so the nightly run and a push to main never cancel each other.
@@ -64,8 +68,11 @@ jobs:
         id: detect
         env:
           EVENT: ${{ github.event_name }}
+          # A pull request is diffed from its base SHA; a merge queue entry from the branch it lands
+          # on, so the entries queued ahead of it count too (scripts/ci_scope.py says why).
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.merge_group.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           set -uo pipefail
           # The script fails open on its own; this covers it not running at all.
@@ -292,20 +299,19 @@ jobs:
       # The threshold lives in pyproject.toml ([tool.coverage.report]
       # fail_under) so local runs enforce the same gate. A PR labeled
       # `coverage-exception` may merge below threshold — label use is
-      # deliberately visible in the PR timeline.
+      # deliberately visible in the PR timeline. In the merge queue the entry's
+      # own PR must carry it, as each PR merging after a labelled one had to;
+      # scripts/coverage_exception.py owns that and fails closed.
       - name: Check coverage-exception label
         id: exception
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          HAS=$(gh pr view "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --json labels --jq '[.labels[].name] | map(select(. == "coverage-exception")) | length')
-          echo "has_exception=${HAS:-0}" >> "$GITHUB_OUTPUT"
-          if [ "${HAS:-0}" != "0" ]; then
-            echo "::warning::coverage-exception label present — threshold will not block"
-          fi
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+        run: python3 scripts/coverage_exception.py
 
       - name: Coverage report and threshold
         env:
@@ -607,22 +613,18 @@ jobs:
           install: false
           node-version-file: false
           cache: false
+      # The same check as the Python job's, on the runner's own Python: stdlib only, before any install.
       - name: Check coverage-exception label
         id: exception
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         timeout-minutes: 1
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          HAS=$(gh pr view "$PR" --repo "$REPO" \
-            --json labels --jq '[.labels[].name] | map(select(. == "coverage-exception")) | length')
-          echo "has_exception=${HAS:-0}" >> "$GITHUB_OUTPUT"
-          if [ "${HAS:-0}" != "0" ]; then
-            echo "::warning::coverage-exception label present — threshold will not block"
-          fi
+        run: python3 scripts/coverage_exception.py
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"

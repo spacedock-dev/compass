@@ -315,3 +315,127 @@ class CoverageShardsTest(unittest.TestCase):
                         timeout=30,
                     )
                     self.assertEqual(blocked, result.returncode != 0, result.stdout)
+
+
+WORKFLOWS = ROOT / ".github/workflows"
+REQUIRED = ("quality-gate.yml", "validate.yml", "version-guard.yml")
+PR_BASE = "${{ github.event.pull_request.base.sha }}"
+QUEUE_BASE_REF = "${{ github.event.merge_group.base_ref }}"
+GROUP_HEAD = "${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}"
+
+# Answers `gh pr view` from $LABELLED (space-separated numbers); any other read fails.
+FAKE_GH = """#!/bin/sh
+if [ "$1" != pr ]; then exit 1; fi
+for n in $LABELLED; do
+  if [ "$3" = "$n" ]; then echo '["coverage-exception"]'; exit 0; fi
+done
+echo '[]'
+"""
+
+
+def _workflow(name: str) -> dict[Any, Any]:
+    loaded = yaml.safe_load((WORKFLOWS / name).read_text())
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def _triggers(workflow: dict[Any, Any]) -> dict[str, Any]:
+    # PyYAML reads the bare key `on` as the boolean True.
+    found = workflow.get(True) or workflow["on"]
+    assert isinstance(found, dict)
+    return found
+
+
+def _exception_step(job: str) -> dict[str, Any]:
+    steps = _workflow("quality-gate.yml")["jobs"][job]["steps"]
+    return next(step for step in steps if step.get("id") == "exception")
+
+
+class MergeQueueReadyTest(unittest.TestCase):
+    """A merge queue reports every required check and measures the group as its pull requests."""
+
+    def test_every_required_workflow_runs_on_a_merge_queue_entry(self) -> None:
+        # A required check that never reports on `merge_group` holds every queue entry forever.
+        for name in REQUIRED:
+            with self.subTest(workflow=name):
+                triggers = _triggers(_workflow(name))
+                self.assertIn("merge_group", triggers)
+                self.assertIn("pull_request", triggers)
+
+    def test_the_lane_detector_reads_the_entrys_base_branch_and_head(self) -> None:
+        detect = next(
+            step
+            for step in _workflow("quality-gate.yml")["jobs"]["changes"]["steps"]
+            if step.get("id") == "detect"
+        )
+        scope = next(
+            step
+            for step in _workflow("validate.yml")["jobs"]["validate"]["steps"]
+            if step.get("id") == "scope"
+        )
+        for step in (detect, scope):
+            with self.subTest(step=step["name"]):
+                self.assertEqual("${{ github.event_name }}", step["env"]["EVENT"])
+                self.assertEqual(PR_BASE, step["env"]["BASE_SHA"])
+                # Not merge_group.base_sha, which is the head of the entry queued ahead.
+                self.assertEqual(QUEUE_BASE_REF, step["env"]["BASE_REF"])
+                self.assertEqual(GROUP_HEAD, step["env"]["HEAD_SHA"])
+
+    def test_both_label_checks_run_in_the_queue_and_read_the_entry(self) -> None:
+        for job in ("coverage", "frontend-coverage"):
+            step = _exception_step(job)
+            with self.subTest(job=job):
+                self.assertIn("github.event_name == 'merge_group'", step["if"])
+                self.assertIn("github.event_name == 'pull_request'", step["if"])
+                self.assertEqual("python3 scripts/coverage_exception.py", step["run"].strip())
+                self.assertEqual("${{ github.token }}", step["env"]["GH_TOKEN"])
+                self.assertEqual(
+                    "${{ github.event.merge_group.head_ref }}", step["env"]["QUEUE_REF"]
+                )
+                self.assertEqual("${{ github.event.pull_request.number }}", step["env"]["PR"])
+                # The group's range is not read: only the entry's own pull request counts.
+                self.assertNotIn("BASE_SHA", step["env"])
+                self.assertNotIn("HEAD_SHA", step["env"])
+
+    @unittest.skipUnless(BASH, "the shipped step uses Bash")
+    def test_only_the_entrys_own_label_lets_a_queue_entry_through(self) -> None:
+        """The shipped step, run as Actions runs it, against a fake `gh`."""
+        queue_ref = f"refs/heads/gh-readonly-queue/main/pr-12-{'a' * 40}"
+        cases = (
+            # #9 is labelled and queued ahead of #12: #12 still needs its own label.
+            ("merge_group", "", "9", "0"),
+            ("merge_group", "", "12", "1"),
+            ("pull_request", "7", "7", "1"),
+            ("pull_request", "7", "", "0"),
+        )
+        for job in ("coverage", "frontend-coverage"):
+            for event, pr, labelled, expected in cases:
+                with (
+                    self.subTest(job=job, event=event, labelled=labelled),
+                    tempfile.TemporaryDirectory(prefix="coverage-exception-") as tmp,
+                ):
+                    bin_dir = Path(tmp) / "bin"
+                    bin_dir.mkdir()
+                    gh = bin_dir / "gh"
+                    gh.write_text(FAKE_GH)
+                    gh.chmod(0o755)
+                    output = Path(tmp) / "output"
+                    subprocess.run(
+                        [BASH or "bash", "-c", _exception_step(job)["run"]],
+                        cwd=ROOT,
+                        env={
+                            **os.environ,
+                            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                            "EVENT": event,
+                            "PR": pr,
+                            "QUEUE_REF": queue_ref,
+                            "REPO": "o/r",
+                            "LABELLED": labelled,
+                            "GITHUB_OUTPUT": str(output),
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(f"has_exception={expected}\n", output.read_text())

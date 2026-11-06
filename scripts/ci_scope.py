@@ -31,6 +31,14 @@ hook: every tracked frontend file was opened by at least one test), so a fronten
 those suites once on Linux. That is ``python_suites``, and it is the run ``validate.yml`` uses to
 decide whether its own copy of the dashboard suite is the only one.
 
+A merge queue entry (``merge_group``) is diffed against the branch it will land on
+(``merge_group.base_ref``), not against ``merge_group.base_sha``: the queue builds an entry on the
+head of the entry ahead of it, so that SHA would show this pull request alone, while the entry is
+measured on every pull request queued ahead of it too. The merge base with the base branch makes
+the diff their union, so a queue run turns on the lanes its pull requests turned on, and no more.
+Every other event (a push to main) runs every lane, so what a queue run skips is measured again
+once it lands.
+
 It FAILS OPEN. Anything it cannot compute, and any path it does not recognise, turns every lane
 on: a wrong "off" skips a job that could catch a regression, and a wrong "on" costs a runner. A
 change that touches only prose no test reads turns every lane off, and ``validate.yml``'s
@@ -102,6 +110,7 @@ GATE_WIRING = (
     ".github/workflows/frontend*.yaml",
     ".github/actions/*",
     "scripts/ci_scope.py",
+    "scripts/coverage_exception.py",
 )
 # Data the Python tests read and nothing executes: it can break an assertion, not a lint, a type,
 # the coverage figure or a platform. Checked before BACKEND, which holds code.
@@ -479,7 +488,7 @@ def scope(
 
 
 def changed_paths(base: str, head: str) -> list[str] | None:
-    """The paths a pull request changes against its merge base, or None when Git cannot say."""
+    """The paths a pull request or a queue group changes, or None when Git cannot say."""
 
     def git(*args: str) -> str | None:
         result = subprocess.run(  # noqa: S603 - fixed git argv, no shell
@@ -498,13 +507,24 @@ def changed_paths(base: str, head: str) -> list[str] | None:
     return diff.splitlines() if diff else None
 
 
-def decide(event: str, base: str, head: str, root: Path) -> Scope:
+def queue_base(base_ref: str) -> str:
+    """The remote-tracking branch a merge queue entry lands on, from ``merge_group.base_ref``."""
+    branch = base_ref.removeprefix("refs/heads/")
+    return f"origin/{branch}" if branch else ""
+
+
+def decide(event: str, base: str, head: str, root: Path, base_ref: str = "") -> Scope:
     """The scope of one workflow run. Every failure resolves to every lane on.
 
-    Anything but a pull request (a push to main, the nightly schedule, a manual dispatch) runs
-    everything, macOS included: that is the safety net for what a pull request's lanes skipped.
+    A merge queue entry is scoped as a pull request is, macOS included, from its paths. Anything
+    else (a push to main, the nightly schedule, a manual dispatch) runs everything, macOS
+    included: that is the safety net for what a pull request's or an entry's lanes skipped.
     """
-    if event != "pull_request" or not base or not head:
+    if event == "merge_group":
+        base = queue_base(base_ref)
+    elif event != "pull_request":
+        return EVERYTHING
+    if not base or not head:
         return EVERYTHING
     try:
         paths = changed_paths(base, head)
@@ -519,6 +539,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--event", default=os.environ.get("EVENT", ""))
     parser.add_argument("--base", default=os.environ.get("BASE_SHA", ""))
     parser.add_argument("--head", default=os.environ.get("HEAD_SHA", ""))
+    parser.add_argument(
+        "--base-ref",
+        default=os.environ.get("BASE_REF", ""),
+        help="a merge queue entry's base branch (merge_group.base_ref); replaces --base there",
+    )
     parser.add_argument("--root", type=Path, default=Path())
     parser.add_argument(
         "--paths", nargs="*", help="classify these paths instead of asking Git (for a dry run)"
@@ -530,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, UnicodeDecodeError, ValueError):
             result = EVERYTHING
     else:
-        result = decide(args.event, args.base, args.head, args.root)
+        result = decide(args.event, args.base, args.head, args.root, args.base_ref)
     for line in result.reasons:
         print(line)
     lines = [f"{name}={value}" for name, value in result.outputs().items()]

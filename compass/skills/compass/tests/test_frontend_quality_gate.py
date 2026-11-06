@@ -484,9 +484,11 @@ class FrontendWiringControlsTest(unittest.TestCase):
         steps = job["steps"]
         names = [step.get("name") for step in steps]
         label = next(step for step in steps if self.label_check(step))
-        self.assertEqual("github.event_name == 'pull_request'", label["if"])
+        self.assertEqual(
+            "github.event_name == 'pull_request' || github.event_name == 'merge_group'", label["if"]
+        )
         self.assertEqual("${{ github.token }}", label["env"]["GH_TOKEN"])
-        self.assertIn("coverage-exception", label["run"])
+        self.assertEqual("python3 scripts/coverage_exception.py", label["run"])
         install = names.index("Frozen install with dependency scripts denied")
         self.assertLess(steps.index(label), install, "the token is used before dependencies exist")
         gate = next(step for step in steps if "pnpm test:coverage" in step.get("run", ""))
@@ -823,7 +825,9 @@ class StorybookChromiumInstallTest(unittest.TestCase):
     def test_main_nightly_and_manual_runs_trigger_the_gate(self) -> None:
         workflow = yaml.safe_load(WORKFLOW.read_text())
         triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads a bare `on` as true
-        self.assertEqual({"push", "pull_request", "schedule", "workflow_dispatch"}, set(triggers))
+        self.assertEqual(
+            {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"}, set(triggers)
+        )
         self.assertEqual(["main"], triggers["push"]["branches"])
         self.assertEqual(1, len(triggers["schedule"]))
         # A nightly run must not cancel a push run on main, or the reverse.
