@@ -308,7 +308,8 @@ same directories through the relative symlinks under `.agents/skills/`.
   suite on the floor without coverage. The suite runs as parallel legs, one runner each: the
   dashboard suite, and the script suite in three `--shard K/3` shards, so no leg waits on the
   other suite.
-- The full unittest suite under `coverage`, against the `fail_under` threshold in `pyproject.toml`.
+- The full unittest suite under `coverage`, in the same parallel legs as the runtime floor, combined
+  once by `Tests + coverage threshold` against the `fail_under` threshold in `pyproject.toml`.
   That threshold only ratchets up. A PR that must merge below it needs the `coverage-exception`
   label, which is visible in the PR timeline.
 - `platform-tests`, the unit suite re-run natively on macOS on 3.12, with one dashboard leg and three script
