@@ -122,6 +122,14 @@ CLIENT_OUTDATED_IN_SESSION: Final = (
     "The dashboard refused this request as outdated, so nothing was sent. Ask "
     f"`{SKILL_COMMAND}` to stop the dashboard, then type `{SKILL_COMMAND}` to start this version."
 )
+# The press from inside a session that no typed command backs (`typed_press`, owner 2026-11-06).
+TYPED_REQUIRED: Final = (
+    "Compass asks for a reading from inside a session only right after you type "
+    f"`{SKILL_COMMAND} drift again` (or `drift` when none is stored), so nothing was read or spent."
+)
+TYPED_UNCONFIRMED: Final = (
+    "Compass could not confirm that you typed the command, so nothing was read or spent."
+)
 NO_TIME: Final = (
     "Compass answered too slowly to ask for a reading and hear back before this command's time "
     "runs out, so nothing was started or spent. Ask again in a moment."
@@ -757,6 +765,8 @@ def press_outcome(  # noqa: C901, PLR0911 - the page's reply order, one exit per
         (409, "revision-changed"): REVISION_CHANGED,
         (400, "page-outdated"): CLIENT_OUTDATED,
         (409, "destination-changed"): DESTINATION_CHANGED,
+        (409, "typed-command-required"): TYPED_REQUIRED,
+        (409, "typed-command-unconfirmed"): TYPED_UNCONFIRMED,
     }
     refused = refusals.get((status, str(reason)))
     if refused is not None:
@@ -1185,8 +1195,12 @@ class _Run:
         route = _route(payload, self.harness) or {}
         drafted = draft(row, payload)
         _emit(self.out, allowance_lines(route))
+        body = press_body(row, route, drafted)
+        if self.in_session:
+            # The server reads the transcript for the person's own typed command for this action.
+            body["typed_action"] = "drift again" if self.again else "drift"
         try:
-            status, answer = self.board.post("/api/reading", press_body(row, route, drafted))
+            status, answer = self.board.post("/api/reading", body)
         except Lost:
             return self.refuse(LOST)
         pressed = press_outcome(status, answer, row, now)

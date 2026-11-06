@@ -930,6 +930,50 @@ DYNAMIC_POLICY = (
 )
 
 
+class TypedCommandTest(unittest.TestCase):
+    """A press from inside a session names the action, and the dashboard checks it was typed."""
+
+    def test_a_person_s_typed_drift_press_names_its_action(self) -> None:
+        for again, action in ((False, "drift"), (True, "drift again")):
+            with self.subTest(action=action):
+                board = FakeBoard()
+                drift(board, again=again, at_shell=False, in_session=True)
+                self.assertEqual(action, board.posts[0][1]["typed_action"])
+
+    def test_a_press_from_a_shell_or_through_a_pipe_names_no_typed_action(self) -> None:
+        for at_shell in (True, False):
+            with self.subTest(at_shell=at_shell):
+                board = FakeBoard()
+                drift(board, at_shell=at_shell)
+                self.assertNotIn("typed_action", board.posts[0][1])
+
+    def test_a_person_whose_agent_asked_on_its_own_reads_that_nothing_was_spent(self) -> None:
+        board = FakeBoard(
+            reply=(409, {"ok": False, "produced": False, "reason": "typed-command-required"})
+        )
+        code, _out, err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.TYPED_REQUIRED, err.strip())
+        self.assertEqual(0, board.model_calls)
+        self.assertIn("/compass:compass drift again", terminal_drift.TYPED_REQUIRED)
+        self.assertIn("nothing was read or spent", terminal_drift.TYPED_REQUIRED)
+
+    def test_a_person_whose_typed_command_could_not_be_confirmed_reads_so(self) -> None:
+        board = FakeBoard(
+            reply=(409, {"ok": False, "produced": False, "reason": "typed-command-unconfirmed"})
+        )
+        code, _out, err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.TYPED_UNCONFIRMED, err.strip())
+
+    def test_a_person_s_plain_drift_over_a_stored_reading_never_asks_the_check(self) -> None:
+        board = stored()
+        code, out, _err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(0, code)
+        self.assertNotIn("/api/reading", [path for path, _ in board.posts])
+        self.assertIn("Level: Medium", out)
+
+
 class ManagedPolicyTest(unittest.TestCase):
     """Measured on a real Claude Code session: a route under managed policy that can change at
     launch publishes a `context-dynamic` allowance, the press starts a job, and the job ends

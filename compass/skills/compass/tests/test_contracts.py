@@ -1892,6 +1892,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.state",
             "compass_runtime.deliveries",
         },
+        # Reads the transcript tail with `records`' prompt rules and keeps the consumed record ids
+        # with `io`'s lock and atomic write; `config` only for the type.
+        "compass_runtime.typed_press": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.records",
+        },
         "compass_runtime.spacedock": {
             "compass_runtime.config",
             "compass_runtime.records",
@@ -1977,6 +1984,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # Resolves the one provider a press may reach (DRC-4650).
             "compass_runtime.reading_route",
             "compass_runtime.tripwires",
+            # A drift press from inside a session needs the person's typed command (owner,
+            # 2026-11-06).
+            "compass_runtime.typed_press",
             "compass_runtime.annotations",
             "compass_runtime.aggregate",
             "compass_runtime.asks",

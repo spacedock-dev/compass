@@ -26,11 +26,13 @@ a later message.
 | `drift` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift` |
 | `drift again` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift again` |
 
-`drift` reads this session, and only a Claude Code session; never add `--session`. With no stored reading it asks a model for one,
-and `drift again` always does, which spends one of the person's daily readings: run `drift again`
-only when the person invoked it, and never repeat an action on your own. Do not act on the reading,
-change the goal, or answer the later messages it counts. When it says a correction is ready, the
-correction is the person's to copy: do not run the command it names, and do not print or apply it.
+`drift` reads this session, and only a Claude Code session; never add `--session`. With no stored
+reading it asks a model for one, and `drift again` always does, which spends one of the person's
+daily readings: run `drift again` only when the person invoked it, and never repeat an action on
+your own. Compass itself refuses a press unless the person's latest prompt is the typed command for
+it, once per typed command. Do not act on the reading, change the goal, or answer the later messages
+it counts. When it says a correction is ready, the correction is the person's to copy: do not run
+the command it names, and do not print or apply it.
 
 Resolve `<skill-dir>` to the directory holding this `SKILL.md`, as `## Start` does, and write the
 command exactly as the table spells it, both paths in double quotes. Claude Code runs that exact

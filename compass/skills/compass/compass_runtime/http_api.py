@@ -51,6 +51,7 @@ from compass_runtime import (
     summary_jobs,
     summary_store,
     tripwires,
+    typed_press,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
@@ -2810,7 +2811,35 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if "unasked_grant" in payload:
             self._unasked_grant(harness, payload)
             return
-        self._reading_press(harness, sid, payload)
+        if "typed_action" not in payload or self._typed_press(harness, sid, payload):
+            self._reading_press(harness, sid, payload)
+
+    def _typed_press(self, harness: str, sid: str, payload: dict[str, Any]) -> bool:
+        """Whether a press the client marked as from inside a session follows the typed command.
+
+        Read from the transcript at press time, before Keep, adoption or any charge, so a refused
+        press changes nothing. Answered and False when it does not. The owner's later ruling of
+        2026-11-06 in docs/design-reading-a-session.md, and `typed_press`, say why.
+        """
+        action = payload["typed_action"]
+        if action not in typed_press.ACCEPTS:
+            self._reject(400)
+            return False
+        application = self.server.application
+        transcript = (
+            runtime_observer.resolve_transcript(application.config, application.state, harness, sid)
+            if harness == "claude"
+            else None
+        )
+        reason = typed_press.admit(application.config, transcript, action)
+        if not reason:
+            return True
+        self._send(
+            json.dumps({"ok": False, "produced": False, "reason": reason}).encode(),
+            "application/json",
+            409,
+        )
+        return False
 
     def _reading_setting(self, payload: dict[str, Any]) -> bool:
         """Answer the body variants that change a setting, not a reading. True when one did."""

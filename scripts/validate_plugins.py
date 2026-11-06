@@ -483,6 +483,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/notifications.py",
     "skills/compass/compass_runtime/spacedock.py",
     "skills/compass/compass_runtime/tripwires.py",
+    "skills/compass/compass_runtime/typed_press.py",
     "skills/compass/compass_runtime/quota.py",
     "skills/compass/compass_runtime/aggregate.py",
     "skills/compass/compass_runtime/annotations.py",

@@ -7020,6 +7020,37 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists what enters the session and what
 stops the spend.
 
+### Owner ruling 2026-11-06 (later): a press from inside a session needs the person's typed command
+
+The pre-approval above means no permission prompt stands between an agent that starts the skill on
+its own and a spent reading, and that reading then feeds the session's later readings. So a press
+from inside a session must be backed by the person's own typed command. A press is from inside a
+session when standard output is not a terminal and the session id came from the environment, which
+is exactly how the skill runs it.
+
+- **The client says so.** Such a press adds `typed_action`, `drift` or `drift again`, to its
+  `/api/reading` body. A press from a terminal, one given `--session`, and the page's own press
+  send none and are unchanged.
+- **The server reads the transcript at press time.** `typed_press` reads the session's transcript
+  tail, not the cached collection, and admits the press only when the latest main-thread prompt is
+  the typed `/compass:compass` command for that action (`records.compass_command_record` and the
+  `<command-args>` it carries). `isMeta` records, tool results and sidechain records are not
+  prompts. A model-started skill is a Skill tool call, never a prompt record, so it admits nothing.
+  Plain `drift` accepts a typed `drift` or `drift again`; `drift again` needs `drift again`. A plain
+  `drift` over a stored reading never presses, so the check never touches it.
+- **One press per typed command.** The id of the typed record that admitted a press is remembered
+  in `compass-typed-presses.json` beside the reading permission store, under a file lock, so a
+  retry, a loop or a second call cannot spend again on it. The newest 512 ids are kept.
+- **Otherwise it refuses and spends nothing.** The closed reason `typed-command-required` prints:
+  "Compass asks for a reading from inside a session only right after you type `/compass:compass
+  drift again` (or `drift` when none is stored), so nothing was read or spent." A transcript or
+  store that cannot be read refuses as `typed-command-unconfirmed` rather than guessing.
+
+This closes an agent-started reading feeding later readings. It is not a hard boundary: a process
+that can write the transcript could forge a typed record, and an agent that names the session with
+`--session` sends no `typed_action`, though that spelling is not pre-approved and asks for
+permission.
+
 ## DEC-26: four drift levels, and a live estimate after every turn
 
 Amended 2026-10-11 by [DEC-27](#dec-27-the-first-view-of-a-session-is-the-goal-analyze-drift-and-the-result): the live monitor switch moves into More (placement only), and an intent with no outcome line is stated in the how-to as a valid "Not enough recorded yet".
