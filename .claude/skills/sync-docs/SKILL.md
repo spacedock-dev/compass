@@ -453,8 +453,8 @@ minutes, a Python version. Stale counts are this repository's most common drift.
      this same tree minutes ago and the human author owns the result.
    - **Standalone/periodic run** — you are the PR author, so run the **whole** pre-PR suite from
      `AGENTS.md` before opening anything. `quality-gate` is a required check covering ruff, format,
-     `mypy --strict`, the frontend lint, strict types and tests, coverage against `fail_under`, and `platform-tests` on
-     macOS; none of that is implied by a to e. Opening a PR you have not gated pushes your own
+     `mypy --strict`, the frontend lint, strict types and tests, coverage against `fail_under`, and, for a
+     platform-sensitive change, `platform-tests` on macOS; none of that is implied by a to e. Opening a PR you have not gated pushes your own
      verification onto the reviewer.
 
    Never open or update a PR on the strength of a to e alone.

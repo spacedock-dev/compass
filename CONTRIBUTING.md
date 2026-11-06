@@ -312,9 +312,11 @@ same directories through the relative symlinks under `.agents/skills/`.
   That threshold only ratchets up. A PR that must merge below it needs the `coverage-exception`
   label, which is visible in the PR timeline.
 - `platform-tests`, the unit suite re-run natively on macOS on 3.12, with one dashboard leg and three script
-  shards, and `platform-tests-current`, the dashboard suite on macOS on Python 3.15. MacOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there.
-- `Frontend (macos-latest)`, with exact Node and pnpm pins, lint, strict types, unit tests, owned
-  development startup and cleanup tests, and a clean preview build.
+  shards, and `platform-tests-current`, the dashboard suite on macOS on Python 3.15. MacOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there. These run only for a change that can behave differently on macOS (see below).
+- `Frontend (ubuntu-latest)`, with exact Node and pnpm pins, lint, strict types, the Node build
+  tests, owned development startup and cleanup tests, and a clean preview build.
+  `Frontend (macos-latest)` runs the unit tests, the startup and cleanup tests and the preview build
+  natively, for a change that can behave differently on macOS.
 - `Frontend tests + coverage threshold`, the Vitest suite under coverage on Linux. Statements,
   branches, functions and lines must each reach the 80% set in `vitest.config.mts`, and the same
   `coverage-exception` label is the only bypass.
@@ -328,11 +330,19 @@ CI exercises macOS and Linux. Windows is no longer exercised by CI for the dashb
 frontend. The local pre-PR command list remains unchanged.
 
 Those checks run by lane, so a change runs only what it can affect. A Python change runs ruff,
-mypy, coverage and the macOS legs but not the frontend jobs. A frontend change runs the frontend
-jobs and the Python suites once on Linux (they read the frontend's files), but not ruff, mypy,
-coverage or the macOS Python legs. A change to the runtime the frontend starts adds only the
-frontend tests that read it. A document, fixture or skill Markdown a Python test reads runs the
-Python suites once and nothing else. A change to prose no test reads runs none of them.
+mypy and coverage but not the frontend jobs. A frontend change runs the frontend jobs and the
+Python suites once on Linux (they read the frontend's files), but not ruff, mypy or coverage. A
+change to the runtime the frontend starts adds only the frontend tests that read it. A document,
+fixture or skill Markdown a Python test reads runs the Python suites once. A document only Vitest
+files read, which includes every document a frontend comment cites, runs just those files on Linux
+rather than the whole frontend lane; the citation check in `frontend/test/docCitations.test.ts`
+fails when a cited heading is renamed. A change to prose no test reads runs none of them.
+
+The macOS legs run only for a change on the reviewed platform-sensitive list in
+`scripts/ci_scope.py` (the launchers, the exit watch, the daemon, file locks, notifications, the
+development server, Terminal automation and their tests), for the gate's own wiring, and for a
+path the detector does not recognise. Every push to main, a nightly scheduled run and a manual
+dispatch run every lane on both systems, so anything a pull request skipped surfaces within a day.
 `scripts/ci_scope.py` makes that call, prints why for each changed path, and turns everything on
 when it cannot tell. Run `python3 scripts/ci_scope.py --paths <file>...` to see what a change
 would run. The `quality-gate` check itself always runs and always reports, so a PR is never left
