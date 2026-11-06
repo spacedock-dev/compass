@@ -11,11 +11,13 @@ from __future__ import annotations
 import copy
 import io
 import json
+import re
+import shlex
 import time
 import unittest
 from typing import TYPE_CHECKING, Any
 
-from compass_runtime import terminal_drift
+from compass_runtime import terminal_client, terminal_drift
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -484,6 +486,18 @@ class FreeReadTest(unittest.TestCase):
         self.assertIn(f"Read before your message at {clock}. New work since this analysis.", out)
         self.assertIn("--drift again", out)
 
+    def test_a_person_told_how_to_ask_over_a_stale_reading_is_told_that_it_spends(self) -> None:
+        for at_shell in (True, False):
+            with self.subTest(at_shell=at_shell):
+                board = stored()
+                board.view = a_view(stale={"kind": "work", "before": NOW - 300})
+                _code, out, _err = drift(board, at_shell=at_shell)
+                asked = [line for line in out.splitlines() if "drift again" in line]
+                self.assertTrue(asked)
+                for line in asked:
+                    self.assertIn("spends", line)
+                    self.assertNotIn("check again", line)
+
     def test_a_person_whose_words_changed_reads_that_their_intent_changed(self) -> None:
         board = stored()
         board.view = a_view(stale={"kind": "intent", "before": None})
@@ -502,8 +516,8 @@ class FreeReadTest(unittest.TestCase):
         _code, out, _err = drift(board, at_shell=False)
         self.assertNotIn("Steer back: keep tabs.", out)
         self.assertIn(
-            "A correction is ready to copy: run `spacedock-compass --drift --session claude:abc` "
-            "in a terminal, or open the session page.",
+            "A correction is ready to copy on the session page. `spacedock-compass --drift "
+            "--session claude:abc` prints it only when you run it in your own terminal.",
             out,
         )
 
@@ -631,7 +645,7 @@ class SpendTest(unittest.TestCase):
         self.assertGreater(clock.at - NOW, 600)
         self.assertIn("Level: Medium", out)
 
-    def test_a_person_who_interrupts_cancels_the_running_reading(self) -> None:
+    def test_a_person_who_interrupts_a_reading_they_started_cancels_exactly_it(self) -> None:
         board = FakeBoard(job_polls=50)
         calls = {"n": 0}
 
@@ -657,6 +671,50 @@ class SpendTest(unittest.TestCase):
         )
         self.assertIn("Cancelled. Nothing more will be read.", out)
 
+    def test_a_person_who_interrupts_a_reading_they_found_running_leaves_it_running(
+        self,
+    ) -> None:
+        board = FakeBoard()
+        board.payload["reading_jobs"] = {
+            KEY: {"id": "job-9", "phase": "waiting", "started_at": NOW, "steps": []}
+        }
+        board._polls_left = 50
+
+        def interrupted(_seconds: float) -> None:
+            raise KeyboardInterrupt
+
+        code, out, err = drift(board, sleep=interrupted)
+        self.assertEqual(130, code)
+        self.assertEqual([], [path for path, _ in board.posts])
+        said = (out + err).strip().splitlines()
+        self.assertEqual(1, len(said))
+        self.assertIn("keeps running", said[0])
+        self.assertIn(PAGE, said[0])
+        self.assertNotIn("Cancelled", out + err)
+
+    def test_a_person_told_a_reading_is_in_flight_does_not_cancel_it_on_interrupt(self) -> None:
+        # Another tab's press landed first: the board answers with that job, which this run
+        # waits on but did not start.
+        board = FakeBoard(
+            reply=(409, {"ok": False, "produced": False, "reason": "in-flight", "job": {"id": "j"}})
+        )
+        board._polls_left = 50
+        real_post = board.post
+
+        def press_then_publish(path: str, body: Mapping[str, Any]) -> tuple[int, Any]:
+            answer = real_post(path, body)
+            if path == "/api/reading":
+                board.payload["reading_jobs"] = {KEY: {"id": "j", "phase": "waiting"}}
+            return answer
+
+        def interrupted(_seconds: float) -> None:
+            raise KeyboardInterrupt
+
+        board.post = press_then_publish  # type: ignore[method-assign]
+        code, _out, _err = drift(board, sleep=interrupted)
+        self.assertEqual(130, code)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
+
     def test_a_person_who_interrupts_before_a_job_is_known_is_told_where_to_look(self) -> None:
         board = FakeBoard()
 
@@ -678,6 +736,25 @@ class SpendTest(unittest.TestCase):
         # Asking again attaches to the job that is still running and starts no second one.
         board._polls_left = 1
         code, out, _err = drift(board, at_shell=False)
+        self.assertEqual(0, code)
+        self.assertEqual(1, board.readings_started())
+        self.assertIn("Level: Medium", out)
+
+    def test_a_person_in_a_session_who_follows_the_still_reading_line_spends_nothing_more(
+        self,
+    ) -> None:
+        board = FakeBoard(job_polls=500)
+        _code, out, _err = drift(board, at_shell=False)
+        line = next(line for line in out.splitlines() if line.startswith("Still reading"))
+        self.assertNotIn("nothing more", line)
+        command = re.search(r"`spacedock-compass ([^`]*)`", line)
+        self.assertIsNotNone(command, line)
+        assert command is not None
+        claimed, again, session = terminal_client.parse_drift_args(shlex.split(command.group(1)))
+        self.assertEqual((True, KEY), (claimed, session))
+        # The reading ends between the two runs, and the person follows the line as printed.
+        board._finish()
+        code, out, _err = drift(board, again=again, at_shell=False)
         self.assertEqual(0, code)
         self.assertEqual(1, board.readings_started())
         self.assertIn("Level: Medium", out)

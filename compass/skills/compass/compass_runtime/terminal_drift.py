@@ -44,8 +44,9 @@ Row = dict[str, Any]
 POLL_SEC: Final = 5.0
 # Inside a session the command runs under the harness's tool timeout, two minutes by default in
 # Claude Code's documentation (not measured here). Stopping short of it leaves the job running and
-# says so; asking again attaches to it and spends nothing, which is how a long reading still
-# reaches the reader there. A shell has no such limit and waits until the job ends or Ctrl+C.
+# says so; a plain `--drift` attaches to it or prints what it stored and spends nothing, which is
+# how a long reading still reaches the reader there. "Inside a session" is every run not `at_shell`,
+# so a `--session` run read through a pipe is capped too. A terminal waits for the job or Ctrl+C.
 IN_SESSION_WAIT_SEC: Final = 100.0
 EXIT_INTERRUPTED: Final = 130
 
@@ -124,12 +125,21 @@ LOST: Final = (
     "Could not confirm the reading. The request has not been retried. "
     "Run --drift to check for a result before asking again."
 )
+# Said where an agent may read the output, so it names no command for the agent to run: the
+# command prints the correction only to a terminal, and the page is where the reader copies it.
 CORRECTION_READY: Final = (
-    "A correction is ready to copy: run `{command}` in a terminal, or open the session page."
+    "A correction is ready to copy on the session page. `{command}` prints it only when you run "
+    "it in your own terminal."
 )
+# Plain `--drift`, spelled out: `--drift again` presses, and would spend a second reading once this
+# one has ended. Plain `--drift` presses only where nothing was stored, which the line says.
 STILL_READING: Final = (
-    "Still reading. It keeps running; ask for drift again to see the result, which spends "
-    "nothing more."
+    "Still reading. It keeps running; run `{command}` to see the result, which spends nothing "
+    "while this reading runs or once it has stored one."
+)
+STOPPED_WAITING: Final = (
+    "Stopped waiting. This run did not start the reading, so it was not cancelled and keeps "
+    "running; the session page shows it:"
 )
 CONTEXT_UNREAD: Final = (
     "Compass answered, but this session's reading could not be read, so nothing was read or "
@@ -1071,9 +1081,13 @@ class _Run:
         return payload if _rec(payload) and isinstance(payload.get("sessions"), list) else None
 
     def again_hint(self) -> str:
+        """How to ask over a stale reading. `again` presses, so the hint says it spends."""
         if self.at_shell:
-            return f"Run `spacedock-compass --drift again --session {self.key}` to check again."
-        return "Ask for `drift again` to check again."
+            return (
+                f"Run `spacedock-compass --drift again --session {self.key}` for a new reading; "
+                "that spends one."
+            )
+        return "Ask for `drift again` for a new reading; that spends one."
 
     def main(self) -> int:  # noqa: PLR0911 - each exit is one refusal or one answer
         payload = self.data()
@@ -1094,7 +1108,7 @@ class _Run:
             return self.refuse(ANNOTATIONS_OFF)
         job = _job_of(payload, self.key)
         if job is not None:
-            return self.wait(job, row, adopted=None)
+            return self.wait(job, row, adopted=None, pressed=False)
         try:
             context = self.board.context(_context_project(row), self.key)
         except Lost:
@@ -1129,10 +1143,27 @@ class _Run:
             _emit(self.out, [notice_line(pressed.notice)])
         assert pressed.job is not None  # noqa: S101 — `press_outcome` gives one or the other
         started = status == 202 and drafted is not None
-        return self.wait(pressed.job, row, adopted=drafted.source if started and drafted else None)
+        return self.wait(
+            pressed.job,
+            row,
+            adopted=drafted.source if started and drafted else None,
+            # A 409 carrying a job is one another tab or process started: waited on, not owned.
+            pressed=200 <= status < 300,
+        )
 
-    def wait(self, job: Mapping[str, Any], row: Mapping[str, Any], *, adopted: str | None) -> int:
-        """Wait for `job` to leave the board, then show what it stored, or why it stored none."""
+    def wait(
+        self,
+        job: Mapping[str, Any],
+        row: Mapping[str, Any],
+        *,
+        adopted: str | None,
+        pressed: bool,
+    ) -> int:
+        """Wait for `job` to leave the board, then show what it stored, or why it stored none.
+
+        Ctrl+C cancels the job only when this run `pressed` it. One found running, perhaps pressed
+        on the page, is the reader's elsewhere, so an interrupt stops the waiting and leaves it.
+        """
         job_id = str(job.get("id"))
         began = self.clock()
         seen = _assessment(row)
@@ -1151,10 +1182,14 @@ class _Run:
                     _emit(self.err, [f"Analyzing drift: {step}"])
                     said = step
                 if not self.at_shell and self.clock() - began >= IN_SESSION_WAIT_SEC:
-                    _emit(self.out, [STILL_READING])
+                    command = f"spacedock-compass --drift --session {self.key}"
+                    _emit(self.out, [STILL_READING.format(command=command)])
                     return 0
                 self.sleep(POLL_SEC)
         except KeyboardInterrupt:
+            if not pressed:
+                _emit(self.out, [f"{STOPPED_WAITING} {self.page}".rstrip()])
+                return EXIT_INTERRUPTED
             return self.cancel(job_id)
         return self.ended(
             payload, _row_of(payload, self.harness, self.sid) or row, seen, job, adopted=adopted
@@ -1289,8 +1324,9 @@ def run(  # noqa: PLR0913 — the seams `terminal_client` fills and the tests re
 ) -> int:
     """`--drift`: print the stored reading for free, or spend one and wait for it.
 
-    `at_shell` is whether the session was named with `--session`, which is a person at a shell
-    rather than an agent inside the session, and decides only whether the correction is printed.
+    `at_shell` is whether a person reads this at a terminal rather than an agent inside the session:
+    `terminal_client` sets it only for `--session` with standard output a terminal. It decides
+    whether the correction is printed and whether the wait stops at `IN_SESSION_WAIT_SEC`.
     """
     drift = _Run(
         harness,
@@ -1307,5 +1343,5 @@ def run(  # noqa: PLR0913 — the seams `terminal_client` fills and the tests re
     try:
         return drift.main()
     except KeyboardInterrupt:
-        # Only outside the wait, which cancels its own job: here no job id is known yet.
+        # Only outside the wait, which answers its own interrupt: here no job id is known yet.
         return drift.interrupted()

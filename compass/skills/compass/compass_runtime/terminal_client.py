@@ -7,7 +7,8 @@ and what was rejected, is in
 
 It holds the request path, discovery, the session rule, the version guard and the wording, for
 the operations that call them. `--drift` is the one that spends: its rules live in the leaf
-`terminal_drift`, which this file hands the four exchanges it needs.
+`terminal_drift`, which this file hands the four exchanges it needs and imports only on that path,
+so no other operation loads it.
 
 `--footer` is the one operation that never reaches the dashboard. It runs on every status line
 refresh, so it reads what the dashboard already wrote and the JSON the status line
@@ -27,7 +28,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
-from compass_runtime import terminal_drift, terminal_sessions
+from compass_runtime import terminal_sessions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -444,8 +445,9 @@ def post(
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
 ) -> Reply:
-    """One JSON POST. `http.client` sends no `Sec-Fetch-*` header, which the press route reads
-    as a local process: the accepted exposure SECURITY.md names for a spend from this machine."""
+    """One JSON POST. `http.client` sends no `Origin` or `Sec-Fetch-*` header, so the dashboard
+    sees a local process, which SECURITY.md says its Host, Origin and fetch-metadata checks do not
+    stop: loopback is not a per-user boundary."""
     sent = {"Content-Type": "application/json", **(headers or {})}
     return request("POST", port, path, json.dumps(payload).encode(), headers=sent, timeout=timeout)
 
@@ -869,6 +871,13 @@ def run_sessions(
     return 0
 
 
+def _is_terminal(stream: object) -> bool:
+    try:
+        return bool(stream.isatty())  # type: ignore[attr-defined]
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
 class LoopbackBoard:
     """The dashboard as `terminal_drift` reaches it: four exchanges, each over `request`.
 
@@ -879,10 +888,12 @@ class LoopbackBoard:
         self.port = port
 
     def _read(self, path: str) -> Any:
+        from compass_runtime.terminal_drift import Lost  # noqa: PLC0415 — only a drift reaches this
+
         try:
             reply = get(self.port, path, timeout=DRIFT_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
         except DashboardUnreachable as error:
-            raise terminal_drift.Lost(path) from error
+            raise Lost(path) from error
         return reply.data if reply.status == 200 else None
 
     def data(self) -> Any:
@@ -895,10 +906,12 @@ class LoopbackBoard:
         return self._read(f"/api/project-context?{query}")
 
     def post(self, path: str, body: Mapping[str, Any]) -> tuple[int, Any]:
+        from compass_runtime.terminal_drift import Lost  # noqa: PLC0415 — only a drift reaches this
+
         try:
             reply = post(self.port, path, body, timeout=DRIFT_REQUEST_TIMEOUT_SEC)
         except DashboardUnreachable as error:
-            raise terminal_drift.Lost(path) from error
+            raise Lost(path) from error
         return reply.status, reply.data
 
 
@@ -915,7 +928,14 @@ def run_drift(
     a status line here. Both refusals come before any dashboard is reached. A Claude Code session
     may spend, so a missing dashboard is started and another release refused; any other harness is
     only sent to its page, which needs a running board and starts none.
+
+    A person at a shell is `--session` with standard output a terminal. An agent's shell tool, and
+    Claude Code's `!` mode, read the output through a pipe, so a named session alone would print
+    the correction into the context of the agent it is addressed to
+    ([DEC-25](docs/design-reading-a-session.md#dec-25-a-correction-stays-yours-to-copy)).
     """
+    from compass_runtime import terminal_drift  # noqa: PLC0415 — only a drift loads the drift rules
+
     env = os.environ if environ is None else environ
     named = resolve_session(session, env, None, payload={})
     if isinstance(named, Unresolved):
@@ -930,7 +950,7 @@ def run_drift(
         named.harness,
         named.sid,
         again=again,
-        at_shell=named.source == "flag",
+        at_shell=named.source == "flag" and _is_terminal(sys.stdout),
         board=LoopbackBoard(found.port),
         port=found.port,
         out=sys.stdout,

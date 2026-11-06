@@ -1038,8 +1038,15 @@ class DriftCommandTest(HomeCase):
         session: str | None = None,
         port: int | None = None,
         environ: dict[str, str] | None = None,
+        tty: bool = False,
     ) -> tuple[int, str, str]:
-        out, err = io.StringIO(), io.StringIO()
+        """`tty` is whether standard output is a terminal; an agent's tool reads it from a pipe."""
+
+        class Stdout(io.StringIO):
+            def isatty(self) -> bool:
+                return tty
+
+        out, err = Stdout(), io.StringIO()
         env = {"COMPASS_HOME": self.home, **(environ or {})}
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = terminal_client.run_drift(again=again, session=session, port=port, environ=env)
@@ -1066,25 +1073,56 @@ class DriftCommandTest(HomeCase):
     def test_a_person_at_a_shell_reads_the_stored_reading_and_its_correction(self) -> None:
         version = terminal_client.release_version()
         with FakeDashboard(version=version, answers=self.answers()) as fake:
-            code, out, err = self.run_drift(session="claude:abc", port=fake.port)
+            code, out, err = self.run_drift(session="claude:abc", port=fake.port, tty=True)
 
         self.assertEqual((0, ""), (code, err))
         self.assertIn("Level: Medium", out)
         self.assertIn("Correction to copy:\nKeep accepting tabs.", out)
         self.assertNotIn(("POST", "/api/reading"), fake.requests)
 
+    def test_a_person_whose_agent_names_the_session_through_a_pipe_keeps_the_correction_out(
+        self,
+    ) -> None:
+        # An agent's shell tool, and Claude Code's `!` mode, read the output from a pipe, so the
+        # correction would land in the context of the agent it is addressed to.
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            code, out, _err = self.run_drift(session="claude:abc", port=fake.port, tty=False)
+
+        self.assertEqual(0, code)
+        self.assertIn("Level: Medium", out)
+        self.assertNotIn("Keep accepting tabs.", out)
+        self.assertNotIn("Correction to copy:", out)
+        self.assertIn("A correction is ready to copy on the session page", out)
+
     def test_a_person_inside_the_session_is_named_by_the_environment_and_gets_no_correction(
         self,
     ) -> None:
         version = terminal_client.release_version()
-        with FakeDashboard(version=version, answers=self.answers()) as fake:
-            code, out, _err = self.run_drift(
-                port=fake.port, environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}
-            )
+        for tty in (True, False):
+            with (
+                self.subTest(tty=tty),
+                FakeDashboard(version=version, answers=self.answers()) as fake,
+            ):
+                code, out, _err = self.run_drift(
+                    port=fake.port, environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=tty
+                )
 
-        self.assertEqual(0, code)
-        self.assertNotIn("Keep accepting tabs.", out)
-        self.assertIn("A correction is ready to copy", out)
+                self.assertEqual(0, code)
+                self.assertNotIn("Keep accepting tabs.", out)
+                self.assertIn("A correction is ready to copy on the session page", out)
+
+    def test_a_person_s_agent_is_never_told_to_run_a_command_that_prints_the_correction(
+        self,
+    ) -> None:
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            _code, out, _err = self.run_drift(session="claude:abc", port=fake.port)
+
+        ready = next(line for line in out.splitlines() if "correction is ready" in line)
+        self.assertNotRegex(ready, r"^A correction is ready to copy: run ")
+        self.assertIn("only", ready)
+        self.assertIn("your own terminal", ready)
 
     def test_a_refused_press_is_read_from_the_refusal_s_own_body(self) -> None:
         version = terminal_client.release_version()
