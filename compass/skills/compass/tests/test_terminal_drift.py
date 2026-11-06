@@ -319,6 +319,108 @@ class AllowanceTest(unittest.TestCase):
         )
 
 
+class NativeSessionIdTest(unittest.TestCase):
+    """Claude Code gives the command its full session UUID; the board keys the row by its first
+    eight characters and carries the full id as `resume_id` (measured on a real board,
+    2026-11-06), so the skill's own run must find its row by the same rule `--sessions` uses."""
+
+    FULL = "734243e7-d73d-47ec-b97b-0e3bb1a02f09"
+
+    def board(self) -> FakeBoard:
+        row = a_row(sid="734243e7", resume_id=self.FULL, annotation_assessment=dict(ASSESSMENT))
+        return FakeBoard(a_payload(row), view=a_view(sid="734243e7"))
+
+    def run_with(self, board: FakeBoard, sid: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        ticking = Clock()
+        code = terminal_drift.run(
+            "claude",
+            sid,
+            again=False,
+            at_shell=False,
+            in_session=True,
+            board=board,
+            port=PORT,
+            out=out,
+            err=err,
+            clock=ticking,
+            sleep=ticking.sleep,
+            began=None,
+            note="",
+        )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_person_in_a_session_reads_the_reading_the_board_keeps_under_the_short_id(
+        self,
+    ) -> None:
+        code, out, err = self.run_with(self.board(), self.FULL)
+
+        self.assertEqual(0, code, err)
+        self.assertIn(terminal_drift.PROVENANCE, out)
+        self.assertNotIn("on the board, so nothing was read", err)
+        self.assertIn("claude:734243e7", out)
+
+    def test_a_person_naming_the_short_id_still_reads_the_same_session(self) -> None:
+        code, out, err = self.run_with(self.board(), "734243e7")
+
+        self.assertEqual(0, code, err)
+        self.assertIn(terminal_drift.PROVENANCE, out)
+
+    def test_another_session_sharing_the_prefix_is_not_read_as_this_one(self) -> None:
+        other = "734243e7-0000-4000-8000-000000000000"
+        code, _, err = self.run_with(self.board(), other)
+
+        self.assertEqual(1, code)
+        self.assertIn("on the board, so nothing was read", err)
+
+
+class OutcomeLineSourceTest(unittest.TestCase):
+    def test_a_person_reads_the_entry_and_reason_an_outcome_line_rests_on(self) -> None:
+        """The page draws an outcome line with the entry it cites and the model's reason (measured on
+        a real reading, 2026-11-06: "Not reached at this stop", entry [2], and the reason)."""
+        line = {
+            "key": "goal",
+            "state": "not-reached",
+            "result": "not reached at this stop",
+            "why": "",
+            "numbers": ["2"],
+            "clause": "Create hello.py",
+            "detail": "hello.py was written, but the python3 run never happened.",
+        }
+        board = FakeBoard(
+            a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=a_view(lines=[line])
+        )
+
+        code, out, err = drift(board)
+
+        self.assertEqual(0, code, err)
+        outcome = next(text for text in out.splitlines() if "Create hello.py" in text)
+        self.assertIn("#2", outcome)
+        self.assertIn("hello.py was written, but the python3 run never happened.", outcome)
+
+    def test_a_person_reads_no_model_reason_under_a_consistent_line_as_on_the_page(self) -> None:
+        line = {
+            "key": "goal",
+            "state": "consistent",
+            "result": "consistent",
+            "why": "",
+            "numbers": ["7"],
+            "clause": "Ship the parser",
+            "detail": "A model-written reason the page does not draw for this state.",
+        }
+        board = FakeBoard(
+            a_payload(a_row(annotation_assessment=dict(ASSESSMENT))),
+            view=a_view(lines=[line], departures=[]),
+        )
+
+        code, out, err = drift(board)
+
+        self.assertEqual(0, code, err)
+        outcome = next(text for text in out.splitlines() if "Ship the parser" in text)
+        self.assertIn("#7", outcome)
+        self.assertNotIn("model-written reason", out)
+
+
 class FreeReadTest(unittest.TestCase):
     def test_a_person_with_a_current_reading_reads_it_and_spends_nothing(self) -> None:
         board = stored()

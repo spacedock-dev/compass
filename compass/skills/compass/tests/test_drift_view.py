@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import unittest
 from typing import Any
 
-from compass_runtime import drift_view
+from compass_runtime import drift_view, record_pages
 
 from .support import SERVER_PATH
 
@@ -26,7 +27,13 @@ BY_NAME: dict[str, dict[str, Any]] = {case["name"]: case for case in NAMED["case
 
 
 def view(case: dict[str, Any]) -> dict[str, Any]:
-    return drift_view.derive(case["session"], case["payload"], case["context"])
+    record = case.get("record")
+    return drift_view.derive(
+        case["session"],
+        case["payload"],
+        case["context"],
+        record["entries"] if record is not None else None,
+    )
 
 
 def lines(name: str) -> dict[str, dict[str, Any]]:
@@ -56,6 +63,39 @@ class GeneratedCasesTest(unittest.TestCase):
         wrong = [case["name"] for case in GENERATED["cases"] if case["expected"] != view(case)]
 
         self.assertEqual([], wrong)
+
+
+class RecordPageTest(unittest.TestCase):
+    """A line can rest on an agent message the context's window left out; the page finds it in the
+    record's newest page, and the port reads the same page."""
+
+    def test_a_not_reached_line_keeps_the_agent_message_it_rests_on(self) -> None:
+        goal = lines("a-line-on-an-agent-message-only-the-record-holds-is-not-reached-mid-flight")[
+            "goal"
+        ]
+
+        self.assertEqual(
+            ("not-reached", "not reached at this stop", "", ["3"], ["a1"]),
+            (goal["state"], goal["result"], goal["why"], goal["numbers"], goal["cites"]),
+        )
+
+    def test_the_same_reading_without_the_record_cites_nothing_the_page_holds(self) -> None:
+        goal = lines("the-same-line-without-the-record-cites-nothing-the-page-holds")["goal"]
+
+        self.assertEqual(("cant-tell", "uncited", []), (goal["state"], goal["why"], goal["cites"]))
+
+    def test_a_departure_resting_on_a_record_message_stands_once_the_session_is_finished(
+        self,
+    ) -> None:
+        name = "a-departure-on-an-agent-message-only-the-record-holds-stands-on-a-finished-session"
+
+        self.assertEqual(["goal"], view(BY_NAME[name])["departures"])
+
+    def test_the_record_s_copy_of_a_fact_wins_but_never_drops_the_contexts_number(self) -> None:
+        kept = lines("a-record-entry-with-no-number-keeps-the-contexts-fixed-one")["goal"]
+        won = lines("a-record-entry-wins-over-the-context-s-copy-of-the-same-fact")["goal"]
+
+        self.assertEqual((["7"], ["9"]), (kept["numbers"], won["numbers"]))
 
 
 class LaterDirectionTwinsTest(unittest.TestCase):
@@ -173,3 +213,13 @@ class StaleReadingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecordPageSizeTest(unittest.TestCase):
+    def test_the_drift_view_merges_the_same_first_page_the_page_loads(self) -> None:
+        source = (
+            SERVER_PATH.parents[3] / "frontend" / "src" / "transport" / "record.ts"
+        ).read_text(encoding="utf-8")
+        match = re.search(r"RECORD_PAGE_SIZE = (\d+);", source)
+        assert match is not None
+        self.assertEqual(int(match.group(1)), record_pages.PAGE_SIZE)

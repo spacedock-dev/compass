@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 KINDS = ("user_message", "agent_message")
 HARNESSES = frozenset({"claude", "codex"})
 CURSOR_MAX_CHARS = 1024
+# The page loads this many entries on opening a session (`RECORD_PAGE_SIZE` in
+# frontend/src/transport/record.ts); the drift view merges the same first page, so the two are one.
+PAGE_SIZE = 50
 _CURSOR = re.compile(r"[A-Za-z0-9_-]+")
 
 
@@ -35,8 +38,8 @@ def page_limit(raw: str) -> int:
     if not digits or not digits.isascii() or not digits.isdecimal():
         raise ValueError("limit must be an integer")
     magnitude = digits.lstrip("0") or "0"
-    count = 50 if len(magnitude) > 2 else int(magnitude)
-    return max(1, min(-count if negative else count, 50))
+    count = PAGE_SIZE if len(magnitude) > 2 else int(magnitude)
+    return max(1, min(-count if negative else count, PAGE_SIZE))
 
 
 def empty(harness: str, sid: str, state: str) -> dict[str, Any]:

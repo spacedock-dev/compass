@@ -5,6 +5,8 @@ import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { createHeld } from '../intent/held';
 import type { Row } from '../observed';
+import { EMPTY_RECORD, type RecordEntry } from '../store/board';
+import type { SemanticFact } from '../api/types';
 import { createAnnouncer } from '../shell/announcer';
 import { createFakeClock } from '../transport/testing';
 import { analysisRow, workObject } from './level';
@@ -79,6 +81,17 @@ function analysisReasons(served: Row | null, blockers: readonly string[]): strin
   return [...new Set(tokens)];
 }
 
+/* The newest page of the session's record as the page holds it once the first request lands. */
+function loadedRecord(entries: readonly unknown[]): RecordEntry {
+  return {
+    ...EMPTY_RECORD,
+    entries: entries as readonly SemanticFact[],
+    reachedStart: true,
+    status: 'loaded',
+    pages: 1,
+  };
+}
+
 /* What the Drift card would hold for the case's session on a fresh load, projected onto closed tokens, numbers
    and the reader's own words. Nothing here is a sentence of the page's. */
 export function pageView(item: DriftCase): unknown {
@@ -99,6 +112,7 @@ export function pageView(item: DriftCase): unknown {
     projectKey: 'p',
     contexts,
     held: createHeld({ clock: createFakeClock(), announcer: createAnnouncer() }),
+    ...(item.record ? { record: loadedRecord(item.record.entries) } : {}),
     liveOn,
     monitor: liveOn && lease ? monitorLevel(lease) : null,
   });

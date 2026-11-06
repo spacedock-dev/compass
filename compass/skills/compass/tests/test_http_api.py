@@ -6537,7 +6537,9 @@ class ConsentNoticeHandlerTest(unittest.TestCase):
             port: int, payload: Any, *, settle: bool = True, **kwargs: Any
         ) -> tuple[int, bytes]:
             handler: Any = object.__new__(http_api._RequestHandler)
-            handler.server = SimpleNamespace(application=application, server_port=port)
+            handler.server = SimpleNamespace(
+                application=application, server_port=port, record_cursor_key=b"k"
+            )
             handler.client_address = ("127.0.0.1", port)
             handler.headers = email.message.Message()
             body = json.dumps(payload).encode()
@@ -6731,7 +6733,9 @@ class SummaryStoreHTTPTest(unittest.TestCase):
         self, path: str = "/api/summary/delete", body: bytes = b'{"harness":"claude","sid":"root"}'
     ) -> Any:
         handler: Any = object.__new__(http_api._RequestHandler)
-        handler.server = SimpleNamespace(application=self.application, server_port=12345)
+        handler.server = SimpleNamespace(
+            application=self.application, server_port=12345, record_cursor_key=b"k"
+        )
         handler.path = path
         handler.headers = {"Content-Length": str(len(body)), "Host": "127.0.0.1:12345"}
         handler.client_address = ("127.0.0.1", 10000)
