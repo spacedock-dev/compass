@@ -516,13 +516,16 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
         process.kill()
         process.wait()
         return
+    # macOS answers EPERM, not ESRCH, when the group's only member is the exited leader not yet
+    # reaped (measured 2026-11-06); either way nothing in the group is left to stop.
+    gone = (ProcessLookupError, PermissionError)
     try:
-        with suppress(ProcessLookupError):
+        with suppress(*gone):
             os.killpg(process.pid, signal.SIGTERM)
         with suppress(subprocess.TimeoutExpired):
             process.wait(timeout=STOP_GRACE)
     finally:
-        with suppress(ProcessLookupError):
+        with suppress(*gone):
             os.killpg(process.pid, signal.SIGKILL)
         process.wait()
 
