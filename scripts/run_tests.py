@@ -36,9 +36,9 @@ fixtures and verdict, and spreads the work:
 - A test that fails or errors runs once more, on its own, after everything
   else. Passing then does not fail the run: it is listed under "Passed only on
   retry" with its first failure, and printed as a ``FLAKY-RETRY-PASSED: <id>``
-  line, which ``scripts/flaky_tally.py`` reads. Failing twice fails the run as
-  before. ``--no-retry`` turns this off. A class fixture or import failure has
-  no test id and is never retried.
+  line, which ``scripts/flaky_tally.py`` reads. Failing twice, or skipping
+  on the retry, fails the run as before. ``--no-retry`` turns this off. A
+  class fixture or import failure has no test id and is never retried.
 
 Every class is its own top-level run, so ``setUpModule`` runs once per class
 rather than once per module. One module defines it, to start and stop a log
@@ -505,14 +505,26 @@ def retry_failures(
     run_phase(context, {**config, "by_id": True}, ids, 1, expected, attempt)
     for test_id in ids:
         summary = attempt["by_unit"].get(test_id)
+        # A skip on retry is not a pass: a test that skips when its port or socket is unavailable
+        # would otherwise turn its own first failure green.
         passed = bool(
             summary
             and summary["run"]
-            and not (summary["failures"] or summary["errors"] or summary["unexpected"])
+            and not (
+                summary["failures"]
+                or summary["errors"]
+                or summary["unexpected"]
+                or summary["skipped"]
+            )
         )
         if not passed:
             again = (summary["failures"] + summary["errors"]) if summary else []
-            line = first_line_of_failure(again[0][1]) if again else "the retry did not report"
+            if again:
+                line = first_line_of_failure(again[0][1])
+            elif summary and summary["skipped"]:
+                line = f"skipped on retry: {summary['skipped'][0][1]}"
+            else:
+                line = "the retry did not report"
             total["failed_again"].append((test_id, line))
             continue
         first = next(text for _name, text, owner in problems if owner == test_id)

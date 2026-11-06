@@ -345,12 +345,17 @@ from pathlib import Path
 class Flaky(unittest.TestCase):
 {methods}
 """
+# The attempt after the first logs its pid when RUNNER_RETRY_PID_LOG is set, then runs `then`.
 FLAKY_METHOD = """
     def test_{name}(self):
         marker = Path(os.environ["RUNNER_FLAKY_DIR"]) / "{name}"
         if not marker.exists():
             marker.write_text("failed once", encoding="utf-8")
-            self.assertGreater(0, 0)
+            {first}
+        if os.environ.get("RUNNER_RETRY_PID_LOG"):
+            with open(os.environ["RUNNER_RETRY_PID_LOG"], "a") as log:
+                log.write(str(os.getpid()) + "\\n")
+        {then}
 """
 PASSING_ALONE = """
 import unittest
@@ -370,8 +375,10 @@ class Broken(unittest.TestCase):
 """
 
 
-def flaky_suite(*names: str, header: str = "") -> str:
-    methods = "".join(FLAKY_METHOD.format(name=name) for name in names)
+def flaky_suite(
+    *names: str, header: str = "", first: str = "self.assertGreater(0, 0)", then: str = "pass"
+) -> str:
+    methods = "".join(FLAKY_METHOD.format(name=name, first=first, then=then) for name in names)
     return FLAKY_TEMPLATE.format(header=header, methods=methods)
 
 
@@ -405,6 +412,34 @@ class RetryTest(unittest.TestCase):
         self.assertNotIn("FAIL: test_once", out)
         self.assertTrue(out.rstrip().endswith("OK (passed on retry=1)"), out)
 
+    def test_a_test_that_errors_once_and_passes_on_its_retry_passes_the_run(self) -> None:
+        write_suite(
+            self.root,
+            {"test_flaky.py": flaky_suite("once", first='raise FileNotFoundError("gone")')},
+        )
+
+        code, out = run(self.root)
+
+        self.assertEqual(0, code, out)
+        self.assertIn("FileNotFoundError: gone", out)
+        self.assertEqual(["FLAKY-RETRY-PASSED: test_flaky.Flaky.test_once"], flaky_lines(out))
+        self.assertNotIn("ERROR: test_once", out)
+        self.assertTrue(out.rstrip().endswith("OK (passed on retry=1)"), out)
+
+    def test_a_test_that_skips_itself_on_its_retry_fails_the_run(self) -> None:
+        write_suite(
+            self.root,
+            {"test_flaky.py": flaky_suite("once", then='self.skipTest("port busy")')},
+        )
+
+        code, out = run(self.root)
+
+        self.assertEqual(1, code, out)
+        self.assertIn("Failed again on retry", out)
+        self.assertIn("skipped on retry: port busy", out)
+        self.assertIn("FAIL: test_once", out)
+        self.assertEqual([], flaky_lines(out))
+
     def test_a_test_that_fails_twice_fails_the_run_as_before(self) -> None:
         write_suite(self.root, {"test_broken.py": ALWAYS_FAILS})
 
@@ -429,9 +464,16 @@ class RetryTest(unittest.TestCase):
         limit = run_tests.RETRY_LIMIT
         names = [f"n{index}" for index in range(limit + 1)]
         write_suite(self.root, {"test_flaky.py": flaky_suite(*names[:limit])})
-        code, out = run(self.root)
+        retries = Path(self.tmp.name) / "retry-pids.log"
+        with mock_env({"RUNNER_RETRY_PID_LOG": str(retries)}):
+            code, out = run(self.root)
         self.assertEqual(0, code, out)
         self.assertEqual(limit, len(flaky_lines(out)))
+        # Retries run one at a time, in one process, so a retried test never shares the machine
+        # with another retry.
+        pids = retries.read_text(encoding="utf-8").split()
+        self.assertEqual(limit, len(pids), pids)
+        self.assertEqual(1, len(set(pids)), pids)
 
         for marker in self.markers.iterdir():
             marker.unlink()

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -245,6 +246,39 @@ class TallyTest(unittest.TestCase):
         for call in gh.calls:
             self.assertIn(call[:2], (["run", "list"], ["run", "view"]))
             self.assertEqual("spacedock-dev/compass", call[call.index("--repo") + 1])
+
+    def test_a_retry_in_an_earlier_failed_attempt_is_kept_beside_its_failures(self) -> None:
+        # Attempt 1 failed on one test and retried another to a pass; attempt 2 passed clean.
+        # Only attempt 1's log names the retried test, and only through --log-failed.
+        run = {
+            "attempt": 2,
+            "conclusion": "success",
+            "createdAt": "2026-11-06T10:00:00Z",
+            "databaseId": 42300000000,
+            "event": "pull_request",
+            "headBranch": "dev/x",
+            "headSha": "a" * 40,
+            "status": "completed",
+            "workflowName": "Quality Gate",
+        }
+        job = "Tests (ubuntu-latest, dashboard)\tRun tests\t2026-11-06T10:05:00.0Z "
+
+        def gh(args: list[str]) -> str:
+            if args[:2] == ["run", "list"]:
+                return json.dumps([run] if "quality-gate.yml" in args else [])
+            if "--log-failed" in args:
+                return (
+                    f"{job}FAIL: test_x (a.test_m.C.test_x)\n"
+                    f"{job}FLAKY-RETRY-PASSED: a.test_m.C.test_y\n"
+                )
+            return f"{job}OK\n"
+
+        sightings, _read = flaky_tally.tally(gh, "2026-11-01", 10, None)
+
+        self.assertEqual(
+            [("test_m.C.test_x", "failed", 1), ("test_m.C.test_y", "retry", 1)],
+            [(s.test, s.kind, s.attempt) for s in sightings],
+        )
 
     def test_a_failed_gh_call_is_an_error_not_an_empty_tally(self) -> None:
         def broken(_args: list[str]) -> str:

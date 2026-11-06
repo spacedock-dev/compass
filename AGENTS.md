@@ -461,8 +461,9 @@ you started, and scope the kill to what you started.
 
 `scripts/run_tests.py` runs a failed test once more, on its own, after the rest of the suite. A
 test that passes then does not fail the run. The runner lists it under "Passed only on retry", in
-the job summary and as a `FLAKY-RETRY-PASSED: <test id>` line. More than five failures retry
-nothing, because that many at once is a real break.
+the job summary and as a `FLAKY-RETRY-PASSED: <test id>` line. A test that skips itself on the
+retry still fails the run. More than five failures retry nothing, because that many at once is a
+real break.
 
 A test module that measures real time sets `REAL_TIME_TESTS = True` at module level, with a
 one-line comment naming what it measures. The runner runs those modules after the parallel workers

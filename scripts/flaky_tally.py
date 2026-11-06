@@ -7,7 +7,9 @@ including the ledger, `docs/flaky-tests.md`, which a person or an agent edits fr
 Two kinds of evidence count, one sighting per test per run:
 
 - A `FLAKY-RETRY-PASSED: <test id>` line, which `scripts/run_tests.py` prints for a test that
-  failed and then passed on its retry. Every finished run in the window is read for these.
+  failed and then passed on its retry. Every finished run's latest attempt is read for these, and
+  so is each candidate attempt below. An earlier attempt's line is still missed when its job
+  passed, because `--log-failed` leaves that job out, and when the run is not a candidate.
 - A `FAIL:` or `ERROR:` test in an attempt that failed on code that also passed: the same commit
   passed in the same workflow, a later merge queue entry for the same pull request passed, or a
   later attempt of the same run passed. Those are candidates, not verdicts. A queue entry can pass
@@ -271,10 +273,12 @@ def tally(
             args = ["run", "view", str(run.id), "--log"]
         else:
             args = ["run", "view", str(run.id), "--attempt", str(attempt), "--log-failed"]
+        # A retry line counts from either read. A FAIL line counts only from a candidate attempt,
+        # because a failure on code that never passed is not evidence of a flake.
         return {
-            Sighting(test, kind, run.id, attempt, job, run.event, run.date)
+            Sighting(test, found, run.id, attempt, job, run.event, run.date)
             for found, job, test in parse_log(gh(args + _repo(repo)))
-            if found == kind
+            if found in {kind, "retry"}
         }
 
     # One log download took about five seconds (2026-11-06), so a week of runs read one at a time
