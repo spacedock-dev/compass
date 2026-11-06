@@ -164,7 +164,7 @@ class RoutesTest(unittest.TestCase):
     def request(
         port: int, method: str, body: Any = None, headers: dict[str, str] | None = None
     ) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             data = None if body is None else json.dumps(body).encode()
             conn.request(method, "/api/settings", body=data, headers=headers or {})

@@ -62,7 +62,7 @@ class LongCoordinatorTest(unittest.TestCase):
         def collect(*args: Any, **kwargs: Any) -> reading_source_collect.Collection:
             seen.append("source")
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(30))
             return original(*args, **kwargs)
 
         with (
@@ -78,12 +78,12 @@ class LongCoordinatorTest(unittest.TestCase):
                 self.assertEqual(202, status, body)
                 job = json.loads(body)["job"]
                 self.assertEqual("long", job["mode"])
-                self.assertTrue(entered.wait(3))
+                self.assertTrue(entered.wait(30))
                 self.assertIsNotNone(markers.load(self.config, job["id"]))
                 status, body = self.fixture.fixture.fixture._post(port, self.fixture.payload)
                 self.assertEqual(409, status, body)
                 self.assertEqual("in-flight", json.loads(body)["reason"])
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
                 try:
                     for identity, expected in (("0" * 32, 409), (job["id"], 202)):
                         conn.request(
@@ -107,7 +107,7 @@ class LongCoordinatorTest(unittest.TestCase):
             finally:
                 release.set()
                 for thread in threads:
-                    thread.join(5)
+                    thread.join(30)
                     self.assertFalse(thread.is_alive())
         self.assertEqual(["source"], seen)
 
@@ -129,12 +129,14 @@ class LongCoordinatorTest(unittest.TestCase):
         def parked(current: reading.Job, group: supervise.Group) -> bool:
             seen.append(group)
             entered.set()
-            self.assertTrue(release.wait(3))
+            self.assertTrue(release.wait(30))
             return handover(current, group)
 
         def spawn(_command: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
             command = (
-                [sys.executable, "-c", "import time; time.sleep(1)"]
+                # Outlives any HTTP round trip, so only the handover's cancel can end it:
+                # at one second a slow Clear let it exit by itself first.
+                [sys.executable, "-c", "import time; time.sleep(60)"]
                 if _command[0] == "/fixture/cli"
                 else _command
             )
@@ -165,10 +167,10 @@ class LongCoordinatorTest(unittest.TestCase):
             thread = threading.Thread(target=call)
             thread.start()
             try:
-                self.assertTrue(entered.wait(3), errors)
+                self.assertTrue(entered.wait(30), errors)
                 self.assertIsNone(job.group)
                 if action == "clear":
-                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
                     try:
                         conn.request(
                             "POST",
@@ -200,7 +202,7 @@ class LongCoordinatorTest(unittest.TestCase):
                         self.assertEqual(200, status, body)
             finally:
                 release.set()
-                thread.join(5)
+                thread.join(30)
         self.assertFalse(thread.is_alive())
         self.assertTrue(seen[0].cleanup_complete(), errors)
         self.assertTrue(seen[0].cancelled())
@@ -268,7 +270,7 @@ class LongCoordinatorTest(unittest.TestCase):
             self.app, "collect_json", side_effect=AssertionError("extra source scan")
         ):
             thread = self.module.launch(self.app, started)
-            thread.join(timeout=5)
+            thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertIsNone(reading.job(self.config, self.fixture.key))
         self.assertIsNone(markers.load(self.config, started.context.active.job.id))
@@ -402,7 +404,7 @@ class LongCoordinatorTest(unittest.TestCase):
 
         with mock.patch.object(coordinator, "_goals", side_effect=slow):
             thread = coordinator.launch(self.app, started)
-            thread.join(5)
+            thread.join(30)
         self.assertFalse(thread.is_alive())
         self.assertEqual("time", self.diagnostic()["source"]["reason"])
         self.assertEqual(0, self.diagnostic()["source"]["usage"]["io_bytes"])
@@ -422,7 +424,7 @@ class LongCoordinatorTest(unittest.TestCase):
 
         with mock.patch.object(reading_source_collect, "collect", side_effect=collect):
             thread = self.module.launch(self.app, started)
-            thread.join(timeout=5)
+            thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertEqual(
             reading.WITHHELD[reading.WITHHELD_CANCELLED_UNSENT], self.entry()["withheld"]
@@ -442,7 +444,7 @@ class LongCoordinatorTest(unittest.TestCase):
 
         with mock.patch.object(reading_source_collect, "collect", side_effect=collect):
             thread = self.module.launch(self.app, started)
-            thread.join(timeout=5)
+            thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertFalse(reading.job_cancelled(started.context.active.job))
         self.assertEqual(reading.WITHHELD["long-incomplete"], self.entry()["withheld"])
@@ -460,7 +462,7 @@ class LongCoordinatorTest(unittest.TestCase):
 
         with mock.patch.object(reading_source_collect, "collect", side_effect=collect):
             thread = self.module.launch(self.app, started)
-            thread.join(timeout=5)
+            thread.join(timeout=30)
         self.assertFalse(thread.is_alive())
         self.assertEqual((), self.entry()["revisions"])
         self.assertNotIn("long_diagnostic", self.entry())

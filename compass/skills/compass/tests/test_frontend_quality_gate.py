@@ -164,7 +164,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=30,
         )
 
     def test_every_required_result_rejects_failure_cancellation_and_unexpected_skip(self) -> None:

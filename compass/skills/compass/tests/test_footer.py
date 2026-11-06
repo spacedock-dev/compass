@@ -32,6 +32,8 @@ NOW = 1_800_000_000.0
 # clock (`LogicalDeadline`), because a wall-clock upper bound over the deadline measures the
 # scheduler as much as the reader (0.352 s observed against 0.2 s + 0.15 s on a loaded macOS lane).
 HANG_GUARD_SEC = 5.0
+# The hang guard and the footer subprocess's exit are waited for on the wall clock.
+REAL_TIME_TESTS = True
 
 # `LogicalDeadline` replaces the clock and the `select` of `_read_pipe`, which Windows never runs
 # (its reader is a thread), so the tests that observe the logical budget are POSIX tests.
@@ -120,8 +122,9 @@ class LogicalDeadline:
     def elapsed(self) -> float:
         return self.now - self.started
 
-    def read(self, stream: TextIO, deadline: float) -> dict[str, object] | None:
-        self._deadline = deadline
+    def read(self, stream: TextIO, deadline: float | None) -> dict[str, object] | None:
+        """Read under this clock; `None` reads with the caller's default deadline."""
+        self._deadline = terminal_client.STDIN_DEADLINE_SEC if deadline is None else deadline
         with (
             mock.patch.object(terminal_client, "time", self),
             mock.patch.object(select, "select", self.select),
@@ -129,14 +132,17 @@ class LogicalDeadline:
             return read_guarded(stream, deadline)
 
 
-def read_guarded(stream: TextIO, deadline: float) -> dict[str, object] | None:
+def read_guarded(stream: TextIO, deadline: float | None) -> dict[str, object] | None:
     """`read_status_line` under an outer wall-clock guard that only tells hung from slow."""
     box: list[dict[str, object] | None] = []
     failed: list[BaseException] = []
 
     def run() -> None:
         try:
-            box.append(terminal_client.read_status_line(stream, deadline=deadline))
+            if deadline is None:
+                box.append(terminal_client.read_status_line(stream))
+            else:
+                box.append(terminal_client.read_status_line(stream, deadline=deadline))
         except BaseException as error:  # noqa: BLE001 — re-raised on the test's own thread
             failed.append(error)
 
@@ -243,14 +249,38 @@ class ReadStatusLineTest(unittest.TestCase):
     def test_json_with_no_newline_and_no_eof_is_answered_without_waiting_for_the_deadline(
         self,
     ) -> None:
+        # A deadline far past the hang guard: a reader that waited for it fails the guard instead
+        # of an elapsed bound that a busy runner can also cross.
         with held_open_pipe() as (stream, write_fd):
             os.write(write_fd, b'{"session_id": "abc", "n": 1}')
-            started = time.monotonic()
-            got = terminal_client.read_status_line(stream, deadline=5.0)
-            elapsed = time.monotonic() - started
+            got = read_guarded(stream, 60.0)
 
         self.assertEqual({"session_id": "abc", "n": 1}, got)
-        self.assertLess(elapsed, 1.0)
+
+    @POSIX_ONLY
+    def test_json_with_no_newline_and_no_eof_spends_none_of_the_deadline(self) -> None:
+        with held_open_pipe() as (stream, write_fd):
+            os.write(write_fd, b'{"session_id": "abc", "n": 1}')
+            clock = LogicalDeadline(write_fd)
+
+            got = clock.read(stream, 5.0)
+
+        self.assertEqual({"session_id": "abc", "n": 1}, got)
+        self.assertEqual([], clock.idle_waits)
+        self.assertEqual(0.0, clock.elapsed)
+
+    @POSIX_ONLY
+    def test_a_silent_producer_costs_the_footer_its_quarter_second_default(self) -> None:
+        # The default the footer command reads its stdin with, which the subprocess test below
+        # can only bound loosely.
+        with held_open_pipe() as (stream, write_fd):
+            clock = LogicalDeadline(write_fd)
+
+            got = clock.read(stream, None)
+
+        self.assertIsNone(got)
+        self.assertEqual([], clock.overdrawn)
+        self.assertAlmostEqual(0.25, clock.elapsed)
 
     def test_json_that_arrives_in_two_writes_is_joined(self) -> None:
         with held_open_pipe() as (stream, write_fd):
@@ -937,7 +967,7 @@ class FooterLightPathTest(unittest.TestCase):
                 env={**os.environ, "COMPASS_HOME": home, "CLAUDE_CODE_SESSION_ID": ""},
             )
             try:
-                code = proc.wait(timeout=10)
+                code = proc.wait(timeout=60)
                 elapsed = time.monotonic() - started
             finally:
                 proc.kill()
@@ -947,7 +977,9 @@ class FooterLightPathTest(unittest.TestCase):
                         stream.close()
 
         self.assertEqual(0, code)
-        self.assertLess(elapsed, 5.0)
+        # Hung against slow: a cold interpreter on a loaded runner measures its start-up here. The
+        # quarter-second stdin default is decided on the logical clock above.
+        self.assertLess(elapsed, 30.0)
 
 
 class FooterDocumentationTest(unittest.TestCase):

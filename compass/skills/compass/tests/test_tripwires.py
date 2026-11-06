@@ -19,6 +19,10 @@ from compass_runtime.state import build_runtime_state
 
 from .support import make_runtime, make_server, poll_fast
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 class TripwireTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -325,7 +329,9 @@ class TripwireTest(unittest.TestCase):
         def request(
             method: str, path: str, body: dict[str, Any] | None = None, origin: str = ""
         ) -> tuple[int, bytes]:
-            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+            )
             try:
                 connection.request(
                     method,

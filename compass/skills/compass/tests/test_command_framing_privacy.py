@@ -202,9 +202,9 @@ from compass.skills.compass.tests.test_claude_checks import SHORT
 from compass_runtime import observer
 import time
 raw = '<command-message>token: AKIAIOSFODNN7EXAMPLE ' + ' ' * 300000
-started = time.monotonic()
+started = time.process_time()
 parsed = observer.parse_message_record({'type': 'user', 'message': {'content': raw}})
-assert time.monotonic() - started < 10, 'Malformed framing exceeded its parse allowance'
+assert time.process_time() - started < 10,'Malformed framing exceeded its parse allowance'
 assert parsed is None or len(parsed['text']) <= 2000
 assert parsed is None or 'IOSFODNN7EXAMPLE' not in parsed['text']
 """

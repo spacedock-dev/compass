@@ -31,6 +31,9 @@ from .support import (
     store_patch,
 )
 
+# Real CLIs are flooded, timed out and reaped, and those waits run on the wall clock.
+REAL_TIME_TESTS = True
+
 
 def _pi_message(
     msg_id: str,
@@ -1512,7 +1515,7 @@ class ObserverRouteTest(RuntimeTestCase):
     """`GET /api/observe`, which had no test of its own."""
 
     def _get(self, server: Any, query: str) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=30)
         conn.request("GET", "/api/observe" + query)
         response = conn.getresponse()
         body = response.read()
@@ -2518,7 +2521,7 @@ class ObserverConsentRouteTest(RuntimeTestCase):
                     mock.patch.object(project_context, "collect", return_value={}) as collect,
                 ):
                     connection = http.client.HTTPConnection(
-                        "127.0.0.1", server.server_port, timeout=5
+                        "127.0.0.1", server.server_port, timeout=30
                     )
                     try:
                         connection.request(
@@ -2653,7 +2656,7 @@ class SupervisedModelCallTest(unittest.TestCase):
                     "    out.write(chunk); out.flush()\n"
                     f"    open({str(peak_file) + '.part'!r}, 'w').write(str(n + 1))\n"
                     f"    os.replace({str(peak_file) + '.part'!r}, {str(peak_file)!r})\n"
-                    "    time.sleep(0.02)\n"
+                    "    time.sleep(0.5)\n"
                     "time.sleep(60)\n"
                 )
                 fake.chmod(0o700)
@@ -2662,6 +2665,9 @@ class SupervisedModelCallTest(unittest.TestCase):
                     config, "prompt", output_cap_bytes=64, binary_resolver=lambda _n, f=fake: str(f)
                 )
                 self.assertEqual(("", "oversized"), (output, status))
+                # The bound is checked every 10 ms and a chunk lands every 0.5 s, so ten chunks is
+                # seconds of stall: a runner that slow is not what this measures. The old 20 ms gap
+                # left the count to the scheduler.
                 self.assertLess(time.monotonic() - started, 20)
                 self.assertLess(int(peak_file.read_text()), 10, "the flood ran far past the bound")
                 self.assertEqual([], sorted(p.name for p in config.state_dir.iterdir()))
@@ -2713,7 +2719,7 @@ class SupervisedModelCallTest(unittest.TestCase):
         self.assertEqual("failed", status)
         self.assertEqual([], sorted(p.name for p in config.state_dir.iterdir()))
         grandchild = int(pid_file.read_text())
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 30
         while process_alive(grandchild) and time.monotonic() < deadline:
             time.sleep(0.05)
         self.assertFalse(process_alive(grandchild), "the CLI's grandchild outlived the timeout")

@@ -273,7 +273,7 @@ class LongInspectionTest(unittest.TestCase):
             def trace(sql: str) -> None:
                 if "FROM long_job_registrations" in sql:
                     entered.set()
-                    release.wait(5)
+                    release.wait(30)
 
             db.set_trace_callback(trace)
             return db
@@ -291,7 +291,7 @@ class LongInspectionTest(unittest.TestCase):
             ):
                 pending = pool.submit(self.inspect)
                 try:
-                    self.assertTrue(entered.wait(5))
+                    self.assertTrue(entered.wait(30))
                     writer.execute(
                         "INSERT INTO long_pass_reservations VALUES (?, ?, ?, ?)",
                         (self.job_id, 1, json.dumps(self.request()), 100.0),
@@ -300,7 +300,7 @@ class LongInspectionTest(unittest.TestCase):
                     writer.commit()
                 finally:
                     release.set()
-                self.assertEqual(0, pending.result(timeout=5).exact.calls)
+                self.assertEqual(0, pending.result(timeout=30).exact.calls)
             self.assertEqual(1, self.inspect().exact.calls)
 
     def test_retirement_requires_explicit_ack_terminal_state_and_complete_accounting(self) -> None:

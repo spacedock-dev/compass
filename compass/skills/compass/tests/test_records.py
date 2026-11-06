@@ -36,6 +36,9 @@ from compass_runtime import quota, records
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+# Masking and redaction kept linear, measured on this process's and thread's CPU.
+REAL_TIME_TESTS = True
+
 # +08:00 with no DST, so the offset is the same in every season and a failure
 # reads as a timezone bug rather than as a date-dependent flake. This is also
 # the offset the defect was found on.
@@ -2664,11 +2667,11 @@ class MaskCommandTest(unittest.TestCase):
         self.assertNotIn("FakeB64Value99", masked)
 
     def test_a_long_run_of_dots_in_one_word_returns_promptly(self) -> None:
-        started = time.monotonic()
+        started = time.thread_time()
         self.assertEqual(["Loading" + "." * 60], records.mask_words(["Loading" + "." * 60]))
         masked = records.mask_prose("please wait" + "." * 60 + " ok")
         self.assertIn("ok", masked)
-        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertLess(time.thread_time() - started, 1.0)
         self.assertNotIn(
             "FakeB64Value99",
             mask("git -c http.https://github.com/.extraheader=FakeB64Value99 fetch"),
@@ -3154,9 +3157,9 @@ class OutputSecretShapesTest(unittest.TestCase):
 
     def test_a_long_run_after_a_signature_name_is_not_quadratic(self) -> None:
         text = "?sig=" + "a" * 100_000
-        start = time.monotonic()
+        start = time.thread_time()
         records.redact_secrets(text)
-        self.assertLess(time.monotonic() - start, 5.0)
+        self.assertLess(time.thread_time() - start, 5.0)
 
     def test_a_secret_string_past_the_old_bound_is_redacted_whole(self) -> None:
         for tail in ('" tail', "\nnext line", ""):
@@ -3169,10 +3172,10 @@ class OutputSecretShapesTest(unittest.TestCase):
         for filler in ("aaaaa", ".", ":", "=", "?", "a.", ":a"):
             for name in ("?sig=", "?x-amz-signature="):
                 text = (name + filler) * (20_000 // (len(name) + len(filler)))
-                start = time.monotonic()
+                start = time.thread_time()
                 records.redact_secrets(text)
                 with self.subTest(name=name, filler=filler):
-                    self.assertLess(time.monotonic() - start, 2.0)
+                    self.assertLess(time.thread_time() - start, 2.0)
 
     def test_a_signature_behind_an_escaped_ampersand_is_redacted(self) -> None:
         for url in (

@@ -33,8 +33,23 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
+def stop_the_clock(case: unittest.TestCase) -> None:
+    """Hold `time.monotonic` still for the rest of the test, unless the test moves it.
+
+    The source and the outline cut a read at a deadline: a page's 2 s, a poll's 250 ms and
+    the 25 ms re-check of the inventory. A busy runner crossed those inside a test about
+    bytes, and a poll then read nothing ("0 not greater than 0"). The deadlines are
+    behaviour, so the tests that are about them drive their own clock over this one.
+    """
+    stopped = time.monotonic()
+    patcher = mock.patch.object(time, "monotonic", lambda: stopped)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 class SessionSourceTest(unittest.TestCase):
     def setUp(self) -> None:
+        stop_the_clock(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

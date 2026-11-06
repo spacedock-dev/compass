@@ -10,6 +10,10 @@ from compass_runtime import stream as runtime_stream
 
 from . import support
 
+# How long the test waits for a wake that happens at once; the waiter's own timeout is longer,
+# so a close that did not wake it fails the wait instead of the timeout waking it.
+WAIT_SEC = 30.0
+
 
 class StreamClientTest(unittest.TestCase):
     def test_wait_returns_the_offered_revision(self) -> None:
@@ -36,13 +40,13 @@ class StreamClientTest(unittest.TestCase):
         woke = threading.Event()
 
         def waiter() -> None:
-            client.wait(timeout=5.0)
+            client.wait(timeout=2 * WAIT_SEC)
             woke.set()
 
         thread = threading.Thread(target=waiter, daemon=True)
         thread.start()
         client.close()
-        self.assertTrue(woke.wait(timeout=2.0), "close must wake a blocked waiter")
+        self.assertTrue(woke.wait(timeout=WAIT_SEC), "close must wake a blocked waiter")
         self.assertTrue(client.closed)
         thread.join(timeout=2.0)
 

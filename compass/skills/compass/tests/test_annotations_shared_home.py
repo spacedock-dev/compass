@@ -43,6 +43,9 @@ from .support import make_runtime
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+# How long a save or a collection waits on a store lock another process holds.
+REAL_TIME_TESTS = True
+
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SID = "0123456789abcdef-shared-home"
 FIRST = "Add retry with backoff to the webhook handler."
@@ -602,7 +605,9 @@ class ABusyStoreIsReportedNotWrittenTest(_SharedHomeCase):
 
     def test_a_stuck_holder_costs_each_waiting_save_one_wait_and_readers_none(self) -> None:
         annotation_store.annotate(self.config, self.first, "claude", SID, goal="Seed", now=START)
-        wait = 1.5
+        # Long enough that a busy runner's scheduling fits inside the margins below: at 1.5 s
+        # the readers had 1.35 s for a 0.25 s wait, and a queued save is still a whole wait out.
+        wait = 5.0
         self.hold(stop=True)
         took: dict[str, tuple[str, float]] = {}
 
@@ -1116,9 +1121,17 @@ class AFirstCollectionWaitsForABusyStoreTest(_SharedHomeCase):
         self.hold()
         began = time.monotonic()
 
-        entries = annotation_store.refresh(self.config, self.first)
+        with mock.patch.object(
+            annotation_store, "_store_locks", wraps=annotation_store._store_locks
+        ) as locks:
+            entries = annotation_store.refresh(self.config, self.first)
 
-        self.assertLess(time.monotonic() - began, 0.9)
+        # Which wait it asked for is the behaviour; the clock only shows it was not the store's
+        # whole wait, with room for a busy runner.
+        self.assertEqual(
+            annotation_store._REFRESH_LOCK_WAIT_SECONDS, locks.call_args.kwargs["wait"]
+        )
+        self.assertLess(time.monotonic() - began, annotation_store._STORE_LOCK_WAIT_SECONDS / 2)
         self.assertEqual(cached, entries)
 
 

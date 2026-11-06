@@ -368,13 +368,13 @@ class CompletedPublicationTest(unittest.TestCase):
                     mock.patch.object(store, "long_receipt_acknowledged", return_value=False),
                 ):
                     future = pool.submit(self.finalize)
-                    self.assertTrue(entered.wait(2))
+                    self.assertTrue(entered.wait(30))
                     self.assertFalse(future.done())
                     if changed == "deadline":
                         self.base.clock[0] = 201
                     else:
                         self.source_current = False
-                self.assertFalse(future.result(timeout=5).acknowledged)
+                self.assertFalse(future.result(timeout=30).acknowledged)
             self.assertTrue(self.path.exists())
             self.assertNotIn("readings", self.entry())
 
@@ -383,7 +383,7 @@ class CompletedPublicationTest(unittest.TestCase):
 
         def source() -> bool:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(30))
             return True
 
         connect = policy._connect
@@ -398,14 +398,14 @@ class CompletedPublicationTest(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             published = pool.submit(self.finalize, source_current=source)
             try:
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(30))
                 with mock.patch.object(policy, "_connect", side_effect=traced):
                     paused = pool.submit(policy.set_consent, self.config, False, now=201)
-                    self.assertTrue(pause_wait.wait(2))
+                    self.assertTrue(pause_wait.wait(30))
                     self.assertFalse(paused.done())
                     release.set()
-                    self.assertTrue(published.result(timeout=5).acknowledged)
-                    self.assertTrue(paused.result(timeout=5)["off"])
+                    self.assertTrue(published.result(timeout=30).acknowledged)
+                    self.assertTrue(paused.result(timeout=30)["off"])
             finally:
                 release.set()
         self.assertEqual(1, self.entry()["readings"])

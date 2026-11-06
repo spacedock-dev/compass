@@ -56,7 +56,7 @@ class LongHistoryHTTPTest(unittest.TestCase):
         *,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, bytes]:
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             connection.request("GET", "/api/reading-long-history?" + query, headers=headers or {})
             response = connection.getresponse()

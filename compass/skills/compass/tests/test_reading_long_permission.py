@@ -17,6 +17,10 @@ from compass_runtime import reading_policy, supervise
 
 from .support import make_runtime
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 class LongPermissionTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -201,14 +205,14 @@ class LongPermissionTest(unittest.TestCase):
             ):
                 waiting = pool.submit(self.reserve, token)
                 try:
-                    self.assertTrue(entering.wait(2.0))
+                    self.assertTrue(entering.wait(WAIT_SEC))
                     self.assertFalse(waiting.done())
                     writer.execute("INSERT OR REPLACE INTO permission VALUES (1, 0)")
                     writer.execute("DELETE FROM permission WHERE allowed=0")
                     writer.execute("DELETE FROM provider_permission WHERE allowed=0")
                 finally:
                     writer.execute("COMMIT")
-                self.assertEqual("permission-changed", waiting.result(timeout=5.0)["reason"])
+                self.assertEqual("permission-changed", waiting.result(timeout=WAIT_SEC)["reason"])
         self.assertEqual(0, reading_policy.status(self.config, now=100.0)["used"])
 
     def test_long_reservations_share_the_existing_cap_and_shutdown_barrier(self) -> None:

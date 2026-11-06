@@ -46,6 +46,11 @@ from compass_runtime.state import build_runtime_state
 from .support import make_runtime, make_server, serve_until_closed
 from .test_claude_checks import SHORT, START, Transcript
 
+# How long a test waits for a step that happens at once on an idle runner, and how long a
+# fake holds a step the test releases: longer, so a step that blocks fails the wait instead.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
+
 FIRST = "Add retry with backoff to the webhook handler."
 FIRST_AT = START.timestamp() + 5
 NOW = START.timestamp() + 3600
@@ -1159,7 +1164,7 @@ class DirectionRouteTest(_ClaudeSession):
         def pause_after_commit(*args: Any, **kwargs: Any) -> str:
             outcome = original(*args, **kwargs)
             completed.set()
-            if not resume.wait(5):
+            if not resume.wait(HOLD_SEC):
                 raise AssertionError("Synthetic concurrent writer did not resume adoption")
             return outcome
 
@@ -1178,7 +1183,7 @@ class DirectionRouteTest(_ClaudeSession):
             )
             caller.start()
             try:
-                self.assertTrue(completed.wait(5))
+                self.assertTrue(completed.wait(WAIT_SEC))
                 self.assertEqual(
                     "stored",
                     annotation_store.annotate(
@@ -1192,7 +1197,7 @@ class DirectionRouteTest(_ClaudeSession):
                 )
             finally:
                 resume.set()
-                caller.join(timeout=10)
+                caller.join(timeout=WAIT_SEC)
             self.assertFalse(caller.is_alive())
         status, reply = answers[0]
         self.assertEqual((200, "unchanged" if repeated else "stored"), (status, reply["outcome"]))

@@ -31,6 +31,9 @@ from .support import make_runtime, process_alive
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+# Real CLIs are spawned, cancelled and reaped, and a cancel is held to half the CLI's sleep.
+REAL_TIME_TESTS = True
+
 KEY = "claude:s1"
 
 
@@ -665,7 +668,7 @@ _FAKE_CLI = (
 NOW = 1_700_000_100.0
 
 
-def _wait_until(predicate: Any, timeout: float = 10.0) -> bool:
+def _wait_until(predicate: Any, timeout: float = 30.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -788,7 +791,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
         thread = reading_jobs.launch(self.application, job, compose or self._compose)
         return job, thread
 
-    def _finish(self, thread: threading.Thread, within: float = 15.0) -> None:
+    def _finish(self, thread: threading.Thread, within: float = 45.0) -> None:
         thread.join(timeout=within)
         self.assertFalse(thread.is_alive(), "the job never finished")
 
@@ -937,8 +940,9 @@ class CancelAnAnalysisTest(unittest.TestCase):
             started = time.monotonic()
             go.set()
             self._finish(thread)
-        # Well inside the fake CLI's 60 s: the handover killed it.
-        self.assertLess(time.monotonic() - started, 10)
+        # Well inside the fake CLI's 60 s: the handover killed it. Half of it, so a loaded runner
+        # reaping the group is not read as a CLI that ran to its end.
+        self.assertLess(time.monotonic() - started, 30)
         self.assertTrue(_wait_until(lambda: not process_alive(groups[0].pid)))
         self.assertIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
 
@@ -952,7 +956,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
             started = time.monotonic()
             self.assertTrue(reading_jobs.cancel(self.application, KEY, job.id))
             self._finish(thread)
-        self.assertLess(time.monotonic() - started, 10, "an unconfirmed kill held the slot")
+        self.assertLess(time.monotonic() - started, 30, "an unconfirmed kill held the slot")
         self.assertIn(("withheld", reading.WITHHELD_UNSTOPPED, True), self.events)
         self.assertIn("may still be running", self._entry().get("withheld"))
         # The slot is free anyway, as the timeout and shutdown paths free it.

@@ -23,6 +23,10 @@ import score_abstention as scoring
 marking._reading()
 from compass_runtime.config import build_runtime_config  # noqa: E402
 
+# A Python start and an import, which a busy runner can stretch past a couple of seconds; the
+# defect it guards is an open that never returns.
+WAIT_SEC = 30.0
+
 
 class ReviewedExportIntakeTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -890,7 +894,7 @@ class ReviewedExportIntakeTest(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=WAIT_SEC,
                 check=False,
             )
         except subprocess.TimeoutExpired:

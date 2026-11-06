@@ -284,7 +284,8 @@ class ConcurrentWritersKeepEveryEndTest(unittest.TestCase):
 
     def test_two_concurrent_saves_do_not_share_a_temp_path(self) -> None:
         opened: list[str] = []
-        both_open = threading.Barrier(2, timeout=5)
+        # Generous: two threads reaching one line is immediate on an idle runner, not on a busy one.
+        both_open = threading.Barrier(2, timeout=30)
         real_open = os.open
 
         def watched(path: str, *args: Any, **kwargs: Any) -> int:

@@ -83,12 +83,12 @@ class LongCancelCommitTest(unittest.TestCase):
             ):
                 pending = pool.submit(self.reserve)
                 try:
-                    self.assertTrue(entered.wait(5))
+                    self.assertTrue(entered.wait(30))
                     self.assertEqual(0, self.checks)
                     self.cancelled.set()
                 finally:
                     writer.execute("COMMIT")
-                result = pending.result(timeout=5)
+                result = pending.result(timeout=30)
         self.assert_unspent(result)
 
     def test_cancellation_after_real_supervision_lock_wait_is_unspent(self) -> None:
@@ -106,12 +106,12 @@ class LongCancelCommitTest(unittest.TestCase):
             with mock.patch.object(supervise, "admitting", admitting), supervise._LOCK:
                 pending = pool.submit(self.reserve)
                 try:
-                    self.assertTrue(entered.wait(5))
+                    self.assertTrue(entered.wait(30))
                     self.assertEqual(0, self.checks)
                     self.cancelled.set()
                 finally:
                     entered.set()
-            result = pending.result(timeout=5)
+            result = pending.result(timeout=30)
         self.assert_unspent(result)
 
     def test_fresh_success_checks_once_and_replay_cannot_check_or_charge_again(self) -> None:

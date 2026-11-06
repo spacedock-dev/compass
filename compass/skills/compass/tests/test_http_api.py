@@ -63,6 +63,7 @@ from .support import (
     build_app,
     collect,
     collect_json,
+    config_patch,
     make_runtime,
     make_server,
     poll_fast,
@@ -76,6 +77,15 @@ from .test_ci_read import GOAL_URL, StubGh
 from .test_claude_checks import Transcript
 from .test_session_summary import Replies
 from .test_summary_jobs import wait_job
+
+# Real loopback sockets, server threads and job threads, and how long a refusal takes to answer.
+REAL_TIME_TESTS = True
+
+# Every wait here is for something that happens at once on an idle runner, so a busy runner
+# is slower and never red. A fake's hold outlasts the test's own wait, so a step that blocks
+# fails that wait instead of slipping through when the hold gives up.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
 
 
 def _application(os_name: str) -> Any:
@@ -110,7 +120,9 @@ class CompassServerTest(RuntimeTestCase):
         try:
             with mock.patch.object(notifications, "notify_mac") as notify:
                 for body in bodies:
-                    conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+                    conn = http.client.HTTPConnection(
+                        "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+                    )
                     conn.request(
                         "POST",
                         "/api/notify",
@@ -132,7 +144,7 @@ class CompassServerTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request("GET", "/api/data", headers={"Sec-Fetch-Site": "cross-site"})
             response = conn.getresponse()
             self.assertEqual(403, response.status)
@@ -258,7 +270,9 @@ class CompassServerTest(RuntimeTestCase):
         try:
             for method, path, headers, expected, why in cases:
                 with self.subTest(why=why):
-                    conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+                    conn = http.client.HTTPConnection(
+                        "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+                    )
                     body = b'{"session_id":"x"}' if method == "POST" else None
                     conn.request(method, path, body=body, headers=headers)
                     response = conn.getresponse()
@@ -292,7 +306,9 @@ class CompassServerTest(RuntimeTestCase):
                 ("POST", "/api/notify", b"{}"),
             ):
                 with self.subTest(path=path, method=method):
-                    conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+                    conn = http.client.HTTPConnection(
+                        "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+                    )
                     conn.request(method, path, body=body, headers={"Sec-Fetch-Site": "same-origin"})
                     response = conn.getresponse()
                     self.assertEqual(200, response.status)
@@ -324,7 +340,12 @@ class CompassServerTest(RuntimeTestCase):
             time.sleep(0.02)
             return {"window_hours": app.config.window_hours, "show_all": show_all}
 
-        with mock.patch.object(aggregate.Application, "collect", fake_collect):
+        # A memo window no runner can outlast: a request reaching the pool after the
+        # shipped 2.5 s would collect again and read as a second flight.
+        with (
+            mock.patch.object(aggregate.Application, "collect", fake_collect),
+            config_patch(collect_memo_sec=3600.0),
+        ):
             with ThreadPoolExecutor(max_workers=12) as pool:
                 bodies = list(pool.map(lambda _: collect_json(24, False), range(24)))
             alternate = collect_json(24, True)
@@ -340,7 +361,7 @@ class CompassServerTest(RuntimeTestCase):
 
     @staticmethod
     def _get_headers(port: int, path: str) -> tuple[int, email.message.Message, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", path)
             response = conn.getresponse()
@@ -433,7 +454,7 @@ class CompassServerTest(RuntimeTestCase):
             # reaches collect(), a liveness check costs a full multi-harness
             # filesystem scan.
             with mock.patch.object(aggregate.Application, "collect") as collect:
-                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+                conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
                 conn.request("GET", "/api/health")
                 response = conn.getresponse()
                 status = response.status
@@ -455,7 +476,7 @@ class CompassServerTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.putrequest("GET", "/api/health", skip_host=True)
             conn.putheader("Host", "evil.example")
             conn.endheaders()
@@ -487,7 +508,7 @@ class OverlayLedgerEndpointTest(RuntimeTestCase):
 
     @staticmethod
     def _get(port: int, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/overlays", headers=headers or {})
             response = conn.getresponse()
@@ -563,7 +584,7 @@ class UsageReceiptOptOutTest(RuntimeTestCase):
     """
 
     def _post(self, port: int, body: bytes) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request(
                 "POST", "/api/usage", body=body, headers={"Content-Type": "application/json"}
@@ -625,7 +646,7 @@ class DismissEndpointTest(RuntimeTestCase):
 
     @staticmethod
     def _post(port: int, body: bytes, *, declared: str | None = None) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             if declared is None:
                 conn.request(
@@ -642,7 +663,7 @@ class DismissEndpointTest(RuntimeTestCase):
 
     @staticmethod
     def _get(port: int, path: str, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", path, headers=headers or {})
             response = conn.getresponse()
@@ -1433,7 +1454,7 @@ class AskEndpointTest(RuntimeTestCase):
         self.assertEqual(403, status)
 
     @staticmethod
-    def _settle_popups(notify: Any, expected: int, *, timeout: float = 5.0) -> None:
+    def _settle_popups(notify: Any, expected: int, *, timeout: float = WAIT_SEC) -> None:
         """Wait for the ask popup, which happens after the reply is on the wire.
 
         `_ask` sends its reply and only then notifies, deliberately: osascript
@@ -1568,8 +1589,8 @@ class AskEndpointTest(RuntimeTestCase):
                     }
                 ).encode(),
             )
-            self.assertTrue(notified.wait(5), "the notifier never ran")
-            handled.wait(5)
+            self.assertTrue(notified.wait(WAIT_SEC), "the notifier never ran")
+            handled.wait(WAIT_SEC)
         self.assertEqual(200, status)
         payload = json.loads(body)
         self.assertIs(True, payload["ok"])
@@ -1659,11 +1680,11 @@ class AskShutdownTest(RuntimeTestCase):
             ask_id = self._register(state, config)
             poller = self._park_poll(httpd.server_port, ask_id, out)
             self._settle()
-            stop = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            stop = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             stop.request("POST", "/api/shutdown", body=b"")
             stop.getresponse().read()
             stop.close()
-            poller.join(timeout=10)
+            poller.join(timeout=WAIT_SEC)
         finally:
             with contextlib.suppress(Exception):
                 httpd.server_close()
@@ -1693,14 +1714,14 @@ class AskShutdownTest(RuntimeTestCase):
             self._wait_until_serving(httpd)
         finally:
             httpd.shutdown()
-            thread.join(timeout=10)
+            thread.join(timeout=WAIT_SEC)
         self.assertEqual(("declined", None), ask.outcome)
 
     @staticmethod
     def _wait_until_serving(httpd: Any) -> None:
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + WAIT_SEC
         while time.monotonic() < deadline:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             try:
                 conn.request("GET", "/api/health")
                 if conn.getresponse().status == 200:
@@ -1812,7 +1833,7 @@ class HostAndSocketTest(unittest.TestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request("GET", "/api/data")
             response = conn.getresponse()
             self.assertEqual(200, response.status)
@@ -1977,7 +1998,7 @@ class HostAndSocketTest(unittest.TestCase):
             thread.start()
             try:
                 port = httpd.server_port
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
                 conn.putrequest("GET", "/", skip_host=True)
                 conn.putheader("Host", f"192.168.0.2:{port}")
                 conn.endheaders()
@@ -2019,7 +2040,7 @@ class HostAndSocketTest(unittest.TestCase):
             try:
                 port = httpd.server_port
                 try:
-                    conn = http.client.HTTPConnection(ip, port, timeout=5)
+                    conn = http.client.HTTPConnection(ip, port, timeout=WAIT_SEC)
                     conn.putrequest("GET", "/", skip_host=True)
                     conn.putheader("Host", f"{ip}:{port}")
                     conn.endheaders()
@@ -2048,7 +2069,7 @@ class HostAndSocketTest(unittest.TestCase):
             port = httpd.server_port
             refused = False
             try:
-                conn = http.client.HTTPConnection(ip, port, timeout=2)
+                conn = http.client.HTTPConnection(ip, port, timeout=WAIT_SEC)
                 conn.request("GET", "/")
                 conn.getresponse()
                 conn.close()
@@ -2092,7 +2113,7 @@ class ReviewFixTest(RuntimeTestCase):
         try:
             for origin, expected, why in cases:
                 with self.subTest(why=why):
-                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
                     conn.request(
                         "POST",
                         "/api/notify",
@@ -2184,7 +2205,7 @@ class ReviewFixTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request("POST", "/api/shutdown", body=b"", headers={"Content-Length": "0"})
             response = conn.getresponse()
             # This proves the client gets a 200 and that the server actually
@@ -2193,7 +2214,7 @@ class ReviewFixTest(RuntimeTestCase):
             self.assertEqual(200, response.status)
             self.assertEqual(b'{"ok":true,"stopping":true}', response.read())
             conn.close()
-            thread.join(timeout=10)
+            thread.join(timeout=WAIT_SEC)
             self.assertFalse(thread.is_alive(), "serve_forever did not return")
         finally:
             httpd.shutdown()
@@ -2208,7 +2229,7 @@ class ReviewFixTest(RuntimeTestCase):
         handler.server.shutdown.side_effect = stopped.set
         with mock.patch.object(handler, "_send", side_effect=BrokenPipeError):
             handler._shutdown()
-        self.assertTrue(stopped.wait(timeout=2), "the failed reply cancelled the shutdown")
+        self.assertTrue(stopped.wait(WAIT_SEC), "the failed reply cancelled the shutdown")
         handler.server.shutdown.assert_called_once_with()
 
     def test_shutdown_endpoint_refuses_a_cross_site_post(self) -> None:
@@ -2216,7 +2237,7 @@ class ReviewFixTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request(
                 "POST",
                 "/api/shutdown",
@@ -2228,7 +2249,7 @@ class ReviewFixTest(RuntimeTestCase):
             response.read()
             conn.close()
             # Still serving: a refused stop must not stop anything.
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request("GET", "/api/health")
             self.assertEqual(200, conn.getresponse().status)
             conn.close()
@@ -2291,7 +2312,11 @@ class RejectedPostDrainTest(unittest.TestCase):
 
     def _reject(self, declared: str, available: bytes) -> tuple[list[int], int]:
         handler = self._Handler(declared, available)
-        handler._reject(413)
+        # These pin the drain's bytes. Its 250 ms deadline is not theirs, and a busy runner
+        # reached it partway through a megabyte of BytesIO, so the clock stands still here.
+        stopped = time.monotonic()
+        with mock.patch.object(time, "monotonic", lambda: stopped):
+            handler._reject(413)
         return handler.sent, handler.rfile.tell()
 
     def test_the_declared_body_is_consumed_before_the_error_is_sent(self) -> None:
@@ -2337,7 +2362,9 @@ class RejectedPostDrainTest(unittest.TestCase):
         thread.start()
         try:
             started = time.monotonic()
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            # The bound is half the connection timeout, as it was at 3 s of 10 s, scaled up so a
+            # loaded runner's round trip fits inside it.
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=HOLD_SEC)
             try:
                 # Declare a body, send none: putrequest/endheaders without a send.
                 conn.putrequest("POST", "/api/notify")
@@ -2356,7 +2383,7 @@ class RejectedPostDrainTest(unittest.TestCase):
             elapsed = time.monotonic() - started
             self.assertLess(
                 elapsed,
-                3.0,
+                HOLD_SEC / 2,
                 f"a refusal must not wait out the connection timeout, took {elapsed:.1f}s",
             )
         finally:
@@ -2400,9 +2427,10 @@ class RejectedPostDrainTest(unittest.TestCase):
         # The shipped 250 ms drain was also the bound, so a healthy request had to
         # finish its whole loopback round trip inside it, on a Windows runner
         # measured at 0.47 s per loopback request (DRC-4648). A re-drain costs at
-        # least the drain, so a 3 s drain with half of it as the bound leaves 3x
-        # that round trip and 1.5 s between a healthy refusal and the defect.
-        drain = mock.patch.object(http_api._RequestHandler, "REJECT_DRAIN_SECONDS", 3.0)
+        # least the drain, so the drain is stretched to HOLD_SEC and half of it is
+        # the bound: a loaded runner's round trip fits, and the defect still lands
+        # a whole half-drain past it.
+        drain = mock.patch.object(http_api._RequestHandler, "REJECT_DRAIN_SECONDS", HOLD_SEC)
         drain.start()
         self.addCleanup(drain.stop)
         httpd = make_server()
@@ -2415,7 +2443,7 @@ class RejectedPostDrainTest(unittest.TestCase):
                 {"harness": "claude", "session_id": "aaa1", "project": "p", "question": 42}
             ).encode()
             started = time.monotonic()
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2 * HOLD_SEC)
             try:
                 conn.request("POST", "/api/ask", body=body, headers={"Content-Type": "text/plain"})
                 response = conn.getresponse()
@@ -2455,7 +2483,7 @@ class StreamEndpointTest(RuntimeTestCase):
 
     @staticmethod
     def _open(port: int, headers: dict[str, str] | None = None) -> Any:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         conn.request("GET", "/api/stream", headers=headers or {})
         return conn, conn.getresponse()
 
@@ -2604,7 +2632,7 @@ class StreamShutdownTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             conn.request("GET", "/api/stream")
             response = conn.getresponse()
             self.assertEqual(200, response.status)
@@ -2619,7 +2647,7 @@ class StreamShutdownTest(RuntimeTestCase):
             reader.start()
             httpd.application.state.streams.close_all()
             self.assertTrue(
-                ended.wait(timeout=5.0),
+                ended.wait(WAIT_SEC),
                 "an open stream must end when the registry closes it",
             )
             conn.close()
@@ -2637,7 +2665,9 @@ class StreamShutdownTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         try:
-            stream_conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            stream_conn = http.client.HTTPConnection(
+                "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+            )
             stream_conn.request("GET", "/api/stream")
             stream_response = stream_conn.getresponse()
             self.assertEqual(200, stream_response.status)
@@ -2650,12 +2680,12 @@ class StreamShutdownTest(RuntimeTestCase):
 
             reader = threading.Thread(target=drain, daemon=True)
             reader.start()
-            stop_conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+            stop_conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
             stop_conn.request("POST", "/api/shutdown", body=b"")
             stop_conn.getresponse().read()
             stop_conn.close()
             self.assertTrue(
-                ended.wait(timeout=5.0),
+                ended.wait(WAIT_SEC),
                 "POST /api/shutdown must wake open streams, not leave them asleep",
             )
             stream_conn.close()
@@ -2695,7 +2725,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, email.message.Message, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
@@ -2950,7 +2980,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
 
         def scan(*_: Any, **__: Any) -> dict[str, Any]:
             entered.set()
-            self.assertTrue(release.wait(timeout=5), "test did not release the scan")
+            self.assertTrue(release.wait(HOLD_SEC), "test did not release the scan")
             return {"generated": 1.0, "sessions": [], "harnesses": []}
 
         def second_request() -> None:
@@ -2961,12 +2991,12 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             first = threading.Thread(target=lambda: bodies.append(collect_json(24, False)))
             second = threading.Thread(target=second_request)
             first.start()
-            self.assertTrue(entered.wait(timeout=5), "first scan did not begin")
+            self.assertTrue(entered.wait(WAIT_SEC), "first scan did not begin")
             second.start()
             self.assertFalse(second_done.wait(timeout=0.2), "second request scanned concurrently")
             release.set()
-            first.join(timeout=5)
-            second.join(timeout=5)
+            first.join(timeout=WAIT_SEC)
+            second.join(timeout=WAIT_SEC)
         self.assertFalse(first.is_alive())
         self.assertFalse(second.is_alive())
         self.assertEqual(1, collect.call_count)
@@ -3090,7 +3120,7 @@ class ReadingRouteTest(unittest.TestCase):
                 ):
                     status, _ = self._post(port, self._claude_press(provider="claude"))
                     self.assertEqual(202, status)
-                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
                     try:
                         conn.request("GET", "/api/annotations")
                         response = conn.getresponse()
@@ -3435,7 +3465,7 @@ class ReadingRouteTest(unittest.TestCase):
         what the press did must wait for the job, and `self.outcomes` holds
         what each finished job wrote.
         """
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request(
                 "POST",
@@ -3921,7 +3951,7 @@ class ReadingRouteTest(unittest.TestCase):
 
     @staticmethod
     def _data(port: int) -> dict[str, Any]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/data")
             return dict(json.loads(conn.getresponse().read()))
@@ -3955,15 +3985,15 @@ class ReadingRouteTest(unittest.TestCase):
             def __call__(self, prompt: str, **_kw: Any) -> tuple[str, str]:
                 calls.append(prompt)
                 reached["model"].set()
-                gates["spawn"].wait(5)
+                gates["spawn"].wait(HOLD_SEC)
                 self.on_spawn(object())
-                gates["reply"].wait(5)
+                gates["reply"].wait(HOLD_SEC)
                 return "{}", "ok"
 
         def facts(*_a: Any, **_k: Any) -> dict[str, Any]:
             if threading.current_thread().name.startswith(runtime_reading_jobs.THREAD_PREFIX):
                 reached["prepare"].set()
-                gates["prepare"].wait(5)
+                gates["prepare"].wait(HOLD_SEC)
             return {
                 "semantic": {
                     "facts": [{**self.FACT, "source_session": {"harness": harness, "sid": "s1"}}]
@@ -4017,11 +4047,11 @@ class ReadingRouteTest(unittest.TestCase):
                     job = json.loads(body)["job"]
                     self.assertEqual("preparing", job["phase"])
                     self.assertEqual([], calls, "the press waited on the model")
-                    self.assertTrue(reached["prepare"].wait(5))
+                    self.assertTrue(reached["prepare"].wait(WAIT_SEC))
                     reload = self._data(port)["reading_jobs"][f"{harness}:s1"]
                     self.assertEqual((job["id"], "preparing"), (reload["id"], reload["phase"]))
                     gates["prepare"].set()
-                    self.assertTrue(reached["model"].wait(5))
+                    self.assertTrue(reached["model"].wait(WAIT_SEC))
                     gates["spawn"].set()
                     self.assertTrue(
                         self._until(lambda c=config, h=harness: self._phase(c, h) == "waiting")
@@ -4056,9 +4086,9 @@ class ReadingRouteTest(unittest.TestCase):
                     self._serving(self._app(config, state, harness)) as port,
                 ):
                     self._post(port, press, settle=False)
-                    self.assertTrue(reached["prepare"].wait(5))
+                    self.assertTrue(reached["prepare"].wait(WAIT_SEC))
                     gates["prepare"].set()
-                    self.assertTrue(reached["model"].wait(5))
+                    self.assertTrue(reached["model"].wait(WAIT_SEC))
                     gates["spawn"].set()
                     self.assertTrue(
                         self._until(lambda c=config, h=harness: self._phase(c, h) == "waiting")
@@ -4084,13 +4114,13 @@ class ReadingRouteTest(unittest.TestCase):
                 ):
                     _, body = self._post(port, press, settle=False)
                     job = json.loads(body)["job"]
-                    self.assertTrue(reached["prepare"].wait(5))
+                    self.assertTrue(reached["prepare"].wait(WAIT_SEC))
                     status, again = self._post(port, press, settle=False)
                     self.assertEqual(409, status)
                     self.assertEqual(job["id"], json.loads(again)["job"]["id"])
                     self.assertEqual("in-flight", json.loads(again)["reason"])
                     gates["prepare"].set()
-                    self.assertTrue(reached["model"].wait(5))
+                    self.assertTrue(reached["model"].wait(WAIT_SEC))
                     gates["spawn"].set()
                     self.assertTrue(
                         self._until(lambda c=config, h=harness: self._phase(c, h) == "waiting")
@@ -4260,7 +4290,7 @@ class ReadingRouteTest(unittest.TestCase):
         return job.phase if job else None
 
     @staticmethod
-    def _until(predicate: Any, timeout: float = 5.0) -> bool:
+    def _until(predicate: Any, timeout: float = WAIT_SEC) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if predicate():
@@ -4272,7 +4302,7 @@ class ReadingRouteTest(unittest.TestCase):
         """Wait out every reading job this test started, and fail if one hangs."""
         prefix = runtime_reading_jobs.THREAD_PREFIX
         for thread in [t for t in threading.enumerate() if t.name.startswith(prefix)]:
-            thread.join(timeout=10)
+            thread.join(timeout=WAIT_SEC)
             self.assertFalse(thread.is_alive(), f"reading job {thread.name} never finished")
 
     def test_a_session_nobody_annotated_is_not_confirmed_to_exist(self) -> None:
@@ -4646,7 +4676,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertFalse(self._consents(config)["codex"], "a press granted the unasked lane")
 
     def _published_row(self, port: int, harness: str) -> dict[str, Any]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/data")
             rows = json.loads(conn.getresponse().read())["sessions"]
@@ -4657,7 +4687,7 @@ class ReadingRouteTest(unittest.TestCase):
 
     @staticmethod
     def _save(port: int, payload: dict[str, Any]) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request(
                 "POST",
@@ -5467,7 +5497,7 @@ class ReadingRouteTest(unittest.TestCase):
             self._counting_model() as calls,
             self._serving(self._app(config, state)) as port,
         ):
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
             try:
                 conn.putrequest("POST", "/api/reading")
                 conn.putheader("Content-Length", "999999")
@@ -5499,14 +5529,14 @@ class ReadingRouteTest(unittest.TestCase):
             def __call__(self, prompt: str, **_kw: Any) -> tuple[str, str]:
                 calls.append(prompt)
                 entered.set()
-                release.wait(10)
+                release.wait(HOLD_SEC)
                 return "{}", "ok"
 
             @staticmethod
             def available() -> bool:
                 if at_seam:
                     entered.set()
-                    release.wait(10)
+                    release.wait(HOLD_SEC)
                 return True
 
         with (
@@ -5530,7 +5560,7 @@ class ReadingRouteTest(unittest.TestCase):
         )
 
     def _board_job(self, port: int) -> Any:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/data", headers={"Sec-Fetch-Site": "same-origin"})
             board = json.loads(conn.getresponse().read())
@@ -5549,7 +5579,7 @@ class ReadingRouteTest(unittest.TestCase):
             status, body = self._post(port, self._press(), settle=False)
             self.assertEqual(202, status, body)
             job_id = json.loads(body)["job"]["id"]
-            self.assertTrue(entered.wait(10))
+            self.assertTrue(entered.wait(WAIT_SEC))
             self.assertIs(False, self._board_job(port)["cancelling"])
             status, body = self._cancel(port, job_id)
             self.assertEqual(202, status, body)
@@ -5573,7 +5603,7 @@ class ReadingRouteTest(unittest.TestCase):
         ):
             _status, body = self._post(port, self._press(), settle=False)
             job_id = json.loads(body)["job"]["id"]
-            self.assertTrue(entered.wait(10))
+            self.assertTrue(entered.wait(WAIT_SEC))
             status, _ = self._cancel(port, job_id)
             self.assertEqual(202, status)
             release.set()
@@ -5601,7 +5631,7 @@ class ReadingRouteTest(unittest.TestCase):
         ):
             _status, body = self._post(port, self._press(), settle=False)
             job_id = json.loads(body)["job"]["id"]
-            self.assertTrue(entered.wait(10))
+            self.assertTrue(entered.wait(WAIT_SEC))
             for headers in (
                 {"Sec-Fetch-Site": "cross-site"},
                 {"Sec-Fetch-Site": "same-site"},
@@ -5627,7 +5657,7 @@ class ReadingRouteTest(unittest.TestCase):
             idle, idle_body = self._cancel(port, "0123456789abcdef")
             _status, body = self._post(port, self._press(), settle=False)
             job_id = json.loads(body)["job"]["id"]
-            self.assertTrue(entered.wait(10))
+            self.assertTrue(entered.wait(WAIT_SEC))
             stale, stale_body = self._cancel(port, "0123456789abcdef")
             unknown, unknown_body = self._cancel(port, job_id, sid="no-such-session")
             self.assertIs(False, self._board_job(port)["cancelling"])
@@ -5673,7 +5703,7 @@ class ReadingRouteTest(unittest.TestCase):
         def held(*args: Any, **kwargs: Any) -> Any:
             if threading.current_thread() is collector.get("thread"):
                 paused.set()
-                resume.wait(10)
+                resume.wait(HOLD_SEC)
             return real(*args, **kwargs)
 
         def board() -> dict[str, Any]:
@@ -5688,7 +5718,7 @@ class ReadingRouteTest(unittest.TestCase):
         ):
             _status, body = self._post(port, self._press(), settle=False)
             job_id = json.loads(body)["job"]["id"]
-            self.assertTrue(entered.wait(10))
+            self.assertTrue(entered.wait(WAIT_SEC))
 
             def collect() -> None:
                 application.state.snapshot.clear()
@@ -5696,7 +5726,7 @@ class ReadingRouteTest(unittest.TestCase):
 
             collector["thread"] = threading.Thread(target=collect, daemon=True)
             collector["thread"].start()
-            self.assertTrue(paused.wait(10))
+            self.assertTrue(paused.wait(WAIT_SEC))
             canceller = threading.Thread(
                 target=runtime_reading_jobs.cancel,
                 args=(application, "pi:s1", job_id),
@@ -5709,8 +5739,8 @@ class ReadingRouteTest(unittest.TestCase):
                 "the job never ended",
             )
             resume.set()
-            collector["thread"].join(10)
-            canceller.join(10)
+            collector["thread"].join(WAIT_SEC)
+            canceller.join(WAIT_SEC)
             self._settle()
             published = board()
         # The collection that straddled the end shows the job or its outcome,
@@ -5769,7 +5799,7 @@ class AnnotateRouteTest(unittest.TestCase):
 
     @staticmethod
     def _post(port: int, body: bytes, *, declared: str | None = None) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             if declared is None:
                 conn.request(
@@ -5786,7 +5816,7 @@ class AnnotateRouteTest(unittest.TestCase):
 
     @staticmethod
     def _get_data(port: int) -> int:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/data")
             response = conn.getresponse()
@@ -5797,7 +5827,7 @@ class AnnotateRouteTest(unittest.TestCase):
 
     @staticmethod
     def _get_annotations(port: int) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/annotations")
             response = conn.getresponse()
@@ -6304,7 +6334,7 @@ class LaneRouteTest(unittest.TestCase):
 
     @staticmethod
     def _post(port: int, body: bytes, *, declared: str | None = None) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             if declared is None:
                 conn.request("POST", "/api/lane", body=body, headers={"Content-Type": "text/plain"})
@@ -6408,7 +6438,7 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
 
     @staticmethod
     def _request(port: int, method: str, body: dict[str, Any] | None = None) -> Any:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             path = "/api/annotate" if body is not None else "/api/data"
             payload = json.dumps(body).encode() if body is not None else None
@@ -6453,7 +6483,7 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
                         if held["armed"]:
                             held["armed"] = False
                             inside.set()
-                            release.wait(10)
+                            release.wait(HOLD_SEC)
                         return scan(*args)
 
                     def poll_then_write(*args: Any, **kwargs: Any) -> Any:
@@ -6466,7 +6496,7 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
                         )
                         poll.start()
                         answers["poll_thread"] = poll
-                        self.assertTrue(inside.wait(10), "the poll never reached its scan")
+                        self.assertTrue(inside.wait(WAIT_SEC), "the poll never reached its scan")
                         return write(*args, **kwargs)
 
                     with (
@@ -6487,8 +6517,8 @@ class ASaveDuringACollectionTest(RuntimeTestCase):
                         )
                         refresh.start()
                         release.set()
-                        answers["poll_thread"].join(10)
-                        refresh.join(10)
+                        answers["poll_thread"].join(WAIT_SEC)
+                        refresh.join(WAIT_SEC)
                 finally:
                     release.set()
                     httpd.shutdown()
@@ -6666,7 +6696,7 @@ class SummaryStoreHTTPTest(unittest.TestCase):
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
@@ -6834,7 +6864,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         ):
             first = self.request_summary()
             self.assertEqual(202, first._send.call_args.args[2])
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
             calls = len(model.prompts)
             used = reading_policy.summary_status(self.config, now=self.application.clock())["used"]
             second = self.request_summary()
@@ -6881,7 +6911,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         ):
             handler = self.request_summary()
             self.assertEqual(202, handler._send.call_args.args[2])
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         prompts = "\n".join(model.prompts)
         for number in (0, 3, 7):
             self.assertIn(f"Audit checkpoint {number}", prompts)
@@ -6899,7 +6929,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
 
         def held_read(*args: Any, **kwargs: Any) -> Any:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return original(*args, **kwargs)
 
         def request() -> None:
@@ -6915,13 +6945,13 @@ class SummaryJobHTTPTest(unittest.TestCase):
             caller = threading.Thread(target=request)
             caller.start()
             try:
-                self.assertTrue(entered.wait(2))
-                self.assertTrue(returned.wait(1), "start waited for source collection")
+                self.assertTrue(entered.wait(WAIT_SEC))
+                self.assertTrue(returned.wait(WAIT_SEC), "start waited for source collection")
                 self.assertTrue(self.jobs.cancel(self.application, "claude", "root"))
             finally:
                 release.set()
                 caller.join(5)
-                wait_job(self.application, "claude", "root", timeout=5)
+                wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         self.assertEqual(202, replies[0]._send.call_args.args[2])
         self.assertEqual([], model.prompts)
         self.assertIsNone(self.store.get(self.config, "claude", "root"))
@@ -6934,7 +6964,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         with mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)):
             handler = self.request_summary()
             self.assertEqual(202, handler._send.call_args.args[2])
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         job = self.jobs.published(self.application, "claude", "root")
         assert job is not None
         self.assertEqual("refused", job["state"])
@@ -6963,7 +6993,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
         ):
             handler = self.request_summary(action="update", origin="press")
             self.assertEqual(202, handler._send.call_args.args[2])
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         after = self.store.get(self.config, "claude", "root")
         assert after is not None
         self.assertEqual(before.summary, after.summary)
@@ -6993,7 +7023,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
             mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
         ):
             self.request_summary()
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         self.assertEqual([], model.prompts)
         job = self.jobs.published(self.application, "claude", "root")
         assert job is not None
@@ -7029,7 +7059,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
                     mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
                 ):
                     self.request_summary()
-                    wait_job(self.application, "claude", "root", timeout=5)
+                    wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
                 self.assertEqual([], model.prompts)
                 self.assertIsNone(self.store.get(self.config, "claude", "root"))
                 job = self.jobs.published(self.application, "claude", "root")
@@ -7060,7 +7090,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
             mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
         ):
             self.request_summary()
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         job = self.jobs.published(self.application, "claude", "root")
         assert job is not None
         self.assertEqual("planned_seconds", job["reason"])
@@ -7104,7 +7134,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
             mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=Replies()),
         ):
             self.request_summary()
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         self.assertIsNotNone(self.store.get(self.config, "claude", "root"))
 
     def test_discard_everything_stops_a_running_summary_and_deletes_the_store_entry(self) -> None:
@@ -7120,7 +7150,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return Replies()(prompt, output_cap_bytes=output_cap_bytes)
 
         with (
@@ -7128,12 +7158,12 @@ class SummaryJobHTTPTest(unittest.TestCase):
             mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
         ):
             self.request_summary()
-            self.assertTrue(entered.wait(5))
+            self.assertTrue(entered.wait(WAIT_SEC))
             try:
                 answer = self.discard()
             finally:
                 release.set()
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
         # Nothing was stored and a job was: the reply says the job was stopped, which `absent` cannot.
         self.assertEqual("stopped", answer["summary"])
         self.assertIsNone(self.store.get(self.config, "claude", "root"))
@@ -7376,7 +7406,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
 
         def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
             entered.set()
-            self.assertTrue(release.wait(5))
+            self.assertTrue(release.wait(HOLD_SEC))
             return replies(prompt, output_cap_bytes=output_cap_bytes)
 
         off = json.dumps({"consent": "off", "press": True, "observer_model": 1}).encode()
@@ -7385,12 +7415,12 @@ class SummaryJobHTTPTest(unittest.TestCase):
             mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
         ):
             self.request_summary(origin="press")
-            self.assertTrue(entered.wait(5))
+            self.assertTrue(entered.wait(WAIT_SEC))
             try:
                 self.handler("/api/reading", off).do_POST()
             finally:
                 release.set()
-            wait_job(self.application, "claude", "root", timeout=5)
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
             self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:root"].reason)
             self.assertEqual(1, len(replies.prompts))
             self.assertIsNone(self.store.get(self.config, "claude", "root"))

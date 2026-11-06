@@ -21,6 +21,9 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pre_pr
 
+# Lock holders and checks run as real processes that are signalled and reaped.
+REAL_TIME_TESTS = True
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 
@@ -559,9 +562,10 @@ STOPPED_HOLDER = textwrap.dedent(
 
 
 def alive(pid: int) -> bool:
-    """Whether `pid` still exists a few seconds on: a check left running sleeps for a minute."""
-    # A process killed a moment ago lingers as a zombie until its new parent reaps it.
-    deadline = time.monotonic() + 5
+    """Whether `pid` still exists half a minute on: a check left running sleeps for a minute."""
+    # A process killed a moment ago lingers as a zombie until its new parent reaps it, which on a
+    # loaded runner is not always within the few seconds this once allowed.
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
             os.kill(pid, 0)
@@ -569,6 +573,17 @@ def alive(pid: int) -> bool:
             return False
         time.sleep(0.05)
     return True
+
+
+def exited_unreaped(pid: int) -> bool:
+    """Whether `pid` has exited and waits, a zombie, for its parent to reap it."""
+    state = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)],  # noqa: S607 - the system's own ps
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    return state.strip().startswith("Z")
 
 
 @unittest.skipIf(sys.platform == "win32", "process groups and these signals are POSIX")
@@ -609,7 +624,11 @@ class StoppedHolderTest(unittest.TestCase):
         EPERM, not ESRCH (measured 2026-11-06; it ejected a merge-queue entry). Stopping such a
         check must still succeed."""
         process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
-        time.sleep(0.5)
+        # Waited for, not slept for: a fixed half second let a slow start stop a live check.
+        deadline = time.monotonic() + 30
+        while not exited_unreaped(process.pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(exited_unreaped(process.pid), "the check never exited")
         pre_pr._stop(process)
         self.assertIsNotNone(process.returncode)
 
@@ -623,10 +642,36 @@ class StoppedHolderTest(unittest.TestCase):
                 "time.sleep(60)"
             )
             item = pre_pr.Item("check", argv=(sys.executable, "-c", check), timeout=3)
-            with redirect_stdout(io.StringIO()) as out:
+            real_wait = subprocess.Popen.wait
+            timed: list[float | None] = []
+
+            def written() -> list[str]:
+                with contextlib.suppress(OSError):
+                    return pids.read_text(encoding="utf-8").split()
+                return []
+
+            def times_out_once_started(
+                process: subprocess.Popen[bytes], timeout: float | None = None
+            ) -> int:
+                # The check's own wait times out once the check has started its grandchild, not
+                # after 3 s of a clock a loaded runner can spend before the check writes its pids.
+                if timed:
+                    return real_wait(process, timeout)
+                timed.append(timeout)
+                deadline = time.monotonic() + 30
+                while len(written()) < 2 and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                raise subprocess.TimeoutExpired(process.args, timeout or 0)
+
+            with (
+                redirect_stdout(io.StringIO()) as out,
+                mock.patch.object(subprocess.Popen, "wait", times_out_once_started),
+            ):
                 code = pre_pr._run(item, Path(tmp))
-            started = [int(pid) for pid in pids.read_text(encoding="utf-8").split()]
+            self.assertEqual([3], timed)
+            started = [int(pid) for pid in written()]
             try:
+                self.assertEqual(2, len(started), "the check never started its grandchild")
                 self.assertEqual(code, 124)
                 self.assertIn("timed out after 3 s", out.getvalue())
                 self.assertEqual([pid for pid in started if alive(pid)], [])

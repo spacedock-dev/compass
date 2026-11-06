@@ -350,7 +350,7 @@ class RecordPagesTest(unittest.TestCase):
         self.addCleanup(server.shutdown)
 
         def request(query: str, **headers: str) -> tuple[int, Any]:
-            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=30)
             connection.request("GET", "/api/session-record" + query, headers=headers)
             response = connection.getresponse()
             body = response.read()

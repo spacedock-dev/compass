@@ -424,12 +424,12 @@ class ProgressRegistryTest(unittest.TestCase):
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     with reading._FLIGHT_LOCK:
                         future = pool.submit(update, active, value, entered)
-                        self.assertTrue(entered.wait(2))
+                        self.assertTrue(entered.wait(30))
                         if seal:
                             active.job.sealed = True
                         else:
                             active.job.cancelled_at = 101
-                    self.assertFalse(future.result(timeout=2))
+                    self.assertFalse(future.result(timeout=30))
 
     def test_public_reads_are_closed_copies_without_io_or_permission_work(self) -> None:
         active = self.admit()

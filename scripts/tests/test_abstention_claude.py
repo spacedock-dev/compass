@@ -1510,7 +1510,7 @@ class DRC4731VerifiedPrivateBytesTest(_InstalledLayout):
                 str(ROOT / "scripts"),
             ],
             capture_output=True,
-            timeout=2,
+            timeout=30,
             check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr.decode())
@@ -3104,7 +3104,7 @@ print(json.dumps(result))
                 env=environ,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=30,
                 check=False,
             )
         self.assertEqual(0, result.returncode, result.stderr)

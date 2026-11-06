@@ -953,7 +953,7 @@ class ConcurrentWritersKeepEveryRecordTest(unittest.TestCase):
         # only if they do not share a temp name. A shared one means both open it
         # O_TRUNC on independent descriptors and `os.replace` the interleaving.
         opened: list[str] = []
-        both_open = threading.Barrier(2, timeout=5)
+        both_open = threading.Barrier(2, timeout=30)
         real_open = os.open
 
         def watched(path: str, *args: Any, **kwargs: Any) -> int:

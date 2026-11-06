@@ -1851,7 +1851,7 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
 
     @staticmethod
     def post(port: int, body: bytes) -> tuple[int, bytes]:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
         try:
             conn.request("POST", "/api/annotate", body=body, headers={"Content-Type": "text/plain"})
             response = conn.getresponse()

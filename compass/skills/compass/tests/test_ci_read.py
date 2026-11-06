@@ -45,6 +45,14 @@ OTHER_HEAD = "b" * 40
 GOAL_URL = f"https://github.com/{REPO}/pull/12"
 GOAL_TEXT = f"Fix the failing GitHub Actions on PR {GOAL_URL}"
 
+# Real `gh` stub processes, a timeout that kills one and a Cancel that kills one.
+REAL_TIME_TESTS = True
+
+# How long a killed call may take on a busy runner (a Python start, a kill, a reap), and how
+# long the stub hangs: a whole further WAIT_SEC past it, so a call that was not killed fails.
+WAIT_SEC = 30.0
+HANG_SEC = 2 * WAIT_SEC
+
 
 def check(name: str, bucket: str, done: str = "2026-10-27T10:00:00Z") -> dict[str, str]:
     """One row as `gh pr checks --json name,state,bucket,completedAt` prints it."""
@@ -415,12 +423,12 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
             self.assertEqual(ci_read.ERROR_OUTPUT, read(self.stub)["error"])
 
     def test_a_call_past_the_timeout_is_killed(self) -> None:
-        self.stub.set(view={"sleep": 30, "stdout": "{}"})
+        self.stub.set(view={"sleep": HANG_SEC, "stdout": "{}"})
         with mock.patch.object(ci_read, "TIMEOUT_SEC", 0.5):
             started = time.monotonic()
             record = read(self.stub)
         self.assertEqual(ci_read.ERROR_TIMEOUT, record["error"])
-        self.assertLess(time.monotonic() - started, 10)
+        self.assertLess(time.monotonic() - started, WAIT_SEC)
 
     def test_a_check_name_is_clipped_and_takes_a_closed_character_set(self) -> None:
         separator = chr(0x2028)
@@ -1384,7 +1392,10 @@ class ACancelKillsACallAlreadyInFlight(unittest.TestCase):
 
     def test_a_slow_gh_is_killed_when_the_group_is_cancelled(self) -> None:
         self.stub.set(
-            view={"sleep": 30, "stdout": json.dumps({"headRefOid": SESSION_HEAD, "number": 12})}
+            view={
+                "sleep": HANG_SEC,
+                "stdout": json.dumps({"headRefOid": SESSION_HEAD, "number": 12}),
+            }
         )
         seen: list[Any] = []
         record: list[dict[str, Any]] = []
@@ -1393,14 +1404,18 @@ class ACancelKillsACallAlreadyInFlight(unittest.TestCase):
             seen.append(group)
             threading.Timer(0.3, group.cancel).start()
 
+        # The call's own timeout is pushed past the hang, so only the Cancel can end it in time.
+        timeout = mock.patch.object(ci_read, "TIMEOUT_SEC", 2 * HANG_SEC)
+        timeout.start()
+        self.addCleanup(timeout.stop)
         started = time.monotonic()
         worker = threading.Thread(
             target=lambda: record.append(read(self.stub, on_spawn=spawned)), daemon=True
         )
         worker.start()
-        worker.join(15)
+        worker.join(WAIT_SEC)
         self.assertFalse(worker.is_alive(), "the call outlived its Cancel")
-        self.assertLess(time.monotonic() - started, 10)
+        self.assertLess(time.monotonic() - started, HANG_SEC)
         self.assertEqual(1, len(seen))
         self.assertTrue(record[0]["error"])
 

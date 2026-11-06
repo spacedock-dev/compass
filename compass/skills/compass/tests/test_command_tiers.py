@@ -42,6 +42,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+# The segment listing's linear-time guard is an elapsed bound.
+REAL_TIME_TESTS = True
+
+
 def facts_of(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         project_context._semantic_fact_from_event(dict(row), str(row["kind"]), "tool_report", "")

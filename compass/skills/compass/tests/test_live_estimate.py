@@ -16,7 +16,6 @@ import dataclasses
 import http.client
 import json
 import socket
-import statistics
 import subprocess
 import sys
 import time
@@ -46,6 +45,8 @@ from .test_subagent_checks import Subagent
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+# Two tests time a replay against the record and a fresh replay, on the wall clock.
+REAL_TIME_TESTS = True
 GOAL = "Ship the placeholder parser"
 LINE = "The parser tests pass"
 
@@ -577,14 +578,16 @@ class TheReplayIsBoundedTest(_Replay):
             )
             fresh_times.append(time.perf_counter() - started)
             self.assertEqual(warm, fresh)
-        warm_median, fresh_median = statistics.median(warm_times), statistics.median(fresh_times)
+        # The least of each, as the transcript reader's linearity test takes it: a stall on a busy
+        # runner only adds time, so one slow sample on either side cannot move the minimum.
+        warm_best, fresh_best = min(warm_times), min(fresh_times)
         # A coarse cross-platform performance guard, alongside the bounded-work checks above. Before the
         # listing kept its entries between steps (2026-11-02), both paths took about four seconds on a hosted
         # Python 3.11 runner, and a bound of 95% of the fresh replay failed there on noise alone (4.26 s
         # against 4.23 s). Both paths got cheaper together, so that noise is still a share of the fresh
         # replay. The guard is for a warm read that costs MORE than a fresh one, which the exact-work checks
         # above do not measure, so it still allows twice the fresh replay.
-        self.assertLess(warm_median, 2.0 * fresh_median + 0.5, (warm_times, fresh_times))
+        self.assertLess(warm_best, 2.0 * fresh_best + 0.5, (warm_times, fresh_times))
 
     def test_a_growing_transcript_reads_what_a_fresh_replay_reads(self) -> None:
         cwd = self.session.cwd
@@ -702,12 +705,17 @@ class TheReplayIsBoundedTest(_Replay):
             self.skipTest("timed without a tracer only")
         self.many_calls(3000)
         self.session.save(self.path)
-        started = time.perf_counter()
-        project_context.claude_tool_reports(self.config, str(self.path), SHORT)
-        record = time.perf_counter() - started
-        started = time.perf_counter()
-        self.estimate()
-        live = time.perf_counter() - started
+        # Best of three each: a single sample let one stall on a busy runner decide the ratio.
+        records, lives = [], []
+        for _ in range(3):
+            started = time.perf_counter()
+            project_context.claude_tool_reports(self.config, str(self.path), SHORT)
+            records.append(time.perf_counter() - started)
+            live_estimate._cache.clear()
+            started = time.perf_counter()
+            self.estimate()
+            lives.append(time.perf_counter() - started)
+        record, live = min(records), min(lives)
         # The unbounded replay took about 150 times the record's cost on this transcript.
         # The bounded one measured about 11 times on macOS and 23 times on the Windows
         # runner (PR #429), so the bound catches the regression without timing the runner.

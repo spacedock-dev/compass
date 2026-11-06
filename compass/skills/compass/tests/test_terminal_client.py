@@ -230,7 +230,7 @@ class PublishedVersionTest(unittest.TestCase):
         self.addCleanup(thread.join, 2)
         self.addCleanup(httpd.server_close)
         self.addCleanup(httpd.shutdown)
-        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=30)
         self.addCleanup(conn.close)
 
         conn.request("GET", "/api/health")
@@ -372,7 +372,7 @@ class DiscoveryTest(HomeCase):
         with FakeDashboard(version="3.2.1") as fake:
             self.state_file(f"compass-{fake.port}.json")
 
-            found = terminal_client.find_dashboard(self.home, timeout=2)
+            found = terminal_client.find_dashboard(self.home, timeout=30)
 
         assert found is not None
         self.assertEqual((fake.port, "3.2.1"), (found.port, found.version))
@@ -391,7 +391,7 @@ class DiscoveryTest(HomeCase):
 
     def test_a_dashboard_without_a_version_is_found_with_none(self) -> None:
         with FakeDashboard(version=None) as fake:
-            found = terminal_client.find_dashboard(self.home, port=fake.port, timeout=2)
+            found = terminal_client.find_dashboard(self.home, port=fake.port, timeout=30)
 
         assert found is not None
         self.assertIsNone(found.version)

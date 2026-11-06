@@ -481,11 +481,13 @@ class SpacedockParserTest(unittest.TestCase):
                 },
             }
         ).encode()
-        started = time.monotonic()
+        # CPU time, not the wall clock: a busy runner delays this process without
+        # making it do more work, and the quadratic rescan was minutes of work.
+        started = time.process_time()
 
         self.assertEqual([], spacedock.boot_records(config, payload))
 
-        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertLess(time.process_time() - started, 5.0)
 
     RENDERED_BOOT = (
         'command: "boot"\n'

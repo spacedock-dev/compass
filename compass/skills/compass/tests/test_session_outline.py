@@ -28,6 +28,11 @@ from .support import make_server, poll_fast
 from .test_claude_checks import Transcript, hook_stdout
 from .test_project_script_checks import git, package
 
+# How long a test waits for a poll that returns at once on an idle runner, and how long a
+# held read waits to be released: longer, so a poll that blocks fails the wait instead.
+WAIT_SEC = 30.0
+HOLD_SEC = 2 * WAIT_SEC
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -317,6 +322,7 @@ class OutlineFactBoundsTest(unittest.TestCase):
 
 class SessionOutlineTest(unittest.TestCase):
     def setUp(self) -> None:
+        test_session_source.stop_the_clock(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -1157,7 +1163,7 @@ class SessionOutlineTest(unittest.TestCase):
             result = real(*args, **kwargs)
             if len(calls) == 1:
                 entered.set()
-                if not release.wait(5):
+                if not release.wait(HOLD_SEC):
                     raise AssertionError("owned read barrier timed out")
             return result
 
@@ -1174,11 +1180,11 @@ class SessionOutlineTest(unittest.TestCase):
                 "root",
             )
             try:
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 yield pool, first, calls
             finally:
                 release.set()
-                first.result(timeout=2)
+                first.result(timeout=WAIT_SEC)
 
     def test_same_session_cold_poll_is_singleflight_and_truthfully_busy(self) -> None:
         self._large(2)
@@ -1186,7 +1192,7 @@ class SessionOutlineTest(unittest.TestCase):
             second = pool.submit(
                 self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
             )
-            pending, plan = second.result(timeout=1)
+            pending, plan = second.result(timeout=WAIT_SEC)
             self.assertEqual(("unavailable", "outline_busy"), (pending["state"], pending["reason"]))
             self.assertIsNone(pending["coverage"])
             self.assertIsNone(plan)
@@ -1205,7 +1211,7 @@ class SessionOutlineTest(unittest.TestCase):
             second = pool.submit(
                 self.outline.for_session_with_plan, config, self.state, "claude", "root"
             )
-            answer = second.result(timeout=1)
+            answer = second.result(timeout=WAIT_SEC)
             self.assertIs(accepted[0], answer[0])
             self.assertIs(accepted[1], answer[1])
             self.assertEqual(["root"], calls)
@@ -1220,7 +1226,7 @@ class SessionOutlineTest(unittest.TestCase):
             second = pool.submit(
                 self.outline.for_session_with_plan, changed, self.state, "claude", "root"
             )
-            self.assertEqual("outline_busy", second.result(timeout=1)[0]["reason"])
+            self.assertEqual("outline_busy", second.result(timeout=WAIT_SEC)[0]["reason"])
             self.assertEqual(["root"], calls)
         self.assertEqual("stale", first.result()[0]["state"])
         self.assertEqual({}, self.state.session_outlines)
@@ -1238,7 +1244,7 @@ class SessionOutlineTest(unittest.TestCase):
             second = pool.submit(
                 self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
             )
-            self.assertEqual("outline_busy", second.result(timeout=1)[0]["reason"])
+            self.assertEqual("outline_busy", second.result(timeout=WAIT_SEC)[0]["reason"])
         self.assertEqual("stale", first.result()[0]["state"])
         self.assertEqual({}, self.state.session_outlines)
 
@@ -1251,7 +1257,7 @@ class SessionOutlineTest(unittest.TestCase):
             second = pool.submit(
                 self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
             )
-            newer = second.result(timeout=1)
+            newer = second.result(timeout=WAIT_SEC)
             self.assertEqual("ok", newer[0]["state"])
             self.assertEqual(["root", "root"], calls)
         self.assertEqual("stale", first.result()[0]["state"])
@@ -1276,7 +1282,7 @@ class SessionOutlineTest(unittest.TestCase):
                     "claude",
                     f"cold-{number}",
                 )
-                self.assertEqual("outline_busy", next_poll.result(timeout=1)[0]["reason"])
+                self.assertEqual("outline_busy", next_poll.result(timeout=WAIT_SEC)[0]["reason"])
                 self.assertEqual(["root"], calls)
                 self.assertEqual(1, self.state.session_outline_active)
         self.assertEqual(0, self.state.session_outline_active)
@@ -1583,7 +1589,7 @@ class SessionOutlineTest(unittest.TestCase):
             result = real(*args, **kwargs)
             if args[3] == "root":
                 entered.set()
-                if not release.wait(5):
+                if not release.wait(HOLD_SEC):
                     raise AssertionError("owned read barrier timed out")
             return result
 
@@ -1600,18 +1606,18 @@ class SessionOutlineTest(unittest.TestCase):
                 self.outline.for_session_with_plan, self.config, self.state, "claude", "root"
             )
             try:
-                self.assertTrue(entered.wait(2))
+                self.assertTrue(entered.wait(WAIT_SEC))
                 second = pool.submit(
                     self.outline.for_session_with_plan, self.config, self.state, "claude", "other"
                 )
                 try:
-                    result = second.result(timeout=1)
+                    result = second.result(timeout=WAIT_SEC)
                 except TimeoutError:
                     self.fail("session B waited behind session A source I/O")
                 self.assertEqual("ok", result[0]["state"])
             finally:
                 release.set()
-                self.assertEqual("ok", first.result(timeout=2)[0]["state"])
+                self.assertEqual("ok", first.result(timeout=WAIT_SEC)[0]["state"])
 
     def test_codex_polls_accumulate_person_only_in_order_with_one_byte_budget(self) -> None:
         rows = []
@@ -2336,7 +2342,9 @@ class SessionOutlineTest(unittest.TestCase):
         handler = mock.Mock(server=server)
 
         def request(_handler: Any, path: str) -> Any:
-            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=WAIT_SEC
+            )
             self.addCleanup(connection.close)
             connection.request("GET", path)
             response = connection.getresponse()

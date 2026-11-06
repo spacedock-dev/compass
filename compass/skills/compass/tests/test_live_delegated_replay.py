@@ -203,7 +203,7 @@ class DelegatedLiveReplayTest(SubagentChecksTestCase):
             calls += 1
             if calls == 1:
                 entered.set()
-                if not release.wait(5):
+                if not release.wait(30):
                     raise AssertionError("the first replay did not finish")
             return real(*args, **kwargs)
 
@@ -219,11 +219,11 @@ class DelegatedLiveReplayTest(SubagentChecksTestCase):
                 concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool,
             ):
                 first = pool.submit(request)
-                self.assertTrue(entered.wait(5))
+                self.assertTrue(entered.wait(30))
                 second = pool.submit(request)
-                self.assertTrue(second_lookup.wait(5))
+                self.assertTrue(second_lookup.wait(30))
                 release.set()
-                self.assertEqual(first.result(timeout=5), second.result(timeout=5))
+                self.assertEqual(first.result(timeout=30), second.result(timeout=30))
             self.assertEqual(1, calls)
         finally:
             release.set()
@@ -252,7 +252,7 @@ class DelegatedLiveReplayTest(SubagentChecksTestCase):
             calls += 1
             if calls == 1:
                 entered.set()
-                if not release.wait(5):
+                if not release.wait(30):
                     raise AssertionError("the waiter did not reach the flight")
                 raise OSError("transient scan failure")
             return real(*args, **kwargs)
@@ -269,13 +269,13 @@ class DelegatedLiveReplayTest(SubagentChecksTestCase):
                 concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool,
             ):
                 first = pool.submit(request)
-                self.assertTrue(entered.wait(5))
+                self.assertTrue(entered.wait(30))
                 second = pool.submit(request)
-                self.assertTrue(second_lookup.wait(5))
+                self.assertTrue(second_lookup.wait(30))
                 release.set()
                 with self.assertRaisesRegex(OSError, "transient scan failure"):
-                    first.result(timeout=5)
-                self.assertEqual(levels.NONE_OR_LOW, second.result(timeout=5)["level"])
+                    first.result(timeout=30)
+                self.assertEqual(levels.NONE_OR_LOW, second.result(timeout=30)["level"])
             self.assertEqual(2, calls)
         finally:
             release.set()

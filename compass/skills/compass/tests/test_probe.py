@@ -19,6 +19,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from compass_runtime import probe as runtime_probe
 
@@ -216,6 +217,7 @@ class ProbeCostBudgetTest(support.RuntimeTestCase):
     # Generous by two orders of magnitude against the measured 0.14 ms for 97
     # paths (about 1.4 microseconds per path). A regression that made the probe
     # glob or read would blow through this; ordinary machine variance will not.
+    # It is CPU time, so a runner busy with other work does not stretch it.
     MAX_MICROSECONDS_PER_PATH = 150.0
 
     def test_the_probe_walks_a_bounded_set_and_stats_it_cheaply(self) -> None:
@@ -233,10 +235,21 @@ class ProbeCostBudgetTest(support.RuntimeTestCase):
             self.assertEqual((str(root),), config.store_roots["claude.projects"])
 
             paths = runtime_probe.watched_paths(config)
-            started = time.perf_counter()
+            started = time.process_time()
             for _ in range(5):
                 runtime_probe.stamp(config)
-            elapsed = (time.perf_counter() - started) / 5
+            elapsed = (time.process_time() - started) / 5
+            with (
+                mock.patch.object(os, "stat", wraps=os.stat) as stat,
+                mock.patch.object(os, "scandir", wraps=os.scandir) as scandir,
+            ):
+                runtime_probe.stamp(config)
+            roots = [path for group in config.store_roots.values() for path in group]
+
+        # The same budget as calls, which no runner's speed can move: one stat per
+        # watched path, and a listing of each store root and nothing below it.
+        self.assertEqual(len(paths), stat.call_count)
+        self.assertEqual(len(roots), scandir.call_count)
 
         self.assertGreater(len(paths), 60, "the watched set must cover every project")
         self.assertLess(

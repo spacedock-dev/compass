@@ -19,6 +19,10 @@ from compass_runtime import reading_policy as policy
 from . import test_reading_recovered_publication as recovery_tests
 from .test_reading_long_finalize import Crash
 
+# How long a test waits for a step that happens at once on an idle runner: a busy runner
+# is slower, not red.
+WAIT_SEC = 30.0
+
 
 class TargetDiscardTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -145,13 +149,13 @@ class TargetDiscardTest(unittest.TestCase):
                         now=105,
                     )
                     futures.append(future)
-                    self.assertTrue(waiting.wait(2))
+                    self.assertTrue(waiting.wait(WAIT_SEC))
                     self.assertFalse(future.done())
                     return retire(*args, **kwargs)
 
             with mock.patch.object(inspection, "_retire_locked", side_effect=held):
                 self.assertTrue(self.discard().retired)
-            self.assertEqual(store.OUTCOME_STORED, futures[0].result(timeout=5))
+            self.assertEqual(store.OUTCOME_STORED, futures[0].result(timeout=WAIT_SEC))
 
     def test_owner_snapshot_and_accounting_constraints_still_apply(self) -> None:
         self.edit()
