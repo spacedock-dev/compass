@@ -49,7 +49,12 @@ DASHBOARD_ARGS = "-s compass/skills/compass/tests -t ."
 SCRIPTS_ARGS = "-s scripts/tests -t scripts/tests"
 DASHBOARD_SUITE = f"{RUNNER} {DASHBOARD_ARGS}"
 SCRIPTS_SUITE = f"{RUNNER} {SCRIPTS_ARGS}"
-DOCUMENTATION_TEST = f"{DASHBOARD_SUITE} -p test_documentation.py"
+VALIDATE_TESTS = (
+    "python3 -m unittest scripts/tests/test_validate_plugins.py scripts/tests/test_bump_version.py"
+)
+INSTALL = "python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt"
+REQUIREMENTS = frozenset({"requirements-validation.txt", "requirements-dev.txt"})
+PLAYWRIGHT = "pnpm exec playwright install chromium"
 VERSION_DIFF = (
     "git diff \"$(git merge-base {base} HEAD)\"..HEAD -- '*plugin.json' "
     "'*gemini-extension.json' | grep -E '^[+-].*\"version\"'"
@@ -99,6 +104,7 @@ class Lanes:
     frontend_docs_tests: tuple[str, ...] = ()
     platform: bool = False
     unknown: tuple[str, ...] = ()
+    has_frontend_docs: bool = False
 
     @classmethod
     def read(cls, outputs: dict[str, str]) -> Lanes:
@@ -121,6 +127,7 @@ class Lanes:
             frontend_docs_tests=tuple(outputs.get("frontend_docs_tests", "").split()),
             platform=on("platform"),
             unknown=unknown,
+            has_frontend_docs="frontend_docs" in outputs,
         )
 
 
@@ -131,6 +138,7 @@ EVERY_LANE = Lanes(python=True, frontend=True, suites=True)
 class Options:
     everything: bool
     coverage: bool
+    requirements: bool
     base: str
     jobs: int | None
     which: Callable[[str], str | None]
@@ -163,13 +171,14 @@ def changed_paths(base: str, root: Path = ROOT) -> list[str]:
     return sorted({path for path in (*tracked, *untracked) if path})
 
 
-def classify(base: str, root: Path = ROOT) -> tuple[dict[str, str], list[str]]:
-    """The detector's outputs for this change, and its one-line reason per path."""
+def classify(base: str, root: Path = ROOT) -> tuple[dict[str, str], list[str], list[str]]:
+    """The detector's outputs for this change, its one-line reason per path, and the paths."""
     try:
-        result = ci_scope.scope(changed_paths(base, root), root)
+        paths = changed_paths(base, root)
+        result = ci_scope.scope(paths, root)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         raise ScopeError(str(error)) from error
-    return result.outputs(), list(result.reasons)
+    return result.outputs(), list(result.reasons), paths
 
 
 def _argv(text: str, options: Options) -> tuple[str, ...]:
@@ -181,9 +190,8 @@ def _argv(text: str, options: Options) -> tuple[str, ...]:
 def _version_check(base: str, root: Path) -> Callable[[], int]:
     def check() -> int:
         merge_base = _git(root, "merge-base", base, "HEAD").strip()
-        diff = _git(
-            root, "diff", f"{merge_base}..HEAD", "--", "*plugin.json", "*gemini-extension.json"
-        )
+        # Against the working tree, not HEAD: an uncommitted bump fails version-guard once pushed.
+        diff = _git(root, "diff", merge_base, "--", "*plugin.json", "*gemini-extension.json")
         moved = [line for line in diff.splitlines() if re.match(r'^[+-].*"version"', line)]
         for line in moved:
             print(f"    {line}")
@@ -213,6 +221,7 @@ def _canonical(lanes: Lanes, options: Options) -> list[Item]:
     every = options.everything
     coverage = every or options.coverage
     no_coverage = "coverage is opt-in with --coverage; CI enforces the threshold"
+    install = None if every or options.requirements else "no requirements file changed"
     frontend = None if every or lanes.frontend else "the frontend lane is off"
     pnpm_install = (
         None
@@ -221,23 +230,23 @@ def _canonical(lanes: Lanes, options: Options) -> list[Item]:
     )
     dev = None if every or lanes.frontend or lanes.contract else "no frontend or contract lane"
     suites = None if every or lanes.suites else "no Python suite lane is on"
-    coverage_step = suites or (None if coverage else no_coverage)
+    # Coverage of the dashboard suite alone, on a run without the suite lanes, would be a partial
+    # figure measured against the whole-repository threshold.
+    suite_coverage = coverage and suites is None
+    coverage_step = None if suite_coverage else suites or no_coverage
 
     def frontend_coverage() -> str | None:
         return frontend or (None if coverage else no_coverage)
 
     def suite(text: str) -> str:
-        if not coverage:
+        if not suite_coverage:
             text = text.replace(" --coverage", "")
         if options.jobs is not None:
             text = f"{text} -j {options.jobs}"
         return text
 
     rows: list[tuple[str, str | None]] = [
-        (
-            "python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt",
-            None if every else "installs the toolchain; run it after the requirements change",
-        ),
+        (INSTALL, install),
         ("ruff check .", None),
         ("ruff format --check .", None),
         ("mypy", None),
@@ -255,9 +264,11 @@ def _canonical(lanes: Lanes, options: Options) -> list[Item]:
         ("pnpm test:dev", dev),
         ("pnpm build", frontend),
         ("pnpm build:check", frontend),
-        ("pnpm exec playwright install chromium", frontend),
+        (PLAYWRIGHT, frontend),
         ("coverage erase", coverage_step),
-        (suite(f"{RUNNER} --coverage {DASHBOARD_ARGS}"), suites),
+        # validate.yml runs the dashboard suite on a pull request the gate runs no Python suite on,
+        # as the backstop for a document the detector misclassifies, so a run without one does too.
+        (suite(f"{RUNNER} --coverage {DASHBOARD_ARGS}"), None),
         (suite(f"{RUNNER} --coverage {SCRIPTS_ARGS}"), suites),
         ("coverage combine", coverage_step),
         ("coverage report", coverage_step),
@@ -279,10 +290,11 @@ def _canonical(lanes: Lanes, options: Options) -> list[Item]:
 
 def _derived(lanes: Lanes, options: Options) -> dict[str, list[Item]]:
     """Commands outside the canonical list, keyed by the canonical command they follow."""
-    documentation = Item(
-        DOCUMENTATION_TEST,
-        "the dashboard suite runs it" if lanes.suites else None,
-        _argv(DOCUMENTATION_TEST, options),
+    # validate.yml runs these on every pull request; the scripts suite holds them otherwise.
+    validate = Item(
+        VALIDATE_TESTS,
+        "the scripts suite runs them" if lanes.suites else None,
+        _argv(VALIDATE_TESTS, options),
     )
     contract: list[Item] = []
     if lanes.contract:
@@ -314,14 +326,15 @@ def _derived(lanes: Lanes, options: Options) -> dict[str, list[Item]]:
         text = f"pnpm exec vitest run {' '.join(lanes.frontend_docs_tests)}"
         docs = Item(text, argv=_argv(text, options))
     else:
-        docs = Item(
-            "pnpm exec vitest run <the Vitest files that read a changed document>",
-            "pnpm test runs every Vitest file"
-            if lanes.frontend
-            else "no changed document is read by a frontend test",
-        )
+        if lanes.frontend:
+            reason = "pnpm test runs every Vitest file"
+        elif lanes.has_frontend_docs:
+            reason = "no changed document is read by a frontend test"
+        else:
+            reason = "this ci_scope.py reports no frontend_docs lane"
+        docs = Item("pnpm exec vitest run <the Vitest files that read a changed document>", reason)
     return {
-        "python3 scripts/bump_version.py --current": [documentation],
+        "python3 scripts/bump_version.py --current": [validate],
         "pnpm test:dev": [*contract, docs],
     }
 
@@ -336,6 +349,7 @@ def plan(
     *,
     everything: bool = False,
     coverage: bool = False,
+    requirements: bool = False,
     base: str = DEFAULT_BASE,
     jobs: int | None = None,
     which: Callable[[str], str | None] = shutil.which,
@@ -344,13 +358,20 @@ def plan(
     """Every command this run considers, in order, each either to run or skipped with a reason."""
     lanes = Lanes.read(outputs)
     everything = everything or bool(lanes.unknown)
-    options = Options(everything, coverage, base, jobs, which, root)
+    options = Options(everything, coverage, requirements, base, jobs, which, root)
     canonical = _canonical(lanes, options)
     if everything:
         return canonical
     derived = _derived(lanes, options)
+    # The canonical list installs the browser after the stories that need it; `--all` keeps that
+    # order, held to AGENTS.md, and a lane run installs it first.
+    browser = next(item for item in canonical if item.text == PLAYWRIGHT)
     items: list[Item] = []
     for item in canonical:
+        if item is browser:
+            continue
+        if item.text == "pnpm build:storybook":
+            items.append(browser)
         items.append(item)
         items.extend(derived.get(item.text, []))
     return items
@@ -437,7 +458,11 @@ def _print_plan(items: list[Item]) -> None:
 def _run(item: Item, root: Path) -> int:
     print(f"\n==> {item.text}", flush=True)
     if item.check is not None:
-        return item.check()
+        try:
+            return item.check()
+        except ScopeError as error:
+            print(f"    {error}")
+            return 1
     env = dict(os.environ)
     # What the frontend's runtime tests start; CI sets it to the job's Python.
     env.setdefault("COMPASS_TEST_PYTHON", sys.executable)
@@ -454,12 +479,20 @@ def _run(item: Item, root: Path) -> int:
 
 
 def _execute(items: list[Item], root: Path) -> int:
-    results = []
-    for item in items:
-        if item.reason is None:
-            started = time.monotonic()
-            code = _run(item, root)
-            results.append((item.text, code, time.monotonic() - started))
+    results: list[tuple[str, int, float]] = []
+    try:
+        for item in items:
+            if item.reason is None:
+                started = time.monotonic()
+                code = _run(item, root)
+                results.append((item.text, code, time.monotonic() - started))
+    except KeyboardInterrupt:
+        _summarize(results)
+        raise
+    return _summarize(results)
+
+
+def _summarize(results: list[tuple[str, int, float]]) -> int:
     print("\nSummary")
     for text, code, seconds in results:
         print(f"  {'pass' if code == 0 else f'FAIL ({code})':<10} {seconds:7.1f}s  {text}")
@@ -468,9 +501,26 @@ def _execute(items: list[Item], root: Path) -> int:
     return 1 if failed else 0
 
 
+def _ci_only(lanes: Lanes) -> list[str]:
+    """The checks CI runs for these lanes that this runner does not, so none passes unannounced."""
+    lines = []
+    if lanes.platform or lanes.python:
+        lines.append(
+            "CI runs the macOS legs (platform-tests, platform-tests-current); not run here."
+        )
+    if lanes.suites:
+        lines.append(
+            "CI runs the direct-launch smoke (server.py --help, server.py --diagnose --json)"
+            " on Python 3.12; not run here."
+        )
+    if lanes.frontend:
+        lines.append("CI runs `pnpm build:preview`, the native preview build; not run here.")
+    return lines
+
+
 def main(
     argv: list[str] | None = None,
-    classify: Callable[[str], tuple[dict[str, str], list[str]]] = classify,
+    classify: Callable[[str], tuple[dict[str, str], list[str], list[str]]] = classify,
 ) -> int:
     """Plan the run, print it, and unless `--dry-run` run it under the repository lock."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -482,16 +532,19 @@ def main(
     args = parser.parse_args(argv)
 
     outputs: dict[str, str] = {}
+    requirements = False
     if args.all:
         print("--all: the whole canonical list in AGENTS.md, whatever changed.")
     else:
         try:
-            outputs, reasons = classify(args.base)
+            outputs, reasons, paths = classify(args.base)
         except ScopeError as error:
             print(f"Could not classify the change ({error}); every lane is on.")
             outputs = {"python": "true", "lint": "true", "frontend": "true"}
             outputs["python_suites"] = "true"
+            requirements = True
         else:
+            requirements = bool(REQUIREMENTS.intersection(paths))
             print(f"Changes against the merge base with {args.base}:")
             for line in reasons:
                 print(f"  {line}")
@@ -500,10 +553,15 @@ def main(
         print(f"CI lanes on: {', '.join(on) or 'none (validate.yml still runs its suite)'}")
         if lanes.unknown:
             print(f"Unknown lanes {', '.join(lanes.unknown)}: running the whole list to be safe.")
-        if lanes.platform or lanes.python:
-            print("CI runs the macOS legs (platform-tests, platform-tests-current); not run here.")
+        for line in _ci_only(lanes):
+            print(line)
     items = plan(
-        outputs, everything=args.all, coverage=args.coverage, base=args.base, jobs=args.jobs
+        outputs,
+        everything=args.all,
+        coverage=args.coverage,
+        requirements=requirements,
+        base=args.base,
+        jobs=args.jobs,
     )
     print()
     _print_plan(items)

@@ -57,6 +57,15 @@ def pnpm(commands: list[str]) -> list[str]:
     return [command for command in commands if command.startswith("pnpm")]
 
 
+def git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],  # noqa: S607
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
 def canonical_list(agents: str) -> list[str]:
     """The commands in AGENTS.md's Pre-PR block, read independently of the runner.
 
@@ -82,10 +91,23 @@ class LanePlanTest(unittest.TestCase):
         commands = ran(items)
         for command in ALWAYS:
             self.assertIn(command, commands)
-        self.assertIn(pre_pr.DOCUMENTATION_TEST, commands)
         self.assertEqual(pnpm(commands), [])
-        self.assertNotIn(pre_pr.DASHBOARD_SUITE, commands)
         self.assertNotIn(pre_pr.SCRIPTS_SUITE, commands)
+
+    def test_a_change_with_no_suite_lane_runs_what_validate_yml_runs(self) -> None:
+        # validate.yml's backstop for a document the detector calls prose: the dashboard suite,
+        # and the validator and bump-version tests it runs on every pull request.
+        commands = ran(plan({}))
+        self.assertIn(pre_pr.DASHBOARD_SUITE, commands)
+        self.assertIn(pre_pr.VALIDATE_TESTS, commands)
+        self.assertNotIn(pre_pr.VALIDATE_TESTS, ran(plan({"python_suites": "true"})))
+        self.assertFalse(any("--coverage" in command for command in ran(plan({}, coverage=True))))
+
+    def test_a_requirements_change_installs_the_toolchain_first(self) -> None:
+        install = "python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt"
+        self.assertIn(install, skipped(plan({"python": "true"})))
+        commands = ran(plan({"python": "true"}, requirements=True))
+        self.assertEqual(commands[0], install)
 
     def test_python_change_runs_both_suites_without_coverage_and_no_pnpm_step(self) -> None:
         commands = ran(plan({"python": "true", "lint": "true", "python_suites": "true"}))
@@ -94,8 +116,8 @@ class LanePlanTest(unittest.TestCase):
         self.assertFalse(any("--coverage" in command for command in commands))
         self.assertFalse(any(command.startswith("coverage ") for command in commands))
         self.assertEqual(pnpm(commands), [])
-        # The dashboard suite already runs test_documentation.
-        self.assertNotIn(pre_pr.DOCUMENTATION_TEST, commands)
+        # The scripts suite already runs the validator and bump-version tests.
+        self.assertNotIn(pre_pr.VALIDATE_TESTS, commands)
 
     def test_coverage_flag_runs_the_canonical_coverage_commands(self) -> None:
         commands = ran(plan({"python": "true", "python_suites": "true"}, coverage=True))
@@ -125,6 +147,12 @@ class LanePlanTest(unittest.TestCase):
             self.assertIn(command, commands)
         self.assertNotIn("pnpm test:coverage", commands)
 
+    def test_the_browser_is_installed_before_the_stories_need_it(self) -> None:
+        commands = ran(plan({"frontend": "true"}))
+        install = commands.index("pnpm exec playwright install chromium")
+        self.assertLess(install, commands.index("pnpm build:storybook"))
+        self.assertLess(install, commands.index("pnpm test:stories"))
+
     def test_frontend_docs_runs_exactly_the_named_vitest_files(self) -> None:
         tests = "frontend/src/a.test.ts frontend/src/b.test.tsx"
         commands = ran(plan({"frontend_docs": "true", "frontend_docs_tests": tests}))
@@ -150,6 +178,13 @@ class LanePlanTest(unittest.TestCase):
             if item.reason is not None:
                 self.assertTrue(item.reason.strip(), item.text)
         self.assertIn("pnpm test:stories", skipped(plan({})))
+
+    def test_a_detector_without_the_docs_lane_says_so(self) -> None:
+        reasons = {item.text: item.reason for item in plan({})}
+        docs = "pnpm exec vitest run <the Vitest files that read a changed document>"
+        self.assertIn("frontend_docs", str(reasons[docs]))
+        with_lane = {item.text: item.reason for item in plan({"frontend_docs": "false"})}
+        self.assertEqual(with_lane[docs], "no changed document is read by a frontend test")
 
     def test_platform_lane_runs_nothing_locally(self) -> None:
         self.assertEqual(ran(plan({"platform": "true"})), ran(plan({})))
@@ -188,15 +223,34 @@ class DryRunTest(unittest.TestCase):
     def test_dry_run_prints_runs_and_skips(self) -> None:
         out = io.StringIO()
         with redirect_stdout(out):
-            code = pre_pr.main(["--dry-run"], classify=lambda _base: (dict(OFF), ["AGENTS.md"]))
+            code = pre_pr.main(
+                ["--dry-run"], classify=lambda _base: (dict(OFF), ["AGENTS.md"], ["AGENTS.md"])
+            )
         text = out.getvalue()
         self.assertEqual(code, 0)
         self.assertIn("run   ruff check .", text)
         self.assertRegex(text, r"skip  pnpm lint\s+\(")
         self.assertIn("AGENTS.md", text)
 
+    def test_a_changed_requirements_file_plans_the_install(self) -> None:
+        out = io.StringIO()
+        paths = ["requirements-dev.txt"]
+        lanes = {**OFF, "python": "true", "python_suites": "true"}
+        with redirect_stdout(out):
+            pre_pr.main(["--dry-run"], classify=lambda _base: (lanes, paths, paths))
+        self.assertIn("run   python3 -m pip install", out.getvalue())
+
+    def test_checks_ci_runs_and_this_does_not_are_named(self) -> None:
+        out = io.StringIO()
+        lanes = {**OFF, "frontend": "true", "python_suites": "true"}
+        with redirect_stdout(out):
+            pre_pr.main(["--dry-run"], classify=lambda _base: (lanes, [], []))
+        text = out.getvalue()
+        self.assertIn("server.py --diagnose --json", text)
+        self.assertIn("pnpm build:preview", text)
+
     def test_classifier_failure_runs_everything(self) -> None:
-        def broken(_base: str) -> tuple[dict[str, str], list[str]]:
+        def broken(_base: str) -> tuple[dict[str, str], list[str], list[str]]:
             message = "no merge base"
             raise pre_pr.ScopeError(message)
 
@@ -213,24 +267,15 @@ class ChangedPathsTest(unittest.TestCase):
     def test_commits_edits_and_new_files_all_count(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-
-            def git(*args: str) -> None:
-                subprocess.run(
-                    ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],  # noqa: S607
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-
-            git("init", "-q", "-b", "main")
+            git(root, "init", "-q", "-b", "main")
             (root / "kept.md").write_text("a\n", encoding="utf-8")
             (root / "edited.py").write_text("a = 1\n", encoding="utf-8")
-            git("add", ".")
-            git("commit", "-q", "-m", "base")
-            git("switch", "-q", "-c", "work")
+            git(root, "add", ".")
+            git(root, "commit", "-q", "-m", "base")
+            git(root, "switch", "-q", "-c", "work")
             (root / "committed.md").write_text("b\n", encoding="utf-8")
-            git("add", "committed.md")
-            git("commit", "-q", "-m", "work")
+            git(root, "add", "committed.md")
+            git(root, "commit", "-q", "-m", "work")
             (root / "edited.py").write_text("a = 2\n", encoding="utf-8")
             (root / "new.ts").write_text("x\n", encoding="utf-8")
             self.assertEqual(
@@ -238,6 +283,46 @@ class ChangedPathsTest(unittest.TestCase):
             )
             with self.assertRaises(pre_pr.ScopeError):
                 pre_pr.changed_paths("no-such-ref", root)
+
+
+class ExecuteTest(unittest.TestCase):
+    """A failing check is a FAIL row; it never stops the commands after it."""
+
+    def test_a_version_check_without_a_merge_base_fails_and_the_run_goes_on(self) -> None:
+        later = pre_pr.Item("later", argv=(sys.executable, "-c", "pass"))
+        version = pre_pr.Item("version", check=pre_pr._version_check("no-such-ref", ROOT))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = pre_pr._execute([version, later], ROOT)
+        text = out.getvalue()
+        self.assertEqual(code, 1)
+        self.assertIn("==> later", text)
+        self.assertRegex(text, r"FAIL \(1\)\s+\S+\s+version")
+        self.assertIn("1 passed, 1 failed", text)
+
+    def test_an_interrupt_still_prints_what_already_ran(self) -> None:
+        def interrupt() -> int:
+            raise KeyboardInterrupt
+
+        first = pre_pr.Item("first", argv=(sys.executable, "-c", "pass"))
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(KeyboardInterrupt):
+            pre_pr._execute([first, pre_pr.Item("second", check=interrupt)], ROOT)
+        self.assertIn("1 passed, 0 failed", out.getvalue())
+
+    def test_an_uncommitted_version_edit_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "plugin.json"
+            manifest.write_text('{"version": "1.0.0"}\n', encoding="utf-8")
+            git(root, "init", "-q", "-b", "main")
+            git(root, "add", ".")
+            git(root, "commit", "-q", "-m", "base")
+            check = pre_pr._version_check("main", root)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(check(), 0)
+                manifest.write_text('{"version": "1.0.1"}\n', encoding="utf-8")
+                self.assertEqual(check(), 1)
 
 
 class LockTest(unittest.TestCase):
@@ -278,15 +363,23 @@ class LockTest(unittest.TestCase):
             self.assertEqual(held.returncode, 3)
             self.assertEqual(free.returncode, 0)
 
-    def test_the_lock_lives_in_the_git_common_directory(self) -> None:
-        common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],  # noqa: S607
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        self.assertEqual(pre_pr.lock_path(ROOT).parent, Path(common))
+    def test_two_worktrees_share_one_lock(self) -> None:
+        # In a main checkout --git-dir and --git-common-dir agree, so only a second worktree can
+        # tell a per-worktree lock from the shared one.
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "main"
+            main.mkdir()
+            git(main, "init", "-q", "-b", "main")
+            git(main, "commit", "-q", "--allow-empty", "-m", "base")
+            other = Path(tmp) / "other"
+            git(main, "worktree", "add", "-q", "-b", "other", str(other))
+            self.assertEqual(pre_pr.lock_path(main), pre_pr.lock_path(other))
+            with (
+                pre_pr.hold_lock(pre_pr.lock_path(main)),
+                self.assertRaises(TimeoutError),
+                pre_pr.hold_lock(pre_pr.lock_path(other), poll=0.05, timeout=0.3),
+            ):
+                self.fail("a second worktree took the lock the first holds")
 
 
 if __name__ == "__main__":

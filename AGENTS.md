@@ -207,13 +207,19 @@ git commit -s -m "feat(skill): add new capability to compass"
 It asks `scripts/ci_scope.py` which lanes the diff against the merge base with `origin/main` touches,
 uncommitted and untracked files included, and runs those lanes' commands from the list below:
 
-- Always: ruff, `ruff format --check`, mypy, `validate_plugins.py`, the two version checks, and
-  `test_documentation` when no Python suite runs.
-- The Python suites through `scripts/run_tests.py`, **without coverage**. CI enforces the threshold;
-  `--coverage` adds the coverage runs, here and for Vitest.
-- The pnpm steps when the frontend lane is on, only the Vitest files that read a changed document
-  when one is, and the `frontend-contract` job's commands when the runtime changed.
-- Nothing for the macOS legs, which CI runs. It says so.
+- Always: ruff, `ruff format --check`, mypy, `validate_plugins.py`, the two version checks (the
+  version diff against the working tree, so an uncommitted bump counts), and the dashboard suite.
+  With no Python suite lane on it also runs the validator and bump-version tests: that is what
+  `validate.yml` runs on such a pull request, as the backstop described below.
+- The pip install when `requirements-validation.txt` or `requirements-dev.txt` changed.
+- The scripts suite through `scripts/run_tests.py` when a Python suite lane is on. Both suites run
+  **without coverage**. CI enforces the threshold; `--coverage` adds the coverage runs, here and
+  for Vitest.
+- The pnpm steps when the frontend lane is on, the Vitest files `ci_scope.py` names in
+  `frontend_docs_tests` when it names any, and the `frontend-contract` job's commands when the
+  runtime changed.
+- Nothing for the macOS legs, the direct-launch smoke or `pnpm build:preview`, which CI runs. It
+  says so.
 
 It prints every command it skips and why, and the lanes CI will run. `--dry-run` prints that plan
 and runs nothing; `-j N` caps each suite's workers; `--base REF` diffs against another ref. A lane
@@ -232,7 +238,7 @@ are how the gate drifts. `scripts/tests/test_pre_pr.py` parses this block and fa
 then the measurable quality-gate jobs skip. CI applies the same rule (see Quality Gate), so
 the two agree by construction rather than by memory. Skipping those jobs is all the short path
 buys: **run the suite locally anyway**, because `validate.yml` is unfiltered by design and runs the
-same `unittest discover` on every PR. `validate_plugins.py` is not what catches a prose edit that
+same `unittest discover` on every PR. `scripts/pre_pr.py` does, for that reason. `validate_plugins.py` is not what catches a prose edit that
 breaks an assertion — measured, one stranded row in `docs/captures/README.md`, which the detector
 then called prose, left the validator at exit 0 and turned that suite red. **`SKILL.md` is not prose
 for this purpose**: `tests/test_documentation.py` asserts its `~/...` paths against
