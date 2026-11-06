@@ -1231,6 +1231,7 @@ class PublicDocumentationBoundaryTest(unittest.TestCase):
             "docs/plans/test.md",
             "docs/design-example.md",
             "docs/development-tracking.md",
+            "docs/flaky-tests.md",
             "docs/captures/example/README.md",
             "docs/drift-replay/README.md",
             "docs/abstention/README.md",

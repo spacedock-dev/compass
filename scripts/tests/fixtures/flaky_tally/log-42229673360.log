@@ -1,0 +1,14 @@
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:11.0412211Z ...........................................................F.................
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5521871Z ======================================================================
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5522310Z Passed only on retry: 1
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5522644Z ----------------------------------------------------------------------
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5523010Z test_fixture_flake.FixtureFlakeTest.test_a_socket_read_finishes_in_time
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5523388Z   first failure: TimeoutError: timed out
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5523702Z     Traceback (most recent call last):
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5524057Z       File "/home/runner/work/compass/compass/scripts/tests/test_fixture_flake.py", line 12, in test_a_socket_read_finishes_in_time
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5524391Z     TimeoutError: timed out
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5524733Z FLAKY-RETRY-PASSED: test_fixture_flake.FixtureFlakeTest.test_a_socket_read_finishes_in_time
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5525051Z ----------------------------------------------------------------------
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5525380Z Ran 1312 tests in 141.502s (4 workers)
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5525621Z
+Runtime floor (Python 3.12, scripts 2)	Run script unit tests on the floor	2026-11-06T14:02:19.5525904Z OK (skipped=2, passed on retry=1)

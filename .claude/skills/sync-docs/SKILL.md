@@ -50,6 +50,7 @@ diff-and-reconcile pass, not a rewrite.
 | `compass/skills/compass/SKILL.md` | **Canonical** product surface: per-harness data sources, session states, start/stop, notifications, options, interpretation notes, common mistakes. | A *shipped, validated artifact* — see the constraints below. It is installed without the repository, so it must never contain a repo-relative link or repo process. |
 | `docs/promise-map.md` | **Canonical** user-facing promise: the five questions of a user's day, one promise each, the shipped capability that backs it, and the limit that keeps it honest. | A promise may not enter it before the capability ships, and the wording of each promise is duplicated verbatim in `docs/visibility-2x2/items.json` (`columns[].promise`) and in the Linear project description. Change one, change all three. [Development tracking](../../../docs/development-tracking.md#how-work-links-to-a-promise) owns promise IDs and the move taxonomy; keep them out of user-facing tracker prose. |
 | `docs/development-tracking.md` | **Canonical** development taxonomy: promise IDs, journey labels, board columns, moves and tracker copies. | Preserve development provenance here; the public promise map owns reader-facing behavior and limits. |
+| `docs/flaky-tests.md` | The flaky-test ledger: one row per test that failed in CI and passed on the same code. | Rows come from AGENTS.md's "Flaky tests" rule, not from a docs pass. Keep the table's columns; `scripts/tests/test_flaky_tally.py` reads it and refuses a malformed row. |
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, the inward-only dependency rule, top-level import identity, and the config/state/application split. | Other design docs link here for the module map instead of restating it. The import allowlist it describes is asserted by a test. |
 | `docs/design-*.md` | The durable *why/how* per area — decisions that outlive the build, **including alternatives that were tried and rejected and the reason why**. | A decision earns a place here if re-deriving it would cost a day, or if a maintainer would otherwise re-attempt something already proven wrong. |
 | `docs/plans/*.md` | **Transient** plans for *unshipped* work only. | Once the work ships, fold the durable *what* into the owning doc and the durable *why* into `docs/design-*.md`, then **delete the plan file.** |
@@ -473,7 +474,8 @@ minutes, a Python version. Stale counts are this repository's most common drift.
     **A standalone run is not finished when the PR opens; it is finished when the required checks are
     green.** Watch them. If one goes red, either it is your doing — fix it — or it is unrelated to a
     docs-only diff, in which case *prove* that before dismissing it: show the diff touches no code the
-    failing test exercises, name the failure mode, and re-run the job. "Probably flaky" without
+    failing test exercises, name the failure mode, record it in `docs/flaky-tests.md` as AGENTS.md's
+    "Flaky tests" says, and re-run the job. "Probably flaky" without
     evidence is how a real regression ships.
 
     End with a one-line report:

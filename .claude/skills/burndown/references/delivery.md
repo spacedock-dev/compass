@@ -222,6 +222,8 @@ to every one.
   only the agent lifecycle and model-selection capabilities the current harness actually exposes.
 - A loopback-port failure under concurrent suites is contention, not a regression: rerun that module
   alone before believing it.
+- Record every CI flake and every "Passed only on retry" test before re-running or re-queuing, as
+  **AGENTS.md, "Flaky tests"** says.
 
 ## Delivery invariants
 

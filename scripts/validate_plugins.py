@@ -241,6 +241,8 @@ PUBLIC_TRACKER_DEVELOPMENT_FILES = frozenset(
         "CONTRIBUTING.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
         "docs/development-tracking.md",
+        # The flaky-test ledger names CI runs and the pull requests and issues behind each flake.
+        "docs/flaky-tests.md",
     }
 )
 PUBLIC_TRACKER_DEVELOPMENT_DIRS = (

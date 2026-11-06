@@ -1,0 +1,4 @@
+[
+  {"attempt": 1, "conclusion": "success", "createdAt": "2026-11-06T13:57:16Z", "databaseId": 42229673293, "event": "pull_request", "headBranch": "ci/release-require-hashes", "headSha": "ff1655d7bff5bc2c5ad51719913865662a3fdfc0", "status": "completed", "workflowName": "Validate"},
+  {"attempt": 1, "conclusion": "", "createdAt": "2026-11-06T14:30:00Z", "databaseId": 42230000001, "event": "pull_request", "headBranch": "ci/still-running", "headSha": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c", "status": "in_progress", "workflowName": "Validate"}
+]

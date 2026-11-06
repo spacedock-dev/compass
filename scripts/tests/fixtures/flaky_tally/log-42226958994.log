@@ -1,0 +1,10 @@
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1180040Z ======================================================================
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1180561Z Passed only on retry: 1
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1180889Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1181203Z compass.skills.compass.tests.test_fixture_flake.FixtureFlakeTest.test_a_socket_read_finishes_in_time
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1181560Z   first failure: TimeoutError: timed out
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1182017Z FLAKY-RETRY-PASSED: compass.skills.compass.tests.test_fixture_flake.FixtureFlakeTest.test_a_socket_read_finishes_in_time
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1182390Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1182741Z Ran 8934 tests in 201.333s (3 workers, then 4 units serially)
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1183005Z
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:45:40.1183290Z OK (skipped=3, expected failures=2, passed on retry=1)

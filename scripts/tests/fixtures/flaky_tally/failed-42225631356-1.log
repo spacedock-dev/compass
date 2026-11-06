@@ -1,0 +1,27 @@
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5404258Z      4.83s  compass.skills.compass.tests.test_reading_native.NativeProducerTest.test_actual_native_multi_prompt_preparation_and_partial_assessment
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5405010Z      4.53s  compass.skills.compass.tests.test_records.TouchingRunsAreReadInLinearWork.test_the_run_reader_masks_exactly_what_the_run_regex_masked
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5406553Z      4.40s  compass.skills.compass.tests.test_records.TouchingValuesAreHiddenWhicheverWasHiddenFirstTest.test_touching_colon_bearing_values_are_hidden_wherever_the_one_at_a_time_scrub_hid_them
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5407138Z 
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5407241Z ======================================================================
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5407877Z FAIL: test_a_group_that_remains_live_exhausts_the_same_deadline (compass.skills.compass.tests.test_supervise.GroupQuiescenceTest.test_a_group_that_remains_live_exhausts_the_same_deadline)
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5408513Z ----------------------------------------------------------------------
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5408899Z Traceback (most recent call last):
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5414759Z   File "/home/runner/work/compass/compass/compass/skills/compass/tests/test_supervise.py", line 155, in test_a_group_that_remains_live_exhausts_the_same_deadline
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5415380Z     self.assertTrue(probe.called)
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5415626Z AssertionError: False is not true
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5415983Z 
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5416127Z ----------------------------------------------------------------------
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5416417Z Ran 8934 tests in 144.161s (4 workers)
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5416562Z 
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.5416670Z FAILED (failures=1, skipped=6, expected failures=2)
+Runtime floor (Python 3.12, dashboard 1)	Run dashboard test discovery on the floor	2026-11-06T13:30:12.6448176Z ##[error]Process completed with exit code 1.
+quality-gate	Verify all gate jobs succeeded	﻿2026-11-06T13:35:19.6917547Z ##[group]Run set -euo pipefail
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6918176Z ^[[36;1mset -euo pipefail^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6919000Z ^[[36;1mecho "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES frontend_docs=$FRONTEND_DOCS platform=$PLATFORM)"^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6919925Z ^[[36;1m^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6920397Z ^[[36;1m# The detector itself is never allowed to skip or fail. If it did, we^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6921017Z ^[[36;1m# do not know whether the measurable jobs were skipped on purpose or lost,^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6921678Z ^[[36;1m# and "we do not know" must not read as green on a required check.^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6922217Z ^[[36;1mif [ "$R_CHANGES" != "success" ]; then^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6922839Z ^[[36;1m  echo "::error::The change detector did not succeed; refusing to report a gate result."^[[0m
+quality-gate	Verify all gate jobs succeeded	2026-11-06T13:35:19.6923395Z ^[[36;1m  exit 1^[[0m

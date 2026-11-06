@@ -313,6 +313,8 @@ same directories through the relative symlinks under `.agents/skills/`.
   once by `Tests + coverage threshold` against the `fail_under` threshold in `pyproject.toml`.
   That threshold only ratchets up. A PR that must merge below it needs the `coverage-exception`
   label, which is visible in the PR timeline.
+- Every Python suite run retries a failed test once, on its own, and lists a test that passed only
+  then. [Flaky tests](AGENTS.md#flaky-tests) says how to record it.
 - `platform-tests`, the unit suite re-run natively on macOS on 3.12, with one dashboard leg and three script
   shards, and `platform-tests-current`, the dashboard suite on macOS on Python 3.15. MacOS takes the kqueue exit watch on 3.12 and `os.waitid` on 3.13 or newer, so each branch runs on its own OS. Ubuntu is covered by the coverage job and the runtime floor, which both run the whole suite there. These run on macOS only for a change that can behave differently on macOS (see below); otherwise the 3.15 leg runs on Linux, since no other job runs that interpreter.
 - `Frontend (ubuntu-latest)`, with exact Node and pnpm pins, lint, strict types, the Node build
