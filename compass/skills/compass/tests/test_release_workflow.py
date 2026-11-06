@@ -199,7 +199,7 @@ class NoCacheTest(unittest.TestCase):
     check it: over `node_modules/.bin/playwright`, say. Main's gate runs third-party code before it
     saves the host-package entry, and on a re-run `build-cli` (third-party PyInstaller dependencies, on
     the tag's ref) could have written the tag's own. A check of the restored `*.deb` files sees none of
-    that. The cold host-package install is bounded and retried, at most 8 minutes of the job's 25.
+    that. The cold host-package install is bounded and retried, at most 11 minutes of the job's 25.
     """
 
     def test_no_job_uses_a_cache_action(self) -> None:
