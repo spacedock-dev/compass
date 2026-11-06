@@ -907,15 +907,20 @@ def run_one_shot(
 def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
-    `--sessions` beside other options honors only `--port`, and only when it was typed:
+    `--sessions` and `--drift` beside other options honor only `--port` (and `--drift` its
+    `--session`), and only when it was typed:
     `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
     client's discovery of a dashboard on another port.
     """
     if args.version:
         return terminal_client.print_version()
+    typed = any(a == "--port" or a.startswith("--port=") for a in argv)
     if args.sessions:
-        typed = any(a == "--port" or a.startswith("--port=") for a in argv)
         return terminal_client.run_sessions(args.sessions, port=args.port if typed else None)
+    if args.drift:
+        return terminal_client.run_drift(
+            again=args.drift == "again", session=args.session, port=args.port if typed else None
+        )
     return None
 
 

@@ -139,6 +139,14 @@ it, listing the cited entries by number, and giving the analysis's reason. A cit
 opens Full activity at that entry, loading older record pages for one not yet listed, with every
 entry the finding cites marked with the finding's words and their current numbers. Departure
 citations keep the neutral `Cited` tag.
+From any shell, `spacedock-compass --drift --session claude:SESSION_ID` prints a Claude Code
+session's stored reading as the session page derives it: the goal and where it came from, the
+level, each outcome line's state and source, each departure with your words, its entry numbers and
+the reason, earlier departures, why it is stale, and, run in your own terminal, the correction to
+copy. A stored reading costs nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
+as Analyze does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
+says how many it left and that the session page can answer them. Another harness gets its session
+page's address. The [manual](../MANUAL.md#options) has the details.
 
 The Intent log brings every board session and retained annotation/discard record into one list,
 with typed goals/output, cached deterministic goals and published workflow titles labeled

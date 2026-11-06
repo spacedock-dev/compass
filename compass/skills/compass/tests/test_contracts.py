@@ -1227,8 +1227,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.entry": {"compass_runtime.cli", "compass_runtime.terminal_client"},
         # Standard library only, so a short command answers before any collector is imported.
         # `--sessions` prints through `terminal_sessions`, which is the one rule for what waits on the
-        # reader and imports nothing from the runtime either.
-        "compass_runtime.terminal_client": {"compass_runtime.terminal_sessions"},
+        # reader and imports nothing from the runtime either. `--drift` runs through
+        # `terminal_drift`, a leaf over `terminal_sessions` for its one `printable`.
+        "compass_runtime.terminal_client": {
+            "compass_runtime.terminal_drift",
+            "compass_runtime.terminal_sessions",
+        },
+        "compass_runtime.terminal_drift": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_sessions": set(),
         # One small file per Claude session for the status line, written through the owner-only
         # writer. A leaf over `io` and `terminal_sessions`, so the module that owns collection never

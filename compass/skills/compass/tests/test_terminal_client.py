@@ -16,10 +16,17 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 from unittest import mock
 
-from compass_runtime import cli, entry, lifecycle, terminal_client, terminal_sessions
+from compass_runtime import (
+    cli,
+    entry,
+    lifecycle,
+    terminal_client,
+    terminal_drift,
+    terminal_sessions,
+)
 
 from . import support
 from .support import SERVER_PATH
@@ -932,6 +939,222 @@ class SessionsCommandTest(HomeCase):
 
         self.assertEqual("1 []\n", done.stdout)
         self.assertEqual(terminal_client.sentence("not_running") + "\n", done.stderr)
+
+
+class DriftOperationTest(unittest.TestCase):
+    def test_drift_takes_an_optional_again_value_in_the_parser(self) -> None:
+        parser = cli.build_parser()
+
+        self.assertIs(True, parser.parse_args(["--drift"]).drift)
+        self.assertEqual("again", parser.parse_args(["--drift", "again"]).drift)
+        self.assertEqual("again", parser.parse_args(["--drift=again"]).drift)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            parser.parse_args(["--drift", "bogus"])
+        self.assertEqual(2, refused.exception.code)
+
+    def test_the_client_claims_drift_with_again_and_one_session_in_any_order(self) -> None:
+        for argv, expected in (
+            (["--drift"], (True, False, None)),
+            (["--drift", "again"], (True, True, None)),
+            (["--drift=again"], (True, True, None)),
+            (["--drift", "--session", "claude:abc"], (True, False, "claude:abc")),
+            (["--session=claude:abc", "--drift", "again"], (True, True, "claude:abc")),
+            (["--drift", "again", "--session", "claude:abc"], (True, True, "claude:abc")),
+        ):
+            with self.subTest(argv=argv):
+                self.assertEqual(expected, terminal_client.parse_drift_args(argv))
+                self.assertTrue(terminal_client.handles(argv))
+        for argv in (
+            ["--drift", "bogus"],
+            ["--drift", "--drift"],
+            ["--drift", "--session"],
+            ["--drift", "--session", "a:b", "--session", "a:c"],
+            ["--drift", "--port", "4581"],
+            ["--drift", "again", "again"],
+            ["--drift", "--footer"],
+        ):
+            with self.subTest(argv=argv):
+                self.assertFalse(terminal_client.parse_drift_args(argv)[0])
+                self.assertFalse(terminal_client.handles(argv))
+
+    def test_a_typed_port_reaches_drift_through_the_cli_with_its_session(self) -> None:
+        with mock.patch.object(terminal_client, "run_drift", return_value=0) as run:
+            code = cli.main(["--drift", "again", "--session", "claude:abc", "--port", "4581"])
+
+        self.assertEqual(0, code)
+        run.assert_called_once_with(again=True, session="claude:abc", port=4581)
+
+
+class DriftCommandTest(HomeCase):
+    VIEW: ClassVar[dict[str, Any]] = {
+        "harness": "claude",
+        "sid": "abc",
+        "malformed": "",
+        "pill": {"level": "medium", "so_far": False},
+        "analysis": {"level": "medium"},
+        "lines": [
+            {
+                "key": "goal",
+                "state": "departs",
+                "numbers": ["41"],
+                "clause": "Accept tabs",
+                "detail": "It rejected them.",
+            }
+        ],
+        "departures": ["goal"],
+        "priors": [],
+        "stale": None,
+    }
+    ROW: ClassVar[dict[str, Any]] = {
+        "harness": "claude",
+        "sid": "abc",
+        "project": "compass",
+        "title": "Tabs",
+        "annotation_goal": "Accept tabs",
+        "annotation_revision": 1,
+        "annotation_assessment": {"read_at": 1000.0, "revision_read": 1},
+    }
+
+    def answers(self) -> dict[str, tuple[int, dict[str, str], bytes]]:
+        json_type = {"Content-Type": "application/json"}
+        board = {"annotate": True, "generated": 1100.0, "sessions": [self.ROW], "reading_jobs": {}}
+        context = {"sources": {"work": {"drift_views": [self.VIEW]}}}
+        correction = {"ok": True, "parts": ["Keep accepting tabs."]}
+        return {
+            "/api/data": (200, json_type, json.dumps(board).encode()),
+            "/api/project-context?project=compass&session=claude%3Aabc": (
+                200,
+                json_type,
+                json.dumps(context).encode(),
+            ),
+            "/api/correction": (200, json_type, json.dumps(correction).encode()),
+            "/api/reading": (409, json_type, b'{"ok": false, "reason": "provider-changed"}'),
+        }
+
+    def run_drift(
+        self,
+        *,
+        again: bool = False,
+        session: str | None = None,
+        port: int | None = None,
+        environ: dict[str, str] | None = None,
+        tty: bool = False,
+    ) -> tuple[int, str, str]:
+        """`tty` is whether standard output is a terminal; an agent's tool reads it from a pipe."""
+
+        class Stdout(io.StringIO):
+            def isatty(self) -> bool:
+                return tty
+
+        out, err = Stdout(), io.StringIO()
+        env = {"COMPASS_HOME": self.home, **(environ or {})}
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = terminal_client.run_drift(again=again, session=session, port=port, environ=env)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_person_who_names_no_session_is_told_how_and_nothing_is_reached(self) -> None:
+        with FakeDashboard() as fake:
+            code, out, err = self.run_drift(port=fake.port)
+
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_client.sentence("no_session") + "\n", err)
+        self.assertEqual([], fake.requests)
+
+    def test_a_person_whose_session_does_not_parse_is_refused_before_anything_is_reached(
+        self,
+    ) -> None:
+        with FakeDashboard() as fake:
+            code, _out, err = self.run_drift(session="nocolon", port=fake.port)
+
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_client.sentence("bad_session_flag") + "\n", err)
+        self.assertEqual([], fake.requests)
+
+    def test_a_person_at_a_shell_reads_the_stored_reading_and_its_correction(self) -> None:
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            code, out, err = self.run_drift(session="claude:abc", port=fake.port, tty=True)
+
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn("Level: Medium", out)
+        self.assertIn("Correction to copy:\nKeep accepting tabs.", out)
+        self.assertNotIn(("POST", "/api/reading"), fake.requests)
+
+    def test_a_person_whose_agent_names_the_session_through_a_pipe_keeps_the_correction_out(
+        self,
+    ) -> None:
+        # An agent's shell tool, and Claude Code's `!` mode, read the output from a pipe, so the
+        # correction would land in the context of the agent it is addressed to.
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            code, out, _err = self.run_drift(session="claude:abc", port=fake.port, tty=False)
+
+        self.assertEqual(0, code)
+        self.assertIn("Level: Medium", out)
+        self.assertNotIn("Keep accepting tabs.", out)
+        self.assertNotIn("Correction to copy:", out)
+        self.assertIn("A correction is ready to copy on the session page", out)
+
+    def test_a_person_inside_the_session_is_named_by_the_environment_and_gets_no_correction(
+        self,
+    ) -> None:
+        version = terminal_client.release_version()
+        for tty in (True, False):
+            with (
+                self.subTest(tty=tty),
+                FakeDashboard(version=version, answers=self.answers()) as fake,
+            ):
+                code, out, _err = self.run_drift(
+                    port=fake.port, environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=tty
+                )
+
+                self.assertEqual(0, code)
+                self.assertNotIn("Keep accepting tabs.", out)
+                self.assertIn("A correction is ready to copy on the session page", out)
+
+    def test_a_person_s_agent_is_never_told_to_run_a_command_that_prints_the_correction(
+        self,
+    ) -> None:
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            _code, out, _err = self.run_drift(session="claude:abc", port=fake.port)
+
+        ready = next(line for line in out.splitlines() if "correction is ready" in line)
+        self.assertNotRegex(ready, r"^A correction is ready to copy: run ")
+        self.assertIn("only", ready)
+        self.assertIn("your own terminal", ready)
+
+    def test_a_refused_press_is_read_from_the_refusal_s_own_body(self) -> None:
+        version = terminal_client.release_version()
+        answers = self.answers()
+        with FakeDashboard(version=version, answers=answers) as fake:
+            answers["/api/data"] = (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "annotate": True,
+                        "generated": 1100.0,
+                        "sessions": [self.ROW],
+                        "reading_jobs": {},
+                        "reading_routes": {"claude": {"provider": "claude", "model": "m"}},
+                        "reading": {"consent": True},
+                        "reading_check": "passed",
+                    }
+                ).encode(),
+            )
+            code, _out, err = self.run_drift(again=True, session="claude:abc", port=fake.port)
+
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.PROVIDER_CHANGED + "\n", err)
+
+    def test_a_press_against_another_release_sends_nothing(self) -> None:
+        with FakeDashboard(version="0.0.1", answers=self.answers()) as fake:
+            code, _out, err = self.run_drift(session="claude:abc", port=fake.port)
+
+        self.assertEqual(1, code)
+        self.assertIn("version 0.0.1", err)
+        self.assertEqual([("GET", "/api/health")], fake.requests)
 
 
 class WordingTest(unittest.TestCase):
