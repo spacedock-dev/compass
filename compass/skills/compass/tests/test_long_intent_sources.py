@@ -346,26 +346,28 @@ class LongIntentSourcesTest(unittest.TestCase):
             for _ in range(100):
                 handle.write(padding)
             handle.write(json.dumps(self.rows[-1]).encode() + b"\n")
+        # The byte bound is what this test is about, so the clock is lifted: under the default a slow
+        # macOS runner reached the time bound first (run 42215659225). The clock's own test is below.
+        config = dataclasses.replace(self.config, direction_scan_max_seconds=600)
+        app = SimpleNamespace(config=config, state=self.state)
         with mock.patch.object(observer, "resolve_transcript", return_value=str(path)):
             recent = project_context.direction_lookup(
-                self.config, self.state, "claude", "long", self.facts[-1]["fact_id"]
+                config, self.state, "claude", "long", self.facts[-1]["fact_id"]
             )
             unreachable = project_context.direction_lookup(
-                self.config, self.state, "claude", "long", self.facts[0]["fact_id"]
+                config, self.state, "claude", "long", self.facts[0]["fact_id"]
             )
             context = http_api._with_prompt_choices(
-                self.app,
+                app,
                 {"semantic": {"facts": self.facts}},
                 [self.row],
                 ("claude", "long"),
                 "synthetic",
             )
-            requests = http_api._request_sources(
-                self.app, self.row, [self.facts[0], self.facts[-1]]
-            )
+            requests = http_api._request_sources(app, self.row, [self.facts[0], self.facts[-1]])
         self.assertEqual("Build synthetic step 3. Keep the tests.", recent.words.text)
         self.assertEqual("out_of_reach", unreachable.reason)
-        self.assertEqual(self.config.direction_scan_max_bytes, recent.scanned_bytes)
+        self.assertEqual(config.direction_scan_max_bytes, recent.scanned_bytes)
         self.assertEqual("bytes", context["prompt_scan"]["bound"])
         self.assertEqual(
             [self.facts[-1]["fact_id"], self.facts[0]["fact_id"]],
