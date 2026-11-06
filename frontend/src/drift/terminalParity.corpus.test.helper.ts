@@ -827,6 +827,10 @@ function levelCases(): DriftCase[] {
       analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
       reading: { criteria: { goal: goalRow({ result: CONSISTENT }) } },
     }),
+    build('none-or-low-over-a-goal-alone-is-withheld-as-the-goal-not-shown', ['L8'], {
+      analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
+      reading: { criteria: { goal: { result: UNVERIFIABLE, clause: 'Ship the queue' } } },
+    }),
     build('an-unsupported-claim-withholds-none-or-low', ['L8'], {
       analysis: ANALYSIS({ level: 'none_or_low', reasons: [] }),
       reading: {

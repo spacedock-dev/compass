@@ -16,6 +16,7 @@ import {
   ASSISTANT_ONLY,
   BASELINE_OPEN,
   BLOCKER_LINES,
+  GOAL_NOT_SHOWN,
   CHECK_DOES_NOT_SHOW_IT,
   CHECK_READ_INCOMPLETE,
   CLAIM_UNCITED,
@@ -69,7 +70,11 @@ function analysisReasons(served: Row | null, blockers: readonly string[]): strin
     : [];
   for (const added of ['line-not-shown-by-a-check', 'claim-not-shown']) {
     const sentence = BLOCKER_LINES[added] ?? REASON_LINES[added]?.('');
-    if (sentence && blockers.includes(sentence) && !tokens.includes(added)) tokens.push(added);
+    /* A reading of the goal alone says the first as "Your goal is not shown by any check." */
+    const said =
+      (sentence && blockers.includes(sentence)) ||
+      (added === 'line-not-shown-by-a-check' && blockers.includes(GOAL_NOT_SHOWN));
+    if (said && !tokens.includes(added)) tokens.push(added);
   }
   return [...new Set(tokens)];
 }
