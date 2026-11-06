@@ -596,9 +596,10 @@ on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-enviro
 installs, so its token is read-only, and its sticky PR comment comes from `Coverage comment`, which
 fetches the report from the run's artifact, runs only the pinned artifact and comment actions, and, like
 the frontend's, never gates and is not in the aggregator's `needs`. No job in any workflow that holds a
-write token restores a cache. `test_workflow_caches.py` reads every job's permissions and steps to hold
-that: a job with no `permissions` anywhere counts as writing, and an action nobody has read counts as
-restoring one.
+write token or a secret, such as a deploy key, restores a cache or another run's artifact.
+`test_workflow_caches.py` reads every job's permissions, secrets and steps to hold that: a job with no
+`permissions` anywhere counts as writing, so does any job that names a secret, and an action nobody has
+read counts as restoring one.
 
 `Frontend production bundle` runs on Linux: it rebuilds the tracked artifact from its sources and
 compares it, and runs no proof. The `Storybook (ubuntu-latest)` job builds the offline explorer and

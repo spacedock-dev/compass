@@ -1,17 +1,19 @@
-"""No job that holds a write token restores a cache, in any workflow.
+"""No job that holds a write credential restores a cache, in any workflow.
 
 actions/cache extracts an entry with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and
 absolute member names, so an entry writes wherever the runner user can before any later step can
 check it, and what it restores runs as it is. Main-branch gate runs save the pip cache after
 running third-party code (lint, typecheck and the suites), so a dependency compromised in one of
-them could shape an entry. A job holding a write token must never be the one that restores it.
+them could shape an entry. A job holding a write token or any secret, such as a deploy key, must
+never be the one that restores it.
 
-`test_release_workflow.NoCacheTest` holds the release workflow to the stricter rule that no job
-there uses a cache at all; this module covers every job of every workflow, the release ones too.
+`test_release_workflow.NoCacheTest` bans only `actions/cache` steps in the release workflow. It
+does not see a setup action's own cache, so this module, which does, covers the release jobs too.
 """
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -29,7 +31,6 @@ RESTORES_NOTHING = frozenset(
     {
         "actions/checkout",
         "actions/upload-artifact",
-        "actions/download-artifact",
         "peter-evans/find-comment",
         "peter-evans/create-or-update-comment",
     }
@@ -43,8 +44,12 @@ def workflows() -> dict[str, dict[str, Any]]:
     }
 
 
-def holds_write_token(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
-    """Whether the job's GITHUB_TOKEN can write anything. Fails closed on a shape it cannot read."""
+def holds_write_credential(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
+    """Whether the job's token can write, or it holds a secret. Fails closed on an unread shape."""
+    # A deploy key arrives as a secret beside a read-only token (release.yml's `marketplace` and
+    # `homebrew`), and nothing here can tell which secrets write, so every one counts.
+    if "secrets" in job or "secrets." in json.dumps(job):
+        return True
     if "permissions" in job:
         permissions = job["permissions"]
     elif "permissions" in workflow:
@@ -65,8 +70,14 @@ def restores_a_cache(step: dict[str, Any]) -> bool:
         return False
     action = step["uses"].split("@")[0]
     options = step.get("with") or {}
-    if action.startswith("actions/cache"):
+    # pnpm/setup v3.0.0 restores its lockfile verification log on every run, "independently of the
+    # `cache` input" (its README), so `cache: false` does not make it cache-free.
+    if action.startswith("actions/cache") or action == "pnpm/setup":
         return True
+    if action == "actions/download-artifact":
+        # Any of these reaches another run's artifacts, which a pull request's untrusted code may
+        # have written: the artifact counterpart of a poisoned cache entry.
+        return any(key in options for key in ("run-id", "github-token", "repository"))
     if action == "actions/setup-python":
         # `cache` has no default (v7.0.0 action.yml): nothing is restored unless it is named.
         return bool(options.get("cache"))
@@ -74,18 +85,14 @@ def restores_a_cache(step: dict[str, Any]) -> bool:
         # `package-manager-cache` defaults to true (v7.0.0 action.yml), and an explicit `cache` is
         # read before it, so only both held off restores nothing.
         return bool(options.get("cache")) or options.get("package-manager-cache") is not False
-    if action == "pnpm/setup":
-        # v3.0.0 restores its lockfile verification log on every run, "independently of the
-        # `cache` input" (its README), so `cache: false` does not make it cache-free.
-        return True
     return action not in RESTORES_NOTHING
 
 
-class WriteTokenRestoresNoCacheTest(unittest.TestCase):
-    def test_no_job_holding_a_write_token_restores_a_cache(self) -> None:
+class WriteCredentialRestoresNoCacheTest(unittest.TestCase):
+    def test_no_job_holding_a_write_credential_restores_a_cache(self) -> None:
         for name, workflow in workflows().items():
             for job_id, job in workflow["jobs"].items():
-                if not holds_write_token(workflow, job):
+                if not holds_write_credential(workflow, job):
                     continue
                 with self.subTest(workflow=name, job=job_id):
                     # A reusable workflow's steps are not in this file, so it cannot be read here.
@@ -102,7 +109,7 @@ class WriteTokenRestoresNoCacheTest(unittest.TestCase):
             (name, job_id)
             for name, workflow in workflows().items()
             for job_id, job in workflow["jobs"].items()
-            if holds_write_token(workflow, job)
+            if holds_write_credential(workflow, job)
         }
         self.assertLessEqual(
             {
@@ -110,11 +117,14 @@ class WriteTokenRestoresNoCacheTest(unittest.TestCase):
                 ("quality-gate.yml", "frontend-coverage-comment"),
                 ("release.yml", "release"),
                 ("release.yml", "attach-cli"),
+                # A read-only token, but a deploy key that writes to another repository.
+                ("release.yml", "marketplace"),
+                ("release.yml", "homebrew"),
             },
             seen,
         )
 
-    def test_the_token_reading_fails_closed(self) -> None:
+    def test_the_credential_reading_fails_closed(self) -> None:
         cases: tuple[tuple[dict[str, Any], dict[str, Any], bool], ...] = (
             ({}, {}, True),  # the repository default
             ({"permissions": {"contents": "read"}}, {}, False),
@@ -125,16 +135,36 @@ class WriteTokenRestoresNoCacheTest(unittest.TestCase):
             ({"permissions": "write-all"}, {"permissions": {}}, False),
             ({}, {"permissions": {"id-token": "write"}}, True),
             ({}, {"permissions": None}, True),
+            (
+                {"permissions": "read-all"},
+                {"steps": [{"env": {"KEY": "${{ secrets.TAP_DEPLOY_KEY }}"}}]},
+                True,
+            ),
+            (
+                {"permissions": "read-all"},
+                {"steps": [{"with": {"ssh-key": "${{ secrets.DEPLOY_KEY }}"}}]},
+                True,
+            ),
+            (
+                {"permissions": "read-all"},
+                {"uses": "./.github/workflows/x.yml", "secrets": "inherit"},
+                True,
+            ),
         )
         for workflow, job, expected in cases:
             with self.subTest(workflow=workflow, job=job):
-                self.assertIs(expected, holds_write_token(workflow, job))
+                self.assertIs(expected, holds_write_credential(workflow, job))
 
     def test_every_way_a_step_restores_a_cache_is_seen(self) -> None:
         cases = (
             ({"run": "pip install -r requirements-dev.txt"}, False),
             ({"uses": "actions/checkout@sha"}, False),
             ({"uses": "actions/download-artifact@sha"}, False),
+            ({"uses": "actions/download-artifact@sha", "with": {"name": "coverage-1"}}, False),
+            # Another run's artifacts, which may be a pull request's that ran untrusted code.
+            ({"uses": "actions/download-artifact@sha", "with": {"run-id": "1"}}, True),
+            ({"uses": "actions/download-artifact@sha", "with": {"github-token": "t"}}, True),
+            ({"uses": "actions/download-artifact@sha", "with": {"repository": "o/r"}}, True),
             ({"uses": "actions/cache@sha"}, True),
             ({"uses": "actions/cache/restore@sha"}, True),
             ({"uses": "actions/setup-python@sha", "with": {"python-version": "3.14"}}, False),
