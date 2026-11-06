@@ -652,5 +652,11 @@ Shared skill bodies must work in every harness:
 - No host-specific tool names (`mcp__claude_ai_*`, `ToolSearch(`, `Skill(skill=`, `subagent_type`) — describe capabilities semantically.
 - The validator (`scripts/validate_plugins.py`) rejects all six of these markers in any bundled Markdown.
 
+One exception is admitted on purpose: the shipped skill's `allowed-tools` frontmatter key, which
+Claude Code reads and Codex and Antigravity ignore, holds `Bash(...)` rules naming
+`${CLAUDE_SKILL_DIR}`. The validator admits only exact launcher commands there, with no wildcard,
+and the reason is recorded in
+[the design record](docs/design-reading-a-session.md#owner-ruling-2026-11-06-the-skill-pre-approves-its-own-actions-in-claude-code).
+
 These rules apply to Markdown **under `compass/skills/`**. In `AGENTS.md` and `CLAUDE.md` the same
 strings are the documentation of the rule and must stay.

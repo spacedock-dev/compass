@@ -107,6 +107,21 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
             "SECURITY.md#what-can-reach-into-a-session, or name it in NOT_ACTIONS",
         )
 
+    def test_claude_code_pre_approves_exactly_the_commands_the_table_runs(self) -> None:
+        # Claude Code expands ${CLAUDE_SKILL_DIR} in this key, so each rule names one install's
+        # command exactly. A glob here was measured to also approve `python3 -c "<code>"`.
+        skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
+        frontmatter = skill.split("\n---\n", 1)[0]
+        match = re.search(r"^allowed-tools: (.*)$", frontmatter, re.MULTILINE)
+        self.assertIsNotNone(match, "SKILL.md's frontmatter pre-approves no action")
+        assert match is not None
+        rules = re.findall(r"Bash\(([^)]*)\)", match.group(1))
+        self.assertEqual(", ".join(f"Bash({rule})" for rule in rules), match.group(1))
+        expected = [
+            command.replace("<skill-dir>", "${CLAUDE_SKILL_DIR}") for _, command in self.rows()
+        ]
+        self.assertEqual(rules, expected)
+
     def test_every_exemption_is_an_operation_the_client_still_answers(self) -> None:
         self.assertLessEqual(set(self.NOT_ACTIONS), {o.flag for o in terminal_client.OPERATIONS})
 

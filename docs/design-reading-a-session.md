@@ -6899,8 +6899,10 @@ Before this, `--sessions` printed only to a terminal the reader was looking at.
 What does not change:
 
 - Compass sends nothing on its own. An action runs as a command the agent runs in its own tool call
-  when the skill is invoked with an action word, which the agent can also do unasked. The harness's
-  permission prompt asks before a run only in a permission mode that shows one.
+  when the skill is invoked with an action word, which the agent can also do unasked. In Claude Code
+  the skill pre-approves its own commands
+  ([2026-11-06](#owner-ruling-2026-11-06-the-skill-pre-approves-its-own-actions-in-claude-code)), so
+  no permission prompt asks before a run unless the reader's settings deny it.
 - A correction stays the reader's to copy. No action composes or sends one.
 - Compass never submits a prompt for the reader, never approves a tool call and never edits a
   session's transcript store.
@@ -6926,6 +6928,43 @@ it, because there are no such lines to describe. Each is an instruction to a mod
 text, not a guarantee, and the ruling does not claim more. Later terminal actions inherit this
 boundary. It is revisited when the drift action prints model-written text, which is a different kind
 of text from what a session said about itself.
+
+### Owner ruling 2026-11-06: the skill pre-approves its own actions in Claude Code
+
+The skill's frontmatter carries `allowed-tools` with one rule per row of its Terminal actions table,
+each naming that row's command exactly, with Claude Code's `${CLAUDE_SKILL_DIR}` standing for the
+install path. While the skill is active, Claude Code runs those commands without a permission
+prompt. This reverses the owner's choice when the `sessions` action first shipped, on 2026-11-05,
+that the skill carry no pre-approval. That choice was recorded on the pull request that shipped the
+action rather than here, and it left the reader a prompt on every use, or a "don't ask again" that
+offers `python3 *`.
+
+Measured on Claude Code 2.1.318 on macOS, headless in default permission mode with no user settings
+loaded:
+
+- Both `sessions` and `sessions waiting` ran with no prompt. The transcript records the decision as
+  `accept` from a rule whose source is `command`, the skill.
+- In the same session, `python3 -c "<code>"` followed by the two script paths and `--sessions`, the
+  `sessions` command with `--stop` added, and the `sessions` command joined to a `touch` with `&&`
+  were each denied, and none of them ran. So were the `sessions` command behind a `PYTHONPATH=`
+  assignment, behind `env PYTHONPATH=`, with its output redirected to a file, piped to `tee`, and
+  with a `$(…)` substitution appended.
+- A deny rule for the command in local settings overrode the skill: the action was denied.
+
+Rejected: the glob `Bash(python3 *launch.py* *server.py* --sessions*)`, measured before that first
+choice. It also approved `python3 -c "<code>" x/launch.py y/server.py --sessions`, because
+a wildcard can swallow an interpreter flag and its code. A prefix rule, `…--sessions:*`, anchors at
+the start but approves any flag after the action. Neither is admitted:
+`scripts/validate_plugins.py` accepts only exact launcher commands at `${CLAUDE_SKILL_DIR}` with no
+wildcard, and `TerminalActionsMatchTheClientTest` requires the rules to equal the table's commands.
+A later action gains its rule with its row.
+
+What this does not change: an action still prints into the session and reaches its model provider,
+as the 2026-11-03 amendment says, and the 2026-11-05 boundary for other sessions' text stands. A
+spelling other than the table's, such as `python` on Windows, is not pre-approved, so every use
+there asks. A reader's deny rule names one install path, so it has to be written again when a plugin
+update moves that path. Codex and Antigravity load
+the skill and ignore the key.
 
 ## DEC-26: four drift levels, and a live estimate after every turn
 

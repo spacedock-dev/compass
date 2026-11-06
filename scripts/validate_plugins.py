@@ -192,7 +192,17 @@ PORTABILITY_MARKERS = {
     "Skill(skill=": "describe skill invocation semantically",
     "subagent_type": "describe the required worker capability instead of a Claude API field",
 }
-SHARED_FRONTMATTER_FIELDS = {"name", "description", "license"}
+SHARED_FRONTMATTER_FIELDS = {"name", "description", "license", "allowed-tools"}
+# Claude Code reads `allowed-tools` and pre-approves each rule while the skill is active; Codex
+# 0.166.0 and AGY 1.5.1 were measured to load the skill with the key and ignore it. Only one exact
+# launcher command per rule is admitted, with no wildcard: on Claude Code 2.1.318 the glob
+# `Bash(python3 *launch.py* *server.py* --sessions*)` also approved `python3 -c "<code>" …`, and
+# a `:*` prefix rule would approve any flag after the action. Claude Code expands the variable to
+# the directory holding SKILL.md, so the rule names that install's command and no other.
+ALLOWED_TOOL_RULE_RE = re.compile(
+    r'Bash\(python3 "\$\{CLAUDE_SKILL_DIR\}/launch\.py" "\$\{CLAUDE_SKILL_DIR\}/server\.py"'
+    r"(?: --[a-z]+(?:-[a-z]+)*)(?: [a-z]+)?\)"
+)
 # The skill now carries font software whose OFL terms must survive distribution;
 # pinning the expression prevents its metadata from reverting to Apache-only.
 SHIPPED_SKILL_LICENSES = {
@@ -653,7 +663,23 @@ def parse_frontmatter(path: Path, validation: Validation) -> dict[str, Any] | No
         validation.error(path, f"unsupported shared frontmatter fields: {sorted(unknown)}")
     if "license" in metadata and not isinstance(metadata["license"], str):
         validation.error(path, "frontmatter license must be a string")
+    if "allowed-tools" in metadata:
+        validate_allowed_tools(metadata["allowed-tools"], path, validation)
     return metadata
+
+
+def validate_allowed_tools(value: object, path: Path, validation: Validation) -> None:
+    if not isinstance(value, str):
+        validation.error(path, "frontmatter allowed-tools must be one comma-separated string")
+        return
+    rules = [rule.group(0) for rule in ALLOWED_TOOL_RULE_RE.finditer(value)]
+    if not rules or ", ".join(rules) != value:
+        validation.error(
+            path,
+            "frontmatter allowed-tools may hold only exact launcher commands, "
+            'Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" '
+            "--<operation>[ <choice>]), separated by ', '",
+        )
 
 
 def parse_openai_metadata(path: Path, validation: Validation) -> dict[str, Any] | None:

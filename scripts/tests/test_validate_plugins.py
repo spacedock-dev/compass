@@ -170,6 +170,53 @@ class ValidatorTests(unittest.TestCase):
 
         self.assertTrue(any("license must be a string" in error for error in validation.errors))
 
+    def test_a_skill_may_pre_approve_its_own_launcher_commands_exactly(self) -> None:
+        rule = 'Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" '
+        path = self.write_temp(
+            "---\nname: ok\ndescription: Fine\n"
+            f"allowed-tools: {rule}--sessions), {rule}--sessions waiting)\n---\n",
+            "SKILL.md",
+        )
+        validation = validator.Validation()
+
+        validator.parse_frontmatter(path, validation)
+
+        self.assertEqual([], validation.errors)
+
+    def test_a_pre_approval_wider_than_one_exact_launcher_command_is_refused(self) -> None:
+        launcher = 'python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py"'
+        for rule in (
+            # Measured on Claude Code 2.1.318: this glob also approved `python3 -c "<code>"`.
+            "Bash(python3 *launch.py* *server.py* --sessions*)",
+            f"Bash({launcher} --sessions:*)",
+            f"Bash({launcher} --sessions*)",
+            "Bash(python3 *)",
+            'Bash(python3 "/home/me/launch.py" "/home/me/server.py" --sessions)',
+            f"Bash({launcher} --sessions; rm -rf x)",
+            "Read",
+            f"Bash({launcher} --sessions) Bash(python3 *)",
+        ):
+            with self.subTest(rule=rule):
+                path = self.write_temp(
+                    f"---\nname: wide\ndescription: Wide\nallowed-tools: '{rule}'\n---\n",
+                    "SKILL.md",
+                )
+                validation = validator.Validation()
+
+                validator.parse_frontmatter(path, validation)
+
+                self.assertTrue(any("allowed-tools" in error for error in validation.errors), rule)
+
+    def test_a_pre_approval_that_is_not_one_string_is_refused(self) -> None:
+        path = self.write_temp(
+            "---\nname: listy\ndescription: Listy\nallowed-tools: [Read]\n---\n", "SKILL.md"
+        )
+        validation = validator.Validation()
+
+        validator.parse_frontmatter(path, validation)
+
+        self.assertTrue(any("allowed-tools" in error for error in validation.errors))
+
     def test_the_shipped_skill_declares_every_distributed_license(self) -> None:
         path = validator.ROOT / "compass" / "skills" / "compass" / "SKILL.md"
         validation = validator.Validation()
