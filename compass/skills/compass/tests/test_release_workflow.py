@@ -172,6 +172,23 @@ class CiLimitsTest(unittest.TestCase):
         self.assertEqual(1, len(suite))
         self.assertEqual(max(ci["pnpm test"]), suite[0]["timeout-minutes"])
 
+    def test_the_chromium_install_is_split_in_ci_and_whole_here(self) -> None:
+        """The one browser step the two workflows no longer share, named so the pairing is not lost silently.
+
+        The gate's Storybook job installs the cached browser and the host packages as two steps, the second
+        bounded and retried once, because `--with-deps` timed out on the Ubuntu mirror's font downloads. The
+        release keeps the single command, so the limit test above no longer pairs it with anything.
+        """
+        ci = self.ci_limits()
+        whole = "pnpm exec playwright install --with-deps chromium"
+        self.assertNotIn(whole, ci)
+        self.assertIn("pnpm exec playwright install chromium", ci)
+        self.assertEqual(1, [s.get("run") for s in steps("verify-frontend")].count(whole))
+        storybook = load(GATE)["jobs"]["storybook"]["steps"]
+        self.assertTrue(
+            any("playwright install-deps chromium" in s.get("run", "") for s in storybook)
+        )
+
 
 class CredentialBoundaryTest(unittest.TestCase):
     def test_each_deploy_key_belongs_to_its_one_job(self) -> None:
