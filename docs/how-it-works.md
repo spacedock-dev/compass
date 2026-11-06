@@ -115,11 +115,14 @@ how much.
 
 One more path starts from you and is not traffic Compass sends. When you invoke the `compass` skill
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
-becomes part of that session's context, so it goes to that session's model provider. The list covers
+becomes part of that session's context, so it goes to that session's model provider. `drift` and
+`drift again` do the same with that session's own drift reading, and can spend one reading, as
+Analyze drift does; the correction stays out of the session. The list covers
 every session on the board, in any harness or project, and
 [what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
 does and does not stop it. The same command run in a terminal outside the session prints to that
-terminal only.
+terminal only. There `--drift` needs `--session claude:SESSION_ID` and refuses without it, and a
+reading it asks for is stored on the session's page as Analyze drift's is.
 
 ### What calls a model
 

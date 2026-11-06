@@ -45,13 +45,15 @@ native Windows `python3` is not a reliable spelling; use `python` or `py -3`.
 
 ## Ask Compass from inside a session
 
-Type an action after the skill's name to get the list of your sessions in the session you are in,
-without opening the dashboard:
+Type an action after the skill's name to get the list of your sessions, or the drift reading of the
+session you are in, without opening the dashboard:
 
 | Harness | Type | Prints |
 |---|---|---|
 | Claude Code | `/compass:compass sessions` | Every session the board holds, as `--sessions` does |
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
+| Claude Code | `/compass:compass drift` | This session's drift reading against your goal, as `--drift` does. With no stored reading, it asks for one |
+| Claude Code | `/compass:compass drift again` | A new reading of this session, as `--drift again` does |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
 Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
@@ -60,7 +62,20 @@ In Claude Code, the command you typed and the agent's answer to it stay in Full 
 left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
 `$compass sessions` counts as a message you sent the session.
 
-Both read a running dashboard and never start one. With none running, the agent prints the
+`drift` and `drift again` read the session you typed them in, and only on Claude Code. Above the
+reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
+stored reading costs nothing. With none, `drift` asks for one, and `drift again` always does: each is
+one Analyze press, counted against the same daily limit as the page's, and Pause model calls on the
+page stops it. Compass presses only right after you type the command yourself, once per command:
+when the agent starts the skill on its own, or runs it again, the press is refused and nothing is
+read or spent. Inside the session the command stops about 100 seconds after it starts; a longer
+reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
+correction is never printed into the session: the answer says one is ready, and you copy it from
+the session page. Nothing about later messages is settled; the answer says how many it left for the
+session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
+another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
+
+`sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
 refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
 belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
 action word. The skill runs the command below, so you can run it yourself to check what the agent
@@ -72,23 +87,23 @@ python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
 
 What to expect:
 
-- Claude Code runs the command without asking for approval. The skill pre-approves exactly its two
-  commands, each with the skill's own install path written out, and nothing else (measured on Claude
-  Code 2.1.318 on macOS; other systems were not). A `python3 -c` command, an extra flag such as
+- Claude Code runs the command without asking for approval. The skill pre-approves exactly its four
+  commands, each with the skill's own install path written out, and nothing else (measured for the
+  two `sessions` commands on Claude Code 2.1.318 on macOS; other systems were not). A `python3 -c` command, an extra flag such as
   `--stop`, or a second command joined on with `&&` is not pre-approved, and was refused when
   measured. Nor is any other spelling of the command, such as `python` on Windows, so on Windows
   every use asks. To stop the action running, add a deny rule to `permissions.deny` in your
-  settings, which overrides the skill (measured):
+  settings, which overrides the skill (measured for the two `--sessions` commands):
   `Bash(python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions)`, and the same with
-  ` waiting` before the closing parenthesis, with `<skill-dir>` written out as the path the command
-  shows. That path changes when the plugin updates, and the deny rule then no longer matches, so
+  ` waiting` before the closing parenthesis, or with `--drift` and `--drift again` in place of
+  `--sessions`, with `<skill-dir>` written out as the path the command shows. That path changes when the plugin updates, and the deny rule then no longer matches, so
   write it again after an update. Do not answer a prompt from this skill with "Yes, and don't ask again": it offers
   `python3 *`, which approves every `python3` command.
 - The agent prints the answer in one code block and adds nothing.
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
   goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
   with its title, its goal or the start of its first prompt, what it is doing and its resume command, so a Codex or Cursor session's words can reach the provider of the
-  Claude Code session you typed this into. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
+  Claude Code session you typed this into. `drift` adds this session's reading: your goal and outcome lines, and the model's level and reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
   has the full account. To keep a list out of a session, run the command above in a terminal outside the session instead.
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.

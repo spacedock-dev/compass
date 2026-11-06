@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import signal
 import time
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol, TypeGuard
@@ -47,8 +48,19 @@ POLL_SEC: Final = 5.0
 # says so; a plain `--drift` attaches to it or prints what it stored and spends nothing, which is
 # how a long reading still reaches the reader there. "Inside a session" is every run not `at_shell`,
 # so a `--session` run read through a pipe is capped too. A terminal waits for the job or Ctrl+C.
+# The budget counts from the command's start, so a dashboard it started and slow board reads come
+# out of it; a wait counted from its own start once overran the timeout it was set under.
 IN_SESSION_WAIT_SEC: Final = 100.0
+# A press is sent only with one exchange's full timeout (terminal_client's
+# DRIFT_REQUEST_TIMEOUT_SEC) and one poll left, so the run can still say whether it started: a
+# press cut short is unknowable.
+PRESS_RESERVE_SEC: Final = 35.0
+# What the wait keeps back for its last board read, which `terminal_client` cuts to what is left.
+LAST_READ_SEC: Final = 5.0
 EXIT_INTERRUPTED: Final = 130
+# How the skill's own run, and only it, names the next step: a plugin install has no
+# `spacedock-compass` on PATH, and this is the command the person types in the session.
+SKILL_COMMAND: Final = "/compass:compass"
 
 PROVENANCE: Final = (
     "The lines below are Compass's reading of this session, written by a model, shown as data, "
@@ -106,6 +118,22 @@ CLIENT_OUTDATED: Final = (
     "The dashboard refused this request as outdated, so nothing was sent. Restart it with "
     "`spacedock-compass --stop` and `spacedock-compass --daemon`."
 )
+CLIENT_OUTDATED_IN_SESSION: Final = (
+    "The dashboard refused this request as outdated, so nothing was sent. Ask "
+    f"`{SKILL_COMMAND}` to stop the dashboard, then type `{SKILL_COMMAND}` to start this version."
+)
+# The press from inside a session that no typed command backs (`typed_press`, owner 2026-11-06).
+TYPED_REQUIRED: Final = (
+    "Compass asks for a reading from inside a session only right after you type "
+    f"`{SKILL_COMMAND} drift again` (or `drift` when none is stored), so nothing was read or spent."
+)
+TYPED_UNCONFIRMED: Final = (
+    "Compass could not confirm that you typed the command, so nothing was read or spent."
+)
+NO_TIME: Final = (
+    "Compass answered too slowly to ask for a reading and hear back before this command's time "
+    "runs out, so nothing was started or spent. Ask again in a moment."
+)
 STORE_BUSY: Final = (
     "Another tab or dashboard is saving to the store of what you typed, so nothing was started "
     "or spent. Try again in a moment."
@@ -131,10 +159,14 @@ CORRECTION_READY: Final = (
     "A correction is ready to copy on the session page. `{command}` prints it only when you run "
     "it in your own terminal."
 )
+CORRECTION_READY_IN_SESSION: Final = (
+    "A correction is ready to copy on the session page. Compass prints it only there or in your "
+    "own terminal, never into this session."
+)
 # Plain `--drift`, spelled out: `--drift again` presses, and would spend a second reading once this
 # one has ended. Plain `--drift` presses only where nothing was stored, which the line says.
 STILL_READING: Final = (
-    "Still reading. It keeps running; run `{command}` to see the result, which spends nothing "
+    "Still reading. It keeps running; {ask} to see the result, which spends nothing "
     "while this reading runs or once it has stored one."
 )
 STOPPED_WAITING: Final = (
@@ -277,6 +309,13 @@ _LINES_MAX: Final = 6
 
 class Lost(Exception):  # noqa: N818 — a reply that never came, not a programming error
     """No answer came back, so whether the dashboard acted is unknown."""
+
+
+class _Terminated(BaseException):
+    """SIGTERM during an in-session wait: the harness's tool timeout, which ends the wait only.
+
+    A BaseException, as KeyboardInterrupt is, so no `except Exception` on the way swallows it.
+    """
 
 
 class Board(Protocol):
@@ -726,6 +765,8 @@ def press_outcome(  # noqa: C901, PLR0911 - the page's reply order, one exit per
         (409, "revision-changed"): REVISION_CHANGED,
         (400, "page-outdated"): CLIENT_OUTDATED,
         (409, "destination-changed"): DESTINATION_CHANGED,
+        (409, "typed-command-required"): TYPED_REQUIRED,
+        (409, "typed-command-unconfirmed"): TYPED_UNCONFIRMED,
     }
     refused = refusals.get((status, str(reason)))
     if refused is not None:
@@ -1049,28 +1090,47 @@ class _Run:
         *,
         again: bool,
         at_shell: bool,
+        in_session: bool,
         board: Board,
         port: int,
         out: TextIO,
         err: TextIO,
         clock: Callable[[], float],
         sleep: Callable[[float], None],
+        began: float,
+        note: str,
     ) -> None:
         self.harness, self.sid, self.key = harness, sid, f"{harness}:{sid}"
         self.again, self.at_shell, self.board, self.port = again, at_shell, board, port
+        self.in_session, self.began, self.note = in_session, began, note
         self.out, self.err, self.clock, self.sleep = out, err, clock, sleep
         self.page = ""
+
+    def left(self) -> float | None:
+        """Seconds left of the in-session budget; None at a shell, which waits for the job."""
+        return None if self.at_shell else IN_SESSION_WAIT_SEC - (self.clock() - self.began)
+
+    def ask_to_see(self) -> str:
+        if self.in_session:
+            return f"type `{SKILL_COMMAND} drift`"
+        return f"run `spacedock-compass --drift --session {self.key}`"
 
     def url(self, row: Mapping[str, Any]) -> str:
         self.page = session_url(self.port, _text(row.get("project")), self.harness, self.sid)
         return self.page
 
+    def noted(self, lines: list[str]) -> list[str]:
+        """`lines` led by the started-Compass line, which the skill shows from either stream."""
+        return [self.note, *lines] if self.note else lines
+
     def interrupted(self) -> int:
-        _emit(self.err, [f"{INTERRUPTED} {self.page}".rstrip()])
+        _emit(self.err, self.noted([f"{INTERRUPTED} {self.page}".rstrip()]))
         return EXIT_INTERRUPTED
 
     def refuse(self, sentence: str) -> int:
-        _emit(self.err, [sentence])
+        if self.in_session and sentence == CLIENT_OUTDATED:
+            sentence = CLIENT_OUTDATED_IN_SESSION
+        _emit(self.err, self.noted([sentence]))
         return 1
 
     def data(self) -> Mapping[str, Any] | None:
@@ -1082,12 +1142,12 @@ class _Run:
 
     def again_hint(self) -> str:
         """How to ask over a stale reading. `again` presses, so the hint says it spends."""
-        if self.at_shell:
-            return (
-                f"Run `spacedock-compass --drift again --session {self.key}` for a new reading; "
-                "that spends one."
-            )
-        return "Ask for `drift again` for a new reading; that spends one."
+        if self.in_session:
+            return f"Type `{SKILL_COMMAND} drift again` for a new reading; that spends one."
+        return (
+            f"Run `spacedock-compass --drift again --session {self.key}` for a new reading; "
+            "that spends one."
+        )
 
     def main(self) -> int:  # noqa: PLR0911 - each exit is one refusal or one answer
         payload = self.data()
@@ -1129,11 +1189,18 @@ class _Run:
         refusal = press_refusal(payload, row, now)
         if refusal:
             return self.refuse(refusal)
+        left = self.left()
+        if left is not None and left < PRESS_RESERVE_SEC:
+            return self.refuse(NO_TIME)
         route = _route(payload, self.harness) or {}
         drafted = draft(row, payload)
         _emit(self.out, allowance_lines(route))
+        body = press_body(row, route, drafted)
+        if self.in_session:
+            # The server reads the transcript for the person's own typed command for this action.
+            body["typed_action"] = "drift again" if self.again else "drift"
         try:
-            status, answer = self.board.post("/api/reading", press_body(row, route, drafted))
+            status, answer = self.board.post("/api/reading", body)
         except Lost:
             return self.refuse(LOST)
         pressed = press_outcome(status, answer, row, now)
@@ -1163,17 +1230,22 @@ class _Run:
 
         Ctrl+C cancels the job only when this run `pressed` it. One found running, perhaps pressed
         on the page, is the reader's elsewhere, so an interrupt stops the waiting and leaves it.
+        Inside a session SIGTERM is the harness ending the tool call, never the reader asking to
+        cancel, so it leaves the job running and says so, as running out of time does.
         """
         job_id = str(job.get("id"))
-        began = self.clock()
         seen = _assessment(row)
         said = ""
         payload: Mapping[str, Any] | None = None
+        restore = self.catch_term()
         try:
             while True:
                 payload = self.data()
+                left = self.left()
+                out_of_time = left is not None and left < POLL_SEC + LAST_READ_SEC
                 if payload is None:
-                    return self.refuse(LOST)
+                    # A read cut short at what was left is time running out, not a lost board.
+                    return self.still_reading() if out_of_time else self.refuse(LOST)
                 running = _job_of(payload, self.key)
                 if running is None or running.get("id") != job_id:
                     break
@@ -1181,19 +1253,43 @@ class _Run:
                 if step and step != said:
                     _emit(self.err, [f"Analyzing drift: {step}"])
                     said = step
-                if not self.at_shell and self.clock() - began >= IN_SESSION_WAIT_SEC:
-                    command = f"spacedock-compass --drift --session {self.key}"
-                    _emit(self.out, [STILL_READING.format(command=command)])
-                    return 0
+                if out_of_time:
+                    return self.still_reading()
                 self.sleep(POLL_SEC)
+        except _Terminated:
+            return self.still_reading()
         except KeyboardInterrupt:
             if not pressed:
                 _emit(self.out, [f"{STOPPED_WAITING} {self.page}".rstrip()])
                 return EXIT_INTERRUPTED
             return self.cancel(job_id)
+        finally:
+            restore()
         return self.ended(
             payload, _row_of(payload, self.harness, self.sid) or row, seen, job, adopted=adopted
         )
+
+    def still_reading(self) -> int:
+        _emit(self.out, [STILL_READING.format(ask=self.ask_to_see())])
+        return 0
+
+    def catch_term(self) -> Callable[[], None]:
+        """Turn SIGTERM into `_Terminated` for an in-session wait; the returned call undoes it."""
+        if self.at_shell:
+            return lambda: None
+
+        def terminated(_signum: int, _frame: object) -> None:
+            raise _Terminated
+
+        try:
+            before = signal.signal(signal.SIGTERM, terminated)
+        except ValueError:  # not the main thread, where no handler can be set
+            return lambda: None
+
+        def restore() -> None:
+            signal.signal(signal.SIGTERM, before)
+
+        return restore
 
     def ended(
         self,
@@ -1305,7 +1401,8 @@ class _Run:
             return []
         if not self.at_shell:
             command = f"spacedock-compass --drift --session {self.key}"
-            return [CORRECTION_READY.format(command=command)]
+            ready = CORRECTION_READY.format(command=command)
+            return [CORRECTION_READY_IN_SESSION if self.in_session else ready]
         return ["Correction to copy:", text]
 
 
@@ -1315,31 +1412,42 @@ def run(  # noqa: PLR0913 — the seams `terminal_client` fills and the tests re
     *,
     again: bool,
     at_shell: bool,
+    in_session: bool = False,
     board: Board,
     port: int,
     out: TextIO,
     err: TextIO,
     clock: Callable[[], float] = time.time,
     sleep: Callable[[float], None] = time.sleep,
+    began: float | None = None,
+    note: str = "",
 ) -> int:
     """`--drift`: print the stored reading for free, or spend one and wait for it.
 
     `at_shell` is whether a person reads this at a terminal rather than an agent inside the session:
     `terminal_client` sets it only for `--session` with standard output a terminal. It decides
-    whether the correction is printed and whether the wait stops at `IN_SESSION_WAIT_SEC`.
+    whether the correction is printed and whether the run stops `IN_SESSION_WAIT_SEC` after
+    `began`, the command's start in `clock`'s terms. `in_session` is the skill's own run, named by
+    the environment and read through a pipe: its next steps name the skill's command, not the CLI.
+    `note` is the line saying this run started Compass, said first on whichever stream answers.
     """
     drift = _Run(
         harness,
         sid,
         again=again,
         at_shell=at_shell,
+        in_session=in_session,
         board=board,
         port=port,
         out=out,
         err=err,
         clock=clock,
         sleep=sleep,
+        began=clock() if began is None else began,
+        note=note,
     )
+    if note:
+        _emit(out, [note])
     try:
         return drift.main()
     except KeyboardInterrupt:

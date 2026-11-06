@@ -11,8 +11,10 @@ from __future__ import annotations
 import copy
 import io
 import json
+import os
 import re
 import shlex
+import signal
 import time
 import unittest
 from typing import TYPE_CHECKING, Any
@@ -256,15 +258,19 @@ class Clock:
         self.at += seconds
 
 
-def drift(
+def drift(  # noqa: PLR0913 - each is a seam of `terminal_drift.run`
     board: FakeBoard,
     *,
     again: bool = False,
     at_shell: bool = True,
+    in_session: bool = False,
     harness: str = "claude",
     clock: Clock | None = None,
     sleep: Any = None,
+    began: float | None = None,
+    note: str = "",
 ) -> tuple[int, str, str]:
+    """`in_session` is the skill's own run: named by the environment, read through a pipe."""
     out, err = io.StringIO(), io.StringIO()
     ticking = clock or Clock()
     code = terminal_drift.run(
@@ -272,12 +278,15 @@ def drift(
         "abc",
         again=again,
         at_shell=at_shell,
+        in_session=in_session,
         board=board,
         port=PORT,
         out=out,
         err=err,
         clock=ticking,
         sleep=sleep or ticking.sleep,
+        began=began,
+        note=note,
     )
     return code, out.getvalue(), err.getvalue()
 
@@ -759,6 +768,120 @@ class SpendTest(unittest.TestCase):
         self.assertEqual(1, board.readings_started())
         self.assertIn("Level: Medium", out)
 
+    def test_a_person_in_a_session_hears_still_reading_within_the_wait_counted_from_the_start(
+        self,
+    ) -> None:
+        # A dashboard started, and a slow board read, before the wait both come out of the same
+        # budget: the tool's timeout counts from the command's start, not from the press.
+        clock = Clock()
+        began = NOW - 60
+        board = FakeBoard(job_polls=500)
+        code, out, _err = drift(board, at_shell=False, clock=clock, began=began)
+        self.assertEqual(0, code)
+        self.assertIn("Still reading", out)
+        self.assertLessEqual(clock.at - began, terminal_drift.IN_SESSION_WAIT_SEC)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
+
+    def test_a_person_in_a_session_is_not_charged_a_reading_there_is_no_time_left_to_hear(
+        self,
+    ) -> None:
+        clock = Clock()
+        board = FakeBoard()
+        code, out, err = drift(board, at_shell=False, clock=clock, began=NOW - 80)
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_drift.NO_TIME, err.strip())
+        self.assertEqual(0, board.readings_started())
+
+    def test_a_person_at_a_shell_is_never_cut_short_by_the_in_session_wait(self) -> None:
+        clock = Clock()
+        board = FakeBoard(job_polls=50)
+        code, out, _err = drift(board, at_shell=True, clock=clock, began=NOW - 99)
+        self.assertEqual(0, code)
+        self.assertEqual(1, board.readings_started())
+        self.assertIn("Level: Medium", out)
+
+    def test_a_person_in_a_session_whose_last_read_ran_out_of_time_hears_it_keeps_running(
+        self,
+    ) -> None:
+        clock = Clock()
+        board = FakeBoard(job_polls=500)
+        real_data = board.data
+        reads = {"n": 0}
+
+        def slow(*_args: Any) -> Any:
+            reads["n"] += 1
+            if reads["n"] == 3:
+                # The loopback read was cut at what was left of the wait.
+                clock.at = NOW + terminal_drift.IN_SESSION_WAIT_SEC - 1
+                raise terminal_drift.Lost("/api/data")
+            return real_data()
+
+        board.data = slow  # type: ignore[method-assign]
+        code, out, err = drift(board, at_shell=False, clock=clock)
+        self.assertEqual(0, code)
+        self.assertIn("Still reading", out)
+        self.assertNotIn(terminal_drift.LOST, out + err)
+
+    def test_a_person_in_a_session_whose_tool_ends_the_wait_hears_the_reading_keeps_running(
+        self,
+    ) -> None:
+        board = FakeBoard(job_polls=500)
+        calls = {"n": 0}
+
+        def terminated(_seconds: float) -> None:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        before = signal.getsignal(signal.SIGTERM)
+        code, out, _err = drift(board, at_shell=False, sleep=terminated)
+        self.assertEqual(0, code)
+        self.assertIn("Still reading", out)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
+        self.assertEqual(before, signal.getsignal(signal.SIGTERM))
+
+    def test_a_person_in_a_session_is_told_to_type_the_skill_s_command_not_the_cli(self) -> None:
+        board = FakeBoard(job_polls=500)
+        _code, out, _err = drift(board, at_shell=False, in_session=True)
+        line = next(line for line in out.splitlines() if line.startswith("Still reading"))
+        self.assertIn("type `/compass:compass drift`", line)
+        self.assertNotIn("spacedock-compass", out)
+
+    def test_a_person_in_a_session_reads_a_correction_is_ready_without_a_command_to_run(
+        self,
+    ) -> None:
+        _code, out, _err = drift(stored(), at_shell=False, in_session=True)
+        ready = next(line for line in out.splitlines() if "correction is ready" in line)
+        self.assertNotIn("spacedock-compass", ready)
+        self.assertNotIn("Steer back: keep tabs.", out)
+
+    def test_a_person_in_a_session_is_told_to_type_drift_again_over_a_stale_reading(self) -> None:
+        board = stored()
+        board.view = a_view(stale={"kind": "work", "before": NOW - 300})
+        _code, out, _err = drift(board, at_shell=False, in_session=True)
+        self.assertIn(
+            "Type `/compass:compass drift again` for a new reading; that spends one.", out
+        )
+        self.assertNotIn("spacedock-compass", out)
+
+    def test_a_person_in_a_session_told_the_dashboard_is_outdated_is_not_named_the_cli(
+        self,
+    ) -> None:
+        board = FakeBoard(reply=(400, {"ok": False, "reason": "page-outdated"}))
+        code, _out, err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertNotIn("spacedock-compass", err)
+        self.assertIn("/compass:compass", err)
+        self.assertIn("nothing was sent", err)
+
+    def test_a_person_in_a_session_reads_that_compass_was_started_first(self) -> None:
+        _code, out, _err = drift(stored(), at_shell=False, in_session=True, note="Started.")
+        self.assertEqual("Started.", out.splitlines()[0])
+        board = FakeBoard(a_payload(a_row(sid="other")))
+        code, out, err = drift(board, at_shell=False, in_session=True, note="Started.")
+        self.assertEqual(1, code)
+        self.assertEqual("Started.", err.splitlines()[0])
+
     def test_a_person_who_asks_while_a_reading_runs_attaches_and_starts_none(self) -> None:
         board = FakeBoard()
         board.payload["reading_jobs"] = {
@@ -805,6 +928,50 @@ DYNAMIC_POLICY = (
     "This route uses managed policy that can change at launch. "
     "Use a route whose context and model-switching controls Compass can check locally."
 )
+
+
+class TypedCommandTest(unittest.TestCase):
+    """A press from inside a session names the action, and the dashboard checks it was typed."""
+
+    def test_a_person_s_typed_drift_press_names_its_action(self) -> None:
+        for again, action in ((False, "drift"), (True, "drift again")):
+            with self.subTest(action=action):
+                board = FakeBoard()
+                drift(board, again=again, at_shell=False, in_session=True)
+                self.assertEqual(action, board.posts[0][1]["typed_action"])
+
+    def test_a_press_from_a_shell_or_through_a_pipe_names_no_typed_action(self) -> None:
+        for at_shell in (True, False):
+            with self.subTest(at_shell=at_shell):
+                board = FakeBoard()
+                drift(board, at_shell=at_shell)
+                self.assertNotIn("typed_action", board.posts[0][1])
+
+    def test_a_person_whose_agent_asked_on_its_own_reads_that_nothing_was_spent(self) -> None:
+        board = FakeBoard(
+            reply=(409, {"ok": False, "produced": False, "reason": "typed-command-required"})
+        )
+        code, _out, err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.TYPED_REQUIRED, err.strip())
+        self.assertEqual(0, board.model_calls)
+        self.assertIn("/compass:compass drift again", terminal_drift.TYPED_REQUIRED)
+        self.assertIn("nothing was read or spent", terminal_drift.TYPED_REQUIRED)
+
+    def test_a_person_whose_typed_command_could_not_be_confirmed_reads_so(self) -> None:
+        board = FakeBoard(
+            reply=(409, {"ok": False, "produced": False, "reason": "typed-command-unconfirmed"})
+        )
+        code, _out, err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.TYPED_UNCONFIRMED, err.strip())
+
+    def test_a_person_s_plain_drift_over_a_stored_reading_never_asks_the_check(self) -> None:
+        board = stored()
+        code, out, _err = drift(board, at_shell=False, in_session=True)
+        self.assertEqual(0, code)
+        self.assertNotIn("/api/reading", [path for path, _ in board.posts])
+        self.assertIn("Level: Medium", out)
 
 
 class ManagedPolicyTest(unittest.TestCase):

@@ -67,7 +67,8 @@ board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) 
 
 Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
 print the same list into that session, where the agent can read it too. The skill pre-approves
-those two commands and no others, so they run without a permission prompt. A line above the listed
+those two commands, and its own `drift` commands under P2, and no others, so they run without a
+permission prompt. A line above the listed
 sessions says they are what other sessions said about themselves, and the list goes to that session's model provider with the rest of its context, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out. Compass leaves the command you
 typed, and the agent's answer to it, out of what it reads about the session, and the session page
@@ -146,7 +147,12 @@ the reason, earlier departures, why it is stale, and, run in your own terminal, 
 copy. A stored reading costs nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
 as Analyze does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
 says how many it left and that the session page can answer them. Another harness gets its session
-page's address. The [manual](../MANUAL.md#options) has the details.
+page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
+`/compass:compass drift` and `/compass:compass drift again` print that session's reading into it,
+under a line saying it is Compass's reading, written by a model, shown as data. The skill
+pre-approves both. The correction is not printed there: the answer says one is ready and where to
+copy it, and the reading goes to that session's model provider, as
+[SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out.
 
 The Intent log brings every board session and retained annotation/discard record into one list,
 with typed goals/output, cached deterministic goals and published workflow titles labeled

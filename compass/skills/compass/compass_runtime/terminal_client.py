@@ -82,6 +82,12 @@ _PATH = re.compile(r"/[!-~]*")
 _SESSION_FLAG = re.compile(r"([a-z][a-z0-9_-]{0,31}):([!-~]{1,200})")
 _SESSION_ID = re.compile(r"[!-~]{1,200}")
 CLAUDE_SESSION_ENV: Final = "CLAUDE_CODE_SESSION_ID"
+# Another harness's own session id in its shells: Codex's, the one `interaction_prototype`'s
+# SESSION_ENVIRONMENT registers a Codex pane by. Started inside a Claude Code session, that harness
+# inherits CLAUDE_CODE_SESSION_ID too, which names the outer session and not the one asking, so
+# its presence stops the environment from naming a session. A harness with no marker of its own
+# cannot be told apart here; SECURITY.md says so.
+OTHER_SESSION_ENV: Final = ("CODEX_THREAD_ID",)
 
 # Every sentence the terminal prints about reaching the dashboard. The page derives its own
 # wording elsewhere; this is the terminal's single copy, so a result reads the same from every
@@ -90,7 +96,18 @@ SENTENCES: Final[dict[str, str]] = {
     "not_running": "Compass is not running. Start it with `{start}`.",
     "starting": "Compass was not running, so this started it as `--daemon` does.",
     "start_failed": "Compass could not start the dashboard. Start it with `{start}`.",
+    "start_failed_in_session": (
+        "Compass could not start the dashboard. Type `/compass:compass` to start it."
+    ),
     "no_session": "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
+    "no_session_in_session": (
+        "The drift action reads Claude Code sessions and this command was given no Claude Code "
+        "session id, so nothing was read or spent; a session's page on the board shows its drift."
+    ),
+    "other_harness": (
+        "The drift action reads Claude Code sessions and this command runs inside another tool's "
+        "session, so nothing was read or spent; that session's page on the board shows its drift."
+    ),
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
     "unreadable_reply": "Compass answered, but its session list could not be read.",
     "caller_unknown": (
@@ -100,6 +117,11 @@ SENTENCES: Final[dict[str, str]] = {
     "version_mismatch": (
         "The running dashboard is version {theirs} and this is version {own}, so nothing was sent. "
         "Stop it with `{stop}` and start it again with `{start}`."
+    ),
+    "version_mismatch_in_session": (
+        "The running dashboard is version {theirs} and this is version {own}, so nothing was sent. "
+        "Ask `/compass:compass` to stop the dashboard, then type `/compass:compass` to start this "
+        "version."
     ),
 }
 
@@ -452,7 +474,9 @@ def post(
     return request("POST", port, path, json.dumps(payload).encode(), headers=sent, timeout=timeout)
 
 
-def version_guard(dashboard: Dashboard, own_version: str | None) -> str | None:
+def version_guard(
+    dashboard: Dashboard, own_version: str | None, *, in_session: bool = False
+) -> str | None:
     """One sentence when the dashboard is another release than this client, else None.
 
     A dashboard that reports no version is another release, since the first one to report it is
@@ -462,11 +486,13 @@ def version_guard(dashboard: Dashboard, own_version: str | None) -> str | None:
     if dashboard.version is not None and dashboard.version == own_version:
         return None
     return sentence(
-        "version_mismatch", own=own_version or "unknown", theirs=dashboard.version or "unknown"
+        "version_mismatch_in_session" if in_session else "version_mismatch",
+        own=own_version or "unknown",
+        theirs=dashboard.version or "unknown",
     )
 
 
-def start_daemon(port: int) -> None:
+def start_daemon(port: int, *, timeout: float = 30.0) -> None:
     """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
@@ -478,7 +504,7 @@ def start_daemon(port: int) -> None:
     argv += ["--daemon", "--port", str(port)]
     try:
         subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
-            argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False
+            argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
         )
     except (OSError, subprocess.SubprocessError):
         return
@@ -490,24 +516,26 @@ def ensure_dashboard(
     port: int | None,
     spend: bool,
     own_version: str | None,
-    start: Callable[[int], None] = start_daemon,
+    start: Callable[[int], None] | None = None,
     say: Callable[[str], None] | None = None,
+    in_session: bool = False,
 ) -> Dashboard | Refusal:
     """The one rule for a missing dashboard, and for a dashboard of another release.
 
     A read with none running says so and stops. A spend starts one and says it did. A spend
-    against another release stops before it sends anything; a read is still served.
+    against another release stops before it sends anything; a read is still served. `in_session`
+    words the refusals for the skill, whose person may have no `spacedock-compass` on PATH.
     """
     found = find_dashboard(home, port=port)
     if found is None:
         if not spend:
             return Refusal(sentence("not_running"))
         (say or _say)(sentence("starting"))
-        start(DEFAULT_PORT if port is None else port)
+        (start or start_daemon)(DEFAULT_PORT if port is None else port)
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
-            return Refusal(sentence("start_failed"))
-    if spend and (message := version_guard(found, own_version)) is not None:
+            return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
+    if spend and (message := version_guard(found, own_version, in_session=in_session)) is not None:
         return Refusal(message)
     return found
 
@@ -615,6 +643,7 @@ def resolve_session(
 ) -> Session | Unresolved:
     """Which session this command is in: `--session`, else the status line, else the environment.
 
+    The environment names none when another harness's own marker is set (`OTHER_SESSION_ENV`).
     Never the working directory. A session id names a session and proves nothing about who asked,
     so a spend still passes the dashboard's own guards. A `--session` that does not parse is
     refused, not replaced by a looser source.
@@ -629,6 +658,8 @@ def resolve_session(
     value = status_line.get("session_id") if status_line is not None else None
     if isinstance(value, str) and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "status line")
+    if any(environ.get(name) for name in OTHER_SESSION_ENV):
+        return Unresolved(sentence("other_harness"))
     value = environ.get(CLAUDE_SESSION_ENV)
     if value is not None and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "environment")
@@ -878,20 +909,33 @@ def _is_terminal(stream: object) -> bool:
         return False
 
 
+def _budget(deadline: float | None, ceiling: float) -> float:
+    """`ceiling`, cut to end a second before `deadline`; never below a tenth of a second."""
+    if deadline is None:
+        return ceiling
+    return max(0.1, min(ceiling, deadline - time.time() - 1.0))
+
+
 class LoopbackBoard:
     """The dashboard as `terminal_drift` reaches it: four exchanges, each over `request`.
 
     A reply that never came is `terminal_drift.Lost`, so the drift rules never see a socket error.
+    With a `deadline` (`time.time` terms) no exchange outlasts it, so an in-session run still has
+    time to say a reading keeps running.
     """
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, deadline: float | None = None) -> None:
         self.port = port
+        self.deadline = deadline
+
+    def timeout(self) -> float:
+        return _budget(self.deadline, DRIFT_REQUEST_TIMEOUT_SEC)
 
     def _read(self, path: str) -> Any:
         from compass_runtime.terminal_drift import Lost  # noqa: PLC0415 — only a drift reaches this
 
         try:
-            reply = get(self.port, path, timeout=DRIFT_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
+            reply = get(self.port, path, timeout=self.timeout(), cap=DATA_CAP_BYTES)
         except DashboardUnreachable as error:
             raise Lost(path) from error
         return reply.data if reply.status == 200 else None
@@ -909,7 +953,7 @@ class LoopbackBoard:
         from compass_runtime.terminal_drift import Lost  # noqa: PLC0415 — only a drift reaches this
 
         try:
-            reply = post(self.port, path, body, timeout=DRIFT_REQUEST_TIMEOUT_SEC)
+            reply = post(self.port, path, body, timeout=self.timeout())
         except DashboardUnreachable as error:
             raise Lost(path) from error
         return reply.status, reply.data
@@ -934,15 +978,35 @@ def run_drift(
     the correction into the context of the agent it is addressed to
     ([DEC-25](docs/design-reading-a-session.md#dec-25-a-correction-stays-yours-to-copy)).
     """
+    began = time.time()  # the in-session budget counts from here, a dashboard start included
     from compass_runtime import terminal_drift  # noqa: PLC0415 — only a drift loads the drift rules
 
     env = os.environ if environ is None else environ
+    tty = _is_terminal(sys.stdout)
     named = resolve_session(session, env, None, payload={})
     if isinstance(named, Unresolved):
-        print(named.message, file=sys.stderr)
+        message = named.message
+        if not tty and message == sentence("no_session"):
+            # The skill never adds `--session`, so the flag is no step for its agent to take.
+            message = sentence("no_session_in_session")
+        print(message, file=sys.stderr)
         return 1
-    spend = named.harness == "claude"
-    found = ensure_dashboard(state_home(env), port=port, spend=spend, own_version=release_version())
+    # The skill's own run, as `SKILL.md` writes it: named by the environment, read through a pipe.
+    in_session = named.source == "environment" and not tty
+    at_shell = named.source == "flag" and tty
+    deadline = None if at_shell else began + terminal_drift.IN_SESSION_WAIT_SEC
+    said: list[str] = []
+    found = ensure_dashboard(
+        state_home(env),
+        port=port,
+        spend=named.harness == "claude",
+        own_version=release_version(),
+        start=lambda chosen: start_daemon(chosen, timeout=_budget(deadline, 30.0)),
+        # Inside a session the skill shows standard output on success and standard error on a
+        # refusal, so the line is handed to the drift rules to say on whichever answers.
+        say=said.append if in_session else None,
+        in_session=in_session,
+    )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)
         return found.code
@@ -950,9 +1014,12 @@ def run_drift(
         named.harness,
         named.sid,
         again=again,
-        at_shell=named.source == "flag" and _is_terminal(sys.stdout),
-        board=LoopbackBoard(found.port),
+        at_shell=at_shell,
+        in_session=in_session,
+        board=LoopbackBoard(found.port, deadline),
         port=found.port,
         out=sys.stdout,
         err=sys.stderr,
+        began=began,
+        note=said[0] if said else "",
     )
