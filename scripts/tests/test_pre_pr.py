@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
 import os
 import re
 import signal
@@ -47,7 +48,8 @@ def installed(name: str) -> str:
 
 def plan(outputs: dict[str, str], **options: object) -> list[pre_pr.Item]:
     lanes = {**OFF, **outputs}
-    return pre_pr.plan(lanes, which=installed, root=ROOT, **options)  # type: ignore[arg-type]
+    options.setdefault("which", installed)
+    return pre_pr.plan(lanes, root=ROOT, **options)  # type: ignore[arg-type]
 
 
 def ran(items: list[pre_pr.Item]) -> list[str]:
@@ -461,7 +463,9 @@ class WaitTimeoutTest(unittest.TestCase):
         self.assertEqual(clock.now, 90)
         self.assertNotIn("==> ", text)
         report = text.split("Gave up", 1)[1]
-        for command in ran(plan({})):
+        # The run under test looks tools up on this machine's PATH, so the expected list does too:
+        # a CI runner has no `claude` CLI, and its native validator is then not planned at all.
+        for command in ran(plan({}, which=shutil.which)):
             self.assertIn(f"  not run  {command}", report)
         self.assertNotIn("not run  pnpm lint", report)
 
