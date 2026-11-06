@@ -27,6 +27,9 @@ from compass_runtime import supervise
 
 from .support import process_alive
 
+# Real children against real timeouts and group deadlines: load stretches them (run 42225631356).
+REAL_TIME_TESTS = True
+
 # A CLI that starts a grandchild, writes the grandchild's pid where the test can
 # read it, and then outlives any timeout the test sets.
 _SPAWNS_A_GRANDCHILD = (

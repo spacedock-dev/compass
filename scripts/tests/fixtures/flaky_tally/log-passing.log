@@ -1,0 +1,31 @@
+validate	Run validator unit tests	2026-11-06T13:57:42.0946776Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+validate	Run validator unit tests	2026-11-06T13:57:42.0947115Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run validator unit tests	2026-11-06T13:57:42.0947444Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run validator unit tests	2026-11-06T13:57:42.0947745Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run validator unit tests	2026-11-06T13:57:42.0948041Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib
+validate	Run validator unit tests	2026-11-06T13:57:42.0948299Z ##[endgroup]
+validate	Run validator unit tests	2026-11-06T13:57:50.6875043Z .....................................................................................................
+validate	Run validator unit tests	2026-11-06T13:57:50.6875689Z ----------------------------------------------------------------------
+validate	Run validator unit tests	2026-11-06T13:57:50.6876222Z Ran 101 tests in 8.281s
+validate	Run validator unit tests	2026-11-06T13:57:50.6876390Z 
+validate	Run validator unit tests	2026-11-06T13:57:50.6876496Z OK
+validate	Run release bump-script unit tests	﻿2026-11-06T13:57:50.7299443Z ##[group]Run python3 -m unittest scripts/tests/test_bump_version.py
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7299844Z ^[[36;1mpython3 -m unittest scripts/tests/test_bump_version.py^[[0m
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7344712Z shell: /usr/bin/bash -e {0}
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7344928Z env:
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7345166Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7345530Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7345866Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7346168Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7346454Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7346748Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.7347009Z ##[endgroup]
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8117522Z ........
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8117928Z bumped 0.1.0 -> 0.2.0
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8118229Z bumped 0.9.0 -> 0.10.0
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8118517Z ----------------------------------------------------------------------
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8118915Z Ran 8 tests in 0.007s
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8119033Z 
+validate	Run release bump-script unit tests	2026-11-06T13:57:50.8119113Z OK
+validate	Check version-field parity across all owned locations	﻿2026-11-06T13:57:50.8280294Z ##[group]Run python3 scripts/bump_version.py --current
+validate	Check version-field parity across all owned locations	2026-11-06T13:57:50.8280643Z ^[[36;1mpython3 scripts/bump_version.py --current^[[0m

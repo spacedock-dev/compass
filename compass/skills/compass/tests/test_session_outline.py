@@ -31,6 +31,9 @@ from .test_project_script_checks import git, package
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+# Outline reads run under the real 0.25 s budget, and the default-budget test measures that budget.
+REAL_TIME_TESTS = True
+
 
 class OutlineFactBoundsTest(unittest.TestCase):
     def setUp(self) -> None:

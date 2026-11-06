@@ -1,0 +1,19 @@
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2617800Z      6.27s  compass.skills.compass.tests.test_reading_native.NativeProducerTest.test_actual_native_multi_prompt_preparation_and_partial_assessment
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2633770Z      5.74s  compass.skills.compass.tests.test_react_frontend.InstalledFrontendTest.test_selected_corruption_fails_before_bind_and_recovery_ignores_assets
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2635750Z      5.70s  compass.skills.compass.tests.test_records.IndexedScrubMatchesRegexScrubTest.test_the_indexed_scrub_masks_exactly_what_the_regex_scrub_masked
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2637370Z 
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2639530Z ======================================================================
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2649050Z FAIL: test_all_parent_poll_reads_share_one_actual_byte_allowance (compass.skills.compass.tests.test_session_outline.SessionOutlineTest.test_all_parent_poll_reads_share_one_actual_byte_allowance)
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2651670Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2656300Z Traceback (most recent call last):
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2718030Z   File "/Users/runner/work/compass/compass/compass/skills/compass/tests/test_session_outline.py", line 575, in test_all_parent_poll_reads_share_one_actual_byte_allowance
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2719720Z     self.assertGreater(reads[0] - before, 0)
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2720150Z     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2721400Z AssertionError: 0 not greater than 0
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2721660Z 
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2722130Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2722600Z Ran 8927 tests in 285.956s (3 workers)
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2722830Z 
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.2723010Z FAILED (failures=1, skipped=3, expected failures=2)
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.7978750Z ##[error]Process completed with exit code 1.
+Tests (macos-latest, Python 3.15, dashboard)	UNKNOWN STEP	2026-11-06T08:39:11.9108470Z Post job cleanup.

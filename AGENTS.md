@@ -122,6 +122,7 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `.agents/skills/*` | Codex discovery aliases for repository development skills. Each entry is a relative symlink to the matching canonical directory under `.claude/skills/`; `scripts/validate_plugins.py` rejects missing, copied, orphaned or misdirected aliases. |
 | `docs/abstention/` | The committed half of DEC-17's abstention check: a README saying what the file may hold and how to argue with a result, and — once a scoring run has been committed — the scorer's summary (case ids, marks, outcomes, counts, coverage, the marks digest). The cases, the local results and the rubric expectations stay under `~/.compass`; `SECURITY.md` owns that ruling. |
 | `docs/evidence/intent-and-drift/` | The optional exploratory teammate prompt and participant notice, archived cold-study protocol, and redacted run template for live Intent and drift feedback. Raw sessions and screenshots stay outside Git; issue attachments require participant review. The owner retired the cold-study acceptance requirement on 2026-10-06; application verification and producer qualification remain required. |
+| `docs/flaky-tests.md` | The flaky-test ledger: one row per test that failed in CI and passed on the same code, with its runs, symptom and fixing pull request. [Flaky tests](#flaky-tests) says when a row is added; `scripts/flaky_tally.py` prints what the ledger is missing. |
 | `tests/README.md` | The pushback session fixtures under `tests/raw_sessions/` and `tests/annotated_sessions/`: what is committed (steering excerpts and annotations), why the full sanitized session logs stay local and gitignored, the redaction tags, and how the sessions were chosen. |
 | `docs/drift-replay/` | The committed half of the drift replay check: a README saying what the files may hold, the run order (blind marks before any output) and how to argue with a result, plus the marks digest and, once scored, the outcome summary. The study is retired (owner, 2026-11-01) and the tooling that produced these records was removed, so the folder is a record rather than a procedure; the cases, marks and outputs it describes stayed under `~/.compass/drift-replay/` (or `COMPASS_HOME`), and the spend ledger under `~/.cargento/drift-replay/`. |
 | `docs/visibility-2x2/` | The Visibility 2x2 prioritisation board and the blind-panel evidence behind its scores. A local working tool, opened by the `visibility-2x2` skill. |
@@ -164,7 +165,7 @@ named development area. Shipped files remain user-facing even below a developmen
 
 Development provenance may remain in `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, repository
 development skills/agents, PR templates and bodies, tests and fixture annotations,
-`docs/development-tracking.md`, `docs/plans/`, design records, capture schemas, roadmap/visibility
+`docs/development-tracking.md`, the flaky-test ledger, `docs/plans/`, design records, capture schemas, roadmap/visibility
 records, probes, feedback, exploration and abstention/drift study records. The facilitator protocol
 and run records are development records; the shared study entry point, kickoff and prompt are
 user-facing exceptions. The validator's audience classifier defines the exact development paths;
@@ -317,6 +318,8 @@ coverage report   # enforces the fail_under threshold from pyproject.toml
 # coverage files that `combine` merges. `-j N` caps the workers. Plain
 # `unittest discover` still works and reaches the same verdict, serially.
 # It holds what a passing test prints, as `unittest -b` does; `--no-buffer` shows it.
+# It runs a failed test once more on its own, and `REAL_TIME_TESTS` modules after the
+# workers; `--no-retry` fails on the first failure. See Flaky tests under Parallel Work.
 # On Python 3.14, `COVERAGE_CORE=sysmon` cuts the coverage run several-fold, as CI does;
 # older Pythons refuse it with branch coverage and fall back to the slow tracer.
 # `test_capture_terminal_identity` and `test_capture_focus_raise` exercise AppleScript
@@ -457,6 +460,32 @@ scratch files per branch.
 harness's own hooks, and they outlive the sandbox. Thirteen of them survived a deleted directory
 here and drove the load average to 18, which then caused the contention failures above. Kill what
 you started, and scope the kill to what you started.
+
+### Flaky tests
+
+`scripts/run_tests.py` runs a failed test once more, on its own, after the rest of the suite. A
+test that passes then does not fail the run. The runner lists it under "Passed only on retry", in
+the job summary and as a `FLAKY-RETRY-PASSED: <test id>` line. A test that skips itself on the
+retry still fails the run. More than five failures retry nothing, because that many at once is a
+real break.
+
+A test module that measures real time sets `REAL_TIME_TESTS = True` at module level, with a
+one-line comment naming what it measures. The runner runs those modules after the parallel workers
+exit, one unit at a time.
+
+Every flake goes in the ledger, [docs/flaky-tests.md](docs/flaky-tests.md):
+
+- A test listed under "Passed only on retry", in any run.
+- A CI failure in a test the change did not touch. Run that module alone first. If it passes
+  alone, it is a flake. If it fails alone, it is a real failure: fix it or report it.
+
+Add a row, or raise the count and last-seen date of the existing row, and name the run. Re-running
+a job or re-queuing a pull request without recording the failure is not allowed. Mark a row fixed
+with the pull request that removed the cause.
+
+`python3 scripts/flaky_tally.py` reads the last week of CI runs through `gh` and prints what the
+ledger is missing. It writes nothing. Its candidates from failed runs still need the module-alone
+check above.
 
 ## Calibrating Effort
 

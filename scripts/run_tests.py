@@ -28,6 +28,17 @@ fixtures and verdict, and spreads the work:
   tests provoke on purpose (2026-10-28), which buried the one line that mattered.
   ``--no-buffer`` prints it as it happens. A subprocess writes to the real
   descriptors and is never held.
+- A module that sets ``REAL_TIME_TESTS = True`` measures something against the
+  real clock, which a loaded machine stretches. Its units run after every
+  parallel worker has exited, one at a time in one more worker, so they share
+  the machine with nothing else in the run. Under ``--shard`` each such module
+  still belongs to one leg, so it runs in exactly one leg's serial pass.
+- A test that fails or errors runs once more, on its own, after everything
+  else. Passing then does not fail the run: it is listed under "Passed only on
+  retry" with its first failure, and printed as a ``FLAKY-RETRY-PASSED: <id>``
+  line, which ``scripts/flaky_tally.py`` reads. Failing twice, or skipping
+  on the retry, fails the run as before. ``--no-retry`` turns this off. A
+  class fixture or import failure has no test id and is never retried.
 
 Every class is its own top-level run, so ``setUpModule`` runs once per class
 rather than once per module. One module defines it, to start and stop a log
@@ -55,6 +66,7 @@ import os
 import queue
 import sys
 import tempfile
+import textwrap
 import time
 import traceback
 import unittest
@@ -62,6 +74,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
+    from multiprocessing.context import SpawnContext
     from multiprocessing.queues import Queue
 
 # How long the parent waits on the result queue before checking whether its
@@ -69,6 +82,12 @@ if TYPE_CHECKING:
 # error on every class it never finished, never waited on forever.
 POLL_SECONDS = 5.0
 JOIN_SECONDS = 30.0
+
+# More failures than this retry nothing. Every flake on record failed one test in its run; six at
+# once is a real break, and retrying it would spend those tests' time again to learn nothing.
+RETRY_LIMIT = 5
+REAL_TIME_MARKER = "REAL_TIME_TESTS"
+FLAKY_LINE = "FLAKY-RETRY-PASSED: "
 
 
 # Seconds one module took on a hosted Windows runner, the slowest platform (measured 2026-10-10
@@ -122,6 +141,12 @@ def module_of(tests: list[unittest.TestCase]) -> str:
     return name.rsplit(".", 1)[-1]
 
 
+def is_real_time(tests: list[unittest.TestCase]) -> bool:
+    """Whether a unit's module declares ``REAL_TIME_TESTS = True``; nothing else counts."""
+    module = sys.modules.get(type(tests[0]).__module__)
+    return getattr(module, REAL_TIME_MARKER, False) is True
+
+
 def iter_tests(suite: unittest.TestSuite) -> Iterator[unittest.TestCase]:
     """Yield every test case in a nested suite, in discovery order."""
     for item in suite:
@@ -160,6 +185,18 @@ def unit_of(test: unittest.TestCase) -> str:
     return name
 
 
+def test_id_of(test: object) -> str | None:
+    """The id a failure can be retried by, or None for a class fixture or import failure.
+
+    A failing subtest reports a `_SubTest` that names its parameters; the retry runs the whole
+    test it belongs to.
+    """
+    case = getattr(test, "test_case", test)
+    if not isinstance(case, unittest.TestCase) or type(case).__module__ == "unittest.loader":
+        return None
+    return case.id()
+
+
 def discover(
     start: str, top: str | None, pattern: str, shard: tuple[int, int] | None = None
 ) -> dict[str, list[unittest.TestCase]]:
@@ -180,13 +217,16 @@ def discover(
 
 
 def summarise(unit: str, result: unittest.TestResult, seconds: float) -> dict[str, Any]:
-    """Reduce a result to picklable strings the parent can merge and print."""
+    """Reduce a result to picklable strings the parent can merge and print.
+
+    Each failure and error carries the test id it can be retried by, or None.
+    """
     return {
         "unit": unit,
         "seconds": seconds,
         "run": result.testsRun,
-        "failures": [(str(test), text) for test, text in result.failures],
-        "errors": [(str(test), text) for test, text in result.errors],
+        "failures": [(str(test), text, test_id_of(test)) for test, text in result.failures],
+        "errors": [(str(test), text, test_id_of(test)) for test, text in result.errors],
         "skipped": [(str(test), text) for test, text in result.skipped],
         "expected": [(str(test), text) for test, text in result.expectedFailures],
         "unexpected": [str(test) for test in result.unexpectedSuccesses],
@@ -196,7 +236,10 @@ def summarise(unit: str, result: unittest.TestResult, seconds: float) -> dict[st
 def worker(
     index: int, config: dict[str, Any], tasks: Queue[str | None], results: Queue[tuple[Any, ...]]
 ) -> None:
-    """Run classes from ``tasks`` until the sentinel, reporting each one."""
+    """Run units from ``tasks`` until the sentinel, reporting each one.
+
+    With ``by_id`` in the config a task names one test, which runs as its own top-level suite.
+    """
     cov = None
     if config["coverage"]:
         import coverage  # noqa: PLC0415 - optional, and absent on the runtime floor
@@ -206,20 +249,23 @@ def worker(
     try:
         units = discover(config["start"], config["top"], config["pattern"], config["shard"])
         results.put(("inventory", index, {unit: len(tests) for unit, tests in units.items()}))
+        lookup = units
+        if config.get("by_id"):
+            lookup = {test.id(): [test] for tests in units.values() for test in tests}
         while (unit := tasks.get()) is not None:
             result = unittest.TestResult()
             result.buffer = config["buffer"]
-            problems: list[tuple[str, str]] = []
+            problems: list[tuple[str, str, None]] = []
             started = time.perf_counter()
-            if unit not in units:
-                problems.append((unit, "this worker's discovery did not find the class"))
+            if unit not in lookup:
+                problems.append((unit, "this worker's discovery did not find the class", None))
             else:
                 try:
                     # A fresh result makes this a top-level run, so TestSuite opens
                     # and closes the class and module fixtures itself.
-                    unittest.TestSuite(units[unit])(result)
+                    unittest.TestSuite(lookup[unit])(result)
                 except BaseException:  # noqa: BLE001 - report a unit, never lose it
-                    problems.append((unit, traceback.format_exc()))
+                    problems.append((unit, traceback.format_exc(), None))
             summary = summarise(unit, result, time.perf_counter() - started)
             summary["errors"] += problems
             results.put(("unit", index, summary))
@@ -237,14 +283,42 @@ def order_units(units: dict[str, list[unittest.TestCase]]) -> list[str]:
     return sorted(units, key=lambda unit: (-len(units[unit]), unit))
 
 
+def first_line_of_failure(text: str) -> str:
+    """The exception line a traceback ends with, which is what a reader quotes."""
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def report_retries(total: dict[str, Any]) -> None:
+    """Print what the retry found, then one greppable line per test that passed only on retry."""
+    out = sys.stderr
+    if total["retry_note"]:
+        out.write(f"{total['retry_note']}\n")
+    if total["retried"]:
+        out.write(f"{'=' * 70}\nPassed only on retry: {len(total['retried'])}\n{'-' * 70}\n")
+        for test_id, text in total["retried"]:
+            out.write(f"{test_id}\n  first failure: {first_line_of_failure(text)}\n")
+            out.write(textwrap.indent(text.rstrip(), "    ") + "\n")
+    if total["failed_again"]:
+        out.write(f"{'=' * 70}\nFailed again on retry: {len(total['failed_again'])}\n")
+        for test_id, line in total["failed_again"]:
+            out.write(f"  {test_id}: {line}\n")
+    for test_id, _text in total["retried"]:
+        out.write(f"{FLAKY_LINE}{test_id}\n")
+
+
 def report(total: dict[str, Any], elapsed: float, jobs: int) -> bool:
     """Print unittest's closing report to stderr and return the verdict."""
     out = sys.stderr
     out.write("\n")
     for flavour, key in (("ERROR", "errors"), ("FAIL", "failures")):
-        for name, text in total[key]:
+        for name, text, _test_id in total[key]:
             out.write(f"{'=' * 70}\n{flavour}: {name}\n{'-' * 70}\n{text}\n")
-    out.write(f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({jobs} workers)\n\n")
+    report_retries(total)
+    serial = f", then {total['serial']} units serially" if total["serial"] else ""
+    out.write(
+        f"{'-' * 70}\nRan {total['run']} tests in {elapsed:.3f}s ({jobs} workers{serial})\n\n"
+    )
     extras = [
         f"{label}={len(total[key])}"
         for label, key in (
@@ -253,12 +327,56 @@ def report(total: dict[str, Any], elapsed: float, jobs: int) -> bool:
             ("skipped", "skipped"),
             ("expected failures", "expected"),
             ("unexpected successes", "unexpected"),
+            ("passed on retry", "retried"),
         )
         if total[key]
     ]
     ok = not (total["failures"] or total["errors"] or total["unexpected"]) and total["run"] > 0
     out.write(("OK" if ok else "FAILED") + (f" ({', '.join(extras)})" if extras else "") + "\n")
     return ok
+
+
+def write_step_summary(total: dict[str, Any], heading: str) -> None:
+    """Append the retried tests to the GitHub job summary, when there is one and anything to say."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path or not (total["retried"] or total["failed_again"]):
+        return
+
+    def code(text: str) -> str:
+        return "`" + text.replace("`", "'") + "`"
+
+    lines = []
+    if total["retried"]:
+        lines += [f"### Passed only on retry ({heading})", ""]
+        lines += [
+            f"- {code(test_id)}: first failure {code(first_line_of_failure(text))}"
+            for test_id, text in total["retried"]
+        ]
+        lines += ["", "Record each one in the flaky-test ledger, `docs/flaky-tests.md`.", ""]
+    if total["failed_again"]:
+        lines += [f"### Failed again on retry ({heading})", ""]
+        lines += [f"- {code(test_id)}: {code(line)}" for test_id, line in total["failed_again"]]
+        lines += [""]
+    with open(path, "a", encoding="utf-8") as summary:
+        summary.write("\n".join(lines) + "\n")
+
+
+def new_total() -> dict[str, Any]:
+    """Empty totals for one run or one retry."""
+    return {
+        "run": 0,
+        "failures": [],
+        "errors": [],
+        "skipped": [],
+        "expected": [],
+        "unexpected": [],
+        "durations": [],
+        "by_unit": {},
+        "serial": 0,
+        "retried": [],
+        "failed_again": [],
+        "retry_note": "",
+    }
 
 
 def absorb(
@@ -269,6 +387,7 @@ def absorb(
     if kind == "unit":
         summary = message[2]
         seen.add(summary["unit"])
+        total["by_unit"][summary["unit"]] = summary
         total["durations"].append((summary["seconds"], summary["unit"]))
         for key in ("run", "failures", "errors", "skipped", "expected", "unexpected"):
             total[key] += summary[key]
@@ -285,26 +404,21 @@ def absorb(
                             f"{unit}: the parent found {expected.get(unit, 0)} tests and this "
                             f"worker found {found.get(unit, 0)}"
                         ),
+                        None,
                     )
                 )
     elif kind == "crash":
-        total["errors"].append((f"worker {message[1]}", message[2]))
+        total["errors"].append((f"worker {message[1]}", message[2], None))
     return bool(kind == "done")
 
 
 def collect(
-    results: Queue[tuple[Any, ...]], procs: list[Any], expected: dict[str, int]
-) -> tuple[dict[str, Any], set[str]]:
-    """Merge worker reports until every worker is done, or every worker is gone."""
-    total: dict[str, Any] = {
-        "run": 0,
-        "failures": [],
-        "errors": [],
-        "skipped": [],
-        "expected": [],
-        "unexpected": [],
-        "durations": [],
-    }
+    results: Queue[tuple[Any, ...]],
+    procs: list[Any],
+    expected: dict[str, int],
+    total: dict[str, Any],
+) -> set[str]:
+    """Merge worker reports into ``total`` until every worker is done, or every one is gone."""
     seen: set[str] = set()
     done = 0
     while done < len(procs):
@@ -322,10 +436,104 @@ def collect(
             absorb(results.get_nowait(), total, expected, seen)
         except queue.Empty:
             break
-    return total, seen
+    return seen
 
 
-def run(
+def run_phase(
+    context: SpawnContext,
+    config: dict[str, Any],
+    order: list[str],
+    jobs: int,
+    expected: dict[str, int],
+    total: dict[str, Any],
+) -> int:
+    """Run ``order`` on up to ``jobs`` workers into ``total``; return how many were started."""
+    if not order:
+        return 0
+    jobs = max(1, min(jobs, len(order)))
+    tasks: Queue[str | None] = context.Queue()
+    results: Queue[tuple[Any, ...]] = context.Queue()
+    for unit in order:
+        tasks.put(unit)
+    for _ in range(jobs):
+        tasks.put(None)
+    procs = [
+        context.Process(target=worker, args=(index, config, tasks, results))
+        for index in range(jobs)
+    ]
+    for proc in procs:
+        proc.start()
+
+    seen = collect(results, procs, expected, total)
+    # Workers that died early leave tasks unread; without this the parent's
+    # feeder thread waits at exit to flush them into a pipe nobody reads.
+    tasks.cancel_join_thread()
+    for proc in procs:
+        proc.join(timeout=JOIN_SECONDS)
+    total["errors"].extend(
+        (unit, "the worker exited before reporting this class", None)
+        for unit in order
+        if unit not in seen
+    )
+    total["errors"].extend(
+        (f"worker pid {proc.pid}", f"exit code {proc.exitcode}", None)
+        for proc in procs
+        if proc.exitcode not in (0, None)
+    )
+    return jobs
+
+
+def retry_failures(
+    context: SpawnContext, config: dict[str, Any], expected: dict[str, int], total: dict[str, Any]
+) -> None:
+    """Run each failed test once more, alone, and keep only the failures that repeat.
+
+    The retry worker records coverage like every other worker, and ``coverage combine`` merges its
+    data file with theirs. A test that passed on retry counts toward the verdict, so the lines it
+    ran count toward the figure too; dropping them would let a flake lower coverage on a run the
+    gate calls green. The threshold itself is unchanged.
+    """
+    problems = total["failures"] + total["errors"]
+    ids = list(dict.fromkeys(test_id for _name, _text, test_id in problems if test_id))
+    failed = len(ids) + sum(1 for entry in problems if entry[2] is None) + len(total["unexpected"])
+    if not ids:
+        return
+    if failed > RETRY_LIMIT:
+        total["retry_note"] = f"{failed} tests failed, more than {RETRY_LIMIT}: retrying none"
+        return
+    attempt = new_total()
+    run_phase(context, {**config, "by_id": True}, ids, 1, expected, attempt)
+    for test_id in ids:
+        summary = attempt["by_unit"].get(test_id)
+        # A skip on retry is not a pass: a test that skips when its port or socket is unavailable
+        # would otherwise turn its own first failure green.
+        passed = bool(
+            summary
+            and summary["run"]
+            and not (
+                summary["failures"]
+                or summary["errors"]
+                or summary["unexpected"]
+                or summary["skipped"]
+            )
+        )
+        if not passed:
+            again = (summary["failures"] + summary["errors"]) if summary else []
+            if again:
+                line = first_line_of_failure(again[0][1])
+            elif summary and summary["skipped"]:
+                line = f"skipped on retry: {summary['skipped'][0][1]}"
+            else:
+                line = "the retry did not report"
+            total["failed_again"].append((test_id, line))
+            continue
+        first = next(text for _name, text, owner in problems if owner == test_id)
+        total["retried"].append((test_id, first))
+        for key in ("failures", "errors"):
+            total[key] = [entry for entry in total[key] if entry[2] != test_id]
+
+
+def run(  # noqa: PLR0913 - one keyword per command-line option main() passes through
     start: str,
     top: str | None,
     pattern: str,
@@ -335,19 +543,15 @@ def run(
     slowest: int = 0,
     shard: tuple[int, int] | None = None,
     buffer: bool = True,
+    retry: bool = True,
 ) -> bool:
-    """Discover, fan out across ``jobs`` workers, merge, report, return the verdict."""
+    """Discover, fan out across ``jobs`` workers, run the serial pass, retry, report."""
     started = time.perf_counter()
     units = discover(start, top, pattern, shard)
-    order = order_units(units)
-    jobs = max(1, min(jobs, len(order)))
+    serial = {unit: tests for unit, tests in units.items() if is_real_time(tests)}
+    parallel = {unit: tests for unit, tests in units.items() if unit not in serial}
+    expected = {unit: len(tests) for unit, tests in units.items()}
     context = multiprocessing.get_context("spawn")
-    tasks: Queue[str | None] = context.Queue()
-    results: Queue[tuple[Any, ...]] = context.Queue()
-    for unit in order:
-        tasks.put(unit)
-    for _ in range(jobs):
-        tasks.put(None)
     config = {
         "start": start,
         "top": top,
@@ -356,34 +560,19 @@ def run(
         "shard": shard,
         "buffer": buffer,
     }
-    procs = [
-        context.Process(target=worker, args=(index, config, tasks, results))
-        for index in range(jobs)
-    ]
-    for proc in procs:
-        proc.start()
-
-    total, seen = collect(results, procs, {unit: len(tests) for unit, tests in units.items()})
-    # Workers that died early leave tasks unread; without this the parent's
-    # feeder thread waits at exit to flush them into a pipe nobody reads.
-    tasks.cancel_join_thread()
-    for proc in procs:
-        proc.join(timeout=JOIN_SECONDS)
-    total["errors"].extend(
-        (unit, "the worker exited before reporting this class")
-        for unit in order
-        if unit not in seen
-    )
-    total["errors"].extend(
-        (f"worker pid {proc.pid}", f"exit code {proc.exitcode}")
-        for proc in procs
-        if proc.exitcode not in (0, None)
-    )
+    total = new_total()
+    jobs = run_phase(context, config, order_units(parallel), jobs, expected, total)
+    total["serial"] = len(serial)
+    run_phase(context, config, order_units(serial), 1, expected, total)
+    if retry:
+        retry_failures(context, config, expected, total)
+        heading = start + (f", shard {shard[0]}/{shard[1]}" if shard else "")
+        write_step_summary(total, heading)
     if slowest:
         sys.stderr.write(f"\nSlowest {slowest} classes:\n")
         for seconds, unit in sorted(total["durations"], reverse=True)[:slowest]:
             sys.stderr.write(f"  {seconds:7.2f}s  {unit}\n")
-    return report(total, time.perf_counter() - started, jobs)
+    return report(total, time.perf_counter() - started, max(jobs, 1))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -404,6 +593,12 @@ def main(argv: list[str] | None = None) -> int:
         dest="buffer",
         action="store_false",
         help="print what tests write as they run, instead of only with a failure",
+    )
+    parser.add_argument(
+        "--no-retry",
+        dest="retry",
+        action="store_false",
+        help="fail on a test's first failure instead of running it once more on its own",
     )
     parser.add_argument(
         "--shard",
@@ -434,6 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         slowest=args.slowest,
         shard=args.shard,
         buffer=args.buffer,
+        retry=args.retry,
     )
     state_home.cleanup()
     return 0 if ok else 1

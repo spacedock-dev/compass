@@ -1,0 +1,27 @@
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0965030Z      6.63s  compass.skills.compass.tests.test_reading_native.NativeProducerTest.test_actual_native_multi_prompt_preparation_and_partial_assessment
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0966230Z      6.62s  compass.skills.compass.tests.test_reading_long_coordinator.ActualLongCoordinatorTest.test_unstopped_first_map_never_starts_a_later_factory_or_replaces_uncertain_group
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0967150Z      6.49s  compass.skills.compass.tests.test_long_intent_sources.LongIntentSourcesTest
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0969810Z      5.49s  compass.skills.compass.tests.test_records.IndexedScrubMatchesRegexScrubTest.test_the_indexed_scrub_masks_exactly_what_the_regex_scrub_masked
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0971710Z 
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0972210Z ======================================================================
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0977170Z FAIL: test_a_cli_that_floods_its_output_file_is_stopped_near_the_bound (compass.skills.compass.tests.test_observer.SupervisedModelCallTest.test_a_cli_that_floods_its_output_file_is_stopped_near_the_bound) (cli='codex')
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0978150Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.0978780Z Traceback (most recent call last):
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1004930Z   File "/Users/runner/work/compass/compass/compass/skills/compass/tests/test_observer.py", line 2664, in test_a_cli_that_floods_its_output_file_is_stopped_near_the_bound
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1009450Z     self.assertEqual(("", "oversized"), (output, status))
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1010650Z     ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1012030Z AssertionError: Tuples differ: ('', 'oversized') != ('', 'unstopped')
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1013750Z 
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1014250Z First differing element 1:
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1015260Z 'oversized'
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1015840Z 'unstopped'
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1016760Z 
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1017110Z - ('', 'oversized')
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1017910Z + ('', 'unstopped')
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1018360Z 
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1018720Z ----------------------------------------------------------------------
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1020160Z Ran 8934 tests in 272.735s (3 workers)
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1020750Z 
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.1021180Z FAILED (failures=1, skipped=3, expected failures=2)
+Tests (macos-latest, Python 3.15, dashboard)	Run dashboard test discovery	2026-11-06T13:50:16.6174070Z ##[error]Process completed with exit code 1.
+quality-gate	Verify all gate jobs succeeded	﻿2026-11-06T13:51:20.0436652Z ##[group]Run set -euo pipefail
