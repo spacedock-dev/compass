@@ -950,7 +950,7 @@ class ReleasePublicNotesGateTest(unittest.TestCase):
             step
             for step in steps
             if "pip install" in str(step.get("run", ""))
-            and "requirements-validation.txt" in str(step.get("run", ""))
+            and "requirements-release.txt" in str(step.get("run", ""))
         ]
         self.assertEqual(1, len(setup))
         self.assertNotIn("if", setup[0], "Resumed releases also import the YAML validator")
