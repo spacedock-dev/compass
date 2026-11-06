@@ -251,6 +251,24 @@ def _deployment(environments: list[Mapping[str, str]]) -> Deployment:
     return "unknown" if unknown else "gateway" if gateway else "cloud" if cloud else "direct"
 
 
+# Keys a server-managed cache may hold without being able to change the model,
+# model switching, the context window, compaction or fallback. An allowlist: a
+# key Claude Code adds later defaults to dynamic, and `env`, `permissions` and
+# `hooks` are dynamic because this reader cannot prove they cannot move the
+# model. Ruling: docs/design-reading-a-session.md, "Owner ruling 2026-11-06:
+# a remote settings cache is dynamic only when it can change the model".
+_REMOTE_HARMLESS: Final = frozenset(
+    {
+        "$schema",
+        "channelsEnabled",
+        "companyAnnouncements",
+        "cleanupPeriodDays",
+        "includeCoAuthoredBy",
+        "attribution",
+    }
+)
+
+
 def _source_flags(source: Source) -> tuple[bool, bool]:
     data = source.data
     overrides = data.get("modelOverrides", {})
@@ -262,7 +280,7 @@ def _source_flags(source: Source) -> tuple[bool, bool]:
     if type(refresh) is not bool:
         raise SettingsError
     dynamic = (
-        source.remote
+        (source.remote and not data.keys() <= _REMOTE_HARMLESS)
         or refresh
         or any(key in data for key in ("policyHelper", "forceLoginGatewayUrl"))
         or data.get("forceLoginMethod") == "gateway"

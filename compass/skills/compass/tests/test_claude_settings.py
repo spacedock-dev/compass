@@ -169,6 +169,45 @@ class ClaudeSettingsTest(unittest.TestCase):
         self.assertIn(180_000, controls.window_limits)
         self.assertFalse(controls.policy_verified)
 
+    def remote(self, document: Any) -> None:
+        self.write(document, "/Users/r/.claude/remote-settings.json")
+
+    def test_a_remote_settings_cache_holding_only_channels_enabled_lets_drift_analyze(self) -> None:
+        self.remote({"channelsEnabled": True})
+        controls = self.resolve()
+        self.assertEqual("", controls.refusal)
+        self.assertEqual("direct", controls.deployment)
+        self.assertFalse(controls.policy_verified)
+
+    def test_an_empty_remote_settings_cache_lets_drift_analyze(self) -> None:
+        self.remote({})
+        self.assertEqual("", self.resolve().refusal)
+
+    def test_a_remote_settings_cache_with_a_key_that_can_change_the_model_still_refuses(
+        self,
+    ) -> None:
+        for document in (
+            {"modelOverrides": {"claude-sonnet-5-5": "other"}},
+            {"forceRemoteSettingsRefresh": True},
+            {"policyHelper": {"path": "/never/run"}},
+            {"forceLoginMethod": "gateway"},
+            {"forceLoginGatewayUrl": "https://private"},
+            {"env": {"ANTHROPIC_MODEL": "claude-opus-4-1"}},
+            {"model": "claude-opus-4-1"},
+            {"availableModels": ["opus"]},
+            {"someFutureKeyNobodyHasHeardOf": 1},
+            {"channelsEnabled": True, "someFutureKeyNobodyHasHeardOf": 1},
+        ):
+            with self.subTest(document=document):
+                self.remote(document)
+                self.assertEqual("dynamic-policy", self.resolve().refusal)
+
+    def test_an_unreadable_remote_settings_cache_still_refuses(self) -> None:
+        target = self.root / "Users/r/.claude/remote-settings.json"
+        target.parent.mkdir(parents=True)
+        target.write_text("{not json", encoding="utf-8")
+        self.assertEqual("context-config", self.resolve().refusal)
+
     def test_unreadable_unknown_managed_sources_refuse(self) -> None:
         self.env["CLAUDE_CODE_MANAGED_SETTINGS_PATH"] = "/unknown"
         self.assertEqual("context-config", self.resolve().refusal)

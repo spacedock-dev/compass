@@ -1955,7 +1955,7 @@ requires separately reviewed authority; this refusal does not refund an outer An
 Compass checks applicable managed settings before admission and again before launch, refusing
 known conflicting or dynamic policy. Managed controls still take precedence. A missing remote
 cache does not prove that the CLI cannot fetch policy, and a read cannot prevent a later policy
-or file change. The [capacity amendment](docs/design-reading-a-session.md#amended-2026-11-04-larger-prompts-need-a-route-allowance)
+or file change. A cached remote policy counts as dynamic only when it holds a key that can change the model or its window, or a key Compass does not know ([ruling](docs/design-reading-a-session.md#owner-ruling-2026-11-06-a-remote-settings-cache-is-dynamic-only-when-it-can-change-the-model)). The [capacity amendment](docs/design-reading-a-session.md#amended-2026-11-04-larger-prompts-need-a-route-allowance)
 records that remaining boundary; no immutable policy or model-fit receipt is claimed.
 
 #### Amended 2026-10-05: Claude reading model baseline
