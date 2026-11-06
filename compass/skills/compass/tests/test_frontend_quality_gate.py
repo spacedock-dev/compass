@@ -82,12 +82,20 @@ class FrontendDetectorControlsTest(unittest.TestCase):
                 f"// See ({cited_doc}#reader-state)\n"
             )
             probe = detector.QualityGateDetectorTest()
-            for path in (root_doc, quoted_doc, cited_doc):
+            # Read by a Vitest file: that file runs, not the lane.
+            for path in (root_doc, quoted_doc):
                 with self.subTest(path=path):
-                    self.assertEqual("true", probe.detect(path, root=root)["frontend"])
+                    found = probe.detect(path, root=root)
+                    self.assertEqual(
+                        ("false", "true", "frontend/test/setup.test.ts"),
+                        (found["frontend"], found["frontend_docs"], found["frontend_docs_tests"]),
+                    )
+            # Cited, with no citation check in this tree to run: the whole lane stands in.
+            self.assertEqual("true", probe.detect(cited_doc, root=root)["frontend"])
             source.unlink()
-            self.assertEqual("false", probe.detect(root_doc, root=root)["frontend"])
-            self.assertEqual("false", probe.detect(quoted_doc, root=root)["frontend"])
+            for path in (root_doc, quoted_doc):
+                found = probe.detect(path, root=root)
+                self.assertEqual(("false", "false"), (found["frontend"], found["frontend_docs"]))
             # An unreadable source scan cannot authorize the prose skip path.
             source.write_bytes(b"\xff")
             found = probe.detect(root_doc, root=root)
@@ -98,20 +106,22 @@ class FrontendDetectorControlsTest(unittest.TestCase):
         self.assertEqual(("false", "false"), (found["python"], found["frontend"]))
 
 
-# Each result the aggregate reads, and the lane output that runs its job.
-LANE_OF = {
-    "R_LINT": "LINT",
-    "R_TYPECHECK": "PYTHON",
-    "R_FLOOR": "SUITES",
-    "R_TEST": "PYTHON",
-    "R_COVERAGE": "PYTHON",
-    "R_PLATFORM": "PYTHON",
-    "R_PLATFORM_CURRENT": "PYTHON",
-    "R_FRONTEND": "FRONTEND",
-    "R_FRONTEND_COVERAGE": "FRONTEND",
-    "R_FRONTEND_PRODUCTION": "FRONTEND",
-    "R_STORYBOOK": "FRONTEND",
-    "R_CONTRACT": "CONTRACT",
+# Each result the aggregate reads, and the detector outputs that must all be on for its job to run.
+LANES_OF = {
+    "R_LINT": ("LINT",),
+    "R_TYPECHECK": ("PYTHON",),
+    "R_FLOOR": ("SUITES",),
+    "R_TEST": ("PYTHON",),
+    "R_COVERAGE": ("PYTHON",),
+    "R_PLATFORM": ("PYTHON", "PLATFORM"),
+    "R_PLATFORM_CURRENT": ("PYTHON",),
+    "R_FRONTEND": ("FRONTEND",),
+    "R_FRONTEND_MACOS": ("FRONTEND", "PLATFORM"),
+    "R_FRONTEND_COVERAGE": ("FRONTEND",),
+    "R_FRONTEND_PRODUCTION": ("FRONTEND",),
+    "R_STORYBOOK": ("FRONTEND",),
+    "R_CONTRACT": ("CONTRACT",),
+    "R_FRONTEND_DOCS": ("FRONTEND_DOCS",),
 }
 ALL_ON = {
     "PYTHON": "true",
@@ -119,8 +129,27 @@ ALL_ON = {
     "FRONTEND": "true",
     "CONTRACT": "true",
     "SUITES": "true",
+    "FRONTEND_DOCS": "true",
+    "PLATFORM": "true",
 }
 ALL_OFF = dict.fromkeys(ALL_ON, "false")
+# The aggregate's env name for each job's result, and the job it reads.
+RESULT_OF = {
+    "R_LINT": "lint",
+    "R_TYPECHECK": "typecheck",
+    "R_FLOOR": "runtime-floor",
+    "R_TEST": "test",
+    "R_COVERAGE": "coverage",
+    "R_PLATFORM": "platform-tests",
+    "R_PLATFORM_CURRENT": "platform-tests-current",
+    "R_FRONTEND": "frontend",
+    "R_FRONTEND_MACOS": "frontend-macos",
+    "R_FRONTEND_COVERAGE": "frontend-coverage",
+    "R_FRONTEND_PRODUCTION": "frontend-production",
+    "R_STORYBOOK": "storybook",
+    "R_CONTRACT": "frontend-contract",
+    "R_FRONTEND_DOCS": "frontend-docs",
+}
 
 
 @unittest.skipUnless(detector.BASH, "the shipped aggregate uses Bash")
@@ -139,7 +168,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
         )
 
     def test_every_required_result_rejects_failure_cancellation_and_unexpected_skip(self) -> None:
-        successful = dict.fromkeys(LANE_OF, "success")
+        successful = dict.fromkeys(LANES_OF, "success")
         for name in successful:
             for bad in ("failure", "cancelled", "skipped"):
                 with self.subTest(name=name, bad=bad):
@@ -148,7 +177,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
         self.assertEqual(0, self.aggregate(lanes=ALL_ON, results=successful).returncode)
 
     def test_a_job_may_skip_only_when_its_own_lane_is_off(self) -> None:
-        skipped = dict.fromkeys(LANE_OF, "skipped")
+        skipped = dict.fromkeys(LANES_OF, "skipped")
         self.assertEqual(0, self.aggregate(lanes=ALL_OFF, results=skipped).returncode)
         for bad in ("failure", "cancelled", "skipped"):
             with self.subTest(detector=bad):
@@ -156,7 +185,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
                     0,
                     self.aggregate(lanes=ALL_OFF, results={**skipped, "R_CHANGES": bad}).returncode,
                 )
-        for name in LANE_OF:
+        for name in LANES_OF:
             with self.subTest(failed=name):
                 self.assertNotEqual(
                     0,
@@ -164,14 +193,62 @@ class FrontendAggregateControlsTest(unittest.TestCase):
                 )
         # One lane on: its jobs must have run, and every other job may skip.
         for lane in ALL_ON:
-            on = {name for name, owner in LANE_OF.items() if owner == lane}
+            on = {name for name, owners in LANES_OF.items() if owners == (lane,)}
             lanes = {**ALL_OFF, lane: "true"}
             with self.subTest(lane=lane):
-                ran = {name: ("success" if name in on else "skipped") for name in LANE_OF}
+                ran = {name: ("success" if name in on else "skipped") for name in LANES_OF}
                 self.assertEqual(0, self.aggregate(lanes=lanes, results=ran).returncode)
                 for name in on:
                     result = self.aggregate(lanes=lanes, results={**ran, name: "skipped"})
                     self.assertNotEqual(0, result.returncode, name)
+
+    def test_a_macos_leg_may_skip_when_platform_is_off_and_not_when_it_is_on(self) -> None:
+        macos = {name for name, owners in LANES_OF.items() if "PLATFORM" in owners}
+        self.assertEqual({"R_PLATFORM", "R_FRONTEND_MACOS"}, macos)
+        for name in sorted(macos):
+            lanes = {**ALL_OFF, **dict.fromkeys(LANES_OF[name], "true")}
+            ran = {
+                other: (
+                    "success"
+                    if set(owners) <= {k for k, v in lanes.items() if v == "true"}
+                    else "skipped"
+                )
+                for other, owners in LANES_OF.items()
+            }
+            with self.subTest(job=name):
+                self.assertEqual(0, self.aggregate(lanes=lanes, results=ran).returncode)
+                # The lane it shares is on and platform is off: the leg skipped on purpose.
+                off = {**lanes, "PLATFORM": "false"}
+                skipped = {**ran, name: "skipped"}
+                self.assertEqual(0, self.aggregate(lanes=off, results=skipped).returncode)
+                # Both on and the leg skipped: a dependency died, which is a failure.
+                result = self.aggregate(lanes=lanes, results=skipped)
+                self.assertNotEqual(0, result.returncode, result.stdout)
+
+    def test_a_platform_answer_that_is_neither_true_nor_false_fails_the_gate(self) -> None:
+        # Every other lane fails closed on a missing output; a lost `platform` must not read as off.
+        python_only = {
+            name: ("skipped" if "PLATFORM" in owners else "success")
+            for name, owners in LANES_OF.items()
+        }
+        for value in ("", "True", "yes"):
+            with self.subTest(platform=value):
+                result = self.aggregate(lanes={**ALL_ON, "PLATFORM": value}, results=python_only)
+                self.assertNotEqual(0, result.returncode, result.stdout)
+
+    def test_the_aggregate_reads_every_job_it_needs(self) -> None:
+        aggregate = jobs()["quality-gate"]
+        env = aggregate["steps"][0]["env"]
+        for variable, job in RESULT_OF.items():
+            with self.subTest(job=job):
+                self.assertEqual(f"${{{{ needs.{job}.result }}}}", env[variable])
+                self.assertIn(job, aggregate["needs"])
+        for output in ("frontend_docs", "platform"):
+            with self.subTest(output=output):
+                self.assertIn(f"needs.changes.outputs.{output}", json.dumps(env))
+        self.assertEqual(
+            set(RESULT_OF), {key for key in env if key.startswith("R_")} - {"R_CHANGES"}
+        )
 
 
 class FrontendWiringControlsTest(unittest.TestCase):
@@ -181,7 +258,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         frontend = jobs()["frontend"]
         steps = frontend["steps"]
         ratchet = next((step for step in steps if step.get("run") == "pnpm test:styles"), None)
-        self.assertIsNotNone(ratchet, "the PR base gate must remain on the macOS frontend leg")
+        self.assertIsNotNone(ratchet, "the PR base gate must remain on the Linux frontend job")
         assert ratchet is not None
         self.assertEqual("${{ github.event.pull_request.base.sha }}", ratchet["env"]["PR_BASE"])
         self.assertEqual("github.event_name == 'pull_request'", ratchet["if"])
@@ -190,7 +267,9 @@ class FrontendWiringControlsTest(unittest.TestCase):
             step for step in steps if step.get("uses", "").startswith("actions/checkout@")
         )
         self.assertEqual(0, checkout["with"]["fetch-depth"])
-        unit = next(step for step in steps if step.get("run") == "pnpm test")
+        unit = next(
+            step for step in jobs()["frontend-macos"]["steps"] if step.get("run") == "pnpm test"
+        )
         self.assertGreaterEqual(unit["timeout-minutes"], 6)
 
     def check_runners(self, job: dict[str, Any], runners: list[str]) -> None:
@@ -208,8 +287,11 @@ class FrontendWiringControlsTest(unittest.TestCase):
     def test_matrix_is_required_and_keeps_all_current_python_jobs(self) -> None:
         workflow_jobs = jobs()
         frontend = workflow_jobs["frontend"]
-        self.check_runners(frontend, ["macos-latest"])
-        self.assertEqual("Frontend (${{ matrix.os }})", frontend["name"])
+        self.assertEqual("ubuntu-latest", frontend["runs-on"])
+        self.assertEqual("Frontend (ubuntu-latest)", frontend["name"])
+        macos = workflow_jobs["frontend-macos"]
+        self.assertEqual("macos-latest", macos["runs-on"])
+        self.assertEqual("Frontend (macos-latest)", macos["name"])
         platform = workflow_jobs["platform-tests"]
         self.check_runners(platform, ["macos-latest"])
         # The two suites run as parallel legs so the slow script suite does not hold the dashboard one.
@@ -219,10 +301,20 @@ class FrontendWiringControlsTest(unittest.TestCase):
             [{"suite": "dashboard", "shard": 2}, {"suite": "dashboard", "shard": 3}],
             platform["strategy"]["matrix"]["exclude"],
         )
-        # macOS on the newest stable CPython beside the 3.12 leg above: 3.12 takes the kqueue exit
-        # watch in supervise.py and 3.13 or newer takes `os.waitid`, so each branch runs on its own OS.
+        # The newest stable CPython on every Python change: on macOS beside the 3.12 leg above when
+        # `platform` is on (3.12 takes the kqueue exit watch in supervise.py and 3.13 or newer takes
+        # `os.waitid`, so each branch runs on its own OS), and on Linux otherwise, because no other
+        # job runs that interpreter.
         current = workflow_jobs["platform-tests-current"]
-        self.check_runners(current, ["macos-latest"])
+        self.check_runners(
+            current,
+            [
+                (
+                    "${{ needs.changes.outputs.platform == 'true' "
+                    "&& 'macos-latest' || 'ubuntu-latest' }}"
+                )
+            ],
+        )
         self.assertEqual(
             "3.15",
             next(s for s in current["steps"] if "setup-python" in s.get("uses", ""))["with"][
@@ -241,7 +333,6 @@ class FrontendWiringControlsTest(unittest.TestCase):
             },
             gated,
         )
-        self.assertFalse(frontend["strategy"]["fail-fast"])
         self.assertLessEqual(frontend["timeout-minutes"], 30)
         self.assertEqual("changes", frontend["needs"])
         self.assertEqual("needs.changes.outputs.frontend == 'true'", frontend["if"])
@@ -250,14 +341,25 @@ class FrontendWiringControlsTest(unittest.TestCase):
             ("typecheck", "python"),
             ("test", "python"),
             ("coverage", "python"),
-            ("platform-tests", "python"),
-            ("platform-tests-current", "python"),
             ("runtime-floor", "python_suites"),
             ("frontend-contract", "contract"),
+            ("frontend-docs", "frontend_docs"),
+            ("platform-tests-current", "python"),
         ):
             with self.subTest(job=name):
                 self.assertEqual(
                     f"needs.changes.outputs.{lane} == 'true'", workflow_jobs[name]["if"]
+                )
+        # A macOS leg runs only where macOS can differ from the Linux run beside it.
+        for name, lane in (
+            ("platform-tests", "python"),
+            ("frontend-macos", "frontend"),
+        ):
+            with self.subTest(job=name):
+                self.assertEqual(
+                    f"needs.changes.outputs.{lane} == 'true' && "
+                    "needs.changes.outputs.platform == 'true'",
+                    workflow_jobs[name]["if"],
                 )
         aggregate = workflow_jobs["quality-gate"]
         self.assertEqual("always()", aggregate["if"])
@@ -272,10 +374,12 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "platform-tests",
                 "platform-tests-current",
                 "frontend",
+                "frontend-macos",
                 "frontend-coverage",
                 "frontend-production",
                 "storybook",
                 "frontend-contract",
+                "frontend-docs",
             },
             set(aggregate["needs"]),
         )
@@ -324,10 +428,12 @@ class FrontendWiringControlsTest(unittest.TestCase):
     def test_bootstrap_is_exact_without_auth_or_implicit_dependency_scripts(self) -> None:
         for name in (
             "frontend",
+            "frontend-macos",
             "frontend-coverage",
             "frontend-production",
             "storybook",
             "frontend-contract",
+            "frontend-docs",
         ):
             with self.subTest(job=name):
                 self.check_bootstrap(jobs()[name]["steps"])
@@ -422,19 +528,24 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 )
                 self.assertRegex(step["uses"], r"@[0-9a-f]{40}$")
 
-    def test_the_macos_job_runs_the_lifecycle_tests_once_and_no_browser_proof(self) -> None:
-        """The browser proofs left the gate (owner, 2026-10-12): the UI is verified by the Storybook job."""
-        steps = jobs()["frontend"]["steps"]
-        matches = [step for step in steps if step.get("run") == "pnpm test:dev"]
-        self.assertEqual(1, len(matches), "the lifecycle tests run exactly once")
-        step = matches[0]
-        self.assertNotIn("if", step)
-        self.assertNotIn("continue-on-error", step)
-        self.assertGreater(step.get("timeout-minutes", 0), 0)
-        self.assertEqual(
-            "${{ steps.python.outputs.python-path }}", step["env"]["COMPASS_TEST_PYTHON"]
-        )
-        for name in ("frontend", "frontend-production"):
+    def test_each_frontend_job_runs_the_lifecycle_tests_once_and_no_browser_proof(self) -> None:
+        """The browser proofs left the gate (owner, 2026-10-12): the UI is verified by the Storybook job.
+
+        `pnpm test:dev` runs on Linux for every frontend change and on macOS when `platform` is on,
+        because its process handling is what the macOS leg exists for."""
+        for name in ("frontend", "frontend-macos"):
+            steps = jobs()[name]["steps"]
+            matches = [step for step in steps if step.get("run") == "pnpm test:dev"]
+            with self.subTest(job=name):
+                self.assertEqual(1, len(matches), "the lifecycle tests run exactly once")
+                step = matches[0]
+                self.assertNotIn("if", step)
+                self.assertNotIn("continue-on-error", step)
+                self.assertGreater(step.get("timeout-minutes", 0), 0)
+                self.assertEqual(
+                    "${{ steps.python.outputs.python-path }}", step["env"]["COMPASS_TEST_PYTHON"]
+                )
+        for name in ("frontend", "frontend-macos", "frontend-production"):
             with self.subTest(job=name):
                 commands = [step.get("run", "") for step in jobs()[name]["steps"]]
                 self.assertFalse(
@@ -646,21 +757,79 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         """A job-level `continue-on-error` makes `needs.<job>.result` read success for a red job; a weakened `if`
         lets the job skip where the aggregator expects it to run."""
         workflow_jobs = jobs()
-        for name, lane in (
-            ("frontend", "frontend"),
-            ("frontend-coverage", "frontend"),
-            ("frontend-production", "frontend"),
-            ("storybook", "frontend"),
-            ("frontend-contract", "contract"),
+        for name, condition in (
+            ("frontend", "needs.changes.outputs.frontend == 'true'"),
+            (
+                "frontend-macos",
+                (
+                    "needs.changes.outputs.frontend == 'true' && "
+                    "needs.changes.outputs.platform == 'true'"
+                ),
+            ),
+            ("frontend-coverage", "needs.changes.outputs.frontend == 'true'"),
+            ("frontend-production", "needs.changes.outputs.frontend == 'true'"),
+            ("storybook", "needs.changes.outputs.frontend == 'true'"),
+            ("frontend-contract", "needs.changes.outputs.contract == 'true'"),
+            ("frontend-docs", "needs.changes.outputs.frontend_docs == 'true'"),
         ):
             with self.subTest(job=name):
                 job = workflow_jobs[name]
                 self.assertNotIn("continue-on-error", job)
                 self.assertEqual("changes", job["needs"])
-                self.assertEqual(f"needs.changes.outputs.{lane} == 'true'", job["if"])
+                self.assertEqual(condition, job["if"])
                 for step in job["steps"]:
                     self.assertNotIn("continue-on-error", step)
         self.assertNotIn("continue-on-error", workflow_jobs["quality-gate"])
+
+    def test_the_document_job_runs_exactly_the_files_the_detector_named_on_linux(self) -> None:
+        job = jobs()["frontend-docs"]
+        self.assertEqual("ubuntu-latest", job["runs-on"])
+        self.assertLessEqual(job["timeout-minutes"], 15)
+        self.assertNotIn("permissions", job, "the job inherits the workflow's read-only token")
+        run = next(step for step in job["steps"] if "vitest run" in step.get("run", ""))
+        self.assertEqual("${{ needs.changes.outputs.frontend_docs_tests }}", run["env"]["FILES"])
+        self.assertIn("pnpm exec vitest run $FILES", run["run"])
+        self.assertGreater(run["timeout-minutes"], 0)
+        # An empty list with the lane on is a broken derivation, never a pass.
+        self.assertIn("exit 1", run["run"])
+        self.assertEqual(
+            "${{ steps.detect.outputs.frontend_docs_tests }}",
+            jobs()["changes"]["outputs"]["frontend_docs_tests"],
+        )
+
+    @unittest.skipUnless(detector.BASH, "the shipped step uses Bash")
+    def test_the_document_job_refuses_an_empty_list(self) -> None:
+        run = next(
+            step["run"]
+            for step in jobs()["frontend-docs"]["steps"]
+            if "vitest run" in step.get("run", "")
+        )
+        result = subprocess.run(
+            [detector.BASH or "bash", "-c", run],
+            env={**os.environ, "FILES": ""},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+
+    def test_the_runtime_contract_runs_on_linux_unless_platform_is_on(self) -> None:
+        self.assertEqual(
+            "${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}",
+            jobs()["frontend-contract"]["runs-on"],
+        )
+
+    def test_main_nightly_and_manual_runs_trigger_the_gate(self) -> None:
+        workflow = yaml.safe_load(WORKFLOW.read_text())
+        triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads a bare `on` as true
+        self.assertEqual({"push", "pull_request", "schedule", "workflow_dispatch"}, set(triggers))
+        self.assertEqual(["main"], triggers["push"]["branches"])
+        self.assertEqual(1, len(triggers["schedule"]))
+        # A nightly run must not cancel a push run on main, or the reverse.
+        self.assertIn("github.event_name", workflow["concurrency"]["group"])
+        detect = next(s for s in jobs()["changes"]["steps"] if s.get("id") == "detect")
+        self.assertEqual("${{ github.event_name }}", detect["env"]["EVENT"])
 
     def test_production_runner_refuses_an_unknown_argument_before_running_anything(self) -> None:
         node = shutil.which("node")
@@ -687,18 +856,36 @@ class StorybookChromiumInstallTest(unittest.TestCase):
                 self.assertNotIn("===", result.stdout, "a proof started")
 
     def test_native_build_is_separate_from_the_canonical_artifact_check(self) -> None:
+        # Linux runs every check a frontend change needs; Vitest runs there under coverage in
+        # `frontend-coverage`, so this job runs the Node build tests rather than the suite again.
+        expected = {
+            "frontend": (
+                "pnpm lint",
+                "pnpm typecheck",
+                "node --test frontend/build/*.test.mjs",
+                "pnpm test:dev",
+                "pnpm build:preview",
+            ),
+            "frontend-macos": ("pnpm test", "pnpm test:dev", "pnpm build:preview"),
+        }
+        for name, wanted in expected.items():
+            steps = jobs()[name]["steps"]
+            commands = {step.get("run"): step for step in steps if "run" in step}
+            with self.subTest(job=name):
+                for command in wanted:
+                    self.assertIn(command, commands)
+                    self.assertNotIn("if", commands[command])
+                self.assertNotIn("pnpm build:check", commands)
+                self.assertTrue(
+                    all(step.get("timeout-minutes", 0) > 0 for step in steps if "run" in step)
+                )
+                python = next(step for step in steps if step.get("id") == "python")
+                self.assertEqual("3.12", python["with"]["python-version"])
+        self.assertNotIn("pnpm test", {step.get("run") for step in jobs()["frontend"]["steps"]})
+        coverage = {step.get("run", "") for step in jobs()["frontend-coverage"]["steps"]}
+        self.assertTrue(any("pnpm test:coverage" in command for command in coverage))
         steps = jobs()["frontend"]["steps"]
         commands = {step.get("run"): step for step in steps if "run" in step}
-        for command in (
-            "pnpm lint",
-            "pnpm typecheck",
-            "pnpm test",
-            "pnpm test:dev",
-            "pnpm build:preview",
-        ):
-            self.assertIn(command, commands)
-            self.assertNotIn("if", commands[command])
-        self.assertNotIn("pnpm build:check", commands)
         production_build = next(
             step
             for step in jobs()["frontend-production"]["steps"]
@@ -707,9 +894,6 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         self.assertNotIn("if", production_build)
         self.assertTrue(all("pnpm preview" not in command for command in commands))
         self.assertTrue(all("pnpm test:browser" not in command for command in commands))
-        self.assertTrue(all(step.get("timeout-minutes", 0) > 0 for step in steps if "run" in step))
-        python = next(step for step in steps if step.get("id") == "python")
-        self.assertEqual("3.12", python["with"]["python-version"])
 
     def test_no_step_runs_the_retired_embedded_linter_or_a_legacy_recording_mode(self) -> None:
         # The embedded linter checked the previous interface's sources and went with them; Biome,
@@ -721,7 +905,7 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         lint_steps = [step.get("run", "") for step in jobs()["lint"]["steps"]]
         self.assertFalse(any("scripts/" in command for command in lint_steps), lint_steps)
         frontend = {step.get("run") for step in jobs()["frontend"]["steps"]}
-        for command in ("pnpm lint", "pnpm typecheck", "pnpm test"):
+        for command in ("pnpm lint", "pnpm typecheck"):
             self.assertIn(command, frontend)
 
 

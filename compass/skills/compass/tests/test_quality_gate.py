@@ -109,7 +109,8 @@ class QualityGateDetectorTest(unittest.TestCase):
                 check=True,
                 timeout=30,
             )
-            return dict(line.split("=", 1) for line in output.read_text().split())
+            # Line by line: `frontend_docs_tests` holds a space-separated list.
+            return dict(line.split("=", 1) for line in output.read_text().splitlines())
 
     def test_content_dependencies_run_the_python_suites(self) -> None:
         for name in (
@@ -166,8 +167,25 @@ class QualityGateDetectorTest(unittest.TestCase):
                 "frontend": "false",
                 "contract": "false",
                 "python_suites": "false",
+                "frontend_docs": "false",
+                "frontend_docs_tests": "",
+                "platform": "false",
             },
             self.detect("docs/" + "design-harness-registry.md"),
+        )
+
+    def test_a_document_frontend_comments_cite_runs_the_citation_check_alone(self) -> None:
+        """The shipped step, not the in-process call: the test list has to reach the job intact."""
+        found = self.detect("docs/design-reading-a-session.md")
+        self.assertEqual(
+            ("false", "true", "frontend/test/docCitations.test.ts", "true", "false"),
+            (
+                found["frontend"],
+                found["frontend_docs"],
+                found["frontend_docs_tests"],
+                found["python_suites"],
+                found["platform"],
+            ),
         )
 
     def test_unknown_diff_fails_open(self) -> None:
@@ -183,6 +201,9 @@ class QualityGateDetectorTest(unittest.TestCase):
                 "frontend": "true",
                 "contract": "false",
                 "python_suites": "true",
+                "frontend_docs": "false",
+                "frontend_docs_tests": "",
+                "platform": "true",
             },
             found,
         )

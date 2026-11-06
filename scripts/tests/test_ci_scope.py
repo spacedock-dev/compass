@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,7 +45,11 @@ ALL_OFF = {
     "frontend": "false",
     "contract": "false",
     "python_suites": "false",
+    "frontend_docs": "false",
+    "frontend_docs_tests": "",
+    "platform": "false",
 }
+CHECK = "frontend/test/docCitations.test.ts"
 
 
 class EachKindOfChangeRunsItsLaneTest(unittest.TestCase):
@@ -175,31 +180,133 @@ class DocumentsTestsReadAreNotProseTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual("true", lanes_of(path)["python_suites"])
 
-    def test_a_document_only_a_frontend_test_reads_runs_the_frontend_lane(self) -> None:
+    def test_a_document_only_vitest_files_read_runs_those_files_not_the_lane(self) -> None:
         with tempfile.TemporaryDirectory(prefix="ci-scope-") as temp:
             root = Path(temp)
             write_builder(root)
-            source = root / "frontend/src/drift/reader.test.ts"
-            source.parent.mkdir(parents=True)
+            check = root / CHECK
+            check.parent.mkdir(parents=True)
+            check.write_text("// reads every citation below\n", encoding="utf-8")
+            reader = root / "frontend/src/drift/reader.test.ts"
+            reader.parent.mkdir(parents=True)
             root_doc = "CONTRIBUTING" + ".md"
             quoted = "docs/" + "frontend-reader" + ".md"
             relative = "docs/" + "frontend-citation" + ".md"
-            source.write_text(
-                f"readFileSync('{root_doc}');\nreadFileSync(\"{quoted}\");\n"
-                f"// [why](../../../{relative}#reader-state)\n",
+            reader.write_text(
+                f"readFileSync('{root_doc}');\nreadFileSync(\"{quoted}\");\n",
                 encoding="utf-8",
             )
-            for path in (root_doc, quoted, relative):
+            # A citation in a source is read by the citation check, not by the source.
+            source = root / "frontend/src/drift/level.ts"
+            source.write_text(f"// [why](../../../{relative}#reader-state)\n", encoding="utf-8")
+            expected = {
+                root_doc: "frontend/src/drift/reader.test.ts",
+                quoted: "frontend/src/drift/reader.test.ts",
+                relative: CHECK,
+            }
+            for path, tests in expected.items():
                 with self.subTest(path=path):
-                    self.assertEqual("true", lanes_of(path, root=root)["frontend"])
-            source.unlink()
+                    self.assertEqual(
+                        {**ALL_OFF, "frontend_docs": "true", "frontend_docs_tests": tests},
+                        lanes_of(path, root=root),
+                    )
+            self.assertEqual(
+                f"frontend/src/drift/reader.test.ts {CHECK}",
+                lanes_of(quoted, relative, root=root)["frontend_docs_tests"],
+            )
+            # The whole lane already runs every Vitest file, so the narrow job stays off.
+            found = lanes_of(quoted, "frontend/src/main.tsx", root=root)
+            self.assertEqual(
+                ("true", "false", ""),
+                (found["frontend"], found["frontend_docs"], found["frontend_docs_tests"]),
+            )
+            reader.unlink()
             self.assertEqual(ALL_OFF, lanes_of(quoted, root=root))
             # A source the scan cannot read cannot authorize a skip.
-            source.write_bytes(b"\xff")
+            reader.write_bytes(b"\xff")
             out = io.StringIO()
             with redirect_stdout(out):
                 ci_scope.main(["--root", str(root), "--paths", quoted])
             self.assertIn("python=true\nlint=true\nfrontend=true", out.getvalue())
+
+    def test_a_document_a_file_vitest_does_not_run_reads_runs_the_whole_lane(self) -> None:
+        # A story, an end-to-end proof, a build script: no one Vitest file stands for it.
+        with tempfile.TemporaryDirectory(prefix="ci-scope-") as temp:
+            root = Path(temp)
+            write_builder(root)
+            quoted = "docs/" + "frontend-reader" + ".md"
+            for reader in (
+                "frontend/stories/Reader.stories.tsx",
+                "frontend/e2e/reader.mjs",
+                "frontend/build/reader.test.mjs",
+            ):
+                with self.subTest(reader=reader):
+                    target = root / reader
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(f"read('{quoted}');\n", encoding="utf-8")
+                    found = lanes_of(quoted, root=root)
+                    self.assertEqual(("true", "false"), (found["frontend"], found["frontend_docs"]))
+                    target.unlink()
+
+    def test_a_citation_with_no_citation_check_to_run_runs_the_whole_lane(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ci-scope-") as temp:
+            root = Path(temp)
+            write_builder(root)
+            relative = "docs/" + "frontend-citation" + ".md"
+            source = root / "frontend/src/level.ts"
+            source.parent.mkdir(parents=True)
+            source.write_text(f"// [why]({relative}#reader-state)\n", encoding="utf-8")
+            found = lanes_of(relative, root=root)
+            self.assertEqual(("true", "false"), (found["frontend"], found["frontend_docs"]))
+
+    def test_the_drift_record_runs_the_citation_check_and_the_python_suites(self) -> None:
+        # Measured 2026-11-06: three drift PRs ran the whole frontend lane, macOS included, only
+        # because they recorded a ruling in this document, which frontend comments cite.
+        found = lanes_of("docs/design-reading-a-session.md")
+        self.assertEqual(
+            {
+                **ALL_OFF,
+                "python_suites": "true",
+                "frontend_docs": "true",
+                "frontend_docs_tests": CHECK,
+            },
+            found,
+        )
+
+    def test_the_citation_check_reads_every_citation_the_detector_sends_it(self) -> None:
+        # The detector runs the check alone for any `(docs/x.md#`; a citation the check's stricter
+        # pattern skips, such as `(docs/x.md#a "title")`, would then be checked by nothing.
+        source = (ROOT / CHECK).read_text(encoding="utf-8")
+        found = re.search(r"^const CITATION = /(.+)/g;$", source, re.MULTILINE)
+        self.assertIsNotNone(found, f"{CHECK} no longer declares CITATION where expected")
+        assert found is not None
+        check = re.compile(found.group(1).replace(r"\/", "/"))
+        skipped = '// (docs/x.md#a "title")\n'
+        self.assertNotEqual(
+            len(ci_scope.CITATION.findall(skipped)), len(check.findall(skipped)), "self-check"
+        )
+        unread = [
+            path.relative_to(ROOT).as_posix()
+            for path in ci_scope._sources(ROOT, "frontend")
+            if len(ci_scope.CITATION.findall(text := path.read_text(encoding="utf-8")))
+            != len(check.findall(text))
+        ]
+        self.assertEqual([], unread)
+
+    def test_every_vitest_file_the_detector_names_is_one_vitest_runs(self) -> None:
+        # The detector's notion of a Vitest file is vitest.config.mts's include globs.
+        config = (ROOT / "vitest.config.mts").read_text(encoding="utf-8")
+        for pattern in ci_scope.VITEST_FILES:
+            with self.subTest(pattern=pattern):
+                self.assertIn(f"include: ['{pattern}']", config)
+        self.assertTrue((ROOT / CHECK).is_file())
+        readers = ci_scope.frontend_documents(ROOT).tests
+        self.assertTrue(readers, "no document is read by Vitest alone, so this asserts nothing")
+        for document, tests in readers.items():
+            for test in tests:
+                with self.subTest(document=document, test=test):
+                    self.assertTrue(ci_scope.is_vitest_file(test))
+                    self.assertTrue((ROOT / test).is_file())
 
 
 class TheBundlesOwnInputsRunTheFrontendLaneTest(unittest.TestCase):
@@ -221,6 +328,80 @@ class TheBundlesOwnInputsRunTheFrontendLaneTest(unittest.TestCase):
             with redirect_stdout(out):
                 ci_scope.main(["--root", str(root), "--paths", ".gitattributes"])
             self.assertIn("python=true\nlint=true\nfrontend=true", out.getvalue())
+
+
+class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
+    def test_a_change_outside_the_platform_list_runs_no_macos_leg(self) -> None:
+        for path in (
+            "compass/skills/compass/compass_runtime/reading.py",
+            "compass/skills/compass/compass_runtime/config.py",
+            "compass/skills/compass/tests/test_sessions.py",
+            "scripts/owned_observer.py",
+            "frontend/src/main.tsx",
+            "requirements-dev.txt",
+            "docs/design-reading-a-session.md",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual("false", lanes_of(path)["platform"])
+
+    def test_platform_sensitive_code_runs_the_macos_legs(self) -> None:
+        for path in (
+            "compass/skills/compass/compass_runtime/supervise.py",
+            "compass/skills/compass/compass_runtime/lifecycle.py",
+            "compass/skills/compass/launch.py",
+            "compass-gemini/hooks/launch.py",
+            "compass/skills/compass/tests/test_supervise.py",
+            "scripts/capture_terminal_identity.py",
+            "frontend/dev/supervisor.mjs",
+            # Timing bounds that failed only on the slower macOS runners (#745, #787).
+            "compass/skills/compass/compass_runtime/records.py",
+            "compass/skills/compass/compass_runtime/terminal_client.py",
+            "compass/skills/compass/tests/test_records.py",
+            "compass/skills/compass/tests/test_footer.py",
+            # The shared test config takes sys.platform, so the macOS legs run every test as darwin.
+            "compass/skills/compass/tests/support.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual("true", lanes_of(path)["platform"])
+
+    def test_a_dependency_bump_runs_the_macos_legs_that_install_it(self) -> None:
+        # The lockfile pins per-OS native bindings (esbuild, rolldown, biome, lightningcss) and the
+        # macOS legs install requirements-validation.txt: only a macOS runner loads their darwin builds.
+        for path in (
+            "pnpm-lock.yaml",
+            "package.json",
+            ".node-version",
+            ".npmrc",
+            "pnpm-workspace.yaml",
+            "requirements-validation.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual("true", lanes_of(path)["platform"])
+
+    def test_an_exit_watch_change_runs_the_python_lane_on_macos(self) -> None:
+        found = lanes_of("compass/skills/compass/compass_runtime/supervise.py")
+        self.assertEqual(("true", "true"), (found["python"], found["platform"]))
+
+    def test_every_platform_entry_names_a_file_that_exists(self) -> None:
+        # A renamed module would otherwise leave its entry matching nothing, silently.
+        for pattern in ci_scope.PLATFORM_PATHS:
+            with self.subTest(pattern=pattern):
+                self.assertTrue(
+                    any(ROOT.glob(pattern)) or (ROOT / pattern).exists(),
+                    f"{pattern} matches no file",
+                )
+
+    def test_the_gates_own_wiring_and_an_unknown_path_run_the_macos_legs(self) -> None:
+        for path in (".github/workflows/quality-gate.yml", "scripts/ci_scope.py", "new/thing"):
+            with self.subTest(path=path):
+                self.assertEqual("true", lanes_of(path)["platform"])
+
+    def test_main_nightly_and_a_manual_run_turn_on_every_lane(self) -> None:
+        for event in ("push", "schedule", "workflow_dispatch"):
+            with self.subTest(event=event):
+                found = ci_scope.decide(event, "", "", ROOT).outputs()
+                for lane in ("python", "lint", "frontend", "python_suites", "platform"):
+                    self.assertEqual("true", found[lane], lane)
 
 
 class RuffAndRenamesTest(unittest.TestCase):
@@ -284,8 +465,11 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             {**ALL_OFF, "frontend": "true", "python_suites": "true"},
             ci_scope.decide("pull_request", base, head, self.tmp).outputs(),
         )
+        # Real SHAs, so only the event can be what turns every lane on.
         for event, b, h in (
             ("push", base, head),
+            ("schedule", base, head),
+            ("workflow_dispatch", base, head),
             ("pull_request", "", head),
             ("pull_request", "nope", head),
         ):
@@ -325,12 +509,13 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             )
         )
         with redirect_stdout(out):
-            ci_scope.main(["--root", str(ROOT), "--paths", "pnpm-lock.yaml"])
+            ci_scope.main(["--root", str(ROOT), "--paths", "frontend/src/main.tsx"])
         self.assertEqual(
-            "python=false\nlint=false\nfrontend=true\ncontract=false\npython_suites=true\n",
+            "python=false\nlint=false\nfrontend=true\ncontract=false\npython_suites=true\n"
+            "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\n",
             output.read_text(encoding="utf-8"),
         )
-        self.assertIn("pnpm-lock.yaml: frontend", out.getvalue())
+        self.assertIn("frontend/src/main.tsx: frontend", out.getvalue())
 
 
 if __name__ == "__main__":

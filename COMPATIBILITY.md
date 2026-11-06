@@ -27,8 +27,9 @@ before using an older build.
 
 ## Platform-specific behavior
 
-CI exercises the dashboard unit suite on macOS and Linux, the frontend development checks on macOS,
-and production-bundle parity proofs on Linux. Windows is no longer exercised by CI for the dashboard
+CI exercises the dashboard unit suite and the frontend development checks on Linux for every
+change that can affect them, and on macOS for a change to platform-sensitive code and on every push
+to main and nightly run. Production-bundle parity proofs run on Linux. Windows is no longer exercised by CI for the dashboard
 unit suite or frontend. Local checks remain available; the capability matrix below describes the
 implementation, not continuous verification on every platform.
 
@@ -55,7 +56,9 @@ python_version`), `scripts/package-cli.sh` (which refuses an older build interpr
 guards three of them, the `SKILL.md` copy and both `pyproject.toml` fields; the workflow and release
 tests pin the CI interpreters, and the CLI script test pins the packaging refusal. The rest are on you.
 CI runs the dashboard suite on macOS twice, on 3.12 and on the newest stable CPython, because the exit
-watch in `supervise.py` takes a different branch on each.
+watch in `supervise.py` takes a different branch on each. It does so for a change to the exit watch or
+other platform-sensitive code, and on every push to main and nightly run; any other Python change
+runs the newest-CPython leg on Linux.
 
 | Capability | macOS | Linux | Windows | WSL2 |
 |---|---|---|---|---|

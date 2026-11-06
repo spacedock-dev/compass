@@ -12,13 +12,19 @@ name: Quality Gate
 # single-component repository: everything runs in one workflow, so no
 # workflow_run indirection or artifact cross-downloads are needed.
 
+# A push to main, the nightly schedule and a manual dispatch run every lane, macOS included, so
+# what a pull request's lanes skipped (a fail-open gap, platform drift) surfaces within a day.
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # The event is in the group so the nightly run and a push to main never cancel each other.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,13 +32,15 @@ permissions:
 
 jobs:
   # Splits the gate into lanes so a change runs only the jobs it can affect:
-  # `python` (ruff, mypy, coverage, macOS), `lint` (ruff alone, for a Markdown
+  # `python` (ruff, mypy, coverage), `lint` (ruff alone, for a Markdown
   # file holding Python blocks the formatter checks), `frontend` (Biome, types, Vitest,
   # the bundle, Storybook), `contract` (the frontend tests that start or read
-  # the Python runtime, when the whole frontend lane is not running), and
-  # `python_suites` (the Python suites on Linux, which also read nearly every
-  # frontend file). scripts/ci_scope.py owns the rules and why; it FAILS OPEN,
-  # so anything it cannot compute turns every lane on.
+  # the Python runtime, when the whole frontend lane is not running),
+  # `frontend_docs` (only the Vitest files that read a changed document, named in
+  # `frontend_docs_tests`), and `python_suites` (the Python suites on Linux, which
+  # also read nearly every frontend file). `platform` adds the macOS legs to the
+  # python and frontend lanes. scripts/ci_scope.py owns the rules and why; it FAILS
+  # OPEN, so anything it cannot compute turns every lane on.
   changes:
     name: Detect what the gate can measure
     runs-on: ubuntu-latest
@@ -43,6 +51,9 @@ jobs:
       frontend: ${{ steps.detect.outputs.frontend }}
       contract: ${{ steps.detect.outputs.contract }}
       python_suites: ${{ steps.detect.outputs.python_suites }}
+      frontend_docs: ${{ steps.detect.outputs.frontend_docs }}
+      frontend_docs_tests: ${{ steps.detect.outputs.frontend_docs_tests }}
+      platform: ${{ steps.detect.outputs.platform }}
     steps:
       # actions/checkout@v7.0.1 — pinned to immutable SHA.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,7 +71,7 @@ jobs:
           # The script fails open on its own; this covers it not running at all.
           if ! python3 scripts/ci_scope.py; then
             echo "::warning::scripts/ci_scope.py failed; running every lane."
-            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\n' >> "$GITHUB_OUTPUT"
+            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\nfrontend_docs=false\nfrontend_docs_tests=\nplatform=true\n' >> "$GITHUB_OUTPUT"
           fi
 
   # The job keeps the name it had when it also ran the embedded-source linter, because a
@@ -366,11 +377,14 @@ jobs:
 
   # Coverage and its sticky comment stay Ubuntu-only; this job checks native
   # macOS behavior without repeating the Ubuntu suite from `test` and
-  # `runtime-floor`. Windows CI was retired after the frontend refactor.
+  # `runtime-floor`. Windows CI was retired after the frontend refactor. It runs
+  # only when `platform` is on: a change to a reviewed platform-sensitive path, the
+  # gate's own wiring or a path the detector does not recognise, and every push to
+  # main, nightly run and manual dispatch.
   platform-tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.suite }} ${{ matrix.shard }})
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.python == 'true' && needs.changes.outputs.platform == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -414,11 +428,12 @@ jobs:
         if: matrix.suite == 'scripts'
         run: python scripts/run_tests.py --slowest 10 --shard ${{ matrix.shard }}/3 -s scripts/tests -t scripts/tests
 
-  # The dashboard suite on macOS beside the floor, pinned to 3.15 (the newest stable minor on
-  # 2026-11-02) and moved by hand when a new minor ships. supervise.py
-  # watches a session's exit with `os.waitid` wherever `os` has it and a kqueue exit filter
-  # otherwise. macOS gained `waitid` in 3.13, so the 3.12 leg above runs kqueue and this leg runs
-  # waitid. Without it the branch a Homebrew `python3` takes never ran on its own OS.
+  # The dashboard suite on 3.15 (the newest stable minor on 2026-11-02), moved by hand when a new
+  # minor ships. supervise.py watches a session's exit with `os.waitid` wherever `os` has it and a
+  # kqueue exit filter otherwise. macOS gained `waitid` in 3.13, so with `platform` on this leg runs
+  # on macOS and takes waitid beside the 3.12 kqueue leg above. With it off the leg runs on Linux,
+  # because no other job runs this interpreter and a change outside the platform list can still
+  # break on it.
   platform-tests-current:
     name: Tests (${{ matrix.os }}, Python 3.15, dashboard)
     needs: changes
@@ -428,7 +443,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: ["${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -445,18 +460,16 @@ jobs:
       - name: Run dashboard test discovery
         run: python scripts/run_tests.py --slowest 10 -s compass/skills/compass/tests -t .
 
+  # Every frontend change, on Linux. The Vitest suite runs on Linux in `frontend-coverage`, so this
+  # job runs the Node build tests that `pnpm test` adds to it rather than the suite a second time.
   frontend:
-    name: Frontend (${{ matrix.os }})
+    name: Frontend (ubuntu-latest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     # The browser proofs are no longer part of the gate (owner, 2026-10-12): the UI is verified by the
     # `storybook` job below. Their scripts stay in package.json and run on demand.
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -498,6 +511,56 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm test:styles
+      - name: Build tests that run Python against the plugin
+        timeout-minutes: 3
+        env:
+          COMPASS_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: node --test frontend/build/*.test.mjs
+      - name: Owned development lifecycle and isolation tests
+        timeout-minutes: 3
+        env:
+          COMPASS_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm test:dev
+      - name: Clean native preview build (not the shipping artifact)
+        timeout-minutes: 3
+        run: pnpm build:preview
+
+  # The same suite natively on macOS, where `pnpm test:dev`'s process handling differs, only when
+  # `platform` is on. Lint, types and the CSS ratchet read no platform, so they stay on Linux.
+  frontend-macos:
+    name: Frontend (macos-latest)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.platform == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # actions/setup-node@v7.0.0 — exact verified release commit.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          check-latest: false
+          package-manager-cache: false
+      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
+      # Keep Node authoritative above, and run the script-denied install explicitly.
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
+        with:
+          version: 12.9.1
+          install: false
+          node-version-file: false
+          cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        id: python
+        with:
+          python-version: "3.12"
+      - name: Verify effective builder versions
+        timeout-minutes: 1
+        run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
+      - name: Frozen install with dependency scripts denied
+        timeout-minutes: 5
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Frontend behavioral unit tests
         # 6 minutes timed out on a suite whose every test had passed: the macOS runner took 5m16s on the
         # commit before (2026-10-28). release.yml's copy of this step is held to the same limit.
@@ -514,8 +577,8 @@ jobs:
 
   # The frontend's coverage threshold, held the way the Python one is in `test` above. The thresholds live in
   # vitest.config.mts so `pnpm test:coverage` enforces the same gate locally, and a PR labeled
-  # `coverage-exception` may merge below them. Ubuntu only, as the Python coverage is; the macOS `frontend` job
-  # still runs the suite natively. The token here stays read-only, because this job runs the frontend's
+  # `coverage-exception` may merge below them. Ubuntu only, as the Python coverage is, and this is the Linux run of
+  # the Vitest suite; `frontend-macos` runs it natively when `platform` is on. The token here stays read-only, because this job runs the frontend's
   # third-party test dependencies: the sticky comment is posted by `frontend-coverage-comment`, which runs none.
   frontend-coverage:
     name: Frontend tests + coverage threshold
@@ -795,13 +858,13 @@ jobs:
 
   # The frontend tests that start or read the Python runtime: `pnpm test:dev` launches server.py, the build
   # tests run Python against the plugin, and a few Vitest files import compass_runtime. A runtime change runs
-  # these instead of the whole frontend lane; when that lane runs, it already includes them. macOS, where
-  # `pnpm test:dev` is proven in the `frontend` job.
+  # these instead of the whole frontend lane; when that lane runs, it already includes them. On macOS when
+  # `platform` is on, as `frontend-macos` is, and on Linux otherwise.
   frontend-contract:
     name: Frontend tests that read the runtime
     needs: changes
     if: needs.changes.outputs.contract == 'true'
-    runs-on: macos-latest
+    runs-on: ${{ needs.changes.outputs.platform == 'true' && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -858,6 +921,52 @@ jobs:
           # shellcheck disable=SC2086 # one path per word; repository paths hold no spaces
           pnpm exec vitest run $FILES
 
+  # A document only Vitest files read (the citation check, for a document a frontend file cites) runs those
+  # files on Linux instead of the whole frontend lane. When that lane runs, it already includes them.
+  frontend-docs:
+    name: Frontend tests that read the changed documents
+    needs: changes
+    if: needs.changes.outputs.frontend_docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # actions/setup-node@v7.0.0 — exact verified release commit.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          check-latest: false
+          package-manager-cache: false
+      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
+      # Keep Node authoritative above, and run the script-denied install explicitly.
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
+        with:
+          version: 12.9.1
+          install: false
+          node-version-file: false
+          cache: false
+      - name: Verify effective builder versions
+        timeout-minutes: 1
+        run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
+      - name: Frozen install with dependency scripts denied
+        timeout-minutes: 5
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Vitest files that read the changed documents
+        timeout-minutes: 5
+        env:
+          FILES: ${{ needs.changes.outputs.frontend_docs_tests }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FILES" ]; then
+            echo "::error::The lane is on but names no test file, so the derivation is broken."
+            exit 1
+          fi
+          echo "$FILES"
+          # shellcheck disable=SC2086 # one path per word; repository paths hold no spaces
+          pnpm exec vitest run $FILES
+
   # The single required status check. Branch protection requires this job, so
   # a measurable job may skip only when the detector turned its lane off.
   quality-gate:
@@ -872,10 +981,12 @@ jobs:
       - platform-tests
       - platform-tests-current
       - frontend
+      - frontend-macos
       - frontend-coverage
       - frontend-production
       - storybook
       - frontend-contract
+      - frontend-docs
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -887,6 +998,8 @@ jobs:
           FRONTEND: ${{ needs.changes.outputs.frontend }}
           CONTRACT: ${{ needs.changes.outputs.contract }}
           SUITES: ${{ needs.changes.outputs.python_suites }}
+          FRONTEND_DOCS: ${{ needs.changes.outputs.frontend_docs }}
+          PLATFORM: ${{ needs.changes.outputs.platform }}
           R_CHANGES: ${{ needs.changes.result }}
           R_LINT: ${{ needs.lint.result }}
           R_TYPECHECK: ${{ needs.typecheck.result }}
@@ -896,13 +1009,15 @@ jobs:
           R_PLATFORM: ${{ needs.platform-tests.result }}
           R_PLATFORM_CURRENT: ${{ needs.platform-tests-current.result }}
           R_FRONTEND: ${{ needs.frontend.result }}
+          R_FRONTEND_MACOS: ${{ needs.frontend-macos.result }}
           R_FRONTEND_COVERAGE: ${{ needs.frontend-coverage.result }}
           R_FRONTEND_PRODUCTION: ${{ needs.frontend-production.result }}
           R_STORYBOOK: ${{ needs.storybook.result }}
           R_CONTRACT: ${{ needs.frontend-contract.result }}
+          R_FRONTEND_DOCS: ${{ needs.frontend-docs.result }}
         run: |
           set -euo pipefail
-          echo "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES)"
+          echo "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES frontend_docs=$FRONTEND_DOCS platform=$PLATFORM)"
 
           # The detector itself is never allowed to skip or fail. If it did, we
           # do not know whether the measurable jobs were skipped on purpose or lost,
@@ -912,16 +1027,28 @@ jobs:
             exit 1
           fi
 
+          # A macOS leg runs when its lane AND `platform` are on, so that conjunction is its lane.
+          # Like every lane, `platform` fails closed: a lost or garbled answer is not "off".
+          if [ "$PLATFORM" != "true" ] && [ "$PLATFORM" != "false" ]; then
+            echo "::error::The detector's platform answer is '$PLATFORM', not true or false."
+            exit 1
+          fi
+          both() { if [ "$1" = "true" ] && [ "$2" = "true" ]; then echo true; else echo false; fi; }
+          PYTHON_MACOS=$(both "$PYTHON" "$PLATFORM")
+          FRONTEND_MACOS=$(both "$FRONTEND" "$PLATFORM")
+
           # Each job names the lane that runs it. `skipped` is a pass ONLY when the
           # detector said that lane is off; anything else skipped means a dependency
           # failed upstream and GitHub cascaded it, which is a failure, not a pass.
           for row in "lint:$LINT:$R_LINT" "typecheck:$PYTHON:$R_TYPECHECK" \
                      "runtime-floor:$SUITES:$R_FLOOR" "test:$PYTHON:$R_TEST" \
-                     "coverage:$PYTHON:$R_COVERAGE" "platform-tests:$PYTHON:$R_PLATFORM" \
+                     "coverage:$PYTHON:$R_COVERAGE" "platform-tests:$PYTHON_MACOS:$R_PLATFORM" \
                      "platform-tests-current:$PYTHON:$R_PLATFORM_CURRENT" "frontend:$FRONTEND:$R_FRONTEND" \
+                     "frontend-macos:$FRONTEND_MACOS:$R_FRONTEND_MACOS" \
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \
-                     "storybook:$FRONTEND:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT"; do
+                     "storybook:$FRONTEND:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT" \
+                     "frontend-docs:$FRONTEND_DOCS:$R_FRONTEND_DOCS"; do
             job=${row%%:*}
             rest=${row#*:}
             lane=${rest%%:*}
