@@ -428,7 +428,8 @@ is required.
   leaves the queue: fix it on its branch and enqueue it again. An entry removed for a failed or
   timed-out check goes back in once per head commit on its own (`requeue-after-ejection.yml`), and a
   comment on the PR names the failed jobs. A second failure of the same commit, a conflict, a manual
-  removal, or a missing `MERGE_QUEUE_TOKEN` secret leaves it out for you to queue again.
+  removal, or a missing `MERGE_QUEUE_TOKEN` secret leaves it out for you to queue again. If you
+  queue it again yourself first, the workflow leaves it alone.
 - **Without one,** the ruleset requires branches be up to date, so landing one PR puts every
   sibling `BEHIND` and each needs `gh pr update-branch` plus a full CI re-run. Plan for one cycle
   per PR. A native GitHub stack (`gh stack`) avoids most of that: when `main` moves,

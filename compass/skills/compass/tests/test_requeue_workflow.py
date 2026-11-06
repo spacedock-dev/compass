@@ -84,17 +84,29 @@ class PermissionsTest(unittest.TestCase):
         self.assertEqual({}, jobs()["enqueue"]["permissions"])
 
     def test_the_enqueue_credential_is_used_in_one_step_of_one_job(self) -> None:
-        holders = [
-            (job_id, step.get("name"))
-            for job_id in jobs()
-            for step in steps(job_id)
-            if "secrets.MERGE_QUEUE_TOKEN }}" in str(step.get("env", {}).get("GH_TOKEN", ""))
+        # Every expression naming a secret, anywhere in the file: an env key, a job-level or
+        # workflow-level env, or a `with:` would each add one.
+        named = [
+            " ".join(expression.split())
+            for expression in EXPRESSION.findall(WORKFLOW.read_text(encoding="utf-8"))
+            if "secrets" in expression
         ]
-        self.assertEqual([("enqueue", "Put it back in the queue")], holders)
+        self.assertEqual(["secrets.MERGE_QUEUE_TOKEN != ''", "secrets.MERGE_QUEUE_TOKEN"], named)
+        self.assertEqual(
+            "${{ secrets.MERGE_QUEUE_TOKEN }}",
+            steps("enqueue")[0]["env"]["GH_TOKEN"],
+        )
         # `decide` learns only whether it is set, as a boolean expression.
         self.assertEqual(
             "${{ secrets.MERGE_QUEUE_TOKEN != '' }}", steps("decide")[1]["env"]["QUEUE_TOKEN_SET"]
         )
+
+    def test_env_is_set_only_on_steps(self) -> None:
+        # A workflow-level or job-level env reaches every step beneath it.
+        self.assertNotIn("env", workflow())
+        for job_id, job in jobs().items():
+            with self.subTest(job=job_id):
+                self.assertNotIn("env", job)
 
     def test_the_enqueue_job_runs_plain_gh_and_checks_out_nothing(self) -> None:
         (only,) = steps("enqueue")
@@ -155,25 +167,29 @@ class NoAuthoredFieldReachesAScriptTest(unittest.TestCase):
                     self.assertNotIn(f"pull_request.{field}", expression)
 
     def test_what_reaches_the_scripts_is_numbers_shas_and_github_s_own_values(self) -> None:
+        # Keyed by where each value lands, so the right value under the wrong job or key fails.
         passed = {
-            value
+            (job_id, step.get("name"), key): value
             for job_id in jobs()
             for step in steps(job_id)
-            for value in step.get("env", {}).values()
+            for key, value in step.get("env", {}).items()
             if "${{" in value
         }
+        decide = "Decide"
+        enqueue = "Put it back in the queue"
         self.assertEqual(
             {
-                "${{ github.token }}",
-                "${{ github.repository }}",
-                "${{ github.event.pull_request.number }}",
-                "${{ github.event.pull_request.head.sha }}",
+                ("decide", decide, "GH_TOKEN"): "${{ github.token }}",
+                ("decide", decide, "REPO"): "${{ github.repository }}",
+                ("decide", decide, "PR_NUMBER"): "${{ github.event.pull_request.number }}",
+                ("decide", decide, "HEAD_SHA"): "${{ github.event.pull_request.head.sha }}",
                 # Held to the default branch by the job's condition before the step runs.
-                "${{ github.event.pull_request.base.ref }}",
-                "${{ github.event.reason }}",
-                "${{ github.event.pull_request.node_id }}",
-                "${{ secrets.MERGE_QUEUE_TOKEN != '' }}",
-                "${{ secrets.MERGE_QUEUE_TOKEN }}",
+                ("decide", decide, "BASE_REF"): "${{ github.event.pull_request.base.ref }}",
+                ("decide", decide, "EVENT_REASON"): "${{ github.event.reason }}",
+                ("decide", decide, "QUEUE_TOKEN_SET"): "${{ secrets.MERGE_QUEUE_TOKEN != '' }}",
+                ("enqueue", enqueue, "GH_TOKEN"): "${{ secrets.MERGE_QUEUE_TOKEN }}",
+                ("enqueue", enqueue, "PR_NODE_ID"): "${{ github.event.pull_request.node_id }}",
+                ("enqueue", enqueue, "HEAD_SHA"): "${{ github.event.pull_request.head.sha }}",
             },
             passed,
         )

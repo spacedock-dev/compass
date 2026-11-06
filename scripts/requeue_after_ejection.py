@@ -50,6 +50,7 @@ query($owner: String!, $name: String!, $number: Int!) {
     pullRequest(number: $number) {
       state
       headRefOid
+      isInMergeQueue
       timelineItems(itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT], last: 1) {
         nodes { ... on RemovedFromMergeQueueEvent { reason } }
       }
@@ -81,6 +82,7 @@ class Facts:
     requeued: frozenset[str]
     gave_up: frozenset[str]
     can_enqueue: bool
+    in_queue: bool
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,9 @@ def decide(facts: Facts) -> Decision:  # noqa: PLR0911 - one return per guard, i
         return Decision("skip", f"the pull request is {facts.state.lower() or 'unreadable'}")
     if not SHA.match(facts.head) or facts.current_head != facts.head:
         return Decision("skip", "the head moved since the removal; its own checks decide")
+    if facts.in_queue:
+        # A person re-queued it before this ran. Re-queueing too would spend this head's attempt.
+        return Decision("skip", "it is already back in the queue")
     if not requeueable(facts.reason):
         return Decision("skip", f"removed for {facts.reason or 'an unrecorded reason'!r}")
     if facts.head in facts.gave_up:
@@ -209,8 +214,11 @@ def _json_lines(text: str | None) -> list[dict[str, object]]:
     return rows
 
 
-def read_pull(repo: str, number: int, gh: Gh) -> tuple[str, str, str]:
-    """State, current head and the latest removal reason; empty strings when unreadable."""
+def read_pull(repo: str, number: int, gh: Gh) -> tuple[str, str, bool, str]:
+    """State, current head, queue membership and the latest removal reason.
+
+    Unreadable reads as an empty state, which every decision skips.
+    """
     owner, _, name = repo.partition("/")
     answer = gh(
         [
@@ -231,16 +239,16 @@ def read_pull(repo: str, number: int, gh: Gh) -> tuple[str, str, str]:
         pull = json.loads(answer or "")["data"]["repository"]["pullRequest"]
         nodes = pull["timelineItems"]["nodes"]
         reason = str(nodes[-1].get("reason") or "") if nodes else ""
-        return str(pull["state"]), str(pull["headRefOid"]), reason
+        return str(pull["state"]), str(pull["headRefOid"]), pull["isInMergeQueue"] is True, reason
     except (ValueError, KeyError, TypeError, IndexError):
-        return "", "", ""
+        return "", "", False, ""
 
 
-def read_comments(repo: str, number: int, gh: Gh) -> list[dict[str, object]]:
+def read_comments(repo: str, number: int, gh: Gh) -> list[dict[str, object]] | None:
+    """The comments, or None when gh failed: an unreadable list is not an empty one."""
     jq = ".[] | {login: .user.login, type: .user.type, body: .body}"
-    return _json_lines(
-        gh(["api", "--paginate", f"repos/{repo}/issues/{number}/comments", "--jq", jq], None)
-    )
+    answer = gh(["api", "--paginate", f"repos/{repo}/issues/{number}/comments", "--jq", jq], None)
+    return None if answer is None else _json_lines(answer)
 
 
 def read_failed_jobs(repo: str, base: str, number: int, gh: Gh) -> list[str]:
@@ -281,8 +289,9 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
         return 1
     number = int(args.number)
 
-    state, current_head, reason = read_pull(args.repo, number, gh)
-    requeued, gave_up = marked_heads(read_comments(args.repo, number, gh))
+    state, current_head, in_queue, reason = read_pull(args.repo, number, gh)
+    comments = read_comments(args.repo, number, gh)
+    requeued, gave_up = marked_heads(comments or [])
     facts = Facts(
         head=args.head,
         current_head=current_head,
@@ -291,8 +300,13 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
         requeued=requeued,
         gave_up=gave_up,
         can_enqueue=args.can_enqueue == "true",
+        in_queue=in_queue,
     )
     decision = decide(facts)
+    if comments is None and decision.action != "skip":
+        # The markers are the only record of an attempt, so without them either action could repeat.
+        print(f"::error::could not read the comments on #{number}; not re-queued")
+        return 1
     # The webhook's reason is logged beside the timeline's so the two vocabularies can be compared.
     print(f"#{number}: timeline reason {reason!r}, webhook reason {args.event_reason!r}")
     print(f"#{number}: {decision.action}: {decision.why}")

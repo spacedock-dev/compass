@@ -28,6 +28,7 @@ FIRST = requeue.Facts(
     requeued=frozenset(),
     gave_up=frozenset(),
     can_enqueue=True,
+    in_queue=False,
 )
 
 
@@ -91,6 +92,13 @@ class DecideTest(unittest.TestCase):
         for current in (OTHER, ""):
             with self.subTest(current=current):
                 found = requeue.decide(replace(FIRST, current_head=current))
+                self.assertEqual("skip", found.action)
+
+    def test_a_pull_request_already_back_in_the_queue_is_left(self) -> None:
+        # Someone re-queued it by hand before this ran; a second enqueue would spend the attempt.
+        for requeued in (frozenset(), frozenset({HEAD})):
+            with self.subTest(requeued=requeued):
+                found = requeue.decide(replace(FIRST, in_queue=True, requeued=requeued))
                 self.assertEqual("skip", found.action)
 
     def test_a_malformed_head_is_never_requeued(self) -> None:
@@ -215,11 +223,15 @@ class FakeGh:
         reason: str = "failed_checks",
         comments: list[dict[str, object]] | None = None,
         post_fails: bool = False,
+        comments_fail: bool = False,
+        in_queue: bool = False,
     ) -> None:
         self.state = state
         self.reason = reason
         self.comments = comments or []
         self.post_fails = post_fails
+        self.comments_fail = comments_fail
+        self.in_queue = in_queue
         self.posted: list[str] = []
         self.calls: list[list[str]] = []
 
@@ -229,6 +241,7 @@ class FakeGh:
             pull = {
                 "state": self.state,
                 "headRefOid": HEAD,
+                "isInMergeQueue": self.in_queue,
                 "timelineItems": {"nodes": [{"reason": self.reason}]},
             }
             return json.dumps({"data": {"repository": {"pullRequest": pull}}})
@@ -238,6 +251,8 @@ class FakeGh:
             self.posted.append(json.loads(stdin or "{}")["body"])
             return "{}"
         if args[1] == "--paginate":
+            if self.comments_fail:
+                return None
             return "\n".join(json.dumps(row) for row in self.comments)
         if "event=merge_group" in args[1]:
             run = {
@@ -311,6 +326,30 @@ class MainTest(unittest.TestCase):
         code, output, printed = self.run_main(FakeGh(post_fails=True))
         self.assertEqual((1, ""), (code, output))
         self.assertIn("::error::", printed)
+
+    def test_unreadable_comments_neither_requeue_nor_report(self) -> None:
+        # An unreadable list is not an empty one: the marker it hides may already be there.
+        for comments in ([], [bot(marker("requeued"))]):
+            with self.subTest(comments=len(comments)):
+                gh = FakeGh(comments=comments, comments_fail=True)
+                code, output, printed = self.run_main(gh)
+                self.assertEqual((1, "", []), (code, output, gh.posted))
+                self.assertIn("::error::", printed)
+
+    def test_unreadable_comments_do_not_fail_a_removal_that_is_left_anyway(self) -> None:
+        code, output, _ = self.run_main(FakeGh(reason="manual", comments_fail=True))
+        self.assertEqual((0, "action=skip\n"), (code, output))
+
+    def test_a_pull_request_back_in_the_queue_posts_nothing(self) -> None:
+        gh = FakeGh(in_queue=True)
+        code, output, _ = self.run_main(gh)
+        self.assertEqual((0, "action=skip\n", []), (code, output, gh.posted))
+
+    def test_the_timeline_query_asks_whether_it_is_queued(self) -> None:
+        gh = FakeGh()
+        self.run_main(gh)
+        (query,) = [arg for call in gh.calls for arg in call if arg.startswith("query=")]
+        self.assertIn("isInMergeQueue", query)
 
     def test_an_unreadable_pull_request_is_left(self) -> None:
         def broken(_args: list[str], _stdin: str | None) -> str | None:
