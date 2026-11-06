@@ -328,8 +328,10 @@ The rewritten issue is approved and gets built in a dedicated worktree on its ow
     because this stage owns what happens next.
   - The failing test written first and **watched to fail for the right reason**. A test that passes
     the moment it is written is testing what already worked.
-  - The canonical pre-PR suite run from **AGENTS.md, "Pre-PR Checks"** — read from there, not from
-    a copy, because a local copy is how someone passes locally and fails the required check.
+  - The canonical pre-PR suite run from **AGENTS.md, "Pre-PR Checks"**, through
+    `python3 scripts/pre_pr.py`, which runs the part of it the diff's lanes can fail — read from
+    there, not from a copy, because a local copy is how someone passes locally and fails the
+    required check.
   - `sync-docs` invoked, its doc updates committed onto this same branch. It is a step of the gate,
     not an optional extra.
   - The actual surface measured against the triage estimate **before the PR opens**:
