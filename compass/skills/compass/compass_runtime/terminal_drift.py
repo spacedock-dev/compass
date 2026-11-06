@@ -172,6 +172,10 @@ STATE_WORDS: Final[dict[str, str]] = {
     "not-reached": "Not reached",
     "unshown": "Not shown",
 }
+# `drift/sentences.ts` CLAUSE_UNRETAINED: what the page draws where a row's words were not kept.
+CLAUSE_UNRETAINED: Final = "the words of the revision this reading read are not retained"
+# `drift/sentences.ts` UNVERIFIABLE, the result the page draws no claims row for (`claimsDrawn`).
+UNVERIFIABLE: Final = "not verifiable from available evidence"
 # The page leads a mid-flight reading's answer with "So far:" so it never reads as how the session
 # ended. The terminal does not port the answer sentence, so it says the scope on its own line.
 SO_FAR_LINE: Final = (
@@ -283,6 +287,7 @@ class Draft(NamedTuple):
 class LineView(NamedTuple):
     key: str
     state: str
+    result: str
     why: str
     numbers: tuple[str, ...]
     clause: str
@@ -794,6 +799,7 @@ def adapt(view: Mapping[str, Any]) -> View:
             LineView(
                 key=str(line["key"]),
                 state=str(line["state"]),
+                result=_text(line.get("result")),
                 why=_text(line.get("why")),
                 numbers=_numbers(line.get("numbers")),
                 clause=_text(line.get("clause")),
@@ -824,14 +830,19 @@ def adapt(view: Mapping[str, Any]) -> View:
     except (KeyError, TypeError, AttributeError):
         return View("unreadable", None, False, False, (), (), (), None, False, None)
     malformed = _text(view.get("malformed"))
+    # `claimsDrawn`: the page draws no claims row where the agent made no claim to read.
+    lines = tuple(line for line in lines if line.key != "claims" or line.result != UNVERIFIABLE)
     unknown = (
         any(line.state not in STATE_WORDS for line in lines)
         or (level is not None and level not in LEVEL_NAMES)
         or (stale is not None and stale.kind not in ("intent", "work"))
     )
+    # `DriftLevelView`: a stored reading held at not_enough, or one beside a drafted goal, draws no
+    # level; the scope line and the line states say what it found.
+    drawn = isinstance(level, str) and level != "not_enough" and view.get("drafted") is not True
     return View(
         malformed=malformed or ("unknown" if unknown else ""),
-        level=level if isinstance(level, str) else None,
+        level=level if drawn else None,
         so_far=view.get("so_far") is True,
         level_so_far=_rec(pill) and pill.get("so_far") is True,
         lines=lines,
@@ -845,6 +856,10 @@ def adapt(view: Mapping[str, Any]) -> View:
 
 # ---------------------------------------------------------------------------------------------
 # What is printed.
+
+
+def _clause(text: str) -> str:
+    return printable(text) or CLAUSE_UNRETAINED
 
 
 def _label(key: str) -> str:
@@ -896,6 +911,16 @@ def unsettled_line(view: View) -> str:
     )
 
 
+def _outcome_line(row: Mapping[str, Any], line: LineView) -> str:
+    source = _line_source(row, line.key)
+    named = f"{_label(line.key)} ({source})" if source else _label(line.key)
+    # The claims row carries no words of the reader's, so the page draws it with no clause.
+    said = "" if line.key == "claims" else f": {_clause(line.clause)}"
+    text = f"- {STATE_WORDS[line.state]} · {named}{said}"
+    why = WHY_WORDS.get(line.why, "") if line.state == "cant-tell" else ""
+    return f"{text} — {why}" if why else text
+
+
 def render(  # noqa: C901, PLR0912 - one optional block per field, in the order printed
     row: Mapping[str, Any],
     payload: Mapping[str, Any],
@@ -933,18 +958,15 @@ def render(  # noqa: C901, PLR0912 - one optional block per field, in the order 
         lines.append(f"Level: {LEVEL_NAMES[view.level]}{' so far' if view.level_so_far else ''}")
     if view.lines:
         lines.append("Outcome lines:")
-        for line in view.lines:
-            source = _line_source(row, line.key)
-            named = f"{_label(line.key)} ({source})" if source else _label(line.key)
-            text = f"- {STATE_WORDS[line.state]} · {named}: {printable(line.clause)}"
-            why = WHY_WORDS.get(line.why, "") if line.state == "cant-tell" else ""
-            lines.append(f"{text} — {why}" if why else text)
+        lines.extend(_outcome_line(row, line) for line in view.lines)
     by_key = {line.key: line for line in view.lines}
     departed = [by_key[key] for key in view.departures if key in by_key]
     if departed:
         lines.append("Departures:")
         for line in departed:
-            parts = [f'{_label(line.key)}: "{printable(line.clause)}"', _entries(line.numbers)]
+            words = printable(line.clause)
+            said = f'"{words}"' if words else CLAUSE_UNRETAINED
+            parts = [f"{_label(line.key)}: {said}", _entries(line.numbers)]
             parts.append(printable(line.detail))
             lines.append("- " + " · ".join(part for part in parts if part))
     if view.priors:
@@ -994,7 +1016,12 @@ def _job_of(payload: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
     return job if _rec(job) and isinstance(job.get("id"), str) else None
 
 
-def _project(row: Mapping[str, Any]) -> str:
+def _context_project(row: Mapping[str, Any]) -> str:
+    """The project `/api/project-context` is asked for: the identity key, which it matches first.
+
+    The session page's link is not built from this: the page routes by the project label, as
+    `terminal_sessions._url` does, and a link built from the key opens to no session.
+    """
     return _text(row.get("project_key")) or _text(row.get("project"))
 
 
@@ -1025,7 +1052,7 @@ class _Run:
         self.page = ""
 
     def url(self, row: Mapping[str, Any]) -> str:
-        self.page = session_url(self.port, _project(row), self.harness, self.sid)
+        self.page = session_url(self.port, _text(row.get("project")), self.harness, self.sid)
         return self.page
 
     def interrupted(self) -> int:
@@ -1069,7 +1096,7 @@ class _Run:
         if job is not None:
             return self.wait(job, row, adopted=None)
         try:
-            context = self.board.context(_project(row), self.key)
+            context = self.board.context(_context_project(row), self.key)
         except Lost:
             context = None
         if _work(context) is None:
@@ -1159,7 +1186,7 @@ class _Run:
         if _assessment(row) == seen or not _rec(row.get("annotation_assessment")):
             return self.refuse(NOTHING_PRODUCED)
         try:
-            context = self.board.context(_project(row), self.key)
+            context = self.board.context(_context_project(row), self.key)
         except Lost:
             context = None
         return self.show(payload, row, context, adopted=adopted)

@@ -367,8 +367,81 @@ class FreeReadTest(unittest.TestCase):
             "goal is not settled",
             out,
         )
-        self.assertIn("Level: Not enough recorded yet", out)
+        self.assertNotIn("Level:", out)
         self.assertNotIn("Departures:", out)
+
+    def test_a_person_whose_reading_found_not_enough_reads_no_level_as_the_page_draws_none(
+        self,
+    ) -> None:
+        # The page draws no level for a stored reading held at not_enough: no bar stands in for
+        # the verdict sentence, so the terminal prints none either.
+        view = a_view(departures=[], pill=None)
+        view["analysis"] = {
+            "level": "not_enough",
+            "reasons": ["later-direction"],
+            "withheld": False,
+        }
+        board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
+        _code, out, _err = drift(board)
+        self.assertNotIn("Level:", out)
+        self.assertNotIn("Not enough recorded yet", out)
+
+    def test_a_person_over_a_drafted_goal_reads_no_level_as_the_page_draws_none(self) -> None:
+        board = FakeBoard(
+            a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=a_view(drafted=True)
+        )
+        _code, out, _err = drift(board)
+        self.assertNotIn("Level:", out)
+
+    def test_a_person_whose_agent_claimed_nothing_reads_no_claims_row(self) -> None:
+        # Measured on a real session: the claims row arrives unverifiable with no clause, and the
+        # page draws no row for it (`claimsDrawn`).
+        view = a_view()
+        view["lines"].append(
+            {
+                "key": "claims",
+                "state": "cant-tell",
+                "result": "not verifiable from available evidence",
+                "why": "",
+                "clause": "",
+                "detail": "",
+                "numbers": [],
+            }
+        )
+        board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
+        _code, out, _err = drift(board)
+        self.assertNotIn("What the agent claimed", out)
+        self.assertIn("- Consistent · Line 1 (typed): The tests pass", out)
+
+    def test_a_person_reads_a_claim_the_record_does_not_show_without_an_empty_clause(
+        self,
+    ) -> None:
+        view = a_view()
+        view["lines"].append(
+            {
+                "key": "claims",
+                "state": "unshown",
+                "result": "not shown by the record",
+                "why": "",
+                "clause": "",
+                "detail": "",
+                "numbers": [],
+            }
+        )
+        board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
+        _code, out, _err = drift(board)
+        self.assertIn("\n- Not shown · What the agent claimed\n", out)
+
+    def test_a_person_whose_words_were_not_retained_reads_that_instead_of_a_blank(self) -> None:
+        view = a_view()
+        view["lines"][1]["clause"] = ""
+        view["lines"][0]["clause"] = ""
+        board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
+        _code, out, _err = drift(board)
+        unretained = "the words of the revision this reading read are not retained"
+        self.assertIn(f"- Consistent · Line 1 (typed): {unretained}", out)
+        self.assertIn(f"- Goal: {unretained} · entries #41, #41.2", out)
+        self.assertNotRegex(out, r"(?m)^- .*: *$")
 
     def test_a_person_reads_how_many_later_messages_were_left_unsettled(self) -> None:
         board = stored()
@@ -732,6 +805,29 @@ class ManagedPolicyTest(unittest.TestCase):
         self.assertIn("Goal (Drafted from your first prompt · not saved)", out)
 
 
+class SessionLinkTest(unittest.TestCase):
+    def test_a_person_opens_the_session_page_by_its_project_label_not_its_identity_key(
+        self,
+    ) -> None:
+        # Measured on a real board: the page routes by the project label, and a link built from
+        # `project_key` opened to "This session is not in the current payload."
+        row = a_row(
+            annotation_assessment=dict(ASSESSMENT),
+            project="recce/compass",
+            project_key="git:0845df6280c14f16ae3019bc",
+        )
+        board = FakeBoard(a_payload(row), view=a_view())
+        _code, out, _err = drift(board)
+        self.assertEqual(
+            f"Session page: http://127.0.0.1:{PORT}/#n=session:recce%2Fcompass:claude:abc",
+            out.rstrip("\n").splitlines()[-1],
+        )
+        # The context read keeps the identity key, which the server matches first.
+        self.assertIn(
+            f"/api/project-context?project=git:0845df6280c14f16ae3019bc&session={KEY}", board.gets
+        )
+
+
 class OtherHarnessTest(unittest.TestCase):
     def test_a_person_on_another_harness_is_sent_to_the_session_page(self) -> None:
         row = a_row(harness="codex")
@@ -1028,8 +1124,7 @@ class AdapterTest(unittest.TestCase):
         row = {"harness": "claude", "sid": "abc"}
         out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
         self.assertIn(terminal_drift.SO_FAR_LINE, out)
-        self.assertIn("Level: Not enough recorded yet", out)
-        self.assertNotIn("Level: Not enough recorded yet so far", out)
+        self.assertNotIn("Level:", out)
 
     def test_a_finished_reading_says_nothing_of_so_far_and_the_pill_keeps_its_own(self) -> None:
         view = a_view()
@@ -1057,6 +1152,9 @@ class AdapterTest(unittest.TestCase):
         out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
         self.assertIn("Outcome lines:", out)
         self.assertEqual(adapted.so_far, terminal_drift.SO_FAR_LINE in out)
+        # The recorded reading is held at not_enough, which the page draws no level for.
+        self.assertEqual("not_enough", found["analysis"]["level"])
+        self.assertNotIn("Level:", out)
 
 
 if __name__ == "__main__":
