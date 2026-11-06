@@ -6,6 +6,7 @@ import builtins
 import contextlib
 import http.client
 import io
+import itertools
 import json
 import os
 import socket
@@ -596,6 +597,22 @@ class SessionTest(unittest.TestCase):
 
         self.assertEqual(terminal_client.Session("claude", "env-id", "environment"), got)
 
+    def test_another_tool_s_session_is_never_read_as_the_claude_session_it_started_in(
+        self,
+    ) -> None:
+        env = {"CLAUDE_CODE_SESSION_ID": "outer", "CODEX_THREAD_ID": "thread-1"}
+
+        got = terminal_client.resolve_session(None, env, None)
+
+        self.assertEqual(terminal_client.Unresolved(terminal_client.sentence("other_harness")), got)
+
+    def test_the_status_line_still_names_its_session_inside_another_tool(self) -> None:
+        env = {"CODEX_THREAD_ID": "thread-1"}
+
+        got = terminal_client.resolve_session(None, env, None, payload={"session_id": "line-id"})
+
+        self.assertEqual(terminal_client.Session("claude", "line-id", "status line"), got)
+
     def test_with_nothing_it_says_it_cannot_tell_and_never_guesses_from_the_directory(self) -> None:
         with mock.patch.object(os, "getcwd", side_effect=AssertionError("read the cwd")):
             got = terminal_client.resolve_session(None, {}, None)
@@ -1054,11 +1071,140 @@ class DriftCommandTest(HomeCase):
 
     def test_a_person_who_names_no_session_is_told_how_and_nothing_is_reached(self) -> None:
         with FakeDashboard() as fake:
-            code, out, err = self.run_drift(port=fake.port)
+            code, out, err = self.run_drift(port=fake.port, tty=True)
 
         self.assertEqual((1, ""), (code, out))
         self.assertEqual(terminal_client.sentence("no_session") + "\n", err)
         self.assertEqual([], fake.requests)
+
+    def test_a_person_whose_agent_has_no_session_id_is_not_told_to_pass_a_flag(self) -> None:
+        # The skill runs `--drift` through a pipe and never adds `--session`, so a flag to pass is
+        # an instruction the agent must not follow and the person cannot use there.
+        with FakeDashboard() as fake:
+            code, out, err = self.run_drift(port=fake.port, tty=False)
+
+        self.assertEqual((1, ""), (code, out))
+        self.assertEqual(terminal_client.sentence("no_session_in_session") + "\n", err)
+        self.assertNotIn("--session", err)
+        self.assertIn("reads Claude Code sessions", err)
+        self.assertIn("nothing was read or spent", err)
+        self.assertEqual([], fake.requests)
+
+    def test_a_person_in_another_tool_s_session_started_under_claude_code_reads_nothing(
+        self,
+    ) -> None:
+        # Codex started inside a Claude Code session inherits that session's id; read as this
+        # session, it would print, and spend on, the outer session's reading.
+        env = {terminal_client.CLAUDE_SESSION_ENV: "abc", "CODEX_THREAD_ID": "thread-1"}
+        version = terminal_client.release_version()
+        for tty in (True, False):
+            with (
+                self.subTest(tty=tty),
+                FakeDashboard(version=version, answers=self.answers()) as fake,
+            ):
+                code, out, err = self.run_drift(port=fake.port, environ=env, tty=tty)
+
+                self.assertEqual((1, ""), (code, out))
+                self.assertEqual(terminal_client.sentence("other_harness") + "\n", err)
+                self.assertNotIn("on the board, so nothing was read", err)
+                self.assertEqual([], fake.requests)
+
+    def test_a_person_in_another_tool_s_session_may_still_name_a_claude_session(self) -> None:
+        env = {terminal_client.CLAUDE_SESSION_ENV: "abc", "CODEX_THREAD_ID": "thread-1"}
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            code, out, _err = self.run_drift(
+                session="claude:abc", port=fake.port, environ=env, tty=True
+            )
+
+        self.assertEqual(0, code)
+        self.assertIn("Level: Medium", out)
+
+    def test_a_person_whose_drift_started_compass_reads_that_in_the_session(self) -> None:
+        # The skill prints standard output on success, so the line goes there inside a session.
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+
+            def start(_port: int, **_budget: Any) -> None:
+                self.state_file(f"compass-{fake.port}.json")
+
+            with mock.patch.object(terminal_client, "start_daemon", side_effect=start):
+                code, out, err = self.run_drift(
+                    environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=False
+                )
+
+        self.assertEqual(0, code)
+        self.assertEqual(terminal_client.sentence("starting"), out.splitlines()[0])
+        self.assertNotIn(terminal_client.sentence("starting"), err)
+
+    def test_a_person_whose_drift_started_compass_and_was_refused_reads_both(self) -> None:
+        # On a refusal the skill prints standard error, so the start is said there too.
+        version = terminal_client.release_version()
+        answers = self.answers()
+        answers["/api/data"] = (200, {}, json.dumps({"sessions": [], "annotate": True}).encode())
+        with FakeDashboard(version=version, answers=answers) as fake:
+
+            def start(_port: int, **_budget: Any) -> None:
+                self.state_file(f"compass-{fake.port}.json")
+
+            with mock.patch.object(terminal_client, "start_daemon", side_effect=start):
+                code, _out, err = self.run_drift(
+                    environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=False
+                )
+
+        self.assertEqual(1, code)
+        lines = err.splitlines()
+        self.assertEqual(terminal_client.sentence("starting"), lines[0])
+        self.assertIn("no session claude:abc on the board", lines[1])
+
+    def test_a_person_at_a_shell_whose_drift_started_compass_is_told_on_standard_error(
+        self,
+    ) -> None:
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+
+            def start(_port: int, **_budget: Any) -> None:
+                self.state_file(f"compass-{fake.port}.json")
+
+            with mock.patch.object(terminal_client, "start_daemon", side_effect=start):
+                code, out, err = self.run_drift(session="claude:abc", tty=True)
+
+        self.assertEqual(0, code)
+        self.assertEqual(terminal_client.sentence("starting") + "\n", err)
+        self.assertNotIn(terminal_client.sentence("starting"), out)
+
+    def test_a_person_in_a_session_is_told_how_to_restart_another_release_without_the_cli(
+        self,
+    ) -> None:
+        with FakeDashboard(version="0.0.1", answers=self.answers()) as fake:
+            code, _out, err = self.run_drift(
+                port=fake.port, environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=False
+            )
+
+        self.assertEqual(1, code)
+        self.assertIn("version 0.0.1", err)
+        self.assertNotIn("spacedock-compass", err)
+        self.assertIn("/compass:compass", err)
+        self.assertEqual([("GET", "/api/health")], fake.requests)
+
+    def test_a_dashboard_start_inside_a_session_is_bounded_by_what_is_left_of_its_wait(
+        self,
+    ) -> None:
+        budgets: list[float] = []
+
+        def start(_port: int, *, timeout: float) -> None:
+            budgets.append(timeout)
+
+        with (
+            mock.patch.object(terminal_client, "start_daemon", side_effect=start),
+            mock.patch(
+                "time.time", side_effect=itertools.chain([1000.0], itertools.repeat(1080.0))
+            ),
+        ):
+            self.run_drift(environ={terminal_client.CLAUDE_SESSION_ENV: "abc"}, tty=False)
+
+        self.assertEqual(1, len(budgets))
+        self.assertLessEqual(budgets[0], 20.0)
 
     def test_a_person_whose_session_does_not_parse_is_refused_before_anything_is_reached(
         self,
@@ -1157,6 +1303,23 @@ class DriftCommandTest(HomeCase):
         self.assertEqual([("GET", "/api/health")], fake.requests)
 
 
+class InSessionBudgetTest(unittest.TestCase):
+    def test_a_press_is_sent_only_with_time_left_to_hear_whether_it_started(self) -> None:
+        self.assertGreaterEqual(
+            terminal_drift.PRESS_RESERVE_SEC,
+            terminal_client.DRIFT_REQUEST_TIMEOUT_SEC + terminal_drift.POLL_SEC,
+        )
+
+    def test_no_exchange_inside_a_session_outlasts_what_is_left_of_its_wait(self) -> None:
+        with mock.patch("time.time", return_value=1000.0):
+            board = terminal_client.LoopbackBoard(4553, deadline=1010.0)
+            self.assertLessEqual(board.timeout(), 9.0)
+            self.assertEqual(
+                terminal_client.DRIFT_REQUEST_TIMEOUT_SEC,
+                terminal_client.LoopbackBoard(4553).timeout(),
+            )
+
+
 class WordingTest(unittest.TestCase):
     def test_every_sentence_is_one_line_and_every_placeholder_is_filled(self) -> None:
         for key in terminal_client.SENTENCES:
@@ -1184,6 +1347,18 @@ class WordingTest(unittest.TestCase):
         self.assertEqual(
             "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
             terminal_client.sentence("no_session"),
+        )
+        self.assertEqual(
+            "The drift action reads Claude Code sessions and this command runs inside another "
+            "tool's session, so nothing was read or spent; that session's page on the board shows "
+            "its drift.",
+            terminal_client.sentence("other_harness"),
+        )
+        self.assertEqual(
+            "The drift action reads Claude Code sessions and this command was given no Claude Code "
+            "session id, so nothing was read or spent; a session's page on the board shows its "
+            "drift.",
+            terminal_client.sentence("no_session_in_session"),
         )
         self.assertEqual(
             "Compass answered, but its session list could not be read.",

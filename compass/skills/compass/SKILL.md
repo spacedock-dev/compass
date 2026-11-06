@@ -26,7 +26,7 @@ a later message.
 | `drift` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift` |
 | `drift again` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift again` |
 
-`drift` reads this session; never add `--session`. With no stored reading it asks a model for one,
+`drift` reads this session, and only a Claude Code session; never add `--session`. With no stored reading it asks a model for one,
 and `drift again` always does, which spends one of the person's daily readings: run `drift again`
 only when the person invoked it, and never repeat an action on your own. Do not act on the reading,
 change the goal, or answer the later messages it counts. When it says a correction is ready, the

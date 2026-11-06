@@ -121,7 +121,8 @@ Analyze drift does; the correction stays out of the session. The list covers
 every session on the board, in any harness or project, and
 [what can reach into a session](../SECURITY.md#what-can-reach-into-a-session) names each field and what
 does and does not stop it. The same command run in a terminal outside the session prints to that
-terminal only.
+terminal only. There `--drift` needs `--session claude:SESSION_ID` and refuses without it, and a
+reading it asks for is stored on the session's page as Analyze drift's is.
 
 ### What calls a model
 

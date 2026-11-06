@@ -66,12 +66,12 @@ left out of what a reading, the Live monitor and a summary read. Codex does not 
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
 stored reading costs nothing. With none, `drift` asks for one, and `drift again` always does: each is
 one Analyze press, counted against the same daily limit as the page's, and Pause model calls on the
-page stops it. Inside the session the agent waits about 100 seconds; a longer reading keeps running,
-and `drift` again collects it without spending. The correction is never printed into the session:
-the answer says one is ready and names the command that prints it in your own terminal, or copy it
-from the session page. Nothing about later messages is settled; the answer says how many it left for
-the session page. With no dashboard running,
-`drift` starts one. These two actions were not run in a session before they shipped.
+page stops it. Inside the session the command stops about 100 seconds after it starts; a longer
+reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
+correction is never printed into the session: the answer says one is ready, and you copy it from
+the session page. Nothing about later messages is settled; the answer says how many it left for the
+session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
+another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
 `sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
 refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
@@ -91,7 +91,7 @@ What to expect:
   `--stop`, or a second command joined on with `&&` is not pre-approved, and was refused when
   measured. Nor is any other spelling of the command, such as `python` on Windows, so on Windows
   every use asks. To stop the action running, add a deny rule to `permissions.deny` in your
-  settings, which overrides the skill (measured):
+  settings, which overrides the skill (measured for the two `--sessions` commands):
   `Bash(python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions)`, and the same with
   ` waiting` before the closing parenthesis, or with `--drift` and `--drift again` in place of
   `--sessions`, with `<skill-dir>` written out as the path the command shows. That path changes when the plugin updates, and the deny rule then no longer matches, so

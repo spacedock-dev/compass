@@ -6984,8 +6984,10 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
   reader's own route, so spend stays bounded by what bounds the page's press: the 100-attempt
   rolling cap, one reading in flight per session (a second request attaches to it), and Pause model
   calls, which is the off switch. The validator admits one flag and one bare word, so the spending
-  form is spelled `--drift again`. These two rules were not run under Claude Code before they
-  shipped; they have the measured `sessions` rules' exact form.
+  form is spelled `--drift again`. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with
+  `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again`
+  ran with no permission prompt (`permission_denials` empty); both runs refused before any press,
+  because the fresh session was not yet on the board.
 - **The 2026-11-05 boundary carries over.** The skill's data instruction, the fence rule and one
   field per line apply as they do to `sessions`, with a provenance line of its own above the
   reading: "The lines below are Compass's reading of this session, written by a model, shown as
@@ -6997,17 +6999,23 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
 - **The correction stays out of the session.** Under DEC-25 a correction is the reader's to copy.
   Printed into the session, it would be read by the agent it is addressed to, which is delivery
   without the reader's paste. So the composed correction prints only when the reader named the
-  session with `--session` and standard output is a terminal. Anywhere else the action prints one
-  line saying a correction is ready, with the session page and the shell command that prints it,
-  and the skill tells the agent not to run that command or print or apply the correction.
+  session with `--session` and standard output is a terminal. Anywhere else the command prints one
+  line saying a correction is ready on the session page. Run by the skill, the line names no
+  command, because a plugin install has no `spacedock-compass` on PATH; through a pipe elsewhere
+  it names the shell command that prints it. The skill tells the agent not to run a command it
+  names, and not to print or apply the correction. The skill's other next steps (still reading,
+  a stale reading, a dashboard of another release) name `/compass:compass` for the same reason.
 - **The terminal settles nothing.** The page's question about later messages has no terminal
   equivalent: the press settles none, an unsettled later message demotes a departure it could
   change, as it does under the page's own Analyze, and the output says in one line how many were
   left and that the session page can answer them.
 - **Claude Code sessions only, for now.** The page analyzes Codex sessions too, but corrections are
   Claude Code's alone. A session of another harness gets one line naming its session page, and the
-  line never claims Compass cannot read it. Codex gives the command no session id, so in Codex the
-  action refuses unless the shell inherited one from an outer Claude Code session.
+  line never claims Compass cannot read it. A harness started inside a Claude Code session
+  inherits that session's id, which names the outer session. Codex sets its own `CODEX_THREAD_ID`,
+  so with no `--session` the action refuses there, saying that it reads Claude Code sessions and
+  nothing was read or spent. A harness or shell with no marker of its own cannot be told apart, so
+  started under Claude Code it reads the outer session.
 
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists what enters the session and what
 stops the spend.
