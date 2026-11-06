@@ -228,7 +228,14 @@ It prints every command it skips and why, and the lanes CI will run. `--dry-run`
 and runs nothing; `-j N` caps each suite's workers; `--base REF` diffs against another ref. A lane
 it does not know, from a newer `ci_scope.py`, runs the whole list. A run holds a lock in the git
 common directory, so a second worktree's run waits instead of contending (see
-[Parallel Work](#parallel-work)).
+[Parallel Work](#parallel-work)). The wait names the holder's pid and worktree and lasts at most
+`--wait-timeout` seconds (30 minutes by default, `0` to not wait); a run that gives up runs nothing,
+lists every check it did not run and exits 75. The lock is the operating system's, so a holder that
+died, even killed outright, releases it at once; only a live holder, hung or suspended, holds a run
+up to the timeout. The lock tracks the runner, not its checks: stop a run with Ctrl+C or a plain
+`kill <pid>`, which stop the check it is running (and on POSIX everything that check started) before
+the lock frees. `kill -9`, or a runner killed outright on Windows, leaves that check running beside
+the next run.
 
 **The block below is the canonical pre-PR suite**, and `python3 scripts/pre_pr.py --all` runs all of
 it in order. Every other document points here rather than keeping its own copy — divergent copies

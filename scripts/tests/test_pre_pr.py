@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
+import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pre_pr
@@ -42,7 +48,8 @@ def installed(name: str) -> str:
 
 def plan(outputs: dict[str, str], **options: object) -> list[pre_pr.Item]:
     lanes = {**OFF, **outputs}
-    return pre_pr.plan(lanes, which=installed, root=ROOT, **options)  # type: ignore[arg-type]
+    options.setdefault("which", installed)
+    return pre_pr.plan(lanes, root=ROOT, **options)  # type: ignore[arg-type]
 
 
 def ran(items: list[pre_pr.Item]) -> list[str]:
@@ -380,6 +387,243 @@ class LockTest(unittest.TestCase):
                 pre_pr.hold_lock(pre_pr.lock_path(other), poll=0.05, timeout=0.3),
             ):
                 self.fail("a second worktree took the lock the first holds")
+
+
+HOLDER = textwrap.dedent(
+    """
+    import pathlib, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import pre_pr
+    with pre_pr.hold_lock(pathlib.Path(sys.argv[2]), timeout=30):
+        print("held", flush=True)
+        time.sleep(60)
+    """
+)
+
+
+class Clock:
+    """A monotonic clock that only moves when the code under test sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps = 0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps += 1
+        self.now += seconds
+
+
+class HolderProcess:
+    """Another process holding the lock at `path` until it is killed."""
+
+    def __init__(self, path: Path) -> None:
+        self.process = subprocess.Popen(
+            [sys.executable, "-c", HOLDER, str(SCRIPTS), str(path)],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        assert self.process.stdout is not None
+        if self.process.stdout.readline().strip() != "held":
+            self.kill()
+            message = "the holder never took the lock"
+            raise AssertionError(message)
+
+    def kill(self) -> None:
+        self.process.kill()
+        self.process.wait(timeout=30)
+        assert self.process.stdout is not None
+        self.process.stdout.close()
+
+
+class WaitTimeoutTest(unittest.TestCase):
+    """A run behind another worktree's run waits a bounded time, then says what it did not run."""
+
+    def run_behind_a_held_lock(self, *argv: str) -> tuple[int, str, Clock]:
+        clock = Clock()
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            with pre_pr.hold_lock(path), redirect_stdout(out):
+                code = pre_pr.main(
+                    list(argv),
+                    classify=lambda _base: (dict(OFF), ["AGENTS.md"], ["AGENTS.md"]),
+                    lock=lambda: path,
+                    clock=clock,
+                    sleep=clock.sleep,
+                )
+        return code, out.getvalue(), clock
+
+    def test_a_timed_out_run_names_every_check_it_did_not_run_and_fails(self) -> None:
+        code, text, clock = self.run_behind_a_held_lock("--wait-timeout", "90")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(code, pre_pr.WAIT_TIMED_OUT)
+        self.assertEqual(clock.now, 90)
+        self.assertNotIn("==> ", text)
+        report = text.split("Gave up", 1)[1]
+        # The run under test looks tools up on this machine's PATH, so the expected list does too:
+        # a CI runner has no `claude` CLI, and its native validator is then not planned at all.
+        for command in ran(plan({}, which=shutil.which)):
+            self.assertIn(f"  not run  {command}", report)
+        self.assertNotIn("not run  pnpm lint", report)
+
+    def test_the_default_wait_is_thirty_minutes(self) -> None:
+        code, _text, clock = self.run_behind_a_held_lock()
+        self.assertEqual(code, pre_pr.WAIT_TIMED_OUT)
+        self.assertEqual(clock.now, 30 * 60)
+
+    def test_a_zero_timeout_gives_up_without_waiting(self) -> None:
+        code, _text, clock = self.run_behind_a_held_lock("--wait-timeout", "0")
+        self.assertEqual(code, pre_pr.WAIT_TIMED_OUT)
+        self.assertEqual(clock.sleeps, 0)
+
+    def test_a_negative_timeout_is_refused(self) -> None:
+        for value in ("-1", "nan", "soon"):
+            with (
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()) as err,
+                self.assertRaises(SystemExit),
+            ):
+                pre_pr.main(["--dry-run", "--wait-timeout", value])
+            self.assertIn("--wait-timeout", err.getvalue())
+
+    def test_a_check_that_times_out_is_not_reported_as_a_lock_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            out = io.StringIO()
+            with (
+                redirect_stdout(out),
+                mock.patch.object(pre_pr, "_execute", side_effect=TimeoutError("a check")),
+                self.assertRaises(TimeoutError),
+            ):
+                pre_pr.main(
+                    [],
+                    classify=lambda _base: (dict(OFF), [], []),
+                    lock=lambda: path,
+                )
+            self.assertNotIn("Gave up", out.getvalue())
+
+
+class DeadHolderTest(unittest.TestCase):
+    """A holder that died leaves no lock behind; a live one keeps its lock."""
+
+    def test_a_killed_holders_lock_is_recovered_at_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            holder = HolderProcess(path)
+            dead = holder.process.pid
+            self.assertIn(f"pid {dead} ", path.read_text(encoding="utf-8"))
+            holder.kill()
+            # Killed outright, so nothing of its own released the lock or cleared its record.
+            self.assertIn(f"pid {dead} ", path.read_text(encoding="utf-8"))
+            with pre_pr.hold_lock(path, timeout=0):
+                self.assertIn(f"pid {os.getpid()} ", path.read_text(encoding="utf-8"))
+
+    def test_a_live_holders_lock_is_not_taken(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            holder = HolderProcess(path)
+            clock = Clock()
+            try:
+                with (
+                    self.assertRaises(pre_pr.LockTimeoutError) as raised,
+                    pre_pr.hold_lock(path, timeout=5, clock=clock, sleep=clock.sleep),
+                ):
+                    self.fail("took the lock a live process holds")
+                self.assertIn(f"pid {holder.process.pid} ", str(raised.exception))
+                self.assertIn(f"pid {holder.process.pid} ", path.read_text(encoding="utf-8"))
+                self.assertEqual(clock.now, 5)
+            finally:
+                holder.kill()
+
+
+# A run whose one check starts a grandchild, as `run_tests.py` starts workers and pnpm starts node.
+STOPPED_HOLDER = textwrap.dedent(
+    """
+    import pathlib, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import pre_pr
+    grandchild = "import time; time.sleep(60)"
+    check = (
+        "import os, pathlib, subprocess, sys, time;"
+        f"g = subprocess.Popen([sys.executable, '-c', {grandchild!r}]);"
+        f"pathlib.Path({sys.argv[3]!r}).write_text(f'{{os.getpid()}} {{g.pid}}');"
+        "time.sleep(60)"
+    )
+    item = pre_pr.Item("check", argv=(sys.executable, "-c", check))
+    sys.exit(pre_pr._run_locked([item], pathlib.Path(sys.argv[2]), 0, time.monotonic, time.sleep))
+    """
+)
+
+
+def alive(pid: int) -> bool:
+    """Whether `pid` still exists a few seconds on: a check left running sleeps for a minute."""
+    # A process killed a moment ago lingers as a zombie until its new parent reaps it.
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+@unittest.skipIf(sys.platform == "win32", "process groups and these signals are POSIX")
+class StoppedHolderTest(unittest.TestCase):
+    """Stopping a run stops the check it was running, so the next run does not start beside it."""
+
+    def test_a_stopped_run_takes_its_check_down_before_freeing_the_lock(self) -> None:
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(signal=signum.name), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "pre-pr.lock"
+                pids = Path(tmp) / "pids"
+                holder = subprocess.Popen(
+                    [sys.executable, "-c", STOPPED_HOLDER, str(SCRIPTS), str(path), str(pids)],
+                    stdout=subprocess.DEVNULL,
+                )
+                started: list[int] = []
+                try:
+                    deadline = time.monotonic() + 30
+                    while len(started) < 2 and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                        with contextlib.suppress(OSError):
+                            started = [int(pid) for pid in pids.read_text(encoding="utf-8").split()]
+                    self.assertEqual(len(started), 2, "the check never started its grandchild")
+                    holder.send_signal(signum)
+                    self.assertNotEqual(holder.wait(timeout=30), 0)
+                    with pre_pr.hold_lock(path, timeout=0):
+                        self.assertEqual([pid for pid in started if alive(pid)], [])
+                finally:
+                    holder.kill()
+                    holder.wait(timeout=30)
+                    for pid in started:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
+
+    def test_a_check_that_times_out_is_stopped_with_what_it_started(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pids = Path(tmp) / "pids"
+            check = (
+                "import os, pathlib, subprocess, sys, time;"
+                "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']);"
+                f"pathlib.Path({str(pids)!r}).write_text(f'{{os.getpid()}} {{g.pid}}');"
+                "time.sleep(60)"
+            )
+            item = pre_pr.Item("check", argv=(sys.executable, "-c", check), timeout=3)
+            with redirect_stdout(io.StringIO()) as out:
+                code = pre_pr._run(item, Path(tmp))
+            started = [int(pid) for pid in pids.read_text(encoding="utf-8").split()]
+            try:
+                self.assertEqual(code, 124)
+                self.assertIn("timed out after 3 s", out.getvalue())
+                self.assertEqual([pid for pid in started if alive(pid)], [])
+            finally:
+                for pid in started:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
 
 
 if __name__ == "__main__":
