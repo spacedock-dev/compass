@@ -32,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol, TypeGuard
 from urllib.parse import quote
 
-from compass_runtime.terminal_sessions import format_duration, printable
+from compass_runtime.terminal_sessions import claude_sid, format_duration, printable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -1056,9 +1056,25 @@ def _row_of(payload: object, harness: str, sid: str) -> Mapping[str, Any] | None
     if not isinstance(rows, list):
         return None
     for row in rows:
-        if _rec(row) and row.get("harness") == harness and row.get("sid") == sid:
+        if _rec(row) and row.get("harness") == harness and _names(row, sid):
             return row
     return None
+
+
+def _names(row: Mapping[str, Any], sid: str) -> bool:
+    """Whether `sid` names this row. Claude Code hands the command its full session UUID while the
+    board keys the row by the first eight characters and keeps the full id as `resume_id`, so the
+    rule is `terminal_sessions._is_caller`'s: the full id must equal `resume_id` where the row has
+    one, and only a row without one is matched on the prefix."""
+    if row.get("sid") == sid:
+        return True
+    prefix = claude_sid(sid) if row.get("harness") == "claude" else None
+    if prefix is None or prefix == sid:
+        return False
+    resume = row.get("resume_id")
+    if isinstance(resume, str) and resume:
+        return resume == sid
+    return row.get("sid") == prefix
 
 
 def _job_of(payload: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
@@ -1158,6 +1174,10 @@ class _Run:
             return self.refuse(
                 f"Compass has no session {printable(self.key)} on the board, so nothing was read."
             )
+        # From here the board's own key names the session: the reading job, the drift view, the
+        # press and the page are all keyed by the row's `sid`, not the id the command was given.
+        self.sid = _text(row.get("sid")) or self.sid
+        self.key = f"{self.harness}:{self.sid}"
         self.url(row)
         if self.harness != "claude":
             # The page reads every harness it has a route for; this command reads Claude Code's
