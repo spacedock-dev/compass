@@ -140,6 +140,14 @@ class EachKindOfChangeRunsItsLaneTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(ALL_OFF, lanes_of(path))
 
+    def test_the_requeue_workflow_is_left_to_validates_dashboard_suite(self) -> None:
+        # It runs from the default branch only, so no lane can run it. Its shape test is in the
+        # dashboard suite, which validate.yml runs whenever this detector turns no Python suite on.
+        workflow = ".github/workflows/requeue-after-ejection.yml"
+        self.assertEqual(ALL_OFF, lanes_of(workflow))
+        self.assertTrue((ROOT / "compass/skills/compass/tests/test_requeue_workflow.py").is_file())
+        self.assertEqual("true", lanes_of("scripts/requeue_after_ejection.py")["python"])
+
     def test_an_unknown_path_and_an_empty_diff_fail_open(self) -> None:
         for paths in (("somewhere/new.file",), ()):
             with self.subTest(paths=paths):

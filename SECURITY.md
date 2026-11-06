@@ -5074,6 +5074,19 @@ and never unpacks or runs one. That job cannot push to `main` or move a tag. The
 lives beside the archives, so it detects a corrupted download and not a hostile release; the
 binaries carry no signature of their own, and on macOS no developer identity or notarization.
 
+## Merge queue re-queue (the queue token)
+
+When the merge queue removes a pull request because a check failed, a workflow puts it back once.
+It runs on `pull_request_target`, which gives it a write token and secrets on an event a pull
+request causes, so it runs nothing from the pull request. It checks out one script from the
+default branch, skips forks, and passes the script only the pull request's number, node id and
+head commit and GitHub's removal reason. Its token can read the pull request, comment on it and
+read workflow runs. Enqueueing needs a second credential, `MERGE_QUEUE_TOKEN`, because an enqueue
+made with the workflow's own token starts no merge queue checks. That secret sits in a job of its
+own that checks out nothing and runs one `gh` command. It can push to unprotected branches of this
+repository, so it should be a token limited to this repository alone. Without it, nothing is
+re-queued.
+
 ## Reporting a vulnerability
 
 Please do not open a public issue for security problems. Instead:
