@@ -2811,35 +2811,54 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if "unasked_grant" in payload:
             self._unasked_grant(harness, payload)
             return
-        if "typed_action" not in payload or self._typed_press(harness, sid, payload):
+        if "typed_action" in payload:
+            self._typed_press(harness, sid, payload)
+        else:
             self._reading_press(harness, sid, payload)
 
-    def _typed_press(self, harness: str, sid: str, payload: dict[str, Any]) -> bool:
-        """Whether a press the client marked as from inside a session follows the typed command.
+    def _typed_press(self, harness: str, sid: str, payload: dict[str, Any]) -> None:
+        """A press marked as from inside a session, sent on only when the typed command backs it.
+
+        The typed record is held before the press, so a concurrent press on it is refused, and
+        given back unless a reading started: a refusal on the way (the daily cap, a pause, consent,
+        a changed revision, one already running) must not use up the person's command.
+        """
+        uuid = self._typed_record(harness, sid, payload)
+        if not uuid:
+            return
+        self._press_started = False
+        try:
+            self._reading_press(harness, sid, payload)
+        finally:
+            if not self._press_started:
+                typed_press.release(self.server.application.config, uuid)
+
+    def _typed_record(self, harness: str, sid: str, payload: dict[str, Any]) -> str:
+        """The typed record's id when a press marked as from inside a session follows it, else "".
 
         Read from the transcript at press time, before Keep, adoption or any charge, so a refused
-        press changes nothing. Answered and False when it does not. The owner's later ruling of
-        2026-11-06 in docs/design-reading-a-session.md, and `typed_press`, say why.
+        press changes nothing. Answered when it does not. The owner's later ruling of 2026-11-06 in
+        docs/design-reading-a-session.md, and `typed_press`, say why.
         """
         action = payload["typed_action"]
         if action not in typed_press.ACCEPTS:
             self._reject(400)
-            return False
+            return ""
         application = self.server.application
         transcript = (
             runtime_observer.resolve_transcript(application.config, application.state, harness, sid)
             if harness == "claude"
             else None
         )
-        reason = typed_press.admit(application.config, transcript, action)
+        reason, uuid = typed_press.admit(application.config, transcript, action)
         if not reason:
-            return True
+            return uuid
         self._send(
             json.dumps({"ok": False, "produced": False, "reason": reason}).encode(),
             "application/json",
             409,
         )
-        return False
+        return ""
 
     def _reading_setting(self, payload: dict[str, Any]) -> bool:
         """Answer the body variants that change a setting, not a reading. True when one did."""
@@ -3555,6 +3574,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 503,
             )
             return
+        self._press_started = True
         self._send(
             self._reading_json(
                 {"ok": True, "job": published, **({"notice": notice} if notice else {})}
@@ -4197,6 +4217,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     503,
                 )
             return
+        self._press_started = True
         self._send(
             self._reading_json(
                 {"ok": True, "job": started, **({"notice": notice} if notice else {})}

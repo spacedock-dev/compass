@@ -6,9 +6,10 @@ on its own could spend a reading, and that reading would feed the session's late
 client marks a press from inside a session with `typed_action`; the reading route then reads the
 session's transcript tail at press time, not the collection, and admits the press only when the
 latest main-thread prompt is the person's typed `/compass:compass` command for that action. Each
-typed record admits one press, remembered beside the reading permission store, so a retry, a loop
-or a second call cannot spend again on it. The owner ruled it on 2026-11-06, after the
-pre-approval; docs/design-reading-a-session.md records the ruling.
+typed record pays for one press that starts, remembered beside the reading permission store, so a
+retry, a loop or a second call cannot spend again on it; a press refused before it starts gives
+the record back. The owner ruled it on 2026-11-06, after the pre-approval;
+docs/design-reading-a-session.md records the ruling.
 
 This is not a hard boundary: a process that can write the transcript can forge a record.
 """
@@ -139,11 +140,22 @@ def _consumed(path: Path) -> list[str] | None:
     return held
 
 
+def _write(path: Path, consumed: list[str]) -> bool:
+    try:
+        runtime_io.atomic_write_owner_only(str(path), json.dumps({"consumed": consumed[-KEEP:]}))
+    except OSError:
+        return False
+    return True
+
+
 def consume(config: RuntimeConfig, uuid: str) -> str:
-    """Record `uuid` as having admitted its one press: `""`, or the reason it cannot.
+    """Hold `uuid` for the press it admits: `""`, or the reason it cannot.
 
     Under the file lock, so two presses on one typed record, from two tabs or two dashboards, admit
-    one. A store that cannot be read or written refuses rather than admit twice.
+    one. Only a lock actually held counts: an unsupported lock is refused like a busy one, because
+    unlocked, every concurrent press could read the store before any wrote it. A store that cannot
+    be read or written refuses rather than admit twice. The caller gives it back with `release`
+    when the press does not start.
     """
     path = store_path(config)
     try:
@@ -151,25 +163,42 @@ def consume(config: RuntimeConfig, uuid: str) -> str:
     except OSError:
         return UNCONFIRMED
     with runtime_io.held_file_lock(f"{path}.lock", wait=LOCK_WAIT_SEC) as held:
-        if held not in (runtime_io.LOCK_HELD, runtime_io.LOCK_UNSUPPORTED):
+        if held != runtime_io.LOCK_HELD:
             return UNCONFIRMED
         consumed = _consumed(path)
         if consumed is None:
             return UNCONFIRMED
         if uuid in consumed:
             return REQUIRED
-        kept = [*consumed, uuid][-KEEP:]
-        try:
-            runtime_io.atomic_write_owner_only(str(path), json.dumps({"consumed": kept}))
-        except OSError:
+        if not _write(path, [*consumed, uuid]):
             return UNCONFIRMED
     return ""
 
 
-def admit(config: RuntimeConfig, transcript: str | None, action: str) -> str:
-    """`""` when the typed command backs this press and it is the record's first, else a reason."""
+def release(config: RuntimeConfig, uuid: str) -> None:
+    """Give `uuid` back after its press was refused or failed before a reading started.
+
+    Best effort: a store that cannot be locked, read or written keeps the id, which costs the
+    person a retype and never a second press.
+    """
+    path = store_path(config)
+    with runtime_io.held_file_lock(f"{path}.lock", wait=LOCK_WAIT_SEC) as held:
+        if held != runtime_io.LOCK_HELD:
+            return
+        consumed = _consumed(path)
+        if consumed and uuid in consumed:
+            _write(path, [item for item in consumed if item != uuid])
+
+
+def admit(config: RuntimeConfig, transcript: str | None, action: str) -> tuple[str, str]:
+    """`("", uuid)` when the typed record `uuid` backs this press and is now held for it.
+
+    Otherwise `(reason, "")`. The caller releases the uuid when the press does not start.
+    """
     lines = tail_lines(transcript) if transcript else None
     if lines is None:
-        return UNCONFIRMED
+        return UNCONFIRMED, ""
     reason, uuid = decide(lines, action)
-    return reason or consume(config, uuid)
+    if not reason:
+        reason = consume(config, uuid)
+    return (reason, "") if reason else ("", uuid)

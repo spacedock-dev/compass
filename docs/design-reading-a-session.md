@@ -7040,7 +7040,13 @@ is exactly how the skill runs it.
   `drift` over a stored reading never presses, so the check never touches it.
 - **One press per typed command.** The id of the typed record that admitted a press is remembered
   in `compass-typed-presses.json` beside the reading permission store, under a file lock, so a
-  retry, a loop or a second call cannot spend again on it. The newest 512 ids are kept.
+  retry, a loop or a second call cannot spend again on it. The newest 512 ids are kept. It is held
+  before the press, so a concurrent press on the same record is refused, and given back when the
+  press is refused or fails before a reading starts (the daily cap, a pause, consent, a changed
+  revision, a reading already running), so a refusal does not use up the person's command. A lock
+  the filesystem cannot take refuses the press as unconfirmed: unlocked, concurrent presses could
+  all read the store before any wrote it. `--forget` keeps the file, as it keeps the spend
+  timestamps, because deleting it would let a command that already paid pay again.
 - **Otherwise it refuses and spends nothing.** The closed reason `typed-command-required` prints:
   "Compass asks for a reading from inside a session only right after you type `/compass:compass
   drift again` (or `drift` when none is stored), so nothing was read or spent." A transcript or

@@ -8,19 +8,25 @@ writes a Skill tool call and its result, never a prompt record.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import http_api, observer, typed_press
+from compass_runtime import io as runtime_io
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
 from .test_compass_skill_action import CompassSession
+from .test_history import isolated_environment, no_instance, run_one_shot_cli
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class TypedPressCase(unittest.TestCase):
@@ -39,6 +45,9 @@ class TypedPressCase(unittest.TestCase):
         self.session.prompt("Teach the parser about tabs.")
 
     def admit(self, action: str) -> str:
+        return self.admitted(action)[0]
+
+    def admitted(self, action: str) -> tuple[str, str]:
         self.session.save(self.path)
         return typed_press.admit(self.config, str(self.path), action)
 
@@ -112,9 +121,9 @@ class TypedPressTest(TypedPressCase):
     def test_an_unreadable_transcript_is_refused_rather_than_guessed(self) -> None:
         self.typed("drift")
         self.assertEqual(
-            typed_press.UNCONFIRMED, typed_press.admit(self.config, str(self.path), "drift")
+            typed_press.UNCONFIRMED, typed_press.admit(self.config, str(self.path), "drift")[0]
         )
-        self.assertEqual(typed_press.UNCONFIRMED, typed_press.admit(self.config, None, "drift"))
+        self.assertEqual(typed_press.UNCONFIRMED, typed_press.admit(self.config, None, "drift")[0])
 
     def test_a_store_that_cannot_be_read_refuses_rather_than_spend_twice(self) -> None:
         self.typed("drift")
@@ -122,6 +131,45 @@ class TypedPressTest(TypedPressCase):
         store.parent.mkdir(parents=True, exist_ok=True)
         store.write_text("not json", encoding="utf-8")
         self.assertEqual(typed_press.UNCONFIRMED, self.admit("drift"))
+
+    def test_a_person_whose_press_was_refused_downstream_can_press_again_on_that_command(
+        self,
+    ) -> None:
+        self.typed("drift again")
+        reason, uuid = self.admitted("drift again")
+        self.assertEqual("", reason)
+        typed_press.release(self.config, uuid)
+        self.assertEqual("", self.admit("drift again"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
+    def test_a_board_that_cannot_lock_the_store_refuses_rather_than_admit_twice(self) -> None:
+        # Unlocked, two presses could both read the store before either wrote it; a reviewer
+        # reproduced four of four admitted on one typed record with the lock unsupported.
+        @contextlib.contextmanager
+        def unsupported(*_args: object, **_kwargs: object) -> Iterator[str]:
+            yield runtime_io.LOCK_UNSUPPORTED
+
+        self.typed("drift")
+        with mock.patch.object(runtime_io, "held_file_lock", unsupported):
+            self.assertEqual(typed_press.UNCONFIRMED, self.admit("drift"))
+        self.assertEqual("", self.admit("drift"))
+
+    def test_forget_keeps_the_commands_a_person_already_paid_for(self) -> None:
+        # The record guards the spend, as the spend timestamps do, and holds no words.
+        root = self.path.parents[3]
+        environ = isolated_environment(str(root / "state"), str(root))
+        config = build_runtime_config(
+            environ=environ, platform_name="linux", os_name="posix", launcher_path=root / "x.py"
+        )
+        self.typed("drift")
+        self.session.save(self.path)
+        self.assertEqual("", typed_press.admit(config, str(self.path), "drift")[0])
+        with no_instance(), mock.patch.object(runtime_io, "diag"):
+            run_one_shot_cli(["--forget"], environ)
+        self.assertTrue(typed_press.store_path(config).exists())
+        self.assertEqual(
+            typed_press.REQUIRED, typed_press.admit(config, str(self.path), "drift")[0]
+        )
 
     def test_a_tail_that_cuts_a_line_reads_only_whole_records(self) -> None:
         self.typed("drift")
@@ -136,7 +184,7 @@ class TypedPressTest(TypedPressCase):
 class ReadingRouteTest(TypedPressCase):
     """The reading route asks the guard only for a press the client marked as from a session."""
 
-    def handler(self) -> Any:
+    def handler(self, *, starts: bool) -> Any:
         handler: Any = object.__new__(http_api._RequestHandler)
         state = build_runtime_state(self.config, started=0.0)
         handler.server = SimpleNamespace(
@@ -145,12 +193,18 @@ class ReadingRouteTest(TypedPressCase):
         handler._send = mock.Mock()
         handler._reject = mock.Mock()
         handler._reading_refusal = mock.Mock(return_value=None)
-        handler._reading_press = mock.Mock()
+
+        def reading_press(*_args: object) -> None:
+            # What `_reading_press` does once a job has started, or leaves undone on a refusal.
+            if starts:
+                handler._press_started = True
+
+        handler._reading_press = mock.Mock(side_effect=reading_press)
         return handler
 
-    def press(self, **fields: Any) -> Any:
+    def press(self, *, starts: bool = True, **fields: Any) -> Any:
         self.session.save(self.path)
-        handler = self.handler()
+        handler = self.handler(starts=starts)
         body = {"harness": "claude", "sid": "abc", "press": True, "observer_model": 1, **fields}
         with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
             handler._reading_dispatch(body)
@@ -177,6 +231,27 @@ class ReadingRouteTest(TypedPressCase):
         self.press(typed_action="drift again")._reading_press.assert_called_once()
         handler = self.press(typed_action="drift again")
         self.assertEqual(typed_press.REQUIRED, self.refused_with(handler))
+
+    def test_a_press_refused_downstream_leaves_the_typed_command_for_a_retry(self) -> None:
+        # The daily cap, a pause, consent, a changed revision or a reading already running.
+        self.typed("drift again")
+        self.press(typed_action="drift again", starts=False)._reading_press.assert_called_once()
+        self.press(typed_action="drift again")._reading_press.assert_called_once()
+        handler = self.press(typed_action="drift again")
+        self.assertEqual(typed_press.REQUIRED, self.refused_with(handler))
+
+    def test_a_press_that_fails_on_the_way_leaves_the_typed_command_for_a_retry(self) -> None:
+        self.typed("drift")
+        self.session.save(self.path)
+        handler = self.handler(starts=False)
+        handler._reading_press.side_effect = RuntimeError("no thread")
+        body = {"harness": "claude", "sid": "abc", "press": True, "typed_action": "drift"}
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            self.assertRaises(RuntimeError),
+        ):
+            handler._reading_dispatch(body)
+        self.press(typed_action="drift")._reading_press.assert_called_once()
 
     def test_a_press_from_a_shell_or_the_page_is_unaffected(self) -> None:
         self.session.model_started_compass("Keep going.")
