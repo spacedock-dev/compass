@@ -9802,3 +9802,23 @@ metadata is unknown without discarding an otherwise valid assessment. Existing o
 cancellation and Clear barriers govern persistence and publication. Measurements establish no
 accuracy result and change no verdict. Module ownership remains in the
 [runtime architecture](design-runtime-architecture.md).
+
+### Owner ruling 2026-11-06: a remote settings cache is dynamic only when it can change the model
+
+Claude Code's server-managed cache (`~/.claude/remote-settings.json`, or under `CLAUDE_CONFIG_DIR`)
+used to count as dynamic policy whenever it existed. On a machine whose organization manages
+only something unrelated, such as `channelsEnabled`, every Analyze drift refused with "this route
+uses managed policy that can change at launch", though nothing in the cache could change the model
+or its window.
+
+The owner ruled that a cache holding no key able to change the model, model switching, the context
+window, compaction or fallback is not dynamic, and that Analyze may use the route. The rule is an
+allowlist: the cache is dynamic unless every top-level key is in `_REMOTE_HARMLESS`
+(`$schema`, `channelsEnabled`, `companyAnnouncements`, `cleanupPeriodDays`, `includeCoAuthoredBy`,
+`attribution`), so a key Claude Code adds later refuses until someone reads it and adds it. Keys
+Compass cannot prove harmless, `env`, `permissions` and `hooks` among them, refuse; so does any
+key already inspected (`modelOverrides`, `forceRemoteSettingsRefresh`, `policyHelper`, a gateway
+login, window and compaction limits). An empty cache is not dynamic. A cache that cannot be read
+or parsed still refuses as `context-config`. The refusal and the Next Analyze prompt allowance
+share one source, `claude_settings.resolve`, so the sentence and the refusal agree. As before, a
+read is not a policy receipt: `policy_verified` stays false.
