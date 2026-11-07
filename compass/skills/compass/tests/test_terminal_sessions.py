@@ -136,14 +136,17 @@ class ListProjectionTest(unittest.TestCase):
         for ask in payload["asks"]:
             ask["future_field"] = "unused"
         payload["history"] = {"large": "x" * 100_000}
+        payload["tripwires"] = {"enabled": True, "sources": [{"large": "x" * 100_000}]}
         before = copy.deepcopy(payload)
         projected = terminal_sessions.list_payload(payload)
         self.assertEqual(before, payload)
+        self.assertEqual({"enabled": True}, projected["tripwires"])
         self.assertEqual(
             {
                 "sessions",
                 "harnesses",
                 "generated",
+                "tripwires",
                 "ends_observable",
                 "ask",
                 "asks",
@@ -157,6 +160,12 @@ class ListProjectionTest(unittest.TestCase):
             "harness",
             "sid",
             "project",
+            "project_key",
+            "project_name",
+            "spacedock",
+            "subagents",
+            "subagent_hierarchy",
+            "subagent_events",
             "resume_id",
             "state",
             "state_detail",

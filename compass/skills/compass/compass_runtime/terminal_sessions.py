@@ -32,6 +32,7 @@ _LIST_FIELDS: Final = (
     "sessions",
     "harnesses",
     "generated",
+    "tripwires",
     "ends_observable",
     "ask",
     "asks",
@@ -42,6 +43,12 @@ _SESSION_FIELDS: Final = (
     "harness",
     "sid",
     "project",
+    "project_key",
+    "project_name",
+    "spacedock",
+    "subagents",
+    "subagent_hierarchy",
+    "subagent_events",
     "resume_id",
     "state",
     "state_detail",
@@ -98,6 +105,8 @@ def _project(value: Any, fields: tuple[str, ...]) -> Any:
 def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     """The terminal list's fields from one published snapshot, without its observation history."""
     result = {key: payload[key] for key in _LIST_FIELDS if key in payload}
+    if isinstance(result.get("tripwires"), dict):
+        result["tripwires"] = _project(result["tripwires"], ("enabled",))
     for key, fields in (
         ("sessions", _SESSION_FIELDS),
         ("harnesses", _HARNESS_FIELDS),

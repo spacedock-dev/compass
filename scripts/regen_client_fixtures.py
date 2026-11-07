@@ -993,6 +993,88 @@ def session_states_scenario(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """A project brief recorded through publication, including credential redaction."""
+    rows = {
+        "claude": [
+            synthetic_row(
+                "claude",
+                "a1b2c3d4",
+                "terminal-project",
+                title="Build the parser",
+                state="working",
+                resume_id="a1b2c3d4-1111-2222-3333-444455556666",
+                project_key="key-terminal-project",
+                instruction={"label": "asked", "text": "Build the parser", "at": NOW - 60},
+                subagents=[{"name": "Reader", "active": True, "assignment": "Review the parser"}],
+            ),
+            synthetic_row(
+                "claude",
+                "e5f6a7b8",
+                "terminal-project",
+                title="Review sk-abcdefghijklmnopqrstuvwxyz123456",
+                first_prompt="Synthetic peer review task.",
+                state="needs_input",
+                project_key="key-terminal-project",
+                instruction={
+                    "label": "asked",
+                    "text": "Check sk-abcdefghijklmnopqrstuvwxyz123456",
+                    "at": NOW - 20,
+                },
+            ),
+            synthetic_row(
+                "claude",
+                "deadbeef",
+                "terminal-project",
+                title="Finished migration",
+                state="working",
+                project_key="key-terminal-project",
+                ended_at=NOW - 100,
+                subagent_events=[
+                    {
+                        "kind": "subagent_complete",
+                        "name": "Writer",
+                        "at": NOW - 700,
+                        "assignment": "Write migration",
+                        "result": "Migration written",
+                        "source": "parent dispatch",
+                    }
+                ],
+            ),
+        ],
+        "codex": [
+            synthetic_row(
+                "codex",
+                "019c0000-1111-7222-8333-444455556666",
+                "terminal-project",
+                title="Document the parser",
+                project_key="key-terminal-project",
+                age=90,
+            )
+        ],
+    }
+    rig = Rig(scratch, "terminal-project", rows=rows)
+    try:
+        rig.write_transcript(
+            "a1b2c3d4",
+            [_transcript_entry("user", "Build the parser with bounded input", NOW - 60, 0)],
+        )
+        for name, path, query in (
+            ("data-terminal-project", "/api/data", ""),
+            ("sessions-terminal-project", "/api/sessions", ""),
+            ("context-terminal-project", "/api/project-context", "project=key-terminal-project"),
+        ):
+            recorder.capture(
+                rig,
+                name,
+                get(path, query),
+                "Four project members: working, waiting, ended and quiet; "
+                "child execution and redacted peer words.",
+            )
+    finally:
+        rig.close()
+
+
 SESSION = {"harness": "claude", "sid": "a1b2c3d4"}
 HOST_PORT_MISMATCH = "http://127.0.0.1:1"
 
@@ -1921,6 +2003,7 @@ def unsupported_record_scenario(recorder: Recorder, scratch: Scratch) -> None:
 SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
     data_scenarios,
     session_states_scenario,
+    terminal_project_scenario,
     stream_scenarios,
     context_scenarios,
     unsupported_record_scenario,

@@ -1,0 +1,227 @@
+{
+  "format": 1,
+  "name": "context-terminal-project",
+  "notes": "Four project members: working, waiting, ended and quiet; child execution and redacted peer words.",
+  "request": {
+    "body": null,
+    "headers": {},
+    "method": "GET",
+    "path": "/api/project-context",
+    "query": "project=key-terminal-project"
+  },
+  "response": {
+    "body": {
+      "child_assignments": [],
+      "events": [
+        {
+          "at": 1899999940.0,
+          "harness": "claude",
+          "intent_promotable": true,
+          "kind": "steer",
+          "phase": "user-role instruction",
+          "sid": "a1b2c3d4",
+          "source": "timestamped non-meta user-role record",
+          "title": "Build the parser with bounded input"
+        }
+      ],
+      "focus": null,
+      "observer_model": {
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause model calls or --no-observer-model stops these calls.",
+        "enabled": false,
+        "max_prompt_bytes": 16384
+      },
+      "observers": [],
+      "project": "key-terminal-project",
+      "semantic": {
+        "contributors": [],
+        "facts": [
+          {
+            "actor_claim": "timestamped non-meta user-role record",
+            "at": 1899999940.0,
+            "evidence": {
+              "confidence": "exact",
+              "source": "timestamped non-meta user-role record"
+            },
+            "fact_id": "fact:f10b33838b55b534",
+            "intent_promoted": true,
+            "scope": "session",
+            "source_kind": "steer",
+            "source_session": {
+              "harness": "claude",
+              "sid": "a1b2c3d4"
+            },
+            "summary": "Build the parser with bounded input",
+            "type": "user_message",
+            "work_item_id": null
+          }
+        ],
+        "history": {
+          "cursors": {
+            "claude:a1b2c3d4": {
+              "at": 1899999940.0,
+              "event_id": "fact:f10b33838b55b534"
+            }
+          },
+          "event_count": 1,
+          "events": [
+            {
+              "at": 1899999940.0,
+              "event_id": "fact:f10b33838b55b534",
+              "event_type": "operator_direction",
+              "source_identity": "claude:a1b2c3d4",
+              "source_ref": "fact:f10b33838b55b534",
+              "summary": "Build the parser with bounded input",
+              "work_binding": null
+            }
+          ],
+          "persisted": true,
+          "window_sec": 86400
+        },
+        "projections": {
+          "activity": {
+            "current_after": 1899999100.0,
+            "historical_dispatches": 0,
+            "historical_unresolved": 0,
+            "history_nodes": [],
+            "nodes": [],
+            "steering": []
+          },
+          "assignments": [],
+          "candidate_goal_shifts": [],
+          "command_attention": [],
+          "command_attention_coverage": {
+            "omitted": 0,
+            "scanned": 2,
+            "source": "bounded active-session final-output scan",
+            "state": "complete",
+            "total": 2
+          },
+          "operator_intents": [
+            {
+              "at": 1899999940.0,
+              "confidence": "derived-deterministic",
+              "derived_from": "fact:f10b33838b55b534",
+              "kind": "operator_intent",
+              "projection_id": "intent:27b3bbfdbe3bd8bd",
+              "summary": "Build the parser with bounded input"
+            }
+          ],
+          "steering_episodes": [],
+          "trail_heads": []
+        },
+        "relations": [
+          {
+            "confidence": "exact",
+            "from": "intent:27b3bbfdbe3bd8bd",
+            "provenance": "bounded semantic-line extraction",
+            "to": "fact:f10b33838b55b534",
+            "type": "derived_from"
+          }
+        ],
+        "work_items": []
+      },
+      "sources": {
+        "gate": {
+          "live": 0,
+          "status_history": "unavailable",
+          "untimestamped_prepare": 0
+        },
+        "observer": {
+          "live": 0,
+          "omitted": [],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            }
+          ]
+        },
+        "scope": "selected project",
+        "steer": {
+          "live": 1,
+          "omitted": [],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            }
+          ]
+        },
+        "surrounding_active": 0,
+        "work": {
+          "live": 0,
+          "omitted": [],
+          "support": {
+            "collapsed_contributors": 0,
+            "dispatch_builds": 0,
+            "pending_subagents": 0,
+            "subagent_calls": 0,
+            "suppressed_tool_calls": 0,
+            "tool_calls": 0
+          },
+          "tool_reports": [
+            {
+              "background": 0,
+              "background_more": 0,
+              "background_unpaired": 0,
+              "check_runs": 0,
+              "ci_failed": 0,
+              "ci_not_recorded": 0,
+              "ci_passed": 0,
+              "command_failed": 0,
+              "command_not_recorded": 0,
+              "command_passed": 0,
+              "commands": 0,
+              "distinct_checks": 0,
+              "failed": 0,
+              "harness": "claude",
+              "last_changing_command_at": null,
+              "last_user_at": 1899999940.0,
+              "listed": 0,
+              "more": 0,
+              "not_recorded": 0,
+              "not_run": 0,
+              "other_commands": 0,
+              "outside_paths": 0,
+              "passed": 0,
+              "pull_requests": 0,
+              "read_only_commands": 0,
+              "shell_calls": 0,
+              "sid": "a1b2c3d4",
+              "skills_used": 0,
+              "subagent_transcripts": 0,
+              "subagent_transcripts_unread": 0,
+              "unknown_flags": 0,
+              "window_start": null,
+              "window_written_paths": 0,
+              "write_attempts": 0,
+              "written_paths": 0
+            }
+          ],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            }
+          ]
+        }
+      },
+      "workflow_discovery": {
+        "reason": "project root unavailable from observed sessions",
+        "source": "spacedock status --discover",
+        "state": "unavailable",
+        "workflows": []
+      }
+    },
+    "headers": {
+      "Cache-Control": "no-store",
+      "Content-Length": "3836",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}

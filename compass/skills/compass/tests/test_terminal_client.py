@@ -815,6 +815,21 @@ class SessionsCommandTest(HomeCase):
             self.assertEqual(BOARD, terminal_client.read_sessions(fake.port))
         self.assertEqual([("GET", "/api/sessions")], fake.requests)
 
+    def test_a_person_using_a_short_list_budget_does_not_wait_it_twice_for_an_older_dashboard(
+        self,
+    ) -> None:
+        answers: dict[str, tuple[int, dict[str, str], bytes]] = {
+            "/api/sessions": (404, {}, b"{}"),
+            "/api/data": (200, {}, json.dumps(BOARD).encode()),
+        }
+        with (
+            FakeDashboard(answers=answers, delays={"/api/sessions": 0.2, "/api/data": 0.2}) as fake,
+            self.assertRaises(terminal_client.UnreadableSessionsError),
+        ):
+            terminal_client.read_sessions(fake.port, timeout=0.3)
+
+        self.assertIn(("GET", "/api/data"), fake.requests)
+
     def test_a_person_with_an_older_dashboard_still_reads_their_sessions(self) -> None:
         board = {**PAYLOAD, "history": {"pad": "x" * (terminal_client.REPLY_CAP_BYTES + 1)}}
         answers = {

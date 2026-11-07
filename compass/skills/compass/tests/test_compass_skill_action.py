@@ -392,6 +392,11 @@ class TheRecogniserTest(unittest.TestCase):
 
 
 class TheTypedCommandIsNotTheReadersMessageTest(_Case):
+    def test_a_persons_project_action_is_left_out_of_later_instructions(self) -> None:
+        self.session.compass("project")
+        events = project_context.instruction_events(self.config, self.save(), "claude", SHORT)
+        self.assertEqual([FIRST], [event["title"] for event in events])
+
     def setUp(self) -> None:
         super().setUp()
         self.first_at = self.session.asked(FIRST)
