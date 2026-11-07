@@ -3835,7 +3835,11 @@ Live monitor lease stands. It holds no title, no path, no prompt, no session id 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
 request over it (`test_footer_lines`). A file is rewritten when its content changes and otherwise
 every 15 seconds, so its time says it was confirmed recently. Idle refreshes also check lease
-endings. An end clears the level while waiting counts keep refreshing; a monitored session that
+endings. Other sessions changing the board leave the last projected level visible. Changes to this
+session's saved intent, annotation fields, row inputs, view settings or record file stamp hide it until
+the next projection, at most once per 15 seconds. Checking the file stamp reads no record page.
+An end or restart clears the level at once. Slow projections cannot restore a level from an earlier
+lease episode or superseded inputs. Waiting counts keep refreshing; a monitored session that
 leaves the board gets one final write, retried if it fails. The client shows an end note for five
 minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness

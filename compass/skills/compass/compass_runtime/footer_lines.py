@@ -48,6 +48,8 @@ class MonitorSource(Protocol):
 
     def state(self, row: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
+    def record_stamp(self, row: Mapping[str, Any]) -> object: ...
+
     def view(
         self, collection: Mapping[str, Any], row: Mapping[str, Any], lease: Mapping[str, Any]
     ) -> Mapping[str, Any] | None: ...
@@ -154,6 +156,36 @@ def _content(body: Body) -> Body:
     return {k: v for k, v in body.items() if k != "at"}
 
 
+def _projection_inputs(collection: Mapping[str, Any], row: Mapping[str, Any]) -> object:
+    # Display ages, counts and neighbours change on a busy board without changing this view.
+    # Keep the row inputs of drift_view.derive and the settings it reads from the payload.
+    fields = (
+        "harness",
+        "sid",
+        "project",
+        "project_key",
+        "state",
+        "ended_at",
+        "copied_prompts",
+        "instruction",
+        "first_prompt",
+        "first_prompt_at",
+        "first_prompt_control",
+        "prompt_states_work",
+        "title",
+        "prompt_at",
+        "session_goal",
+    )
+    routes = collection.get("reading_routes")
+    return (
+        {key: row.get(key) for key in fields},
+        {key: value for key, value in row.items() if key.startswith("annotation_")},
+        collection.get("annotate"),
+        collection.get("annotate_unreadable"),
+        routes.get(row["harness"]) if isinstance(routes, dict) else None,
+    )
+
+
 class Lines:
     """Writes the files and keeps them fresh. Nothing here raises into a caller."""
 
@@ -179,7 +211,8 @@ class Lines:
         self._said = False
         self._monitor = monitor
         self._collection: Body = {}
-        self._generation = 0
+        self._inputs: dict[str, object] = {}
+        self._generations: dict[str, object] = {}
         self._sessions: dict[str, Mapping[str, Any]] = {}
         self._ambiguous: set[str] = set()
         # Desired bodies survive write failure. In particular, an end must never fall back to
@@ -208,11 +241,6 @@ class Lines:
                 if identities[(row["harness"], row["sid"])] != 1
             }
             with self._lock:
-                if {k: v for k, v in snapshot.items() if k != "generated"} != {
-                    k: v for k, v in self._collection.items() if k != "generated"
-                }:
-                    self._generation += 1
-                    self._levels.clear()
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -230,6 +258,8 @@ class Lines:
                     elif name not in self._retired:
                         self._desired.pop(name, None)
                     self._levels.pop(name, None)
+                    self._inputs.pop(name, None)
+                    self._generations.pop(name, None)
                 self._collection = snapshot
                 self._sessions = sessions
                 self._ambiguous = ambiguous
@@ -239,8 +269,9 @@ class Lines:
                     self._retired.discard(name)
                     self._desired[name] = body
                     row = sessions[name]
-                    if name not in self._ambiguous:
-                        self._apply_state(name, self._state(row))
+                    self._apply_state(
+                        name, self._state(row) if name not in self._ambiguous else {"on": False}
+                    )
                 self._flush(now)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
@@ -248,9 +279,23 @@ class Lines:
     def _state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
         return self._monitor.state(row) if self._monitor is not None else {"on": False}
 
+    def _current_state(self, name: str) -> Mapping[str, Any]:
+        if name not in self._current:
+            return {"on": False}
+        lease = self._state(self._sessions[name]) if name not in self._ambiguous else {"on": False}
+        self._apply_state(name, lease)
+        return lease
+
     def _apply_state(self, name: str, lease: Mapping[str, Any]) -> None:
         body = self._desired[name]
         on = lease.get("on") is True
+        if on and self._monitor is not None:
+            row = self._sessions[name]
+            inputs = (_projection_inputs(self._collection, row), self._monitor.record_stamp(row))
+            if name not in self._inputs or inputs != self._inputs[name]:
+                self._inputs[name] = inputs
+                self._generations[name] = object()
+                self._levels.pop(name, None)
         cached = self._levels.get(name)
         body["monitor"] = on
         body["last_end"] = None if on else lease.get("last_end")
@@ -261,6 +306,8 @@ class Lines:
         )
         if not on:
             self._levels.pop(name, None)
+            self._inputs.pop(name, None)
+            self._generations.pop(name, None)
 
     def _flush(self, now: float) -> None:
         wrote = False
@@ -283,7 +330,7 @@ class Lines:
 
         The coordinator calls this after collection has released its non-reentrant lock. Reserve
         attempts before releasing our lock, so concurrent touches cannot multiply transcript reads.
-        Recheck both lease episode and collection generation before accepting a slow answer.
+        Recheck both lease episode and this session's inputs before accepting a slow answer.
         """
         jobs = []
         reserved: set[str] = set()
@@ -301,7 +348,9 @@ class Lines:
                         ):
                             self._inflight.add(name)
                             reserved.add(name)
-                            jobs.append((name, row, lease, self._collection, self._generation))
+                            jobs.append(
+                                (name, row, lease, self._collection, self._generations[name])
+                            )
                     except Exception as exc:  # noqa: BLE001 - one lease cannot block its neighbours
                         self._report(exc)
                 self._flush(now)
@@ -309,15 +358,11 @@ class Lines:
                 view = None
                 try:
                     with self._lock:
-                        current = (
-                            self._state(self._sessions[name])
-                            if name in self._current and name not in self._ambiguous
-                            else {"on": False}
-                        )
+                        current = self._current_state(name)
                         ready = (
                             current.get("on") is True
                             and current.get("started_at") == lease.get("started_at")
-                            and generation == self._generation
+                            and generation is self._generations.get(name)
                         )
                     if ready and self._monitor is not None:
                         with self._lock:
@@ -331,15 +376,11 @@ class Lines:
                         self._inflight.discard(name)
                         reserved.discard(name)
                         if name in self._current:
-                            current = (
-                                self._state(self._sessions[name])
-                                if name not in self._ambiguous
-                                else {"on": False}
-                            )
+                            current = self._current_state(name)
                             if (
                                 current.get("on") is True
                                 and current.get("started_at") == lease.get("started_at")
-                                and generation == self._generation
+                                and generation is self._generations.get(name)
                             ):
                                 pill = view.get("pill") if view is not None else None
                                 level = pill.get("level") if isinstance(pill, dict) else None
@@ -366,7 +407,8 @@ class Lines:
             self._retired.clear()
             self._levels.clear()
             self._attempted.clear()
-            self._generation += 1
+            self._inputs.clear()
+            self._generations.clear()
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)

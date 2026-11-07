@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from itertools import pairwise
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
@@ -516,6 +517,10 @@ class MonitorSource:
     def state(self, session: Any) -> dict[str, Any]:
         return self.leases.get(session["sid"], {"on": False})
 
+    def record_stamp(self, session: Any) -> object:
+        del session
+        return None
+
     def view(self, collection: Any, session: Any, lease: Any) -> dict[str, Any]:
         del collection, lease
         self.calls.append(session["sid"])
@@ -556,6 +561,103 @@ class MonitorLinesTest(unittest.TestCase):
         self.publish()
         self.assertEqual((True, "medium"), (self.body()["monitor"], self.body()["level"]))
         self.assertEqual(["short-id"], self.source.calls)
+
+    def test_a_person_keeps_seeing_their_level_while_other_sessions_change_the_board(self) -> None:
+        self.collection["sessions"].append(row("claude", "other"))
+        clock = [NOW]
+        starts: list[float] = []
+        original = self.source.view
+
+        def view(collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+            starts.append(clock[0])
+            return original(collection, session, lease)
+
+        with (
+            mock.patch.object(time, "monotonic", side_effect=lambda: clock[0]),
+            mock.patch.object(self.source, "view", side_effect=view),
+        ):
+            self.publish()
+            for age in range(2, 61, 2):
+                with self.subTest(age=age):
+                    clock[0] = NOW + age
+                    other = self.collection["sessions"][1]
+                    other.update(last_activity=NOW + age, annotation_revision=age)
+                    other["state"] = "needs_input" if age % 4 == 0 else "working"
+                    self.collection["generated"] = NOW + age
+                    self.lines.update(self.collection, NOW + age)
+                    self.assertEqual("medium", self.body()["level"])
+                    self.assertEqual(int(age % 4 == 0), self.body()["waiting"])
+                    self.lines.touch(NOW + age)
+                    self.assertEqual("medium", self.body()["level"])
+        self.assertGreaterEqual(len(starts), 4)
+        self.assertLessEqual(len(starts), 5)
+        self.assertTrue(all(b - a >= 15 for a, b in pairwise(starts)))
+
+    def test_a_person_who_changes_their_goal_sees_the_old_level_hidden_until_reprojected(
+        self,
+    ) -> None:
+        self.collection["sessions"][0].update(annotation_goal="Ship the fix", annotation_revision=1)
+        self.publish()
+        self.collection["sessions"][0].update(
+            annotation_goal="Explain the fix", annotation_revision=2
+        )
+        self.source.views["short-id"] = {"pill": {"level": "low"}}
+        self.lines.update(self.collection, NOW + 1)
+        self.assertIs(self.body()["monitor"], True)
+        self.assertIsNone(self.body()["level"])
+        self.lines.touch(NOW + 14)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual(["short-id"], self.source.calls)
+        self.lines.touch(NOW + 15)
+        self.assertEqual("low", self.body()["level"])
+
+    def test_a_person_keeps_their_level_when_only_their_display_age_changes(self) -> None:
+        self.publish()
+        self.collection["sessions"][0]["age"] = "a minute ago"
+        self.lines.update(self.collection, NOW + 1)
+        self.assertEqual("medium", self.body()["level"])
+
+    def test_a_person_sees_the_old_level_hidden_when_their_own_row_changes(self) -> None:
+        self.publish()
+        self.collection["sessions"][0]["first_prompt"] = "A new direction"
+        self.lines.update(self.collection, NOW + 1)
+        self.assertIsNone(self.body()["level"])
+        self.lines.touch(NOW + 14)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual(["short-id"], self.source.calls)
+
+    def test_a_person_still_gets_a_slow_projection_while_other_sessions_change(self) -> None:
+        self.lines.update(self.collection, NOW)
+        self.source.entered, self.source.release = threading.Event(), threading.Event()
+        worker = threading.Thread(target=self.lines.touch, args=(NOW,))
+        worker.start()
+        try:
+            self.assertTrue(self.source.entered.wait(10))
+            self.collection["sessions"].append(row("claude", "other"))
+            self.lines.update(self.collection, NOW + 1)
+        finally:
+            self.source.release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual("medium", self.body()["level"])
+
+    def test_a_person_never_sees_a_slow_projection_from_before_their_monitor_restart(self) -> None:
+        self.lines.update(self.collection, NOW)
+        self.source.entered, self.source.release = threading.Event(), threading.Event()
+        worker = threading.Thread(target=self.lines.touch, args=(NOW,))
+        worker.start()
+        try:
+            self.assertTrue(self.source.entered.wait(10))
+            self.source.leases["short-id"] = {"on": True, "started_at": NOW + 1}
+            self.lines.touch(NOW + 1)
+        finally:
+            self.source.release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.body()["monitor"], True)
+        self.assertIsNone(self.body()["level"])
+        self.lines.touch(NOW + 15)
+        self.assertEqual("medium", self.body()["level"])
 
     def test_a_person_with_the_monitor_off_never_publishes_a_saved_level(self) -> None:
         self.source.leases.clear()
@@ -883,6 +985,40 @@ class FooterProviderTest(unittest.TestCase):
 
 
 class FooterAssemblyTest(LeaseRoute):
+    def test_a_person_whose_record_changes_sees_the_old_level_hidden_until_reprojected(
+        self,
+    ) -> None:
+        app = self.app()
+        collected = json.loads(app.collect_json(show_all=False)[1])
+        session = next(r for r in collected["sessions"] if r["sid"] == SHORT)
+        source = http_api.FooterMonitorSource(app)
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.object(source, "state", return_value={"on": True, "started_at": NOW}),
+            mock.patch.object(source, "view", return_value={"pill": {"level": "medium"}}) as view,
+            mock.patch.object(time, "monotonic", return_value=0.0),
+        ):
+            lines = footer_lines.Lines(home, monitor=source)
+            name = session.get("resume_id") or session["sid"]
+            path = os.path.join(home, "footer", footer_lines.line_name("claude", name))
+
+            def level() -> Any:
+                with open(path, encoding="utf-8") as handle:
+                    return json.load(handle)["level"]
+
+            lines.update(collected, NOW)
+            lines.touch(NOW)
+            self.assertEqual("medium", level())
+            self.session.bash("pytest", "1 failed", is_error=True)
+            self.session.save(self.path)
+            lines.touch(NOW + 1)
+            self.assertIsNone(level())
+            self.assertEqual(1, view.call_count)
+            view.return_value = {"pill": {"level": "high"}}
+            lines.touch(NOW + 15)
+            self.assertEqual("high", level())
+            self.assertEqual(2, view.call_count)
+
     def test_a_person_sees_a_failed_check_from_the_record_as_the_page_does(self) -> None:
         self.session.write(self.session.cwd + "/src/a.py")
         self.session.bash("pytest", "1 failed, 4 passed", is_error=True)

@@ -870,6 +870,19 @@ class FooterMonitorSource:
         )
         return published
 
+    def record_stamp(self, row: Mapping[str, Any]) -> object:
+        """Notice record changes without spending another context or record-page read."""
+        path = runtime_observer.resolve_transcript(
+            self.application.config, self.application.state, str(row["harness"]), str(row["sid"])
+        )
+        if not path:
+            return None
+        try:
+            info = os.stat(path)
+        except OSError:
+            return (path, None)
+        return (path, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
     def view(
         self, collection: Mapping[str, Any], row: Mapping[str, Any], lease: Mapping[str, Any]
     ) -> Mapping[str, Any] | None:
