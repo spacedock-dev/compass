@@ -382,6 +382,7 @@ ROW_SUMMARY = "A session summary, on open of a finished session or on a press"
 ROW_MONITOR = (
     "A Live monitor check, about once a minute "
     "while you view a Claude Code session with the switch on"
+    " or a terminal holder keeps the lease"
 )
 ROW_CI = "A press for a reading that reads a pull request's CI checks"
 ROW_GIT = "The git probe, and the committed-file read of a project's check scripts"

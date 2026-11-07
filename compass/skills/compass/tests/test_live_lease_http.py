@@ -151,6 +151,31 @@ class TheRoundTrip(LeaseRoute):
             )
 
 
+class AReaderChoosesTheHolderKind(LeaseRoute):
+    def test_a_terminal_reader_gets_no_browser_clock_and_an_older_caller_gets_one(self) -> None:
+        with self.serving() as port:
+            status, terminal = self.lease(port, "start", holder_kind="terminal")
+            self.assertEqual((200, True), (status, terminal["ok"]))
+            self.assertIsNone(terminal["state"]["deadline"])
+            _, beat = self.lease(port, "beat", holder_kind="browser")
+            self.assertIsNone(beat["state"]["deadline"])
+            self.lease(port, "stop")
+            _, browser = self.lease(port, "start")
+            self.assertIsNotNone(browser["state"]["deadline"])
+
+    def test_a_reader_sending_a_malformed_kind_is_refused_before_collection_or_a_lease(
+        self,
+    ) -> None:
+        with self.serving() as port, mock.patch.object(http_api, "_lease_row") as collect:
+            kinds: tuple[Any, ...] = (None, "", "Terminal", "other", 1, True, [], {})
+            for kind in kinds:
+                with self.subTest(kind=kind):
+                    status, _ = self.lease(port, "start", holder_kind=kind)
+                    self.assertEqual(400, status)
+                    self.assertIsNone(self.application.live_leases)
+                    collect.assert_not_called()
+
+
 class AHiddenTabStartsWithoutTicks(LeaseRoute):
     def test_a_start_that_says_the_tab_is_hidden_holds_the_lease_and_is_not_visible(self) -> None:
         with self.serving() as port:

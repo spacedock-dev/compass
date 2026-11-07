@@ -12,7 +12,7 @@ reader's action starts (a focused refresh for a goal line, a press for a reading
 finished session or a press for a session summary) runs without a prior question and shows a
 one-time, non-blocking notice naming what is sent and where, with its off switch beside it: Pause
 model calls for a reading or a goal line, Turn off summaries for a summary. Turning on the Live monitor
-starts a Haiku check about once a minute for as long as the session is viewed, and shows its own notice. Unasked drift checks stay off by default, and `--no-observer-model` refuses
+starts a Haiku check about once a minute while the session is viewed or a terminal holder keeps the lease, and shows its own notice. Unasked drift checks stay off by default, and `--no-observer-model` refuses
 every model call.
 [Observer model calls](#observer-model-calls) states its bounds;
 [Light harness usage](#light-harness-usage-asking-a-harness-a-bounded-question) states the notice rule.
@@ -397,7 +397,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | An optional goal summary | A Codex goal call, on by default for a focused refresh with a notice. | The same refusal | `test_documentation.LightHarnessUsageContractDocumentationTest.test_the_observer_pathway_defaults_on_and_has_both_rollback_spellings` checks that the switch reaches the configuration. None runs a goal summary with a process patched to raise, so that half rests on the shared runner above. |
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model, and writes nothing. Its processes are the read-only committed-file `git` read of a project's check scripts and, for a recorded CI poll, the two fixed identity `git` commands (`rev-parse HEAD`, `config --get remote.origin.url`). | `--no-git` stops both reads | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class and connection, and refuses any process but the four committed-file `git` reads (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`); its session holds no CI poll, so it does not reach the identity commands. For a session that holds a poll, `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` pins that `--no-git` starts no process, and `test_command_tiers.ACiPollInRealCheckouts` runs the identity reads against real repositories |
-| A Live monitor check, about once a minute while you view a Claude Code session with the switch on | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the switch, leaving the session, hiding the tab, the session ending, and the 20-minute question | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
+| A Live monitor check, about once a minute while you view a Claude Code session with the switch on or a terminal holder keeps the lease | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the last holder leaving or lapsing, session end and caps; browser holders also stop at their consent deadline or No, and a hidden tab cannot drive checks | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
 | The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | `--footer`, the status line segment | Nothing. It launches no program and opens no socket: it reads the JSON a Claude Code status line passes on standard input and one file the dashboard wrote, and prints one line. [The status line files](#the-status-line-files) owns what that file holds. | Not putting it in a status line | `test_footer.RunFooterTest.test_it_opens_no_socket`, `test_footer.FooterLightPathTest.test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client` |
 | The hook forwarders, the MCP server and the terminal client | Loopback only. The Python forwarders and the MCP server refuse a target that is not loopback, ignore proxy settings and refuse redirects. The terminal client reaches only the literal `127.0.0.1` with an integer port, ignores proxy settings and returns a redirect without following it, and discovers a dashboard from state file names and mtimes without opening a state file. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`; `test_terminal_client.RequestPathTest.test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.DiscoveryTest.test_no_state_file_is_ever_opened`; `test_terminal_sessions.SessionsPrintableTest.test_escape_sequences_and_bidi_controls_are_gone_from_every_printed_value`. None for the two JavaScript adapters. |
@@ -1169,10 +1169,10 @@ control does not render.
 The Claude Code CLI that Compass starts for a reading, a summary or the Live monitor is told not to
 persist a session, but it keeps its own local state under `~/.claude`, which Compass neither writes nor
 prunes and has not measured. A press passes redacted session text through it once. The Live monitor
-passes the recent window through it about once a minute for as long as the switch is on and the session
-is viewed, so the same exposure repeats at that cadence. It is accepted rather than solved, because the
-CLI's own storage is outside what Compass controls, and the switch, Pause model calls and the
-20-minute question are what bound how long it repeats. [The Live monitor](#the-live-monitor) owns the rest.
+passes the recent window through it about once a minute while a browser or terminal holder drives
+checks, so the same exposure repeats at that cadence. It is accepted rather than solved, because the
+CLI's own storage is outside what Compass controls. Holder heartbeats, Stop, Pause model calls and
+caps bound the repetition; browser holders also have the 20-minute question and consent deadline. [The Live monitor](#the-live-monitor) owns the rest.
 
 A row's attribution is unverified, as the ask lane's already is. A forged registration cannot make a
 window appear, because the target comes from a collector rather than from a request, but a reader
@@ -2921,8 +2921,8 @@ process that can rewrite the file.
 
 Ruled 2026-10-23 by the owner
 ([DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)).
-With the switch on and the session on screen, a Haiku check of the latest turns runs about once a
-minute and produces the live drift level. It is a call the reader starts, under
+With the switch on and the session on screen, or while a terminal holder keeps the lease, a Haiku
+check of new turns runs about once a minute and produces the live drift level. It is a call the reader starts, under
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
 with a `monitor` notice shown before the first charged call.
 
@@ -2936,14 +2936,24 @@ with a `monitor` notice shown before the first charged call.
   (default `claude-haiku-5-5`; only an explicit Haiku id is accepted, and the reading model's Sonnet floor is
   unchanged), with no tools and no session persistence, in a private working directory. It is never resumed into or injected into the watched
   session. Nothing is written into the session.
-- What holds it. A lease in memory, one per session, held by any number of tabs. A tab beats about every
-  20 seconds, and a visible tab that stops for 50 seconds has left. A hidden tab pauses the checks and
-  keeps the lease. The lease ends when the last tab leaves, the session ends, model calls are paused,
-  nobody answers the 20-minute question within 10 minutes, or a cap is spent. A restart starts with no
-  lease and makes no check until a page starts one.
-- What caps it. At least 60 seconds between two checks of a session, 30 checks per session per window,
-  and its own rolling 24-hour cap across the board (240 checks at present), kept apart from Analyze's. A check cancelled by an
-  Analyze press is not refunded.
+- What holds it. A lease in memory, one per session, shared by tabs and terminal holders. Each
+  beats about every 20 seconds. A visible tab or terminal holder that stops beating lapses after
+  50 seconds. A hidden browser tab keeps consent but cannot drive checks. The browser asks at
+  20 minutes and removes its holders if nobody answers within 10 minutes, or answers No. A
+  terminal start is consent and has no question or consent deadline. Browser expiry or No leaves
+  terminal holders running. The lease ends when its last holder leaves, the session ends or
+  disappears, model calls are paused, the server stops, or a cap is spent. A restart starts with
+  no lease and makes no check until a caller starts one.
+- What caps it. At least 60 seconds between checks of a session. The per-session allowance counts
+  30 charged attempts per browser consent window; Yes renews that allowance for a browser-only
+  monitor. Once a terminal joins, the allowance uses fixed 30-minute buckets anchored at its first
+  start. These are elapsed monitoring periods, not accumulated busy time. Only charged attempts
+  reset at a boundary; the level and evidence stay. Browser Yes and holders joining or leaving
+  do not replenish terminal buckets. The separate rolling 24-hour board cap is 240 charged
+  attempts, apart from Analyze's. An unchanged transcript or no new admitted turns sends nothing
+  and spends nothing. Failed or cancelled calls still consume a reserved attempt. A working
+  loop eventually stops at the board cap. The [terminal monitor ruling](docs/design-reading-a-session.md#terminal-monitor-lifetime-and-accounting)
+  records the lifetime and accounting rules.
 - What is not known yet. The page labels its level `Live monitor · Haiku`, and its accuracy check has not
   been run: it ships labelled and is qualified later, so read its level as an account of the latest turns,
   not a measurement.

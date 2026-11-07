@@ -456,11 +456,11 @@ _LEASE_ACTIONS = frozenset({"start", "beat", "confirm", "stop"})
 _TAB_ID_CAP = 128
 
 
-def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str, bool] | None:
+def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str, bool, str] | None:
     """A lease request's fields, or None when any is missing, mistyped or unbounded.
 
-    The last element is what the action carries: `visible` for a beat and `answer == "yes"`
-    for a confirm.
+    The final fields are what the action carries (`visible` or `answer == "yes"`) and
+    the validated holder kind. Only start uses kind; later actions preserve ownership.
     """
     if not isinstance(payload, dict):
         return None
@@ -484,18 +484,29 @@ def _lease_request(payload: Any, identity_cap: int) -> tuple[str, str, str, str,
     if action == "confirm" and payload.get("answer") not in {"yes", "no"}:
         return None
     visible = payload.get("visible", True)
-    if action in {"start", "beat"} and not isinstance(visible, bool):
+    kind = payload.get("holder_kind", "browser")
+    if (
+        (action in {"start", "beat"} and not isinstance(visible, bool))
+        or not isinstance(kind, str)
+        or kind not in {"browser", "terminal"}
+    ):
         return None
     extra = bool(visible) if action in {"start", "beat"} else payload.get("answer") == "yes"
-    return harness, sid, tab, action, extra
+    return harness, sid, tab, action, extra, kind
 
 
 def _lease_answer(
-    leases: live_lease.Leases, harness: str, sid: str, tab: str, action: str, extra: bool
+    leases: live_lease.Leases,
+    harness: str,
+    sid: str,
+    tab: str,
+    action: str,
+    extra: bool,
+    holder_kind: str = "browser",
 ) -> dict[str, Any]:
     """The lease's answer to one request already read and bounded."""
     if action == "start":
-        return leases.start(harness, sid, tab, visible=extra)
+        return leases.start(harness, sid, tab, visible=extra, holder_kind=holder_kind)
     if action == "beat":
         return leases.beat(harness, sid, tab, visible=extra)
     if action == "confirm":
