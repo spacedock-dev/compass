@@ -593,6 +593,47 @@ class MonitorLinesTest(unittest.TestCase):
         self.assertLessEqual(len(starts), 5)
         self.assertTrue(all(b - a >= 15 for a, b in pairwise(starts)))
 
+    def test_a_person_who_keeps_working_still_sees_their_last_level_until_it_is_rechecked(
+        self,
+    ) -> None:
+        clock = [NOW]
+        with (
+            mock.patch.object(time, "monotonic", side_effect=lambda: clock[0]),
+            mock.patch.object(self.source, "record_stamp", side_effect=lambda _row: clock[0]),
+        ):
+            self.publish()
+            self.source.views["short-id"] = {"pill": {"level": "high"}}
+            for age in range(1, 16):
+                with self.subTest(age=age):
+                    clock[0] = NOW + age
+                    self.collection["sessions"][0].update(
+                        state="working" if age % 2 else "idle",
+                        prompt_at=NOW + age,
+                        title=f"Working on step {age}",
+                    )
+                    self.lines.update(self.collection, NOW + age)
+                    self.assertEqual("medium", self.body()["level"])
+                    self.assertIs(self.body()["monitor"], True)
+                    self.assertIsNone(self.body()["last_end"])
+                    self.lines.touch(NOW + age)
+                    self.assertEqual("medium" if age < 15 else "high", self.body()["level"])
+                    self.assertEqual(["short-id"] * (1 if age < 15 else 2), self.source.calls)
+
+    def test_a_person_who_replaces_saved_intent_sees_the_old_level_hidden_until_rechecked(
+        self,
+    ) -> None:
+        self.collection["sessions"][0]["session_goal"] = {"text": "Ship the fix", "at": NOW}
+        self.publish()
+        self.collection["sessions"][0]["session_goal"] = {"text": "Explain the fix", "at": NOW + 1}
+        self.source.views["short-id"] = {"pill": {"level": "low"}}
+        self.lines.update(self.collection, NOW + 1)
+        self.assertIsNone(self.body()["level"])
+        self.lines.touch(NOW + 14)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual(["short-id"], self.source.calls)
+        self.lines.touch(NOW + 15)
+        self.assertEqual("low", self.body()["level"])
+
     def test_a_person_who_changes_their_goal_sees_the_old_level_hidden_until_reprojected(
         self,
     ) -> None:
@@ -617,14 +658,17 @@ class MonitorLinesTest(unittest.TestCase):
         self.lines.update(self.collection, NOW + 1)
         self.assertEqual("medium", self.body()["level"])
 
-    def test_a_person_sees_the_old_level_hidden_when_their_own_row_changes(self) -> None:
+    def test_a_person_keeps_the_old_level_until_rechecked_when_their_own_row_changes(self) -> None:
         self.publish()
         self.collection["sessions"][0]["first_prompt"] = "A new direction"
+        self.source.views["short-id"] = {"pill": {"level": "low"}}
         self.lines.update(self.collection, NOW + 1)
-        self.assertIsNone(self.body()["level"])
+        self.assertEqual("medium", self.body()["level"])
         self.lines.touch(NOW + 14)
-        self.assertIsNone(self.body()["level"])
+        self.assertEqual("medium", self.body()["level"])
         self.assertEqual(["short-id"], self.source.calls)
+        self.lines.touch(NOW + 15)
+        self.assertEqual("low", self.body()["level"])
 
     def test_a_person_still_gets_a_slow_projection_while_other_sessions_change(self) -> None:
         self.lines.update(self.collection, NOW)
@@ -828,7 +872,9 @@ class MonitorLinesTest(unittest.TestCase):
         self.assertEqual(["short-id"], ending.calls)
         self.assertIs(self.body("second")["monitor"], False)
 
-    def test_a_persons_changed_inputs_hide_the_cached_level_until_the_next_projection(self) -> None:
+    def test_a_persons_changed_annotation_revision_hides_the_cached_level_until_rechecked(
+        self,
+    ) -> None:
         self.publish()
         self.collection["sessions"][0]["annotation_revision"] = 2
         self.lines.update(self.collection, NOW + 1)
@@ -985,7 +1031,7 @@ class FooterProviderTest(unittest.TestCase):
 
 
 class FooterAssemblyTest(LeaseRoute):
-    def test_a_person_whose_record_changes_sees_the_old_level_hidden_until_reprojected(
+    def test_a_person_whose_record_changes_keeps_the_old_level_until_reprojected(
         self,
     ) -> None:
         app = self.app()
@@ -1012,7 +1058,7 @@ class FooterAssemblyTest(LeaseRoute):
             self.session.bash("pytest", "1 failed", is_error=True)
             self.session.save(self.path)
             lines.touch(NOW + 1)
-            self.assertIsNone(level())
+            self.assertEqual("medium", level())
             self.assertEqual(1, view.call_count)
             view.return_value = {"pill": {"level": "high"}}
             lines.touch(NOW + 15)

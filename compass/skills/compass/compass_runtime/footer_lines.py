@@ -212,6 +212,7 @@ class Lines:
         self._monitor = monitor
         self._collection: Body = {}
         self._inputs: dict[str, object] = {}
+        self._intents: dict[str, object] = {}
         self._generations: dict[str, object] = {}
         self._sessions: dict[str, Mapping[str, Any]] = {}
         self._ambiguous: set[str] = set()
@@ -259,6 +260,7 @@ class Lines:
                         self._desired.pop(name, None)
                     self._levels.pop(name, None)
                     self._inputs.pop(name, None)
+                    self._intents.pop(name, None)
                     self._generations.pop(name, None)
                 self._collection = snapshot
                 self._sessions = sessions
@@ -295,6 +297,13 @@ class Lines:
             if name not in self._inputs or inputs != self._inputs[name]:
                 self._inputs[name] = inputs
                 self._generations[name] = object()
+            # New work keeps the page's last level visible; replacing the words it measured
+            # against makes that level invalid even before the next bounded projection.
+            intent = tuple(
+                row.get(key) for key in ("session_goal", "annotation_goal", "annotation_revision")
+            )
+            if name not in self._intents or intent != self._intents[name]:
+                self._intents[name] = intent
                 self._levels.pop(name, None)
         cached = self._levels.get(name)
         body["monitor"] = on
@@ -307,6 +316,7 @@ class Lines:
         if not on:
             self._levels.pop(name, None)
             self._inputs.pop(name, None)
+            self._intents.pop(name, None)
             self._generations.pop(name, None)
 
     def _flush(self, now: float) -> None:
@@ -408,6 +418,7 @@ class Lines:
             self._levels.clear()
             self._attempted.clear()
             self._inputs.clear()
+            self._intents.clear()
             self._generations.clear()
 
     def _write(self, name: str, body: Body, now: float) -> bool:
