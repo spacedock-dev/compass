@@ -12,10 +12,12 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, override
+from urllib.parse import urlparse
 
 from compass_runtime import http_api, live_lease, monitor_store
 from compass_runtime import terminal_client as client
@@ -42,6 +44,7 @@ class ProcessTest(unittest.TestCase):
             "last_activity": time.time(),
             "ended_at": None,
         }
+        self.rows = [self.row]
         self.actions: list[dict[str, Any]] = []
         self.started = time.time() + 100
         config = dataclasses.replace(make_config(), state_dir=Path(self.home))
@@ -51,7 +54,7 @@ class ProcessTest(unittest.TestCase):
         self.addCleanup(self.leases.close)
         outer = self
 
-        class Handler(BaseHTTPRequestHandler):
+        class Handler(http_api._RequestHandler):
             def log_message(self, *_args: object) -> None:
                 pass
 
@@ -62,6 +65,7 @@ class ProcessTest(unittest.TestCase):
                 self.end_headers()
                 self.wfile.write(body)
 
+            @override
             def do_GET(self) -> None:
                 if self.path == "/api/health":
                     self.answer(
@@ -73,9 +77,14 @@ class ProcessTest(unittest.TestCase):
                             "version": client.release_version(),
                         }
                     )
+                elif urlparse(self.path).path == "/api/session":
+                    self._session(urlparse(self.path))
+                elif self.path == "/api/data":
+                    self.answer({"sessions": outer.rows})
                 else:
-                    self.answer({"sessions": [outer.row]})
+                    self.send_error(404)
 
+            @override
             def do_POST(self) -> None:
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 outer.actions.append(payload)
@@ -83,7 +92,12 @@ class ProcessTest(unittest.TestCase):
                 assert parsed is not None
                 self.answer(http_api._lease_answer(outer.leases, *parsed))
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        class Board(ThreadingHTTPServer):
+            application = types.SimpleNamespace(
+                collect_json=lambda **_kwargs: ("revision", json.dumps({"sessions": outer.rows}))
+            )
+
+        self.server = Board(("127.0.0.1", 0), Handler)
         worker = threading.Thread(target=self.server.serve_forever)
         worker.start()
         self.addCleanup(worker.join)
@@ -128,6 +142,31 @@ class ProcessTest(unittest.TestCase):
         if process.poll() is None:
             process.kill()
         process.communicate(timeout=5)
+
+    def test_a_person_finds_only_the_named_session_on_the_process_test_board(self) -> None:
+        reply = client.get(self.port, "/api/session?harness=claude&sid=" + NATIVE)
+        self.assertEqual(200, reply.status)
+        self.assertEqual({"session": self.row}, reply.data)
+        self.assertNotIn("sessions", reply.data)
+
+    def test_a_person_whose_session_is_absent_gets_no_other_session_from_the_process_test_board(
+        self,
+    ) -> None:
+        for harness, sid in (("codex", NATIVE), ("claude", "missing")):
+            with self.subTest(harness=harness, sid=sid):
+                reply = client.get(self.port, f"/api/session?harness={harness}&sid={sid}")
+                self.assertEqual(404, reply.status)
+                self.assertEqual({"reason": "not-found"}, reply.data)
+                self.assertNotIn("session", reply.data)
+
+    def test_a_person_with_an_ambiguous_id_gets_no_session_from_the_process_test_board(
+        self,
+    ) -> None:
+        self.rows = [self.row, {**self.row, "resume_id": "abcdefab-2222-4222-8222-222222222222"}]
+        reply = client.get(self.port, "/api/session?harness=claude&sid=" + SID)
+        self.assertEqual(409, reply.status)
+        self.assertEqual({"reason": "ambiguous"}, reply.data)
+        self.assertNotIn("session", reply.data)
 
     def test_two_people_starting_at_once_share_one_sidecar_and_off_preserves_the_browser(
         self,
@@ -205,7 +244,7 @@ class ProcessTest(unittest.TestCase):
         )
         parent = subprocess.Popen(
             [str(executable), "-c", command + "; sleep 30; :"],
-            env=self.env,
+            env={**self.env, "CLAUDE_CODE_SESSION_ID": NATIVE},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
