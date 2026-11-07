@@ -63,13 +63,15 @@ and the change would touch every caller.
 The client owns a command only when it is the whole argument list: today that is a lone `--version`,
 a lone `--pause-model-calls`, a lone `--sessions` or `--sessions waiting`, a lone `--footer`, which may carry its own `--session`,
 a lone `--drift` or `--drift again`, which may too, and `--monitor` with only `--off` and `--session`, and `--goal` with optional text,
-`--clear` or `--adopt` and its own `--session`.
+`--clear` or `--adopt` and its own `--session`. It also owns `--summary` with `--update` or
+`--again` and its own `--session`, and `--summaries off`. The full parser honors an explicit
+`--port` for those commands and refuses unrelated options.
 `--version` beside another option, `--footer` beside any other option (a usage error in `cli`),
 `--help` and everything else go to `cli` untouched, so argparse still judges combinations and usage
 errors as before. The exceptions are `--sessions` and `--drift` beside `--port`: `cli.main` dispatches
 them to the client too, because the parser would otherwise start a dashboard on that port. An operation the client
 owns is declared once, in `terminal_client.OPERATIONS`, and a value-taking option it owns in
-`terminal_client.OPTIONS`; `--off`, `--clear` and `--adopt` are dependent switches in `terminal_client.SWITCHES`. `cli.build_parser` registers each from those tables, so `--help`
+`terminal_client.OPTIONS`; `--off`, `--clear`, `--adopt`, `--update` and `--again` are dependent switches in `terminal_client.SWITCHES`. `cli.build_parser` registers each from those tables, so `--help`
 and the `MANUAL.md` option inventory stay authoritative.
 
 `terminal_goal.py` reads only `/api/session`, including annotation availability, caps and
@@ -80,6 +82,13 @@ identity with `expected_revision`. Typed saves omit outcome lines. Clear saves `
 source, words and time, including for sessions outside the default window. Receipts name the
 revision captured under the write lock, even if a later writer has already advanced it.
 Saving starts no monitor and promises no level. The skill offers only the read.
+
+`terminal_summary.py` is a standard-library terminal leaf over `terminal_drift`'s URL/transport
+error and `terminal_sessions`' text and identity helpers. It owns stored phase rendering and the
+explicit start/update/rerun wait. `terminal_client` imports it only for `--summary`; HTTP serving
+and summary production never depend on this terminal adapter. Its focused API reads the published
+row, summary store and job publication directly, without assembling a project context.
+
 
 `--pause-model-calls` sends the page's existing off request without resolving a session or starting
 a dashboard. It accepts only an optional `--port`. Success requires `ok: true` and `reading.off: true`;

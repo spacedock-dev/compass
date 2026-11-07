@@ -2234,3 +2234,27 @@ it, even if the reader has since turned summaries on again. The last admitted ca
 at the rolling limit; a refused subsequent call publishes nothing. Nothing from that call or a
 later part overwrites the finished prefix. The supervised Claude call uses the summary system
 prompt and configured per-call timeout; the stored model stamp includes the prompt's SHA-256.
+
+## Terminal summary
+
+The terminal adapter reads the stored summary through `GET /api/summary`, with the exact published
+row lookup and its all-sessions fallback. The response holds `session`, `summary`, `summaries`
+and `citation_labels`. Focused freshness uses `summary_store.for_session`; jobs use the ordinary
+publication. Citation labels use the same message index and listed tool ordinals as the page.
+Unavailable labels remain unavailable. This read starts no job or model refresh and builds no outline.
+
+`--summary` prints stored prose immediately, including stale and partial prose. Only an absent
+summary can start one. The admission lock rechecks absence, so a concurrent save cannot cause a
+second start. `--summary --update` requests update only; an unchanged covered summary spends nothing.
+`--summary --again` explicitly requests rerun. Inside a session, these are three distinct typed
+commands and each record admits one matching spend. A refused admission gives the record back.
+The producer, disclosure coverage and all limits are unchanged.
+
+`--summaries off` has no session identity. Like the page, it is refused while model calls are
+paused and preserves the stored answer. There is no terminal on command. Ctrl+C cancels only the
+job admitted by this invocation, checked by expected id under the publication lock. A bounded wait
+or lost response leaves the job alone and tells the reader to read again before retrying a spend.
+
+The recorded sample session binds Python terminal rendering to the page's display helpers in
+`summaryTerminalParity.test.tsx`. It covers the lede, every phase, speaker transformations,
+withheld strings and available citation labels. No new model-produced phases are fixtures here.

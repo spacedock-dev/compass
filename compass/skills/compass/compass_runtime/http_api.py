@@ -1638,6 +1638,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         with_url = {
             "/api/data": self._data,
             "/api/session": self._session,
+            "/api/summary": self._summary_get,
             "/api/sessions": self._sessions,
             "/api/observe": self._observe,
             "/api/project-context": self._project_context,
@@ -1953,6 +1954,61 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "application/json",
             code=status,
         )
+
+    def _summary_get(self, url: ParseResult) -> None:
+        if not self._loopback_resource_ok() or self._is_document_navigation():
+            self.send_error(403)
+            return
+        query = parse_qs(url.query)
+        identity = {key: query.get(key, [""])[0] for key in ("harness", "sid")}
+        if not self._summary_identity(identity):
+            self.send_error(400)
+            return
+        harness, sid = identity["harness"], identity["sid"]
+        row = self._published_row(harness, sid)
+        if row is None:
+            self._summary_reply(404, {"reason": "session-unavailable-or-ambiguous"})
+            return
+        application = self.server.application
+        summary = summary_store.for_session(application.config, application.state, harness, sid)
+        summary["job"] = summary_jobs.published(application, harness, sid)
+        answer = {
+            "session": row,
+            "summary": summary,
+            "summaries": summary_jobs.board(application.config, now=application.clock()),
+            "citation_labels": self._summary_labels(summary, harness, sid),
+        }
+        self._summary_reply(200, runtime_project_context.for_page(answer))
+
+    def _summary_labels(self, summary: dict[str, Any], harness: str, sid: str) -> dict[str, str]:
+        cites = set((summary.get("lede") or {}).get("cites", []))
+        for block in summary.get("blocks", []):
+            for phase in block.get("phases", []):
+                for bullet in phase.get("bullets", []):
+                    cites.update(bullet.get("cites", []))
+        if not cites:
+            return {}
+        application = self.server.application
+        config, state = application.config, application.state
+        path = runtime_observer.resolve_transcript(config, state, harness, sid)
+        index = entry_numbers.message_index(config, state, path, harness, sid) if path else None
+        if index is None:
+            return {}
+        labels = {fact: str(n) for fact in cites if (n := index.ordinal(fact)) is not None}
+        if path and harness == "claude" and cites - labels.keys():
+            reports, _scan = runtime_project_context.claude_tool_reports(
+                config, path, sid, index_provider=lambda: index
+            )
+            for report in reports:
+                fact = runtime_project_context._semantic_fact_from_event(  # noqa: SLF001 - page identity
+                    report, report["kind"], "tool_report", ""
+                )
+                if fact["fact_id"] in cites and type(report.get("ordinal")) is int:
+                    label = str(report["ordinal"])
+                    if type(report.get("ordinal_sub")) is int:
+                        label += "." + str(report["ordinal_sub"])
+                    labels[fact["fact_id"]] = label
+        return labels
 
     def _data(self, url: ParseResult) -> None:
         query = parse_qs(url.query)
@@ -2976,7 +3032,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _reading_dispatch(self, payload: dict[str, Any]) -> None:
         application = self.server.application
-        if not reading_long_preview.valid_ingress(payload):
+        if not reading_long_preview.valid_ingress(payload) or (
+            "typed_action" in payload and payload["typed_action"] not in ("drift", "drift again")
+        ):
             self._reject(400)
             return
         refusal = self._reading_refusal(
@@ -4978,7 +5036,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._summary_consent(payload["consent"] == "on")
             return
         if (
-            set(payload) != {"harness", "sid", "action", "origin"}
+            set(payload)
+            not in (
+                {"harness", "sid", "action", "origin"},
+                {"harness", "sid", "action", "origin", "typed_action"},
+            )
             or not self._summary_identity(payload)
             or payload["action"] not in ("start", "update", "rerun")
             or payload["origin"] not in ("press", "open")
@@ -4986,7 +5048,24 @@ class _RequestHandler(BaseHTTPRequestHandler):
         ):
             self._reject(400)
             return
-        self._summary_start(payload)
+        if "typed_action" in payload:
+            expected = {"start": "summary", "update": "summary update", "rerun": "summary again"}[
+                payload["action"]
+            ]
+            if payload["origin"] != "press" or payload["typed_action"] != expected:
+                self._reject(400)
+                return
+            uuid = self._typed_record(payload["harness"], payload["sid"], payload)
+            if not uuid:
+                return
+            self._summary_started = False
+            try:
+                self._summary_start(payload)
+            finally:
+                if not self._summary_started:
+                    typed_press.release(self.server.application.config, uuid)
+        else:
+            self._summary_start(payload)
 
     def _summary_consent(self, allowed: bool) -> None:
         application = self.server.application
@@ -5039,7 +5118,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             else "store-unavailable"
             if summary_store.load(config).state != "ok"
             else "summary-exists"
-            if payload["origin"] == "open" and summary_store.get(config, harness, sid)
+            if payload["action"] == "start" and summary_store.get(config, harness, sid)
             else ""
         )
         if reason:
@@ -5060,18 +5139,34 @@ class _RequestHandler(BaseHTTPRequestHandler):
         code, response = summary_jobs.start_source(
             application, path, harness, sid, action=payload["action"], origin=payload["origin"]
         )
+        self._summary_started = code == 202
+        if code == 202 and response.get("notice"):
+            response["disclosure"] = summary_jobs.disclosure(response["notice"]["destination"])
         self._summary_reply(code, response)
 
     def _summary_cancel(self) -> None:
         payload = self._summary_payload()
         if payload is None:
             return
-        if set(payload) != {"harness", "sid"} or not self._summary_identity(payload):
+        if (
+            set(payload) not in ({"harness", "sid"}, {"harness", "sid", "expected_job"})
+            or not self._summary_identity(payload)
+            or (
+                "expected_job" in payload
+                and (
+                    not isinstance(payload["expected_job"], str)
+                    or not 0 < len(payload["expected_job"]) <= 128
+                )
+            )
+        ):
             self._reject(400)
             return
         try:
             accepted = summary_jobs.cancel(
-                self.server.application, payload["harness"], payload["sid"]
+                self.server.application,
+                payload["harness"],
+                payload["sid"],
+                expected_job=payload.get("expected_job"),
             )
         except (OSError, ValueError):
             self._summary_reply(503, {"ok": False, "reason": "store-unavailable"})

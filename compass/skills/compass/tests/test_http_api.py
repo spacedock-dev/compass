@@ -6806,6 +6806,66 @@ class SummaryStoreHTTPTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_a_person_reads_an_aged_summary_without_models_or_project_assembly(self) -> None:
+        def collection(*, show_all: bool) -> Any:
+            return (1.0, 1), json.dumps({"sessions": [self.row] if show_all else []}).encode()
+
+        self.config = dataclasses.replace(self.config, model_calls_disabled=False)
+        self.application.config = self.config
+        with (
+            self.serving() as port,
+            mock.patch.object(self.application, "collect_json", side_effect=collection),
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(summary_jobs, "start_source") as start,
+            mock.patch.object(runtime_observer, "prepare_claude_exec") as model,
+        ):
+            for _ in range(2):
+                status, answer = self.request(port, "GET", "/api/summary?harness=claude&sid=root")
+                self.assertEqual(200, status)
+                self.assertEqual(
+                    {"session", "summary", "summaries", "citation_labels"}, set(answer)
+                )
+                self.assertTrue(answer["summary"]["exists"])
+                self.assertEqual("unchanged", answer["summary"]["out_of_date"]["kind"])
+                self.assertTrue(answer["citation_labels"])
+            start.assert_not_called()
+            for _ in range(2):
+                with (
+                    mock.patch.object(
+                        terminal_client,
+                        "ensure_dashboard",
+                        return_value=terminal_client.Dashboard(port, 1, 0, "1"),
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                    contextlib.redirect_stderr(io.StringIO()) as error,
+                ):
+                    self.assertEqual(
+                        0,
+                        terminal_client.run_summary(terminal_client.SummaryRequest("claude:root")),
+                    )
+                self.assertIn("synthetic-model", output.getvalue())
+                self.assertEqual("", error.getvalue())
+            model.assert_not_called()
+            start.assert_not_called()
+        self.assertEqual(0, reading_policy.summary_status(self.config, now=time.time())["used"])
+
+    def test_a_person_cancel_request_names_only_the_job_their_terminal_started(self) -> None:
+        handler = self.handler(body=b'{"harness":"claude","sid":"root","expected_job":"old"}')
+        with mock.patch.object(summary_jobs, "cancel", return_value=False) as cancel:
+            handler._summary_cancel()
+        cancel.assert_called_once_with(self.application, "claude", "root", expected_job="old")
+        self.assertEqual(409, handler._send.call_args.args[2])
+        for value in (None, 1, ""):
+            handler = self.handler(
+                body=json.dumps(
+                    {"harness": "claude", "sid": "root", "expected_job": value}
+                ).encode()
+            )
+            with mock.patch.object(summary_jobs, "cancel") as cancel:
+                handler._summary_cancel()
+            cancel.assert_not_called()
+            handler._reject.assert_called_once_with(400)
+
     def test_focused_reopen_serves_a_stored_summary_without_a_model_call(self) -> None:
         """Serving only: generating on first open and its summary ledger belong to the job lane.
 

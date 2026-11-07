@@ -194,6 +194,34 @@ class LightPathTest(unittest.TestCase):
         loaded = [name for name in HEAVY if f" {name}\n" in done.stderr]
         self.assertEqual([], loaded)
 
+    def test_a_person_asking_for_a_summary_dispatches_without_dashboard_imports(self) -> None:
+        for args in (["--summary"], ["--summary", "--update"], ["--summary", "--again"]):
+            with (
+                mock.patch.object(cli, "main") as main,
+                mock.patch.object(terminal_client, "run_summary", return_value=0) as summary,
+            ):
+                self.assertEqual(0, entry.main(args))
+            main.assert_not_called()
+            summary.assert_called_once()
+
+    def test_a_person_cannot_mix_summary_modifiers_or_other_operations(self) -> None:
+        for args in (
+            ["--summary", "--again", "--update"],
+            ["--summary", "--stop"],
+            ["--again"],
+            ["--drift", "--again"],
+            ["--summaries"],
+            ["--summaries", "on"],
+        ):
+            with (
+                mock.patch.object(terminal_client, "ensure_dashboard") as discover,
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(args)
+            self.assertEqual(2, error.exception.code)
+            discover.assert_not_called()
+
     def test_anything_but_a_bare_version_is_handed_to_the_cli_untouched(self) -> None:
         for argv in (["--version", "--bogus"], ["--status"], ["--help"], []):
             with self.subTest(argv=argv), mock.patch.object(cli, "main", return_value=7) as main:
@@ -226,7 +254,10 @@ class OperationTableTest(unittest.TestCase):
     def test_the_client_claims_only_flags_it_owns(self) -> None:
         flags = {operation.flag for operation in terminal_client.OPERATIONS}
 
-        self.assertTrue(all(terminal_client.handles([flag]) for flag in flags))
+        for flag in flags:
+            self.assertEqual(flag != "--summaries", terminal_client.handles([flag]), flag)
+        self.assertTrue(terminal_client.handles(["--summaries", "off"]))
+        self.assertFalse(terminal_client.handles(["--summaries", "on"]))
         self.assertFalse(terminal_client.handles(["--stop"]))
 
 

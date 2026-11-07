@@ -168,6 +168,8 @@ class Option(NamedTuple):
 
 
 OPERATIONS = (
+    Operation("--summary", "read stored cited phases; start only when none exist"),
+    Operation("--summaries", "turn summaries off machine-wide", ("off",)),
     Operation(
         "--goal",
         "read the goal a reading would use; text saves it, --clear empties it, "
@@ -206,7 +208,8 @@ OPTIONS = (
     Option(
         "--session",
         "HARNESS:SESSION_ID",
-        "the session --footer, --goal, --project or --drift reports for, or --monitor holds; "
+        "the session --footer, --goal, --project, --summary or --drift reports for, "
+        "or --monitor holds; "
         "such as claude:SESSION_ID; "
         "default: the status line's session_id (--footer only), then CLAUDE_CODE_SESSION_ID",
     ),
@@ -214,6 +217,8 @@ OPTIONS = (
 
 
 SWITCHES = (
+    Operation("--update", "update an appendable summary, only with --summary"),
+    Operation("--again", "summarize from the start, only with --summary"),
     Operation("--off", "stop this terminal holder, only with --monitor"),
     Operation("--clear", "save an empty goal, only with --goal"),
     Operation("--adopt", "adopt the harness goal or drafted prompt, only with --goal"),
@@ -257,6 +262,104 @@ def parse_goal_args(argv: list[str]) -> GoalRequest | None:
     if not goal or sum((text is not None, clear, adopt)) > 1:
         return None
     return GoalRequest(text, clear, adopt, session)
+
+
+class SummaryRequest(NamedTuple):
+    session: str | None = None
+    update: bool = False
+    again: bool = False
+
+
+def parse_summary_args(argv: list[str]) -> SummaryRequest | None:
+    rest = list(argv)
+    if rest.count("--summary") != 1:
+        return None
+    rest.remove("--summary")
+    update, again = "--update" in rest, "--again" in rest
+    if update and again:
+        return None
+    for modifier in ("--update", "--again"):
+        if modifier in rest:
+            rest.remove(modifier)
+    if not rest:
+        return SummaryRequest(update=update, again=again)
+    if len(rest) == 2 and rest[0] == "--session" and not rest[1].startswith("--"):
+        return SummaryRequest(rest[1], update, again)
+    if len(rest) == 1 and rest[0].startswith("--session="):
+        return SummaryRequest(rest[0].split("=", 1)[1], update, again)
+    return None
+
+
+def run_summary(
+    request: SummaryRequest, *, port: int | None = None, environ: Mapping[str, str] | None = None
+) -> int:
+    from compass_runtime import terminal_drift, terminal_summary  # noqa: PLC0415
+
+    env = os.environ if environ is None else environ
+    named = resolve_session(request.session, env, None, payload={})
+    if isinstance(named, Unresolved):
+        print(named.message, file=sys.stderr)
+        return 1
+    if named.harness != "claude":
+        print("Compass summarizes Claude Code sessions only.", file=sys.stderr)
+        return 1
+    found = ensure_dashboard(state_home(env), port=port, spend=True, own_version=release_version())
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    board = LoopbackBoard(found.port)
+    try:
+        payload = board.session(named.harness, named.sid)
+    except terminal_drift.Lost:
+        payload = None
+    row = payload.get("session") if isinstance(payload, dict) else None
+    if (
+        not isinstance(row, dict)
+        or not isinstance(row.get("sid"), str)
+        or row.get("harness") != named.harness
+        or not terminal_sessions.names(row, named.sid)
+    ):
+        print("Compass could not resolve this session unambiguously.", file=sys.stderr)
+        return 1
+    named = named._replace(sid=row["sid"])
+    at_shell = named.source == "flag" and _is_terminal(sys.stdout)
+    return terminal_summary.run(
+        named=named,
+        board=board,
+        out=sys.stdout,
+        err=sys.stderr,
+        update=request.update,
+        again=request.again,
+        in_session=not at_shell,
+        wait=630.0 if at_shell else 20.0,
+    )
+
+
+def run_summaries_off(*, port: int | None = None, environ: Mapping[str, str] | None = None) -> int:
+    env = os.environ if environ is None else environ
+    found = ensure_dashboard(state_home(env), port=port, spend=False, own_version=release_version())
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    try:
+        reply = post(found.port, "/api/summary", {"consent": "off"})
+    except DashboardUnreachable:
+        reply = Reply(0, {})
+    data = reply.data if isinstance(reply.data, dict) else {}
+    if (
+        reply.status == 200
+        and data.get("ok") is True
+        and data.get("summaries", {}).get("consent") is False
+    ):
+        print("Summaries are turned off for every session.")
+        return 0
+    print(
+        "Model calls are paused; summaries were not changed."
+        if data.get("reason") == "model-calls-paused"
+        else "Compass could not confirm that summaries are off.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def release_version() -> str | None:
@@ -409,7 +512,7 @@ def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
     keeps judging combinations and usage errors exactly as it did.
     """
     for operation in OPERATIONS:
-        if argv == [operation.flag]:
+        if argv == [operation.flag] and operation.flag != "--summaries":
             return operation, None
         for choice in operation.choices:
             if argv in ([operation.flag, choice], [f"{operation.flag}={choice}"]):
@@ -434,7 +537,8 @@ def parse_project_args(argv: list[str]) -> tuple[bool, str | None]:
 
 def handles(argv: list[str]) -> bool:
     return (
-        parse_goal_args(argv) is not None
+        parse_summary_args(argv) is not None
+        or parse_goal_args(argv) is not None
         or parse_monitor_args(argv)[0]
         or parse_footer_args(argv)[0]
         or parse_drift_args(argv)[0]
@@ -444,6 +548,11 @@ def handles(argv: list[str]) -> bool:
 
 
 def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short operation
+    summary = parse_summary_args(argv)
+    if summary is not None:
+        return run_summary(summary)
+    if argv in (["--summaries", "off"], ["--summaries=off"]):
+        return run_summaries_off()
     goal = parse_goal_args(argv)
     if goal is not None:
         return run_goal(goal)
@@ -1319,6 +1428,11 @@ class LoopbackBoard:
         from urllib.parse import urlencode  # noqa: PLC0415
 
         return self._read("/api/session?" + urlencode({"harness": harness, "sid": sid}))
+
+    def summary(self, harness: str, sid: str) -> Any:
+        from urllib.parse import urlencode  # noqa: PLC0415
+
+        return self._read("/api/summary?" + urlencode({"harness": harness, "sid": sid}))
 
     def context(self, project: str, session: str) -> Any:
         from urllib.parse import quote  # noqa: PLC0415 — only a drift reaches this

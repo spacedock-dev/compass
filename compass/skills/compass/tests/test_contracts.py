@@ -1241,10 +1241,16 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.terminal_sessions",
         },
         "compass_runtime.terminal_client": {
+            "compass_runtime.terminal_summary",
             "compass_runtime.terminal_goal",
             "compass_runtime.terminal_project",
             "compass_runtime.loopback_transport",
             "compass_runtime.terminal_monitor",
+            "compass_runtime.terminal_drift",
+            "compass_runtime.terminal_sessions",
+        },
+        "compass_runtime.terminal_summary": {
+            "compass_runtime.terminal_client",
             "compass_runtime.terminal_drift",
             "compass_runtime.terminal_sessions",
         },
