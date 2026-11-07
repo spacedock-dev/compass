@@ -987,7 +987,7 @@ def _monitor_parts(line: Line | None, now: float) -> list[str]:
         elif line.last_end is not None:
             reason, ended_at = line.last_end
             note = MONITOR_END_NOTES.get(reason)
-            if reason == "paused" and line.model_calls_paused is not True:
+            if reason == "paused":
                 note = "monitor off"
             if note and -LINE_FUTURE_SLACK_SEC <= now - ended_at < MONITOR_END_SEC:
                 parts.append(note)

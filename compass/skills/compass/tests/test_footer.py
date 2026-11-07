@@ -611,6 +611,20 @@ class ReadLineTest(unittest.TestCase):
             "model calls paused", terminal_client.compose_footer(payload, self.read(), NOW)
         )
 
+    def test_a_person_sees_model_calls_paused_once_when_their_monitor_ended_for_it(self) -> None:
+        line_file(
+            self.home,
+            "claude",
+            "sess-1",
+            good_line(
+                model_calls_paused=True, monitor=False, last_end={"reason": "paused", "at": NOW}
+            ),
+        )
+        text = terminal_client.compose_footer(None, self.read(), NOW)
+        self.assertEqual("model calls paused · monitor off · 2 waiting", text)
+        self.assertEqual(1, text.count("model calls paused"))
+        self.assertNotIn("monitor off:", text)
+
     def test_a_person_who_resumes_loses_pause_text_even_after_a_monitor_ended_paused(self) -> None:
         line_file(
             self.home,
