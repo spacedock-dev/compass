@@ -172,6 +172,9 @@ OPERATIONS = (
         "--monitor",
         "hold the Live monitor for this Claude Code session; --off stops this terminal holder",
     ),
+    Operation(
+        "--project", "read this Claude Code session's project brief without starting Compass"
+    ),
     Operation("--version", "print the Compass version and exit"),
     Operation(
         "--footer",
@@ -197,7 +200,7 @@ OPTIONS = (
     Option(
         "--session",
         "HARNESS:SESSION_ID",
-        "the session --footer or --drift reports for, or --monitor holds; "
+        "the session --footer, --project or --drift reports for, or --monitor holds; "
         "such as claude:SESSION_ID; "
         "default: the status line's session_id (--footer only), then CLAUDE_CODE_SESSION_ID",
     ),
@@ -332,11 +335,27 @@ def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
     return None
 
 
+def parse_project_args(argv: list[str]) -> tuple[bool, str | None]:
+    """Claim the project read alone or with its explicit caller; leave other flags to argparse."""
+    if "--project" not in argv:
+        return False, None
+    rest = list(argv)
+    rest.remove("--project")
+    if not rest:
+        return True, None
+    if len(rest) == 2 and rest[0] == "--session":
+        return True, rest[1]
+    if len(rest) == 1 and rest[0].startswith("--session="):
+        return True, rest[0].split("=", 1)[1]
+    return False, None
+
+
 def handles(argv: list[str]) -> bool:
     return (
         parse_monitor_args(argv)[0]
         or parse_footer_args(argv)[0]
         or parse_drift_args(argv)[0]
+        or parse_project_args(argv)[0]
         or claim(argv) is not None
     )
 
@@ -350,6 +369,9 @@ def run(argv: list[str]) -> int:
     drift, again, session = parse_drift_args(argv)
     if drift:
         return run_drift(again=again, session=session)
+    project, session = parse_project_args(argv)
+    if project:
+        return run_project(session=session)
     claimed = claim(argv)
     if claimed is not None and claimed[0].flag == "--sessions":
         return run_sessions(claimed[1] or True)
@@ -975,14 +997,16 @@ def _emit(lines: list[str], stream: TextIO) -> None:
     stream.write(text.encode(encoding, "replace").decode(encoding, "replace"))
 
 
-def read_sessions(port: int) -> dict[str, Any]:
+def read_sessions(port: int, *, timeout: float = LIST_REQUEST_TIMEOUT_SEC) -> dict[str, Any]:
     """Read list rows, or the full board when an older daemon lacks the list route."""
+    deadline = time.monotonic() + timeout
     try:
-        reply = get(port, "/api/sessions", timeout=LIST_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
+        reply = get(port, "/api/sessions", cap=DATA_CAP_BYTES, timeout=timeout)
         # Updating the plugin leaves an older daemon running. Only a missing route earns the
         # legacy read; hiding any other failure would turn a broken list into a second answer.
         if reply.status == 404:
-            reply = get(port, "/api/data", timeout=LIST_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
+            left = max(0.0, deadline - time.monotonic())
+            reply = get(port, "/api/data", timeout=left, cap=DATA_CAP_BYTES)
     except DashboardUnreachable as exc:
         raise UnreadableSessionsError from exc
     payload = reply.data
@@ -1006,6 +1030,104 @@ def read_sessions(port: int) -> dict[str, Any]:
         ):
             raise UnreadableSessionsError
     return payload
+
+
+def run_project(
+    *,
+    session: str | None = None,
+    port: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Read the caller, lean membership and project context; no launch or model press."""
+    from urllib.parse import urlencode  # noqa: PLC0415
+
+    from compass_runtime import terminal_project  # noqa: PLC0415
+
+    env = os.environ if environ is None else environ
+    named = resolve_session(session, env, None)
+    if isinstance(named, Unresolved) or named.harness != "claude":
+        print(
+            named.message
+            if isinstance(named, Unresolved)
+            else "--project needs a Claude Code caller.",
+            file=sys.stderr,
+        )
+        return 1
+    found = ensure_dashboard(state_home(env), port=port, spend=False, own_version=None)
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    # Keep the cold collection's longer allowance without lengthening the focused reads.
+    deadline = time.monotonic() + LIST_REQUEST_TIMEOUT_SEC + 2 * REQUEST_TIMEOUT_SEC
+
+    def remaining(ceiling: float = REQUEST_TIMEOUT_SEC) -> float:
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise DashboardUnreachable
+        return min(ceiling, seconds)
+
+    try:
+        reply = get(
+            found.port,
+            "/api/session?" + urlencode({"harness": named.harness, "sid": named.sid}),
+            cap=REPLY_CAP_BYTES,
+            timeout=remaining(),
+        )
+        own = reply.data.get("session") if isinstance(reply.data, dict) else None
+        if (
+            reply.status != 200
+            or not isinstance(own, dict)
+            or own.get("harness") != named.harness
+            or not isinstance(own.get("sid"), str)
+            or not isinstance(own.get("project"), str)
+        ):
+            raise UnreadableSessionsError  # noqa: TRY301 - shared unreadable-response handling
+        label = own["project"]
+        if not label.strip():
+            print("This session has no project label; no project sessions are listed.")
+            return 0
+        payload = read_sessions(found.port, timeout=remaining(LIST_REQUEST_TIMEOUT_SEC))
+        caller = (own["harness"], own["sid"])
+        matching = [
+            row
+            for row in payload["sessions"]
+            if row["harness"] == named.harness and terminal_sessions.names(row, named.sid)
+        ]
+        if len(matching) != 1 or matching[0]["project"] != label:
+            print(
+                "This session is outside the current board or its project changed; read again.",
+                file=sys.stderr,
+            )
+            return 1
+        project = terminal_project.project_key(payload, label)
+        reply = get(
+            found.port,
+            "/api/project-context?" + urlencode({"project": project}),
+            cap=DATA_CAP_BYTES,
+            timeout=remaining(),
+        )
+        if (
+            reply.status != 200
+            or not isinstance(reply.data, dict)
+            or not isinstance(reply.data.get("semantic"), dict)
+            or reply.data.get("project") != project
+            or reply.data.get("focus") is not None
+        ):
+            raise UnreadableSessionsError  # noqa: TRY301 - shared unreadable-response handling
+        brief = terminal_project.derive(payload, reply.data, label=label)
+        lines = terminal_project.render(brief, caller=caller)
+    except (
+        DashboardUnreachable,
+        UnreadableSessionsError,
+        ValueError,
+        TypeError,
+        KeyError,
+        OverflowError,
+    ):
+        print(sentence("unreadable_reply"), file=sys.stderr)
+        return 1
+    _emit(lines, sys.stdout)
+    return 0
 
 
 def run_sessions(

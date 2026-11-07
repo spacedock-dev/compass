@@ -911,7 +911,7 @@ def run_one_shot(
 def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
-    `--sessions` and `--drift` beside other options honor only `--port` (and `--drift` its
+    These reads beside other options honor only `--port` (and `--project` and `--drift` their
     `--session`), and only when it was typed:
     `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
     client's discovery of a dashboard on another port.
@@ -921,6 +921,8 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     typed = any(a == "--port" or a.startswith("--port=") for a in argv)
     if args.sessions:
         return terminal_client.run_sessions(args.sessions, port=args.port if typed else None)
+    if args.project:
+        return terminal_client.run_project(session=args.session, port=args.port if typed else None)
     if args.drift:
         return terminal_client.run_drift(
             again=args.drift == "again", session=args.session, port=args.port if typed else None

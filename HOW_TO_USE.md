@@ -51,6 +51,7 @@ session you are in, without opening the dashboard:
 | Harness | Type | Prints |
 |---|---|---|
 | Claude Code | `/compass:compass sessions` | Every session the board holds, as `--sessions` does |
+| Claude Code | `/compass:compass project` | This session's project label, its sessions and the project brief |
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Claude Code | `/compass:compass drift` | This session's drift reading against your goal, as `--drift` does. With no stored reading, it asks for one |
 | Claude Code | `/compass:compass drift again` | A new reading of this session, as `--drift again` does |
@@ -75,7 +76,7 @@ the session page. Nothing about later messages is settled; the answer says how m
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
 another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
-`sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
+`project`, `sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
 refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
 belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
 action word. The skill runs the command below, so you can run it yourself to check what the agent

@@ -1241,11 +1241,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.terminal_sessions",
         },
         "compass_runtime.terminal_client": {
+            "compass_runtime.terminal_project",
             "compass_runtime.loopback_transport",
             "compass_runtime.terminal_monitor",
             "compass_runtime.terminal_drift",
             "compass_runtime.terminal_sessions",
         },
+        "compass_runtime.terminal_project": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_drift": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_sessions": set(),
         # One small file per Claude session for the status line, written through the owner-only

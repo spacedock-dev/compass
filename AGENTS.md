@@ -50,6 +50,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         │   ├── monitor_store.py    # private control records and persistent OS lock paths
         │   ├── terminal_drift.py   # stdlib-only: --drift, rendered from the server's drift_views, and its press
         │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
+        │   ├── terminal_project.py # stdlib-only: --project, ported from the board's project brief
         │   ├── collectors/         # one harness collector per file, one per supported harness
         │   └── web/                # the built React page, its integrity metadata and licenses, vendored
         │                           # terminal assets, fonts and the page loader (`page.py`)

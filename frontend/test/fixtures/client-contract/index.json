@@ -264,6 +264,20 @@
       "status": 400
     },
     {
+      "method": "GET",
+      "name": "context-terminal-project",
+      "route": "/api/project-context",
+      "sha256": "2615f2c24c3ca4a3241d325dc3ae2b52e79e9a113f7cd185f2ba5db30d174802",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-terminal-project-fo",
+      "route": "/api/project-context",
+      "sha256": "d1a943538c7ad4898ba713bb19c62ed658f61aa47495f4b5ae59e13479e0fcdc",
+      "status": 200
+    },
+    {
       "method": "POST",
       "name": "correction-copied-accepted",
       "route": "/api/correction/copied",
@@ -345,6 +359,20 @@
       "name": "data-show-all",
       "route": "/api/data",
       "sha256": "971852967409b3e6e24d6ed77a6505c21d97b7ed6722f134c5db03aee0e149a0",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-terminal-project",
+      "route": "/api/data",
+      "sha256": "e824a27e8fe688b2a3fef13ccae5d71b8a914fe14cfa61028ceef470e72aefa3",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-terminal-project-fo",
+      "route": "/api/data",
+      "sha256": "6ac25e7098c90fa1b81f1f90b44ea8e5941fe557ce566f2ce94e0ddc04659c18",
       "status": 200
     },
     {
@@ -646,6 +674,20 @@
       "name": "record-unsupported",
       "route": "/api/session-record",
       "sha256": "a28f751590e0ccb62a53b86f057e926ccaba50fc7046bcd57ff58c9e10b05a4f",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "sessions-terminal-project",
+      "route": "/api/sessions",
+      "sha256": "1602bf0c8ab48940a499d87237f6a813f4ea249e6277e0fc5d55f03bcf4e77dd",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "sessions-terminal-project-fo",
+      "route": "/api/sessions",
+      "sha256": "1e1601975c7301e59faaa4b71347afed81f4c3e8d7250b4fa93bdc25f3f4d804",
       "status": 200
     },
     {

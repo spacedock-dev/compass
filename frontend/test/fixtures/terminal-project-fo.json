@@ -1,0 +1,86 @@
+{
+  "label": "terminal-project",
+  "key": "key-terminal-project",
+  "counts": "4 sessions · 1 ended · 3 quiet",
+  "warning": "4 sessions share this display label; shared location is not established",
+  "members": [
+    {
+      "key": "claude:a1b2c3d4",
+      "title": "Build the parser",
+      "state": "idle",
+      "age": "2m",
+      "harness": "Claude Code"
+    },
+    {
+      "key": "claude:e5f6a7b8",
+      "title": "Review sk-…REDACTED",
+      "state": "idle",
+      "age": "30s",
+      "harness": "Claude Code"
+    },
+    {
+      "key": "codex:019c0000-1111-7222-8333-444455556666",
+      "title": "Document the parser",
+      "state": "idle",
+      "age": "1m",
+      "harness": "Codex"
+    },
+    {
+      "key": "claude:deadbeef",
+      "title": "Finished migration",
+      "state": "working",
+      "age": "30s",
+      "harness": "Claude Code"
+    }
+  ],
+  "task": "Not observed",
+  "task_stage": "",
+  "task_source": "",
+  "instruction": "Check sk-…REDACTED",
+  "instruction_heading": "Latest instruction",
+  "instruction_source": "claude · latest instruction",
+  "running": [
+    "claude:a1b2c3d4"
+  ],
+  "children": [
+    {
+      "worker": "First",
+      "lifecycle": "returned",
+      "assignment": "assignment unavailable",
+      "source": "child lifecycle source unavailable",
+      "parent": "claude:a1b2c3d4",
+      "result": "result unavailable",
+      "stale": false
+    }
+  ],
+  "attention": [
+    {
+      "owner": "FO",
+      "label": "refresh workflow discovery",
+      "kind": "",
+      "source": "spacedock status --discover · project root unavailable from observed sessions"
+    },
+    {
+      "owner": "FO",
+      "label": "refresh observer",
+      "kind": "",
+      "source": "Observer · transcript not found · Steer · transcript not found · Work · transcript not found"
+    },
+    {
+      "owner": "FO",
+      "label": "inspect idle owner · 3",
+      "kind": "",
+      "source": "exact session state"
+    },
+    {
+      "owner": "FO",
+      "label": "recover First handoff",
+      "kind": "child_evidence_gap",
+      "source": "child lifecycle source unavailable"
+    }
+  ],
+  "coverage": "Coverage complete · 2 of 2 active sessions",
+  "attention_heading": "FO INSPECTING",
+  "attention_truth": "Captain not needed",
+  "authority_gloss": "FO is the first officer, the agent driving this workflow; Captain is you."
+}

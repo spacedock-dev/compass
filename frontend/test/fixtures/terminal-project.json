@@ -1,0 +1,96 @@
+{
+  "label": "terminal-project",
+  "key": "key-terminal-project",
+  "counts": "4 sessions · 1 working · 1 waiting on you · 1 ended · 1 quiet",
+  "warning": "4 sessions share this display label; shared location is not established",
+  "members": [
+    {
+      "key": "claude:a1b2c3d4",
+      "title": "Build the parser",
+      "state": "working",
+      "age": "30s",
+      "harness": "Claude Code"
+    },
+    {
+      "key": "claude:e5f6a7b8",
+      "title": "Review sk-…REDACTED",
+      "state": "needs_input",
+      "age": "30s",
+      "harness": "Claude Code"
+    },
+    {
+      "key": "codex:019c0000-1111-7222-8333-444455556666",
+      "title": "Document the parser",
+      "state": "idle",
+      "age": "1m",
+      "harness": "Codex"
+    },
+    {
+      "key": "claude:deadbeef",
+      "title": "Finished migration",
+      "state": "working",
+      "age": "30s",
+      "harness": "Claude Code"
+    }
+  ],
+  "task": "Build the parser with bounded input",
+  "task_stage": "",
+  "task_source": "Exact operator direction",
+  "instruction": "Check sk-…REDACTED",
+  "instruction_heading": "Latest instruction",
+  "instruction_source": "claude · latest instruction",
+  "running": [
+    "claude:a1b2c3d4",
+    "claude:deadbeef"
+  ],
+  "children": [
+    {
+      "worker": "Reader",
+      "lifecycle": "active",
+      "assignment": "Review the parser",
+      "source": "exact parent dispatch",
+      "parent": "claude:a1b2c3d4",
+      "result": "",
+      "stale": false
+    },
+    {
+      "worker": "Writer",
+      "lifecycle": "returned",
+      "assignment": "Write migration",
+      "source": "parent dispatch",
+      "parent": "claude:deadbeef",
+      "result": "Migration written",
+      "stale": true
+    }
+  ],
+  "attention": [
+    {
+      "owner": "FO",
+      "label": "inspect Claude Code input request",
+      "kind": "",
+      "source": "exact session needs-input state"
+    },
+    {
+      "owner": "FO",
+      "label": "refresh workflow discovery",
+      "kind": "",
+      "source": "spacedock status --discover · project root unavailable from observed sessions"
+    },
+    {
+      "owner": "FO",
+      "label": "refresh observer",
+      "kind": "",
+      "source": "Observer · transcript not found · Steer · transcript not found · Work · transcript not found"
+    },
+    {
+      "owner": "FO",
+      "label": "inspect idle owner · 1",
+      "kind": "",
+      "source": "exact session state"
+    }
+  ],
+  "coverage": "Coverage complete · 2 of 2 active sessions",
+  "attention_heading": "CHECKING",
+  "attention_truth": "",
+  "authority_gloss": ""
+}
