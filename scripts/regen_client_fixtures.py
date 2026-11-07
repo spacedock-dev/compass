@@ -21,6 +21,11 @@ Python constant that changes without regeneration fails `--check`; a React const
 equals the fixture fails `frontend/src/api/vocabulary.test.ts`. The file sits beside the
 client-contract directory, not in it, because that directory is recorded request and response
 scenarios and the manifest and the client tests require every file in it to be one.
+
+`frontend/test/fixtures/terminal-goal.json` records fresh Intent payloads, including a
+transcript `/goal` before and after adoption. This script writes and checks the inputs;
+COMPASS_WRITE_GOAL_PARITY=1 pnpm exec vitest run frontend/src/intent/terminalGoalParity.test.ts
+records their expected text through React's Intent derivations.
 """
 
 from __future__ import annotations
@@ -52,10 +57,12 @@ REPO = Path(__file__).resolve().parents[1]
 SKILL = REPO / "compass" / "skills" / "compass"
 FIXTURES = REPO / "frontend" / "test" / "fixtures" / "client-contract"
 VOCABULARY = FIXTURES.parent / "vocabulary.json"
+TERMINAL_GOALS = FIXTURES.parent / "terminal-goal.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
 from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
+from compass_runtime import claude_data as runtime_claude_data  # noqa: E402 - runtime path
 from compass_runtime import claude_settings as runtime_claude_settings  # noqa: E402 - runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
@@ -2134,6 +2141,79 @@ def generate() -> dict[str, bytes]:
     return dict(sorted(files.items()))
 
 
+def generate_terminal_goals() -> list[dict[str, Any]]:
+    """Fresh Intent payloads; React records the expected text in terminalGoalParity.test.ts."""
+    scratch = Scratch()
+    cases: list[dict[str, Any]] = []
+    try:
+        with guarded():
+            row = healthy_rows()["claude"][0]
+            rig = Rig(scratch, "terminal-goal", rows={"claude": [row]})
+            try:
+                first_at, goal_at = NOW - 600, NOW - 100
+                condition = "The placeholder parser handles every token type and its tests pass"
+                transcript = [_transcript_entry("user", row["first_prompt"], first_at, 0)]
+                rig.write_transcript(row["sid"], transcript)
+
+                def save(body: dict[str, Any]) -> None:
+                    answer = rig.send(post("/api/annotate", {**SESSION, **body}))
+                    if answer["status"] != 200 or not answer["body"].get("persisted"):
+                        msg = f"terminal goal fixture save failed: {answer}"
+                        raise AssertionError(msg)
+
+                def capture(name: str) -> None:
+                    answer = rig.send(get("/api/session", "harness=claude&sid=" + row["sid"]))
+                    if answer["status"] != 200:
+                        msg = f"terminal goal fixture read failed: {answer}"
+                        raise AssertionError(msg)
+                    cases.append({"name": name, "payload": answer["body"]})
+
+                save({"goal": "Ship the placeholder parser", "lines": ["The parser tests pass"]})
+                capture("typed-with-outcomes")
+                save({"goal": "", "expected_revision": 1})
+                capture("empty-goal-with-prompt-draft")
+                # The sentinel and printed answer were measured in
+                # docs/captures/claude/goal-2.1.308-macos.jsonl; only the prose is synthetic.
+                sentinel = _transcript_entry("attachment", "", goal_at, 1)
+                del sentinel["message"]
+                sentinel["attachment"] = {
+                    "type": "goal_status",
+                    "met": False,
+                    "sentinel": True,
+                    "condition": condition,
+                }
+                answer = _transcript_entry("system", "", goal_at, 2)
+                del answer["message"]
+                answer.update(
+                    subtype="local_command",
+                    commandRun={"command": "goal", "args": condition},
+                    content=f"<local-command-stdout>Goal set: {condition}</local-command-stdout>",
+                )
+                rig.write_transcript(row["sid"], [*transcript, sentinel, answer])
+                transcript_path = (
+                    rig.dir / "projects" / "-work-alpha-app" / f"{row['sid']}-full.jsonl"
+                )
+                row["session_goal"] = runtime_claude_data.session_goal(
+                    rig.config, rig.state, str(transcript_path)
+                )
+                rig.republish()
+                capture("harness-goal-draft")
+                save(
+                    {
+                        "adopt": "session-goal",
+                        "expected_prompt": condition,
+                        "expected_prompt_at": goal_at,
+                        "expected_revision": 2,
+                    }
+                )
+                capture("adopted-harness-goal")
+            finally:
+                rig.close()
+    finally:
+        scratch.close()
+    return cases
+
+
 def _code_point_ranges(pattern: Any) -> list[list[int]]:
     """The BMP code points a compiled pattern matches as one character, as [first, last] runs."""
     runs: list[list[int]] = []
@@ -2243,6 +2323,9 @@ def main() -> int:
     files = generate()
     present = {path.name: path.read_bytes() for path in FIXTURES.glob("*.json")}
     words = canonical(vocabulary())
+    goals = generate_terminal_goals()
+    recorded_goals = json.loads(TERMINAL_GOALS.read_bytes()) if TERMINAL_GOALS.is_file() else []
+    goal_inputs = [{"name": case["name"], "payload": case["payload"]} for case in recorded_goals]
     if args.check:
         stale = sorted(
             {name for name in files if present.get(name) != files[name]}
@@ -2250,9 +2333,17 @@ def main() -> int:
         )
         if not VOCABULARY.is_file() or VOCABULARY.read_bytes() != words:
             stale.append(str(VOCABULARY.relative_to(REPO)))
+        if goal_inputs != goals:
+            stale.append(str(TERMINAL_GOALS.relative_to(REPO)))
         for name in stale:
             print(f"stale: {name}", file=sys.stderr)
         return 1 if stale else 0
+    expected = {case["name"]: case.get("expected") for case in recorded_goals}
+    for case in goals:
+        case["expected"] = expected.get(case["name"])
+    TERMINAL_GOALS.write_text(
+        json.dumps(goals, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     VOCABULARY.write_bytes(words)
     FIXTURES.mkdir(parents=True, exist_ok=True)
     for name in present.keys() - files.keys():

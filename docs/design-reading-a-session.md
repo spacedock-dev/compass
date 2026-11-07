@@ -9996,6 +9996,10 @@ saves only the goal, keeping outcomes. `--clear` saves an empty goal with the ex
 revision history intact; it may expose a draft again. The API's destructive `clear: true`
 was rejected for this command. `--adopt` uses the page's adoption route, rechecking source,
 words, source time and expected revision, including outside the default session window.
+An unsaved goal and a discard both publish revision zero. Terminal adoption of an unsaved
+goal opts into the store's empty-intent guard, so a board discard that follows the read wins.
+The terminal names that refusal. The page can still deliberately adopt after a discard,
+and Analyze keeps its own adoption path.
 Typed saves and adoptions return their own locked revision receipt. A later read may already
 show another writer's revision. Saving supplies intent; a monitor check still has to produce
 a level. No save starts that monitor.

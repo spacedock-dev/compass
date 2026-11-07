@@ -2704,6 +2704,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 standalone=True,
                 settle_through=settle_through,
                 receipt=receipt,
+                empty_intent_only=payload.get("empty_intent_only") is True,
             )
         elif settle_through is not None:
             # A third arm on this route rather than a route of its own: the

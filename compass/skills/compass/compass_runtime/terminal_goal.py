@@ -35,7 +35,7 @@ def render(payload: Mapping[str, Any], *, port: int) -> list[str]:
         for n, text in enumerate(outcomes, 1)
         if isinstance(text, str) and text.strip()
     )
-    if not any(outcomes):
+    if not any(isinstance(text, str) and text.strip() for text in outcomes):
         lines.append("No expected outcome lines saved.")
     lines.extend(
         note
@@ -79,6 +79,10 @@ def _body(request: GoalRequest, payload: Mapping[str, Any]) -> dict[str, Any] | 
         body.update(
             adopt=candidate.source, expected_prompt=candidate.text, expected_prompt_at=candidate.at
         )
+        if not revision:
+            # Revision zero also names a discard. Keep a board discard that follows
+            # this read; the page can still deliberately adopt after discarding.
+            body["empty_intent_only"] = True
     else:
         text = "" if request.clear else request.text
         cap = payload.get("annotate_goal_cap")
@@ -114,11 +118,13 @@ def run(request: GoalRequest, *, named: Session, board: Board, out: TextIO, err:
                 or answer.get("outcome") not in ("stored", "unchanged")
                 or type(answer.get("saved_revision")) is not int
             ):
-                print(
-                    "Goal not saved: the source or revision changed, "
-                    "or the store could not save it. Read again before retrying.",
-                    file=err,
+                reason = (
+                    "Goal not saved: the goal was discarded on the board meanwhile."
+                    if request.adopt and isinstance(answer, dict) and answer.get("discarded")
+                    else "Goal not saved: the source or revision changed, "
+                    "or the store could not save it. Read again before retrying."
                 )
+                print(reason, file=err)
                 return 1
             saved = answer["saved_revision"]
             notices.append(

@@ -154,6 +154,11 @@ class ClientContractFixtureTest(unittest.TestCase):
                     f"{name} no longer matches the backend: run scripts/regen_client_fixtures.py",
                 )
 
+    def test_a_persons_terminal_goal_cases_can_be_recorded_again_from_the_server(self) -> None:
+        recorded = json.loads(regen.TERMINAL_GOALS.read_bytes())
+        inputs = [{"name": case["name"], "payload": case["payload"]} for case in recorded]
+        self.assertEqual(inputs, regen.generate_terminal_goals())
+
     def test_manifest_names_every_scenario_with_its_digest(self) -> None:
         manifest = json.loads((FIXTURES / "index.json").read_bytes())
         self.assertEqual(1, manifest["format"])

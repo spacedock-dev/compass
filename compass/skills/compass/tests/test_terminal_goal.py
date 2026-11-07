@@ -203,6 +203,36 @@ class APersonUsesTheirGoal(LeaseRoute):
         self.assertEqual("session-goal", revision["goal_source"])
         self.assertEqual(at, revision["goal_source_at"])
 
+    def test_a_person_whose_goal_was_discarded_on_the_board_meanwhile_keeps_the_discard(
+        self,
+    ) -> None:
+        Path(annotation_store.store_path(self.config)).unlink()
+        self.session.rows.extend(set_goal(START.timestamp() + 100))
+        self.session.save(self.path)
+        original = terminal_client.post
+        discarded = None
+
+        def changed(port: int, path: str, body: Any, **kwargs: Any) -> Any:
+            nonlocal discarded
+            self.assertEqual(0, body["expected_revision"])
+            annotation_store.annotate(
+                self.config, self.state, "claude", SHORT, goal="Another tab's goal"
+            )
+            annotation_store.clear(self.config, self.state, "claude", SHORT)
+            discarded = self.entry()
+            return original(port, path, body, **kwargs)
+
+        with (
+            self.serving() as port,
+            mock.patch.object(terminal_client, "post", side_effect=changed),
+        ):
+            code, out, err = self.command(port, "--goal", "--adopt", "--session", "claude:" + SID)
+        self.assertEqual(discarded, self.entry())
+        self.assertTrue(annotation_store.is_discarded(self.entry()))
+        self.assertEqual((1, ""), (code, out))
+        self.assertIn("goal was discarded on the board meanwhile", err)
+        self.assertNotIn("Saved goal", out + err)
+
     def test_a_person_cannot_overwrite_a_changed_goal_prompt_or_time_by_adopting(self) -> None:
         at = START.timestamp() + 100
         self.session.rows.extend(set_goal(at))
@@ -433,6 +463,35 @@ class APersonChoosesOneGoalOperation(unittest.TestCase):
                     output = "\n".join(terminal_goal.render(payload, port=4553))
                     for text in [expected["goal"], expected["source"], *expected["outcomes"]]:
                         self.assertIn(text, output)
+
+    def test_a_person_with_only_whitespace_outcomes_is_told_none_are_saved(self) -> None:
+        fixture = SERVER_PATH.parents[3] / "frontend/test/fixtures/terminal-goal.json"
+        payload = json.loads(fixture.read_text())[0]["payload"]
+        for n in range(1, 7):
+            payload["session"][f"annotation_line_{n}"] = " \t\n "
+        output = "\n".join(terminal_goal.render(payload, port=4553))
+        self.assertIn("No expected outcome lines saved.", output)
+        self.assertNotIn("Outcome ", output)
+        payload["session"]["annotation_line_3"] = "Tests pass"
+        output = "\n".join(terminal_goal.render(payload, port=4553))
+        self.assertIn("Outcome 3: Tests pass", output)
+        self.assertNotIn("No expected outcome lines saved.", output)
+
+    def test_a_person_reads_a_harness_goal_draft_and_its_adoption_in_the_parity_cases(self) -> None:
+        fixture = SERVER_PATH.parents[3] / "frontend/test/fixtures/terminal-goal.json"
+        cases = {case["name"]: case for case in json.loads(fixture.read_text())}
+        for name in ("harness-goal-draft", "adopted-harness-goal"):
+            with self.subTest(case=name):
+                case = cases[name]
+                row = case["payload"]["session"]
+                self.assertIsNotNone(row["session_goal"])
+                self.assertNotEqual(row["first_prompt"], row["session_goal"]["text"])
+                self.assertEqual(row["session_goal"]["text"], case["expected"]["goal"])
+                if name == "adopted-harness-goal":
+                    self.assertEqual("session-goal", row["annotation_goal_source"])
+                    self.assertEqual(row["session_goal"]["at"], row["annotation_goal_source_at"])
+                else:
+                    self.assertFalse(row["annotation_goal"])
 
     def test_a_person_can_choose_each_goal_form_but_cannot_combine_them(self) -> None:
         for argv in (

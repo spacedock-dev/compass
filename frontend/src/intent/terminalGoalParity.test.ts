@@ -31,6 +31,17 @@ it('a person reads the fresh Intent goal, source and outcomes in the terminal', 
         source: goalSourceLine(input),
         outcomes: annotationLines(annotation).map((line) => line.text),
       };
+      if (item.name === 'harness-goal-draft' || item.name === 'adopted-harness-goal') {
+        const harnessGoal = session['session_goal'] as Row;
+        expect(harnessGoal, item.name).toBeTruthy();
+        expect(actual.goal, item.name).toBe(harnessGoal['text']);
+        expect(actual.goal, item.name).not.toBe(session['first_prompt']);
+        expect(actual.source, item.name).toBe(
+          item.name === 'harness-goal-draft'
+            ? 'From your /goal at 03:04 · not saved'
+            : 'From your /goal at 03:04 · saved',
+        );
+      }
       if (process.env['COMPASS_WRITE_GOAL_PARITY'] === '1') item.expected = actual;
       expect(actual, item.name).toEqual(item.expected);
     }
