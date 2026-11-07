@@ -37,6 +37,8 @@ from compass_runtime import (
     session_summary,
     summary_jobs,
     summary_store,
+    terminal_client,
+    terminal_sessions,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
@@ -77,6 +79,7 @@ from .test_ci_read import GOAL_URL, StubGh
 from .test_claude_checks import Transcript
 from .test_session_summary import Replies
 from .test_summary_jobs import wait_job
+from .test_terminal_sessions import PAYLOAD
 
 # Real loopback sockets, server threads and job threads, and how long a refusal takes to answer.
 REAL_TIME_TESTS = True
@@ -488,6 +491,101 @@ class CompassServerTest(RuntimeTestCase):
             httpd.shutdown()
             httpd.server_close()
             thread.join(timeout=2)
+
+
+class SessionListRouteTest(RuntimeTestCase):
+    @contextlib.contextmanager
+    def serving(self, payload: dict[str, Any]) -> Any:
+        httpd = make_server()
+        with mock.patch.object(httpd.application, "collect", return_value=payload) as collect_board:
+            thread = serve_until_closed(httpd)
+            try:
+                yield httpd, collect_board
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+
+    @staticmethod
+    def get(port: int, path: str, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
+        try:
+            connection.request("GET", path, headers=headers or {})
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
+
+    def test_a_person_downloads_the_list_without_history_or_unused_row_fields(self) -> None:
+        payload = {
+            **PAYLOAD,
+            "sessions": [PAYLOAD["sessions"][i % 13] for i in range(3751)],
+            "history": {"pad": "x" * (terminal_client.DATA_CAP_BYTES + 1)},
+        }
+        before = json.dumps(payload).encode()
+        with self.serving(payload) as (httpd, collect_board):
+            with mock.patch.object(httpd.application, "request_usage_fetch") as fetch:
+                status, body = self.get(httpd.server_port, "/api/sessions?usage=1&all=1")
+                fetch.assert_not_called()
+            self.assertEqual(200, status, body[:200])
+            self.assertEqual(terminal_sessions.list_payload(payload), json.loads(body))
+            self.assertNotIn("history", json.loads(body))
+            self.assertNotIn("tokens", json.loads(body)["sessions"][0])
+            self.assertLess(len(body), terminal_client.DATA_CAP_BYTES)
+            self.assertEqual(before, self.get(httpd.server_port, "/api/data")[1])
+            collect_board.assert_called_once_with(show_all=False)
+        self.assertEqual(before, json.dumps(payload).encode())
+
+    def test_a_persons_list_reuses_the_page_snapshot_and_sees_its_invalidation(self) -> None:
+        payload = {
+            "sessions": [{"harness": "claude", "sid": "s1", "project": "alpha", "title": "Before"}]
+        }
+        with config_patch(collect_memo_sec=3600.0), self.serving(payload) as (httpd, collect_board):
+            self.get(httpd.server_port, "/api/data")
+            status, body = self.get(httpd.server_port, "/api/sessions")
+            self.assertEqual(200, status)
+            self.assertEqual("Before", json.loads(body)["sessions"][0]["title"])
+            collect_board.assert_called_once_with(show_all=False)
+            collect_board.return_value = {
+                "sessions": [{**payload["sessions"][0], "title": "After"}]
+            }
+            httpd.application.snapshot.clear()
+            status, body = self.get(httpd.server_port, "/api/sessions")
+            self.assertEqual(200, status)
+            self.assertEqual("After", json.loads(body)["sessions"][0]["title"])
+            self.assertEqual(2, collect_board.call_count)
+
+    def test_a_persons_list_refuses_navigation_and_nonlocal_callers(self) -> None:
+        with self.serving({"sessions": []}) as (httpd, collect_board):
+            for headers in (
+                {"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate"},
+                {"Sec-Fetch-Site": "cross-site"},
+                {"Host": "evil.example"},
+                {"Origin": "https://evil.example"},
+            ):
+                with self.subTest(headers=headers):
+                    status, _ = self.get(httpd.server_port, "/api/sessions", headers)
+                    self.assertEqual(403, status)
+            collect_board.assert_not_called()
+
+    def test_a_persons_server_only_words_never_leave_the_list(self) -> None:
+        payload = {
+            "sessions": [
+                {
+                    "harness": "claude",
+                    "sid": "s1",
+                    "project": "alpha",
+                    "annotation_assessment": {
+                        "nested": [{"reader_words": "private", "agent_words": "private"}]
+                    },
+                }
+            ]
+        }
+        with self.serving(payload) as (httpd, _):
+            status, body = self.get(httpd.server_port, "/api/sessions")
+        self.assertEqual(200, status)
+        self.assertEqual({"nested": [{}]}, json.loads(body)["sessions"][0]["annotation_assessment"])
+        self.assertNotIn(b"private", body)
 
 
 class OverlayLedgerEndpointTest(RuntimeTestCase):

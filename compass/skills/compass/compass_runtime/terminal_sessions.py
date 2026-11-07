@@ -1,4 +1,4 @@
-"""What `--sessions` and `--sessions waiting` print, derived from one `/api/data` payload.
+"""What `--sessions` and `--sessions waiting` print, derived from one published board payload.
 
 Standard library only, and no runtime module, for the reason `terminal_client` gives: a short
 command runs before the collectors load. The reasoning, and what was rejected, is in
@@ -27,6 +27,92 @@ from typing import Any, Final, NamedTuple, TypeGuard
 from urllib.parse import quote
 
 Row = Mapping[str, Any]
+
+_LIST_FIELDS: Final = (
+    "sessions",
+    "harnesses",
+    "generated",
+    "ends_observable",
+    "ask",
+    "asks",
+    "annotate",
+    "annotate_unreadable",
+)
+_SESSION_FIELDS: Final = (
+    "harness",
+    "sid",
+    "project",
+    "resume_id",
+    "state",
+    "state_detail",
+    "wait_unconfirmed",
+    "blocked_since",
+    "title",
+    "first_prompt_control",
+    "last_activity",
+    "tasks",
+    "turn",
+    "ended_at",
+    "finished_at",
+    "turn_end_at",
+    "dirty",
+    "changed",
+    "source_gaps",
+    "instruction",
+    "first_prompt",
+    "first_prompt_at",
+    "prompt_states_work",
+    "prompt_at",
+    "session_goal",
+    "copied_prompts",
+    "annotation_goal",
+    "annotation_goal_source",
+    "annotation_assessment",
+    "departures",
+    "loop",
+    "delegated_launches",
+    "delegated_unpaired",
+    "delegated_quiet_since",
+)
+_HARNESS_FIELDS: Final = ("key", "label", "error", "reports_needs_input")
+_ASK_FIELDS: Final = ("id", "harness", "session_id", "project", "question", "options", "age_sec")
+_NESTED_FIELDS: Final = {
+    "tasks": ("status", "subject"),
+    "turn": ("long",),
+    "loop": ("errors",),
+    "instruction": ("label", "text", "at"),
+    "copied_prompts": ("quoted_as",),
+    "session_goal": ("text", "offered", "cut", "at"),
+    "departures": ("at",),
+}
+
+
+def _project(value: Any, fields: tuple[str, ...]) -> Any:
+    if isinstance(value, list):
+        return [_project(item, fields) for item in value]
+    if isinstance(value, dict):
+        return {key: value[key] for key in fields if key in value}
+    return value
+
+
+def list_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """The terminal list's fields from one published snapshot, without its observation history."""
+    result = {key: payload[key] for key in _LIST_FIELDS if key in payload}
+    for key, fields in (
+        ("sessions", _SESSION_FIELDS),
+        ("harnesses", _HARNESS_FIELDS),
+        ("asks", _ASK_FIELDS),
+    ):
+        if key in result:
+            result[key] = _project(result[key], fields)
+    for row in _records(result.get("sessions")):
+        # Unknown assessment keys invalidate a reading; trimming them would invent a departure.
+        # Keep the assessment intact so the board's schema rejection remains the same.
+        for key, nested_fields in _NESTED_FIELDS.items():
+            if key in row:
+                row[key] = _project(row[key], nested_fields)
+    return result
+
 
 GOAL_WIDTH: Final = 120
 
