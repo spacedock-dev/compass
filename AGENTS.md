@@ -432,9 +432,10 @@ is required.
   timed-out check goes back in once per head commit on its own (`requeue-after-ejection.yml`), and a
   comment on the PR names the failed jobs. A second failure of the same commit, a conflict, a manual
   removal, or a missing `MERGE_QUEUE_TOKEN` secret leaves it out for you to queue again. If you
-  queue it again yourself first, the workflow leaves it alone. If putting it back fails, as it did
-  once with a token GitHub rejected, that comment changes to say it is not in the queue and why, and
-  the commit keeps its one automatic attempt.
+  queue it again yourself first, the workflow leaves it alone. If putting it back fails, that comment
+  changes to say it is not in the queue and why. When GitHub refused the token, as it did once, the
+  commit keeps its one automatic attempt; any other failure counts as the attempt, because it may
+  have reached GitHub.
 - **Without one,** the ruleset requires branches be up to date, so landing one PR puts every
   sibling `BEHIND` and each needs `gh pr update-branch` plus a full CI re-run. Plan for one cycle
   per PR. A native GitHub stack (`gh stack`) avoids most of that: when `main` moves,

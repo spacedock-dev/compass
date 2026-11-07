@@ -16,7 +16,8 @@ required string whose values GitHub does not document; the timeline's
 Once per head is held by a comment carrying a hidden marker with the head SHA, written by the
 workflow's own bot account and read back from it alone, so a comment anyone else writes can
 neither consume the attempt nor fake one. The marker is written before the enqueue, so a comment
-that cannot be written stops the enqueue rather than allowing a second one later. Stdlib only: the runner's Python runs it as checked out.
+that cannot be written stops the enqueue rather than allowing a second one later. Stdlib only:
+the runner's Python runs it as checked out.
 """
 
 from __future__ import annotations
@@ -46,8 +47,10 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 FAILED_CHECKS = "failed_checks"
 FAILED_JOB = frozenset({"failure", "timed_out", "cancelled", "startup_failure"})
 LISTED_JOBS = 20
-# What the enqueue job writes as its `failure` output, from gh's own error. Anything else reads as
-# the default, so nothing the job printed reaches the comment.
+# What the enqueue job writes as its `failure` output, from gh's own error. Only these two are a
+# definite refusal, so only they refund the head's attempt: any other failure may have reached
+# GitHub, and a refund then could re-queue the same head twice. Anything the job did not write
+# reads as the default, so nothing it printed reaches the comment.
 FAILURES = {
     "token-rejected": (
         "GitHub rejected `MERGE_QUEUE_TOKEN` (HTTP 401): it is expired, revoked or not a token. "
@@ -59,7 +62,7 @@ FAILURES = {
     ),
 }
 UNKNOWN_FAILURE = "The enqueue job failed; its log says why."
-RUN_URL = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/actions/runs/\d+$")
+RUN_URL = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/actions/runs/\d+")
 
 TIMELINE = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -112,7 +115,7 @@ def decide(facts: Facts) -> Decision:  # noqa: PLR0911 - one return per guard, i
     """Re-queue once per head on a failed or timed-out check; report the second failure once."""
     if facts.state != "OPEN":
         return Decision("skip", f"the pull request is {facts.state.lower() or 'unreadable'}")
-    if not SHA.match(facts.head) or facts.current_head != facts.head:
+    if not SHA.fullmatch(facts.head) or facts.current_head != facts.head:
         return Decision("skip", "the head moved since the removal; its own checks decide")
     if facts.in_queue:
         # A person re-queued it before this ran. Re-queueing too would spend this head's attempt.
@@ -210,20 +213,29 @@ def failed_enqueue_comment(
     head: str, number: int, failure: str, names: list[str], run_url: str
 ) -> str:
     """What the requeue comment becomes when the enqueue after it failed."""
-    cause = FAILURES.get(failure, UNKNOWN_FAILURE)
-    run = f" [The run]({run_url})." if RUN_URL.match(run_url) else ""
-    return "\n".join(
-        [
-            f"<!-- {MARKER}: enqueue-failed head={head} -->",
+    refused = failure in FAILURES
+    run = f" [The run]({run_url})." if RUN_URL.fullmatch(run_url) else ""
+    if refused:
+        kind, outcome = "enqueue-failed", "Putting it back automatically failed"
+        attempt = "was not used up, so if it fails in the queue again it goes back in once."
+    else:
+        kind, outcome = "requeued", "Putting it back automatically may have failed"
+        attempt = (
+            "counts as used, because the failure does not show whether GitHub received it, "
+            "so if it fails in the queue again it stays out."
+        )
+    lines = [
+        f"<!-- {MARKER}: {kind} head={head} -->",
+        (
             "The merge queue removed this pull request because a check failed or timed out "
-            f"on `{head[:12]}`. Putting it back automatically failed, so it is not in the queue.\n",
-            f"{cause}{run}\n",
-            "These failed in the queue:\n",
-            _job_list(names),
-            f"Queue it with `gh pr merge {number}`. This commit's automatic re-queue was not used "
-            "up, so if it fails in the queue again it goes back in once.",
-        ]
-    ) + "\n"
+            f"on `{head[:12]}`. {outcome}, and it is not in the queue.\n"
+        ),
+        f"{FAILURES.get(failure, UNKNOWN_FAILURE)}{run}\n",
+        "These failed in the queue:\n",
+        _job_list(names),
+        f"Queue it with `gh pr merge {number}`. This commit's automatic re-queue {attempt}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _run_gh(args: list[str], stdin: str | None = None) -> str | None:
@@ -321,12 +333,22 @@ def read_failed_jobs(repo: str, base: str, number: int, gh: Gh) -> list[str]:
     return failed_job_names(failed, jobs)
 
 
-def report_failed_enqueue(  # noqa: PLR0913 - each is one input the workflow passes
-    repo: str, number: int, head: str, base: str, comment_id: str, failure: str, run_url: str, gh: Gh
+def report_failed_enqueue(
+    repo: str,
+    number: int,
+    head: str,
+    base: str,
+    comment_id: str,
+    failure: str,
+    run_url: str,
+    gh: Gh,
 ) -> int:
-    """Rewrite the requeue comment once the enqueue after it failed: say so, and refund the attempt."""
+    """Correct the requeue comment once the enqueue after it failed, refunding a refused attempt."""
     if not comment_id.isdigit():
         print(f"::error::no requeue comment to correct on #{number} (id {comment_id!r})")
+        return 1
+    if not SHA.fullmatch(head):
+        print(f"::error::malformed head {head!r} on #{number}; the comment is left as it is")
         return 1
     _, _, in_queue, _ = read_pull(repo, number, gh)
     if in_queue:
@@ -354,7 +376,7 @@ def report_failed_enqueue(  # noqa: PLR0913 - each is one input the workflow pas
     return 0
 
 
-def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:  # noqa: C901 - two modes, in turn
+def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=os.environ.get("REPO", ""))
     parser.add_argument("--number", default=os.environ.get("PR_NUMBER", ""))

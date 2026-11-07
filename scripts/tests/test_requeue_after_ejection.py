@@ -145,7 +145,6 @@ class MarkersTest(unittest.TestCase):
                 self.assertEqual(frozenset({HEAD}), requeue.marked_heads([bot(body)])[slot])
                 self.assertIn("- `Quality Gate / test`", body)
 
-
     def test_a_failed_enqueue_leaves_the_heads_attempt_unspent(self) -> None:
         # The report rewrites the requeued comment into this one, so the next failure re-queues.
         body = requeue.failed_enqueue_comment(HEAD, 7, "token-rejected", [], "")
@@ -154,6 +153,7 @@ class MarkersTest(unittest.TestCase):
         requeued, gave_up = requeue.marked_heads([bot(body)])
         facts = replace(FIRST, requeued=requeued, gave_up=gave_up)
         self.assertEqual("requeue", requeue.decide(facts).action)
+
 
 class FailedJobsTest(unittest.TestCase):
     RUNS = (
@@ -377,13 +377,16 @@ class MainTest(unittest.TestCase):
         self.assertEqual((0, "action=skip\n"), (code, output))
 
 
-
 RUN_URL = "https://github.com/spacedock-dev/compass/actions/runs/42328619023"
 
 
 class ReportFailedEnqueueTest(unittest.TestCase):
     def report(
-        self, gh: FakeGh, failure: str = "token-rejected", comment_id: str = "41", run_url: str = RUN_URL
+        self,
+        gh: FakeGh,
+        failure: str = "token-rejected",
+        comment_id: str = "41",
+        run_url: str = RUN_URL,
     ) -> tuple[int, str]:
         argv = [
             "--report-failed-enqueue",
@@ -441,6 +444,37 @@ class ReportFailedEnqueueTest(unittest.TestCase):
                 self.assertIn(expected, body)
                 self.assertNotIn("<script>", body)
 
+    def test_only_a_definite_rejection_refunds_the_attempt(self) -> None:
+        # Any other failure may have reached GitHub (a dropped connection after the enqueue
+        # landed), and a refund then would let the same head be re-queued twice.
+        cases = {
+            "token-rejected": ("enqueue-failed", "was not used up"),
+            "token-forbidden": ("enqueue-failed", "was not used up"),
+            "other": ("requeued", "counts as used"),
+            "": ("requeued", "counts as used"),
+        }
+        for failure, (kind, spent) in cases.items():
+            with self.subTest(failure=failure):
+                gh = FakeGh()
+                self.report(gh, failure=failure)
+                ((_, body),) = gh.patched
+                self.assertIn(f"<!-- {requeue.MARKER}: {kind} head={HEAD} -->", body)
+                self.assertIn(spent, body)
+                self.assertIn("not in the queue", body)
+
+    def test_a_malformed_head_is_never_written_into_a_marker(self) -> None:
+        for head in ("a" * 39 + "\n<!--", HEAD + "\n", HEAD.upper()):
+            with self.subTest(head=head):
+                gh = FakeGh()
+                out = io.StringIO()
+                argv = ["--report-failed-enqueue", "--repo", REPO, "--number", "7"]
+                argv += ["--head", head, "--base", "main", "--comment-id", "41"]
+                argv += ["--enqueue-failure", "token-rejected"]
+                with unittest.mock.patch.dict(os.environ, {}, clear=True), redirect_stdout(out):
+                    code = requeue.main(argv, gh)
+                self.assertEqual((1, []), (code, gh.patched))
+                self.assertIn("::error::", out.getvalue())
+
     def test_a_pull_request_back_in_the_queue_keeps_the_comment(self) -> None:
         # Someone queued it by hand meanwhile, so "it goes back in" is true and stays.
         gh = FakeGh(in_queue=True)
@@ -462,7 +496,12 @@ class ReportFailedEnqueueTest(unittest.TestCase):
                 self.assertIn("::error::", printed)
 
     def test_only_an_actions_run_url_is_linked(self) -> None:
-        for run_url in ("", "https://evil.example/actions/runs/1", f"{RUN_URL})[x](y"):
+        for run_url in (
+            "",
+            "https://evil.example/actions/runs/1",
+            f"{RUN_URL})[x](y",
+            f"{RUN_URL}\n",
+        ):
             with self.subTest(run_url=run_url):
                 gh = FakeGh()
                 self.report(gh, run_url=run_url)

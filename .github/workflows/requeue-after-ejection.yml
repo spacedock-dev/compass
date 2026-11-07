@@ -116,7 +116,9 @@ jobs:
             exit 0
           fi
           printf '%s\n' "$answer"
+          # A rate limit is also HTTP 403, and says nothing about the token.
           case "$answer" in
+            *"rate limit"*) failure=other ;;
             *"HTTP 401"* | *"Bad credentials"*) failure=token-rejected ;;
             *"HTTP 403"* | *"Resource not accessible"*) failure=token-forbidden ;;
             *) failure=other ;;

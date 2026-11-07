@@ -143,7 +143,7 @@ class PermissionsTest(unittest.TestCase):
         self.assertEqual("enqueue", only["id"])
         written = set(re.findall(r"\bfailure=([a-z-]+)", only["run"]))
         self.assertEqual({"token-rejected", "token-forbidden", "other"}, written)
-        self.assertEqual(1, only["run"].count(">> \"$GITHUB_OUTPUT\""))
+        self.assertEqual(1, only["run"].count('>> "$GITHUB_OUTPUT"'))
 
 
 class NoPullRequestCodeTest(unittest.TestCase):
@@ -175,9 +175,7 @@ class NoPullRequestCodeTest(unittest.TestCase):
 
     def test_the_script_runs_isolated_from_the_checkout(self) -> None:
         self.assertEqual(f"python3 -I {SCRIPT}", steps("decide")[1]["run"])
-        self.assertEqual(
-            f"python3 -I {SCRIPT} --report-failed-enqueue", steps("report")[1]["run"]
-        )
+        self.assertEqual(f"python3 -I {SCRIPT} --report-failed-enqueue", steps("report")[1]["run"])
 
     def test_nothing_is_restored_from_a_cache_or_another_run(self) -> None:
         for job_id, job in jobs().items():
@@ -245,7 +243,6 @@ class NoAuthoredFieldReachesAScriptTest(unittest.TestCase):
         )
 
 
-
 @unittest.skipUnless(shutil.which("bash"), "the enqueue step is a bash script")
 class EnqueueStepTest(unittest.TestCase):
     """The enqueue step's own shell, run against a gh that answers the way GitHub did."""
@@ -273,7 +270,7 @@ class EnqueueStepTest(unittest.TestCase):
                 "HEAD_SHA": "a" * 40,
             }
             # GitHub runs a step with `bash -e`, so the failure must be caught inside it.
-            ran = subprocess.run(  # noqa: S603 - fixed argv
+            ran = subprocess.run(
                 ["bash", "-e", str(script)],  # noqa: S607 - bash from PATH
                 env=env,
                 capture_output=True,
@@ -293,6 +290,11 @@ class EnqueueStepTest(unittest.TestCase):
         self.assertEqual(
             (1, "failure=token-forbidden\n"), self.run_step("gh: Forbidden (HTTP 403)", 1)
         )
+
+    def test_a_rate_limit_is_not_called_a_permission_problem(self) -> None:
+        # GitHub answers a rate limit with HTTP 403 too; it says nothing about the token.
+        answer = "gh: API rate limit exceeded for user ID 1. (HTTP 403)"
+        self.assertEqual((1, "failure=other\n"), self.run_step(answer, 1))
 
     def test_any_other_failure_is_other(self) -> None:
         answer = "GraphQL: Head ref has been modified since the pull request was last fetched"
