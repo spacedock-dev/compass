@@ -404,6 +404,7 @@
             "deadline": null,
             "destination": null,
             "disclosure": null,
+            "episode": null,
             "interval_sec": 60.0,
             "label": "Live monitor · Haiku",
             "last_end": null,
@@ -474,7 +475,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "8418",
+      "Content-Length": "8433",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

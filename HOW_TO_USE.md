@@ -783,7 +783,9 @@ never replaces a status line you have, so both procedures below are yours to app
 What the line says, and when it says nothing:
 
 - `drift High` comes first while the Live monitor is on for this session. It uses the same level as
-  the page's pill, or says `drift: no level yet` when the page would draw no pill. Turn the monitor on
+  the page's pill and keeps the last level visible while you work, until the next check replaces it.
+  Replacing your saved intent or annotation revision clears the old level at once. It says
+  `drift: no level yet` when there is no level to show. Turn the monitor on
   with `spacedock-compass --monitor` in that session, or from the session page. When the lease ends,
   the level disappears on the next refresh. A short reason such as `monitor off: session ended`
   stays for five minutes after the end. Your own Off is silent. Waiting counts keep refreshing.
