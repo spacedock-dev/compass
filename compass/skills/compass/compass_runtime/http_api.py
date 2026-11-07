@@ -3366,6 +3366,18 @@ class _RequestHandler(BaseHTTPRequestHandler):
             accepted = answer.get("ok") is True
             if accepted and terminal:
                 answer["terminal"] = terminal
+                destination = answer["state"]["destination"]
+                # Record only a start whose receipt can be printed. A failed write leaves it due.
+                with contextlib.suppress(reading_policy.RefusedError):
+                    reading_policy.note(
+                        config,
+                        kind="monitor",
+                        provider=live_monitor.PROVIDER,
+                        destination=destination,
+                        content=reading_policy.WORDS_CONTENT_VERSION,
+                        tool_output=destination,
+                        now=self.server.application.clock(),
+                    )
         finally:
             if uuid and not accepted:
                 typed_press.release(config, uuid)
@@ -3442,20 +3454,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 return "adoption-refused"
         now = application.clock()
         board = live_monitor.board(config, now=now)
-        try:
-            notice = reading_policy.note(
-                config,
-                kind="monitor",
-                provider=live_monitor.PROVIDER,
-                destination=board["destination"],
-                content=reading_policy.WORDS_CONTENT_VERSION,
-                tool_output=board["destination"],
-                now=now,
-            )
-        except reading_policy.RefusedError:
-            return "store-unavailable"
         receipt.update(
-            notice_due=notice is not None,
+            notice_due=board["notice_due"],
             disclosure=live_monitor.disclosure(board["destination"], terminal=True),
         )
         return ""

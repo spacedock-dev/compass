@@ -2972,7 +2972,10 @@ def _save_refused(
     expected_revision = options.get("expected_revision")
     return bool(
         (expected_revision is not None and expected_revision != actual_revision)
-        or (options.get("empty_intent_only") and has_typed_words(existing))
+        or (
+            options.get("empty_intent_only")
+            and (has_typed_words(existing) or is_discarded(existing))
+        )
         or (
             options.get("empty_goal_only")
             and existing

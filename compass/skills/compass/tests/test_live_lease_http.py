@@ -260,6 +260,77 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         self.assertNotIn("goal", answer["terminal"])
         self.assertEqual("", self.saved()["revisions"][-1]["goal"])
 
+    def test_a_person_who_discards_their_empty_intent_during_a_terminal_start_keeps_it_discarded(
+        self,
+    ) -> None:
+        annotation_store.annotate(self.config, self.state, "claude", SHORT, goal="", now=NOW)
+        adopt = annotation_store.adopt
+        discarded = []
+
+        def racing(*args: Any, **kwargs: Any) -> str:
+            annotation_store.clear(self.config, self.state, "claude", SHORT, now=NOW + 1)
+            discarded.append(self.saved())
+            return adopt(*args, **kwargs)
+
+        with (
+            self.serving() as port,
+            mock.patch.object(annotation_store, "adopt", side_effect=racing),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertFalse(answer["ok"])
+        self.assertFalse(answer["state"]["on"])
+        self.assertNotIn("terminal", answer)
+        self.assertTrue(annotation_store.is_discarded(self.saved()))
+        self.assertEqual(discarded[0], self.saved())
+
+    def test_a_person_whose_start_is_refused_after_preparation_still_sees_the_disclosure_next_time(
+        self,
+    ) -> None:
+        with self.serving() as port:
+            with mock.patch.object(
+                live_lease.Leases, "_start_refusal", side_effect=["", "unavailable"]
+            ):
+                _, refused = self.lease(port, "start", holder_kind="terminal")
+            self.assertFalse(refused["ok"])
+            self.assertFalse(refused["state"]["on"])
+            self.assertNotIn("terminal", refused)
+            self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+            _, accepted = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(accepted["ok"])
+            self.assertTrue(accepted["terminal"]["notice_due"])
+
+    def test_a_person_sees_the_disclosure_even_when_its_notice_cannot_be_recorded(self) -> None:
+        with (
+            self.serving() as port,
+            mock.patch.object(
+                reading_policy,
+                "note",
+                side_effect=reading_policy.RefusedError(
+                    {
+                        **reading_policy.status(self.config, now=NOW),
+                        "reason": "store-unavailable",
+                    }
+                ),
+            ),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertTrue(answer["ok"])
+        self.assertTrue(answer["terminal"]["notice_due"])
+        self.assertIn("Sends to api.anthropic.com", answer["terminal"]["disclosure"])
+        self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+
+    def test_a_person_reads_when_terminal_checks_run_and_how_to_stop_them(self) -> None:
+        with self.serving() as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        text = answer["terminal"]["disclosure"]
+        self.assertIn("checks after new work in this session, at most about once a minute", text)
+        self.assertIn("spacedock-compass --monitor --off from a shell", text)
+        self.assertIn("/compass:compass monitor off in the session", text)
+        self.assertIn("Pause model calls stops it.", text)
+        self.assertNotIn("terminal holder", text)
+        self.assertNotIn("heartbeats", text)
+        self.assertNotIn("no confirmation question", text)
+
     def test_a_person_s_page_draft_is_saved_before_the_ticker_can_start(self) -> None:
         seen = []
 

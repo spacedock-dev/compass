@@ -208,19 +208,20 @@ def disclosure(destination: str, *, terminal: bool = False) -> str:
         "file paths are not sent, because Compass cannot name where they would go"
     )
     cadence = (
-        "while a terminal holder keeps Live monitor on"
+        f"to Haiku: {sent}. It checks after new work in this session, at most about once a minute. "
         if terminal
-        else "while Live monitor is on and you are viewing this session"
+        else f"to Haiku, about once a minute while Live monitor is on "
+        f"and you are viewing this session: {sent}. "
     )
     stop = (
-        "Stop this terminal's holder with --monitor --off. "
-        "The terminal holder must keep sending heartbeats; no confirmation question is needed."
+        "Stop it with spacedock-compass --monitor --off from a shell "
+        "or /compass:compass monitor off in the session."
         if terminal
         else "It turns itself off after a while unless you say you still want it."
     )
     return (
         f"Sends to {destination or 'a destination Compass cannot name'} through your Claude Code, "
-        f"to Haiku, about once a minute {cadence}: {sent}. "
+        f"{cadence}"
         "Recent turns are sent again in later checks, and again each time "
         "Live monitor is turned off and on. Everything is redacted first. No file or tool "
         f"output is sent. Pause model calls stops it. {stop}"

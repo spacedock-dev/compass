@@ -7055,7 +7055,7 @@ is exactly how the skill runs it.
 
 The same guard admits the terminal `monitor on` action. An in-session `--monitor` start carries
 `typed_action: "monitor on"` to `/api/live-monitor`, consumes its typed record before lease
-admission can save a goal, record a notice or start the ticker, and gives it back on refused or failed admission. Terminal preparation runs outside the lease lock after ordinary refusal checks, and admission is checked again before holder publication. Preparation adopts the page's draft through `_adopt_prompt` only while neither a goal nor outcome lines are saved; the annotation lock guards this condition too. A concurrent save wins. No model call is made. A failed adoption starts no lease. The receipt names the actual saved revision, never the requested draft or an unrelated later revision. Accepted runs
+admission can save a goal, record a notice or start the ticker, and gives it back on refused or failed admission. Terminal preparation runs outside the lease lock after ordinary refusal checks, and admission is checked again before holder publication. Preparation adopts the page's draft through `_adopt_prompt` only while neither a goal nor outcome lines are saved; the annotation lock guards this condition too. A concurrent save wins. A concurrent discard refuses adoption and the start, leaving the discard record intact. No model call is made. A failed adoption starts no lease. The receipt names the actual saved revision, never the requested draft or an unrelated later revision. Accepted runs
 keep it consumed across dashboard restarts. Beats and `--monitor --off` consume nothing. The
 sidecar exits on a restart and requires a new command rather than replaying start. The skill's
 exact approval for `--monitor --off` is the only two-flag exception to the validator's rule above.
@@ -7873,7 +7873,7 @@ below, which supersedes the floor bullet here.
   note saying why, Yes resets the clock and No turns it off.
 - **Stops.** Pause model calls and `--no-observer-model` both stop the monitor and refuse to start it.
   Pause cancels a tick in flight. Under DEC-28's opt-out, consent means "not paused": the monitor has
-  no grant of its own for a reader to give. A browser records the `monitor` notice with the first charged call; a terminal start records a due notice during preparation, before publishing the holder, without a charge. The foreground prints that receipt. A store that cannot say whether the reader paused refuses the call.
+  no grant of its own for a reader to give. A browser records the `monitor` notice with the first charged call; terminal preparation only reads whether the notice is due. After admission succeeds and the terminal receipt exists, the start records the notice without a charge. A refused admission records no notice. A failed notice write leaves the receipt due, so the foreground still prints the disclosure. Two simultaneous first starts may both print it. A store that cannot say whether the reader paused refuses the call.
 - **Sessions with no `ended_at` stamp.** The TTL banner is what stops the monitor. Idleness is not read as
   an end. A session that has an end turns the monitor off and disables the switch.
 - **The level's floor.** Superseded by [the owner's floor amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor).

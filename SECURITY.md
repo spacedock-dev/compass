@@ -2940,7 +2940,7 @@ Ruled 2026-10-23 by the owner
 With the switch on and the session on screen, or while a terminal holder keeps the lease, a Haiku
 check of new turns runs about once a minute and produces the live drift level. It is a call the reader starts, under
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
-with a `monitor` notice shown before the first charged call. A terminal start records a due notice before publishing its holder, without a model call or charge; the foreground prints it, including `--monitor --off`. The notice follows the same destination and content-tier rules, including the reset on Pause.
+with a `monitor` notice shown before the first charged call. A terminal start checks whether its notice is due without recording it. After admission succeeds and the terminal receipt exists, it records the notice without a model call or charge. A refused start leaves the notice due. If recording fails, the receipt still tells the foreground to print it. The terminal disclosure says checks follow new work, at most about once a minute, and names `spacedock-compass --monitor --off` from a shell, `/compass:compass monitor off` in the session, and Pause model calls. The notice follows the same destination and content-tier rules, including the reset on Pause.
 
 - What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
   agent's replies, the commands of checks with their result, every other command as its masked line
@@ -2963,7 +2963,7 @@ with a `monitor` notice shown before the first charged call. A terminal start re
 - Terminal holders. `--monitor` starts one detached holder per Claude Code session; `--monitor
   --off` stops only that holder and leaves the dashboard and browser holders running. The skill's
   `monitor on` starts only when the transcript's latest main-thread prompt is that typed command,
-  once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat of an already-running command consume no command. The repeat only reads the board's published notice status. A full session id must match
+  once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins, and a concurrent discard stays discarded and refuses the start. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat of an already-running command consume no command. The repeat only reads the board's published notice status. A full session id must match
   `resume_id`; a same-prefix different id is refused.
   The holder exits on a recorded lease end, an absent or ended row, 30 seconds of continuously
   failed dashboard exchanges, or two hours with no new published activity. On POSIX it records the
@@ -4915,7 +4915,7 @@ and Event ingress below is where it is stated. `POST /api/focus`'s capability bu
 injected into the served document, so anything that can load the board under a non-default bind can
 also ask for a raise, and `/api/data` names which rows would answer it. What that second gate
 actually separates is a page from a document navigation and from a local process that never fetched
-the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice before starting the holder; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
+the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice after admission succeeds and its terminal receipt exists; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
 to addresses and never to names. Under `0.0.0.0`, that means any address a client could arrive on.
