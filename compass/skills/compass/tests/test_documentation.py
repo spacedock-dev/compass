@@ -2713,12 +2713,12 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         row = next(line for line in raw.splitlines() if line.startswith("| A Live monitor check"))
         for stop in (
             "the switch",
-            "leaving the session",
-            "hiding the tab",
-            "the session ending",
+            "last holder leaving or lapsing",
+            "hidden tab cannot drive checks",
+            "session end",
             "Pause model calls",
             "`--no-observer-model`",
-            "the 20-minute question",
+            "browser holders also stop at their consent deadline or No",
         ):
             self.assertIn(stop, row)
         self.assertIn("--claude-monitor-model", text)
