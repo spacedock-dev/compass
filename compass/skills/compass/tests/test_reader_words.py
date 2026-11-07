@@ -739,6 +739,7 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
                 call in source
                 for call in (
                     "runtime_project_context.collect(",
+                    "assemble_project_drift(",
                     "_session_context(",
                     "_session_facts(",
                 )
