@@ -273,8 +273,8 @@ the board draws as a risk row does not. The number is left out when nothing coul
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
 can be about a minute behind. It shows the page's drift level while the Live monitor is on for that
-session, and says when no level is available yet. Turning the monitor on from the terminal is not
-available yet; use the session page. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
+session, and says when no level is available yet. `spacedock-compass --monitor` turns the monitor on
+for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
 
 Compass can now check a session against your words while you are away and raise a departure
