@@ -17,7 +17,7 @@ from compass_runtime import terminal_client, terminal_project
 from compass_runtime.terminal_sessions import _owner
 
 from .support import SERVER_PATH
-from .test_terminal_client import FakeDashboard
+from .test_terminal_client import ClockedDashboard, FakeDashboard
 
 FIXTURES = Path(__file__).resolve().parents[4] / "frontend/test/fixtures"
 # A cold project read exercises the session list's real six-second response time.
@@ -348,7 +348,9 @@ class ProjectTest(unittest.TestCase):
 
 
 class ProjectCommandTest(unittest.TestCase):
-    def run_project(self, fake: FakeDashboard, **kwargs: Any) -> tuple[int, str, str]:
+    def run_project(
+        self, fake: FakeDashboard | ClockedDashboard, **kwargs: Any
+    ) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = terminal_client.run_project(
@@ -438,12 +440,36 @@ class ProjectCommandTest(unittest.TestCase):
         with (
             mock.patch.object(terminal_client, "REQUEST_TIMEOUT_SEC", 0.1),
             mock.patch.object(terminal_client, "LIST_REQUEST_TIMEOUT_SEC", 0.5),
-            FakeDashboard(answers=self.answers(), delays={"/api/sessions": 0.4}) as fake,
+            ClockedDashboard(
+                answers=self.answers(),
+                delays={
+                    "/api/session?harness=claude&sid=a1b2c3d4-1111-2222-3333-444455556666": 0.08,
+                    "/api/sessions": 0.49,
+                    "/api/project-context?project=key-terminal-project": 0.08,
+                },
+            ) as fake,
         ):
             code, out, err = self.run_project(fake)
 
         self.assertEqual((0, ""), (code, err))
         self.assertEqual(1, out.count("[this session]"))
+
+    def test_a_person_gets_no_partial_brief_when_the_project_list_exceeds_its_allowance(
+        self,
+    ) -> None:
+        with (
+            mock.patch.object(terminal_client, "REQUEST_TIMEOUT_SEC", 0.1),
+            mock.patch.object(terminal_client, "LIST_REQUEST_TIMEOUT_SEC", 0.5),
+            ClockedDashboard(answers=self.answers(), delays={"/api/sessions": 0.51}) as fake,
+        ):
+            result = self.run_project(fake)
+
+        self.assertEqual(
+            (1, "", "Compass answered, but its session list could not be read.\n"), result
+        )
+        self.assertIn(("GET", "/api/sessions"), fake.requests)
+        self.assertFalse(any(path.startswith("/api/project-context") for _, path in fake.requests))
+        self.assertNotIn(("GET", "/api/data"), fake.requests)
 
     def test_a_person_gets_no_project_brief_from_a_fallback_after_another_read_failure(
         self,

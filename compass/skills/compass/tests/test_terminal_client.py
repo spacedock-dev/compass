@@ -18,13 +18,15 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 from unittest import mock
 
 from compass_runtime import (
     cli,
     entry,
     lifecycle,
+    loopback_transport,
     terminal_client,
     terminal_drift,
     terminal_sessions,
@@ -33,6 +35,9 @@ from compass_runtime import (
 from . import support
 from .support import SERVER_PATH
 from .test_terminal_sessions import PAYLOAD
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 MANIFEST = SERVER_PATH.parents[2] / ".claude-plugin" / "plugin.json"
 HEAVY = ("compass_runtime.cli", "compass_runtime.http_api", "compass_runtime.aggregate")
@@ -110,6 +115,61 @@ class FakeDashboard:
         self.release.set()
         self.server.shutdown()
         self.server.server_close()
+
+
+class ClockedDashboard:
+    """Script transport latency without making scheduling part of a client's budget test.
+
+    Only the exchange and the client's clock are replaced. Request parsing, fallback,
+    validation and rendering still run; real socket deadlines have separate coverage.
+    """
+
+    port = 4553
+
+    def __init__(
+        self,
+        *,
+        answers: dict[str, tuple[int, dict[str, str], bytes]],
+        delays: dict[str, float],
+    ) -> None:
+        self.answers = answers
+        self.delays = delays
+        self.requests: list[tuple[str, str]] = []
+        self.now = 100.0
+
+    def exchange(
+        self,
+        method: str,
+        _port: int,
+        path: str,
+        _body: bytes | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,  # noqa: ARG002 - exchange's keyword contract
+        timeout: float,
+        cap: int,
+    ) -> tuple[int, bytes]:
+        self.requests.append((method, path))
+        delay = self.delays.get(path, 0.0)
+        self.now += min(delay, timeout)
+        if delay >= timeout:
+            raise TimeoutError
+        if path == "/api/health":
+            return 200, b'{"ok":true,"pid":4242,"port":4553,"started":1}'
+        status, _headers, body = self.answers.get(path, (404, {}, b"{}"))
+        return status, body[: cap + 1]
+
+    def __enter__(self) -> Self:
+        self._patches = contextlib.ExitStack()
+        self._patches.enter_context(
+            mock.patch.object(terminal_client, "time", SimpleNamespace(monotonic=lambda: self.now))
+        )
+        self._patches.enter_context(
+            mock.patch.object(loopback_transport, "exchange", self.exchange)
+        )
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._patches.close()
 
 
 def run_entry(*argv: str) -> tuple[int, str, str]:
@@ -823,12 +883,29 @@ class SessionsCommandTest(HomeCase):
             "/api/data": (200, {}, json.dumps(BOARD).encode()),
         }
         with (
-            FakeDashboard(answers=answers, delays={"/api/sessions": 0.2, "/api/data": 0.2}) as fake,
+            ClockedDashboard(
+                answers=answers, delays={"/api/sessions": 0.2, "/api/data": 0.2}
+            ) as fake,
             self.assertRaises(terminal_client.UnreadableSessionsError),
         ):
             terminal_client.read_sessions(fake.port, timeout=0.3)
 
         self.assertIn(("GET", "/api/data"), fake.requests)
+
+    def test_a_person_reads_an_older_dashboard_when_its_fallback_fits_the_remaining_budget(
+        self,
+    ) -> None:
+        answers: dict[str, tuple[int, dict[str, str], bytes]] = {
+            "/api/sessions": (404, {}, b"{}"),
+            "/api/data": (200, {}, json.dumps(BOARD).encode()),
+        }
+        with ClockedDashboard(
+            answers=answers, delays={"/api/sessions": 0.2, "/api/data": 0.05}
+        ) as fake:
+            payload = terminal_client.read_sessions(fake.port, timeout=0.3)
+
+        self.assertEqual(BOARD, payload)
+        self.assertEqual([("GET", "/api/sessions"), ("GET", "/api/data")], fake.requests)
 
     def test_a_person_with_an_older_dashboard_still_reads_their_sessions(self) -> None:
         board = {**PAYLOAD, "history": {"pad": "x" * (terminal_client.REPLY_CAP_BYTES + 1)}}
