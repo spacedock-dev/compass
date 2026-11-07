@@ -220,7 +220,7 @@ class RefusalTest(unittest.TestCase):
 
 
 class SpendClassificationTest(unittest.TestCase):
-    def test_a_person_sees_four_free_actions_and_three_that_can_spend(self) -> None:
+    def test_a_person_sees_five_free_actions_and_three_that_can_spend(self) -> None:
         text = (ROOT / "compass/skills/compass/SKILL.md").read_text(encoding="utf-8")
         table = session_smoke.parse_actions(text)
         self.assertEqual(
@@ -233,6 +233,7 @@ class SpendClassificationTest(unittest.TestCase):
                 "drift again": True,
                 "monitor on": True,
                 "monitor off": False,
+                "pause": False,
             },
         )
 

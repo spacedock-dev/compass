@@ -220,8 +220,16 @@ def attach_footer_lines(application: aggregate.Application, config: RuntimeConfi
     Not in `build_application`: `--diagnose` and every test build one, and none of them may write
     into the reader's home.
     """
+
+    def paused() -> bool | None:
+        answer = reading_policy.status(config, now=application.clock())
+        return None if answer["reason"] in ("store-unavailable", "run-disabled") else answer["off"]
+
     application.footer_lines = footer_lines.Lines(
-        config.state_home, monitor=http_api.FooterMonitorSource(application), diagnostic_sink=print
+        config.state_home,
+        monitor=http_api.FooterMonitorSource(application),
+        model_calls_paused=paused,
+        diagnostic_sink=print,
     )
 
 
@@ -916,6 +924,16 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
     client's discovery of a dashboard on another port.
     """
+    if args.pause_model_calls:
+        remaining = [arg for arg in argv if arg != "--pause-model-calls"]
+        if not (
+            not remaining
+            or (len(remaining) == 2 and remaining[0] == "--port")
+            or (len(remaining) == 1 and remaining[0].startswith("--port="))
+        ):
+            build_parser().error("--pause-model-calls stands alone or with --port")
+        typed = any(a == "--port" or a.startswith("--port=") for a in argv)
+        return terminal_client.run_pause_model_calls(port=args.port if typed else None)
     if args.version:
         return terminal_client.print_version()
     typed = any(a == "--port" or a.startswith("--port=") for a in argv)

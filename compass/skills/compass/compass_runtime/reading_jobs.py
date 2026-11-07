@@ -177,11 +177,7 @@ class Hooks:
         confirmed keeps its own reason, so "may still be running" is never
         turned into "ran".
         """
-        path = _marker(self._application.config, self._job.id)
-        with _MARKER_LOCK, contextlib.suppress(OSError, ValueError):
-            marker = json.loads(path.read_text(encoding="utf-8"))
-            marker["reason"] = why if why in _KEPT_REASONS else reading.WITHHELD_UNSTORED
-            runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+        _mark_unstored(self._application.config, self._job.id, why)
 
     def spawned(self, group: Any) -> None:
         """The CLI exists, so the job is waiting on the provider now.
@@ -206,6 +202,12 @@ class Hooks:
 
     def cancelled(self) -> bool:
         """Whether a reader's Cancel was accepted for this job."""
+        permission = self._job.permission
+        changed = permission is None or bool(
+            reading_policy.long_permission_reason(self._application.config, permission)
+        )
+        if changed:
+            cancel(self._application, self._key, self._job.id)
         return reading.job_cancelled(self._job)
 
     def phase(self, phase: str) -> None:
@@ -217,6 +219,21 @@ class Hooks:
 
 def _marker(config: Any, job_id: str) -> Path:
     return Path(config.state_dir) / MARKER_DIR / f"{job_id}.json"
+
+
+def _mark_unstored(config: RuntimeConfig, job_id: str, why: str) -> None:
+    path = _marker(config, job_id)
+    with _MARKER_LOCK, contextlib.suppress(OSError, ValueError):
+        marker = json.loads(path.read_text(encoding="utf-8"))
+        previous = marker.get("reason")
+        marker["reason"] = (
+            why
+            if why in _KEPT_REASONS
+            else previous
+            if previous in _KEPT_REASONS
+            else reading.WITHHELD_UNSTORED
+        )
+        runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
 
 
 def _publish(application: Application) -> None:
@@ -239,6 +256,19 @@ def _publish(application: Application) -> None:
             f"Compass: a reading job could not publish ({exc.__class__.__name__}).",
             application.diagnostic_sink,
         )
+
+
+def start_job(
+    config: RuntimeConfig, session_key: str, *, provider: str, label: str, now: float
+) -> reading.Job | None:
+    """Bind ordinary-job admission to the durable permission epoch before registration."""
+    # Pause enumeration can miss a slot still being registered. The epoch also remembers
+    # a pause followed immediately by Resume, without making the identity registry durable.
+    permission = reading_policy.capture_long_permission(config, now=now)
+    job = reading.start_job(config, session_key, provider=provider, label=label, now=now)
+    if job is not None:
+        job.permission = permission
+    return job
 
 
 def launch(
@@ -285,6 +315,13 @@ def cancel(application: Application, session_key: str, job_id: str) -> bool:
         group.cancel()
     _publish(application)
     return True
+
+
+def pause_all(application: Application) -> None:
+    """Cancel ordinary jobs by ID; long analyses retain their permission-change outcome."""
+    for key, job in reading.published_jobs(application.config).items():
+        if job.get("mode") != "long":
+            cancel(application, key, job["id"])
 
 
 def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], Outcome]) -> None:
@@ -385,6 +422,35 @@ def _cancelled(job: reading.Job, outcome: Outcome, *, spent: bool) -> Outcome:
 
 
 def _record(
+    application: Application,
+    job: reading.Job,
+    outcome: Outcome,
+    *,
+    on_a_check: frozenset[str] = frozenset(),
+    analyze_diagnostic: dict[str, Any] | None = None,
+) -> bool:
+    """Fence assessment publication against a pause accepted after the job's seal."""
+    permission = job.permission
+    fence = (
+        contextlib.nullcontext("")
+        if outcome[0] is None
+        else contextlib.nullcontext("permission-changed")
+        if permission is None
+        else reading_policy.long_publication_permission(application.config, permission)
+    )
+    # Do not cancel or publish while holding SQL: reservation already takes marker -> SQL.
+    with fence as reason:
+        if reason:
+            outcome = _cancelled(job, outcome, spent=outcome[2])
+        durable = _write_outcome(
+            application, job, outcome, on_a_check=on_a_check, analyze_diagnostic=analyze_diagnostic
+        )
+    if reason and not durable:
+        _mark_unstored(application.config, job.id, outcome[1])
+    return durable
+
+
+def _write_outcome(
     application: Application,
     job: reading.Job,
     outcome: Outcome,

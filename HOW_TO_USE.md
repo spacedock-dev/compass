@@ -781,9 +781,16 @@ for example `1 waiting · 5h 82% resets in 2h 9m`. It needs no browser, but it n
 to know about the waits: `spacedock-compass --daemon` starts one. Compass edits no settings file and
 never replaces a status line you have, so both procedures below are yours to apply.
 
+Checked on Claude Code 2.1.319. Its [`statusLine.refreshInterval`](https://code.claude.com/docs/en/statusline)
+re-runs the command while you are idle, in seconds, with a minimum of 1. Without it, a level produced
+after a turn ends may wait until the next turn to appear. Claude Code runs a status line per open session.
+
 What the line says, and when it says nothing:
 
-- `drift High` comes first while the Live monitor is on for this session. It uses the same level as
+- `model calls paused` appears while the shared permission store confirms pause, even without a Live
+  monitor. Pause on the board or run `spacedock-compass --pause-model-calls` from any shell. Resume
+  model calls on the board clears it on the next footer refresh.
+- `drift High` appears while the Live monitor is on for this session. It uses the same level as
   the page's pill and keeps the last level visible while you work, until the next check replaces it.
   Replacing your saved intent or annotation revision clears the old level at once. It says
   `drift: no level yet` when there is no level to show. Turn the monitor on
@@ -803,7 +810,8 @@ What the line says, and when it says nothing:
 - Anything it cannot tell, it leaves out and still exits `0`. A status line discards error text, so it
   prints none.
 
-It sends no request and starts nothing, and a call takes about 40 milliseconds. A session is found from the
+It sends no request and starts nothing. On the owner's machine, 15 runs with real status-line JSON
+took a median of about 50 milliseconds for `--footer` alone. A session is found from the
 `--session claude:SESSION_ID`, then from the `session_id` Claude Code sends, then from
 `CLAUDE_CODE_SESSION_ID`. [SECURITY.md](SECURITY.md#the-status-line-files) owns what the dashboard writes
 for it.
@@ -817,7 +825,8 @@ using the `server.py` you pinned in [Find the copy your commands will run](#find
 {
   "statusLine": {
     "type": "command",
-    "command": "python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer"
+    "command": "python3 /path/to/skills/compass/launch.py /path/to/skills/compass/server.py --footer",
+    "refreshInterval": 5
   }
 }
 ```
@@ -848,8 +857,25 @@ else
 fi
 ```
 
-Then point `statusLine.command` at that script, leaving everything else in the setting alone. If your
-command is the one Claude Code names in `statusLine.command` today, put that exact command in place of the
+Then point `statusLine.command` at that script and set a 10-second refresh:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-with-compass.sh",
+    "refreshInterval": 10
+  }
+}
+```
+
+The wrapper's cost is the wrapped command's: Barista takes about 470 ms per run and the footer about
+50 ms. In 15 runs on the owner's machine with real status-line JSON, Barista alone had a 472 ms
+median; this wrapper had a 525 ms median and a 1,337 ms maximum. Each open Claude Code session runs
+its own copy, so the wrapper uses a longer interval. The [recorded idle refresh check](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none)
+used scratch settings on Claude Code 2.1.319.
+
+If your command is the one Claude Code names in `statusLine.command` today, put that exact command in place of the
 `barista.sh` line.
 
 Barista already has a module that shows quota, so for Barista the footer's quota segment repeats it. Take

@@ -1812,7 +1812,13 @@ records their admission and publication shapes. No new session field is added.
   refuses the press with `store-unavailable`, without launching or charging a model. A press whose
   job cannot launch withdraws the notice it recorded, so the next press carries it.
 - Pause model calls keeps the request `{consent: "off", press: true, observer_model: 1}`. It
-  stores off for all providers, clears notices, and replies 200. It is accepted under
+  stores off for all providers, clears notices, and replies 200. `--pause-model-calls` and the skill's
+  `pause` action send that same request without a session or typed-command check. The handler
+  cancels ordinary jobs by their existing IDs alongside long analyses, unasked checks, summaries
+  and Live monitor holders. Ordinary jobs capture the durable permission epoch before registration
+  and recheck before invocation and publication, so enumeration gaps and a quick Resume cannot
+  revive old work. The final annotation write holds the shared permission fence, so a pause after
+  the job seal still withholds the reply. Charged attempts remain charged. Resume stays on the board. It is accepted under
   `--no-annotations`, with no qualified reading provider, and under `--no-observer-model`, since
   goal summaries need none of those; the loopback, navigation, `observer_model` and `press` guards
   still apply. Subsequent presses reply 403

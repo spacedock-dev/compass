@@ -4378,7 +4378,9 @@ class ReadingRouteTest(unittest.TestCase):
             payload = self._data(port)
         self.assertEqual(202, status)
         self.assertEqual([], calls)
-        self.assertEqual([], self.outcomes, "a refused press wrote an outcome")
+        self.assertEqual(
+            [{"produced": False, "reason": "cancelled-unsent", "spent": False}], self.outcomes
+        )
         self.assertEqual({}, payload["reading_jobs"])
         self.assertEqual("model-calls-paused", payload["reading"]["reason"])
         self.assertFalse(payload["reading"]["consent"])
@@ -5413,7 +5415,7 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual("OpenAI", answer["notice"]["tool_output"])
         self.assertEqual(2, self._checks_sent(calls[0]))
 
-    def test_turning_readings_off_then_on_mid_press_still_includes_checks(self) -> None:
+    def test_a_person_who_pauses_then_resumes_during_preparation_sends_nothing(self) -> None:
         config, state = self._runtime()
         reading_policy.set_consent(
             config,
@@ -5435,10 +5437,11 @@ class ReadingRouteTest(unittest.TestCase):
             config, state, self._claude_press(), on_collect=withdraw
         )
         self.assertEqual(202, status, answer)
-        self.assertEqual(2, self._checks_sent(calls[0]))
+        self.assertEqual([], calls)
         entry = annotation_store.find(annotation_store.load(config), "claude", "s1")
         assert entry is not None
-        self.assertNotIn("tool output was not allowed", entry["assessment"]["cutoff"])
+        self.assertNotIn("assessment", entry)
+        self.assertEqual(0, reading_policy.status(config, now=1_700_000_100.0)["used"])
 
     def test_the_press_hands_the_reading_the_passes_a_later_command_may_have_changed(
         self,
@@ -7516,6 +7519,46 @@ class SummaryJobHTTPTest(unittest.TestCase):
             self.assertTrue(entered.wait(WAIT_SEC))
             try:
                 self.handler("/api/reading", off).do_POST()
+            finally:
+                release.set()
+            wait_job(self.application, "claude", "root", timeout=WAIT_SEC)
+            self.assertEqual("model-calls-paused", self.state.summary_jobs["claude:root"].reason)
+            self.assertEqual(1, len(replies.prompts))
+            self.assertIsNone(self.store.get(self.config, "claude", "root"))
+            refused = self.request_summary(origin="press")
+            self.assertEqual(403, refused._send.call_args.args[2])
+            answer = json.loads(refused._send.call_args.args[0])
+            self.assertEqual("model-calls-paused", answer["reason"])
+            self.assertFalse(answer["summaries"]["consent"])
+            self.assertEqual(1, len(replies.prompts))
+
+    def test_a_person_pausing_from_a_shell_stops_the_running_summary(self) -> None:
+        # After Pause model calls no session summary call is made until Resume model calls.
+        entered, release = threading.Event(), threading.Event()
+        replies = Replies()
+
+        def model(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            entered.set()
+            self.assertTrue(release.wait(HOLD_SEC))
+            return replies(prompt, output_cap_bytes=output_cap_bytes)
+
+        with (
+            mock.patch.object(runtime_observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(self.jobs, "ClaudeSummaryModel", return_value=model),
+        ):
+            self.request_summary(origin="press")
+            self.assertTrue(entered.wait(WAIT_SEC))
+            try:
+                httpd = make_server(application=self.application)
+                thread = serve_until_closed(httpd)
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(
+                            0, terminal_client.run_pause_model_calls(port=httpd.server_port)
+                        )
+                finally:
+                    httpd.shutdown()
+                    thread.join(timeout=30)
             finally:
                 release.set()
             wait_job(self.application, "claude", "root", timeout=WAIT_SEC)

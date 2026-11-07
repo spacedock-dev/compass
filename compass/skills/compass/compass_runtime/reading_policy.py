@@ -1652,7 +1652,7 @@ class GuardedModel:
             return "", refusal
         if refusal := self._reserve_call(prompt, output_cap_bytes):
             return "", refusal
-        if self.reserve_prompt is not None and (refusal := self._before_invoke()):
+        if refusal := self._before_invoke():
             return "", refusal
         self._model_invoked = True
         raw, outcome = self.model(prompt, output_cap_bytes=output_cap_bytes)
@@ -1664,6 +1664,8 @@ class GuardedModel:
 
     def _before_invoke(self) -> str | None:
         """Recheck after reservation callbacks; this is adapter entry, not child spawn."""
+        if self.reserve_prompt is None:
+            return "cancelled" if self.cancelled is not None and self.cancelled() else None
         if refusal := self._preflight():
             return refusal
         if self.before_invoke is not None:

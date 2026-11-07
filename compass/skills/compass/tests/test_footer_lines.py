@@ -28,6 +28,7 @@ from compass_runtime import (
     live_lease,
     observation,
     project_context,
+    reading_policy,
     terminal_sessions,
 )
 from compass_runtime import io as runtime_io
@@ -335,6 +336,7 @@ class BuildTest(unittest.TestCase):
                 "monitor": False,
                 "level": None,
                 "last_end": None,
+                "model_calls_paused": None,
             },
             built[("claude", "a")],
         )
@@ -370,6 +372,72 @@ class LinesTest(unittest.TestCase):
         ) as h:
             loaded: dict[str, Any] = json.load(h)
         return loaded
+
+    def test_a_person_sees_pause_resume_and_unknown_on_the_next_idle_refresh(self) -> None:
+        paused: bool | None = False
+
+        def permission() -> bool | None:
+            return paused
+
+        self.lines = footer_lines.Lines(self.home, model_calls_paused=permission)
+        old_board = board([row("claude", "a")])
+        old_board["reading"] = {"off": False}
+        self.lines.update(old_board, NOW)
+        self.assertIs(self.body("a")["model_calls_paused"], False)
+        for offset, value in enumerate((True, False, True, None), 1):
+            paused = value
+            self.lines.touch(NOW + offset)
+            self.assertIs(self.body("a")["model_calls_paused"], value)
+        paused = True
+        self.lines.update(old_board, NOW + 5)
+        self.assertIs(self.body("a")["model_calls_paused"], True)
+        self.assertEqual(1, self.body("a")["v"])
+
+    def test_a_person_keeps_a_newer_pause_when_an_older_store_read_finishes_late(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        paused = False
+        hold = False
+
+        def permission() -> bool:
+            answer = paused
+            if hold and not answer:
+                entered.set()
+                release.wait(30)
+            return answer
+
+        self.lines = footer_lines.Lines(self.home, model_calls_paused=permission)
+        old = board([row("claude", "a")])
+        self.lines.update(old, NOW)
+        hold = True
+        worker = threading.Thread(target=self.lines.update, args=(old, NOW + 1))
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(30))
+            paused = True
+            self.lines.touch(NOW + 2)
+            self.assertIs(self.body("a")["model_calls_paused"], True)
+        finally:
+            release.set()
+            worker.join(30)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.body("a")["model_calls_paused"], True)
+
+    def test_a_person_keeps_footer_service_while_the_permission_store_is_read(self) -> None:
+        sampled = []
+
+        def permission() -> bool:
+            acquired = self.lines._lock.acquire(blocking=False)
+            sampled.append(acquired)
+            if acquired:
+                self.lines._lock.release()
+            return True
+
+        self.lines = footer_lines.Lines(self.home, model_calls_paused=permission)
+        self.lines.update(board([row("claude", "a")]), NOW)
+        self.lines.touch(NOW + 1)
+        self.assertEqual([True, True], sampled)
+        self.assertIs(self.body("a")["model_calls_paused"], True)
 
     def test_a_session_gets_one_owner_only_file_in_an_owner_only_directory(self) -> None:
         self.lines.update(board([row("claude", "a")]), NOW)
@@ -1115,6 +1183,43 @@ class FooterProviderTest(unittest.TestCase):
 
 
 class FooterAssemblyTest(LeaseRoute):
+    def test_a_person_sees_a_page_pause_and_shared_store_resume_without_a_collection(self) -> None:
+        app = self.app()
+        cli.attach_footer_lines(app, app.config)
+        lines = app.footer_lines
+        assert isinstance(lines, footer_lines.Lines)
+        self.addCleanup(lines.remove_all)
+        old = json.loads(app.collect_json(show_all=False)[1])
+        session = old["sessions"][0]
+        identity = session.get("resume_id") or session["sid"]
+        old["reading"] = {"off": False}
+        lines.update(old, NOW)
+        path = Path(lines.directory) / footer_lines.line_name("claude", identity)
+
+        def paused() -> Any:
+            return json.loads(path.read_text())["model_calls_paused"]
+
+        with self.serving(app) as port:
+            lines.update(old, NOW)
+            status, answer = self.call(
+                port, "POST", "/api/reading", {"consent": "off", "press": True, "observer_model": 1}
+            )
+            self.assertEqual(200, status)
+            self.assertIs(answer["reading"]["off"], True)
+            lines.touch(NOW + 1)
+            self.assertIs(paused(), True)
+            lines.update(old, NOW + 2)
+            self.assertIs(paused(), True)
+            other = dataclasses.replace(app.config)
+            reading_policy.set_consent(other, True, now=NOW + 3)
+            lines.touch(NOW + 3)
+            self.assertIs(paused(), False)
+            with mock.patch.object(
+                reading_policy, "status", return_value={"reason": "store-unavailable", "off": False}
+            ):
+                lines.touch(NOW + 4)
+            self.assertIsNone(paused())
+
     def test_a_person_whose_record_changes_keeps_the_old_level_until_reprojected(
         self,
     ) -> None:

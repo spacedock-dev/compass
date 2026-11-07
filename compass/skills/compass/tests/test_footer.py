@@ -591,6 +591,39 @@ class ReadLineTest(unittest.TestCase):
     def read(self) -> terminal_client.Line | None:
         return terminal_client.read_line(self.home, self.session, NOW)
 
+    def test_a_person_sees_pause_without_a_monitor_and_keeps_waiting_and_quota(self) -> None:
+        payload = {"rate_limits": {"five_hour": {"used_percentage": 60}}}
+        for value, expected in (
+            (True, True),
+            (False, False),
+            (None, False),
+            (1, False),
+            ("true", False),
+        ):
+            with self.subTest(value=value):
+                line_file(self.home, "claude", "sess-1", good_line(model_calls_paused=value))
+                text = terminal_client.compose_footer(payload, self.read(), NOW)
+                self.assertEqual(expected, "model calls paused" in text)
+                self.assertIn("2 waiting", text)
+                self.assertIn("5h 60%", text)
+        line_file(self.home, "claude", "sess-1", good_line(model_calls_paused=True, at=NOW - 10000))
+        self.assertNotIn(
+            "model calls paused", terminal_client.compose_footer(payload, self.read(), NOW)
+        )
+
+    def test_a_person_who_resumes_loses_pause_text_even_after_a_monitor_ended_paused(self) -> None:
+        line_file(
+            self.home,
+            "claude",
+            "sess-1",
+            good_line(
+                model_calls_paused=False, monitor=False, last_end={"reason": "paused", "at": NOW}
+            ),
+        )
+        text = terminal_client.compose_footer(None, self.read(), NOW)
+        self.assertNotIn("model calls paused", text)
+        self.assertIn("2 waiting", text)
+
     def test_a_fresh_line_is_read(self) -> None:
         line_file(self.home, "claude", "sess-1", good_line(blind=["Cursor"]))
 
@@ -708,7 +741,7 @@ class MonitorFooterTest(ReadLineTest):
         notes = {
             "ended": "monitor off: session ended",
             "left": "monitor off: check-in expired",
-            "paused": "monitor off: model calls paused",
+            "paused": "monitor off",
             "unanswered": "monitor off: no answer",
             "declined": "monitor off: as you asked",
             "cap": "monitor off: check limit reached",
