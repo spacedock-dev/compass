@@ -1955,6 +1955,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            # Single-row lookup shares the terminal native-id predicate, a stdlib-only leaf.
+            "compass_runtime.terminal_sessions",
             # The Drift card's answer, published on the focused context beside the levels.
             "compass_runtime.drift_view",
             "compass_runtime.reading_long_admission",

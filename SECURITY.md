@@ -258,6 +258,12 @@ The posture rests on two invariants:
    is cited, the title the activity list already publishes. Each runs a collection to read the session, and that
    collection may rewrite `semantic-work-history.json` as any collection does. [Analyze drift, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections)
    owns the bounds of both.
+   `GET /api/session?harness=...&sid=...` serves one published session row to the terminal
+   monitor. It searches the default collection, then all sessions, so an idle session can still
+   be found without sending board history. Full native ids must match `resume_id` where present;
+   ambiguous matches answer 409 and absent ones answer 404. It removes server-only message words,
+   refuses document navigation and requires a loopback peer and same-origin request. It exposes
+   the same row fields as `/api/data`, with no model call.
    One `GET` reads wider than the rest, and is named here for that reason rather than for the
    count above. `GET /api/annotations` serves the prose you composed, for every session you have
    annotated, including sessions no longer on the board. That is a wider scope than `/api/data`

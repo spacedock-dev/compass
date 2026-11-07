@@ -100,6 +100,7 @@ SENTENCES: Final[dict[str, str]] = {
     "monitor_not_running": "This terminal's Live monitor is not running.",
     "monitor_busy": "Another monitor command is still running.",
     "monitor_failed": "Compass could not start or stop this terminal's Live monitor.",
+    "monitor_unreadable": "Compass could not read the board to find this live Claude Code session.",
     "monitor_unavailable": "Compass could not find this live Claude Code session.",
     "monitor_refused": "Compass refused this Live monitor start.",
     "not_running": "Compass is not running. Start it with `{start}`.",

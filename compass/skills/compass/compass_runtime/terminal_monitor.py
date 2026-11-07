@@ -13,6 +13,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 
 from compass_runtime import monitor_store, terminal_sessions
 from compass_runtime import terminal_client as client
@@ -26,20 +27,6 @@ FAILURE_SEC = 30.0
 IDLE_SEC = 7200.0
 READY_SEC = 12.0
 SIDECAR_FLAG = "--monitor-sidecar"
-
-
-def select_row(payload: object, sid: str) -> Mapping[str, Any] | None:
-    rows = payload.get("sessions") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
-        return None
-    matches = [
-        row
-        for row in rows
-        if isinstance(row, dict)
-        and row.get("harness") == "claude"
-        and terminal_sessions.names(row, sid)
-    ]
-    return matches[0] if len(matches) == 1 else None
 
 
 def process_identity(pid: int) -> tuple[int, str, str] | None:
@@ -149,6 +136,9 @@ def _command(
             time.sleep(0.05)
         return _say("failed", failed=True) if store.running() else _say("stopped")
     if off:
+        record = store.read("run")
+        if terminal_sessions.names(record, named.sid):
+            store.write("stop", {"generation": record.get("generation")})
         return _say("not_running")
     return _start(store, named, in_session=in_session)
 
@@ -166,11 +156,26 @@ def _start(store: monitor_store.Store, named: client.Session, *, in_session: boo
         print(found.message, file=sys.stderr)
         return found.code
     try:
-        reply = client.get(found.port, "/api/data?all=1", cap=client.DATA_CAP_BYTES)
+        query = urlencode({"harness": named.harness, "sid": named.sid})
+        reply = client.get(found.port, "/api/session?" + query)
     except client.DashboardUnreachable:
-        return _say("failed", failed=True)
-    row = select_row(reply.data, named.sid) if reply.status == 200 else None
-    if row is None or row.get("ended_at") or not isinstance(row.get("sid"), str):
+        return _say("unreadable", failed=True)
+    payload = reply.data
+    if (reply.status, payload) in (
+        (404, {"reason": "not-found"}),
+        (409, {"reason": "ambiguous"}),
+    ):
+        return _say("unavailable", failed=True)
+    row = payload.get("session") if isinstance(payload, dict) else None
+    if (
+        reply.status != 200
+        or not isinstance(row, dict)
+        or row.get("harness") != named.harness
+        or not isinstance(row.get("sid"), str)
+        or not terminal_sessions.names(row, named.sid)
+    ):
+        return _say("unreadable", failed=True)
+    if row.get("ended_at"):
         return _say("unavailable", failed=True)
     generation = uuid.uuid4().hex
     store.write(
@@ -181,7 +186,11 @@ def _start(store: monitor_store.Store, named: client.Session, *, in_session: boo
             "resume_id": row.get("resume_id"),
             "dashboard": list(found),
             "typed": in_session,
-            "ancestor": ancestor(),
+            "ancestor": (
+                ancestor()
+                if terminal_sessions.names(row, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+                else {}
+            ),
         },
     )
     return _await_start(store, named.sid, generation)
@@ -197,9 +206,12 @@ def _await_start(store: monitor_store.Store, sid: str, generation: str) -> int:
             if status.get("generation") == generation:
                 if status.get("reason") == "started":
                     ready = True
+                    # Keep Popen owned until exit so it is reaped without a ResourceWarning.
+                    threading.Thread(target=worker.wait, daemon=True).start()
                     return _say("started")
                 if status.get("reason"):
-                    return _say("refused", failed=True)
+                    reason = "failed" if status["reason"] == "unreachable" else "refused"
+                    return _say(reason, failed=True)
             if worker.poll() is not None:
                 break
             time.sleep(0.05)
@@ -212,7 +224,11 @@ def _await_start(store: monitor_store.Store, sid: str, generation: str) -> int:
                 worker.wait(timeout=6)
             if worker.poll() is None:
                 worker.terminate()
-                worker.wait(timeout=6)
+                try:
+                    worker.wait(timeout=6)
+                except subprocess.TimeoutExpired:
+                    worker.kill()
+                    worker.wait(timeout=6)
 
 
 def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state machine

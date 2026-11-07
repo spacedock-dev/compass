@@ -50,6 +50,7 @@ from compass_runtime import (
     settings,
     summary_jobs,
     summary_store,
+    terminal_sessions,
     tripwires,
     typed_press,
 )
@@ -1619,6 +1620,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # by anything about the route, so neither grows a branch per entry.
         with_url = {
             "/api/data": self._data,
+            "/api/session": self._session,
             "/api/observe": self._observe,
             "/api/project-context": self._project_context,
             "/api/session-record": self._session_record,
@@ -1867,6 +1869,41 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._send(
             json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(),
             "application/json",
+        )
+
+    def _session(self, url: ParseResult) -> None:
+        if not self._loopback_resource_ok() or self._is_document_navigation():
+            self.send_error(403)
+            return
+        query = parse_qs(url.query)
+        harness = query.get("harness", [""])[0]
+        sid = query.get("sid", [""])[0]
+        if not harness or not sid:
+            self.send_error(400, "harness and sid are required")
+            return
+        # Keep board history on the server; a terminal needs only its session's row.
+        for show_all in (False, True):
+            _, body = self.server.application.collect_json(show_all=show_all)
+            rows = [
+                row
+                for row in json.loads(body)["sessions"]
+                if row.get("harness") == harness and terminal_sessions.names(row, sid)
+            ]
+            if rows:
+                status, answer = (
+                    (200, {"session": rows[0]})
+                    if len(rows) == 1
+                    else (409, {"reason": "ambiguous"})
+                )
+                break
+        else:
+            status, answer = 404, {"reason": "not-found"}
+        self._send(
+            json.dumps(
+                runtime_project_context.for_page(answer), ensure_ascii=False, separators=(",", ":")
+            ).encode(),
+            "application/json",
+            code=status,
         )
 
     def _data(self, url: ParseResult) -> None:

@@ -43,13 +43,11 @@ class Store:
             if sys.platform == "win32":
                 import msvcrt  # noqa: PLC0415
 
-                if os.fstat(fd).st_size == 0:
-                    os.write(fd, b"0")
                 os.lseek(fd, 0, os.SEEK_SET)
                 try:
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     held = True
-                except OSError:
+                except PermissionError:
                     pass
             else:
                 import fcntl  # noqa: PLC0415
@@ -61,6 +59,10 @@ class Store:
                     pass
             yield held
         finally:
+            if held and sys.platform == "win32":
+                with contextlib.suppress(OSError):
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
             os.close(fd)
         # Never unlink a lock: a waiter may already have opened its inode.
 

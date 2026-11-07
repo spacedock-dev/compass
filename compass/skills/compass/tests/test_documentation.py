@@ -2748,9 +2748,11 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
             r"Pause model calls stops Analyze drift, goal summaries, session summaries and the Live monitor",
         )
 
-    def test_the_unasked_lane_stays_the_only_path_that_spends_with_nobody_watching(self) -> None:
+    def test_a_person_knows_when_terminal_monitoring_spends_with_nobody_watching(self) -> None:
         text = self._text("docs/promise-map.md")
         self.assertIn(
-            "The Live monitor does not: it calls a model only while a reader is viewing the session.",
+            "The Live monitor calls a model while a reader views the session, or, when started "
+            "from the terminal with `--monitor`, after new work in that session until it is "
+            "turned off or the session ends, under its caps.",
             text,
         )

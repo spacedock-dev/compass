@@ -12,7 +12,7 @@ import dataclasses
 import http.client
 import json
 import unittest
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
@@ -365,3 +365,75 @@ class PauseAndShutdown(LeaseRoute):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionLookupTest(unittest.TestCase):
+    row: ClassVar[dict[str, str]] = {
+        "harness": "claude",
+        "sid": "abcdefab",
+        "resume_id": "abcdefab-1111-4111-8111-111111111111",
+    }
+
+    @contextlib.contextmanager
+    def serving(self, default: list[Any], all_rows: list[Any]) -> Any:
+        httpd = make_server()
+
+        def collect(*, show_all: bool) -> tuple[int, bytes]:
+            return 1, json.dumps({"sessions": all_rows if show_all else default}).encode()
+
+        with mock.patch.object(httpd.application, "collect_json", side_effect=collect):
+            thread = serve_until_closed(httpd)
+            try:
+                yield httpd.server_port
+            finally:
+                httpd.shutdown()
+                thread.join(timeout=5)
+
+    def test_a_person_whose_session_has_been_idle_for_a_day_can_still_monitor_it(self) -> None:
+        with self.serving([], [self.row]) as port:
+            status, body = LeaseRoute.call(
+                port, "GET", "/api/session?harness=claude&sid=" + self.row["resume_id"]
+            )
+        self.assertEqual(200, status)
+        self.assertEqual({"session": self.row}, body)
+
+    def test_a_person_can_find_one_session_without_getting_someone_elses_same_prefix_session(
+        self,
+    ) -> None:
+        other = {**self.row, "resume_id": "abcdefab-2222-4222-8222-222222222222"}
+        for sid, rows, status, body in (
+            ("abcdefab", [self.row], 200, {"session": self.row}),
+            (self.row["resume_id"], [self.row, other], 200, {"session": self.row}),
+            ("abcdefab", [self.row, other], 409, {"reason": "ambiguous"}),
+            (self.row["resume_id"], [other], 404, {"reason": "not-found"}),
+            ("missing", [], 404, {"reason": "not-found"}),
+        ):
+            with self.subTest(sid=sid, status=status), self.serving(rows, rows) as port:
+                self.assertEqual(
+                    (status, body),
+                    LeaseRoute.call(port, "GET", "/api/session?harness=claude&sid=" + sid),
+                )
+
+    def test_a_persons_whole_message_words_never_leave_the_single_session_route(self) -> None:
+        row = {
+            **self.row,
+            "reader_words": "private reader sentence",
+            "nested": [{"agent_words": "private agent sentence"}],
+        }
+        with self.serving([row], [row]) as port:
+            status, body = LeaseRoute.call(port, "GET", "/api/session?harness=claude&sid=abcdefab")
+        self.assertEqual(200, status)
+        self.assertEqual({"session": {**self.row, "nested": [{}]}}, body)
+
+    def test_a_persons_session_row_is_refused_to_navigation_and_nonlocal_callers(self) -> None:
+        for headers in (
+            {"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Host": "evil.example"},
+            {"Origin": "https://evil.example"},
+        ):
+            with self.subTest(headers=headers), self.serving([self.row], [self.row]) as port:
+                status, _ = LeaseRoute.call(
+                    port, "GET", "/api/session?harness=claude&sid=abcdefab", headers=headers
+                )
+                self.assertEqual(403, status)
