@@ -124,6 +124,8 @@ class WriteCredentialRestoresNoCacheTest(unittest.TestCase):
                 ("requeue-after-ejection.yml", "decide"),
                 # No token at all, but the secret that enqueues.
                 ("requeue-after-ejection.yml", "enqueue"),
+                # pull_request_target again: corrects the comment when the enqueue fails.
+                ("requeue-after-ejection.yml", "report"),
             },
             seen,
         )

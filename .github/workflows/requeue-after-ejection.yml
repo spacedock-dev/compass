@@ -23,11 +23,20 @@ name: Re-queue After Ejection
 # and the run says so. The queue itself still merges as github-merge-queue[bot],
 # so the push to main runs its workflows as before.
 #
+# Why a third job: `decide` comments, with the once-per-head marker, before the
+# enqueue, so a comment it cannot write stops the enqueue. When the enqueue then
+# fails, `report` rewrites that comment to say the pull request is not in the
+# queue and why, under a marker that does not spend the head's attempt. The
+# enqueue job passes on only a fixed failure name, never gh's own words. The
+# concurrency group finishes `report` before the next removal's run reads the
+# markers.
+#
 # Permissions, by job:
 #   decide   contents: read       check out the default branch's script
 #            pull-requests: write read the timeline and comments, post one comment
 #            actions: read        list the failed merge_group runs and their jobs
 #   enqueue  none                 GITHUB_TOKEN is unused; only the secret enqueues
+#   report   as decide            the same reads, and it edits decide's comment
 #
 # Only the pull request's number, node id and head SHA, and the webhook's
 # reason, reach a script, and only through `env`. No cache is restored and no
@@ -57,6 +66,7 @@ jobs:
       actions: read
     outputs:
       action: ${{ steps.decide.outputs.action }}
+      comment_id: ${{ steps.decide.outputs.comment_id }}
     steps:
       - name: Check out the default branch's script
         # actions/checkout@v7.0.1 — pinned to immutable SHA.
@@ -85,8 +95,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
+    outputs:
+      failure: ${{ steps.enqueue.outputs.failure }}
     steps:
       - name: Put it back in the queue
+        id: enqueue
         env:
           GH_TOKEN: ${{ secrets.MERGE_QUEUE_TOKEN }}
           PR_NODE_ID: ${{ github.event.pull_request.node_id }}
@@ -96,4 +109,55 @@ jobs:
             mutation($id: ID!, $oid: GitObjectID!) {
             enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $oid})
             { mergeQueueEntry { position } } }
-        run: gh api graphql -f query="$ENQUEUE" -f id="$PR_NODE_ID" -f oid="$HEAD_SHA"
+        # Measured on #825: a token GitHub does not accept answers `Bad credentials (HTTP 401)`.
+        run: |
+          if answer=$(gh api graphql -f query="$ENQUEUE" -f id="$PR_NODE_ID" -f oid="$HEAD_SHA" 2>&1); then
+            printf '%s\n' "$answer"
+            exit 0
+          fi
+          printf '%s\n' "$answer"
+          # A rate limit is also HTTP 403, and says nothing about the token.
+          case "$answer" in
+            *"rate limit"*) failure=other ;;
+            *"HTTP 401"* | *"Bad credentials"*) failure=token-rejected ;;
+            *"HTTP 403"* | *"Resource not accessible"*) failure=token-forbidden ;;
+            *) failure=other ;;
+          esac
+          echo "failure=$failure" >> "$GITHUB_OUTPUT"
+          exit 1
+
+  report:
+    needs: [decide, enqueue]
+    # always(): a failed enqueue would otherwise skip every job that needs it.
+    if: >-
+      always() &&
+      needs.decide.outputs.action == 'requeue' &&
+      needs.enqueue.result != 'success' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Check out the default branch's script
+        # actions/checkout@v7.0.1 — pinned to immutable SHA.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/requeue_after_ejection.py
+          sparse-checkout-cone-mode: false
+      - name: Say it was not re-queued
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          COMMENT_ID: ${{ needs.decide.outputs.comment_id }}
+          ENQUEUE_FAILURE: ${{ needs.enqueue.outputs.failure }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 -I scripts/requeue_after_ejection.py --report-failed-enqueue
