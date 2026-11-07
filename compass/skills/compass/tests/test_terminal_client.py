@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -35,6 +36,8 @@ from .test_terminal_sessions import PAYLOAD
 
 MANIFEST = SERVER_PATH.parents[2] / ".claude-plugin" / "plugin.json"
 HEAVY = ("compass_runtime.cli", "compass_runtime.http_api", "compass_runtime.aggregate")
+# Session-list tests measure a cold reply and the whole-exchange deadline on real sockets.
+REAL_TIME_TESTS = True
 
 
 class FakeDashboard:
@@ -50,8 +53,10 @@ class FakeDashboard:
         version: str | None = "1.0.0",
         answers: dict[str, tuple[int, dict[str, str], bytes]] | None = None,
         health: dict[str, object] | None = None,
+        delays: dict[str, float | None] | None = None,
     ) -> None:
         self.requests: list[tuple[str, str]] = []
+        self.release = threading.Event()
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -68,6 +73,9 @@ class FakeDashboard:
                 )
                 if self.path != "/api/health":
                     status, headers, body = (outer.answers or {}).get(self.path, (404, {}, b"{}"))
+                delay = (delays or {}).get(self.path, 0)
+                if delay != 0 and outer.release.wait(delay):
+                    return
                 self.send_response(status)
                 for name, value in headers.items():
                     self.send_header(name, value)
@@ -99,6 +107,7 @@ class FakeDashboard:
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        self.release.set()
         self.server.shutdown()
         self.server.server_close()
 
@@ -743,6 +752,35 @@ class SessionsCommandTest(HomeCase):
             self.run_sessions(port=fake.port)
 
         self.assertEqual([], [path for _, path in fake.requests if "?" in path])
+
+    def test_a_person_can_read_their_sessions_when_the_cold_board_takes_six_seconds(self) -> None:
+        with FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": 6}) as fake:
+            code, out, err = self.run_sessions(port=fake.port)
+
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn("Wire the parser", out)
+        self.assertNotIn("could not be read", out)
+
+    def test_a_person_is_not_left_waiting_forever_for_their_session_list(self) -> None:
+        with FakeDashboard(answers=data_reply(BOARD), delays={"/api/sessions": None}) as fake:
+            # Release the fixture even if the client's deadline is broken, so that the test
+            # reports a failure instead of leaving a listener and a blocked request behind.
+            guard = threading.Timer(35, fake.release.set)
+            guard.start()
+            try:
+                started = time.monotonic()
+                code, out, err = self.run_sessions(port=fake.port)
+                elapsed = time.monotonic() - started
+            finally:
+                guard.cancel()
+                guard.join()
+
+        self.assertEqual(
+            (1, "", "Compass answered, but its session list could not be read.\n"),
+            (code, out, err),
+        )
+        self.assertGreater(elapsed, 6)
+        self.assertLess(elapsed, 34)
 
     def test_a_person_reads_both_lists_when_history_and_full_rows_exceed_the_cap(self) -> None:
         board = {

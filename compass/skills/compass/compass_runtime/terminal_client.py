@@ -45,6 +45,9 @@ DEFAULT_PORT = 4553
 MAX_CANDIDATES: Final = 8
 HEALTH_TIMEOUT_SEC: Final = 0.3
 REQUEST_TIMEOUT_SEC: Final = 5.0
+# On 2026-11-07, a cold list of 3,700+ sessions took 4.8 s and the first client read
+# hit the five-second limit. Allow collection time while keeping a whole-exchange bound.
+LIST_REQUEST_TIMEOUT_SEC: Final = 30.0
 HEALTH_CAP_BYTES: Final = 4096
 REPLY_CAP_BYTES: Final = 1_048_576
 # The board's own read. `/api/data` measured 1,096,870 bytes on a real board on 2026-11-03, so the
@@ -975,7 +978,7 @@ def _emit(lines: list[str], stream: TextIO) -> None:
 def read_sessions(port: int) -> dict[str, Any]:
     """Read structured list rows for terminal actions, without downloading board history."""
     try:
-        reply = get(port, "/api/sessions", cap=DATA_CAP_BYTES)
+        reply = get(port, "/api/sessions", timeout=LIST_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
     except DashboardUnreachable as exc:
         raise UnreadableSessionsError from exc
     payload = reply.data
