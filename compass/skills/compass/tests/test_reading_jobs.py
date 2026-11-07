@@ -810,13 +810,49 @@ class CancelAnAnalysisTest(unittest.TestCase):
     def test_a_person_who_pauses_stops_a_running_reading_and_keeps_its_charge(self) -> None:
         _job, thread = self._start()
         self._spawned()
-        reading_policy.set_consent(self.config, False, now=NOW)
-        reading_jobs.pause_all(self.application)
+        _answer, permission = reading_policy.pause(self.config, now=NOW)
+        reading_jobs.pause_all(self.application, permission)
         reading_policy.set_consent(self.config, True, now=NOW)
         self._finish(thread)
         self.assertNotIn("assessment", self._entry())
         self.assertEqual(1, self._used())
         self.assertIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
+
+    def test_a_person_who_resumes_and_starts_a_reading_is_not_cancelled_by_an_earlier_pause(
+        self,
+    ) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def model(_prompt: str, **_kw: Any) -> tuple[str, str]:
+            entered.set()
+            release.wait(30)
+            return "", "error"
+
+        for key in ("claude:older", "claude:current"):
+            self.addCleanup(reading.end_job, self.config, key)
+            reading_jobs.start_job(self.config, key, provider="codex", label="Codex", now=NOW)
+            if key == "claude:older":
+                reading_policy.set_consent(self.config, False, now=NOW)
+                reading_policy.resume(self.config, now=NOW)
+        _answer, permission = reading_policy.pause(self.config, now=NOW)
+        reading_policy.resume(self.config, now=NOW)
+        _job, thread = self._start(lambda hooks: self._compose(hooks, model))
+        try:
+            self.assertTrue(entered.wait(30), "the resumed reading never reached the provider")
+            # The earlier pause handler reaches its sweep only after Resume and Analyze.
+            reading_jobs.pause_all(self.application, permission)
+            self.assertFalse(reading_policy.status(self.config, now=NOW)["off"])
+            jobs = reading.published_jobs(self.config)
+            self.assertFalse(jobs[KEY]["cancelling"])
+            self.assertTrue(jobs["claude:older"]["cancelling"])
+            self.assertTrue(jobs["claude:current"]["cancelling"])
+        finally:
+            release.set()
+            self._finish(thread)
+        self.assertEqual(1, self._used())
+        self.assertNotIn("assessment", self._entry())
+        self.assertNotIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
+        self.assertIn(("withheld", reading.WITHHELD_MODEL_FAILED, True), self.events)
 
     def test_a_person_who_pauses_before_handover_stops_the_late_child_even_after_resume(
         self,
@@ -833,8 +869,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
             _job, thread = self._start()
             self.addCleanup(release.set)
             self.assertTrue(entered.wait(30))
-            reading_policy.set_consent(self.config, False, now=NOW)
-            reading_jobs.pause_all(self.application)
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
             reading_policy.set_consent(self.config, True, now=NOW)
             release.set()
             self._finish(thread)
@@ -849,8 +885,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
 
         def crossing(*args: Any, **kwargs: Any) -> Any:
             permission = original(*args, **kwargs)
-            reading_policy.set_consent(self.config, False, now=NOW)
-            reading_jobs.pause_all(self.application)
+            _answer, pause_permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, pause_permission)
             reading_policy.set_consent(self.config, True, now=NOW)
             return permission
 
@@ -873,8 +909,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
 
             def crossed() -> None:
                 reserved()
-                reading_policy.set_consent(self.config, False, now=NOW)
-                reading_jobs.pause_all(self.application)
+                _answer, permission = reading_policy.pause(self.config, now=NOW)
+                reading_jobs.pause_all(self.application, permission)
                 reading_policy.set_consent(self.config, True, now=NOW)
 
             hooks.reserved = crossed  # type: ignore[method-assign]
@@ -922,8 +958,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
         with mock.patch.object(reading_jobs, "_record", held):
             _job, thread = self._start()
             self.assertTrue(entered.wait(30))
-            reading_policy.set_consent(self.config, False, now=NOW)
-            reading_jobs.pause_all(self.application)
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
             reading_policy.set_consent(self.config, True, now=NOW)
             release.set()
             self._finish(thread)
@@ -951,8 +987,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
         ):
             job, thread = self._start()
             self.assertTrue(entered.wait(30))
-            reading_policy.set_consent(self.config, False, now=NOW)
-            reading_jobs.pause_all(self.application)
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
             release.set()
             self._finish(thread)
         marker = json.loads((self.home / reading_jobs.MARKER_DIR / f"{job.id}.json").read_text())
@@ -975,8 +1011,8 @@ class CancelAnAnalysisTest(unittest.TestCase):
             _job, thread = self._start()
             self.addCleanup(release.set)
             self.assertTrue(entered.wait(30))
-            reading_policy.set_consent(self.config, False, now=NOW)
-            reading_jobs.pause_all(self.application)
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
             reading_policy.set_consent(self.config, True, now=NOW)
             release.set()
             self._finish(thread)

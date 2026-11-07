@@ -317,11 +317,23 @@ def cancel(application: Application, session_key: str, job_id: str) -> bool:
     return True
 
 
-def pause_all(application: Application) -> None:
-    """Cancel ordinary jobs by ID; long analyses retain their permission-change outcome."""
-    for key, job in reading.published_jobs(application.config).items():
-        if job.get("mode") != "long":
-            cancel(application, key, job["id"])
+def pause_all(application: Application, permission: reading_policy.LongPermission | None) -> None:
+    """Cancel ordinary jobs admitted no later than this pause's revoked epoch."""
+    if permission is None:
+        return
+    for key, snapshot in reading.published_jobs(application.config).items():
+        if snapshot.get("mode") == "long":
+            continue
+        job = reading.job(application.config, key)
+        if job is None or job.id != snapshot["id"] or job.permission is None:
+            continue
+        # Resume can admit a new reading before an earlier pause reaches this sweep.
+        # A job still registering rechecks its own captured permission before spending.
+        if (
+            job.permission.lineage == permission.lineage
+            and job.permission.epoch <= permission.epoch
+        ):
+            cancel(application, key, job.id)
 
 
 def _run(application: Application, job: reading.Job, compose: Callable[[Hooks], Outcome]) -> None:

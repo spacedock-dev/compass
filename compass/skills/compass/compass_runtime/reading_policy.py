@@ -863,6 +863,7 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
             if operation
             in (
                 "capture-long",
+                "off",
                 "reserve-long",
                 "reserve-long-pass",
                 "register-long-job",
@@ -916,7 +917,11 @@ def _transaction(  # noqa: PLR0913 - the optional long-job token joins the same 
         if operation in ("reserve", "reserve-long") and not answer["reason"]:
             return _commit_charge(db, answer, now, job_id), None, None
         db.execute("COMMIT")
-        captured = permission if operation == "capture-long" and not answer["reason"] else None
+        captured = (
+            permission
+            if operation == "off" or (operation == "capture-long" and not answer["reason"])
+            else None
+        )
         return answer, recorded, captured
 
 
@@ -1018,6 +1023,15 @@ def set_consent(
     today = {**(destinations or {}), provider: destination}
     operation = "allow" if allowed else "off"
     return _run(config, now, operation, provider, tool_output, today=today, content=content)
+
+
+def pause(config: RuntimeConfig, *, now: float) -> tuple[Status, LongPermission | None]:
+    """Store off and return the permission epoch it revoked, in one transaction."""
+    try:
+        answer, _, permission = _transaction(config, now, "off", LEGACY_PROVIDER)
+        return answer, cast("LongPermission | None", permission)
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+        return _answer(reason="store-unavailable"), None
 
 
 def set_unasked_grant(

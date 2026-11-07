@@ -1815,7 +1815,10 @@ records their admission and publication shapes. No new session field is added.
   stores off for all providers, clears notices, and replies 200. `--pause-model-calls` and the skill's
   `pause` action send that same request without a session or typed-command check. The handler
   cancels ordinary jobs by their existing IDs alongside long analyses, unasked checks, summaries
-  and Live monitor holders. Ordinary jobs capture the durable permission epoch before registration
+  and Live monitor holders. The pause transaction captures the epoch it revokes; its ordinary-job
+  sweep stops only jobs from that lineage admitted at or before that epoch, so a later Resume and
+  Analyze can run while the earlier handler finishes. Ordinary jobs capture the durable permission
+  epoch before registration
   and recheck before invocation and publication, so enumeration gaps and a quick Resume cannot
   revive old work. The final annotation write holds the shared permission fence, so a pause after
   the job seal still withholds the reply. Charged attempts remain charged. Resume stays on the board. It is accepted under
