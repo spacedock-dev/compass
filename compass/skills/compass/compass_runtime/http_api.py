@@ -603,6 +603,10 @@ def _with_lease(
     if row is None:
         return context
     published = _live_leases(application).state(harness, sid, ended=bool(row.get("ended_at")))
+    return _attach_lease(context, published)
+
+
+def _attach_lease(context: dict[str, Any], published: Mapping[str, Any]) -> dict[str, Any]:
     raw_sources = context.get("sources")
     sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
     raw_work = sources.get("work")
@@ -785,6 +789,85 @@ def _with_levels(
         )
         work["live_levels"] = [live]
     return {**context, "sources": {**sources, "work": work}}
+
+
+def assemble_project_drift(
+    application: Any,
+    collected: dict[str, Any],
+    project: str,
+    focus: tuple[str, str] | None,
+    cursor_key: bytes,
+    *,
+    refresh: bool = False,
+    model_consent: bool = False,
+    lease: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The page's context assembly, shared with the footer without collecting the board again.
+
+    Marks and ordinals precede levels and lease state; the view then merges the newest record
+    page. The footer supplies its already-read lease so it never creates a table or recollects
+    through `_lease_row`. The reading route's `_session_context` still receives no levels.
+    """
+    rows = collected["sessions"]
+    result = runtime_project_context.collect(
+        application.config,
+        application.state,
+        rows,
+        project,
+        now=application.clock(),
+        refresh=refresh,
+        focus=focus,
+        model_consent=model_consent,
+    )
+    result = copied_corrections.mark(result, rows)
+    if focus is not None:
+        result = compass_turns.mark(
+            application.config,
+            application.state,
+            result,
+            [row for row in rows if (row.get("harness"), row.get("sid")) == focus],
+        )
+        result = _with_message_ordinals(application, result, focus)
+        result = _with_levels(application, result, rows, focus, project)
+        result = (
+            _with_lease(application, result, rows, focus)
+            if lease is None
+            else _attach_lease(result, lease)
+        )
+        result = _with_drift_view(application, result, collected, focus, project, cursor_key)
+    return result
+
+
+class FooterMonitorSource:
+    """The footer's serving-only bridge to existing leases and the page's focused assembly."""
+
+    def __init__(self, application: Any) -> None:
+        self.application = application
+        self._cursor_key = os.urandom(32)
+
+    def state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        leases = self.application.live_leases
+        if leases is None:
+            return {"on": False}
+        published: Mapping[str, Any] = leases.state(
+            str(row["harness"]), str(row["sid"]), ended=bool(row.get("ended_at"))
+        )
+        return published
+
+    def view(
+        self, collection: Mapping[str, Any], row: Mapping[str, Any], lease: Mapping[str, Any]
+    ) -> Mapping[str, Any] | None:
+        context = assemble_project_drift(
+            self.application,
+            dict(collection),
+            str(row.get("project_key") or row.get("project") or ""),
+            (str(row["harness"]), str(row["sid"])),
+            self._cursor_key,
+            lease=lease,
+        )
+        views = context.get("sources", {}).get("work", {}).get("drift_views", [])
+        result: Mapping[str, Any] | None = views[0] if len(views) == 1 else None
+        return result
 
 
 def _read_ci(
@@ -1657,14 +1740,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         _revision, body = application.collect_json(show_all=False)
         collected = json.loads(body)
-        result = runtime_project_context.collect(
-            application.config,
-            application.state,
-            collected["sessions"],
+        result = assemble_project_drift(
+            application,
+            collected,
             project,
-            now=application.clock(),
+            focus,
+            self.server.record_cursor_key,
             refresh=refresh,
-            focus=focus,
             model_consent=(
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
@@ -1673,32 +1755,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 and reading_policy.status(application.config, now=application.clock())["consent"]
             ),
         )
-        # Marked here and in `_session_context`, the two readers the page and the
-        # reading route see; the unasked lane receives no copy (item 12 of the ruling
-        # `copied_corrections` cites).
-        result = copied_corrections.mark(result, collected["sessions"])
         if focus is not None:
-            # The focused session's Compass turns reach the page as a mark on each fact, so Full
-            # activity labels them and the Drift card does not count them as new work. Only the
-            # focused row: finding a turn reads the whole transcript once, and no other session's
-            # facts are drawn.
-            result = compass_turns.mark(
-                application.config,
-                application.state,
-                result,
-                [
-                    row
-                    for row in collected["sessions"]
-                    if (row.get("harness"), row.get("sid")) == focus
-                ],
-            )
-            result = _with_message_ordinals(application, result, focus)
-            result = _with_levels(application, result, collected["sessions"], focus, project)
-            result = _with_lease(application, result, collected["sessions"], focus)
-            # After the lease: the view reads it, with the levels, the line requests and the marks.
-            result = _with_drift_view(
-                application, result, collected, focus, project, self.server.record_cursor_key
-            )
             matching = [
                 row
                 for row in collected["sessions"]

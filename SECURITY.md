@@ -3789,12 +3789,16 @@ directory), written atomically. The name is the first 32 hex characters of the S
 id, so an id never reaches a path and the file name does not reveal it. The file holds one line of
 JSON: a shape version, a time, the dashboard's process id, the count of the other needs on the
 Attention queue, sessions waiting on you and pending asks (`null` when no harness that can report a wait was read), the board's names for harnesses that
-cannot report one, and two reserved keys, both `null`. It holds no title, no path, no prompt, no
-session id and no tool output.
+cannot report one, a `monitor` boolean, a `level` token or `null`, and `last_end` (`null` or an
+end reason and time). The level comes from the page's pill and is written only while that session's
+Live monitor lease stands. It holds no title, no path, no prompt, no session id and no tool output.
 
 The dashboard writes only the page-default snapshot, only while it is serving, and never fails a
 request over it (`test_footer_lines`). A file is rewritten when its content changes and otherwise
-every 15 seconds, so its time says it was confirmed recently. A dashboard that stops removes the
+every 15 seconds, so its time says it was confirmed recently. Idle refreshes also check lease
+endings. An end clears the level while waiting counts keep refreshing; a monitored session that
+leaves the board gets one final write, retried if it fails. The client shows an end note for five
+minutes after the recorded end, except for the reader's own Off. A dashboard that stops removes the
 files it wrote, including on `--stop`; a crash leaves them to the client's one-minute freshness
 ceiling, after which the client ignores them, and to a sweep that removes strays older than an hour.
 `--footer` opens a file without following a link, reads at most 8 KiB of it, ignores one that is

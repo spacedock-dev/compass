@@ -1117,7 +1117,8 @@ class Observation:
 
         Measured: a dashboard with no tab open collects only on an event, so a board that is
         quiet and correct would otherwise age past the client's ceiling and lose its segment.
-        This only restamps files whose content the last collection published; it reads no store.
+        The writer also checks lease endings and refreshes monitored sessions' page projections.
+        This runs outside collection and coordinator locks.
         """
         writer = getattr(self.application, "footer_lines", None)
         if writer is None:
@@ -1194,6 +1195,7 @@ class Observation:
             with self._lock:
                 self._last_collect_at = now
                 self._bump("skipped.probe")
+            self._touch_footer()
             return
         try:
             # The revision, not the body: comparing it is how this tells a real
@@ -1206,6 +1208,7 @@ class Observation:
         finally:
             with self._lock:
                 self._last_collect_at = self.clock()
+            self._touch_footer()
         reused = revision == self._last_revision
         self._last_revision = revision
         if reused:

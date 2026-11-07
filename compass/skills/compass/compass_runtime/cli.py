@@ -220,7 +220,9 @@ def attach_footer_lines(application: aggregate.Application, config: RuntimeConfi
     Not in `build_application`: `--diagnose` and every test build one, and none of them may write
     into the reader's home.
     """
-    application.footer_lines = footer_lines.Lines(config.state_home, diagnostic_sink=print)
+    application.footer_lines = footer_lines.Lines(
+        config.state_home, monitor=http_api.FooterMonitorSource(application), diagnostic_sink=print
+    )
 
 
 def refuse_footer_with_other_options(

@@ -14,10 +14,23 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, cli, footer_lines, observation, terminal_sessions
+from compass_runtime import (
+    aggregate,
+    cli,
+    compass_turns,
+    copied_corrections,
+    drift_view,
+    footer_lines,
+    http_api,
+    observation,
+    project_context,
+    terminal_sessions,
+)
 from compass_runtime import io as runtime_io
 
 from . import support
+from .test_claude_checks import SHORT
+from .test_live_lease_http import LeaseRoute
 
 NOW = 1_800_000_000.0
 NAME = re.compile(r"claude-[0-9a-f]{32}\.json")
@@ -303,7 +316,7 @@ class BuildTest(unittest.TestCase):
 
                 self.assertIsNone(waiting_of(built, "a"))
 
-    def test_the_shape_is_versioned_and_carries_the_monitor_keys_the_later_issue_fills(
+    def test_a_person_with_no_monitor_gets_no_level_in_the_version_one_file(
         self,
     ) -> None:
         built = self.build(board([row("claude", "a")]))
@@ -315,8 +328,9 @@ class BuildTest(unittest.TestCase):
                 "pid": 4242,
                 "waiting": 0,
                 "blind": [],
-                "monitor": None,
+                "monitor": False,
                 "level": None,
+                "last_end": None,
             },
             built[("claude", "a")],
         )
@@ -491,6 +505,404 @@ class LinesTest(unittest.TestCase):
         self.assertEqual(2, len(self.files()))
 
 
+class MonitorSource:
+    def __init__(self) -> None:
+        self.leases: dict[str, dict[str, Any]] = {}
+        self.calls: list[str] = []
+        self.views: dict[str, dict[str, Any]] = {}
+        self.entered: threading.Event | None = None
+        self.release: threading.Event | None = None
+
+    def state(self, session: Any) -> dict[str, Any]:
+        return self.leases.get(session["sid"], {"on": False})
+
+    def view(self, collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+        del collection, lease
+        self.calls.append(session["sid"])
+        if self.entered is not None and self.release is not None:
+            self.entered.set()
+            if not self.release.wait(10):
+                raise TimeoutError("test did not release projection")
+        return self.views.get(session["sid"], {"pill": {"level": "medium"}})
+
+
+class MonitorLinesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.enterContext(mock.patch.object(time, "monotonic", return_value=0.0))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = tmp.name
+        self.source = MonitorSource()
+        self.lines = footer_lines.Lines(
+            self.home, pid=1, monitor=self.source, diagnostic_sink=lambda _m: None
+        )
+        self.collection = board([row("claude", "short-id") | {"resume_id": "short-id-full"}])
+        self.source.leases["short-id"] = {"on": True, "started_at": NOW}
+
+    def body(self, sid: str = "short-id-full") -> dict[str, Any]:
+        path = os.path.join(self.home, "footer", footer_lines.line_name("claude", sid))
+        with open(path, encoding="utf-8") as handle:
+            result: dict[str, Any] = json.load(handle)
+        return result
+
+    def publish(self) -> None:
+        self.lines.update(self.collection, NOW)
+        self.lines.touch(NOW)
+
+    def end(self, at: float = NOW + 1) -> None:
+        self.source.leases["short-id"] = {"on": False, "last_end": {"reason": "ended", "at": at}}
+
+    def test_a_person_gets_the_page_pill_under_their_full_resume_id(self) -> None:
+        self.publish()
+        self.assertEqual((True, "medium"), (self.body()["monitor"], self.body()["level"]))
+        self.assertEqual(["short-id"], self.source.calls)
+
+    def test_a_person_with_the_monitor_off_never_publishes_a_saved_level(self) -> None:
+        self.source.leases.clear()
+        self.collection["sessions"].append(row("agy", "x"))
+        self.collection["harnesses"].append(harness("agy", "Antigravity", reports=False))
+        self.publish()
+        self.assertIs(self.body()["monitor"], False)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual(["Antigravity"], self.body()["blind"])
+        self.assertEqual([], self.source.calls)
+
+    def test_a_person_whose_monitor_ends_while_idle_loses_the_level_but_keeps_waits(self) -> None:
+        self.publish()
+        self.end()
+        self.lines.touch(NOW + 1)
+        self.assertEqual(
+            (False, None, {"reason": "ended", "at": NOW + 1}),
+            tuple(self.body()[key] for key in ("monitor", "level", "last_end")),
+        )
+        self.collection["sessions"].append(row("codex", "waiter", "needs_input"))
+        self.lines.update(self.collection, NOW + 20)
+        self.assertEqual(1, self.body()["waiting"])
+        self.lines.touch(NOW + 400)
+        self.assertEqual(NOW + 400, self.body()["at"])
+        self.assertIsNone(self.body()["level"])
+
+    def test_a_person_who_restarts_the_monitor_can_see_a_level_again(self) -> None:
+        self.publish()
+        self.end()
+        self.lines.touch(NOW + 1)
+        self.source.leases["short-id"] = {"on": True, "started_at": NOW + 20}
+        self.lines.touch(NOW + 20)
+        self.assertEqual(
+            (True, "medium", None), tuple(self.body()[k] for k in ("monitor", "level", "last_end"))
+        )
+
+    def test_a_departed_persons_monitored_row_gets_one_terminal_write(self) -> None:
+        self.publish()
+        self.end()
+        self.lines.update(board([]), NOW + 1)
+        terminal = self.body()
+        self.assertIs(terminal["monitor"], False)
+        self.assertIsNone(terminal["level"])
+        self.lines.touch(NOW + 100)
+        self.assertEqual(terminal, self.body())
+
+    def test_a_persons_failed_end_write_is_retried_without_restamping_the_old_level(self) -> None:
+        self.publish()
+        self.end()
+        with mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=OSError("full")):
+            self.lines.update(board([]), NOW + 1)
+        self.lines.touch(NOW + 2)
+        self.assertIs(self.body()["monitor"], False)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual(NOW + 2, self.body()["at"])
+        self.lines.touch(NOW + 40)
+        self.assertEqual(NOW + 2, self.body()["at"])
+
+    def test_a_person_never_sees_a_slow_projection_resurrect_a_later_end(self) -> None:
+        self.lines.update(self.collection, NOW)
+        self.source.entered, self.source.release = threading.Event(), threading.Event()
+        worker = threading.Thread(target=self.lines.touch, args=(NOW,))
+        worker.start()
+        try:
+            self.assertTrue(self.source.entered.wait(10))
+            self.end()
+            self.lines.touch(NOW + 1)
+            self.assertIs(self.body()["monitor"], False)
+        finally:
+            self.source.release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.body()["monitor"], False)
+        self.assertIsNone(self.body()["level"])
+
+    def test_a_persons_projection_runs_once_per_refresh_only_for_monitored_sessions(self) -> None:
+        self.collection["sessions"].extend([row("claude", "second"), row("claude", "off")])
+        self.source.leases["second"] = {"on": True, "started_at": NOW}
+        self.publish()
+        for age in (1, 5, 14):
+            self.lines.update(self.collection, NOW + age)
+            self.lines.touch(NOW + age)
+        self.assertCountEqual(["short-id", "second"], self.source.calls)
+        self.lines.touch(NOW + 15)
+        self.assertCountEqual(["short-id", "second"] * 2, self.source.calls)
+
+    def test_a_person_whose_neighbour_lookup_fails_still_gets_their_own_level_on_the_next_refresh(
+        self,
+    ) -> None:
+        for failure_call in (1, 3):
+            with self.subTest(neighbour_lookup=failure_call):
+                self.lines = footer_lines.Lines(
+                    self.home, monitor=self.source, diagnostic_sink=lambda _m: None
+                )
+                self.collection["sessions"] = [
+                    self.collection["sessions"][0],
+                    row("claude", "second"),
+                    row("claude", "third"),
+                ]
+                for sid in ("second", "third"):
+                    self.source.leases[sid] = {"on": True, "started_at": NOW}
+                self.lines.update(self.collection, NOW)
+                self.assertIsNone(self.body()["level"])
+                neighbour_calls = 0
+
+                def state(session: Any, *, fail_at: int = failure_call) -> dict[str, Any]:
+                    nonlocal neighbour_calls
+                    if session["sid"] == "second":
+                        neighbour_calls += 1
+                        if neighbour_calls == fail_at:
+                            raise RuntimeError("neighbour lookup failed")
+                    return MonitorSource.state(self.source, session)
+
+                with mock.patch.object(self.source, "state", side_effect=state):
+                    self.lines.touch(NOW)
+                    self.assertEqual("medium", self.body()["level"])
+                    self.lines.touch(NOW + 15)
+                self.assertEqual("medium", self.body()["level"])
+                self.assertEqual("medium", self.body("third")["level"])
+
+    def test_a_person_whose_neighbour_was_slow_is_not_projected_twice_within_one_refresh(
+        self,
+    ) -> None:
+        self.collection["sessions"].append(row("claude", "second"))
+        self.source.leases["second"] = {"on": True, "started_at": NOW}
+        self.lines.update(self.collection, NOW)
+        clock = [100.0]
+        starts: dict[str, list[float]] = {"short-id": [], "second": []}
+        original = self.source.view
+
+        def view(collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+            sid = session["sid"]
+            starts[sid].append(clock[0])
+            if sid == "short-id" and len(starts[sid]) == 1:
+                clock[0] += 30
+                self.lines.touch(NOW + 30)
+            return original(collection, session, lease)
+
+        with (
+            mock.patch.object(time, "monotonic", side_effect=lambda: clock[0]),
+            mock.patch.object(self.source, "view", side_effect=view),
+        ):
+            self.lines.touch(NOW)
+            self.assertEqual("medium", self.body("second")["level"])
+            self.assertEqual([130.0], starts["second"])
+            clock[0] = 135.0
+            self.lines.touch(NOW + 35)
+            self.assertEqual([130.0], starts["second"])
+            clock[0] = 145.0
+            self.lines.touch(NOW + 45)
+        self.assertEqual([130.0, 145.0], starts["second"])
+        self.assertEqual("medium", self.body("second")["level"])
+
+    def test_a_person_whose_monitor_ends_while_another_projects_costs_no_record_read(self) -> None:
+        source = self.source
+
+        class EndsOther(MonitorSource):
+            def view(self, collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+                if session["sid"] == "short-id":
+                    self.leases["second"] = {"on": False}
+                return super().view(collection, session, lease)
+
+        ending = EndsOther()
+        ending.leases = {**source.leases, "second": {"on": True, "started_at": NOW}}
+        self.lines = footer_lines.Lines(self.home, monitor=ending)
+        self.collection["sessions"].append(row("claude", "second"))
+        self.publish()
+        self.assertEqual(["short-id"], ending.calls)
+        self.assertIs(self.body("second")["monitor"], False)
+
+    def test_a_persons_changed_inputs_hide_the_cached_level_until_the_next_projection(self) -> None:
+        self.publish()
+        self.collection["sessions"][0]["annotation_revision"] = 2
+        self.lines.update(self.collection, NOW + 1)
+        self.assertIsNone(self.body()["level"])
+        self.lines.touch(NOW + 15)
+        self.assertEqual("medium", self.body()["level"])
+
+    def test_a_person_never_gets_a_guessed_monitor_for_duplicate_session_rows(self) -> None:
+        self.collection["sessions"].append(dict(self.collection["sessions"][0]))
+        self.publish()
+        self.assertIs(self.body()["monitor"], False)
+        self.assertIsNone(self.body()["level"])
+        self.assertEqual([], self.source.calls)
+
+    def test_a_persons_departure_retries_an_end_that_failed_while_the_row_was_present(self) -> None:
+        self.publish()
+        self.end()
+        with mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=OSError("full")):
+            self.lines.touch(NOW + 1)
+        self.lines.update(board([]), NOW + 2)
+        self.assertIs(self.body()["monitor"], False)
+        self.assertIsNone(self.body()["level"])
+
+    def test_a_persons_return_to_the_board_does_not_multiply_projection_reads(self) -> None:
+        self.publish()
+        self.lines.update(board([]), NOW + 1)
+        self.lines.update(self.collection, NOW + 2)
+        self.lines.touch(NOW + 2)
+        self.assertEqual(["short-id"], self.source.calls)
+
+    def test_a_person_never_sees_a_slow_projection_for_replaced_intent(self) -> None:
+        self.lines.update(self.collection, NOW)
+        self.source.entered, self.source.release = threading.Event(), threading.Event()
+        worker = threading.Thread(target=self.lines.touch, args=(NOW,))
+        worker.start()
+        try:
+            self.assertTrue(self.source.entered.wait(10))
+            self.collection["sessions"][0]["annotation_revision"] = 2
+            self.lines.update(self.collection, NOW + 1)
+        finally:
+            self.source.release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertIsNone(self.body()["level"])
+
+    def test_a_persons_projection_uses_the_pages_parity_fixture_pill(self) -> None:
+        path = support.SERVER_PATH.parents[3] / "frontend/test/fixtures/drift-parity.json"
+        cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+        for case in cases:
+            session = case["session"]
+            if session["harness"] != "claude":
+                continue
+            with self.subTest(case=case["name"]), tempfile.TemporaryDirectory() as home:
+                source = MonitorSource()
+                source.leases[session["sid"]] = {"on": True, "started_at": NOW}
+                record = case.get("record")
+                source.views[session["sid"]] = drift_view.derive(
+                    session, case["payload"], case["context"], record["entries"] if record else None
+                )
+                lines = footer_lines.Lines(home, monitor=source)
+                lines.update(board([session]), NOW)
+                lines.touch(NOW)
+                name = session.get("resume_id", session["sid"])
+                with open(
+                    os.path.join(home, "footer", footer_lines.line_name("claude", name)),
+                    encoding="utf-8",
+                ) as handle:
+                    body = json.load(handle)
+                pill = case["expected"]["pill"]
+                self.assertEqual(pill["level"] if pill else None, body["level"])
+
+
+class FooterProviderTest(unittest.TestCase):
+    def test_a_person_with_no_lease_table_causes_no_context_or_record_read(self) -> None:
+        app = cli.build_application(*support.make_runtime(), clock=lambda: NOW)
+        source = http_api.FooterMonitorSource(app)
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.object(
+                project_context, "collect", side_effect=AssertionError("unexpected context read")
+            ),
+            mock.patch.object(
+                http_api, "_record_page", side_effect=AssertionError("unexpected record read")
+            ),
+        ):
+            self.assertIs(source.state(row("claude", "short"))["on"], False)
+            lines = footer_lines.Lines(home, monitor=source)
+            lines.update(board([row("claude", "short")]), NOW)
+            lines.touch(NOW)
+            lines.touch(NOW + 15)
+        self.assertIsNone(app.live_leases)
+
+    def test_a_persons_lease_is_looked_up_by_short_row_id_after_the_end_overlay(self) -> None:
+        leases = mock.Mock()
+        leases.state.return_value = {"on": False, "last_end": {"reason": "ended", "at": NOW}}
+        app = SimpleNamespace(live_leases=leases)
+        source = http_api.FooterMonitorSource(app)
+        session = row("claude", "short-id") | {"resume_id": "short-id-full", "ended_at": NOW}
+        self.assertEqual("ended", source.state(session)["last_end"]["reason"])
+        leases.state.assert_called_once_with("claude", "short-id", ended=True)
+
+    def test_a_person_gets_the_same_page_pill_without_recursive_collection(self) -> None:
+        path = support.SERVER_PATH.parents[3] / "frontend/test/fixtures/drift-parity.json"
+        cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+        app = cli.build_application(*support.make_runtime(), clock=lambda: NOW)
+        source = http_api.FooterMonitorSource(app)
+        for case in cases:
+            session = case["session"]
+            if session["harness"] != "claude":
+                continue
+            with (
+                self.subTest(case=case["name"]),
+                mock.patch.object(
+                    app, "collect_json", side_effect=AssertionError("recursive collection")
+                ),
+                mock.patch.object(
+                    http_api, "_lease_row", side_effect=AssertionError("recursive row")
+                ),
+                mock.patch.object(
+                    project_context, "collect", return_value=case["context"]
+                ) as collect,
+                mock.patch.object(
+                    compass_turns, "mark", side_effect=lambda _c, _s, context, _r: context
+                ),
+                mock.patch.object(
+                    copied_corrections, "mark", side_effect=lambda context, _r: context
+                ),
+                mock.patch.object(
+                    http_api, "_with_message_ordinals", side_effect=lambda _a, context, _f: context
+                ),
+                mock.patch.object(
+                    http_api, "_with_levels", side_effect=lambda _a, context, _r, _f, _p: context
+                ),
+                mock.patch.object(
+                    http_api,
+                    "_record_page",
+                    return_value={"state": "ok", **case["record"]}
+                    if case.get("record")
+                    else {"state": "unavailable", "entries": []},
+                ),
+            ):
+                lease = (
+                    case["context"]
+                    .get("sources", {})
+                    .get("work", {})
+                    .get("live_monitor", {"on": False})
+                )
+                result = source.view(case["payload"] | {"sessions": [session]}, session, lease)
+                self.assertIsNotNone(result)
+                assert result is not None
+                self.assertEqual(case["expected"]["pill"], result["pill"])
+                self.assertIs(collect.call_args.kwargs["refresh"], False)
+                self.assertIs(collect.call_args.kwargs["model_consent"], False)
+
+
+class FooterAssemblyTest(LeaseRoute):
+    def test_a_person_sees_a_failed_check_from_the_record_as_the_page_does(self) -> None:
+        self.session.write(self.session.cwd + "/src/a.py")
+        self.session.bash("pytest", "1 failed, 4 passed", is_error=True)
+        self.session.save(self.path)
+        app = self.app()
+        collected = json.loads(app.collect_json(show_all=False)[1])
+        session = next(r for r in collected["sessions"] if r["sid"] == SHORT)
+        source = http_api.FooterMonitorSource(app)
+        with (
+            mock.patch.object(
+                app, "collect_json", side_effect=AssertionError("recursive collection")
+            ),
+            mock.patch.object(http_api, "_lease_row", side_effect=AssertionError("recursive row")),
+        ):
+            projected = source.view(collected, session, {"on": True})
+        assert projected is not None
+        self.assertEqual("high", projected["pill"]["level"])
+        self.assertEqual("live", projected["pill"]["source"])
+
+
 class ApplicationWritesTest(unittest.TestCase):
     """`collect_json` is where a published snapshot is made, so it is where the file is written."""
 
@@ -518,6 +930,30 @@ class ApplicationWritesTest(unittest.TestCase):
         self.app.collect_json(show_all=False)
 
         self.assertEqual([], self.names())
+
+    def test_a_persons_page_pill_is_projected_after_collection_releases_its_lock(self) -> None:
+        source = MonitorSource()
+        source.leases["a"] = {"on": True, "started_at": NOW}
+        lines = footer_lines.Lines(self.home, monitor=source)
+        self.app.footer_lines = lines
+        self.app.collect_json(show_all=False)
+        path = os.path.join(self.home, "footer", footer_lines.line_name("claude", "a"))
+        with open(path, encoding="utf-8") as handle:
+            self.assertIsNone(json.load(handle)["level"])
+        self.assertEqual([], source.calls)
+        original = source.view
+
+        def view(collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+            for lock in (self.app.state.collect_memo_lock, lines._lock):
+                self.assertTrue(lock.acquire(blocking=False), "projection holds a publication lock")
+                lock.release()
+            return original(collection, session, lease)
+
+        with mock.patch.object(source, "view", side_effect=view):
+            coordinator = observation.Observation(self.app, clock=lambda: NOW)
+            coordinator._touch_footer()
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual("medium", json.load(handle)["level"])
 
     def test_the_page_default_snapshot_writes_the_files(self) -> None:
         self.app.footer_lines = self.lines
@@ -601,6 +1037,20 @@ class CoordinatorRefreshTest(unittest.TestCase):
 
             self.assertTrue(calls.acquire(timeout=30.0))
             self.assertTrue(calls.acquire(timeout=30.0), "the worker died after one failure")
+
+    def test_a_persons_monitor_is_refreshed_even_when_a_probe_skips_collection(self) -> None:
+        writer = mock.Mock()
+        coordinator = self.coordinator(writer)
+        with mock.patch.object(coordinator, "_worth_collecting", return_value=False):
+            coordinator._collect("tick")
+        writer.touch.assert_called_once_with(NOW)
+
+    def test_a_persons_monitor_is_refreshed_after_collection_outside_its_lock(self) -> None:
+        writer = mock.Mock()
+        coordinator = self.coordinator(writer)
+        coordinator.application.collect_json = mock.Mock(return_value=("r1", b"{}"))  # type: ignore[method-assign]
+        coordinator._collect("event")
+        writer.touch.assert_called_once_with(NOW)
 
     def test_no_writer_means_nothing_to_touch(self) -> None:
         coordinator = self.coordinator(None)
