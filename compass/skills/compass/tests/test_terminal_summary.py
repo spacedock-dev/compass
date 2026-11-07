@@ -6,11 +6,12 @@ import copy
 import io
 import json
 import signal
+import time
 import unittest
 from typing import Any
 from unittest import mock
 
-from compass_runtime import terminal_client, terminal_summary
+from compass_runtime import terminal_client, terminal_drift, terminal_summary
 
 from .support import SERVER_PATH
 from .test_claude_checks import SHORT, SID
@@ -56,6 +57,180 @@ class APersonReadsASummary(unittest.TestCase):
             **kwargs,
         )
         return result, out.getvalue(), err.getvalue()
+
+    def test_a_person_reads_the_write_time_in_their_local_clock_without_a_utc_date(self) -> None:
+        local = time.struct_time((2026, 11, 8, 5, 28, 3, 6, 312, 0))
+        for state, wording in (("complete", "summarized at"), ("running", "updated")):
+            summary = recorded()
+            summary["made_at"] = 1794086883.719384
+            summary["job"] = {"state": state}
+            with mock.patch.object(time, "localtime", return_value=local):
+                _, out, _ = self.run_command(Board(summary))
+            self.assertIn(f"claude-sonnet-5-5 · {wording} 05:28", out)
+            self.assertNotIn("+00:00", out)
+            self.assertNotIn("2026-11", out)
+
+    def test_a_person_reads_why_cited_checks_or_files_cannot_open_counted_once(self) -> None:
+        for count in (0, 1, 3):
+            summary = recorded()
+            checks = [f"earlier-check-{n}" for n in range(count)]
+            summary["lede"] = {"text": "Opening.", "cites": ["older-message", *checks]}
+            summary["blocks"][0]["phases"] = [
+                {
+                    "title": "Reading",
+                    "bullets": [
+                        {"text": "Asked for tests.", "kind": "asked", "cites": ["older-message"]},
+                        {"text": "Read checks.", "kind": "did", "cites": checks * 2},
+                    ],
+                }
+            ]
+            for block in summary["blocks"][1:]:
+                block["phases"] = []
+            _, out, _ = self.run_command(Board(summary))
+            if count == 1:
+                self.assertIn(
+                    "1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here.",
+                    out,
+                )
+            elif count:
+                self.assertIn(
+                    "3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here.",
+                    out,
+                )
+            else:
+                self.assertNotIn("cannot be opened from here", out)
+            self.assertNotIn("no available label", out)
+
+    def test_a_person_reads_the_right_update_reason_and_when_the_record_changed(self) -> None:
+        cases = (
+            (
+                "unchanged",
+                2,
+                "Some message text remains unsummarized. Update summary continues from where it stopped.",
+            ),
+            ("appended", 1, "1 new entry since 05:28."),
+            ("appended", 2, "2 new entries since 05:28."),
+            ("changed_earlier", 0, "A check\u2019s result arrived since 05:28."),
+        )
+        for kind, count, expected in cases:
+            with self.subTest(kind=kind, count=count):
+                summary = recorded()
+                summary["out_of_date"] = {"kind": kind, "action": "update", "new_entries": count}
+                with mock.patch.object(terminal_drift, "clock_text", return_value="05:28"):
+                    _, out, _ = self.run_command(Board(summary))
+                self.assertIn(expected, out)
+                if kind != "unchanged":
+                    self.assertNotIn("Some message text remains unsummarized", out)
+
+    def test_a_person_keeps_lowercase_mentions_after_abbreviations_in_the_opening(self) -> None:
+        summary = recorded()
+        summary["lede"]["text"] = (
+            "The person asked for tests. Followed instructions, e.g. the person asked for tests."
+        )
+        _, out, _ = self.run_command(Board(summary))
+        self.assertIn(
+            "You asked for tests. Followed instructions, e.g. the person asked for tests.", out
+        )
+        self.assertNotIn("e.g. You", out)
+
+    def test_a_person_reads_why_the_opening_is_absent_or_still_being_written(self) -> None:
+        for reason, state, expected in (
+            (
+                "stopped",
+                "complete",
+                "No opening summary: The summary stopped before every part was summarized.",
+            ),
+            (
+                "bytes",
+                "complete",
+                "No opening summary: The summary reached the largest size it may be saved at, so its newest parts were left out.",
+            ),
+            (
+                "no_valid_reply",
+                "complete",
+                "No opening summary: The summary stopped (no_valid_reply).",
+            ),
+            (None, "complete", "No opening summary."),
+            ("stopped", "running", "The opening summary is written once every part has been read."),
+            (
+                "stopped",
+                "stopping",
+                "The opening summary is written once every part has been read.",
+            ),
+        ):
+            with self.subTest(reason=reason, state=state):
+                summary = recorded()
+                summary.update(lede=None, lede_reason=reason, job={"state": state})
+                _, out, _ = self.run_command(Board(summary))
+                self.assertIn(expected, out.splitlines())
+                self.assertNotIn("No opening summary. (", out)
+                if state in ("running", "stopping"):
+                    self.assertNotIn("No opening summary", out)
+
+    def test_a_person_with_an_older_dashboard_hears_how_to_restart_without_a_spend(self) -> None:
+        board = terminal_client.LoopbackBoard(4553)
+        for in_session in (False, True):
+            with (
+                self.subTest(in_session=in_session),
+                mock.patch.object(
+                    terminal_client, "get", return_value=terminal_client.Reply(404, {})
+                ),
+            ):
+                code, out, err = self.run_command(board, in_session=in_session)
+            self.assertEqual((1, ""), (code, out))
+            self.assertIn("older release than this client", err)
+            self.assertIn("Ask `/compass:compass` to stop" if in_session else "Stop it with", err)
+            self.assertNotIn("unambiguously", err)
+
+    def test_a_person_in_a_session_gets_the_skill_instruction_for_a_version_mismatch(self) -> None:
+        err = io.StringIO()
+        with (
+            mock.patch.object(
+                terminal_client,
+                "resolve_session",
+                return_value=terminal_client.Session("claude", "s/1", "environment"),
+            ),
+            mock.patch.object(
+                terminal_client,
+                "find_dashboard",
+                return_value=terminal_client.Dashboard(4553, 1, 0, "old"),
+            ),
+            mock.patch.object(terminal_client, "release_version", return_value="new"),
+            mock.patch("sys.stdout", io.StringIO()),
+            mock.patch("sys.stderr", err),
+        ):
+            code = terminal_client.run_summary(terminal_client.SummaryRequest(), environ={})
+        self.assertEqual(1, code)
+        self.assertIn("Ask `/compass:compass` to stop the dashboard", err.getvalue())
+        self.assertNotIn("Stop it with", err.getvalue())
+
+    def test_a_person_redirecting_an_explicit_session_still_needs_their_typed_command_to_spend(
+        self,
+    ) -> None:
+        board = Board({"exists": False})
+        with (
+            mock.patch.object(
+                terminal_client,
+                "ensure_dashboard",
+                return_value=terminal_client.Dashboard(4553, 1, 0, "1"),
+            ),
+            mock.patch.object(
+                terminal_client.LoopbackBoard,
+                "session",
+                return_value={"session": board.payload["session"]},
+            ),
+            mock.patch.object(terminal_client.LoopbackBoard, "summary", side_effect=board.summary),
+            mock.patch.object(terminal_client.LoopbackBoard, "post", side_effect=board.post),
+            mock.patch("sys.stdout", io.StringIO()),
+            mock.patch("sys.stderr", io.StringIO()),
+        ):
+            self.assertEqual(
+                1,
+                terminal_client.run_summary(
+                    terminal_client.SummaryRequest("claude:s/1"), environ={}
+                ),
+            )
+        self.assertEqual("summary", board.posts[0][1].get("typed_action"))
 
     def test_a_person_reads_stored_phases_twice_without_a_start_even_when_stale(self) -> None:
         board = Board(recorded())

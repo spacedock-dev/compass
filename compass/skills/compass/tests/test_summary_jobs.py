@@ -62,6 +62,26 @@ class _SummaryCase(unittest.TestCase):
 
 
 class APersonKeepsTheirSummary(_SummaryCase):
+    def test_a_person_can_cancel_their_utf8_job_under_a_non_utf8_system_locale(self) -> None:
+        application: Any = SimpleNamespace(config=self.config, state=self.state)
+        self.state.summary_jobs["claude:s1"] = summary_jobs.Job(
+            "mine", "claude", "s1", 100.0, "模型", 0, 1
+        )
+        marker = summary_jobs._marker(self.config, "claude", "s1")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text('{"id":"mine","state":"running","destination":"模型"}', encoding="utf-8")
+        read_text = Path.read_text
+
+        def locale_read(path: Path, encoding: str | None = None, **kwargs: Any) -> str:
+            return read_text(path, encoding=encoding or "ascii", **kwargs)
+
+        with (
+            mock.patch.object(Path, "read_text", locale_read),
+            mock.patch.object(summary_jobs, "_publish"),
+        ):
+            self.assertTrue(summary_jobs.cancel(application, "claude", "s1", expected_job="mine"))
+        self.assertEqual("stopping", json.loads(marker.read_text(encoding="utf-8"))["state"])
+
     def test_a_person_starting_after_another_save_spends_no_call_or_notice(self) -> None:
         application: Any = SimpleNamespace(
             config=self.config, state=self.state, clock=lambda: 100.0

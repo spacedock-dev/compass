@@ -744,7 +744,9 @@ def cancel(
         if expected_job is not None:
             # A sibling dashboard may own the marker even while this registry remembers ours.
             try:
-                marker = json.loads(_marker(application.config, harness, sid).read_text())
+                marker = json.loads(
+                    _marker(application.config, harness, sid).read_text(encoding="utf-8")
+                )
             except (OSError, ValueError):
                 return False
             if not isinstance(marker, dict) or marker.get("id") != expected_job:

@@ -140,6 +140,15 @@ SENTENCES: Final[dict[str, str]] = {
         "Ask `/compass:compass` to stop the dashboard, then type `/compass:compass` to start this "
         "version."
     ),
+    "summary_older": (
+        "The running dashboard is an older release than this client and cannot serve summaries, "
+        "so nothing was sent. Stop it with `{stop}` and start it again with `{start}`."
+    ),
+    "summary_older_in_session": (
+        "The running dashboard is an older release than this client and cannot serve summaries, "
+        "so nothing was sent. Ask `/compass:compass` to stop the dashboard, then type "
+        "`/compass:compass` to start this version."
+    ),
 }
 
 
@@ -303,7 +312,14 @@ def run_summary(
     if named.harness != "claude":
         print("Compass summarizes Claude Code sessions only.", file=sys.stderr)
         return 1
-    found = ensure_dashboard(state_home(env), port=port, spend=True, own_version=release_version())
+    at_shell = named.source == "flag" and _is_terminal(sys.stdout)
+    found = ensure_dashboard(
+        state_home(env),
+        port=port,
+        spend=True,
+        own_version=release_version(),
+        in_session=not at_shell,
+    )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)
         return found.code
@@ -322,7 +338,6 @@ def run_summary(
         print("Compass could not resolve this session unambiguously.", file=sys.stderr)
         return 1
     named = named._replace(sid=row["sid"])
-    at_shell = named.source == "flag" and _is_terminal(sys.stdout)
     return terminal_summary.run(
         named=named,
         board=board,
@@ -1432,7 +1447,16 @@ class LoopbackBoard:
     def summary(self, harness: str, sid: str) -> Any:
         from urllib.parse import urlencode  # noqa: PLC0415
 
-        return self._read("/api/summary?" + urlencode({"harness": harness, "sid": sid}))
+        from compass_runtime import terminal_drift, terminal_summary  # noqa: PLC0415
+
+        path = "/api/summary?" + urlencode({"harness": harness, "sid": sid})
+        try:
+            reply = get(self.port, path, timeout=self.timeout(), cap=DATA_CAP_BYTES)
+        except DashboardUnreachable as error:
+            raise terminal_drift.Lost(path) from error
+        if reply.status == 404:
+            raise terminal_summary.OlderDashboardError
+        return reply.data if reply.status == 200 else None
 
     def context(self, project: str, session: str) -> Any:
         from urllib.parse import quote  # noqa: PLC0415 — only a drift reaches this

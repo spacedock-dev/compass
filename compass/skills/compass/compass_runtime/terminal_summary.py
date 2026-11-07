@@ -10,7 +10,6 @@ import contextlib
 import re
 import signal
 import time
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from compass_runtime import terminal_drift
@@ -29,6 +28,10 @@ class Board(Protocol):
 
     def summary(self, harness: str, sid: str) -> Any: ...
     def post(self, path: str, body: Mapping[str, Any]) -> tuple[int, Any]: ...
+
+
+class OlderDashboardError(Exception):
+    """The running dashboard has no summary endpoint."""
 
 
 SPEECH = (
@@ -124,9 +127,7 @@ def lede_words(words: str) -> str:
             else found[0]
         )
 
-    return re.sub(
-        r"(^|[.!?]\s+)The\s+(?:person|user)\s+([^.!?]*)", replace, words, flags=re.IGNORECASE
-    )
+    return re.sub(r"(^|[.!?]\s+)The\s+(?:person|user)\s+([^.!?]*)", replace, words)
 
 
 WITHHELD = {
@@ -184,13 +185,15 @@ def _freshness(summary: Mapping[str, Any]) -> list[str]:
         lines.append(UNKNOWN)
     elif report.get("action") == "update":
         count = report.get("new_entries", 0)
+        at = summary.get("made_at")
+        since = f" since {terminal_drift.clock_text(at)}" if at else ""
         lines.append(
-            f"{count} new {'entry' if count == 1 else 'entries'}."
+            "Some message text remains unsummarized. "
+            "Update summary continues from where it stopped."
+            if report.get("kind") == "unchanged"
+            else f"{count} new {'entry' if count == 1 else 'entries'}{since}."
             if count
-            else (
-                "Some message text remains unsummarized. "
-                "Update summary continues from where it stopped."
-            )
+            else f"A check\u2019s result arrived{since}."
         )
     elif report.get("action") == "summarize_again":
         lines.append(
@@ -345,7 +348,7 @@ def _stamp(summary: Mapping[str, Any]) -> str:
     if isinstance(made, (int, float)):
         try:
             stamp += " · updated " if running else " · summarized at "
-            stamp += datetime.fromtimestamp(made, UTC).isoformat()
+            stamp += terminal_drift.clock_text(made)
         except (ValueError, OverflowError, OSError):
             stamp += " · write time unavailable"
     else:
@@ -353,6 +356,47 @@ def _stamp(summary: Mapping[str, Any]) -> str:
     if running:
         stamp += " · still running"
     return stamp
+
+
+# The reasons the producer can leave on an absent lede, in summary.ts's words.
+LEDE_REASONS = {
+    "stopped": "The summary stopped before every part was summarized.",
+    "bytes": (
+        "The summary reached the largest size it may be saved at, "
+        "so its newest parts were left out."
+    ),
+    "ceiling": (
+        "The summary reached one of its limits on calls, bytes or time, "
+        "so the parts after it were not summarized."
+    ),
+    "refused": "A model call was refused, so the summary stopped.",
+}
+
+
+def _unlinked(summary: Mapping[str, Any], labels: Mapping[str, str]) -> int:
+    bullets = [
+        bullet
+        for block in summary.get("blocks", [])
+        for phase in block.get("phases", [])
+        for bullet in phase.get("bullets", [])
+    ]
+    # Person and agent messages can be opened from older record pages; checks and files cannot.
+    messages = {
+        c for b in bullets if b.get("kind") in ("asked", "said") for c in b.get("cites", [])
+    }
+    missing = {
+        c
+        for c in (summary.get("lede") or {}).get("cites", [])
+        if c not in messages and c not in labels
+    }
+    missing.update(
+        c
+        for b in bullets
+        if b.get("kind") not in ("asked", "said")
+        for c in b.get("cites", [])
+        if c not in labels
+    )
+    return len(missing)
 
 
 def render(summary: Mapping[str, Any], labels: Mapping[str, str], *, page_url: str) -> list[str]:
@@ -365,10 +409,8 @@ def render(summary: Mapping[str, Any], labels: Mapping[str, str], *, page_url: s
         lines.append(f"Summary job: {job['state']}{reason}; stored summary shown below.")
     lines.extend(_freshness(summary))
     lines.extend(_notes(summary))
-    missing: set[str] = set()
 
     def cited(text: str, cites: list[str]) -> str:
-        missing.update(c for c in cites if c not in labels)
         suffix = " ".join(f"[#{labels[c]}]" for c in cites if c in labels)
         return text + (" " + suffix if suffix else "")
 
@@ -386,17 +428,30 @@ def render(summary: Mapping[str, Any], labels: Mapping[str, str], *, page_url: s
         )
         lines.append(cited(words, lede.get("cites", [])))
     else:
-        lines.append(
-            "No opening summary."
-            + (f" ({summary['lede_reason']})" if summary.get("lede_reason") else "")
-        )
+        lede_reason = summary.get("lede_reason")
+        if job.get("state") in ("running", "stopping"):
+            lines.append("The opening summary is written once every part has been read.")
+        elif lede_reason:
+            lines.append(
+                "No opening summary: "
+                + LEDE_REASONS.get(lede_reason, f"The summary stopped ({lede_reason}).")
+            )
+        else:
+            lines.append("No opening summary.")
     lines.extend(_phases(summary, cited))
     if summary.get("state") != "ok" or any(b.get("gap") for b in summary.get("blocks", [])):
         lines.append("This summary does not cover every part of the session.")
         if summary.get("reason"):
             lines.append(f"Summary stopped: {summary['reason']}.")
+    missing = _unlinked(summary, labels)
     if missing:
-        lines.append(f"{len(missing)} cited entries have no available label here.")
+        lines.append(
+            "1 cited entry is an earlier check or file that Full activity does not list, "
+            "so it cannot be opened from here."
+            if missing == 1
+            else f"{missing} cited entries are earlier checks or files that Full activity "
+            "does not list, so they cannot be opened from here."
+        )
     lines.extend((RELEVANCE, page_url))
     return lines
 
@@ -511,6 +566,11 @@ def _run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - one bounded comman
         )
         encoding = getattr(out, "encoding", None) or "utf-8"
         out.write(text.encode(encoding, "replace").decode(encoding, "replace"))
+    except OlderDashboardError:
+        from compass_runtime.terminal_client import sentence  # noqa: PLC0415
+
+        print(sentence("summary_older_in_session" if in_session else "summary_older"), file=err)
+        return 1
     except KeyboardInterrupt:
         if own is not None:
             try:
