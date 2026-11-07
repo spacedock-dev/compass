@@ -2940,7 +2940,7 @@ Ruled 2026-10-23 by the owner
 With the switch on and the session on screen, or while a terminal holder keeps the lease, a Haiku
 check of new turns runs about once a minute and produces the live drift level. It is a call the reader starts, under
 [DEC-28](docs/design-session-summary.md#the-widening-opt-out-with-a-notice-for-every-call-a-reader-starts),
-with a `monitor` notice shown before the first charged call.
+with a `monitor` notice shown before the first charged call. A terminal start records a due notice before publishing its holder, without a model call or charge; the foreground prints it, including `--monitor --off`. The notice follows the same destination and content-tier rules, including the reset on Pause.
 
 - What is sent. The saved goal, and, redacted and clipped first, the person's own messages, the
   agent's replies, the commands of checks with their result, every other command as its masked line
@@ -2963,7 +2963,7 @@ with a `monitor` notice shown before the first charged call.
 - Terminal holders. `--monitor` starts one detached holder per Claude Code session; `--monitor
   --off` stops only that holder and leaves the dashboard and browser holders running. The skill's
   `monitor on` starts only when the transcript's latest main-thread prompt is that typed command,
-  once per accepted run. Beats and stops consume no command. A full session id must match
+  once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat of an already-running command consume no command. The repeat only reads the board's published notice status. A full session id must match
   `resume_id`; a same-prefix different id is refused.
   The holder exits on a recorded lease end, an absent or ended row, 30 seconds of continuously
   failed dashboard exchanges, or two hours with no new published activity. On POSIX it records the
@@ -2971,7 +2971,7 @@ with a `monitor` notice shown before the first charged call.
   dies or its start time changes. On Windows, and when no such ancestor exists, only the other
   bounds apply. A restarted dashboard ends the holder with a status-file reason and never replays
   start. A hard-killed sidecar's holder lapses after 50 seconds. Its private `monitor/` directory in
-  the Compass home stores identities and status, never session text. The dashboard alone writes
+  the Compass home stores identities, status and a start receipt bounded below 8 KiB. That receipt can contain the adopted goal, its source and time, the session page URL and the disclosure. It survives holder exit until a later start replaces it; no transcript is stored there. The dashboard alone writes
   footer line files; the sidecar's status is not yet merged into the footer.
 - What caps it. At least 60 seconds between checks of a session. The per-session allowance counts
   30 charged attempts per browser consent window; Yes renews that allowance for a browser-only
@@ -4147,7 +4147,7 @@ fact id, and refused unless its displayed text and time still match an offered s
 correction, a harness control and a local command are never offered. Authorship is inferred from the
 harness user-message shape and injected-prompt filter, which fails open; it is not proof a person
 wrote the message. The server resolves the published source again, requires its displayed text and
-source time to match, and refuses implicit adoption over an existing goal. Adoption uses the same
+source time to match, and refuses implicit adoption over an existing goal. A terminal monitor start also adopts through this path, only while the store holds neither a goal nor outcome lines. It selects the page's draft, preserves discard and source-time refusals, and prints the saved revision's words and provenance. This save makes no model call and writes nothing into the harness session. Adoption uses the same
 1,000-character, one-line annotation writer for the goal. Its closed source token and source time survive with
 the revision and the reading that used it; an explicit goal save makes typed words instead.
 
@@ -4915,7 +4915,7 @@ and Event ingress below is where it is stated. `POST /api/focus`'s capability bu
 injected into the served document, so anything that can load the board under a non-default bind can
 also ask for a raise, and `/api/data` names which rows would answer it. What that second gate
 actually separates is a page from a document navigation and from a local process that never fetched
-the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session and writes nothing; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
+the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice before starting the holder; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
 to addresses and never to names. Under `0.0.0.0`, that means any address a client could arrive on.

@@ -213,6 +213,7 @@ def disclosure(destination: str, *, terminal: bool = False) -> str:
         else "while Live monitor is on and you are viewing this session"
     )
     stop = (
+        "Stop this terminal's holder with --monitor --off. "
         "The terminal holder must keep sending heartbeats; no confirmation question is needed."
         if terminal
         else "It turns itself off after a while unless you say you still want it."
@@ -234,7 +235,8 @@ def board(config: RuntimeConfig, *, now: float) -> dict[str, Any]:
         name: answer[name] for name in ("consent", "off", "used", "limit", "retry_at", "reason")
     } | {
         "notice_due": reading_policy.notice_due(
-            answer,
+            # The monitor ledger counts attempts; saved disclosures belong to the notice store.
+            reading_policy.status(config, now=now),
             kind="monitor",
             provider=PROVIDER,
             destination=where,

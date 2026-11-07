@@ -358,4 +358,4 @@ Windows skips this check and never calls `os.kill(pid, 0)`. With no matching anc
 row/lease endings, a 30-second continuous exchange failure budget and a two-hour idle bound still
 end the worker. A dashboard identity change exits with a status-file reason and no new start:
 restarting would replay or bypass a consumed typed command. The monitor store owns that status;
-footer files remain the dashboard's alone.
+footer files remain the dashboard's alone. The sidecar forwards a bounded start receipt through its status file, including disclosure and adopted-goal provenance, and preserves it on exit so a fast stop cannot erase what the foreground must print. The JSON receipt stays below the store's 8 KiB read limit, clipping long goal output with an ellipsis if needed. A repeated running command reads the focused board's notice status and never posts start or beat.

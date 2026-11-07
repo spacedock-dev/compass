@@ -39,7 +39,7 @@ the command it names, and do not print or apply it.
 `monitor on` holds the Live monitor for this Claude Code session without a browser tab, and
 `monitor off` stops this terminal holder. Never add `--session`. Run `monitor on` only when the
 person typed that action; it can spend on model checks. Compass verifies the typed command once
-before starting. Never repeat it on your own, including after a dashboard restart.
+before saving a drafted goal or starting. It prints what it sends when disclosure is due, the saved goal with its source and session page URL, or why it makes no check yet. With saved outcome lines it leaves the goal alone. Never repeat it on your own, including after a dashboard restart.
 
 Resolve `<skill-dir>` to the directory holding this `SKILL.md`, as `## Start` does, and write the
 command exactly as the table spells it, both paths in double quotes. Claude Code runs that exact

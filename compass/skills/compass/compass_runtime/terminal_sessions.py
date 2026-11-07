@@ -895,6 +895,12 @@ def _enc(part: str) -> str:
     return quote(part, safe="-_.!~*'()")
 
 
+def session_url(port: int, project: str, harness: str, sid: str) -> str:
+    """The session page in the board's route grammar."""
+    route = ":".join(_enc(part) for part in (project, harness, sid))
+    return f"http://127.0.0.1:{port}/#n=session:{route}"
+
+
 def _url(port: int, entry: Entry | None) -> str:
     base = f"http://127.0.0.1:{port}/#n="
     if entry is None:

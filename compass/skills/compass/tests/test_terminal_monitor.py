@@ -281,6 +281,143 @@ class SpawnTest(unittest.TestCase):
 
 
 class ReadinessTest(unittest.TestCase):
+    def test_a_person_whose_dashboard_cannot_be_reached_gets_the_transport_failure(self) -> None:
+        store = mock.Mock()
+        store.read.return_value = {"generation": "a" * 32, "reason": "unreachable", "answer": {}}
+        with mock.patch.object(monitor, "spawn"), mock.patch("sys.stderr", io.StringIO()) as err:
+            self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
+        self.assertIn("could not start or stop", err.getvalue())
+
+    def test_a_person_repeating_the_command_reads_the_board_without_another_start(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write(
+                "run", {"sid": "one", "project": "billing", "dashboard": [4553, 42, 100.0, "1.0.0"]}
+            )
+            for due in (False, True):
+                board = {
+                    "sources": {
+                        "work": {
+                            "live_monitor": {
+                                "notice_due": due,
+                                "disclosure": "Sends to the changed destination.",
+                            }
+                        }
+                    }
+                }
+                with (
+                    self.subTest(due=due),
+                    mock.patch.object(store, "running", return_value=True),
+                    mock.patch.object(client, "get", return_value=client.Reply(200, board)) as get,
+                    mock.patch.object(client, "post") as post,
+                    mock.patch.object(monitor, "spawn") as spawn,
+                    mock.patch("sys.stdout", io.StringIO()) as out,
+                ):
+                    self.assertEqual(
+                        0,
+                        monitor._command(
+                            store,
+                            client.Session("claude", "one", "flag"),
+                            off=False,
+                            in_session=True,
+                        ),
+                    )
+                    self.assertEqual(due, "Sends to the changed destination." in out.getvalue())
+                    self.assertIn("already running", out.getvalue())
+                    self.assertIn("/api/project-context?", get.call_args.args[1])
+                    post.assert_not_called()
+                    spawn.assert_not_called()
+
+    def test_a_person_s_long_unicode_goal_keeps_the_start_receipt_readable(self) -> None:
+        answer = {
+            "ok": True,
+            "terminal": {
+                "goal_status": "adopted",
+                "goal": {"text": "字" * 10000, "source": "first-prompt"},
+                "disclosure": "Sends to Haiku.",
+                "notice_due": True,
+            },
+        }
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write("status", {"answer": monitor._start_receipt(client.Reply(200, answer))})
+            saved = store.read("status")["answer"]
+            self.assertTrue(saved["ok"])
+            self.assertTrue(saved["terminal"]["goal"]["text"].endswith("…"))
+            self.assertEqual("Sends to Haiku.", saved["terminal"]["disclosure"])
+
+    def test_a_person_reads_the_receipt_even_when_the_holder_already_exited(self) -> None:
+        answer = {
+            "ok": True,
+            "terminal": {
+                "notice_due": True,
+                "disclosure": "Sends your words to Haiku.",
+                "goal_status": "adopted",
+                "goal": {"text": "Ship the parser", "source": "first-prompt", "at": 100},
+                "page_url": "http://127.0.0.1:4553/#n=session:billing:claude:one",
+            },
+        }
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            generation = "a" * 32
+            store.write(
+                "run",
+                {
+                    "generation": generation,
+                    "sid": "one",
+                    "dashboard": [4553, 42, 100.0, "1.0.0"],
+                    "ancestor": {},
+                },
+            )
+            with (
+                mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+                mock.patch("signal.signal"),
+                mock.patch.object(client, "post", return_value=client.Reply(200, answer)),
+                mock.patch.object(
+                    client, "probe", return_value=client.Dashboard(4553, 42, 100.0, "1.0.0")
+                ),
+                mock.patch.object(monitor, "hold", return_value="stopped"),
+            ):
+                self.assertEqual(0, monitor.sidecar("one", generation))
+            with (
+                mock.patch.object(monitor, "spawn"),
+                mock.patch("sys.stdout", io.StringIO()) as out,
+            ):
+                self.assertEqual(0, monitor._await_start(store, "one", generation))
+            self.assertIn("Sends your words to Haiku.", out.getvalue())
+            self.assertIn("From your first prompt · saved", out.getvalue())
+            self.assertIn("Ship the parser", out.getvalue())
+            self.assertIn("http://127.0.0.1:4553/#n=session:billing:claude:one", out.getvalue())
+
+    def test_a_person_without_a_goal_is_told_why_the_monitor_is_quiet(self) -> None:
+        with mock.patch("sys.stdout", io.StringIO()) as out:
+            self.assertEqual(
+                0,
+                monitor._report_start(
+                    {
+                        "ok": True,
+                        "terminal": {
+                            "goal_status": "missing",
+                            "page_url": "http://127.0.0.1:4553/#n=session:p:claude:one",
+                        },
+                    }
+                ),
+            )
+        self.assertIn("on", out.getvalue())
+        self.assertIn("no check until a goal is saved", out.getvalue())
+        self.assertIn("http://127.0.0.1:4553/", out.getvalue())
+
+    def test_a_person_reads_one_sentence_for_each_known_refusal(self) -> None:
+        for reason, words in (
+            ("paused", "paused"),
+            ("no-observer-model", "--no-observer-model"),
+            ("ended", "ended"),
+        ):
+            with self.subTest(reason=reason), mock.patch("sys.stderr", io.StringIO()) as err:
+                self.assertEqual(1, monitor._report_start({"ok": False, "reason": reason}))
+                self.assertIn(words, err.getvalue())
+                self.assertEqual(1, len(err.getvalue().splitlines()))
+
     def test_a_person_whose_start_times_out_does_not_leave_a_late_ready_worker(self) -> None:
         store = mock.Mock()
         store.read.return_value = {"generation": "a" * 32, "reason": "started"}
@@ -336,6 +473,32 @@ class MonitorCorrectionsTest(unittest.TestCase):
         "resume_id": "abcdefab-1111-4111-8111-111111111111",
     }
     dashboard = client.Dashboard(4553, 42, 100.0, "1.0.0")
+
+    def test_a_person_only_hears_ended_when_the_board_uniquely_identifies_their_session(
+        self,
+    ) -> None:
+        for reply, sentence in (
+            (client.Reply(200, {"session": {**self.row, "ended_at": 100.0}}), "monitor_ended"),
+            (client.Reply(404, {"reason": "not-found"}), "monitor_unavailable"),
+            (client.Reply(409, {"reason": "ambiguous"}), "monitor_unavailable"),
+        ):
+            with (
+                self.subTest(reply=reply),
+                tempfile.TemporaryDirectory() as home,
+                mock.patch.object(client, "ensure_dashboard", return_value=self.dashboard),
+                mock.patch.object(client, "get", return_value=reply),
+                mock.patch.object(monitor, "spawn") as spawn,
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                result = monitor.command(
+                    client.Session("claude", self.row["resume_id"], "flag"),
+                    off=False,
+                    home=home,
+                    in_session=False,
+                )
+                self.assertEqual(1, result)
+                self.assertEqual(client.sentence(sentence) + "\n", err.getvalue())
+                spawn.assert_not_called()
 
     def test_a_person_with_a_long_history_still_finds_their_live_session(self) -> None:
         history = json.dumps(
