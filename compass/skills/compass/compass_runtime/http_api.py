@@ -1638,6 +1638,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         with_url = {
             "/api/data": self._data,
             "/api/session": self._session,
+            "/api/sessions": self._sessions,
             "/api/observe": self._observe,
             "/api/project-context": self._project_context,
             "/api/session-record": self._session_record,
@@ -1885,6 +1886,19 @@ class _RequestHandler(BaseHTTPRequestHandler):
         result = runtime_project_context.for_page(result)
         self._send(
             json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(),
+            "application/json",
+        )
+
+    def _sessions(self, _url: ParseResult) -> None:
+        if not self._loopback_resource_ok() or self._is_document_navigation():
+            self.send_error(403)
+            return
+        _, body = self.server.application.collect_json(show_all=False)
+        answer = terminal_sessions.list_payload(json.loads(body))
+        self._send(
+            json.dumps(
+                runtime_project_context.for_page(answer), ensure_ascii=False, separators=(",", ":")
+            ).encode(),
             "application/json",
         )
 

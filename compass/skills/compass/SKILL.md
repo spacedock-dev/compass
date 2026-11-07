@@ -970,6 +970,7 @@ Paths 2 and 3 are complementary and can both be installed. Keep `Notification` o
 | `--history-days N` | How long the local history keeps an observation, in days (default 14). Eviction is age first, so narrowing this drops what falls outside the window and widening it again brings nothing back. Zero or negative is refused. |
 | `--history-max-bytes N` | The size cap on the local history store, in bytes (default 1048576). It is the read cap too: a file larger than it is discarded unread rather than parsed. Zero or negative is refused. |
 | `http://127.0.0.1:4553/?all=1` | Show all sessions ever, including idle ones |
+| `/api/sessions` | The terminal session list: the default board window, with only list fields and no observation history. Loopback and same-origin only; document navigation is refused. |
 | `/api/data` | Raw JSON, same data as the UI. Its `build` names the page this process serves, and a tab that sees it change asks to be reloaded. |
 | `/api/health` | Liveness and identity (pid, port, start time). Scans nothing, unlike `/api/data`. |
 | `/api/overlays` | Diagnostic: the live event overlays behind each session's state, with their arrival order and timings, plus a record of every time an event overruled a session the dashboard had read as waiting. Use this when a row's state disagrees with what the agent is actually doing and you need to know whether an event said so or never arrived. Empty is a real answer. Absent under `--no-events`. |

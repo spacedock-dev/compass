@@ -31,6 +31,7 @@ from compass_runtime import (
 
 from . import support
 from .support import SERVER_PATH
+from .test_terminal_sessions import PAYLOAD
 
 MANIFEST = SERVER_PATH.parents[2] / ".claude-plugin" / "plugin.json"
 HEAVY = ("compass_runtime.cli", "compass_runtime.http_api", "compass_runtime.aggregate")
@@ -676,7 +677,7 @@ class SessionTest(unittest.TestCase):
 
 def data_reply(body: object) -> dict[str, tuple[int, dict[str, str], bytes]]:
     raw = body if isinstance(body, bytes) else json.dumps(body).encode()
-    return {"/api/data": (200, {"Content-Type": "application/json"}, raw)}
+    return {"/api/sessions": (200, {"Content-Type": "application/json"}, raw)}
 
 
 BOARD = {
@@ -735,7 +736,7 @@ class SessionsCommandTest(HomeCase):
 
         self.assertEqual((0, ""), (code, err))
         self.assertIn("Wire the parser", out)
-        self.assertEqual([("GET", "/api/health"), ("GET", "/api/data")], fake.requests)
+        self.assertEqual([("GET", "/api/health"), ("GET", "/api/sessions")], fake.requests)
 
     def test_the_read_never_asks_for_usage_or_the_wider_window(self) -> None:
         with FakeDashboard(answers=data_reply(BOARD)) as fake:
@@ -743,13 +744,76 @@ class SessionsCommandTest(HomeCase):
 
         self.assertEqual([], [path for _, path in fake.requests if "?" in path])
 
-    def test_a_board_larger_than_the_old_reply_cap_still_reads(self) -> None:
-        padded = {**BOARD, "history": {"pad": "x" * (terminal_client.REPLY_CAP_BYTES + 100_000)}}
-        with FakeDashboard(answers=data_reply(padded)) as fake:
-            code, out, _ = self.run_sessions(port=fake.port)
+    def test_a_person_reads_both_lists_when_history_and_full_rows_exceed_the_cap(self) -> None:
+        board = {
+            **PAYLOAD,
+            "sessions": [PAYLOAD["sessions"][i % 13] for i in range(3751)],
+            "history": {"pad": "x" * (terminal_client.DATA_CAP_BYTES + 1)},
+        }
+        self.assertGreater(
+            len(json.dumps({"sessions": board["sessions"]})), terminal_client.DATA_CAP_BYTES
+        )
+        lean = terminal_sessions.list_payload(board)
+        with FakeDashboard(answers=data_reply(lean)) as fake:
+            for mode in (None, "waiting"):
+                with self.subTest(mode=mode):
+                    code, out, err = self.run_sessions(mode, port=fake.port)
+                    lines = (
+                        terminal_sessions.render_sessions(board)
+                        if mode is None
+                        else terminal_sessions.render_waiting(
+                            board,
+                            port=fake.port,
+                            exclude=None,
+                            nothing=terminal_client.sentence("nothing_waiting"),
+                            caveat=terminal_client.sentence("caller_unknown"),
+                        )
+                    )
+                    self.assertEqual((0, "\n".join(lines) + "\n", ""), (code, out, err))
+        self.assertNotIn(("GET", "/api/data"), fake.requests)
 
-        self.assertEqual(0, code)
-        self.assertIn("Wire the parser", out)
+    def test_a_person_can_reuse_the_structured_session_reader(self) -> None:
+        with FakeDashboard(answers=data_reply(BOARD)) as fake:
+            self.assertEqual(BOARD, terminal_client.read_sessions(fake.port))
+        self.assertEqual([("GET", "/api/sessions")], fake.requests)
+
+    def test_a_person_gets_an_unreadable_answer_instead_of_a_false_empty_list(self) -> None:
+        malformed: list[dict[str, Any]] = [
+            {},
+            {"sessions": [None]},
+            {"sessions": [{}]},
+            {"sessions": [], "harnesses": {}},
+            {"sessions": [], "harnesses": [None]},
+            {"sessions": [], "asks": {}},
+            {"sessions": [], "asks": [None]},
+            {"sessions": [], "ask": True, "asks": [{}]},
+        ]
+        replies: list[tuple[int, dict[str, str], bytes]] = [
+            (404, {}, b"{}"),
+            (500, {}, b"{}"),
+            (200, {}, b"{"),
+            *[(200, {}, json.dumps(body).encode()) for body in malformed],
+        ]
+        for reply in replies:
+            with self.subTest(reply=reply), FakeDashboard(answers={"/api/sessions": reply}) as fake:
+                with self.assertRaises(terminal_client.UnreadableSessionsError):
+                    terminal_client.read_sessions(fake.port)
+                for mode in (None, "waiting"):
+                    code, out, err = self.run_sessions(mode, port=fake.port)
+                    self.assertEqual(
+                        (1, "", terminal_client.sentence("unreadable_reply") + "\n"),
+                        (code, out, err),
+                    )
+
+    def test_a_person_can_read_a_legitimately_empty_board(self) -> None:
+        with FakeDashboard(answers=data_reply({"sessions": []})) as fake:
+            for mode in (None, "waiting"):
+                code, out, err = self.run_sessions(mode, port=fake.port)
+                self.assertEqual((0, ""), (code, err))
+                self.assertIn(
+                    "Active now" if mode is None else terminal_client.sentence("nothing_waiting"),
+                    out,
+                )
 
     def test_a_board_over_the_bound_is_one_sentence_and_exit_one(self) -> None:
         padded = {**BOARD, "history": {"pad": "x" * 2_000}}
@@ -757,10 +821,10 @@ class SessionsCommandTest(HomeCase):
             mock.patch.object(terminal_client, "DATA_CAP_BYTES", 1_000),
             FakeDashboard(answers=data_reply(padded)) as fake,
         ):
-            code, out, err = self.run_sessions(port=fake.port)
-
-        self.assertEqual((1, ""), (code, out))
-        self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+            for mode in (None, "waiting"):
+                code, out, err = self.run_sessions(mode, port=fake.port)
+                self.assertEqual((1, ""), (code, out))
+                self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
 
     def test_a_refusal_or_a_body_that_is_no_board_is_one_sentence_and_exit_one(self) -> None:
         replies = {
@@ -770,11 +834,11 @@ class SessionsCommandTest(HomeCase):
             "no sessions list": (200, {}, b'{"sessions": 3}'),
         }
         for name, reply in replies.items():
-            with self.subTest(name), FakeDashboard(answers={"/api/data": reply}) as fake:
-                code, out, err = self.run_sessions(port=fake.port)
-
-            self.assertEqual((1, ""), (code, out))
-            self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
+            with self.subTest(name), FakeDashboard(answers={"/api/sessions": reply}) as fake:
+                for mode in (None, "waiting"):
+                    code, out, err = self.run_sessions(mode, port=fake.port)
+                    self.assertEqual((1, ""), (code, out))
+                    self.assertEqual(terminal_client.sentence("unreadable_reply") + "\n", err)
 
     def test_a_dashboard_that_dies_between_the_probe_and_the_read_is_one_sentence(self) -> None:
         with (

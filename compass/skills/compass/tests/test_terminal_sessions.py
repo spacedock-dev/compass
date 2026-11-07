@@ -53,6 +53,167 @@ def with_rows(**changes: Any) -> dict[str, Any]:
     return payload
 
 
+class ListProjectionTest(unittest.TestCase):
+    def assert_same_lists(self, payload: dict[str, Any]) -> None:
+        projected = terminal_sessions.list_payload(payload)
+        self.assertEqual(
+            terminal_sessions.render_sessions(payload), terminal_sessions.render_sessions(projected)
+        )
+        for exclude in (None, WaitingCallerTest.CALLER):
+            options: dict[str, Any] = {
+                "port": 4553,
+                "exclude": exclude,
+                "nothing": NOTHING,
+                "caveat": "Caller unknown",
+            }
+            self.assertEqual(
+                terminal_sessions.render_waiting(payload, **options),
+                terminal_sessions.render_waiting(projected, **options),
+            )
+
+    def test_a_person_reads_the_same_two_lists_from_the_recorded_board(self) -> None:
+        self.assert_same_lists(PAYLOAD)
+
+    def test_a_person_keeps_ambiguous_asks_risks_and_unknown_ends_in_their_places(self) -> None:
+        payload = copy.deepcopy(PAYLOAD)
+        payload["sessions"].append({**payload["sessions"][1], "project": "elsewhere"})
+        for fields in (
+            {"loop": {"errors": 3, "failures": 5}},
+            {
+                "delegated_launches": 2,
+                "delegated_unpaired": 1,
+                "delegated_quiet_since": 1_899_995_000.0,
+            },
+        ):
+            self.assert_same_lists(with_rows(a7b8c9d0=fields))
+        payload["asks"][1]["age_sec"] = 900
+        for annotate in (False, True):
+            payload["annotate"] = annotate
+            payload["ends_observable"] = False
+            payload["annotate_unreadable"] = True
+            self.assert_same_lists(payload)
+
+    def test_a_person_is_not_told_an_invalid_assessment_is_a_departure(self) -> None:
+        payload = with_rows(
+            f6a7b8c9={
+                "departures": [],
+                "annotation_assessment": {
+                    "read_at": 1_899_999_000.0,
+                    "criteria": {"goal": {"result": "departure", "cites": ["step three"]}},
+                    "unknown": "invalidates this assessment",
+                },
+            }
+        )
+        projected = terminal_sessions.list_payload(payload)
+        row = next(r for r in projected["sessions"] if r["sid"] == "f6a7b8c9")
+        self.assertIn("unknown", row["annotation_assessment"])
+        self.assertNotIn(["claude", "f6a7b8c9"], keys(terminal_sessions.board(projected).active))
+        self.assert_same_lists(payload)
+
+    def test_a_person_downloads_only_list_fields_without_changing_the_page_payload(self) -> None:
+        payload = copy.deepcopy(PAYLOAD)
+        row = payload["sessions"][0]
+        row.update(
+            {
+                "future_field": "not a terminal field",
+                "tasks": [{"status": "pending", "subject": "Ship it", "details": "large"}],
+                "turn": {"long": True, "details": "large"},
+                "instruction": {"label": "Goal", "text": "Ship it", "at": 10, "details": "large"},
+                "session_goal": {
+                    "text": "Ship it",
+                    "offered": True,
+                    "cut": False,
+                    "at": 10,
+                    "details": "large",
+                },
+                "copied_prompts": [{"quoted_as": "goal", "text": "large"}],
+                "departures": [{"at": 10, "details": "large"}],
+                "loop": {"errors": 2, "details": "large"},
+            }
+        )
+        for harness in payload["harnesses"]:
+            harness["future_field"] = "unused"
+        for ask in payload["asks"]:
+            ask["future_field"] = "unused"
+        payload["history"] = {"large": "x" * 100_000}
+        before = copy.deepcopy(payload)
+        projected = terminal_sessions.list_payload(payload)
+        self.assertEqual(before, payload)
+        self.assertEqual(
+            {
+                "sessions",
+                "harnesses",
+                "generated",
+                "ends_observable",
+                "ask",
+                "asks",
+                "annotate",
+                "annotate_unreadable",
+            }
+            & payload.keys(),
+            projected.keys(),
+        )
+        allowed = {
+            "harness",
+            "sid",
+            "project",
+            "resume_id",
+            "state",
+            "state_detail",
+            "wait_unconfirmed",
+            "blocked_since",
+            "title",
+            "first_prompt_control",
+            "last_activity",
+            "tasks",
+            "turn",
+            "ended_at",
+            "finished_at",
+            "turn_end_at",
+            "dirty",
+            "changed",
+            "source_gaps",
+            "instruction",
+            "first_prompt",
+            "first_prompt_at",
+            "prompt_states_work",
+            "prompt_at",
+            "session_goal",
+            "copied_prompts",
+            "annotation_goal",
+            "annotation_goal_source",
+            "annotation_assessment",
+            "departures",
+            "loop",
+            "delegated_launches",
+            "delegated_unpaired",
+            "delegated_quiet_since",
+        }
+        self.assertEqual(allowed & row.keys(), projected["sessions"][0].keys())
+        for harness in projected["harnesses"]:
+            self.assertEqual(
+                {"key", "label", "error", "reports_needs_input"} & payload["harnesses"][0].keys(),
+                harness.keys(),
+            )
+        for original, ask in zip(payload["asks"], projected["asks"], strict=True):
+            self.assertEqual(
+                {"id", "harness", "session_id", "project", "question", "options", "age_sec"}
+                & original.keys(),
+                ask.keys(),
+            )
+        for field, expected in (
+            ("tasks", [{"status": "pending", "subject": "Ship it"}]),
+            ("turn", {"long": True}),
+            ("instruction", {"label": "Goal", "text": "Ship it", "at": 10}),
+            ("session_goal", {"text": "Ship it", "offered": True, "cut": False, "at": 10}),
+            ("copied_prompts", [{"quoted_as": "goal"}]),
+            ("departures", [{"at": 10}]),
+            ("loop", {"errors": 2}),
+        ):
+            self.assertEqual(expected, projected["sessions"][0][field])
+        self.assertLess(len(json.dumps(projected)), len(json.dumps(PAYLOAD)) // 3)
+
+
 class BoardParityTest(unittest.TestCase):
     def test_the_groups_hold_the_sessions_the_board_holds_in_the_board_order(self) -> None:
         got = board()

@@ -48,8 +48,8 @@ REQUEST_TIMEOUT_SEC: Final = 5.0
 HEALTH_CAP_BYTES: Final = 4096
 REPLY_CAP_BYTES: Final = 1_048_576
 # The board's own read. `/api/data` measured 1,096,870 bytes on a real board on 2026-11-03, so the
-# 1 MiB reply cap above refuses an ordinary board. Sixteen times that holds the `?all=1` variant
-# the page never asks for with room to spare, and still bounds a hostile answer.
+# 1 MiB reply cap above refuses an ordinary board. Keep a larger safety bound for board reads
+# and the projected session list; even projected rows can exceed a constant cap.
 DATA_CAP_BYTES: Final = 16_777_216
 # `--drift`'s exchanges. A press collects the board and verifies an adoption before it answers, and
 # so does the focused context, so five seconds can expire on a busy board; an expired press reads as
@@ -355,6 +355,10 @@ def run(argv: list[str]) -> int:
 
 class DashboardUnreachable(OSError):  # noqa: N818
     """Nothing answered, or what answered broke the HTTP exchange."""
+
+
+class UnreadableSessionsError(ValueError):
+    """The dashboard's session list could not be read; this is never an empty list."""
 
 
 class Dashboard(NamedTuple):
@@ -968,6 +972,35 @@ def _emit(lines: list[str], stream: TextIO) -> None:
     stream.write(text.encode(encoding, "replace").decode(encoding, "replace"))
 
 
+def read_sessions(port: int) -> dict[str, Any]:
+    """Read structured list rows for terminal actions, without downloading board history."""
+    try:
+        reply = get(port, "/api/sessions", cap=DATA_CAP_BYTES)
+    except DashboardUnreachable as exc:
+        raise UnreadableSessionsError from exc
+    payload = reply.data
+    if (
+        reply.status != 200
+        or not isinstance(payload, dict)
+        or not isinstance(payload.get("sessions"), list)
+    ):
+        raise UnreadableSessionsError
+    for field, required in (
+        ("sessions", ("harness", "sid", "project")),
+        ("harnesses", ("key",)),
+        ("asks", ("id", "harness", "session_id", "project", "question")),
+    ):
+        if field not in payload:
+            continue
+        rows = payload[field]
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict) or any(not isinstance(row.get(key), str) for key in required)
+            for row in rows
+        ):
+            raise UnreadableSessionsError
+    return payload
+
+
 def run_sessions(
     mode: str | bool | None = None,
     *,
@@ -986,15 +1019,8 @@ def run_sessions(
         print(found.message, file=sys.stderr)
         return found.code
     try:
-        reply = get(found.port, "/api/data", cap=DATA_CAP_BYTES)
-    except DashboardUnreachable:
-        reply = Reply(0, None)
-    payload = reply.data
-    if (
-        reply.status != 200
-        or not isinstance(payload, dict)
-        or not isinstance(payload.get("sessions"), list)
-    ):
+        payload = read_sessions(found.port)
+    except UnreadableSessionsError:
         print(sentence("unreadable_reply"), file=sys.stderr)
         return 1
     try:

@@ -345,7 +345,7 @@ class _Journey(_App):
 class TheJourneyWritesNothingIntoAHarnessStoreTest(_Journey):
     """The invariant is read-only against harness stores, and nothing but absence held it.
 
-    Two checks run over one journey of nine routes, and they watch four directories: the
+    Two checks run over one journey of ten routes, and they watch four directories: the
     transcript store, the Claude and Codex configuration directories under the fixture's HOME,
     and the directory the session ran in. The snapshot compares each entry's size, modified
     time and content hash before and after, so it sees a change whatever made it, a subprocess
@@ -376,6 +376,7 @@ class TheJourneyWritesNothingIntoAHarnessStoreTest(_Journey):
         sid = f"claude:{SHORT}"
         steps = [
             ("GET", "/api/data?all=1", None),
+            ("GET", "/api/sessions", None),
             ("GET", f"/api/project-context?project=billing&session={sid}&prompts=1", None),
             ("GET", f"/api/observe?harness=claude&sid={SHORT}", None),
             (
@@ -438,6 +439,7 @@ class TheJourneyWritesNothingIntoAHarnessStoreTest(_Journey):
         # for the wrong reason.
         statuses = dict(answered)
         self.assertEqual(200, statuses["/api/data"])
+        self.assertEqual(200, statuses["/api/sessions"])
         self.assertEqual(200, statuses["/api/annotate"])
         self.assertEqual(202, statuses["/api/reading"])
         self.assertEqual(200, statuses["/api/correction"])
@@ -837,7 +839,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
 class ThePostRoutesAreTheListedOnesTest(unittest.TestCase):
     """Adding a POST route fails here until the route is listed, which is the review point.
 
-    The journey test calls nine fixed routes and cannot see a tenth. A route is where a send
+    The journey test calls ten fixed routes and cannot see an eleventh. A route is where a send
     path into a session would first appear, so the set `do_POST` dispatches is pinned exactly,
     and SECURITY.md's "What launches and what sends" is the table to reread when it changes.
     The two prefixes are matched ahead of the exact-match dictionary.
