@@ -568,6 +568,18 @@ def _model(prompt: str, **fields: object) -> dict[str, object]:
 class TheReportNamesEachRowTest(unittest.TestCase):
     """Each model launch is placed by its own arguments; every helper program has its row."""
 
+    def test_a_person_reading_a_monitor_report_sees_the_browser_and_terminal_lease_row(
+        self,
+    ) -> None:
+        trace = [_event("start", "process"), _model(observe_journey.prompts()["monitor"])]
+        result = observe_journey.report(trace, "default")
+        row = next(row for row in observe_journey.table_rows() if row.startswith("A Live monitor"))
+        self.assertIn("or a terminal holder keeps the lease", row)
+        self.assertIn(row, result["by_row"])
+        self.assertEqual(1, sum(result["by_row"][row].values()))
+        self.assertNotIn(observe_journey.ROW_PRESS, result["by_row"])
+        self.assertEqual([], result["unlisted"])
+
     def test_launches_land_on_their_own_rows(self) -> None:
         prompts = observe_journey.prompts()
         trace = [
