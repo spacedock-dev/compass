@@ -53,7 +53,8 @@ The launcher once imported `cli` directly. `cli` loads the collectors, `http_api
 import, which is about 170 ms of a 200 ms `--version` here, and a short terminal command should not
 pay for a dashboard it never starts. So `entry.main` asks `terminal_client.handles` first and imports
 `cli` inside the function only when the client does not own the command. The client imports the terminal leaves beside it: `terminal_sessions`, which imports nothing from the runtime, and `terminal_drift`, which imports
-only `terminal_sessions`, and `terminal_project`, another leaf over `terminal_sessions`, plus the lazily loaded monitor orchestrator and shared transport; and
+only `terminal_sessions`, and `terminal_project`, another leaf over `terminal_sessions`, and `terminal_goal`, which reuses
+`terminal_drift`'s fresh Intent goal selection and source sentences, plus the lazily loaded monitor orchestrator and shared transport; and
 `RuntimeImportGraphTest` holds that (it counts the function-local `cli` import, so the edge is listed). `launch.py` stays
 out of it: it must parse on Python 3.6, hooks and the MCP server share it, and `compass-gemini` and `compass-droid` carry byte-identical copies.
 Making `cli`'s own imports lazy was rejected, because tests patch `cli.http_api` and its neighbours
@@ -61,14 +62,24 @@ and the change would touch every caller.
 
 The client owns a command only when it is the whole argument list: today that is a lone `--version`,
 a lone `--pause-model-calls`, a lone `--sessions` or `--sessions waiting`, a lone `--footer`, which may carry its own `--session`,
-a lone `--drift` or `--drift again`, which may too, and `--monitor` with only `--off` and `--session`.
+a lone `--drift` or `--drift again`, which may too, and `--monitor` with only `--off` and `--session`, and `--goal` with optional text,
+`--clear` or `--adopt` and its own `--session`.
 `--version` beside another option, `--footer` beside any other option (a usage error in `cli`),
 `--help` and everything else go to `cli` untouched, so argparse still judges combinations and usage
 errors as before. The exceptions are `--sessions` and `--drift` beside `--port`: `cli.main` dispatches
 them to the client too, because the parser would otherwise start a dashboard on that port. An operation the client
 owns is declared once, in `terminal_client.OPERATIONS`, and a value-taking option it owns in
-`terminal_client.OPTIONS`; `--off` is a dependent switch in `terminal_client.SWITCHES`. `cli.build_parser` registers each from those tables, so `--help`
+`terminal_client.OPTIONS`; `--off`, `--clear` and `--adopt` are dependent switches in `terminal_client.SWITCHES`. `cli.build_parser` registers each from those tables, so `--help`
 and the `MANUAL.md` option inventory stay authoritative.
+
+`terminal_goal.py` reads only `/api/session`, including annotation availability, caps and
+collection time from the snapshot that found the row. Reads do not launch. Writes require an
+explicit session and terminal stdout, may start a matching release, and use the row's returned
+identity with `expected_revision`. Typed saves omit outcome lines. Clear saves `goal=""`; API
+`clear: true` was rejected because it deletes history. Adoption uses the page's route with
+source, words and time, including for sessions outside the default window. Receipts name the
+revision captured under the write lock, even if a later writer has already advanced it.
+Saving starts no monitor and promises no level. The skill offers only the read.
 
 `--pause-model-calls` sends the page's existing off request without resolving a session or starting
 a dashboard. It accepts only an optional `--port`. Success requires `ok: true` and `reading.off: true`;

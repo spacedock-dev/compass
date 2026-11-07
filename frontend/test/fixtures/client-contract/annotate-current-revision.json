@@ -28,13 +28,13 @@
       "removed": null,
       "revision": 2,
       "revision_count": 2,
-      "saved_revision": null,
+      "saved_revision": 2,
       "summary": "untouched",
       "withdrew": true
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "171",
+      "Content-Length": "168",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

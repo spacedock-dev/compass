@@ -9982,3 +9982,20 @@ login, window and compaction limits). An empty cache is not dynamic. A cache tha
 or parsed still refuses as `context-config`. The refusal and the Next Analyze prompt allowance
 share one source, `claude_settings.resolve`, so the sentence and the refusal agree. As before, a
 read is not a policy receipt: `policy_verified` stays false.
+
+
+### Amended 2026-11-08: terminal goal reads and saves
+
+`--goal` reads the fresh Intent card's goal and source sentence with no held browser edits.
+It prints the saved revision, outcome lines, binding caveat and page URL without requesting a
+reading or starting a monitor. The skill offers only this read. Its exact command approval
+does not cover text or flags.
+
+Terminal writes require an explicit `--session` and terminal stdout before any POST. Text
+saves only the goal, keeping outcomes. `--clear` saves an empty goal with the existing bounded
+revision history intact; it may expose a draft again. The API's destructive `clear: true`
+was rejected for this command. `--adopt` uses the page's adoption route, rechecking source,
+words, source time and expected revision, including outside the default session window.
+Typed saves and adoptions return their own locked revision receipt. A later read may already
+show another writer's revision. Saving supplies intent; a monitor check still has to produce
+a level. No save starts that monitor.

@@ -456,6 +456,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/footer_lines.py",
     "skills/compass/compass_runtime/terminal_sessions.py",
     "skills/compass/compass_runtime/terminal_project.py",
+    "skills/compass/compass_runtime/terminal_goal.py",
     "skills/compass/compass_runtime/config.py",
     "skills/compass/compass_runtime/frontend_dev.py",
     "skills/compass/compass_runtime/state.py",

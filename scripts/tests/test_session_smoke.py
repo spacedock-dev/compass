@@ -220,12 +220,13 @@ class RefusalTest(unittest.TestCase):
 
 
 class SpendClassificationTest(unittest.TestCase):
-    def test_a_person_sees_five_free_actions_and_three_that_can_spend(self) -> None:
+    def test_a_person_sees_six_free_actions_and_three_that_can_spend(self) -> None:
         text = (ROOT / "compass/skills/compass/SKILL.md").read_text(encoding="utf-8")
         table = session_smoke.parse_actions(text)
         self.assertEqual(
             {action: session_smoke.spends(command) for action, command in table.items()},
             {
+                "goal": False,
                 "project": False,
                 "sessions": False,
                 "sessions waiting": False,
@@ -247,6 +248,9 @@ class SpendClassificationTest(unittest.TestCase):
             'python3 "x/launch.py" "x/server.py" --drift waiting',
             'python3 "x/launch.py" "x/server.py"',
             "python3 --sessions",
+            'python3 "x/launch.py" "x/server.py" --goal "New goal"',
+            'python3 "x/launch.py" "x/server.py" --goal --clear',
+            'python3 "x/launch.py" "x/server.py" --goal --adopt',
         ):
             with self.subTest(command=command):
                 self.assertTrue(session_smoke.spends(command))

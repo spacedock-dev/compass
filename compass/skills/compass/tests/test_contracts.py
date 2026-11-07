@@ -1241,6 +1241,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.terminal_sessions",
         },
         "compass_runtime.terminal_client": {
+            "compass_runtime.terminal_goal",
             "compass_runtime.terminal_project",
             "compass_runtime.loopback_transport",
             "compass_runtime.terminal_monitor",
@@ -1248,6 +1249,12 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.terminal_sessions",
         },
         "compass_runtime.terminal_project": {"compass_runtime.terminal_sessions"},
+        "compass_runtime.terminal_goal": {
+            # The client edge is type-only: the request and resolved identity it hands in.
+            "compass_runtime.terminal_client",
+            "compass_runtime.terminal_drift",
+            "compass_runtime.terminal_sessions",
+        },
         "compass_runtime.terminal_drift": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_sessions": set(),
         # One small file per Claude session for the status line, written through the owner-only

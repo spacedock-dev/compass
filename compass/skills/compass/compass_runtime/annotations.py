@@ -2813,6 +2813,7 @@ def annotate(  # noqa: PLR0913
     now: float | None = None,
     window_start: Any = None,
     read_from_now: bool = False,
+    receipt: MutableMapping[str, int] | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> str:
     """Save what the reader typed. Returns an `OUTCOMES` token.
@@ -2861,6 +2862,7 @@ def annotate(  # noqa: PLR0913
         lines=lines,
         now=now,
         adoption=options,
+        receipt=receipt,
         window_start=window_start,
         diagnostic_sink=diagnostic_sink,
     )

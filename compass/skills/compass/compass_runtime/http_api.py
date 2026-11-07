@@ -1915,14 +1915,31 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # Keep board history on the server; a terminal needs only its session's row.
         for show_all in (False, True):
             _, body = self.server.application.collect_json(show_all=show_all)
+            collection = json.loads(body)
             rows = [
                 row
-                for row in json.loads(body)["sessions"]
+                for row in collection["sessions"]
                 if row.get("harness") == harness and terminal_sessions.names(row, sid)
             ]
             if rows:
                 status, answer = (
-                    (200, {"session": rows[0]})
+                    (
+                        200,
+                        {
+                            "session": rows[0],
+                            **{
+                                key: collection[key]
+                                for key in (
+                                    "generated",
+                                    "annotate",
+                                    "annotate_unreadable",
+                                    "annotate_cap",
+                                    "annotate_goal_cap",
+                                )
+                                if key in collection
+                            },
+                        },
+                    )
                     if len(rows) == 1
                     else (409, {"reason": "ambiguous"})
                 )
@@ -2592,9 +2609,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED),
             "outcome": outcome,
             "revision": current["revision"],
-            # Stable adoption result captured under the write lock, not the
-            # potentially newer current revision read above. Other arms owe
-            # no adoption receipt and always answer null.
+            # The save's own result under the write lock, not a later writer's revision.
             "saved_revision": receipt.get("saved_revision"),
             "revision_count": current["revision_count"],
             # When the discard this session carries a record of happened, or
@@ -2727,6 +2742,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 now=now,
                 window_start=self._typed_window_start(harness, sid, now),
                 read_from_now=payload.get("read_from_now") is True,
+                receipt=receipt,
                 diagnostic_sink=application.diagnostic_sink,
             )
         return outcome, withdrew, summary
@@ -3909,12 +3925,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return annotation_store.OUTCOME_REFUSED
         # Read the source again rather than accepting client-authored provenance.
         application.state.snapshot.clear()
-        _, body = application.collect_json(show_all=False)
-        rows = [
-            row
-            for row in json.loads(body)["sessions"]
-            if row.get("harness") == harness and row.get("sid") == sid
-        ]
+        for show_all in (False, True):
+            _, body = application.collect_json(show_all=show_all)
+            rows = [
+                row
+                for row in json.loads(body)["sessions"]
+                if row.get("harness") == harness and row.get("sid") == sid
+            ]
+            if rows:
+                break
         if len(rows) != 1:
             return annotation_store.OUTCOME_REFUSED
         source = str(payload.get("adopt") or "")

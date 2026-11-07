@@ -66,6 +66,16 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
     NOT_ACTIONS = ("--footer", "--version")
     LAUNCHER = 'python3 "<skill-dir>/launch.py" "<skill-dir>/server.py"'
 
+    def test_a_person_only_preapproves_reading_the_goal_and_keeps_writes_out_of_the_skill(
+        self,
+    ) -> None:
+        self.assertIn(("goal", self.LAUNCHER + " --goal"), self.rows())
+        section = self.section()
+        self.assertIn("read-only", section)
+        self.assertIn("Never add text, --clear, --adopt or --session", section)
+        for _, command in self.rows():
+            self.assertNotIn("--goal ", command)
+
     @classmethod
     def section(cls) -> str:
         skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
