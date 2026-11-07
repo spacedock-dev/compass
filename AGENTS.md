@@ -50,6 +50,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         │   ├── monitor_store.py    # private control records and persistent OS lock paths
         │   ├── terminal_drift.py   # stdlib-only: --drift, rendered from the server's drift_views, and its press
         │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
+        │   ├── terminal_summary.py # stdlib-only: stored cited phases and explicit summary requests
         │   ├── terminal_goal.py    # stdlib-only: fresh Intent goal reads and guarded terminal saves
         │   ├── terminal_project.py # stdlib-only: --project, ported from the board's project brief
         │   ├── collectors/         # one harness collector per file, one per supported harness

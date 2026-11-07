@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 OWNER_PORT = 4553
 DEFAULT_PORT = 4795
 DEFAULT_TASK = "Write a three-line poem about a lighthouse keeper."
-# The argument lists after `server.py` that read and never press a reading. Anything else counts as
+# The argument lists after `server.py` that cannot start a model call. Anything else counts as
 # spending until it is listed here, so a new action fails closed rather than spending by default.
 FREE_ARGUMENTS = frozenset(
     {
@@ -49,6 +49,7 @@ FREE_ARGUMENTS = frozenset(
         ("--sessions", "waiting"),
         ("--monitor", "--off"),
         ("--pause-model-calls",),
+        ("--summaries", "off"),
     }
 )
 _TABLE_ROW = re.compile(r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|")
@@ -115,7 +116,7 @@ def admission(actions: Sequence[str], table: dict[str, str], *, allow_spend: boo
             refusals.append(f"`{action}` is not an action the skill's table lists")
         elif spends(table[action]) and not allow_spend:
             # Plain `drift` presses too: a session this helper just created has no stored reading.
-            refusals.append(f"`{action}` can press a paid reading; pass --allow-spend to spend it")
+            refusals.append(f"`{action}` can start a model call; pass --allow-spend to spend it")
     return refusals
 
 
@@ -359,7 +360,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=300.0, help="seconds per claude call")
     parser.add_argument("--board-timeout", type=float, default=60.0)
     parser.add_argument(
-        "--allow-spend", action="store_true", help="permit actions that can press a paid reading"
+        "--allow-spend", action="store_true", help="permit actions that can start a model call"
     )
     args = parser.parse_args(argv)
     args.tree = args.tree.resolve()

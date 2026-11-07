@@ -201,7 +201,7 @@ def start(
     page: session_source.SourcePage,
     *,
     action: str,
-    origin: str = "press",
+    origin: str = "press",  # noqa: ARG001 - retained for page callers; action guards absence
     model: session_summary.Model | None = None,
     destination: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
@@ -234,7 +234,7 @@ def start(
             prior if action == "update" else None,
             change,
             model,
-            (origin, None),
+            (action, None),
         )
     except (OSError, ValueError):
         return _refusal("job-unrecorded")
@@ -247,7 +247,7 @@ def start_source(
     sid: str,
     *,
     action: str,
-    origin: str = "press",
+    origin: str = "press",  # noqa: ARG001 - retained for page callers; action guards absence
 ) -> tuple[int, dict[str, Any]]:
     """Admit before reading: collection and planning share the cancellable job's lifetime."""
     config = application.config
@@ -268,7 +268,7 @@ def start_source(
             prior,
             None,
             None,
-            (origin, path),
+            (action, path),
         )
     except (OSError, ValueError):
         return _refusal("job-unrecorded")
@@ -278,12 +278,12 @@ def _store_moved(
     config: RuntimeConfig,
     page: session_source.SourcePage,
     prior: summary_store.StoredSummary | None,
-    origin: str,
+    action: str,
 ) -> str:
     # `start` read the store outside the publication lock. A Delete summary that ran since left
     # no marker to stop, so an update merging that prior would bring deleted text back.
     current = summary_store.get(config, page.harness, page.sid)
-    if origin == "open" and current:
+    if action == "start" and current:
         return "summary-exists"
     if prior is None:
         return ""
@@ -304,10 +304,10 @@ def _admit(
     model: session_summary.Model | None,
     request: tuple[str, str | None],
 ) -> tuple[int, dict[str, Any]]:
-    origin, path = request
+    action, path = request
     config = application.config
     with _locked(application):
-        moved = _store_moved(config, page, prior, origin)
+        moved = _store_moved(config, page, prior, action)
         if moved:
             return _refusal(moved)
         old = application.state.summary_jobs.get(_key(page.harness, page.sid))
@@ -733,9 +733,27 @@ def _stop(application: reading_jobs.Application, harness: str, sid: str, reason:
 
 
 def cancel(
-    application: reading_jobs.Application, harness: str, sid: str, *, reason: str = "cancelled"
+    application: reading_jobs.Application,
+    harness: str,
+    sid: str,
+    *,
+    reason: str = "cancelled",
+    expected_job: str | None = None,
 ) -> bool:
     with _locked(application):
+        if expected_job is not None:
+            # A sibling dashboard may own the marker even while this registry remembers ours.
+            try:
+                marker = json.loads(
+                    _marker(application.config, harness, sid).read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                return False
+            if not isinstance(marker, dict) or marker.get("id") != expected_job:
+                return False
+            current = published(application, harness, sid)
+            if current is None or current["id"] != expected_job:
+                return False
         accepted = _stop(application, harness, sid, reason)
     _publish(application)
     return accepted

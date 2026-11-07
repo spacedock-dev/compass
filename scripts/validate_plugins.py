@@ -201,7 +201,7 @@ SHARED_FRONTMATTER_FIELDS = {"name", "description", "license", "allowed-tools"}
 # the directory holding SKILL.md, so the rule names that install's command and no other.
 ALLOWED_TOOL_RULE_RE = re.compile(
     r'Bash\(python3 "\$\{CLAUDE_SKILL_DIR\}/launch\.py" "\$\{CLAUDE_SKILL_DIR\}/server\.py"'
-    r"(?: --monitor --off| --[a-z]+(?:-[a-z]+)*(?: [a-z]+)?)\)"
+    r"(?: --summary --(?:update|again)| --monitor --off| --[a-z]+(?:-[a-z]+)*(?: [a-z]+)?)\)"
 )
 # The skill now carries font software whose OFL terms must survive distribution;
 # pinning the expression prevents its metadata from reverting to Apache-only.
@@ -457,6 +457,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/terminal_sessions.py",
     "skills/compass/compass_runtime/terminal_project.py",
     "skills/compass/compass_runtime/terminal_goal.py",
+    "skills/compass/compass_runtime/terminal_summary.py",
     "skills/compass/compass_runtime/config.py",
     "skills/compass/compass_runtime/frontend_dev.py",
     "skills/compass/compass_runtime/state.py",

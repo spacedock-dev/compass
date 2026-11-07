@@ -57,6 +57,18 @@ class TypedPressCase(unittest.TestCase):
 
 
 class TypedPressTest(TypedPressCase):
+    def test_a_person_summary_command_authorizes_only_its_exact_action_once(self) -> None:
+        actions = ("summary", "summary update", "summary again")
+        for typed in actions:
+            for requested in actions:
+                with self.subTest(typed=typed, requested=requested):
+                    self.typed(typed)
+                    self.assertEqual(
+                        "" if typed == requested else typed_press.REQUIRED, self.admit(requested)
+                    )
+                    if typed == requested:
+                        self.assertEqual(typed_press.REQUIRED, self.admit(requested))
+
     def test_a_person_who_types_drift_gets_one_press(self) -> None:
         self.typed("drift")
         self.assertEqual("", self.admit("drift"))
@@ -257,6 +269,13 @@ class ReadingRouteTest(TypedPressCase):
         self.session.model_started_compass("Keep going.")
         self.press()._reading_press.assert_called_once()
 
+    def test_a_person_asking_for_a_summary_cannot_pay_for_a_drift_reading_instead(self) -> None:
+        for command in ("summary", "summary update", "summary again"):
+            self.typed(command)
+            handler = self.press(typed_action=command)
+            handler._reject.assert_called_once_with(400)
+            handler._reading_press.assert_not_called()
+
     def test_an_action_the_skill_does_not_have_is_refused_as_malformed(self) -> None:
         self.typed("drift")
         handler = self.press(typed_action="sessions")
@@ -331,3 +350,54 @@ class MonitorRouteTest(TypedPressCase):
             self.press(failure=RuntimeError("cannot start ticker"))
         self.press().admission.assert_called_once()
         self.press().admission.assert_not_called()
+
+
+class SummaryRouteTest(TypedPressCase):
+    def press(self, action: str, *, starts: bool = True, typed: str | None = None) -> Any:
+        self.session.save(self.path)
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(
+            application=SimpleNamespace(
+                config=self.config, state=build_runtime_state(self.config, started=0)
+            )
+        )
+        handler._reject, handler._send = mock.Mock(), mock.Mock()
+        body = {
+            "harness": "claude",
+            "sid": "abc",
+            "action": action,
+            "origin": "press",
+            "typed_action": typed
+            or {"start": "summary", "update": "summary update", "rerun": "summary again"}[action],
+        }
+        handler._summary_payload = mock.Mock(return_value=body)
+
+        def start(_body: Any) -> None:
+            handler._summary_started = starts
+
+        handler._summary_start = mock.Mock(side_effect=start)
+        with mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)):
+            handler._summary()
+        return handler
+
+    def test_a_person_gets_one_matching_summary_spend_and_a_refusal_keeps_the_command(self) -> None:
+        for action, command in (
+            ("start", "summary"),
+            ("update", "summary update"),
+            ("rerun", "summary again"),
+        ):
+            self.typed(command)
+            self.press(action, starts=False)._summary_start.assert_called_once()
+            self.press(action)._summary_start.assert_called_once()
+            self.press(action)._summary_start.assert_not_called()
+
+    def test_a_person_without_a_typed_command_spends_nothing_and_plain_summary_cannot_rerun(
+        self,
+    ) -> None:
+        self.session.model_started_compass("Keep working.")
+        self.press("start")._summary_start.assert_not_called()
+        self.typed("summary")
+        self.press("rerun")._summary_start.assert_not_called()
+        handler = self.press("rerun", typed="summary")
+        handler._reject.assert_called_once_with(400)
+        handler._summary_start.assert_not_called()

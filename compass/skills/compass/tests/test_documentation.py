@@ -110,6 +110,8 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
                     "monitor on": ["--monitor"],
                     "monitor off": ["--monitor", "--off"],
                     "pause": ["--pause-model-calls"],
+                    "summary update": ["--summary", "--update"],
+                    "summary again": ["--summary", "--again"],
                 }
                 self.assertEqual(
                     expected.get(action, ["--" + action.split()[0], *action.split()[1:]]), argv
@@ -117,11 +119,12 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
 
     def test_every_question_the_client_answers_has_an_action_unless_it_is_not_one(self) -> None:
         offered = {command[len(self.LAUNCHER) :].strip() for _, command in self.rows()}
-        expected = {"--monitor --off"}
+        expected = {"--monitor --off", "--summary --update", "--summary --again"}
         for operation in terminal_client.OPERATIONS:
             if operation.flag in self.NOT_ACTIONS:
                 continue
-            expected.add(operation.flag)
+            if operation.flag != "--summaries":
+                expected.add(operation.flag)
             expected.update(f"{operation.flag} {choice}" for choice in operation.choices)
         self.assertEqual(
             offered,

@@ -61,6 +61,67 @@ class _SummaryCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
 
+class APersonKeepsTheirSummary(_SummaryCase):
+    def test_a_person_can_cancel_their_utf8_job_under_a_non_utf8_system_locale(self) -> None:
+        application: Any = SimpleNamespace(config=self.config, state=self.state)
+        self.state.summary_jobs["claude:s1"] = summary_jobs.Job(
+            "mine", "claude", "s1", 100.0, "模型", 0, 1
+        )
+        marker = summary_jobs._marker(self.config, "claude", "s1")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text('{"id":"mine","state":"running","destination":"模型"}', encoding="utf-8")
+        read_text = Path.read_text
+
+        def locale_read(path: Path, encoding: str | None = None, **kwargs: Any) -> str:
+            return read_text(path, encoding=encoding or "ascii", **kwargs)
+
+        with (
+            mock.patch.object(Path, "read_text", locale_read),
+            mock.patch.object(summary_jobs, "_publish"),
+        ):
+            self.assertTrue(summary_jobs.cancel(application, "claude", "s1", expected_job="mine"))
+        self.assertEqual("stopping", json.loads(marker.read_text(encoding="utf-8"))["state"])
+
+    def test_a_person_starting_after_another_save_spends_no_call_or_notice(self) -> None:
+        application: Any = SimpleNamespace(
+            config=self.config, state=self.state, clock=lambda: 100.0
+        )
+        with (
+            mock.patch.object(summary_store, "get", return_value=object()),
+            mock.patch.object(reading_policy, "note") as notice,
+            mock.patch.object(threading.Thread, "start") as start,
+        ):
+            status, answer = summary_jobs.start_source(
+                application, "unused", "claude", "s1", action="start"
+            )
+        self.assertEqual((409, "summary-exists"), (status, answer["reason"]))
+        notice.assert_not_called()
+        start.assert_not_called()
+
+    def test_a_person_cancelling_an_old_job_cannot_stop_its_replacement(self) -> None:
+        application: Any = SimpleNamespace(config=self.config, state=self.state)
+        with (
+            mock.patch.object(summary_jobs, "published", return_value={"id": "replacement"}),
+            mock.patch.object(summary_jobs, "_stop") as stop,
+        ):
+            self.assertFalse(summary_jobs.cancel(application, "claude", "s1", expected_job="old"))
+        stop.assert_not_called()
+
+    def test_a_person_cannot_cancel_a_durable_replacement_even_if_this_dashboard_remembers_old_work(
+        self,
+    ) -> None:
+        application: Any = SimpleNamespace(config=self.config, state=self.state)
+        marker = summary_jobs._marker(self.config, "claude", "s1")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({"id": "replacement", "state": "running"}))
+        with (
+            mock.patch.object(summary_jobs, "published", return_value={"id": "old"}),
+            mock.patch.object(summary_jobs, "_publish"),
+        ):
+            self.assertFalse(summary_jobs.cancel(application, "claude", "s1", expected_job="old"))
+        self.assertEqual("running", json.loads(marker.read_text())["state"])
+
+
 class SummaryDisclosureTest(unittest.TestCase):
     def test_names_every_fact_sent_in_plain_words(self) -> None:
         text = summary_jobs.disclosure("Anthropic")
@@ -214,7 +275,7 @@ class SummaryJobTest(_SummaryCase):
         code, answer = self.jobs.start(
             self.application,
             self.page,
-            action="start",
+            action="rerun",
             model=model or Replies(),
             destination="Anthropic",
         )
@@ -411,7 +472,7 @@ class SummaryJobTest(_SummaryCase):
                 code, answer = self.jobs.start(
                     self.application,
                     self.page,
-                    action="start",
+                    action="rerun",
                     model=Replies(),
                     destination="Anthropic",
                 )

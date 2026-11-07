@@ -42,6 +42,7 @@ from compass_runtime import (
     reading_route,
     records,
     semantic_history,
+    summary_store,
     unasked,
 )
 from compass_runtime import annotations as annotation_store
@@ -582,6 +583,7 @@ SENTINEL = "SENTINEL-READER-WORDS"
 GET_ROUTES = {
     "/api/sessions": "/api/sessions",
     "/api/session": f"/api/session?harness=claude&sid={SHORT}",
+    "/api/summary": f"/api/summary?harness=claude&sid={SHORT}",
     "/api/session-record": f"/api/session-record?project=billing&session=claude:{SHORT}",
     "/api/data": "/api/data?all=1",
     "/api/observe": f"/api/observe?harness=claude&sid={SHORT}",
@@ -653,7 +655,7 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
                     if route == "/api/sessions":
                         self.assertEqual(200, status, body)
                         self.assertIn(SHORT, [row["sid"] for row in json.loads(body)["sessions"]])
-                    if route == "/api/session":
+                    if route in {"/api/session", "/api/summary"}:
                         self.assertEqual(200, status, body)
                         self.assertEqual(SHORT, json.loads(body)["session"]["sid"])
                     if route in {"/api/reading-long-plan", "/api/reading-long-history"}:
@@ -678,6 +680,20 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
                     if route == "/api/project-context":
                         body = self._without_prompt_choices(body)
                     self.assertNotIn(SENTINEL.encode(), body)
+
+    def test_a_person_reading_a_summary_never_receives_internal_reader_words(self) -> None:
+        focused = {"exists": False, "state": "absent", "nested": [{FIELD: SENTINEL}]}
+        with (
+            mock.patch.object(summary_store, "for_session", return_value=focused),
+            self.serving() as port,
+        ):
+            status, body = self.request(port, "GET", GET_ROUTES["/api/summary"])
+        self.assertEqual(200, status)
+        self.assertEqual(
+            {"session", "summary", "summaries", "citation_labels"}, set(json.loads(body))
+        )
+        self.assertNotIn(FIELD.encode(), body)
+        self.assertNotIn(SENTINEL.encode(), body)
 
     def _without_prompt_choices(self, body: bytes) -> bytes:
         """The focused context with its one reviewed carrier taken out, after checking it."""

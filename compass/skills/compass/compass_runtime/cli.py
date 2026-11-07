@@ -242,6 +242,8 @@ def refuse_footer_with_other_options(
     """
     if args.monitor or args.off:
         parser.error("--monitor stands alone or with --off and --session")
+    if args.update or args.again or args.summaries or args.summary:
+        parser.error("--update and --again need --summary; --summaries accepts off only")
     if args.clear or args.adopt:
         parser.error("--clear and --adopt need --goal")
     if args.footer or args.session is not None:
@@ -922,7 +924,7 @@ def run_one_shot(
     return None
 
 
-def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:
+def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:  # noqa: PLR0912 - one dispatch per operation
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
     These reads beside other options honor only `--port` (and `--project` and `--drift` their
@@ -930,6 +932,26 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
     client's discovery of a dashboard on another port.
     """
+    if (args.update or args.again) and not args.summary:
+        build_parser().error("--update and --again need --summary")
+    if args.summary or args.summaries:
+        remaining = list(argv)
+        for index, arg in enumerate(remaining):
+            if arg == "--port":
+                del remaining[index : index + 2]
+                break
+            if arg.startswith("--port="):
+                del remaining[index]
+                break
+        typed = any(a == "--port" or a.startswith("--port=") for a in argv)
+        if remaining in (["--summaries", "off"], ["--summaries=off"]):
+            return terminal_client.run_summaries_off(port=args.port if typed else None)
+        summary = terminal_client.parse_summary_args(remaining)
+        if summary is None:
+            build_parser().error(
+                "--summary accepts --update or --again, with --session and --port only"
+            )
+        return terminal_client.run_summary(summary, port=args.port if typed else None)
     if args.goal is not None:
         remaining = list(argv)
         for index, arg in enumerate(remaining):
