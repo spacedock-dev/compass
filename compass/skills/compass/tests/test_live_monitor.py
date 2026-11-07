@@ -172,6 +172,162 @@ class Case(unittest.TestCase):
         )
 
 
+class ATerminalReadersAllowance(Case):
+    def start_terminal(self) -> None:
+        live_monitor.begin_window(
+            self.config, KEY, now=NOW, holder="terminal", holder_kind="terminal"
+        )
+        self.addCleanup(live_monitor.end, self.config, KEY)
+
+    def test_a_terminal_reader_can_check_at_the_boundary_after_spending_thirty_ticks(self) -> None:
+        self.start_terminal()
+        for minute in range(30):
+            self.grow()
+            self.assertEqual("ran", self.tick(NOW + 60 * minute).status)
+        level = live_monitor.published(self.config, KEY)
+        self.assertEqual("cap", live_monitor.ready(self.config, KEY, NOW + 1799.9))
+        self.assertEqual("", live_monitor.ready(self.config, KEY, NOW + 1800))
+        self.assertEqual(level, live_monitor.published(self.config, KEY))
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 1800).status)
+        self.assertEqual(31, len(self.runner.calls))
+        self.assertEqual(31, (live_monitor.published(self.config, KEY) or {})["checks"])
+        self.assertEqual(31, reading_policy.monitor_status(self.config, now=NOW + 1800)["used"])
+
+    def test_a_terminal_reader_does_not_buy_more_ticks_with_new_turns_or_holder_churn(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=2)
+        self.start_terminal()
+        self.assertEqual("ran", self.tick().status)
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 60).status)
+        live_monitor.begin_window(
+            self.config, KEY, now=NOW + 70, holder="second", holder_kind="terminal"
+        )
+        live_monitor.end(self.config, KEY, holder="terminal")
+        live_monitor.begin_window(
+            self.config, KEY, now=NOW + 80, holder="terminal", holder_kind="terminal"
+        )
+        self.grow()
+        self.assertEqual("cap", self.tick(NOW + 120).reason)
+        self.assertEqual(2, len(self.runner.calls))
+        self.assertEqual("ran", self.tick(NOW + 1800).status)
+
+    def test_a_browser_readers_yes_and_terminal_departure_do_not_replenish_the_bucket(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start_terminal()
+        live_monitor.begin_window(self.config, KEY, now=NOW, holder="tab")
+        self.tick()
+        live_monitor.begin_window(self.config, KEY, now=NOW + 1200, holder="tab", renew=True)
+        live_monitor.end(self.config, KEY, holder="terminal")
+        self.grow()
+        self.assertEqual("cap", self.tick(NOW + 1260).reason)
+        self.assertEqual(1, len(self.runner.calls))
+
+    def test_an_idle_terminal_reader_keeps_evidence_level_and_spacing_across_skipped_buckets(
+        self,
+    ) -> None:
+        self.start_terminal()
+        self.runner.text = reply("high")
+        self.tick(NOW + 1790)
+        before = live_monitor.published(self.config, KEY)
+        self.grow()
+        self.assertEqual("too-soon", self.tick(NOW + 1800).reason)
+        self.assertEqual(before, live_monitor.published(self.config, KEY))
+        self.assertEqual("ran", self.tick(NOW + 7200).status)
+        self.assertEqual(2, len(self.runner.calls))
+        self.assertEqual(2, (live_monitor.published(self.config, KEY) or {})["checks"])
+        self.touch()  # old facts are not charged again after the jump
+        self.assertEqual("no-new-turns", self.tick(NOW + 7260).reason)
+        self.assertEqual(2, len(self.runner.calls))
+        self.assertIn("Another instruction 1", str(self.runner.calls[-1]))
+        self.assertIn("I changed the tokenizer.", str(self.runner.calls[-1]))
+
+    def test_a_terminal_reader_counts_failed_calls_and_keeps_findings_across_buckets(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start_terminal()
+        self.runner.text = "not a model reply"
+        self.assertEqual("failed", self.tick().status)
+        self.grow()
+        self.assertEqual("cap", self.tick(NOW + 60).reason)
+        self.runner.text = reply("high")
+        self.assertEqual("ran", self.tick(NOW + 1800).status)
+        before = live_monitor.published(self.config, KEY) or {}
+        self.assertEqual((1, 1), (before["checks"], before["findings"]))
+        self.assertEqual("", live_monitor.ready(self.config, KEY, NOW + 3600))
+        self.assertEqual(before, live_monitor.published(self.config, KEY))
+        self.assertEqual("unchanged", self.tick(NOW + 3600).reason)
+        self.touch()
+        self.assertEqual("no-new-turns", self.tick(NOW + 3600).reason)
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 3600).status)
+        after = live_monitor.published(self.config, KEY) or {}
+        self.assertEqual((2, 2), (after["checks"], after["findings"]))
+        self.assertEqual(3, reading_policy.monitor_status(self.config, now=NOW + 3600)["used"])
+
+    def test_a_terminal_reader_joining_a_tab_anchors_fixed_buckets_at_the_terminal_start(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=2)
+        self.begin()
+        self.tick()
+        live_monitor.begin_window(
+            self.config, KEY, now=NOW + 600, holder="terminal", holder_kind="terminal"
+        )
+        self.addCleanup(live_monitor.end, self.config, KEY)
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 600).status)
+        self.assertEqual("cap", live_monitor.ready(self.config, KEY, NOW + 1800))
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 2400).status)
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 4190).status)
+        self.grow()
+        self.assertEqual("too-soon", self.tick(NOW + 4200).reason)
+        self.assertEqual("ran", self.tick(NOW + 4250).status)
+
+    def test_a_terminal_reader_cannot_race_a_bucket_rollover_past_a_reserved_charge(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start_terminal()
+        entered, release, ready_started = threading.Event(), threading.Event(), threading.Event()
+        ready_done = threading.Event()
+        reserve = reading_policy.reserve_monitor
+        results: list[live_monitor.Tick] = []
+        reasons: list[str] = []
+
+        def delayed(config: Any, *, now: float) -> Any:
+            entered.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("reservation was not released")
+            return reserve(config, now=now)
+
+        def ask_ready() -> None:
+            ready_started.set()
+            reasons.append(live_monitor.ready(self.config, KEY, NOW + 3600))
+            ready_done.set()
+
+        with mock.patch.object(reading_policy, "reserve_monitor", side_effect=delayed):
+            worker = threading.Thread(target=lambda: results.append(self.tick(NOW + 1800)))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                checker = threading.Thread(target=ask_ready)
+                checker.start()
+                self.assertTrue(ready_started.wait(timeout=5))
+                self.assertFalse(ready_done.wait(timeout=0.1))
+            finally:
+                release.set()
+                worker.join(timeout=5)
+                if ready_started.is_set():
+                    checker.join(timeout=5)
+        self.assertEqual("ran", results[0].status)
+        self.assertEqual(1, len(reasons))
+        self.assertIn(reasons[0], ("", "busy"))
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 3600).status)
+        self.assertEqual("cap", self.tick(NOW + 3660).reason)
+        self.assertEqual(2, len(self.runner.calls))
+
+
 class SpacingAndTheReadingSlot(Case):
     def test_two_checks_of_one_session_never_start_less_than_sixty_seconds_apart(self) -> None:
         self.begin()

@@ -3,15 +3,18 @@
 [DEC-26](docs/design-reading-a-session.md#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check)
 puts the TTL clock on the server, and the owner stopped the monitor when the reader leaves the
 session, hides the tab, or the session ends. This module holds that in memory only: a restart
-starts with no lease and makes no check until a page starts one. One lease per Claude Code
-session, held by any number of tabs, so two tabs spend no more than one. A small ticker thread
-walks the leases every few seconds and calls the check for one that is due; it never reads a
+starts with no lease and makes no check until a caller starts one. One lease per Claude Code
+session, held by browser and terminal callers, so they share one spending stream. A small ticker
+thread walks the leases every few seconds and calls the check for one that is due; it never reads a
 transcript or builds a prompt itself, which `live_monitor.tick` does.
 
 A tab beats about every 20 seconds while it shows the session. A visible tab that stops beating
 is gone (`left`) after `live_monitor_lapse_sec`, with no stop post and no beacon. A tab that says
 it is hidden keeps the lease alive without ticks, until the TTL deadline, so the checks resume
 when it is visible again within the TTL and no check is made while nobody watches.
+
+Terminal holders beat like visible tabs, but have no consent question or deadline:
+[DEC-26](docs/design-reading-a-session.md#terminal-monitor-lifetime-and-accounting).
 
 The lease state is published on the focused context's `sources.work`, never on a session row.
 """
@@ -61,6 +64,7 @@ class Inputs:
 class _Holder:
     last_beat: float
     hidden: bool = False
+    kind: str = "browser"
 
 
 @dataclasses.dataclass
@@ -107,7 +111,15 @@ class Leases:
 
     # -- the reader's presses -------------------------------------------------------------
 
-    def start(self, harness: str, sid: str, tab_id: str, *, visible: bool = True) -> dict[str, Any]:
+    def start(
+        self,
+        harness: str,
+        sid: str,
+        tab_id: str,
+        *,
+        visible: bool = True,
+        holder_kind: str = "browser",
+    ) -> dict[str, Any]:
         """Take or join the lease for one session, or say why not.
 
         A tab that is hidden when it starts says so, and holds the lease without ticks until it is
@@ -123,8 +135,11 @@ class Leases:
                     self._ended.pop(key, None)
                     self._leases[key] = _Lease()
                 lease = self._leases[key]
-                lease.holders[tab_id] = _Holder(last_beat=now, hidden=not visible)
-                live_monitor.begin_window(self.config, key, now=now, holder=tab_id)
+                holder = lease.holders.setdefault(tab_id, _Holder(now, kind=holder_kind))
+                holder.last_beat, holder.hidden = now, not visible
+                live_monitor.begin_window(
+                    self.config, key, now=now, holder=tab_id, holder_kind=holder.kind
+                )
                 self._ensure_ticker_locked()
         return self._answer(harness, sid, refusal)
 
@@ -137,7 +152,8 @@ class Leases:
             lease = self._leases.get(key)
             held = lease is not None and tab_id in lease.holders
             if lease is not None and held:
-                lease.holders[tab_id] = _Holder(last_beat=now, hidden=not visible)
+                holder = lease.holders[tab_id]
+                holder.last_beat, holder.hidden = now, not visible
         # Only a tab that started and has not lapsed keeps the lease: a beat cannot join one, so the
         # holders here and in `live_monitor` stay one set.
         return self._answer(harness, sid, "" if held else "not-monitoring")
@@ -146,7 +162,8 @@ class Leases:
         """The reader's answer to "Do you still want to monitor this session?".
 
         Valid only while the question stands, so a second tab answering after the first has
-        changes nothing. Yes resets the window; No ends the lease `declined`.
+        changes nothing. Yes resets browser consent; No removes browser holders, ending a
+        browser-only lease `declined`. Terminal holders cannot answer this question.
         """
         now = self._clock()
         key = f"{harness}:{sid}"
@@ -157,12 +174,18 @@ class Leases:
             window = live_monitor.window(self.config, key) if lease is not None else None
             if lease is None or window is None or tab_id not in lease.holders:
                 refusal = "not-monitoring"
-            elif window["banner_due_at"] <= now < window["deadline"]:
+            elif (
+                lease.holders[tab_id].kind == "browser"
+                and window["banner_due_at"] is not None
+                and window["deadline"] is not None
+                and window["banner_due_at"] <= now < window["deadline"]
+            ):
                 if yes:
                     live_monitor.begin_window(self.config, key, now=now, holder=tab_id, renew=True)
-                    lease.holders[tab_id] = _Holder(last_beat=now)
+                    holder = lease.holders[tab_id]
+                    holder.last_beat, holder.hidden = now, False
                 else:
-                    self._end_locked(key, "declined", now)
+                    self._remove_browsers_locked(key, lease, "declined", now)
         return self._answer(harness, sid, refusal)
 
     def stop(self, harness: str, sid: str, tab_id: str) -> dict[str, Any]:
@@ -334,25 +357,36 @@ class Leases:
         return seen and waited
 
     def _visible(self, holder: _Holder, now: float) -> bool:
-        return not holder.hidden and now - holder.last_beat <= self.config.live_monitor_lapse_sec
+        return (holder.kind == "terminal" or not holder.hidden) and (
+            now - holder.last_beat <= self.config.live_monitor_lapse_sec
+        )
 
     def _sweep_locked(self, now: float) -> None:
-        """Lapse the tabs that stopped beating and end what ran out of window or tabs."""
+        """Lapse absent holders and remove browser holders whose consent ran out."""
         for key in list(self._leases):
             lease = self._leases[key]
             for tab, holder in list(lease.holders.items()):
                 if (
-                    not holder.hidden
-                    and now - holder.last_beat > self.config.live_monitor_lapse_sec
-                ):
+                    holder.kind == "terminal" or not holder.hidden
+                ) and now - holder.last_beat > self.config.live_monitor_lapse_sec:
                     del lease.holders[tab]
                     live_monitor.end(self.config, key, holder=tab)
             if not lease.holders:
                 self._end_locked(key, "left", now)
                 continue
             window = live_monitor.window(self.config, key)
-            if window is None or now >= window["deadline"]:
+            if window is None:
                 self._end_locked(key, "unanswered", now)
+            elif window["deadline"] is not None and now >= window["deadline"]:
+                self._remove_browsers_locked(key, lease, "unanswered", now)
+
+    def _remove_browsers_locked(self, key: str, lease: _Lease, reason: str, now: float) -> None:
+        for tab, holder in list(lease.holders.items()):
+            if holder.kind == "browser":
+                del lease.holders[tab]
+                live_monitor.end(self.config, key, holder=tab)
+        if not lease.holders:
+            self._end_locked(key, reason, now)
 
     def _end(self, key: str, reason: str, now: float) -> None:
         with self._lock:
@@ -396,6 +430,9 @@ class Leases:
             lease = self._leases.get(key)
             last_end = dict(self._ended[key]) if key in self._ended else None
             window = live_monitor.window(self.config, key) if lease is not None else None
+            terminal = lease is not None and any(
+                h.kind == "terminal" for h in lease.holders.values()
+            )
             visible = lease is not None and any(
                 self._visible(holder, now) for holder in lease.holders.values()
             )
@@ -422,7 +459,9 @@ class Leases:
             "level": live_monitor.published(self.config, key) if on else None,
             "label": live_monitor.SOURCE,
             "destination": where,
-            "disclosure": live_monitor.disclosure(where) if where is not None else None,
+            "disclosure": live_monitor.disclosure(where, terminal=terminal)
+            if where is not None
+            else None,
             "model": self.config.claude_monitor_model,
             "interval_sec": self.config.live_monitor_interval_sec,
             "now": now,

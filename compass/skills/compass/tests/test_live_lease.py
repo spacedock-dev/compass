@@ -555,6 +555,213 @@ class TheRealCheckBehindTheLease(Rig):
         self.assertEqual(1, len(runner.calls))
 
 
+class ATerminalHolder(Rig):
+    def test_a_terminal_reader_keeps_monitoring_without_a_question_or_browser_clock(self) -> None:
+        self.start(holder_kind="terminal")
+        self.run_for(1810, beat=(TAB_A,))
+        state = self.leases.state(HARNESS, SID)
+        self.assertTrue(state["on"])
+        for field in ("started_at", "banner_due_at", "deadline", "confirm_by"):
+            self.assertIsNone(state[field], field)
+        self.assertNotIn("unless you say", state["disclosure"])
+        self.assertNotIn("you are viewing", state["disclosure"])
+        self.assertTrue(self.ticks)
+
+    def test_a_terminal_reader_whose_sidecar_dies_loses_the_lease_even_if_hidden(self) -> None:
+        self.start(holder_kind="terminal", visible=False)
+        self.at(self.config.live_monitor_lapse_sec)
+        self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+        self.at(self.config.live_monitor_lapse_sec + 1)
+        self.leases.step()
+        state = self.leases.state(HARNESS, SID)
+        self.assertEqual((False, "left"), (state["on"], state["last_end"]["reason"]))
+        self.assertEqual([], self.ticks)
+
+    def test_a_reader_cannot_reclassify_an_existing_holder_by_starting_again(self) -> None:
+        for original, replacement in (("browser", "terminal"), ("terminal", "browser")):
+            with self.subTest(original=original):
+                self.start(holder_kind=original)
+                self.run_for(1210, beat=(TAB_A,))
+                self.start(holder_kind=replacement)
+                self.leases.beat(HARNESS, SID, TAB_A)
+                state = self.leases.beat(HARNESS, SID, TAB_A, visible=False)["state"]
+                self.assertEqual(original == "terminal", state["visible"])
+                self.assertEqual(original == "terminal", state["deadline"] is None)
+                self.run_for(610, beat=(TAB_A,))
+                self.assertEqual(original == "terminal", self.leases.state(HARNESS, SID)["on"])
+                self.leases.stop(HARNESS, SID, TAB_A)
+
+    def test_a_browser_reader_whose_question_expires_leaves_the_terminal_reader_monitoring(
+        self,
+    ) -> None:
+        self.start()
+        self.start(TAB_B, holder_kind="terminal")
+        self.run_for(1810, beat=(TAB_A, TAB_B))
+        state = self.leases.state(HARNESS, SID)
+        self.assertTrue(state["on"])
+        self.assertIsNone(state["confirm_by"])
+        self.assertIsNone(state["deadline"])
+        self.assertEqual("not-monitoring", self.leases.beat(HARNESS, SID, TAB_A)["reason"])
+        self.leases.stop(HARNESS, SID, TAB_B)
+        self.assertFalse(self.leases.state(HARNESS, SID)["on"])
+
+    def test_a_browser_reader_saying_no_removes_tabs_and_keeps_the_terminal_reader(self) -> None:
+        self.start()
+        self.start("another-tab")
+        self.start(TAB_B, holder_kind="terminal")
+        self.run_for(1210, beat=(TAB_A, TAB_B, "another-tab"))
+        self.leases.confirm(HARNESS, SID, TAB_A, yes=False)
+        self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+        self.assertEqual("not-monitoring", self.leases.beat(HARNESS, SID, "another-tab")["reason"])
+        self.leases.stop(HARNESS, SID, TAB_B)
+        self.assertFalse(self.leases.state(HARNESS, SID)["on"])
+
+    def test_a_terminal_reader_cannot_answer_the_browser_readers_question(self) -> None:
+        self.start()
+        self.start(TAB_B, holder_kind="terminal")
+        self.run_for(1210, beat=(TAB_A, TAB_B))
+        before = self.leases.state(HARNESS, SID)["deadline"]
+        self.leases.confirm(HARNESS, SID, TAB_B, yes=True)
+        self.leases.confirm(HARNESS, SID, TAB_B, yes=False)
+        self.assertEqual(before, self.leases.state(HARNESS, SID)["deadline"])
+
+    def test_a_terminal_reader_and_a_tab_share_checks_and_either_can_leave(self) -> None:
+        for leaving, remaining in ((TAB_A, TAB_B), (TAB_B, TAB_A)):
+            with self.subTest(leaving=leaving):
+                self.start()
+                self.start(TAB_B, holder_kind="terminal")
+                self.run_for(600, beat=(TAB_A, TAB_B))
+                starts = [at for _key, at in self.ticks]
+                self.assertEqual(10, len(starts))
+                self.leases.stop(HARNESS, SID, leaving)
+                self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+                self.run_for(60, beat=(remaining,))
+                self.assertEqual(11, len(self.ticks))
+                self.leases.stop(HARNESS, SID, remaining)
+                self.assertFalse(self.leases.state(HARNESS, SID)["on"])
+                self.ticks.clear()
+
+
+class ATerminalReaderGetsRealChecks(Rig):
+    def make_real(self, *, daily_cap: int = 240) -> tuple[live_lease.Leases, FakeRunner]:
+        self.config = dataclasses.replace(self.config, live_monitor_daily_cap=daily_cap)
+        self.transcript = self.state_dir / "terminal-session.jsonl"
+        self.transcript.write_text('{"n":1}\n', encoding="utf-8")
+        self.turns: list[dict[str, Any]] = []
+        runner = FakeRunner()
+        leases = live_lease.Leases(
+            self.config,
+            clock=lambda: self.now,
+            row_for=lambda h, s: self.rows.get((h, s)),
+            inputs_for=lambda *_: live_lease.Inputs(
+                str(self.transcript), facts(*self.turns), GOAL, {"level": "none_or_low"}
+            ),
+            runner=runner,
+            binary_resolver=lambda _name: "/synthetic/bin/claude",
+            start_thread=False,
+        )
+        self.addCleanup(leases.close)
+        return leases, runner
+
+    def work(self, leases: live_lease.Leases, seconds: int) -> None:
+        for offset in range(0, seconds, 20):
+            self.now = NOW + offset
+            leases.beat(HARNESS, SID, TAB_A)
+            if offset % 60 == 0:
+                with self.transcript.open("a", encoding="utf-8") as handle:
+                    handle.write('{"n":2}\n')
+                self.turns.append(
+                    {
+                        "fact_id": f"turn-{offset}",
+                        "type": "user_message",
+                        "at": self.now,
+                        "reader_words": f"Check turn {offset}.",
+                    }
+                )
+            leases.step()
+
+    def test_a_terminal_reader_gets_three_hours_of_checks_and_keeps_the_level_at_rollover(
+        self,
+    ) -> None:
+        leases, runner = self.make_real()
+        leases.start(HARNESS, SID, TAB_A, holder_kind="terminal")
+        self.work(leases, 10800)
+        self.assertEqual(180, len(runner.calls))
+        state = leases.state(HARNESS, SID)
+        self.assertTrue(state["on"])
+        self.assertEqual(("none_or_low", 180), (state["level"]["level"], state["level"]["checks"]))
+        before = state["level"]
+        self.now = NOW + 10800
+        leases.beat(HARNESS, SID, TAB_A)
+        self.assertEqual(before, leases.state(HARNESS, SID)["level"])
+        leases.step()  # unchanged transcript at the next boundary sends nothing
+        self.assertEqual(180, len(runner.calls))
+        self.assertEqual(before, leases.state(HARNESS, SID)["level"])
+
+    def test_an_idle_terminal_reader_spends_nothing_and_resumes_on_new_work(self) -> None:
+        leases, runner = self.make_real()
+        leases.start(HARNESS, SID, TAB_A, holder_kind="terminal")
+        leases.step()
+        before = leases.state(HARNESS, SID)["level"]
+        for offset in range(20, 7220, 20):
+            self.now = NOW + offset
+            leases.beat(HARNESS, SID, TAB_A)
+            leases.step()
+        self.assertEqual(1, len(runner.calls))
+        self.assertEqual(before, leases.state(HARNESS, SID)["level"])
+        self.assertTrue(leases.state(HARNESS, SID)["on"])
+        self.turns.append(
+            {
+                "fact_id": "new-work",
+                "type": "user_message",
+                "at": self.now,
+                "reader_words": "Run the next check.",
+            }
+        )
+        with self.transcript.open("a", encoding="utf-8") as handle:
+            handle.write('{"n":2}\n')
+        for _ in range(3):
+            self.now += 20
+            leases.beat(HARNESS, SID, TAB_A)
+        leases.step()
+        self.assertEqual(2, len(runner.calls))
+
+    def test_a_terminal_reader_stopping_at_rollover_does_not_publish_a_late_reply(self) -> None:
+        leases, runner = self.make_real()
+        runner.hold = True
+        leases.start(HARNESS, SID, TAB_A, holder_kind="terminal")
+        # Keep the holder alive while advancing the fake clock to the boundary.
+        for offset in range(20, 1800, 20):
+            self.now = NOW + offset
+            leases.beat(HARNESS, SID, TAB_A)
+        worker = threading.Thread(target=leases.step)
+        worker.start()
+        try:
+            self.assertTrue(runner.started.wait(timeout=5))
+            self.now = NOW + 1800
+            leases.beat(HARNESS, SID, TAB_A)
+            live_monitor.ready(self.config, KEY, self.now)
+            leases.stop(HARNESS, SID, TAB_A)
+            leases.start(HARNESS, SID, TAB_A, holder_kind="terminal")
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(leases.state(HARNESS, SID)["on"])
+            self.assertIsNone(leases.state(HARNESS, SID)["level"])
+        finally:
+            leases.stop_all("stopped")
+            worker.join(timeout=5)
+        self.assertEqual(1, reading_policy.monitor_status(self.config, now=self.now)["used"])
+
+    def test_a_terminal_reader_in_a_working_loop_stops_at_the_boards_rolling_day_cap(self) -> None:
+        leases, runner = self.make_real()
+        leases.start(HARNESS, SID, TAB_A, holder_kind="terminal")
+        self.work(leases, 14500)
+        state = leases.state(HARNESS, SID)
+        self.assertEqual((False, "cap"), (state["on"], state["last_end"]["reason"]))
+        self.assertEqual(240, len(runner.calls))
+        self.assertEqual(240, reading_policy.monitor_status(self.config, now=self.now)["used"])
+
+
 class TheTickerThread(Rig):
     def test_close_stops_the_ticker_and_cancels_a_check_in_flight(self) -> None:
         release = threading.Event()

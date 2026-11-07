@@ -98,6 +98,10 @@ _Entry = tuple[str, str, str]
 class _Session:
     window_started_at: float
     holders: set[str] = dataclasses.field(default_factory=set)
+    terminal_holders: set[str] = dataclasses.field(default_factory=set)
+    terminal_bucket_at: float | None = None
+    # Rollover and a charge share this lock; SQLite never runs under the table lock.
+    accounting_lock: Any = dataclasses.field(default_factory=threading.Lock)
     ticks: int = 0
     last_started_at: float | None = None
     signature: Any = None
@@ -193,7 +197,7 @@ def provenance(config: RuntimeConfig) -> dict[str, Any]:
     }
 
 
-def disclosure(destination: str) -> str:
+def disclosure(destination: str, *, terminal: bool = False) -> str:
     """The "What is sent" words for the `monitor` notice: what leaves, to whom, how to stop."""
     sent = (
         "your saved goal, and your recent messages, the agent's replies, the commands of checks "
@@ -203,13 +207,22 @@ def disclosure(destination: str) -> str:
         else "your saved goal, and your recent messages and the agent's replies. Checks and "
         "file paths are not sent, because Compass cannot name where they would go"
     )
+    cadence = (
+        "while a terminal holder keeps Live monitor on"
+        if terminal
+        else "while Live monitor is on and you are viewing this session"
+    )
+    stop = (
+        "The terminal holder must keep sending heartbeats; no confirmation question is needed."
+        if terminal
+        else "It turns itself off after a while unless you say you still want it."
+    )
     return (
         f"Sends to {destination or 'a destination Compass cannot name'} through your Claude Code, "
-        "to Haiku, about once a minute while Live monitor is on and you are viewing this "
-        f"session: {sent}. Recent turns are sent again in later checks, and again each time "
+        f"to Haiku, about once a minute {cadence}: {sent}. "
+        "Recent turns are sent again in later checks, and again each time "
         "Live monitor is turned off and on. Everything is redacted first. No file or tool "
-        "output is sent. Pause model calls stops it, and it turns itself off "
-        "after a while unless you say you still want it."
+        f"output is sent. Pause model calls stops it. {stop}"
     )
 
 
@@ -236,7 +249,9 @@ def board(config: RuntimeConfig, *, now: float) -> dict[str, Any]:
 
 
 def _expired(config: RuntimeConfig, session: _Session, now: float) -> bool:
-    return now >= session.window_started_at + config.live_monitor_window_sec
+    return not session.terminal_holders and now >= (
+        session.window_started_at + config.live_monitor_window_sec
+    )
 
 
 def _drop(key: tuple[str, str], session: _Session) -> None:
@@ -252,15 +267,14 @@ def begin_window(
     now: float,
     holder: str = "lease",
     renew: bool = False,
+    holder_kind: str = "browser",
 ) -> bool:
     """Start monitoring a session, or renew its window when the reader answers Yes.
 
-    `holder` names who asked (a tab), so one tab leaving does not stop another's monitor. A start
-    on a live window adds a holder and leaves the clock alone. `renew` is a Yes: it resets the
-    clock and the tick count, keeps what the session has already sent, and is refused, with the
-    monitor off, after the deadline or for a session nobody is monitoring. Returns whether the
-    window now stands. The banner is due `live_monitor_banner_sec` in and the deadline is
-    `live_monitor_window_sec` in, and this module holds the only clock.
+    Browser consent has a banner and deadline; terminal holders have neither. Both share one
+    spending stream. Browser Yes resets consent and, until a terminal joins, charged ticks.
+    Terminal accounting instead uses fixed buckets and survives holder churn without a refill.
+    A holder's kind is fixed until it leaves. Returns whether the window now stands.
     """
     key = _key(config, session_key)
     with _LOCK:
@@ -270,29 +284,37 @@ def begin_window(
             session = None
             if renew:
                 return False
-        if renew:
-            if session is None:
+        if session is None:
+            if renew:
                 return False
-            session.window_started_at = now
-            session.ticks = 0
-        elif session is None:
             session = _Session(window_started_at=now)
             _SESSIONS[key] = session
+        if holder in session.holders:
+            holder_kind = "terminal" if holder in session.terminal_holders else "browser"
+        if holder_kind == "browser":
+            if renew or not (session.holders - session.terminal_holders):
+                session.window_started_at = now
+            if renew and session.terminal_bucket_at is None:
+                session.ticks = 0
+        else:
+            session.terminal_holders.add(holder)
+            if session.terminal_bucket_at is None:
+                session.terminal_bucket_at = now
         session.holders.add(holder)
         return True
 
 
-def window(config: RuntimeConfig, session_key: str) -> dict[str, float] | None:
-    """When the window started, when its banner is due and its deadline, or None when off."""
+def window(config: RuntimeConfig, session_key: str) -> dict[str, float | None] | None:
+    """Browser consent times, null for a terminal-only session, or None when off."""
     with _LOCK:
         session = _SESSIONS.get(_key(config, session_key))
         if session is None:
             return None
-        start = session.window_started_at
+        start = session.window_started_at if session.holders - session.terminal_holders else None
     return {
         "started_at": start,
-        "banner_due_at": start + config.live_monitor_banner_sec,
-        "deadline": start + config.live_monitor_window_sec,
+        "banner_due_at": start + config.live_monitor_banner_sec if start is not None else None,
+        "deadline": start + config.live_monitor_window_sec if start is not None else None,
     }
 
 
@@ -307,6 +329,7 @@ def end(config: RuntimeConfig, session_key: str, holder: str | None = None) -> b
         session = _SESSIONS.get(key)
         if holder is not None and session is not None:
             session.holders.discard(holder)
+            session.terminal_holders.discard(holder)
             if session.holders:
                 return False
         running = _RUNNING.get(key)
@@ -599,10 +622,13 @@ def _gate(config: RuntimeConfig, session_key: str, now: float) -> tuple[str, _Se
     answer = reading_policy.monitor_status(config, now=now)
     if answer["reason"] in _REFUSED_BY_STATUS:
         return answer["reason"], session
-    with _LOCK:
+    with session.accounting_lock, _LOCK:
+        if _SESSIONS.get(key) is not session:
+            return "not-monitored", None
         if _expired(config, session, now):
             _drop(key, session)
             return "window-ended", session
+        _advance_terminal_bucket(session, now)
         last = session.last_started_at
         full = session.ticks >= config.live_monitor_session_tick_cap
         stops = (
@@ -610,6 +636,18 @@ def _gate(config: RuntimeConfig, session_key: str, now: float) -> tuple[str, _Se
             ("too-soon", last is not None and now - last < config.live_monitor_interval_sec),
         )
     return next((reason for reason, hit in stops if hit), ""), session
+
+
+def _advance_terminal_bucket(session: _Session, now: float) -> None:
+    """Roll only charged ticks, with both the accounting and table locks held.
+
+    [DEC-26](docs/design-reading-a-session.md#terminal-monitor-lifetime-and-accounting)
+    anchors fixed buckets at the first terminal start; joins and consent never buy more ticks.
+    """
+    start = session.terminal_bucket_at
+    if start is not None and now >= start + 1800.0:
+        session.terminal_bucket_at = start + ((now - start) // 1800.0) * 1800.0
+        session.ticks = 0
 
 
 def ready(config: RuntimeConfig, session_key: str, now: float) -> str:
@@ -640,9 +678,15 @@ def _claim(
     the slot. The in-flight limit counts this board's ticks, not every board's.
     """
     key = _key(config, session_key)
-    with _LOCK:
+    with session.accounting_lock, _LOCK:
         if _SESSIONS.get(key) is not session:
             return "not-monitored"
+        _advance_terminal_bucket(session, now)
+        if session.ticks >= config.live_monitor_session_tick_cap:
+            return "cap"
+        last = session.last_started_at
+        if last is not None and now - last < config.live_monitor_interval_sec:
+            return "too-soon"
         busy = (
             sum(1 for state, _ in _RUNNING if state == key[0])
             >= config.live_monitor_in_flight_limit
@@ -734,6 +778,7 @@ def tick(  # noqa: PLR0911, PLR0913 - one admission order, each exit a named rea
             return _refused(exc.answer["reason"] or "store-unavailable")
         return _call(
             config,
+            session_key,
             session,
             running,
             notice,
@@ -757,6 +802,7 @@ def tick(  # noqa: PLR0911, PLR0913 - one admission order, each exit a named rea
 
 def _call(  # noqa: PLR0913 - the tick's own state, handed on rather than rebuilt
     config: RuntimeConfig,
+    session_key: str,
     session: _Session,
     running: _Running,
     notice: reading_policy.Notice | None,
@@ -772,7 +818,7 @@ def _call(  # noqa: PLR0913 - the tick's own state, handed on rather than rebuil
     clock: Callable[[], float],
     now: float,
 ) -> Tick:
-    words = disclosure(where)
+    words = disclosure(where, terminal=bool(session.terminal_holders))
     spent = False
 
     def reserved() -> None:
@@ -790,6 +836,23 @@ def _call(  # noqa: PLR0913 - the tick's own state, handed on rather than rebuil
                 session.seen.pop(next(iter(session.seen)))
             session.recent = [(turn.fact_id, turn.kind, turn.text) for turn in turns]
 
+    def reserve(config: RuntimeConfig, *, now: float) -> reading_policy.Status:
+        # A context read can roll the bucket while a tick prepares its call. Keep that roll
+        # outside the durable reservation and its in-memory count as one serialized operation.
+        with session.accounting_lock:
+            with _LOCK:
+                if _SESSIONS.get(_key(config, session_key)) is not session or running.cancelled:
+                    raise reading_policy.RefusedError(
+                        reading_policy._answer(reason="not-monitored")  # noqa: SLF001
+                    )
+                _advance_terminal_bucket(session, now)
+                if session.ticks >= config.live_monitor_session_tick_cap:
+                    raise reading_policy.RefusedError(reading_policy._answer(reason="cap"))  # noqa: SLF001
+            answer = reading_policy.reserve_monitor(config, now=now)
+            if not answer["reason"]:
+                reserved()
+            return answer
+
     try:
         with prepare(
             config, runner=runner, binary_resolver=binary_resolver, on_spawn=running.attach
@@ -801,10 +864,9 @@ def _call(  # noqa: PLR0913 - the tick's own state, handed on rather than rebuil
                 provider=PROVIDER,
                 destination=where,
                 resolve_destination=lambda: reading_route.destination(PROVIDER),
-                on_reserved=reserved,
                 cancelled=lambda: running.cancelled,
                 content=reading_policy.WORDS_CONTENT_VERSION,
-                reserve_with=reading_policy.reserve_monitor,
+                reserve_with=reserve,
             )
             reply, status = guarded(
                 build_prompt(intent, turns), output_cap_bytes=config.live_monitor_output_cap_bytes

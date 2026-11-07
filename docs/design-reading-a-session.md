@@ -73,7 +73,8 @@ holds the rulings and the remaining decisions.
 [DEC-16](#dec-16-compass-does-not-write-into-a-session) still applies, unamended: the check runs as a
 supervised child, is never resumed into the watched session and is never injected into it. The overlay
 the reader asks for, and the refusal of a verdict on whether the work met the request, are also
-unchanged.
+unchanged. The [terminal monitor amendment](#terminal-monitor-lifetime-and-accounting) widens this
+permission for a terminal holder, without changing the browser's question or deadline.
 
 ## DEC-15b: an assessment may be stored
 
@@ -7871,6 +7872,40 @@ below, which supersedes the floor bullet here.
 - **The level's floor.** Superseded by [the owner's floor amendment](#amended-2026-10-23-owner-the-haiku-levels-own-none-or-low-floor).
   The level is held to [DEC-17's shape contract](#dec-17-the-shape-contract) and carries no verdict.
   The model level is absent, not low, until a tick completes.
+
+### Terminal monitor lifetime and accounting
+
+The owner ruled on 2026-11-07 that a terminal-started monitor's per-session cap counts per
+30 minutes of the session's work. The board-wide rolling-day cap remains the bound on a long
+session. This amends [DEC-15's viewing-only permission](#amended-2026-10-23-owner-the-live-monitor-may-evaluate-on-a-cadence-while-the-session-is-viewed)
+and [DEC-26's Live monitor rules](#amended-2026-10-23-owner-the-live-level-comes-from-a-haiku-check).
+The earlier terminal ruling (DRC-5095) also stands: running the command is consent. A terminal
+holder has no 20-minute question, consent deadline or `unanswered` end.
+
+Work means new facts admitted by `live_monitor.new_entries`, under the existing saved-goal and
+transcript gates. The accounting periods are fixed, non-overlapping 1,800-second buckets anchored
+at the first terminal monitoring start. They measure elapsed monitoring time in which work may
+be checked, not accumulated CPU or busy time. Idle periods make no calls and end no lease.
+
+At a boundary, advance by whole buckets before testing the per-session cap. Reset only charged
+ticks. Keep spacing, transcript signature, seen fact ids, recent turns, the published level,
+checks and findings. Rollover and tick reservation are serialized. Failed and cancelled calls
+still count once reserved. A working loop that keeps producing new admitted turns eventually
+ends `cap` at the unchanged 240-reservation rolling-day board limit.
+
+A session has one lease and one spending stream, even when tabs and terminal holders share it.
+A terminal holder must beat like a visible tab and lapses after the same 50-second grace,
+including when it reports itself hidden. A dead sidecar cannot leave authorization spending
+until the session ends. A terminal holder also ends on Stop, session end or disappearance,
+Pause model calls, shutdown or a spent cap.
+
+Browser consent keeps its own clock. Its deadline or No removes only browser holders; a
+terminal holder can continue. Yes renews browser consent without replenishing a terminal
+bucket. Joining or leaving never replenishes it, including when the last terminal holder
+leaves tabs behind. A new browser joining a terminal-only lease starts browser consent then.
+Terminal-only state publishes null `started_at`, `banner_due_at`, `deadline` and `confirm_by`.
+Holder kind is fixed until that holder leaves; a beat, confirmation or repeated start cannot
+reclassify it. No terminal caller is supplied by this backend change.
 
 ### Amended 2026-10-23 (owner): the Haiku level's own None or low floor
 
