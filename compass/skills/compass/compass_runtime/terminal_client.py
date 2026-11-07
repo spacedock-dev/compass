@@ -976,9 +976,13 @@ def _emit(lines: list[str], stream: TextIO) -> None:
 
 
 def read_sessions(port: int) -> dict[str, Any]:
-    """Read structured list rows for terminal actions, without downloading board history."""
+    """Read list rows, or the full board when an older daemon lacks the list route."""
     try:
         reply = get(port, "/api/sessions", timeout=LIST_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
+        # Updating the plugin leaves an older daemon running. Only a missing route earns the
+        # legacy read; hiding any other failure would turn a broken list into a second answer.
+        if reply.status == 404:
+            reply = get(port, "/api/data", timeout=LIST_REQUEST_TIMEOUT_SEC, cap=DATA_CAP_BYTES)
     except DashboardUnreachable as exc:
         raise UnreadableSessionsError from exc
     payload = reply.data

@@ -815,6 +815,89 @@ class SessionsCommandTest(HomeCase):
             self.assertEqual(BOARD, terminal_client.read_sessions(fake.port))
         self.assertEqual([("GET", "/api/sessions")], fake.requests)
 
+    def test_a_person_with_an_older_dashboard_still_reads_their_sessions(self) -> None:
+        board = {**PAYLOAD, "history": {"pad": "x" * (terminal_client.REPLY_CAP_BYTES + 1)}}
+        answers = {
+            **data_reply(terminal_sessions.list_payload(board)),
+            "/api/data": (200, {}, json.dumps(board).encode()),
+        }
+        with FakeDashboard(version="0.0.1", answers=answers) as fake:
+            for mode in (None, "waiting"):
+                with self.subTest(mode=mode):
+                    answers["/api/sessions"] = data_reply(terminal_sessions.list_payload(board))[
+                        "/api/sessions"
+                    ]
+                    expected = self.run_sessions(mode, port=fake.port)
+                    self.assertEqual((0, ""), (expected[0], expected[2]))
+                    fake.requests.clear()
+                    answers["/api/sessions"] = (404, {}, b"{}")
+
+                    actual = self.run_sessions(mode, port=fake.port)
+
+                    self.assertEqual(expected, actual)
+                    self.assertEqual(
+                        [("GET", "/api/health"), ("GET", "/api/sessions"), ("GET", "/api/data")],
+                        fake.requests,
+                    )
+
+    def test_a_person_is_not_shown_a_fallback_list_after_another_read_failure(self) -> None:
+        replies: list[tuple[int, dict[str, str], bytes]] = [
+            (500, {}, b"{}"),
+            (200, {}, b"{"),
+            (200, {}, b'{"sessions":3}'),
+        ]
+        for reply in replies:
+            with (
+                self.subTest(reply=reply),
+                FakeDashboard(
+                    answers={
+                        "/api/sessions": reply,
+                        "/api/data": (200, {}, json.dumps(BOARD).encode()),
+                    }
+                ) as fake,
+            ):
+                for mode in (None, "waiting"):
+                    self.assertEqual(
+                        (1, "", "Compass answered, but its session list could not be read.\n"),
+                        self.run_sessions(mode, port=fake.port),
+                    )
+                self.assertNotIn(("GET", "/api/data"), fake.requests)
+
+    def test_a_person_gets_no_false_empty_list_when_the_older_dashboard_reply_is_unreadable(
+        self,
+    ) -> None:
+        replies: list[tuple[int, dict[str, str], bytes]] = [
+            (500, {}, b'{"sessions":[]}'),
+            (200, {}, b"{"),
+            (200, {}, b'{"sessions":[{}]}'),
+        ]
+        for reply in replies:
+            with (
+                self.subTest(reply=reply),
+                FakeDashboard(
+                    answers={"/api/sessions": (404, {}, b"{}"), "/api/data": reply}
+                ) as fake,
+            ):
+                self.assertEqual(
+                    (1, "", "Compass answered, but its session list could not be read.\n"),
+                    self.run_sessions(port=fake.port),
+                )
+
+    def test_a_person_is_told_when_the_older_dashboard_reply_exceeds_the_safety_bound(self) -> None:
+        answers: dict[str, tuple[int, dict[str, str], bytes]] = {
+            "/api/sessions": (404, {}, b"{}"),
+            "/api/data": (200, {}, json.dumps({**BOARD, "history": "x" * 2000}).encode()),
+        }
+        with (
+            FakeDashboard(answers=answers) as fake,
+            mock.patch.object(terminal_client, "DATA_CAP_BYTES", 1000),
+        ):
+            self.assertEqual(
+                (1, "", "Compass answered, but its session list could not be read.\n"),
+                self.run_sessions(port=fake.port),
+            )
+        self.assertIn(("GET", "/api/data"), fake.requests)
+
     def test_a_person_gets_an_unreadable_answer_instead_of_a_false_empty_list(self) -> None:
         malformed: list[dict[str, Any]] = [
             {},
