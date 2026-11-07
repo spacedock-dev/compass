@@ -96,7 +96,11 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
                 self.assertTrue(command.startswith(self.LAUNCHER + " "), command)
                 argv = shlex.split(command[len(self.LAUNCHER) :])
                 self.assertTrue(terminal_client.handles(argv), command)
-                expected = {"monitor on": ["--monitor"], "monitor off": ["--monitor", "--off"]}
+                expected = {
+                    "monitor on": ["--monitor"],
+                    "monitor off": ["--monitor", "--off"],
+                    "pause": ["--pause-model-calls"],
+                }
                 self.assertEqual(
                     expected.get(action, ["--" + action.split()[0], *action.split()[1:]]), argv
                 )

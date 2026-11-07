@@ -121,7 +121,7 @@ class ReadingJobTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def _run(self, compose: Any) -> reading.Job:
-        job = reading.start_job(
+        job = reading_jobs.start_job(
             self.config, KEY, provider="claude", label="Claude Code", now=1_700_000_100.0
         )
         assert job is not None
@@ -183,7 +183,7 @@ class ReadingJobTest(unittest.TestCase):
             return annotation_store.OUTCOME_STORED
 
         with mock.patch.object(annotation_store, "record_reading", record):
-            job = reading.start_job(
+            job = reading_jobs.start_job(
                 self.config, KEY, provider="claude", label="Claude Code", now=1_700_000_100.0
             )
             assert job is not None
@@ -384,7 +384,9 @@ class ReadingJobTest(unittest.TestCase):
 
     def test_a_thread_that_cannot_start_frees_the_job_and_the_slot(self) -> None:
         """Review F8: a failed start would otherwise answer every later press 409."""
-        job = reading.start_job(self.config, KEY, provider="claude", label="Claude Code", now=1.0)
+        job = reading_jobs.start_job(
+            self.config, KEY, provider="claude", label="Claude Code", now=1.0
+        )
         assert job is not None
         with (
             mock.patch.object(threading.Thread, "start", side_effect=RuntimeError("no thread")),
@@ -768,7 +770,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
         )
 
     def _start(self, compose: Any = None) -> tuple[reading.Job, threading.Thread]:
-        job = reading.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
+        job = reading_jobs.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
         assert job is not None
         record_reading = annotation_store.record_reading
         record_withheld = annotation_store.record_withheld
@@ -804,6 +806,218 @@ class CancelAnAnalysisTest(unittest.TestCase):
 
     def _used(self) -> int:
         return reading_policy.status(self.config, now=NOW)["used"]
+
+    def test_a_person_who_pauses_stops_a_running_reading_and_keeps_its_charge(self) -> None:
+        _job, thread = self._start()
+        self._spawned()
+        _answer, permission = reading_policy.pause(self.config, now=NOW)
+        reading_jobs.pause_all(self.application, permission)
+        reading_policy.set_consent(self.config, True, now=NOW)
+        self._finish(thread)
+        self.assertNotIn("assessment", self._entry())
+        self.assertEqual(1, self._used())
+        self.assertIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
+
+    def test_a_person_who_resumes_and_starts_a_reading_is_not_cancelled_by_an_earlier_pause(
+        self,
+    ) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def model(_prompt: str, **_kw: Any) -> tuple[str, str]:
+            entered.set()
+            release.wait(30)
+            return "", "error"
+
+        for key in ("claude:older", "claude:current"):
+            self.addCleanup(reading.end_job, self.config, key)
+            reading_jobs.start_job(self.config, key, provider="codex", label="Codex", now=NOW)
+            if key == "claude:older":
+                reading_policy.set_consent(self.config, False, now=NOW)
+                reading_policy.resume(self.config, now=NOW)
+        _answer, permission = reading_policy.pause(self.config, now=NOW)
+        reading_policy.resume(self.config, now=NOW)
+        _job, thread = self._start(lambda hooks: self._compose(hooks, model))
+        try:
+            self.assertTrue(entered.wait(30), "the resumed reading never reached the provider")
+            # The earlier pause handler reaches its sweep only after Resume and Analyze.
+            reading_jobs.pause_all(self.application, permission)
+            self.assertFalse(reading_policy.status(self.config, now=NOW)["off"])
+            jobs = reading.published_jobs(self.config)
+            self.assertFalse(jobs[KEY]["cancelling"])
+            self.assertTrue(jobs["claude:older"]["cancelling"])
+            self.assertTrue(jobs["claude:current"]["cancelling"])
+        finally:
+            release.set()
+            self._finish(thread)
+        self.assertEqual(1, self._used())
+        self.assertNotIn("assessment", self._entry())
+        self.assertNotIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
+        self.assertIn(("withheld", reading.WITHHELD_MODEL_FAILED, True), self.events)
+
+    def test_a_person_who_pauses_before_handover_stops_the_late_child_even_after_resume(
+        self,
+    ) -> None:
+        entered, release = threading.Event(), threading.Event()
+        hand_over = reading.hand_over
+
+        def held(job: reading.Job, group: Any) -> bool:
+            entered.set()
+            release.wait(30)
+            return hand_over(job, group)
+
+        with mock.patch.object(reading, "hand_over", held):
+            _job, thread = self._start()
+            self.addCleanup(release.set)
+            self.assertTrue(entered.wait(30))
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
+            reading_policy.set_consent(self.config, True, now=NOW)
+            release.set()
+            self._finish(thread)
+        self.assertNotIn("assessment", self._entry())
+        self.assertIn(("withheld", reading.WITHHELD_CANCELLED, True), self.events)
+
+    def test_a_person_who_pauses_during_registration_prevents_the_missed_job_from_calling(
+        self,
+    ) -> None:
+        self.mode = "reply"
+        original = reading_policy.capture_long_permission
+
+        def crossing(*args: Any, **kwargs: Any) -> Any:
+            permission = original(*args, **kwargs)
+            _answer, pause_permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, pause_permission)
+            reading_policy.set_consent(self.config, True, now=NOW)
+            return permission
+
+        with mock.patch.object(reading_policy, "capture_long_permission", crossing):
+            _job, thread = self._start()
+        self._finish(thread)
+        self.assertEqual([], self._pids())
+        self.assertEqual(0, self._used())
+        self.assertNotIn("assessment", self._entry())
+
+    def test_a_person_who_pauses_at_the_charge_boundary_sends_no_model_request(self) -> None:
+        calls = []
+
+        def model(_prompt: str, **_kw: Any) -> tuple[str, str]:
+            calls.append("sent")
+            return "", "error"
+
+        def compose(hooks: reading_jobs.Hooks) -> Any:
+            reserved = hooks.reserved
+
+            def crossed() -> None:
+                reserved()
+                _answer, permission = reading_policy.pause(self.config, now=NOW)
+                reading_jobs.pause_all(self.application, permission)
+                reading_policy.set_consent(self.config, True, now=NOW)
+
+            hooks.reserved = crossed  # type: ignore[method-assign]
+            return self._compose(hooks, model)
+
+        _job, thread = self._start(compose)
+        self._finish(thread)
+        self.assertEqual([], calls)
+        self.assertEqual(1, self._used())
+        self.assertNotIn("assessment", self._entry())
+
+    def test_a_person_who_pauses_in_a_shared_store_cannot_publish_an_older_reply(self) -> None:
+        self.mode = "reply"
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def compose(hooks: reading_jobs.Hooks) -> Any:
+            outcome = self._compose(hooks)
+            entered.set()
+            release.wait(30)
+            return outcome
+
+        _job, thread = self._start(compose)
+        self.assertTrue(entered.wait(30))
+        reading_policy.set_consent(self.config, False, now=NOW)
+        reading_policy.set_consent(self.config, True, now=NOW)
+        release.set()
+        self._finish(thread)
+        self.assertNotIn("assessment", self._entry())
+        self.assertEqual(1, self._used())
+
+    def test_a_person_who_pauses_after_the_seal_still_prevents_the_pending_store_write(
+        self,
+    ) -> None:
+        self.mode = "reply"
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        record = reading_jobs._record
+
+        def held(*args: Any, **kw: Any) -> bool:
+            entered.set()
+            release.wait(30)
+            return record(*args, **kw)
+
+        with mock.patch.object(reading_jobs, "_record", held):
+            _job, thread = self._start()
+            self.assertTrue(entered.wait(30))
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
+            reading_policy.set_consent(self.config, True, now=NOW)
+            release.set()
+            self._finish(thread)
+        self.assertNotIn("assessment", self._entry())
+        self.assertEqual(1, self._used())
+
+    def test_a_person_whose_paused_reply_cannot_be_stored_keeps_cancellation_after_restart(
+        self,
+    ) -> None:
+        self.mode = "reply"
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        record = reading_jobs._record
+
+        def held(*args: Any, **kw: Any) -> bool:
+            entered.set()
+            release.wait(30)
+            return record(*args, **kw)
+
+        with (
+            mock.patch.object(reading_jobs, "_record", held),
+            mock.patch.object(
+                annotation_store, "_record", return_value=annotation_store.OUTCOME_UNWRITABLE
+            ),
+        ):
+            job, thread = self._start()
+            self.assertTrue(entered.wait(30))
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
+            release.set()
+            self._finish(thread)
+        marker = json.loads((self.home / reading_jobs.MARKER_DIR / f"{job.id}.json").read_text())
+        self.assertEqual("cancelled", marker["reason"])
+        reading_jobs.recover(self.application, alive=lambda _pid: False)
+        self.assertEqual(reading.WITHHELD[reading.WITHHELD_CANCELLED], self._entry()["withheld"])
+        self.assertEqual(1, self._entry()["readings"])
+
+    def test_a_person_who_pauses_after_a_reply_never_sees_the_old_assessment(self) -> None:
+        self.mode = "reply"
+        entered, release = threading.Event(), threading.Event()
+        seal = reading.seal_job
+
+        def held(job: reading.Job) -> bool:
+            entered.set()
+            release.wait(30)
+            return seal(job)
+
+        with mock.patch.object(reading, "seal_job", held):
+            _job, thread = self._start()
+            self.addCleanup(release.set)
+            self.assertTrue(entered.wait(30))
+            _answer, permission = reading_policy.pause(self.config, now=NOW)
+            reading_jobs.pause_all(self.application, permission)
+            reading_policy.set_consent(self.config, True, now=NOW)
+            release.set()
+            self._finish(thread)
+        self.assertNotIn("assessment", self._entry())
+        self.assertEqual(1, self._used())
 
     def test_a_reader_who_cancels_mid_call_sees_the_cancelled_sentence_and_one_attempt_counted(
         self,
@@ -1032,7 +1246,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
         self.assertFalse(process_alive(child))
         self.assertTrue(list(self.home.glob("observer-model-*")))
         self.assertIsNone(
-            reading.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
+            reading_jobs.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
         )
         # A reload now draws the same box, with Cancel shown as finishing.
         self.assertTrue(reading.published_jobs(self.config)[KEY]["cancelling"])
@@ -1053,7 +1267,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
 
     def test_a_job_nobody_cancelled_publishes_cancelling_false(self) -> None:
         """A default is not a measurement: the flag is checked on the boring job too."""
-        job = reading.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
+        job = reading_jobs.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
         assert job is not None
         self.assertIs(False, reading.published_jobs(self.config)[KEY]["cancelling"])
         self.assertTrue(reading.cancel_job(self.config, KEY, job.id, now=NOW)[0])
@@ -1201,7 +1415,7 @@ class CancelAnAnalysisTest(unittest.TestCase):
 
     def test_the_cancel_outcome_counts_exactly_what_was_charged(self) -> None:
         """Either witness of a charge makes the cancel spent; neither makes it unspent."""
-        job = reading.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
+        job = reading_jobs.start_job(self.config, KEY, provider="codex", label="Codex", now=NOW)
         assert job is not None
         self.assertEqual(
             (None, reading.WITHHELD_CANCELLED, True),
@@ -1370,7 +1584,7 @@ class TheThreadIsNamedForItsJobTest(unittest.TestCase):
         home = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, home, True)
         config, state = make_runtime(state_home=home, state_dir=Path(home))
-        job = reading.start_job(config, KEY, provider="codex", label="Codex", now=1.0)
+        job = reading_jobs.start_job(config, KEY, provider="codex", label="Codex", now=1.0)
         assert job is not None
         release = threading.Event()
         application: Any = _Application(config, state, [])

@@ -10,13 +10,22 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import http.client
+import io
 import json
 import unittest
 from typing import Any, ClassVar
 from unittest import mock
 
 from compass_runtime import annotations as annotation_store
-from compass_runtime import http_api, live_lease, reading_policy, reading_route
+from compass_runtime import (
+    http_api,
+    live_lease,
+    reading,
+    reading_jobs,
+    reading_policy,
+    reading_route,
+    terminal_client,
+)
 
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
@@ -654,6 +663,39 @@ class TheTickerEndsWhatHasEnded(LeaseRoute):
 
 
 class PauseAndShutdown(LeaseRoute):
+    def test_a_person_can_pause_from_either_side_and_see_the_board_stop_ordinary_jobs(self) -> None:
+        for source in ("page", "terminal"):
+            with self.subTest(source=source), self.serving() as port:
+                reading_policy.set_consent(self.config, True, now=self.application.clock())
+                self.lease(port, "start")
+                job = reading_jobs.start_job(
+                    self.config, "codex:ordinary", provider="codex", label="Codex", now=NOW
+                )
+                assert job is not None
+                group = mock.Mock()
+                reading.hand_over(job, group)
+                try:
+                    if source == "page":
+                        status, _ = self.call(
+                            port,
+                            "POST",
+                            "/api/reading",
+                            {"consent": "off", "press": True, "observer_model": 1},
+                        )
+                        self.assertEqual(200, status)
+                    else:
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            self.assertEqual(0, terminal_client.run_pause_model_calls(port=port))
+                    self.assertTrue(reading.job_cancelled(job))
+                    group.cancel.assert_called_once()
+                    context = self.focused(port)
+                    lease = context["sources"]["work"]["live_monitor"]
+                    self.assertEqual((False, "paused"), (lease["on"], lease["last_end"]["reason"]))
+                    _, board = self.call(port, "GET", "/api/data")
+                    self.assertIs(board["reading"]["off"], True)
+                finally:
+                    reading.end_job(self.config, "codex:ordinary")
+
     def test_pause_ends_every_lease_paused(self) -> None:
         with self.serving() as port:
             self.lease(port, "start")

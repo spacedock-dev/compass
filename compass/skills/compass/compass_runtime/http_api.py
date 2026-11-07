@@ -3080,8 +3080,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _pause_model_calls(self) -> None:
         application = self.server.application
-        answer = reading_policy.set_consent(application.config, False, now=application.clock())
+        answer, permission = reading_policy.pause(application.config, now=application.clock())
         reading_long_coordinator.stop_all(application)
+        runtime_reading_jobs.pause_all(application, permission)
         # And an unasked check already running (owner, 2026-10-20).
         if application.unasked_lane is not None:
             application.unasked_lane.stop()
@@ -4448,7 +4449,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         job = live_monitor.start_with_priority(
             config,
             key,
-            lambda: runtime_reading.start_job(
+            lambda: runtime_reading_jobs.start_job(
                 config,
                 key,
                 provider=route["provider"],

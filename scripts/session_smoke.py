@@ -42,7 +42,13 @@ DEFAULT_TASK = "Write a three-line poem about a lighthouse keeper."
 # The argument lists after `server.py` that read and never press a reading. Anything else counts as
 # spending until it is listed here, so a new action fails closed rather than spending by default.
 FREE_ARGUMENTS = frozenset(
-    {("--project",), ("--sessions",), ("--sessions", "waiting"), ("--monitor", "--off")}
+    {
+        ("--project",),
+        ("--sessions",),
+        ("--sessions", "waiting"),
+        ("--monitor", "--off"),
+        ("--pause-model-calls",),
+    }
 )
 _TABLE_ROW = re.compile(r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|")
 SKILL_DIR = Path("compass/skills/compass")

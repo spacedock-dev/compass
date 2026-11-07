@@ -779,6 +779,98 @@ HISTORY_ONLY_BOARD = {
 }
 
 
+class PauseCommandTest(HomeCase):
+    def pause(self, port: int | None = None) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = terminal_client.run_pause_model_calls(
+                port=port, environ={"COMPASS_HOME": self.home}
+            )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_person_in_any_shell_can_pause_without_a_session(self) -> None:
+        bodies = []
+        real_post = terminal_client.post
+
+        def posted(dashboard: Any, path: str, body: Any, **kw: Any) -> Any:
+            bodies.append(body)
+            return real_post(dashboard, path, body, **kw)
+
+        answers: dict[str, tuple[int, dict[str, str], bytes]] = {
+            "/api/reading": (200, {}, b'{"ok":true,"reading":{"off":true}}')
+        }
+        with (
+            FakeDashboard(answers=answers) as fake,
+            mock.patch.object(terminal_client, "post", posted),
+        ):
+            code, out, err = self.pause(fake.port)
+        self.assertEqual(0, code)
+        self.assertEqual("", err)
+        self.assertIn(f"127.0.0.1:{fake.port}", out)
+        self.assertEqual([{"consent": "off", "observer_model": 1, "press": True}], bodies)
+        self.assertEqual([("POST", "/api/reading")], fake.posts())
+        self.assertEqual([("GET", "/api/health"), ("POST", "/api/reading")], fake.requests)
+
+    def test_a_person_is_told_which_dashboard_was_paused(self) -> None:
+        for explicit in (False, True):
+            with (
+                self.subTest(explicit=explicit),
+                FakeDashboard(
+                    answers={"/api/reading": (200, {}, b'{"ok":true,"reading":{"off":true}}')}
+                ) as fake,
+            ):
+                self.state_file(f"compass-{fake.port}.json")
+                code, out, err = self.pause(fake.port if explicit else None)
+                self.assertEqual((0, ""), (code, err))
+                self.assertEqual(
+                    f"Model calls are paused on the dashboard at 127.0.0.1:{fake.port}.\n", out
+                )
+                self.assertNotEqual("Model calls are paused.\n", out)
+                self.assertEqual([("POST", "/api/reading")], fake.posts())
+
+    def test_a_person_without_a_dashboard_starts_nothing_when_pausing(self) -> None:
+        with mock.patch.object(terminal_client, "start_daemon") as start:
+            code, out, err = self.pause()
+        self.assertEqual((1, ""), (code, out))
+        self.assertIn("not running", err)
+        start.assert_not_called()
+
+    def test_a_person_is_never_told_pause_succeeded_without_a_stored_off_answer(self) -> None:
+        cases = [
+            b"{}",
+            b'{"ok":false,"reading":{"off":true}}',
+            b'{"ok":true,"reading":{"off":false}}',
+            b'{"ok":true,"reading":{"off":1}}',
+            b"[]",
+            b"bad",
+        ]
+        for body in cases:
+            with (
+                self.subTest(body=body),
+                FakeDashboard(answers={"/api/reading": (200, {}, body)}) as fake,
+            ):
+                code, out, err = self.pause(fake.port)
+                self.assertEqual((1, ""), (code, out))
+                self.assertIn("could not confirm", err)
+                self.assertEqual(1, len(fake.posts()))
+
+    def test_a_person_can_choose_a_pause_port_but_cannot_mix_other_operations(self) -> None:
+        self.assertTrue(terminal_client.handles(["--pause-model-calls"]))
+        for extra in (["--session", "claude:s1"], ["--daemon"], ["--version"], ["--sessions"]):
+            with self.subTest(extra=extra), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.main(["--pause-model-calls", *extra])
+                self.assertEqual(2, raised.exception.code)
+        with (
+            FakeDashboard(
+                answers={"/api/reading": (200, {}, b'{"ok":true,"reading":{"off":true}}')}
+            ) as fake,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(0, cli.main(["--pause-model-calls", "--port", str(fake.port)]))
+            self.assertEqual(1, len(fake.posts()))
+
+
 class SessionsCommandTest(HomeCase):
     def run_sessions(
         self,

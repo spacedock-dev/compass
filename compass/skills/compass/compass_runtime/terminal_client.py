@@ -168,6 +168,7 @@ class Option(NamedTuple):
 
 
 OPERATIONS = (
+    Operation("--pause-model-calls", "pause Compass model calls; Resume stays on the board"),
     Operation(
         "--monitor",
         "hold the Live monitor for this Claude Code session; --off stops this terminal holder",
@@ -297,6 +298,39 @@ def parse_monitor_args(argv: list[str]) -> tuple[bool, bool, str | None]:
     return False, False, None
 
 
+def run_pause_model_calls(
+    *, port: int | None = None, environ: Mapping[str, str] | None = None
+) -> int:
+    """Send the page's durable pause without starting a dashboard or resolving a session."""
+    env = os.environ if environ is None else environ
+    dashboard = ensure_dashboard(
+        state_home(env), port=port, spend=False, own_version=release_version()
+    )
+    if isinstance(dashboard, Refusal):
+        print(dashboard.message, file=sys.stderr)
+        return dashboard.code
+    try:
+        reply = post(
+            dashboard.port, "/api/reading", {"consent": "off", "observer_model": 1, "press": True}
+        )
+        data = reply.data
+        reading = data.get("reading") if isinstance(data, dict) else None
+        confirmed = (
+            reply.status == 200
+            and isinstance(data, dict)
+            and data.get("ok") is True
+            and isinstance(reading, dict)
+            and reading.get("off") is True
+        )
+    except DashboardUnreachable:
+        confirmed = False
+    if not confirmed:
+        print("Compass could not confirm that model calls are paused. Try again.", file=sys.stderr)
+        return 1
+    print(f"Model calls are paused on the dashboard at 127.0.0.1:{dashboard.port}.")
+    return 0
+
+
 def run_monitor(
     *, off: bool = False, session: str | None = None, environ: Mapping[str, str] | None = None
 ) -> int:
@@ -375,7 +409,12 @@ def run(argv: list[str]) -> int:
     claimed = claim(argv)
     if claimed is not None and claimed[0].flag == "--sessions":
         return run_sessions(claimed[1] or True)
-    return print_version()
+    operation = (
+        run_pause_model_calls
+        if claimed is not None and claimed[0].flag == "--pause-model-calls"
+        else print_version
+    )
+    return operation()
 
 
 class DashboardUnreachable(OSError):  # noqa: N818
@@ -774,6 +813,7 @@ class Line(NamedTuple):
     monitor: bool = False
     level: str | None = None
     last_end: tuple[str, float] | None = None
+    model_calls_paused: bool | None = None
 
 
 # Copies of the producer vocabularies, held equal by tests without importing the runtime here.
@@ -932,14 +972,11 @@ def read_line(home: str, session: Session, now: float) -> Line | None:
             and ended_at <= now + LINE_FUTURE_SLACK_SEC
         ):
             last_end = (reason, ended_at)
-    return Line(count, blind, monitor, level, last_end)
+    paused = data.get("model_calls_paused")
+    return Line(count, blind, monitor, level, last_end, paused if type(paused) is bool else None)
 
 
-def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: float) -> str:
-    """The one line: monitor, waiting, who cannot report a wait, then the tightest quota window.
-
-    An unmeasured or zero count prints nothing, and a steady board prints nothing at all.
-    """
+def _monitor_parts(line: Line | None, now: float) -> list[str]:
     parts: list[str] = []
     if line is not None:
         if line.monitor is True:
@@ -950,8 +987,22 @@ def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: fl
         elif line.last_end is not None:
             reason, ended_at = line.last_end
             note = MONITOR_END_NOTES.get(reason)
+            if reason == "paused":
+                note = "monitor off"
             if note and -LINE_FUTURE_SLACK_SEC <= now - ended_at < MONITOR_END_SEC:
                 parts.append(note)
+    return parts
+
+
+def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: float) -> str:
+    """The one line: monitor, waiting, who cannot report a wait, then the tightest quota window.
+
+    An unmeasured or zero count prints nothing, and a steady board prints nothing at all.
+    """
+    parts: list[str] = []
+    if line is not None and line.model_calls_paused is True:
+        parts.append("model calls paused")
+    parts.extend(_monitor_parts(line, now))
     if line is not None and line.waiting:
         parts.append(f"{line.waiting} waiting")
     if line is not None and line.blind:

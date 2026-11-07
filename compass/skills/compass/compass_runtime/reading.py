@@ -1488,6 +1488,7 @@ class Job:
     # because the result it would discard is already being stored.
     sealed: bool = False
     notice: reading_policy.Notice | None = None
+    permission: reading_policy.LongPermission | None = None
     # Encoded private snapshots cannot share mutable dictionaries with a caller.
     _long_plan: str | None = field(default=None, repr=False)
     _long_progress: str | None = field(default=None, repr=False)

@@ -2,7 +2,7 @@
 name: compass
 description: Open Compass, a local agent-cartography dashboard for Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid sessions, with subagents, task progress, token rate, ETAs, and Claude input-wait notifications. Use for “open compass” or “monitor agent progress”.
 license: Apache-2.0 AND OFL-1.1
-allowed-tools: Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --project), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions waiting), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift again), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor --off)
+allowed-tools: Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --project), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions waiting), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift again), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor --off), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --pause-model-calls)
 ---
 
 # Compass
@@ -28,6 +28,12 @@ a later message.
 | `drift again` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift again` |
 | `monitor on` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --monitor` |
 | `monitor off` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --monitor --off` |
+| `pause` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --pause-model-calls` |
+
+`pause` sends the page's Pause model calls to the running dashboard from any shell. It needs no
+session or typed-command check, starts nothing and spends nothing. It stops that dashboard's running
+readings, summaries and Live monitor holders. The success line names the dashboard address and port
+that received the pause. Resume model calls stays on the board.
 
 `project` reads this Claude Code session's project label, its sessions and the project brief.
 Never add `--session`. It starts nothing and spends nothing.

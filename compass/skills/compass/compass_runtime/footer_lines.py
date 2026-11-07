@@ -148,6 +148,7 @@ def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
             "monitor": False,
             "level": None,
             "last_end": None,
+            "model_calls_paused": None,
         }
     return built
 
@@ -195,6 +196,7 @@ class Lines:
         *,
         pid: int | None = None,
         monitor: MonitorSource | None = None,
+        model_calls_paused: Callable[[], bool | None] | None = None,
         diagnostic_sink: Callable[[str], None] | None = None,
     ) -> None:
         self.directory = os.path.join(home, DIRECTORY)
@@ -210,6 +212,10 @@ class Lines:
         self._last_sweep: float | None = None
         self._said = False
         self._monitor = monitor
+        self._model_calls_paused = model_calls_paused
+        self._pause_serial = 0
+        self._pause_accepted = 0
+        self._paused: bool | None = None
         self._collection: Body = {}
         self._inputs: dict[str, object] = {}
         self._intents: dict[str, object] = {}
@@ -227,6 +233,7 @@ class Lines:
     def update(self, collection: Mapping[str, Any], now: float) -> None:
         """Publish counts and lease state under collection's lock; never project here."""
         try:
+            sample = self._pause_state()
             snapshot = copy.deepcopy(dict(collection))
             built = build(snapshot, pid=self._pid, now=now)
             sessions = {
@@ -242,6 +249,7 @@ class Lines:
                 if identities[(row["harness"], row["sid"])] != 1
             }
             with self._lock:
+                self._accept_pause(sample)
                 for name in self._current - sessions.keys():
                     body = self._desired[name]
                     previous = self._written.get(name)
@@ -269,6 +277,7 @@ class Lines:
                 for (harness, sid), body in built.items():
                     name = line_name(harness, sid)
                     self._retired.discard(name)
+                    body["model_calls_paused"] = self._paused
                     self._desired[name] = body
                     row = sessions[name]
                     self._apply_state(
@@ -277,6 +286,25 @@ class Lines:
                 self._flush(now)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
+
+    def _pause_state(self) -> tuple[int, bool | None]:
+        # Number before I/O: an older read that returns late cannot replace a newer sample.
+        with self._lock:
+            self._pause_serial += 1
+            serial = self._pause_serial
+        try:
+            answer = self._model_calls_paused() if self._model_calls_paused is not None else None
+        except Exception as exc:  # noqa: BLE001 - unknown clears a previously confirmed pause
+            self._report(exc)
+            answer = None
+        return serial, answer if type(answer) is bool else None
+
+    def _accept_pause(self, sample: tuple[int, bool | None]) -> None:
+        serial, answer = sample
+        if serial > self._pause_accepted:
+            self._pause_accepted, self._paused = serial, answer
+            for body in self._desired.values():
+                body["model_calls_paused"] = answer
 
     def _state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
         return self._monitor.state(row) if self._monitor is not None else {"on": False}
@@ -343,8 +371,10 @@ class Lines:
         jobs = []
         reserved: set[str] = set()
         try:
+            sample = self._pause_state()
             reserved_at = time.monotonic()
             with self._lock:
+                self._accept_pause(sample)
                 for name, row in self._sessions.items():
                     try:
                         lease = self._state(row) if name not in self._ambiguous else {"on": False}
