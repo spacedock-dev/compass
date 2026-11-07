@@ -41,7 +41,7 @@ DEFAULT_PORT = 4795
 DEFAULT_TASK = "Write a three-line poem about a lighthouse keeper."
 # The argument lists after `server.py` that read and never press a reading. Anything else counts as
 # spending until it is listed here, so a new action fails closed rather than spending by default.
-FREE_ARGUMENTS = frozenset({("--sessions",), ("--sessions", "waiting")})
+FREE_ARGUMENTS = frozenset({("--sessions",), ("--sessions", "waiting"), ("--monitor", "--off")})
 _TABLE_ROW = re.compile(r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|")
 SKILL_DIR = Path("compass/skills/compass")
 
@@ -389,6 +389,8 @@ def _run(args: argparse.Namespace, home: str, deps: Deps) -> int:
     env = child_env(home)
     clean = True
     started = False
+    session_id: str | None = None
+    monitor_attempted = False
     try:
         _start_board(args, env, deps)
         # Only after the daemon said it started: a failed start may mean a sibling's board holds
@@ -415,6 +417,7 @@ def _run(args: argparse.Namespace, home: str, deps: Deps) -> int:
                     "stream-json",
                     "--verbose",
                 )
+                monitor_attempted = monitor_attempted or action == "monitor on"
                 done = deps.run(command, project, args.timeout, env)
                 ran = report_action(action, done, deps.out)
                 clean = clean and ran
@@ -422,6 +425,16 @@ def _run(args: argparse.Namespace, home: str, deps: Deps) -> int:
         deps.err.write(f"failed: {error}\n")
         clean = False
     finally:
+        if monitor_attempted and session_id is not None:
+            command = _board(args, "--monitor", "--off", "--session", "claude:" + session_id)
+            try:
+                done = deps.run(command, args.tree / SKILL_DIR, args.board_timeout, env)
+                if done.returncode:
+                    deps.err.write("failed to stop the detached monitor: " + done.stderr + "\n")
+                    clean = False
+            except (TimeoutError, OSError) as error:
+                deps.err.write(f"failed to stop the detached monitor: {error}\n")
+                clean = False
         if started and not _stop_board(args, env, deps):
             clean = False
     return 0 if clean else 1

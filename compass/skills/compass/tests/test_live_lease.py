@@ -354,7 +354,9 @@ class TheQuestionAndTheClock(Rig):
         options = {
             option for action in cli.build_parser()._actions for option in action.option_strings
         }
-        self.assertFalse({o for o in options if "monitor" in o} - {"--claude-monitor-model"})
+        self.assertFalse(
+            {o for o in options if "monitor" in o} - {"--claude-monitor-model", "--monitor"}
+        )
 
 
 class WhatEndsTheLeaseOtherwise(Rig):
@@ -793,3 +795,35 @@ class TheTickerThread(Rig):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TerminalHeartbeatTest(Rig):
+    def test_a_person_s_terminal_observes_an_ended_row_without_waiting_for_the_ticker(self) -> None:
+        self.start(holder_kind="terminal")
+        self.rows[(HARNESS, SID)]["ended_at"] = NOW
+        answer = self.leases.beat(HARNESS, SID, TAB_A)
+        self.assertFalse(answer["ok"])
+        self.assertFalse(answer["state"]["on"])
+        self.assertEqual("ended", answer["state"]["last_end"]["reason"])
+
+    def test_a_person_s_terminal_observes_a_missing_row_and_carries_only_activity(self) -> None:
+        self.rows[(HARNESS, SID)]["last_activity"] = NOW - 10
+        self.start(holder_kind="terminal")
+        self.assertEqual(NOW - 10, self.leases.beat(HARNESS, SID, TAB_A)["activity"])
+        del self.rows[(HARNESS, SID)]
+        answer = self.leases.beat(HARNESS, SID, TAB_A)
+        self.assertFalse(answer["state"]["on"])
+
+    def test_a_person_s_row_is_read_outside_the_lease_lock(self) -> None:
+        self.start(holder_kind="terminal")
+        original = self.leases._row_for
+
+        def row(harness: str, sid: str) -> Any:
+            self.assertTrue(self.leases._lock.acquire(blocking=False))
+            self.leases._lock.release()
+            return original(harness, sid)
+
+        observed = mock.Mock(side_effect=row)
+        self.leases._row_for = observed
+        self.leases.beat(HARNESS, SID, TAB_A)
+        observed.assert_called_once_with(HARNESS, SID)

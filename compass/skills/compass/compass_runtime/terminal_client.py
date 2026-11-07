@@ -1,12 +1,13 @@
 """The terminal's one client for the dashboard's loopback API.
 
-Standard library only, and no runtime module but the leaf `terminal_sessions`: `entry.main` runs
+Standard library only, with terminal leaves and a lazily loaded monitor holder: `entry.main` runs
 this before `cli` is imported, so a short command never pays for the collectors. The reasoning,
 and what was rejected, is in
 [R-1](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 
 It holds the request path, discovery, the session rule, the version guard and the wording, for
-the operations that call them. `--drift` is the one that spends: its rules live in the leaf
+the operations that call them. `--monitor` holds a lease through `terminal_monitor`; `--drift`
+spends on a reading whose rules live in the leaf
 `terminal_drift`, which this file hands the four exchanges it needs and imports only on that path,
 so no other operation loads it.
 
@@ -93,6 +94,15 @@ OTHER_SESSION_ENV: Final = ("CODEX_THREAD_ID",)
 # wording elsewhere; this is the terminal's single copy, so a result reads the same from every
 # command that produces it.
 SENTENCES: Final[dict[str, str]] = {
+    "monitor_started": "Live monitor started for this session.",
+    "monitor_already_running": "Live monitor is already running for this session.",
+    "monitor_stopped": "This terminal's Live monitor stopped.",
+    "monitor_not_running": "This terminal's Live monitor is not running.",
+    "monitor_busy": "Another monitor command is still running.",
+    "monitor_failed": "Compass could not start or stop this terminal's Live monitor.",
+    "monitor_unreadable": "Compass could not read the board to find this live Claude Code session.",
+    "monitor_unavailable": "Compass could not find this live Claude Code session.",
+    "monitor_refused": "Compass refused this Live monitor start.",
     "not_running": "Compass is not running. Start it with `{start}`.",
     "starting": "Compass was not running, so this started it as `--daemon` does.",
     "start_failed": "Compass could not start the dashboard. Start it with `{start}`.",
@@ -151,6 +161,10 @@ class Option(NamedTuple):
 
 
 OPERATIONS = (
+    Operation(
+        "--monitor",
+        "hold the Live monitor for this Claude Code session; --off stops this terminal holder",
+    ),
     Operation("--version", "print the Compass version and exit"),
     Operation(
         "--footer",
@@ -176,10 +190,14 @@ OPTIONS = (
     Option(
         "--session",
         "HARNESS:SESSION_ID",
-        "the session --footer or --drift reports for, such as claude:SESSION_ID; "
+        "the session --footer or --drift reports for, or --monitor holds; "
+        "such as claude:SESSION_ID; "
         "default: the status line's session_id (--footer only), then CLAUDE_CODE_SESSION_ID",
     ),
 )
+
+
+SWITCHES = (Operation("--off", "stop this terminal holder, only with --monitor"),)
 
 
 def release_version() -> str | None:
@@ -252,6 +270,44 @@ def parse_drift_args(argv: list[str]) -> tuple[bool, bool, str | None]:
     return False, False, None
 
 
+def parse_monitor_args(argv: list[str]) -> tuple[bool, bool, str | None]:
+    rest = list(argv)
+    if rest.count("--monitor") != 1 or rest.count("--off") > 1:
+        return False, False, None
+    rest.remove("--monitor")
+    off = "--off" in rest
+    if off:
+        rest.remove("--off")
+    if not rest:
+        return True, off, None
+    if len(rest) == 1 and rest[0].startswith("--session="):
+        return True, off, rest[0][len("--session=") :]
+    if len(rest) == 2 and rest[0] == "--session" and not rest[1].startswith("--"):
+        return True, off, rest[1]
+    return False, False, None
+
+
+def run_monitor(
+    *, off: bool = False, session: str | None = None, environ: Mapping[str, str] | None = None
+) -> int:
+    from compass_runtime import terminal_monitor  # noqa: PLC0415
+
+    env = os.environ if environ is None else environ
+    named = resolve_session(session, env, None)
+    if isinstance(named, Unresolved):
+        print(sentence("no_session"), file=sys.stderr)
+        return 1
+    if named.harness != "claude":
+        print(sentence("monitor_unavailable"), file=sys.stderr)
+        return 1
+    return terminal_monitor.command(
+        named,
+        off=off,
+        home=state_home(env),
+        in_session=named.source == "environment" and not sys.stdout.isatty(),
+    )
+
+
 def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
     """The operation `argv` is, and the value it carries, when `argv` is exactly one operation.
 
@@ -270,10 +326,18 @@ def claim(argv: list[str]) -> tuple[Operation, str | None] | None:
 
 
 def handles(argv: list[str]) -> bool:
-    return parse_footer_args(argv)[0] or parse_drift_args(argv)[0] or claim(argv) is not None
+    return (
+        parse_monitor_args(argv)[0]
+        or parse_footer_args(argv)[0]
+        or parse_drift_args(argv)[0]
+        or claim(argv) is not None
+    )
 
 
 def run(argv: list[str]) -> int:
+    monitor, off, named = parse_monitor_args(argv)
+    if monitor:
+        return run_monitor(off=off, session=named)
     if parse_footer_args(argv)[0]:
         return run_footer(argv, os.environ, sys.stdin, sys.stdout)
     drift, again, session = parse_drift_args(argv)
@@ -370,18 +434,15 @@ def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
     """
     import http.client  # noqa: PLC0415 — only a command that reaches the dashboard pays for it
 
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+
     try:
-        conn.request("GET", "/api/health")
-        response = conn.getresponse()
-        body = response.read(HEALTH_CAP_BYTES)
-        if response.status != 200:
+        status, body = exchange("GET", port, "/api/health", timeout=timeout, cap=HEALTH_CAP_BYTES)
+        if status != 200 or len(body) > HEALTH_CAP_BYTES:
             return None
         data = json.loads(body)
     except (OSError, http.client.HTTPException, ValueError, RecursionError):
         return None
-    finally:
-        conn.close()
     if not isinstance(data, dict):
         return None
     pid, reported, started = data.get("pid"), data.get("port"), data.get("started")
@@ -432,17 +493,15 @@ def request(
     import http.client  # noqa: PLC0415 — see `probe`
 
     limit = REPLY_CAP_BYTES if cap is None else cap
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+
     try:
-        conn.request(method, path, body=body, headers=dict(headers or {}))
-        response = conn.getresponse()
-        raw = response.read(limit + 1)
-        status = response.status
+        status, raw = exchange(
+            method, port, path, body, headers=headers, timeout=timeout, cap=limit
+        )
     except (OSError, http.client.HTTPException) as error:
         msg = f"no answer from 127.0.0.1:{port}"
         raise DashboardUnreachable(msg) from error
-    finally:
-        conn.close()
     data: Any = None
     # A refusal's body is read too: `--drift` says why a press was refused from its `reason`.
     if len(raw) <= limit and (200 <= status < 300 or status >= 400):

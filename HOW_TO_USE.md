@@ -633,6 +633,10 @@ unless you start the dashboard with `--claude-monitor-model` and another explici
 again after a reload is yours to do: nothing about it is remembered. Its limits are its own, apart from
 Analyze's 100 attempts.
 
+`spacedock-compass --monitor` turns the same monitor on for the Claude Code session you run it in, with
+no page open. It checks only after new work, asks no 20-minute question, and keeps going until
+`--monitor --off` or the session ends. [MANUAL.md](MANUAL.md) lists what else ends it.
+
 `--forget` also stores model calls as paused and session summaries as off, without resetting
 either rolling spend budget. Readings and goal summaries wait for **Resume model calls**, and
 session summaries also wait for **Turn summaries on**. It deletes the local history store, the session-end store and the stored
@@ -780,7 +784,7 @@ What the line says, and when it says nothing:
 
 - `drift High` comes first while the Live monitor is on for this session. It uses the same level as
   the page's pill, or says `drift: no level yet` when the page would draw no pill. Turn the monitor on
-  from the session page; turning it on from the terminal is not available yet. When the lease ends,
+  with `spacedock-compass --monitor` in that session, or from the session page. When the lease ends,
   the level disappears on the next refresh. A short reason such as `monitor off: session ended`
   stays for five minutes after the end. Your own Off is silent. Waiting counts keep refreshing.
 - `N waiting` counts the needs on the board's Attention queue other than the session the line is in: other

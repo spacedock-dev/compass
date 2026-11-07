@@ -273,15 +273,16 @@ the board draws as a risk row does not. The number is left out when nothing coul
 never shown as zero, and a harness that cannot report a wait is named on the line instead of being
 counted as quiet. It needs the dashboard running and reads a small file the dashboard writes, so it
 can be about a minute behind. It shows the page's drift level while the Live monitor is on for that
-session, and says when no level is available yet. Turning the monitor on from the terminal is not
-available yet; use the session page. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
+session, and says when no level is available yet. `spacedock-compass --monitor` turns the monitor on
+for the session you run it in, or the session page does. [How to add it](../HOW_TO_USE.md#show-waiting-sessions-and-quota-in-the-claude-code-status-line)
 to a status line you already have.
 
 Compass can now check a session against your words while you are away and raise a departure
-without being asked, which is off by default and the only thing here that spends your model capacity
-with nobody watching. The Live monitor does not: it calls a model only while a reader is viewing the
-session. Where it stops is the part worth reading: it raises a departure and never a
-reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
+without being asked, which is off by default. The Live monitor calls a model while a reader views
+the session, or, when started from the terminal with `--monitor`, after new work in that session
+until it is turned off or the session ends, under its caps.
+
+An unasked check raises a departure and never a reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
 with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other
 harnesses prefer Claude Code, falling back only when the preferred provider is unavailable or

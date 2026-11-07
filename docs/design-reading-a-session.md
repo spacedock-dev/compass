@@ -7053,6 +7053,14 @@ is exactly how the skill runs it.
   drift again` (or `drift` when none is stored), so nothing was read or spent." A transcript or
   store that cannot be read refuses as `typed-command-unconfirmed` rather than guessing.
 
+The same guard admits the terminal `monitor on` action. An in-session `--monitor` start carries
+`typed_action: "monitor on"` to `/api/live-monitor`, consumes its typed record before lease
+admission can start the ticker, and gives it back on refused or failed admission. Accepted runs
+keep it consumed across dashboard restarts. Beats and `--monitor --off` consume nothing. The
+sidecar exits on a restart and requires a new command rather than replaying start. The skill's
+exact approval for `--monitor --off` is the only two-flag exception to the validator's rule above.
+The [daemon record](design-daemon.md#terminal-monitor-holders) owns process lifetime and locks.
+
 This closes an agent-started reading feeding later readings. It is not a hard boundary: a process
 that can write the transcript could forge a typed record, and an agent that names the session with
 `--session` sends no `typed_action`, though that spelling is not pre-approved and asks for

@@ -167,20 +167,17 @@ def probe_port(port: int, timeout: float = 1.0) -> tuple[str, dict[str, Any] | N
     listening" reading as "Compass is running" is how a stop command ends up
     aimed at an unrelated local server.
     """
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+
     try:
-        conn.request("GET", "/api/health")
-        response = conn.getresponse()
-        body = response.read(4096)
-        if response.status != 200:
+        status, body = exchange("GET", port, "/api/health", timeout=timeout, cap=4096)
+        if status != 200 or len(body) > 4096:
             return ("foreign", None)
         data = json.loads(body)
     except (OSError, http.client.HTTPException):
         return ("closed", None)
     except (ValueError, RecursionError):
         return ("foreign", None)  # answered 200 with something that is not JSON
-    finally:
-        conn.close()
     if not isinstance(data, dict):
         return ("foreign", None)
     pid = data.get("pid")

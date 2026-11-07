@@ -580,6 +580,7 @@ SENTINEL = "SENTINEL-READER-WORDS"
 # GET routes the sweep requests, with the query each needs. A route added to `_get_api`
 # without a line here fails `test_every_get_route_is_swept`.
 GET_ROUTES = {
+    "/api/session": f"/api/session?harness=claude&sid={SHORT}",
     "/api/session-record": f"/api/session-record?project=billing&session=claude:{SHORT}",
     "/api/data": "/api/data?all=1",
     "/api/observe": f"/api/observe?harness=claude&sid={SHORT}",
@@ -648,6 +649,9 @@ class EveryPageRouteDropsTheWordsTest(_Collected):
             for route, path in GET_ROUTES.items():
                 with self.subTest(route=route):
                     status, body = self.request(port, "GET", path)
+                    if route == "/api/session":
+                        self.assertEqual(200, status, body)
+                        self.assertEqual(SHORT, json.loads(body)["session"]["sid"])
                     if route in {"/api/reading-long-plan", "/api/reading-long-history"}:
                         # Exercise real successful metadata, never a word-free 400/503 refusal.
                         self.assertEqual(200, status, body)

@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == ["--monitor-sidecar"]:
+        from compass_runtime import terminal_monitor  # noqa: PLC0415
+
+        return terminal_monitor.sidecar(args[1], args[2]) if len(args) == 3 else 2
     if terminal_client.handles(args):
         return terminal_client.run(args)
     from compass_runtime import cli  # noqa: PLC0415

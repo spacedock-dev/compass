@@ -44,7 +44,10 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         ├── compass_runtime/       # importable dashboard runtime package
         │                           # per-module map: docs/design-runtime-architecture.md
         │   ├── entry.py            # what server.py runs: terminal_client's short operations, else cli.main
-        │   ├── terminal_client.py  # stdlib-only client for the loopback API; imports only the two terminal_ leaves
+        │   ├── terminal_client.py  # stdlib-only client for the loopback API and terminal operations
+        │   ├── loopback_transport.py # whole-exchange deadlines for client and lifecycle probes
+        │   ├── terminal_monitor.py # detached per-session terminal lease holder
+        │   ├── monitor_store.py    # private control records and persistent OS lock paths
         │   ├── terminal_drift.py   # stdlib-only: --drift, rendered from the server's drift_views, and its press
         │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
         │   ├── collectors/         # one harness collector per file, one per supported harness
