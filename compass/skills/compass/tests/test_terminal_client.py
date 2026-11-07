@@ -804,10 +804,29 @@ class PauseCommandTest(HomeCase):
             mock.patch.object(terminal_client, "post", posted),
         ):
             code, out, err = self.pause(fake.port)
-        self.assertEqual((0, "Model calls are paused.\n", ""), (code, out, err))
+        self.assertEqual(0, code)
+        self.assertEqual("", err)
+        self.assertIn(f"127.0.0.1:{fake.port}", out)
         self.assertEqual([{"consent": "off", "observer_model": 1, "press": True}], bodies)
         self.assertEqual([("POST", "/api/reading")], fake.posts())
         self.assertEqual([("GET", "/api/health"), ("POST", "/api/reading")], fake.requests)
+
+    def test_a_person_is_told_which_dashboard_was_paused(self) -> None:
+        for explicit in (False, True):
+            with (
+                self.subTest(explicit=explicit),
+                FakeDashboard(
+                    answers={"/api/reading": (200, {}, b'{"ok":true,"reading":{"off":true}}')}
+                ) as fake,
+            ):
+                self.state_file(f"compass-{fake.port}.json")
+                code, out, err = self.pause(fake.port if explicit else None)
+                self.assertEqual((0, ""), (code, err))
+                self.assertEqual(
+                    f"Model calls are paused on the dashboard at 127.0.0.1:{fake.port}.\n", out
+                )
+                self.assertNotEqual("Model calls are paused.\n", out)
+                self.assertEqual([("POST", "/api/reading")], fake.posts())
 
     def test_a_person_without_a_dashboard_starts_nothing_when_pausing(self) -> None:
         with mock.patch.object(terminal_client, "start_daemon") as start:

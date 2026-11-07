@@ -32,7 +32,8 @@ a later message.
 
 `pause` sends the page's Pause model calls to the running dashboard from any shell. It needs no
 session or typed-command check, starts nothing and spends nothing. It stops that dashboard's running
-readings, summaries and Live monitor holders. Resume model calls stays on the board.
+readings, summaries and Live monitor holders. The success line names the dashboard address and port
+that received the pause. Resume model calls stays on the board.
 
 `project` reads this Claude Code session's project label, its sessions and the project brief.
 Never add `--session`. It starts nothing and spends nothing.

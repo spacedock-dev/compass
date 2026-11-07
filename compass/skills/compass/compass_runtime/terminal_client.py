@@ -327,7 +327,7 @@ def run_pause_model_calls(
     if not confirmed:
         print("Compass could not confirm that model calls are paused. Try again.", file=sys.stderr)
         return 1
-    print("Model calls are paused.")
+    print(f"Model calls are paused on the dashboard at 127.0.0.1:{dashboard.port}.")
     return 0
 
 
