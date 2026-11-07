@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, override
 from urllib.parse import urlparse
 
-from compass_runtime import http_api, live_lease, monitor_store
+from compass_runtime import http_api, live_lease, live_monitor, monitor_store, reading_policy
 from compass_runtime import terminal_client as client
 
 from .support import SERVER_PATH, make_config
@@ -81,6 +81,10 @@ class ProcessTest(unittest.TestCase):
                     self._session(urlparse(self.path))
                 elif self.path == "/api/data":
                     self.answer({"sessions": outer.rows})
+                elif urlparse(self.path).path == "/api/project-context":
+                    self.answer(
+                        {"sources": {"work": {"live_monitor": outer.leases.state("claude", SID)}}}
+                    )
                 else:
                     self.send_error(404)
 
@@ -90,7 +94,24 @@ class ProcessTest(unittest.TestCase):
                 outer.actions.append(payload)
                 parsed = http_api._lease_request(payload, 200)
                 assert parsed is not None
-                self.answer(http_api._lease_answer(outer.leases, *parsed))
+                answer = http_api._lease_answer(outer.leases, *parsed)
+                if payload["action"] == "start" and answer["ok"]:
+                    where = answer["state"]["destination"]
+                    notice = reading_policy.note(
+                        config,
+                        kind="monitor",
+                        provider=live_monitor.PROVIDER,
+                        destination=where,
+                        content=reading_policy.WORDS_CONTENT_VERSION,
+                        tool_output=where,
+                        now=time.time(),
+                    )
+                    answer["terminal"] = {
+                        "goal_status": "existing",
+                        "notice_due": notice is not None,
+                        "disclosure": answer["state"]["disclosure"],
+                    }
+                self.answer(answer)
 
         class Board(ThreadingHTTPServer):
             application = types.SimpleNamespace(
@@ -177,6 +198,7 @@ class ProcessTest(unittest.TestCase):
         self.assertEqual([0, 0], [first.returncode, second.returncode], outputs)
         self.assertEqual(1, sum(a["action"] == "start" for a in self.actions))
         self.assertEqual(1, sum("already running" in out for out, _err in outputs))
+        self.assertEqual(1, sum("Everything is redacted first" in out for out, _err in outputs))
         self.assertTrue(self.store.running())
         off = self.launch("--off")
         out, err = off.communicate(timeout=20)
@@ -258,6 +280,7 @@ class ProcessTest(unittest.TestCase):
 
         self.addCleanup(cleanup)
         assert parent.stdout is not None
+        self.assertIn("Sends to", parent.stdout.readline())
         self.assertIn("started", parent.stdout.readline())
         self.assertEqual(parent.pid, self.store.read("run")["ancestor"]["pid"])
         began = time.monotonic()

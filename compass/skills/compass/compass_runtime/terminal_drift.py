@@ -30,8 +30,8 @@ import signal
 import time
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol, TypeGuard
-from urllib.parse import quote
 
+from compass_runtime import terminal_sessions
 from compass_runtime.terminal_sessions import format_duration, names, printable
 
 if TYPE_CHECKING:
@@ -395,8 +395,7 @@ def clock_text(at: float) -> str:
 
 def session_url(port: int, project: str, harness: str, sid: str) -> str:
     """The session page, in the route grammar the board's own links use (`terminal_sessions`)."""
-    route = ":".join(quote(part, safe="-_.!~*'()") for part in (project, harness, sid))
-    return f"http://127.0.0.1:{port}/#n=session:{route}"
+    return terminal_sessions.session_url(port, project, harness, sid)
 
 
 # ---------------------------------------------------------------------------------------------

@@ -92,7 +92,7 @@ only; while paused it stays disabled and keeps its saved answer. Open a session,
 press Analyze drift. The How Intent and drift works entry in the Intent card's More menu explains
 the steps and the limits; with no outcome line, Compass reads your goal's end state; a goal too
 vague to read is refused under the Goal field, with no level for that run. On Claude Code sessions,
-you can turn on the Live monitor: about once a minute while you view the session, a Haiku check
+you can turn on the Live monitor from the page or with `--monitor` in a terminal. It says what it sends and how to stop. With no saved goal or outcome lines, a terminal start saves the page's drafted goal and prints its source and the session page URL; with no draft it says why no check can run. About once a minute while you view the session or a terminal holder keeps it on, a Haiku check
 through your own Claude Code gives the level shown in the panel and header, labelled Live monitor ·
 Haiku, and its accuracy check has not been run yet. Until a check returns, or when it is paused,
 capped or fails, the level is the estimate from recorded checks and file paths rather than the
@@ -127,9 +127,7 @@ the source disappears. The first qualifying entity trips it once until Rearm; fi
 establish a baseline, skipped stages imply nothing, and notification service acceptance does not
 prove a banner appeared. See [workflow stage conditions](design-tripwires.md).
 
-The Claude Code live monitor is off by default and is not remembered across reloads. It calls Haiku
-only while you view the session with its tab visible, asks whether you still want it after 20
-minutes, and raises no notification. Its checks have limits of their own, 30 per session in a window
+The Claude Code live monitor is off by default. A browser reload leaves its switch off; a terminal holder runs until stopped or its session or connection ends, without a browser question. `--monitor --off` stops that terminal holder; Pause model calls stops all holders. A browser calls Haiku while you view the session with its tab visible and asks whether you still want it after 20 minutes. Neither raises a notification. A terminal start saves no goal over existing intent or a discard, and makes no check with neither saved intent nor a draft. Saved outcome lines still allow checks. Its checks have limits of their own, 30 per session in a window
 and a rolling 24-hour limit across the board, apart from Analyze's 100 attempts. An analysis result
 keeps the source beside each outcome line, groups written paths by folder, and states whether your words changed or new work
 arrived after it. Both levels are recomputed from the evidence and are never stored.

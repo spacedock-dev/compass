@@ -2973,6 +2973,10 @@ def _save_refused(
     return bool(
         (expected_revision is not None and expected_revision != actual_revision)
         or (
+            options.get("empty_intent_only")
+            and (has_typed_words(existing) or is_discarded(existing))
+        )
+        or (
             options.get("empty_goal_only")
             and existing
             and existing["revisions"]
@@ -3853,6 +3857,7 @@ def adopt(  # noqa: PLR0913
     chosen: PromptChoice | None = None,
     receipt: MutableMapping[str, int] | None = None,
     read_from_now: bool = False,
+    empty_intent_only: bool = False,
 ) -> str:
     """Adopt a prompt as the goal. Returns an `OUTCOMES` token.
 
@@ -3889,6 +3894,7 @@ def adopt(  # noqa: PLR0913
         adoption={
             **options,
             "empty_goal_only": expected_revision is None,
+            "empty_intent_only": empty_intent_only,
             "expected_revision": expected_revision,
             "read_from_now": read_from_now,
             **({"settle_through": float(settle_through), "goal_empty_or": text} if keep else {}),

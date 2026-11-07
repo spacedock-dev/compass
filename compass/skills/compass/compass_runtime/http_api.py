@@ -504,10 +504,14 @@ def _lease_answer(
     action: str,
     extra: bool,
     holder_kind: str = "browser",
+    *,
+    prepare: Callable[[], str] | None = None,
 ) -> dict[str, Any]:
     """The lease's answer to one request already read and bounded."""
     if action == "start":
-        return leases.start(harness, sid, tab, visible=extra, holder_kind=holder_kind)
+        return leases.start(
+            harness, sid, tab, visible=extra, holder_kind=holder_kind, prepare=prepare
+        )
     if action == "beat":
         return leases.beat(harness, sid, tab, visible=extra)
     if action == "confirm":
@@ -3350,13 +3354,111 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if not uuid:
                 return None
         accepted = False
+        terminal: dict[str, Any] = {}
         try:
-            answer = _lease_answer(_live_leases(self.server.application), *parsed)
+            answer = _lease_answer(
+                _live_leases(self.server.application),
+                *parsed,
+                prepare=(lambda: self._prepare_terminal_monitor(parsed[0], parsed[1], terminal))
+                if starting and parsed[5] == "terminal"
+                else None,
+            )
             accepted = answer.get("ok") is True
+            if accepted and terminal:
+                answer["terminal"] = terminal
+                destination = answer["state"]["destination"]
+                # Record only a start whose receipt can be printed. A failed write leaves it due.
+                with contextlib.suppress(reading_policy.RefusedError):
+                    reading_policy.note(
+                        config,
+                        kind="monitor",
+                        provider=live_monitor.PROVIDER,
+                        destination=destination,
+                        content=reading_policy.WORDS_CONTENT_VERSION,
+                        tool_output=destination,
+                        now=self.server.application.clock(),
+                    )
         finally:
             if uuid and not accepted:
                 typed_press.release(config, uuid)
         return answer
+
+    def _prepare_terminal_monitor(self, harness: str, sid: str, receipt: dict[str, Any]) -> str:
+        application = self.server.application
+        config, state = application.config, application.state
+        application.state.snapshot.clear()
+        row = _published_row_of(application, harness, sid)
+        if row is None or row.get("ended_at"):
+            return "unavailable"
+        fresh = annotation_store.fresh(config, state)
+        if fresh.entries is None:
+            return "adoption-refused"
+        entry = annotation_store.find(fresh.entries, harness, sid)
+        receipt.update(
+            page_url=terminal_sessions.session_url(
+                self.server.server_port, str(row.get("project") or ""), harness, sid
+            ),
+            goal_status="existing" if annotation_store.has_typed_words(entry) else "missing",
+        )
+        draft = drift_view.intent_draft({"annotate": True}, row, annotation_store.published(entry))
+        if not annotation_store.has_typed_words(entry) and draft:
+            source = next(
+                (
+                    source
+                    for source in ("session-goal", "first-prompt", "latest-prompt")
+                    if annotation_store.prompt_candidate(row, source)
+                    == (draft["text"], draft["at"])
+                ),
+                "",
+            )
+            saved: dict[str, int] = {}
+            outcome = self._adopt_prompt(
+                harness,
+                sid,
+                {
+                    "adopt": source,
+                    "expected_prompt": draft["text"],
+                    "expected_prompt_at": draft["at"],
+                },
+                receipt=saved,
+                empty_intent_only=True,
+            )
+            application.state.snapshot.clear()
+            fresh = annotation_store.fresh(config, state)
+            if fresh.entries is None:
+                return "adoption-refused"
+            entry = annotation_store.find(fresh.entries, harness, sid)
+            if outcome == annotation_store.OUTCOME_STORED and saved:
+                revision = (
+                    next((r for r in entry["revisions"] if r["n"] == saved["saved_revision"]), None)
+                    if entry
+                    else None
+                )
+                if revision is not None:
+                    receipt.update(
+                        goal_status="adopted",
+                        goal={
+                            "text": revision["goal"],
+                            "source": revision["goal_source"],
+                            "at": revision["goal_source_at"],
+                            "saved_revision": revision["n"],
+                        },
+                    )
+                else:
+                    receipt["goal_status"] = (
+                        "existing" if annotation_store.has_typed_words(entry) else "missing"
+                    )
+            elif annotation_store.has_typed_words(entry):
+                receipt["goal_status"] = "existing"
+            else:
+                return "adoption-refused"
+        now = application.clock()
+        board = live_monitor.board(config, now=now)
+        receipt.update(
+            notice_due=board["notice_due"],
+            disclosure=live_monitor.disclosure(board["destination"], terminal=True),
+        )
+        return ""
 
     def _goal_find(self) -> None:
         """Find a goal in the reader's own prompts. One press, one call, nothing stored.
@@ -3769,6 +3871,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         settle_through: Any = None,
         now: float | None = None,
         receipt: dict[str, int] | None = None,
+        empty_intent_only: bool = False,
     ) -> str:
         application = self.server.application
         expected = payload.get("expected_revision")
@@ -3799,6 +3902,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             settle_through=settle_through,
             receipt=receipt,
             read_from_now=payload.get("read_from_now") is True,
+            empty_intent_only=empty_intent_only,
             chosen=(
                 self._chosen_prompt(rows[0], payload.get("prompt_fact"))
                 if source == runtime_reading.PROMPT_CHOSEN

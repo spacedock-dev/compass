@@ -20,6 +20,8 @@ from compass_runtime import http_api, live_lease, reading_policy, reading_route
 
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
+from .test_compass_skill_action import CompassSession
+from .test_copied_corrections import STORED
 from .test_live_estimate import GOAL, LINE, _Replay
 
 NOW = 1_700_000_000.0
@@ -151,7 +153,328 @@ class TheRoundTrip(LeaseRoute):
             )
 
 
+class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
+    def setUp(self) -> None:
+        _Replay.setUp(self)
+        patch = mock.patch.object(reading_route, "destination", return_value="api.anthropic.com")
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.session.save(self.path)
+
+    def saved(self) -> Any:
+        return annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+
+    def test_a_person_s_stated_goal_takes_priority_over_their_opening_prompt(self) -> None:
+        goal = {"text": "Ship the parser", "at": START.timestamp() + 10}
+        with self.serving(self.app(session_goal=goal)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertEqual("session-goal", answer["terminal"]["goal"]["source"])
+        self.assertEqual(goal["text"], self.saved()["revisions"][-1]["goal"])
+
+    def test_a_person_s_latest_prompt_is_used_when_the_first_has_no_source_time(self) -> None:
+        asked = {"label": "asked", "text": "Ship the lexer", "at": START.timestamp() + 10}
+        with self.serving(self.app(first_prompt_at=None, instruction=asked)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertEqual("latest-prompt", answer["terminal"]["goal"]["source"])
+        self.assertEqual(asked["at"], self.saved()["revisions"][-1]["goal_source_at"])
+
+    def test_a_person_s_control_prompt_does_not_become_a_goal(self) -> None:
+        asked = {"label": "asked", "text": "Ship the lexer", "at": START.timestamp() + 10}
+        with self.serving(self.app(first_prompt_control=True, instruction=asked)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertEqual("missing", answer["terminal"]["goal_status"])
+        self.assertIsNone(self.saved())
+
+    def test_a_person_s_copied_correction_is_not_adopted(self) -> None:
+        at, _ = self.pasted()
+        with self.serving(self.app(first_prompt=STORED, first_prompt_at=at)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertEqual("missing", answer["terminal"]["goal_status"])
+        self.assertIsNone(self.saved())
+
+    def test_a_person_sees_the_saved_excerpt_rather_than_the_uncut_draft(self) -> None:
+        words = "Ship the parser. " * 1000
+        with self.serving(self.app(first_prompt=words)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        saved = self.saved()["revisions"][-1]["goal"]
+        self.assertNotEqual(words, saved)
+        self.assertEqual(saved, answer["terminal"]["goal"]["text"])
+
+    def test_a_person_s_discarded_intent_stays_discarded(self) -> None:
+        annotation_store.annotate(self.config, self.state, "claude", SHORT, goal=GOAL, now=NOW)
+        annotation_store.clear(self.config, self.state, "claude", SHORT, now=NOW + 1)
+        with self.serving() as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertEqual("missing", answer["terminal"]["goal_status"])
+        self.assertTrue(annotation_store.is_discarded(self.saved()))
+
+    def test_a_model_started_command_saves_no_goal_records_no_notice_and_starts_no_lease(
+        self,
+    ) -> None:
+        session = CompassSession(self.root / "work")
+        session.prompt("Ship the parser")
+        session.model_started_compass("Keep going.")
+        session.save(self.path)
+        with self.serving() as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal", typed_action="monitor on")
+            self.assertEqual("typed-command-required", answer["reason"])
+            self.assertIsNone(self.application.live_leases)
+        self.assertIsNone(self.saved())
+        self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+
+    def test_a_person_can_retry_their_typed_command_after_adoption_fails(self) -> None:
+        session = CompassSession(self.root / "work")
+        session.prompt("Ship the parser")
+        session.compass("monitor on", stop=False)
+        session.save(self.path)
+        with self.serving() as port:
+            with mock.patch.object(
+                annotation_store, "adopt", return_value=annotation_store.OUTCOME_REFUSED
+            ):
+                _, refused = self.lease(
+                    port, "start", holder_kind="terminal", typed_action="monitor on"
+                )
+            self.assertFalse(refused["ok"])
+            self.assertFalse(refused["state"]["on"])
+            _, retried = self.lease(
+                port, "start", holder_kind="terminal", typed_action="monitor on"
+            )
+            self.assertTrue(retried["ok"])
+
+    def test_a_person_s_concurrent_outcome_line_wins_over_a_drafted_goal(self) -> None:
+        adopt = annotation_store.adopt
+
+        def racing(*args: Any, **kwargs: Any) -> str:
+            annotation_store.annotate(
+                self.config, self.state, "claude", SHORT, goal="", lines=[LINE], now=NOW
+            )
+            return adopt(*args, **kwargs)
+
+        with (
+            self.serving() as port,
+            mock.patch.object(annotation_store, "adopt", side_effect=racing),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertTrue(answer["ok"])
+        self.assertEqual("existing", answer["terminal"]["goal_status"])
+        self.assertNotIn("goal", answer["terminal"])
+        self.assertEqual("", self.saved()["revisions"][-1]["goal"])
+
+    def test_a_person_who_discards_their_empty_intent_during_a_terminal_start_keeps_it_discarded(
+        self,
+    ) -> None:
+        annotation_store.annotate(self.config, self.state, "claude", SHORT, goal="", now=NOW)
+        adopt = annotation_store.adopt
+        discarded = []
+
+        def racing(*args: Any, **kwargs: Any) -> str:
+            annotation_store.clear(self.config, self.state, "claude", SHORT, now=NOW + 1)
+            discarded.append(self.saved())
+            return adopt(*args, **kwargs)
+
+        with (
+            self.serving() as port,
+            mock.patch.object(annotation_store, "adopt", side_effect=racing),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertFalse(answer["ok"])
+        self.assertFalse(answer["state"]["on"])
+        self.assertNotIn("terminal", answer)
+        self.assertTrue(annotation_store.is_discarded(self.saved()))
+        self.assertEqual(discarded[0], self.saved())
+
+    def test_a_person_whose_start_is_refused_after_preparation_still_sees_the_disclosure_next_time(
+        self,
+    ) -> None:
+        with self.serving() as port:
+            with mock.patch.object(
+                live_lease.Leases, "_start_refusal", side_effect=["", "unavailable"]
+            ):
+                _, refused = self.lease(port, "start", holder_kind="terminal")
+            self.assertFalse(refused["ok"])
+            self.assertFalse(refused["state"]["on"])
+            self.assertNotIn("terminal", refused)
+            self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+            _, accepted = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(accepted["ok"])
+            self.assertTrue(accepted["terminal"]["notice_due"])
+
+    def test_a_person_sees_the_disclosure_even_when_its_notice_cannot_be_recorded(self) -> None:
+        with (
+            self.serving() as port,
+            mock.patch.object(
+                reading_policy,
+                "note",
+                side_effect=reading_policy.RefusedError(
+                    {
+                        **reading_policy.status(self.config, now=NOW),
+                        "reason": "store-unavailable",
+                    }
+                ),
+            ),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertTrue(answer["ok"])
+        self.assertTrue(answer["terminal"]["notice_due"])
+        self.assertIn("Sends to api.anthropic.com", answer["terminal"]["disclosure"])
+        self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+
+    def test_a_person_reads_when_terminal_checks_run_and_how_to_stop_them(self) -> None:
+        with self.serving() as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        text = answer["terminal"]["disclosure"]
+        self.assertIn("checks after new work in this session, at most about once a minute", text)
+        self.assertIn("spacedock-compass --monitor --off from a shell", text)
+        self.assertIn("/compass:compass monitor off in the session", text)
+        self.assertIn("Pause model calls stops it.", text)
+        self.assertNotIn("terminal holder", text)
+        self.assertNotIn("heartbeats", text)
+        self.assertNotIn("no confirmation question", text)
+
+    def test_a_person_s_page_draft_is_saved_before_the_ticker_can_start(self) -> None:
+        seen = []
+
+        def ticker(_leases: Any) -> None:
+            seen.append(self.saved())
+            row = http_api._lease_row(self.application, "claude", SHORT)
+            assert row is not None
+            self.assertEqual(self.saved()["revisions"][-1]["goal"], row["annotation_goal"])
+
+        with (
+            self.serving() as port,
+            mock.patch.object(live_lease.Leases, "_ensure_ticker_locked", ticker),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        saved = self.saved()["revisions"][-1]
+        self.assertEqual("Add retry with backoff to the webhook handler.", saved["goal"])
+        self.assertEqual("first-prompt", saved["goal_source"])
+        self.assertEqual(START.timestamp() + 5, saved["goal_source_at"])
+        self.assertTrue(seen[0])
+        self.assertEqual("adopted", answer["terminal"]["goal_status"])
+        self.assertEqual(saved["n"], answer["terminal"]["goal"]["saved_revision"])
+        self.assertEqual(0, reading_policy.monitor_status(self.config, now=NOW)["used"])
+
+    def test_a_person_sees_the_notice_once_then_again_for_a_new_destination_or_wider_tier(
+        self,
+    ) -> None:
+        with self.serving() as port:
+            _, first = self.lease(port, "start", holder_kind="terminal")
+            published = self.focused(port)["sources"]["work"]["live_monitor"]
+            self.assertFalse(published["notice_due"])
+            _, repeat = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(first["terminal"]["notice_due"])
+            self.assertFalse(repeat["terminal"]["notice_due"])
+            with mock.patch.object(reading_route, "destination", return_value="other.example"):
+                _, changed = self.lease(port, "start", holder_kind="terminal")
+                self.assertTrue(changed["terminal"]["notice_due"])
+                with mock.patch.object(reading_policy, "WORDS_CONTENT_VERSION", 999):
+                    _, wider = self.lease(port, "start", holder_kind="terminal")
+                    self.assertTrue(wider["terminal"]["notice_due"])
+        self.assertIn("--monitor --off", first["state"]["disclosure"])
+        self.assertEqual(0, reading_policy.monitor_status(self.config, now=NOW)["used"])
+
+    def test_a_person_without_a_draft_has_an_on_monitor_and_no_charge(self) -> None:
+        with (
+            self.serving(self.app(first_prompt=None, first_prompt_at=None)) as port,
+            mock.patch.object(live_lease.Leases, "_ensure_ticker_locked"),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(answer["state"]["on"])
+            self.assertEqual("missing", answer["terminal"]["goal_status"])
+            self.assertIn(f"/#n=session:billing:claude:{SHORT}", answer["terminal"]["page_url"])
+            self.assertIsNone(self.saved())
+            with mock.patch.object(self.application.live_leases, "_runner") as model:
+                self.application.live_leases.step()
+                model.assert_not_called()
+        self.assertEqual(0, reading_policy.monitor_status(self.config, now=NOW)["used"])
+
+    def test_a_person_who_pauses_and_resumes_gets_the_disclosure_again(self) -> None:
+        with self.serving() as port:
+            _, first = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(first["terminal"]["notice_due"])
+            reading_policy.set_consent(self.config, False, now=NOW)
+            reading_policy.set_consent(self.config, True, now=NOW + 1)
+            _, resumed = self.lease(port, "start", holder_kind="terminal")
+            self.assertTrue(resumed["terminal"]["notice_due"])
+
+    def test_a_person_refused_by_the_ordinary_switches_saves_nothing(self) -> None:
+        for disabled in (False, True):
+            with self.subTest(disabled=disabled):
+                self.config = dataclasses.replace(self.config, model_calls_disabled=disabled)
+                reading_policy.set_consent(self.config, False, now=NOW)
+                with self.serving() as port:
+                    _, answer = self.lease(port, "start", holder_kind="terminal")
+                self.assertFalse(answer["ok"])
+                self.assertFalse(answer["state"]["on"])
+                self.assertIsNone(self.saved())
+                self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
+
+    def test_a_person_s_saved_outcome_lines_are_not_given_an_adopted_goal(self) -> None:
+        annotation_store.annotate(
+            self.config, self.state, "claude", SHORT, goal="", lines=[LINE], now=NOW
+        )
+        with self.serving() as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+            self.lease(port, "start", tab_id="browser")
+            row = http_api._lease_row(self.application, "claude", SHORT)
+            assert row is not None
+            inputs = http_api._lease_inputs(self.application, "claude", SHORT, row)
+        self.assertEqual("existing", answer["terminal"]["goal_status"])
+        self.assertEqual("", self.saved()["revisions"][-1]["goal"])
+        assert inputs is not None
+        self.assertIn(LINE, inputs.intent)
+
+    def test_another_person_s_concurrent_saved_goal_wins_without_a_stale_receipt(self) -> None:
+        adopt = annotation_store.adopt
+
+        def racing(*args: Any, **kwargs: Any) -> str:
+            annotation_store.annotate(
+                self.config, self.state, "claude", SHORT, goal=GOAL, lines=[LINE], now=NOW
+            )
+            return adopt(*args, **kwargs)
+
+        with (
+            self.serving() as port,
+            mock.patch.object(annotation_store, "adopt", side_effect=racing),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertTrue(answer["ok"])
+        self.assertEqual("existing", answer["terminal"]["goal_status"])
+        self.assertNotIn("goal", answer["terminal"])
+        self.assertEqual(GOAL, self.saved()["revisions"][-1]["goal"])
+
+    def test_a_person_whose_goal_cannot_be_saved_gets_no_lease_or_notice(self) -> None:
+        with (
+            self.serving() as port,
+            mock.patch.object(
+                annotation_store, "adopt", return_value=annotation_store.OUTCOME_REFUSED
+            ),
+        ):
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+        self.assertFalse(answer["ok"])
+        self.assertFalse(answer["state"]["on"])
+        self.assertTrue(
+            reading_policy.notice_due(
+                reading_policy.monitor_status(self.config, now=NOW),
+                kind="monitor",
+                provider="claude",
+                destination="api.anthropic.com",
+                content=reading_policy.WORDS_CONTENT_VERSION,
+                tool_output="api.anthropic.com",
+            )
+        )
+
+
 class AReaderChoosesTheHolderKind(LeaseRoute):
+    def test_a_browser_reader_is_not_given_terminal_notice_metadata(self) -> None:
+        with self.serving() as port:
+            _, browser = self.lease(port, "start")
+            self.assertNotIn("notice_due", browser["state"])
+            _, terminal = self.lease(port, "start", tab_id="terminal", holder_kind="terminal")
+            self.assertIn("notice_due", terminal["state"])
+            self.lease(port, "stop", tab_id="terminal")
+            self.assertNotIn("notice_due", self.focused(port)["sources"]["work"]["live_monitor"])
+
     def test_a_terminal_reader_gets_no_browser_clock_and_an_older_caller_gets_one(self) -> None:
         with self.serving() as port:
             status, terminal = self.lease(port, "start", holder_kind="terminal")

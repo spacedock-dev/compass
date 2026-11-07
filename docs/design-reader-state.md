@@ -144,6 +144,8 @@ code, which cites this file instead:
   the text back over the cleared value. Measured before the fix: the sent sentence stayed in the box for
   the life of the tab and a second send recorded it twice.
 
+A terminal monitor can save the page's drafted goal before its first tick. It changes the stored annotation, not the browser's held edit. The [typed monitor guard](design-reading-a-session.md#owner-ruling-2026-11-06-the-skill-pre-approves-its-own-actions-in-claude-code) records admission and concurrent-save rules.
+
 ## Disclosure write precedence
 
 The keyed store is the single writer. `createDisclosureStore` publishes a stable snapshot with an

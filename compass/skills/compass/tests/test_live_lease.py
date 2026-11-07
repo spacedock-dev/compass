@@ -89,6 +89,18 @@ class Rig(unittest.TestCase):
 
 
 class StartIsRefusedFor(Rig):
+    def test_a_person_whose_session_ends_during_preparation_gets_no_holder(self) -> None:
+        def prepare() -> str:
+            self.assertTrue(self.leases._lock.acquire(blocking=False))
+            self.leases._lock.release()
+            self.rows[(HARNESS, SID)]["ended_at"] = NOW
+            return ""
+
+        answer = self.start(holder_kind="terminal", prepare=prepare)
+        self.assertFalse(answer["ok"])
+        self.assertFalse(answer["state"]["on"])
+        self.assertEqual([], self.ticks)
+
     def test_an_ended_session(self) -> None:
         self.rows[(HARNESS, SID)]["ended_at"] = NOW - 5
         refused = self.start()

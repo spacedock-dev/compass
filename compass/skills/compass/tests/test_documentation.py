@@ -37,6 +37,12 @@ from .support import (
 
 
 class CommandManualOptionsTest(unittest.TestCase):
+    def test_a_person_is_told_the_monitor_can_spend_in_its_own_option_row(self) -> None:
+        manual = (SERVER_PATH.parents[3] / "MANUAL.md").read_text(encoding="utf-8")
+        row = next(line for line in manual.splitlines() if line.startswith("| `--monitor` |"))
+        self.assertIn("can spend", row)
+        self.assertIn("SECURITY.md#the-live-monitor", row)
+
     def test_option_rows_cover_every_parser_spelling(self) -> None:
         manual = (SERVER_PATH.parents[3] / "MANUAL.md").read_text(encoding="utf-8")
         first_cells = re.findall(r"^\| ([^|]+) \|", manual, flags=re.MULTILINE)

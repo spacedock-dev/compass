@@ -119,6 +119,7 @@ class Leases:
         *,
         visible: bool = True,
         holder_kind: str = "browser",
+        prepare: Callable[[], str] | None = None,
     ) -> dict[str, Any]:
         """Take or join the lease for one session, or say why not.
 
@@ -128,6 +129,14 @@ class Leases:
         now = self._clock()
         key = f"{harness}:{sid}"
         refusal = "stopping" if self._stop.is_set() else self._start_refusal(harness, sid, now)
+        if not refusal and prepare is not None:
+            # Collection and adoption take their own locks. Publish no holder until they finish.
+            refusal = prepare()
+            if not refusal:
+                now = self._clock()
+                refusal = (
+                    "stopping" if self._stop.is_set() else self._start_refusal(harness, sid, now)
+                )
         if not refusal:
             with self._lock:
                 self._sweep_locked(now)
@@ -470,6 +479,11 @@ class Leases:
             "level": live_monitor.published(self.config, key) if on else None,
             "label": live_monitor.SOURCE,
             "destination": where,
+            **(
+                {"notice_due": live_monitor.board(self.config, now=now)["notice_due"]}
+                if terminal
+                else {}
+            ),
             "disclosure": live_monitor.disclosure(where, terminal=terminal)
             if where is not None
             else None,

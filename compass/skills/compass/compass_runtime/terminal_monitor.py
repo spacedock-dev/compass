@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import signal
@@ -101,6 +102,59 @@ def _say(reason: str, *, failed: bool = False) -> int:
     return int(failed)
 
 
+def _report_start(answer: Mapping[str, Any], *, repeat: bool = False) -> int:
+    if answer.get("ok") is not True:
+        reason = answer.get("reason")
+        return _say(
+            str(reason) if reason in {"paused", "no-observer-model", "ended"} else "refused",
+            failed=True,
+        )
+    receipt = answer.get("terminal") or {}
+    if receipt.get("notice_due") and receipt.get("disclosure"):
+        print(terminal_sessions.printable(receipt["disclosure"]))
+    _say(
+        "missing"
+        if receipt.get("goal_status") == "missing"
+        else "already_running"
+        if repeat
+        else "started"
+    )
+    goal = receipt.get("goal")
+    if receipt.get("goal_status") == "adopted" and isinstance(goal, dict):
+        source = {
+            "first-prompt": "your first prompt",
+            "latest-prompt": "your latest prompt",
+            "session-goal": "your /goal",
+        }.get(str(goal.get("source")), "your prompt")
+        at = goal.get("at")
+        if goal.get("source") == "session-goal" and isinstance(at, int | float) and at > 0:
+            source += " at " + time.strftime("%H:%M", time.localtime(at))
+        print(f"From {source} · saved")
+        print(terminal_sessions.printable(goal.get("text", "")))
+    if receipt.get("goal_status") in {"missing", "adopted"}:
+        print(
+            "Change the goal on the session page: "
+            + terminal_sessions.printable(receipt.get("page_url", ""))
+        )
+    return 0
+
+
+def _start_receipt(reply: client.Reply) -> dict[str, Any]:
+    """Keep readiness readable within Store's 8 KiB bound, even for escaped Unicode goals."""
+    data = reply.data if isinstance(reply.data, dict) else {}
+    answer = {name: data[name] for name in ("ok", "reason", "terminal") if name in data}
+    answer = json.loads(json.dumps(answer))
+    terminal = answer.get("terminal")
+    if isinstance(terminal, dict):
+        goal = terminal.get("goal")
+        if isinstance(goal, dict):
+            while len(json.dumps(answer)) > 7400 and goal.get("text"):
+                goal["text"] = goal["text"][: max(0, len(goal["text"]) - 100)]
+            if goal.get("text") != data.get("terminal", {}).get("goal", {}).get("text"):
+                goal["text"] += "…"
+    return answer if len(json.dumps(answer)) <= 7500 else {"ok": False, "reason": "unreadable"}
+
+
 def command(named: client.Session, *, off: bool, home: str, in_session: bool) -> int:
     try:
         store = monitor_store.Store(home, named.sid)
@@ -128,7 +182,16 @@ def _command(
         if not terminal_sessions.names(record, named.sid):
             return _say("unavailable", failed=True)
         if not off:
-            return _say("already_running")
+            try:
+                query = urlencode(
+                    {"project": record.get("project", ""), "session": "claude:" + record["sid"]}
+                )
+                reply = client.get(record["dashboard"][0], "/api/project-context?" + query)
+                board = reply.data["sources"]["work"]["live_monitor"]
+                receipt = {"notice_due": board["notice_due"], "disclosure": board["disclosure"]}
+                return _report_start({"ok": True, "terminal": receipt}, repeat=True)
+            except (client.DashboardUnreachable, KeyError, TypeError):
+                return _say("unreadable", failed=True)
         generation = record.get("generation")
         store.write("stop", {"generation": generation})
         until = time.monotonic() + READY_SEC
@@ -176,7 +239,7 @@ def _start(store: monitor_store.Store, named: client.Session, *, in_session: boo
     ):
         return _say("unreadable", failed=True)
     if row.get("ended_at"):
-        return _say("unavailable", failed=True)
+        return _say("ended", failed=True)
     generation = uuid.uuid4().hex
     store.write(
         "run",
@@ -184,6 +247,7 @@ def _start(store: monitor_store.Store, named: client.Session, *, in_session: boo
             "generation": generation,
             "sid": row["sid"],
             "resume_id": row.get("resume_id"),
+            "project": row.get("project", ""),
             "dashboard": list(found),
             "typed": in_session,
             "ancestor": (
@@ -196,7 +260,9 @@ def _start(store: monitor_store.Store, named: client.Session, *, in_session: boo
     return _await_start(store, named.sid, generation)
 
 
-def _await_start(store: monitor_store.Store, sid: str, generation: str) -> int:
+def _await_start(  # noqa: C901 — readiness and cleanup share ownership of the Popen child
+    store: monitor_store.Store, sid: str, generation: str
+) -> int:
     worker = spawn(sid, generation)
     until = time.monotonic() + READY_SEC
     ready = False
@@ -204,6 +270,11 @@ def _await_start(store: monitor_store.Store, sid: str, generation: str) -> int:
         while time.monotonic() < until:
             status = store.read("status")
             if status.get("generation") == generation:
+                if isinstance(status.get("answer"), dict) and status["answer"]:
+                    ready = status["answer"].get("ok") is True
+                    if ready:
+                        threading.Thread(target=worker.wait, daemon=True).start()
+                    return _report_start(status["answer"])
                 if status.get("reason") == "started":
                     ready = True
                     # Keep Popen owned until exit so it is reaped without a ResourceWarning.
@@ -334,14 +405,18 @@ def sidecar(sid: str, generation: str) -> int:
             payload["typed_action"] = "monitor on"
         reason = "refused"
         started = False
+        receipt: dict[str, Any] = {}
         try:
             if stopping.is_set() or store.read("stop").get("generation") == generation:
                 return 0
             answer = client.post(dashboard.port, "/api/live-monitor", payload)
+            receipt = _start_receipt(answer)
             if not _accepted(answer):
                 return 1
             started = True
-            store.write("status", {"generation": generation, "reason": "started"})
+            store.write(
+                "status", {"generation": generation, "reason": "started", "answer": receipt}
+            )
             reason = hold(
                 dashboard,
                 record["sid"],
@@ -361,7 +436,13 @@ def sidecar(sid: str, generation: str) -> int:
             _stop_holder(dashboard, record["sid"], generation)
             store.write(
                 "status",
-                {"generation": generation, "reason": reason, "at": time.time(), "started": started},
+                {
+                    "generation": generation,
+                    "reason": reason,
+                    "at": time.time(),
+                    "started": started,
+                    "answer": receipt,
+                },
             )
 
 
