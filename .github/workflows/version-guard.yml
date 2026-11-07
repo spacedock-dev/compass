@@ -85,6 +85,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           fetch-depth: 0
 
+      - name: Planted failure for the re-queue live check (never merge)
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "::error::Planted merge_group failure to exercise requeue-after-ejection.yml. This PR must not merge."
+          exit 1
+
       - name: Check version fields against merge-base
         run: |
           set -euo pipefail
