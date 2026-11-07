@@ -69,6 +69,7 @@ class _Holder:
 
 @dataclasses.dataclass
 class _Lease:
+    episode: int
     holders: dict[str, _Holder] = dataclasses.field(default_factory=dict)
     last_attempt: float | None = None
 
@@ -102,6 +103,7 @@ class Leases:
         self._diagnostic_sink = diagnostic_sink
         self._lock = threading.Lock()
         self._leases: dict[str, _Lease] = {}
+        self._episode = 0
         self._ended: dict[str, dict[str, Any]] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -142,7 +144,9 @@ class Leases:
                 self._sweep_locked(now)
                 if key not in self._leases:
                     self._ended.pop(key, None)
-                    self._leases[key] = _Lease()
+                    # Browser consent times can be null or renewed within a standing lease.
+                    self._episode += 1
+                    self._leases[key] = _Lease(self._episode)
                 lease = self._leases[key]
                 holder = lease.holders.setdefault(tab_id, _Holder(now, kind=holder_kind))
                 holder.last_beat, holder.hidden = now, not visible
@@ -462,6 +466,7 @@ class Leases:
         deadline = window["deadline"] if window else None
         return {
             "on": on,
+            "episode": lease.episode if on and lease is not None else None,
             "started_at": window["started_at"] if window else None,
             "banner_due_at": banner_due,
             "deadline": deadline,

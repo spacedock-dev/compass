@@ -309,9 +309,7 @@ class Lines:
         body["monitor"] = on
         body["last_end"] = None if on else lease.get("last_end")
         body["level"] = (
-            cached[1]
-            if on and cached is not None and cached[0] == lease.get("started_at")
-            else None
+            cached[1] if on and cached is not None and cached[0] == lease.get("episode") else None
         )
         if not on:
             self._levels.pop(name, None)
@@ -371,7 +369,7 @@ class Lines:
                         current = self._current_state(name)
                         ready = (
                             current.get("on") is True
-                            and current.get("started_at") == lease.get("started_at")
+                            and current.get("episode") == lease.get("episode")
                             and generation is self._generations.get(name)
                         )
                     if ready and self._monitor is not None:
@@ -389,12 +387,12 @@ class Lines:
                             current = self._current_state(name)
                             if (
                                 current.get("on") is True
-                                and current.get("started_at") == lease.get("started_at")
+                                and current.get("episode") == lease.get("episode")
                                 and generation is self._generations.get(name)
                             ):
                                 pill = view.get("pill") if view is not None else None
                                 level = pill.get("level") if isinstance(pill, dict) else None
-                                self._levels[name] = (lease.get("started_at"), level)
+                                self._levels[name] = (lease.get("episode"), level)
                             self._apply_state(name, current)
                             self._flush(max(now, self._written.get(name, ({}, now))[1]))
         except Exception as exc:  # noqa: BLE001
