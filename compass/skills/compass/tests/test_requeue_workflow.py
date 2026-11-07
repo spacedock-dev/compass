@@ -4,12 +4,18 @@
 hold what makes that safe here: only the default branch's own files are checked out, every action
 is pinned to a commit, a fork is skipped, no field a pull request author writes reaches a script,
 nothing is restored from a cache or another run, and the enqueue credential sits alone in a job
-that checks out nothing. scripts/tests/test_requeue_after_ejection.py tests the decision itself.
+that checks out nothing and passes on only a fixed failure name. When that enqueue fails, a third
+job, with the ordinary token and never the secret, corrects the comment.
+scripts/tests/test_requeue_after_ejection.py tests the decision and the correction themselves.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -55,16 +61,27 @@ class TriggerTest(unittest.TestCase):
         self.assertIs(False, concurrency["cancel-in-progress"])
 
     def test_forks_and_other_bases_are_skipped(self) -> None:
-        condition = " ".join(jobs()["decide"]["if"].split())
-        self.assertIn(
-            "github.event.pull_request.head.repo.full_name == github.repository", condition
-        )
-        self.assertIn(
-            "github.event.pull_request.base.ref == github.event.repository.default_branch",
-            condition,
-        )
-        self.assertIn("&&", condition)
-        self.assertNotIn("||", condition)
+        for job in ("decide", "report"):
+            with self.subTest(job=job):
+                condition = " ".join(jobs()[job]["if"].split())
+                self.assertIn(
+                    "github.event.pull_request.head.repo.full_name == github.repository", condition
+                )
+                self.assertIn(
+                    "github.event.pull_request.base.ref == github.event.repository.default_branch",
+                    condition,
+                )
+                self.assertIn("&&", condition)
+                self.assertNotIn("||", condition)
+
+    def test_the_report_runs_only_when_a_requeue_was_tried_and_did_not_land(self) -> None:
+        report = jobs()["report"]
+        self.assertEqual(["decide", "enqueue"], report["needs"])
+        condition = " ".join(report["if"].split())
+        # always(): a failed enqueue would otherwise skip every job that needs it.
+        self.assertTrue(condition.startswith("always() && "))
+        self.assertIn("needs.decide.outputs.action == 'requeue'", condition)
+        self.assertIn("needs.enqueue.result != 'success'", condition)
 
     def test_the_enqueue_waits_for_a_requeue_decision(self) -> None:
         enqueue = jobs()["enqueue"]
@@ -82,6 +99,10 @@ class PermissionsTest(unittest.TestCase):
             jobs()["decide"]["permissions"],
         )
         self.assertEqual({}, jobs()["enqueue"]["permissions"])
+        self.assertEqual(
+            {"contents": "read", "pull-requests": "write", "actions": "read"},
+            jobs()["report"]["permissions"],
+        )
 
     def test_the_enqueue_credential_is_used_in_one_step_of_one_job(self) -> None:
         # Every expression naming a secret, anywhere in the file: an env key, a job-level or
@@ -111,8 +132,18 @@ class PermissionsTest(unittest.TestCase):
     def test_the_enqueue_job_runs_plain_gh_and_checks_out_nothing(self) -> None:
         (only,) = steps("enqueue")
         self.assertNotIn("uses", only)
-        self.assertTrue(only["run"].lstrip().startswith("gh api graphql"))
+        self.assertIn('gh api graphql -f query="$ENQUEUE"', only["run"])
         self.assertIn("expectedHeadOid", only["env"]["ENQUEUE"])
+
+    def test_the_enqueue_job_passes_on_only_a_fixed_failure_name(self) -> None:
+        (only,) = steps("enqueue")
+        self.assertEqual(
+            {"failure": "${{ steps.enqueue.outputs.failure }}"}, jobs()["enqueue"]["outputs"]
+        )
+        self.assertEqual("enqueue", only["id"])
+        written = set(re.findall(r"\bfailure=([a-z-]+)", only["run"]))
+        self.assertEqual({"token-rejected", "token-forbidden", "other"}, written)
+        self.assertEqual(1, only["run"].count(">> \"$GITHUB_OUTPUT\""))
 
 
 class NoPullRequestCodeTest(unittest.TestCase):
@@ -130,17 +161,23 @@ class NoPullRequestCodeTest(unittest.TestCase):
             for step in steps(job_id)
             if step.get("uses", "").startswith("actions/checkout@")
         ]
-        self.assertEqual(["decide"], [job_id for job_id, _ in checkouts])
-        options = checkouts[0][1]["with"]
-        # Under pull_request_target, github.sha is the base branch's tip, held to the default
-        # branch by the job's condition. A head ref or SHA here would run the pull request's code.
-        self.assertEqual("${{ github.sha }}", options["ref"])
-        self.assertIs(False, options["persist-credentials"])
-        self.assertEqual(SCRIPT, options["sparse-checkout"])
-        self.assertNotIn("repository", options)
+        self.assertEqual(["decide", "report"], [job_id for job_id, _ in checkouts])
+        for job_id, step in checkouts:
+            with self.subTest(job=job_id):
+                options = step["with"]
+                # Under pull_request_target, github.sha is the base branch's tip, held to the
+                # default branch by the job's condition. A head ref or SHA here would run the pull
+                # request's code.
+                self.assertEqual("${{ github.sha }}", options["ref"])
+                self.assertIs(False, options["persist-credentials"])
+                self.assertEqual(SCRIPT, options["sparse-checkout"])
+                self.assertNotIn("repository", options)
 
     def test_the_script_runs_isolated_from_the_checkout(self) -> None:
         self.assertEqual(f"python3 -I {SCRIPT}", steps("decide")[1]["run"])
+        self.assertEqual(
+            f"python3 -I {SCRIPT} --report-failed-enqueue", steps("report")[1]["run"]
+        )
 
     def test_nothing_is_restored_from_a_cache_or_another_run(self) -> None:
         for job_id, job in jobs().items():
@@ -177,6 +214,7 @@ class NoAuthoredFieldReachesAScriptTest(unittest.TestCase):
         }
         decide = "Decide"
         enqueue = "Put it back in the queue"
+        report = "Say it was not re-queued"
         self.assertEqual(
             {
                 ("decide", decide, "GH_TOKEN"): "${{ github.token }}",
@@ -190,9 +228,78 @@ class NoAuthoredFieldReachesAScriptTest(unittest.TestCase):
                 ("enqueue", enqueue, "GH_TOKEN"): "${{ secrets.MERGE_QUEUE_TOKEN }}",
                 ("enqueue", enqueue, "PR_NODE_ID"): "${{ github.event.pull_request.node_id }}",
                 ("enqueue", enqueue, "HEAD_SHA"): "${{ github.event.pull_request.head.sha }}",
+                ("report", report, "GH_TOKEN"): "${{ github.token }}",
+                ("report", report, "REPO"): "${{ github.repository }}",
+                ("report", report, "PR_NUMBER"): "${{ github.event.pull_request.number }}",
+                ("report", report, "HEAD_SHA"): "${{ github.event.pull_request.head.sha }}",
+                ("report", report, "BASE_REF"): "${{ github.event.pull_request.base.ref }}",
+                # Written by decide (a number from GitHub's answer) and enqueue (a fixed name).
+                ("report", report, "COMMENT_ID"): "${{ needs.decide.outputs.comment_id }}",
+                ("report", report, "ENQUEUE_FAILURE"): "${{ needs.enqueue.outputs.failure }}",
+                ("report", report, "RUN_URL"): (
+                    "${{ github.server_url }}/${{ github.repository }}"
+                    "/actions/runs/${{ github.run_id }}"
+                ),
             },
             passed,
         )
+
+
+
+@unittest.skipUnless(shutil.which("bash"), "the enqueue step is a bash script")
+class EnqueueStepTest(unittest.TestCase):
+    """The enqueue step's own shell, run against a gh that answers the way GitHub did."""
+
+    def run_step(self, answer: str, status: int) -> tuple[int, str]:
+        (step,) = steps("enqueue")
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake = bin_dir / "gh"
+            fake.write_text(
+                f"#!/usr/bin/env bash\nprintf '%s\\n' {answer!r} >&2\nexit {status}\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            script = Path(tmp) / "step.sh"
+            script.write_text(step["run"], encoding="utf-8")
+            output = Path(tmp) / "output"
+            output.touch()
+            env = {
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "GITHUB_OUTPUT": str(output),
+                "ENQUEUE": step["env"]["ENQUEUE"],
+                "PR_NODE_ID": "PR_node",
+                "HEAD_SHA": "a" * 40,
+            }
+            # GitHub runs a step with `bash -e`, so the failure must be caught inside it.
+            ran = subprocess.run(  # noqa: S603 - fixed argv
+                ["bash", "-e", str(script)],  # noqa: S607 - bash from PATH
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return ran.returncode, output.read_text(encoding="utf-8")
+
+    def test_a_rejected_token_is_named_and_fails_the_job(self) -> None:
+        self.assertEqual(
+            (1, "failure=token-rejected\n"), self.run_step("gh: Bad credentials (HTTP 401)", 1)
+        )
+
+    def test_a_token_without_the_permission_is_named(self) -> None:
+        answer = "GraphQL: Resource not accessible by personal access token (enqueuePullRequest)"
+        self.assertEqual((1, "failure=token-forbidden\n"), self.run_step(answer, 1))
+        self.assertEqual(
+            (1, "failure=token-forbidden\n"), self.run_step("gh: Forbidden (HTTP 403)", 1)
+        )
+
+    def test_any_other_failure_is_other(self) -> None:
+        answer = "GraphQL: Head ref has been modified since the pull request was last fetched"
+        self.assertEqual((1, "failure=other\n"), self.run_step(answer, 1))
+
+    def test_a_queued_pull_request_writes_no_failure(self) -> None:
+        self.assertEqual((0, ""), self.run_step('{"data": {}}', 0))
 
 
 if __name__ == "__main__":

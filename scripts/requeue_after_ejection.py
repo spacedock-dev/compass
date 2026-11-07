@@ -4,7 +4,9 @@
 `.github/workflows/requeue-after-ejection.yml` runs this on `pull_request_target` `dequeued`,
 from the default branch's own copy, with the workflow's token. It reads, comments and prints
 `action=requeue`, `action=give_up` or `action=skip` to `$GITHUB_OUTPUT`. It never enqueues: the
-workflow's next job does that with a separate credential, so this script never holds it.
+workflow's next job does that with a separate credential, so this script never holds it. When that
+enqueue fails, `--report-failed-enqueue` rewrites the requeue comment to say the pull request is not
+in the queue and why, and its marker to one that does not spend the head's attempt.
 
 The reason comes from the pull request's timeline, not the webhook. The webhook's `reason` is a
 required string whose values GitHub does not document; the timeline's
@@ -13,7 +15,8 @@ required string whose values GitHub does not document; the timeline's
 
 Once per head is held by a comment carrying a hidden marker with the head SHA, written by the
 workflow's own bot account and read back from it alone, so a comment anyone else writes can
-neither consume the attempt nor fake one. Stdlib only: the runner's Python runs it as checked out.
+neither consume the attempt nor fake one. The marker is written before the enqueue, so a comment
+that cannot be written stops the enqueue rather than allowing a second one later. Stdlib only: the runner's Python runs it as checked out.
 """
 
 from __future__ import annotations
@@ -36,13 +39,27 @@ if TYPE_CHECKING:
 Action = Literal["requeue", "give_up", "skip"]
 
 MARKER = "compass-requeue-after-ejection"
-MARKED = re.compile(rf"<!-- {MARKER}: (requeued|gave-up) head=([0-9a-f]{{40}}) -->")
+MARKED = re.compile(rf"<!-- {MARKER}: (requeued|gave-up|enqueue-failed) head=([0-9a-f]{{40}}) -->")
 BOT = "github-actions[bot]"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 # Measured on this repository (see the module docstring).
 FAILED_CHECKS = "failed_checks"
 FAILED_JOB = frozenset({"failure", "timed_out", "cancelled", "startup_failure"})
 LISTED_JOBS = 20
+# What the enqueue job writes as its `failure` output, from gh's own error. Anything else reads as
+# the default, so nothing the job printed reaches the comment.
+FAILURES = {
+    "token-rejected": (
+        "GitHub rejected `MERGE_QUEUE_TOKEN` (HTTP 401): it is expired, revoked or not a token. "
+        "A repository admin replaces the secret."
+    ),
+    "token-forbidden": (
+        "`MERGE_QUEUE_TOKEN` was not allowed to queue it (HTTP 403). It needs Contents and Pull "
+        "requests write on this repository, and an organization owner may still have to approve it."
+    ),
+}
+UNKNOWN_FAILURE = "The enqueue job failed; its log says why."
+RUN_URL = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/actions/runs/\d+$")
 
 TIMELINE = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -113,7 +130,8 @@ def decide(facts: Facts) -> Decision:  # noqa: PLR0911 - one return per guard, i
 
 def marked_heads(comments: Iterable[Mapping[str, object]]) -> tuple[frozenset[str], frozenset[str]]:
     """The heads re-queued once and the heads already reported, from the bot's own comments."""
-    found: dict[str, set[str]] = {"requeued": set(), "gave-up": set()}
+    # An enqueue-failed marker is read and counted for nothing: the attempt was never spent.
+    found: dict[str, set[str]] = {"requeued": set(), "gave-up": set(), "enqueue-failed": set()}
     for comment in comments:
         if comment.get("login") != BOT or comment.get("type") != "Bot":
             continue
@@ -188,6 +206,26 @@ def comment(action: Action, head: str, number: int, names: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def failed_enqueue_comment(
+    head: str, number: int, failure: str, names: list[str], run_url: str
+) -> str:
+    """What the requeue comment becomes when the enqueue after it failed."""
+    cause = FAILURES.get(failure, UNKNOWN_FAILURE)
+    run = f" [The run]({run_url})." if RUN_URL.match(run_url) else ""
+    return "\n".join(
+        [
+            f"<!-- {MARKER}: enqueue-failed head={head} -->",
+            "The merge queue removed this pull request because a check failed or timed out "
+            f"on `{head[:12]}`. Putting it back automatically failed, so it is not in the queue.\n",
+            f"{cause}{run}\n",
+            "These failed in the queue:\n",
+            _job_list(names),
+            f"Queue it with `gh pr merge {number}`. This commit's automatic re-queue was not used "
+            "up, so if it fails in the queue again it goes back in once.",
+        ]
+    ) + "\n"
+
+
 def _run_gh(args: list[str], stdin: str | None = None) -> str | None:
     result = subprocess.run(  # noqa: S603 - fixed gh argv, no shell
         ["gh", *args],  # noqa: S607 - gh from PATH, preinstalled on the runner
@@ -212,6 +250,14 @@ def _json_lines(text: str | None) -> list[dict[str, object]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _comment_id(posted: str) -> str:
+    try:
+        found = json.loads(posted)["id"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+    return str(found) if isinstance(found, int) else ""
 
 
 def read_pull(repo: str, number: int, gh: Gh) -> tuple[str, str, bool, str]:
@@ -275,7 +321,40 @@ def read_failed_jobs(repo: str, base: str, number: int, gh: Gh) -> list[str]:
     return failed_job_names(failed, jobs)
 
 
-def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
+def report_failed_enqueue(  # noqa: PLR0913 - each is one input the workflow passes
+    repo: str, number: int, head: str, base: str, comment_id: str, failure: str, run_url: str, gh: Gh
+) -> int:
+    """Rewrite the requeue comment once the enqueue after it failed: say so, and refund the attempt."""
+    if not comment_id.isdigit():
+        print(f"::error::no requeue comment to correct on #{number} (id {comment_id!r})")
+        return 1
+    _, _, in_queue, _ = read_pull(repo, number, gh)
+    if in_queue:
+        # Someone queued it by hand meanwhile: the comment's "goes back in" is true, so it stays.
+        print(f"#{number}: the enqueue failed, but it is in the queue; the comment stands")
+        return 0
+    body = failed_enqueue_comment(
+        head, number, failure, read_failed_jobs(repo, base, number, gh), run_url
+    )
+    edited = gh(
+        [
+            "api",
+            "--method",
+            "PATCH",
+            f"repos/{repo}/issues/comments/{comment_id}",
+            "--input",
+            "-",
+        ],
+        json.dumps({"body": body}),
+    )
+    if edited is None:
+        print(f"::error::#{number} was not re-queued, and its comment still says it was")
+        return 1
+    print(f"::warning::#{number} was not re-queued: {FAILURES.get(failure, UNKNOWN_FAILURE)}")
+    return 0
+
+
+def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:  # noqa: C901 - two modes, in turn
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=os.environ.get("REPO", ""))
     parser.add_argument("--number", default=os.environ.get("PR_NUMBER", ""))
@@ -283,11 +362,26 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
     parser.add_argument("--base", default=os.environ.get("BASE_REF", ""))
     parser.add_argument("--event-reason", default=os.environ.get("EVENT_REASON", ""))
     parser.add_argument("--can-enqueue", default=os.environ.get("QUEUE_TOKEN_SET", ""))
+    parser.add_argument("--report-failed-enqueue", action="store_true")
+    parser.add_argument("--comment-id", default=os.environ.get("COMMENT_ID", ""))
+    parser.add_argument("--enqueue-failure", default=os.environ.get("ENQUEUE_FAILURE", ""))
+    parser.add_argument("--run-url", default=os.environ.get("RUN_URL", ""))
     args = parser.parse_args(argv)
     if not args.number.isdigit() or "/" not in args.repo or not args.base:
         print(f"::error::missing input: repo={args.repo!r} number={args.number!r}")
         return 1
     number = int(args.number)
+    if args.report_failed_enqueue:
+        return report_failed_enqueue(
+            args.repo,
+            number,
+            args.head,
+            args.base,
+            args.comment_id,
+            args.enqueue_failure,
+            args.run_url,
+            gh,
+        )
 
     state, current_head, in_queue, reason = read_pull(args.repo, number, gh)
     comments = read_comments(args.repo, number, gh)
@@ -313,6 +407,7 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
     if decision.action == "skip" and "MERGE_QUEUE_TOKEN" in decision.why:
         print(f"::warning::#{number} was not re-queued: {decision.why}")
 
+    comment_id = ""
     if decision.action != "skip":
         names = read_failed_jobs(args.repo, args.base, number, gh)
         body = comment(decision.action, args.head, number, names)
@@ -331,10 +426,14 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh) -> int:
             # Without the marker a second failure would re-queue again, so nothing is enqueued.
             print(f"::error::could not comment on #{number}; not re-queued")
             return 1
+        comment_id = _comment_id(posted)
 
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with Path(output).open("a", encoding="utf-8") as handle:
+            if decision.action == "requeue":
+                # The report job rewrites this comment if the enqueue fails.
+                handle.write(f"comment_id={comment_id}\n")
             handle.write(f"action={decision.action}\n")
     return 0
 

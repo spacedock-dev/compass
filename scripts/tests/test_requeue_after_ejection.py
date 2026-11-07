@@ -146,6 +146,15 @@ class MarkersTest(unittest.TestCase):
                 self.assertIn("- `Quality Gate / test`", body)
 
 
+    def test_a_failed_enqueue_leaves_the_heads_attempt_unspent(self) -> None:
+        # The report rewrites the requeued comment into this one, so the next failure re-queues.
+        body = requeue.failed_enqueue_comment(HEAD, 7, "token-rejected", [], "")
+        self.assertEqual((frozenset(), frozenset()), requeue.marked_heads([bot(body)]))
+        self.assertNotIn("requeued head=", body)
+        requeued, gave_up = requeue.marked_heads([bot(body)])
+        facts = replace(FIRST, requeued=requeued, gave_up=gave_up)
+        self.assertEqual("requeue", requeue.decide(facts).action)
+
 class FailedJobsTest(unittest.TestCase):
     RUNS = (
         # An older group for the same pull request, failed: not the one just removed.
@@ -225,6 +234,7 @@ class FakeGh:
         post_fails: bool = False,
         comments_fail: bool = False,
         in_queue: bool = False,
+        patch_fails: bool = False,
     ) -> None:
         self.state = state
         self.reason = reason
@@ -232,7 +242,9 @@ class FakeGh:
         self.post_fails = post_fails
         self.comments_fail = comments_fail
         self.in_queue = in_queue
+        self.patch_fails = patch_fails
         self.posted: list[str] = []
+        self.patched: list[tuple[str, str]] = []
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str], stdin: str | None) -> str | None:  # noqa: PLR0911 - one answer per read
@@ -246,10 +258,16 @@ class FakeGh:
             }
             return json.dumps({"data": {"repository": {"pullRequest": pull}}})
         if "--method" in args:
+            body = json.loads(stdin or "{}")["body"]
+            if args[args.index("--method") + 1] == "PATCH":
+                if self.patch_fails:
+                    return None
+                self.patched.append((args[args.index("--method") + 2], body))
+                return "{}"
             if self.post_fails:
                 return None
-            self.posted.append(json.loads(stdin or "{}")["body"])
-            return "{}"
+            self.posted.append(body)
+            return json.dumps({"id": 41, "body": body})
         if args[1] == "--paginate":
             if self.comments_fail:
                 return None
@@ -297,7 +315,7 @@ class MainTest(unittest.TestCase):
     def test_a_first_failure_comments_with_the_failed_jobs_then_says_requeue(self) -> None:
         gh = FakeGh()
         code, output, printed = self.run_main(gh)
-        self.assertEqual((0, "action=requeue\n"), (code, output))
+        self.assertEqual((0, "comment_id=41\naction=requeue\n"), (code, output))
         (body,) = gh.posted
         self.assertIn(f"requeued head={HEAD}", body)
         self.assertIn("- `Quality Gate / Tests (3.14)`", body)
@@ -357,6 +375,99 @@ class MainTest(unittest.TestCase):
 
         code, output, _ = self.run_main(broken)
         self.assertEqual((0, "action=skip\n"), (code, output))
+
+
+
+RUN_URL = "https://github.com/spacedock-dev/compass/actions/runs/42328619023"
+
+
+class ReportFailedEnqueueTest(unittest.TestCase):
+    def report(
+        self, gh: FakeGh, failure: str = "token-rejected", comment_id: str = "41", run_url: str = RUN_URL
+    ) -> tuple[int, str]:
+        argv = [
+            "--report-failed-enqueue",
+            "--repo",
+            REPO,
+            "--number",
+            "7",
+            "--head",
+            HEAD,
+            "--base",
+            "main",
+            "--comment-id",
+            comment_id,
+            "--enqueue-failure",
+            failure,
+            "--run-url",
+            run_url,
+        ]
+        out = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, {}, clear=True), redirect_stdout(out):
+            code = requeue.main(argv, gh)
+        return code, out.getvalue()
+
+    def test_a_rejected_token_rewrites_the_comment_to_say_it_is_not_queued(self) -> None:
+        gh = FakeGh()
+        code, printed = self.report(gh)
+        self.assertEqual(0, code)
+        ((path, body),) = gh.patched
+        self.assertEqual(f"repos/{REPO}/issues/comments/41", path)
+        self.assertIn(f"<!-- {requeue.MARKER}: enqueue-failed head={HEAD} -->", body)
+        self.assertNotIn("requeued head=", body)
+        self.assertIn("not in the queue", body)
+        self.assertIn("HTTP 401", body)
+        self.assertIn("MERGE_QUEUE_TOKEN", body)
+        self.assertIn("`gh pr merge 7`", body)
+        self.assertIn("- `Quality Gate / Tests (3.14)`", body)
+        self.assertIn(f"]({RUN_URL})", body)
+        self.assertEqual([], gh.posted)
+        self.assertIn("::warning::#7 was not re-queued", printed)
+
+    def test_each_failure_names_its_own_cause(self) -> None:
+        cases = {
+            "token-rejected": "HTTP 401",
+            "token-forbidden": "HTTP 403",
+            "other": "its log says why",
+            # Anything the enqueue job did not write, an empty output included, reads as other.
+            "": "its log says why",
+            "<script>": "its log says why",
+        }
+        for failure, expected in cases.items():
+            with self.subTest(failure=failure):
+                gh = FakeGh()
+                self.assertEqual(0, self.report(gh, failure=failure)[0])
+                ((_, body),) = gh.patched
+                self.assertIn(expected, body)
+                self.assertNotIn("<script>", body)
+
+    def test_a_pull_request_back_in_the_queue_keeps_the_comment(self) -> None:
+        # Someone queued it by hand meanwhile, so "it goes back in" is true and stays.
+        gh = FakeGh(in_queue=True)
+        code, _ = self.report(gh)
+        self.assertEqual((0, [], []), (code, gh.patched, gh.posted))
+
+    def test_an_unwritten_correction_fails_the_run(self) -> None:
+        gh = FakeGh(patch_fails=True)
+        code, printed = self.report(gh)
+        self.assertEqual(1, code)
+        self.assertIn("::error::", printed)
+
+    def test_only_a_numeric_comment_id_is_edited(self) -> None:
+        for comment_id in ("", "41/../../pulls", "-1"):
+            with self.subTest(comment_id=comment_id):
+                gh = FakeGh()
+                code, printed = self.report(gh, comment_id=comment_id)
+                self.assertEqual((1, []), (code, gh.patched))
+                self.assertIn("::error::", printed)
+
+    def test_only_an_actions_run_url_is_linked(self) -> None:
+        for run_url in ("", "https://evil.example/actions/runs/1", f"{RUN_URL})[x](y"):
+            with self.subTest(run_url=run_url):
+                gh = FakeGh()
+                self.report(gh, run_url=run_url)
+                ((_, body),) = gh.patched
+                self.assertNotIn("](", body)
 
 
 if __name__ == "__main__":

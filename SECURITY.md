@@ -5085,7 +5085,9 @@ read workflow runs. Enqueueing needs a second credential, `MERGE_QUEUE_TOKEN`, b
 made with the workflow's own token starts no merge queue checks. That secret sits in a job of its
 own that checks out nothing and runs one `gh` command. It can push to unprotected branches of this
 repository, so it should be a token limited to this repository alone. Without it, nothing is
-re-queued.
+re-queued. When that command fails, the job passes on only one of three fixed failure names, never
+GitHub's reply, and a third job holding the workflow's own token corrects the pull request's
+comment.
 
 ## Reporting a vulnerability
 
