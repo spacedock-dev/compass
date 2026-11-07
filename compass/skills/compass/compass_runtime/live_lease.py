@@ -149,14 +149,25 @@ class Leases:
         key = f"{harness}:{sid}"
         with self._lock:
             self._sweep_locked(now)
+            original = self._leases.get(key)
+            holder = original.holders.get(tab_id) if original is not None else None
+            terminal = holder is not None and holder.kind == "terminal"
+        # A model tick can block on another session. A terminal heartbeat must see the final
+        # published end itself, without holding the lease lock during a collection.
+        row = self._row_for(harness, sid) if terminal else None
+        with self._lock:
             lease = self._leases.get(key)
-            held = lease is not None and tab_id in lease.holders
-            if lease is not None and held:
+            if terminal and lease is original and (row is None or row.get("ended_at")):
+                self._end_locked(key, "ended", now)
+                lease = None
+            held = lease is original and lease is not None and tab_id in lease.holders
+            if held and lease is not None:
                 holder = lease.holders[tab_id]
                 holder.last_beat, holder.hidden = now, not visible
-        # Only a tab that started and has not lapsed keeps the lease: a beat cannot join one, so the
-        # holders here and in `live_monitor` stay one set.
-        return self._answer(harness, sid, "" if held else "not-monitoring")
+        answer = self._answer(harness, sid, "" if held else "not-monitoring")
+        if terminal:
+            answer["activity"] = row.get("last_activity") if row is not None else None
+        return answer
 
     def confirm(self, harness: str, sid: str, tab_id: str, *, yes: bool) -> dict[str, Any]:
         """The reader's answer to "Do you still want to monitor this session?".

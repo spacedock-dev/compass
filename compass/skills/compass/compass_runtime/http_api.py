@@ -3295,8 +3295,31 @@ class _RequestHandler(BaseHTTPRequestHandler):
         if starting and not config.annotations_enabled:
             self._reject(503)
             return
-        answer = _lease_answer(_live_leases(self.server.application), *parsed)
-        self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
+        answer = self._monitor_answer(payload, parsed)
+        if answer is not None:
+            self._send(json.dumps(answer, separators=(",", ":")).encode(), "application/json")
+
+    def _monitor_answer(
+        self, payload: dict[str, Any], parsed: tuple[str, str, str, str, bool, str]
+    ) -> dict[str, Any] | None:
+        config = self.server.application.config
+        starting = parsed[3] == "start"
+        uuid = ""
+        if starting and "typed_action" in payload:
+            if payload["typed_action"] != "monitor on" or parsed[5] != "terminal":
+                self._reject(400)
+                return None
+            uuid = self._typed_record(parsed[0], parsed[1], payload)
+            if not uuid:
+                return None
+        accepted = False
+        try:
+            answer = _lease_answer(_live_leases(self.server.application), *parsed)
+            accepted = answer.get("ok") is True
+        finally:
+            if uuid and not accepted:
+                typed_press.release(config, uuid)
+        return answer
 
     def _goal_find(self) -> None:
         """Find a goal in the reader's own prompts. One press, one call, nothing stored.

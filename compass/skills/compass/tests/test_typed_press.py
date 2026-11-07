@@ -262,3 +262,72 @@ class ReadingRouteTest(TypedPressCase):
         handler = self.press(typed_action="sessions")
         handler._reject.assert_called_once_with(400)
         handler._reading_press.assert_not_called()
+
+
+class MonitorRouteTest(TypedPressCase):
+    def press(
+        self, *, accepted: bool = True, failure: Exception | None = None, **fields: Any
+    ) -> Any:
+        self.session.save(self.path)
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(
+            application=SimpleNamespace(
+                config=self.config, state=build_runtime_state(self.config, started=0)
+            )
+        )
+        handler._send = mock.Mock()
+        handler._reject = mock.Mock()
+        handler._is_document_navigation = mock.Mock(return_value=False)
+        handler._loopback_resource_ok = mock.Mock(return_value=True)
+        body = json.dumps(
+            {
+                "harness": "claude",
+                "sid": "one",
+                "tab_id": "terminal-one",
+                "action": "start",
+                "holder_kind": "terminal",
+                "observer_model": 1,
+                "typed_action": "monitor on",
+                **fields,
+            }
+        ).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler._read_body = mock.Mock(return_value=body)
+        with (
+            mock.patch.object(observer, "resolve_transcript", return_value=str(self.path)),
+            mock.patch.object(http_api, "_live_leases"),
+            mock.patch.object(
+                http_api, "_lease_answer", return_value={"ok": accepted}, side_effect=failure
+            ) as start,
+        ):
+            handler._live_monitor()
+        handler.admission = start
+        return handler
+
+    def test_a_person_who_types_monitor_on_admits_exactly_one_run(self) -> None:
+        self.typed("monitor on")
+        self.press().admission.assert_called_once()
+        self.press().admission.assert_not_called()
+
+    def test_a_model_started_monitor_never_admits_a_lease(self) -> None:
+        self.session.model_started_compass("Keep going.")
+        self.press().admission.assert_not_called()
+
+    def test_a_person_s_refused_monitor_can_retry_the_same_typed_command(self) -> None:
+        self.typed("monitor on")
+        self.press(accepted=False).admission.assert_called_once()
+        self.press().admission.assert_called_once()
+        self.press().admission.assert_not_called()
+
+    def test_a_person_s_beat_and_stop_consume_no_command(self) -> None:
+        self.typed("monitor on")
+        self.press(action="beat").admission.assert_called_once()
+        self.press(action="stop").admission.assert_called_once()
+        self.press().admission.assert_called_once()
+
+    def test_a_person_s_failed_admission_releases_the_typed_command(self) -> None:
+        self.typed("monitor on")
+        with self.assertRaises(RuntimeError):
+            self.press(failure=RuntimeError("cannot start ticker"))
+        self.press().admission.assert_called_once()
+        self.press().admission.assert_not_called()

@@ -220,12 +220,19 @@ class RefusalTest(unittest.TestCase):
 
 
 class SpendClassificationTest(unittest.TestCase):
-    def test_the_shipped_table_lists_two_free_actions_and_two_that_spend(self) -> None:
+    def test_a_person_sees_three_free_actions_and_three_that_can_spend(self) -> None:
         text = (ROOT / "compass/skills/compass/SKILL.md").read_text(encoding="utf-8")
         table = session_smoke.parse_actions(text)
         self.assertEqual(
             {action: session_smoke.spends(command) for action, command in table.items()},
-            {"sessions": False, "sessions waiting": False, "drift": True, "drift again": True},
+            {
+                "sessions": False,
+                "sessions waiting": False,
+                "drift": True,
+                "drift again": True,
+                "monitor on": True,
+                "monitor off": False,
+            },
         )
 
     def test_a_command_with_any_flag_the_helper_does_not_know_counts_as_spending(self) -> None:
@@ -457,3 +464,23 @@ class RunnerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MonitorSmokeTest(unittest.TestCase):
+    def test_a_person_can_stop_without_spend_but_must_allow_a_monitor_start(self) -> None:
+        prefix = 'python3 "/t/launch.py" "/t/server.py" '
+        self.assertFalse(session_smoke.spends(prefix + "--monitor --off"))
+        self.assertTrue(session_smoke.spends(prefix + "--monitor"))
+
+    def test_a_person_s_failed_monitor_action_still_stops_the_sidecar_before_the_board(
+        self,
+    ) -> None:
+        world = FakeWorld()
+        world.action_error = TimeoutError("interrupted")
+        self.assertEqual(1, smoke(world, "--allow-spend", "monitor on"))
+        stops = world.board_calls("--off")
+        self.assertEqual(1, len(stops))
+        self.assertIn("claude:" + SESSION_ID, stops[0])
+        self.assertLess(
+            world.calls.index(stops[0]), world.calls.index(world.board_calls("--stop")[0])
+        )

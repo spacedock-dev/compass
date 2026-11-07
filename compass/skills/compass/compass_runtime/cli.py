@@ -232,6 +232,8 @@ def refuse_footer_with_other_options(
 
     It reaches no dashboard, so it cannot also serve, stop or report one.
     """
+    if args.monitor or args.off:
+        parser.error("--monitor stands alone or with --off and --session")
     if args.footer or args.session is not None:
         parser.error(
             "--footer and --session stand alone: they read the status line, not a dashboard"
@@ -244,7 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     # `--frontend-dev-manifest`, and a habit from the retired renderer switch (`--frontend react`)
     # would otherwise be read as a development ticket path instead of an unknown option.
     parser = argparse.ArgumentParser(description=DESCRIPTION, allow_abbrev=False)
-    for operation in terminal_client.OPERATIONS:
+    for operation in (*terminal_client.OPERATIONS, *terminal_client.SWITCHES):
         if operation.choices:
             parser.add_argument(
                 operation.flag,

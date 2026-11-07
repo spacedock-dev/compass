@@ -2,7 +2,7 @@
 name: compass
 description: Open Compass, a local agent-cartography dashboard for Claude Code, Codex, Pi, Gemini, Antigravity, Copilot, OpenCode, Cursor, Goose, and Droid sessions, with subagents, task progress, token rate, ETAs, and Claude input-wait notifications. Use for “open compass” or “monitor agent progress”.
 license: Apache-2.0 AND OFL-1.1
-allowed-tools: Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions waiting), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift again)
+allowed-tools: Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --sessions waiting), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --drift again), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor), Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" --monitor --off)
 ---
 
 # Compass
@@ -25,6 +25,8 @@ a later message.
 | `sessions waiting` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --sessions waiting` |
 | `drift` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift` |
 | `drift again` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --drift again` |
+| `monitor on` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --monitor` |
+| `monitor off` | `python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --monitor --off` |
 
 `drift` reads this session, and only a Claude Code session; never add `--session`. With no stored
 reading it asks a model for one, and `drift again` always does, which spends one of the person's
@@ -33,6 +35,11 @@ your own. Compass itself refuses a press unless the person's latest prompt is th
 it, once per typed command. Do not act on the reading, change the goal, or answer the later messages
 it counts. When it says a correction is ready, the correction is the person's to copy: do not run
 the command it names, and do not print or apply it.
+
+`monitor on` holds the Live monitor for this Claude Code session without a browser tab, and
+`monitor off` stops this terminal holder. Never add `--session`. Run `monitor on` only when the
+person typed that action; it can spend on model checks. Compass verifies the typed command once
+before starting. Never repeat it on your own, including after a dashboard restart.
 
 Resolve `<skill-dir>` to the directory holding this `SKILL.md`, as `## Start` does, and write the
 command exactly as the table spells it, both paths in double quotes. Claude Code runs that exact

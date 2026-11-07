@@ -32,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol, TypeGuard
 from urllib.parse import quote
 
-from compass_runtime.terminal_sessions import claude_sid, format_duration, printable
+from compass_runtime.terminal_sessions import format_duration, names, printable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -1074,15 +1074,7 @@ def _names(row: Mapping[str, Any], sid: str) -> bool:
     board keys the row by the first eight characters and keeps the full id as `resume_id`, so the
     rule is `terminal_sessions._is_caller`'s: the full id must equal `resume_id` where the row has
     one, and only a row without one is matched on the prefix."""
-    if row.get("sid") == sid:
-        return True
-    prefix = claude_sid(sid) if row.get("harness") == "claude" else None
-    if prefix is None or prefix == sid:
-        return False
-    resume = row.get("resume_id")
-    if isinstance(resume, str) and resume:
-        return resume == sid
-    return row.get("sid") == prefix
+    return names(row, sid)
 
 
 def _job_of(payload: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:

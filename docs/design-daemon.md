@@ -338,3 +338,24 @@ valuable and does not otherwise touch.
   nobody needed. `CompassHTTPServer.server_bind` calls `socketserver.TCPServer.server_bind`
   directly and sets `server_name` and `server_port` itself. Restoring the `super()` call reinstates
   the stall, for the dashboard's own startup as much as for the suite.
+
+
+## Terminal monitor holders
+
+The monitor sidecar uses a detached subprocess of the existing entry point rather than forking the
+client: POSIX `start_new_session`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, closed
+descriptors and all standard streams on `DEVNULL`. Its hidden mode is dispatched before `cli` and
+is not a public operation. A short command lock covers spawn through readiness; the worker takes a
+lifetime lock before admitting a lease. Both lock paths persist so a waiter never locks an obsolete
+inode. Stop is a generation-bound file request, never a signal to a PID read from disk. Failed
+readiness cleans up only the parent's own child. Signals converge on bounded stop and cleanup;
+a hard kill leaves the lease to lapse after 50 seconds.
+
+On POSIX, the starting command walks its ancestors with bounded `ps` calls and remembers the nearest
+executable named `claude`, its PID and start time. The worker checks both so PID reuse does not keep
+an orphan. It checks at most once every five seconds; the faster stop-file poll starts no process.
+Windows skips this check and never calls `os.kill(pid, 0)`. With no matching ancestor,
+row/lease endings, a 30-second continuous exchange failure budget and a two-hour idle bound still
+end the worker. A dashboard identity change exits with a status-file reason and no new start:
+restarting would replay or bypass a consumed typed command. The monitor store owns that status;
+footer files remain the dashboard's alone.

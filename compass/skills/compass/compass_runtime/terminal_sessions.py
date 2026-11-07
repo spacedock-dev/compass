@@ -1005,3 +1005,16 @@ def render_waiting(
     lines.append(got.coverage)
     lines.extend(got.unreported)
     return lines
+
+
+def names(row: Mapping[str, Any], sid: str) -> bool:
+    """Match the native id before considering a shortened Claude board key."""
+    if row.get("sid") == sid:
+        return True
+    prefix = claude_sid(sid) if row.get("harness", "claude") == "claude" else None
+    if prefix is None or prefix == sid:
+        return False
+    resume = row.get("resume_id")
+    if isinstance(resume, str) and resume:
+        return resume == sid
+    return row.get("sid") == prefix

@@ -594,13 +594,9 @@ class CompassServerTest(support.RuntimeTestCase):
         for label, body in invalid:
             with (
                 self.subTest(payload=label),
-                mock.patch.object(http.client, "HTTPConnection") as connection,
+                mock.patch("compass_runtime.loopback_transport.exchange", return_value=(200, body)),
             ):
-                response = connection.return_value.getresponse.return_value
-                response.status = 200
-                response.read.return_value = body
                 self.assertEqual(("foreign", None), lifecycle.probe_port(4553))
-                connection.return_value.close.assert_called_once_with()
 
     def test_instance_status_covers_running_stale_foreign_and_absent(self) -> None:
         with (

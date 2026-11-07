@@ -201,7 +201,7 @@ SHARED_FRONTMATTER_FIELDS = {"name", "description", "license", "allowed-tools"}
 # the directory holding SKILL.md, so the rule names that install's command and no other.
 ALLOWED_TOOL_RULE_RE = re.compile(
     r'Bash\(python3 "\$\{CLAUDE_SKILL_DIR\}/launch\.py" "\$\{CLAUDE_SKILL_DIR\}/server\.py"'
-    r"(?: --[a-z]+(?:-[a-z]+)*)(?: [a-z]+)?\)"
+    r"(?: --monitor --off| --[a-z]+(?:-[a-z]+)*(?: [a-z]+)?)\)"
 )
 # The skill now carries font software whose OFL terms must survive distribution;
 # pinning the expression prevents its metadata from reverting to Apache-only.
@@ -447,6 +447,9 @@ COMPASS_RUNTIME_FILES = (
     # `cli` only for everything else. Both ship or `server.py` cannot start at all.
     "skills/compass/compass_runtime/entry.py",
     "skills/compass/compass_runtime/terminal_client.py",
+    "skills/compass/compass_runtime/loopback_transport.py",
+    "skills/compass/compass_runtime/terminal_monitor.py",
+    "skills/compass/compass_runtime/monitor_store.py",
     # `--drift`, which `terminal_client` imports at the top, so a missing copy breaks every command.
     "skills/compass/compass_runtime/terminal_drift.py",
     # The status line's per-session files, written by the dashboard and read by `--footer`.

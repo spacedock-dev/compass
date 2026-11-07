@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 # presses only when no reading is stored, so the person who typed `drift again` asked for at least
 # that much.
 ACCEPTS: Final[dict[str, tuple[str, ...]]] = {
+    "monitor on": ("monitor on",),
     "drift": ("drift", "drift again"),
     "drift again": ("drift again",),
 }

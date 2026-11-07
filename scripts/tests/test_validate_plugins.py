@@ -174,7 +174,7 @@ class ValidatorTests(unittest.TestCase):
         rule = 'Bash(python3 "${CLAUDE_SKILL_DIR}/launch.py" "${CLAUDE_SKILL_DIR}/server.py" '
         path = self.write_temp(
             "---\nname: ok\ndescription: Fine\n"
-            f"allowed-tools: {rule}--sessions), {rule}--sessions waiting)\n---\n",
+            f"allowed-tools: {rule}--sessions), {rule}--sessions waiting), {rule}--monitor --off)\n---\n",
             "SKILL.md",
         )
         validation = validator.Validation()
@@ -193,6 +193,9 @@ class ValidatorTests(unittest.TestCase):
             "Bash(python3 *)",
             'Bash(python3 "/home/me/launch.py" "/home/me/server.py" --sessions)',
             f"Bash({launcher} --sessions; rm -rf x)",
+            f"Bash({launcher} --sessions --off)",
+            f"Bash({launcher} --monitor --stop)",
+            f"Bash({launcher} --monitor --off extra)",
             "Read",
             f"Bash({launcher} --sessions) Bash(python3 *)",
         ):

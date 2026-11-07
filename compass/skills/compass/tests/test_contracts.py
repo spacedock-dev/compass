@@ -1224,12 +1224,25 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # What `server.py` runs. `cli` is a function-local import by design: a short operation
         # must not load it (R-1). The walk counts that edge, so it is listed.
-        "compass_runtime.entry": {"compass_runtime.cli", "compass_runtime.terminal_client"},
+        "compass_runtime.entry": {
+            "compass_runtime.cli",
+            "compass_runtime.terminal_client",
+            "compass_runtime.terminal_monitor",
+        },
         # Standard library only, so a short command answers before any collector is imported.
         # `--sessions` prints through `terminal_sessions`, which is the one rule for what waits on the
         # reader and imports nothing from the runtime either. `--drift` runs through
         # `terminal_drift`, a leaf over `terminal_sessions` for its one `printable`.
+        "compass_runtime.loopback_transport": set(),
+        "compass_runtime.monitor_store": set(),
+        "compass_runtime.terminal_monitor": {
+            "compass_runtime.monitor_store",
+            "compass_runtime.terminal_client",
+            "compass_runtime.terminal_sessions",
+        },
         "compass_runtime.terminal_client": {
+            "compass_runtime.loopback_transport",
+            "compass_runtime.terminal_monitor",
             "compass_runtime.terminal_drift",
             "compass_runtime.terminal_sessions",
         },
@@ -2028,6 +2041,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.probe",
         },
         "compass_runtime.lifecycle": {
+            "compass_runtime.loopback_transport",
             "compass_runtime.config",
             "compass_runtime.http_api",
             "compass_runtime.interaction_prototype",

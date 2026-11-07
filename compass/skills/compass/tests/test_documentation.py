@@ -90,11 +90,14 @@ class TerminalActionsMatchTheClientTest(unittest.TestCase):
                 self.assertTrue(command.startswith(self.LAUNCHER + " "), command)
                 argv = shlex.split(command[len(self.LAUNCHER) :])
                 self.assertTrue(terminal_client.handles(argv), command)
-                self.assertEqual(action.split(), [argv[0].removeprefix("--"), *argv[1:]])
+                expected = {"monitor on": ["--monitor"], "monitor off": ["--monitor", "--off"]}
+                self.assertEqual(
+                    expected.get(action, ["--" + action.split()[0], *action.split()[1:]]), argv
+                )
 
     def test_every_question_the_client_answers_has_an_action_unless_it_is_not_one(self) -> None:
         offered = {command[len(self.LAUNCHER) :].strip() for _, command in self.rows()}
-        expected = set()
+        expected = {"--monitor --off"}
         for operation in terminal_client.OPERATIONS:
             if operation.flag in self.NOT_ACTIONS:
                 continue
