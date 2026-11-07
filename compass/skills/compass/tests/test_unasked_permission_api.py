@@ -64,6 +64,33 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
             self.assertFalse(json.loads(body)["reading"]["off"])
             app.unasked_lane.stop.assert_called_once_with("codex")
 
+    def test_a_reader_cannot_grant_an_unreadable_session_but_can_revoke_existing_coverage(
+        self,
+    ) -> None:
+        config, state = self._runtime(unasked_enabled=True)
+        reading_policy.store_path(config).unlink()
+        app = self._app(config, state, "gemini")
+        app.unasked_lane = mock.Mock()
+        with (
+            named_machine(),
+            mock.patch.object(
+                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+            ),
+            mock.patch.object(reading, "produce", side_effect=AssertionError("a model ran")),
+            self._serving(app) as port,
+        ):
+            status, body = self._post(port, self._body(harness="gemini"))
+            self.assertEqual(409, status, body)
+            self.assertEqual("no-record-reader", json.loads(body)["reason"])
+            self.assertFalse(reading_policy.store_path(config).exists())
+            reading_policy.set_unasked_grant(
+                config, True, now=100.0, provider="codex", destination="OpenAI"
+            )
+            status, body = self._post(port, self._body(harness="gemini", unasked_grant=False))
+            self.assertEqual(200, status, body)
+            self.assertFalse(json.loads(body)["reading"]["words"]["codex"])
+            app.unasked_lane.stop.assert_called_once_with("codex")
+
     def test_navigation_non_loopback_or_a_stale_destination_never_writes_a_grant(self) -> None:
         config, state = self._runtime(unasked_enabled=True)
         reading_policy.store_path(config).unlink()

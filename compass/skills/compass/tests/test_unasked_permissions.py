@@ -132,7 +132,7 @@ class UnaskedPermissionTest(unittest.TestCase):
             )("words", output_cap_bytes=100)
 
     def test_the_unasked_lane_takes_its_own_provider_and_claude_first_elsewhere(self) -> None:
-        for harness in ("claude", "codex", "pi", "gemini", "opencode"):
+        for harness in ("claude", "codex", "pi", "antigravity"):
             for present in ({"claude", "codex"}, {"claude"}, {"codex"}):
                 with self.subTest(harness=harness, present=present):
                     expected = (
@@ -148,6 +148,43 @@ class UnaskedPermissionTest(unittest.TestCase):
 
                     route = reading_route.resolve(harness, binary_resolver=which, unasked=True)
                     self.assertEqual(expected, route["provider"])
+
+    def test_a_reader_is_not_offered_unasked_checks_without_a_session_record_reader(self) -> None:
+        for harness in ("gemini", "copilot", "cursor", "opencode", "goose", "droid"):
+            for present in ({"claude", "codex"}, {"claude"}, {"codex"}, set()):
+                with self.subTest(harness=harness, present=present):
+                    which = mock.Mock(
+                        side_effect=lambda name, present=present: (
+                            f"/bin/{name}" if name in present else None
+                        )
+                    )
+                    route = reading_route.resolve(harness, binary_resolver=which, unasked=True)
+                    self.assertEqual("", route["provider"])
+                    self.assertEqual("no-record-reader", route["reason"])
+                    self.assertEqual(
+                        "Compass cannot run unasked checks for this harness because it has no session record reader.",
+                        route["note"],
+                    )
+                    self.assertFalse(route["fallback"])
+                    for field in (
+                        "destination",
+                        "words_destination",
+                        "disclosure",
+                        "tool_output",
+                        "model",
+                    ):
+                        self.assertEqual("", route[field])
+                    self.assertEqual([], route["disclosure_parts"])
+                    self.assertEqual([], reading_route.unasked_parts(route))
+                    self.assertEqual("off", route["ci_read"])
+                    which.assert_not_called()
+
+    def test_a_reader_can_still_request_analyze_for_a_harness_without_a_record_reader(self) -> None:
+        for harness in ("gemini", "copilot", "cursor", "opencode", "goose", "droid"):
+            with self.subTest(harness=harness):
+                route = reading_route.resolve(harness, binary_resolver=lambda name: f"/bin/{name}")
+                self.assertEqual("codex", route["provider"])
+                self.assertEqual("no-own-producer", route["reason"])
 
     def test_analyze_keeps_codex_first_where_no_own_producer_exists(self) -> None:
         # The 2026-10-20 ruling changed the unasked lane's provider, not Analyze's.

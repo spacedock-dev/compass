@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as drift from './Drift.stories';
+import * as unasked from './UnaskedChecks.stories';
 import { REASON_CASES, routeFor } from './drift.reasons';
 import { JOB, JOB_STEPS } from './drift.scenario';
 
@@ -31,6 +32,7 @@ const routeSource = readFileSync(
 
 interface Producer {
   readonly reasons: string[];
+  readonly unaskedReasons: string[];
   readonly phases: string[];
   readonly phaseText: Record<string, string>;
 }
@@ -39,7 +41,7 @@ const PROGRAM = [
   'import json, sys',
   'sys.path.insert(0, sys.argv[1])',
   'from compass_runtime import reading, reading_route',
-  'print(json.dumps({"reasons": list(reading_route.REASONS), "phases": list(reading.PHASES),',
+  'print(json.dumps({"reasons": list(reading_route.REASONS), "unaskedReasons": list(reading_route.UNASKED_REASONS), "phases": list(reading.PHASES),',
   ' "phaseText": dict(reading.PHASE_TEXT)}))',
 ].join('\n');
 
@@ -122,5 +124,28 @@ describe('the running analysis the Analyzing story draws', () => {
       ),
     );
     expect(python.phases).toContain(JOB.phase);
+  });
+});
+
+describe('the unasked reasons stay separate from requested Analyze', () => {
+  it('tells a reader why an unasked-only route has no reader in an exported story that plays', () => {
+    const onlyUnasked = python.unaskedReasons.filter((reason) => !python.reasons.includes(reason));
+    expect(onlyUnasked).toEqual(['no-record-reader']);
+    expect(new Set(python.unaskedReasons).size).toBe(python.unaskedReasons.length);
+    for (const reason of python.reasons) expect(python.unaskedReasons).toContain(reason);
+    const stories = Object.values(unasked).filter((story) => {
+      const routes = (
+        story as {
+          args?: {
+            scenario?: { payload?: { unasked_routes?: Record<string, { reason?: string }> } };
+          };
+        }
+      ).args?.scenario?.payload?.unasked_routes;
+      return (
+        routes && Object.values(routes).some((route) => onlyUnasked.includes(route.reason ?? ''))
+      );
+    });
+    expect(stories.length).toBeGreaterThan(0);
+    for (const story of stories) expect(typeof (story as { play?: unknown }).play).toBe('function');
   });
 });

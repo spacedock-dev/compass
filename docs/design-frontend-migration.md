@@ -290,7 +290,9 @@ in the Drift card, with an Attention cue linking sessions waiting for it. Claude
 separate toggle. The page reads who the lane reaches from `unasked_routes`, never from
 `reading_routes`, because on a harness with no producer of its own the lane prefers Claude Code
 where Analyze prefers Codex. No golden recording or differential
-comparison was changed for this addition; permission behavior is held by `UnaskedPermission.test.tsx`
+comparison was changed for this addition. A provider-empty `no-record-reader` route now explains
+why unasked checks cannot run, hides the grant offer and Attention cue, and keeps a stored Codex
+grant revocable beside the note. Permission behavior is held by `UnaskedPermission.test.tsx`
 and `UnaskedChecks.stories.tsx`.
 
 2026-10-19: the owner renamed the master switch to Pause model calls / Resume model calls.

@@ -234,3 +234,86 @@ export const AttentionCueAfterARevoke: Story = {
     await expect(cue).not.toHaveTextContent('none of them has been checked');
   },
 };
+
+const unavailable = routeOf('gemini', {
+  provider: '',
+  label: '',
+  reason: 'no-record-reader',
+  note: 'Compass cannot run unasked checks for this harness because it has no session record reader.',
+  fallback: false,
+});
+const unreadable = (allowed = false, reading?: Scenario['reading']): Scenario => ({
+  harness: 'gemini',
+  ...(reading ? { reading } : {}),
+  payload: {
+    unasked: true,
+    unasked_routes: { gemini: unavailable },
+    reading: { consent: true, off: false, words: { codex: allowed } },
+  },
+});
+
+export const NoSessionRecordReader: Story = {
+  args: { scenario: unreadable() },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText(String(unavailable['note']))).toBeVisible();
+    await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
+  },
+};
+
+export const UnreadableSessionIsAbsentFromAttention: Story = {
+  args: { scenario: { ...unreadable(), initialView: 'attention' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText('OBSERVED', { exact: true });
+    await expect(
+      canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+  },
+};
+
+const unreadableRevoke = readingScenario([]);
+export const UnreadableSessionKeepsRevocation: Story = {
+  args: { scenario: unreadable(true, unreadableRevoke) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText(String(unavailable['note']))).toBeVisible();
+    const toggle = canvas.getByRole('switch', { name: off });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(toggle);
+    await expect(unreadableRevoke.posts).toHaveLength(1);
+    await expect(unreadableRevoke.posts[0]).toMatchObject({ unasked_grant: false });
+    await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
+    await expect(canvas.getByText(String(unavailable['note']))).toBeVisible();
+  },
+};
+
+function supported(harness: 'pi' | 'antigravity'): Story {
+  return {
+    args: {
+      scenario: scenario({
+        harness,
+        initialView: 'attention',
+        payload: {
+          unasked: true,
+          unasked_routes: { [harness]: { ...route, harness, reason: 'fallback-not-installed' } },
+          reading: { consent: true, off: false, words: { codex: false } },
+        },
+      }),
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      const cue = await canvas.findByRole('region', {
+        name: 'Unasked checks waiting for permission',
+      });
+      await expect(cue).toHaveTextContent('Codex needs your permission first');
+      await userEvent.click(within(cue).getByRole('link', { name: 'Synthetic session' }));
+      await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+    },
+  };
+}
+export const PiKeepsPermission = supported('pi');
+export const AntigravityKeepsPermission = supported('antigravity');

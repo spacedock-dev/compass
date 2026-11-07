@@ -795,10 +795,12 @@ Compass can also check an annotated session against what you asked for without b
 raise a departure while you are away. Off by default, behind `--unasked-readings`, refused by
 `--no-observer-model` whatever else is set, and it is the only thing here that spends your model
 capacity with nobody watching. Claude Code reads Claude Code sessions; Codex reads Codex sessions.
-On other harnesses an unasked check prefers Claude Code. If the preferred provider is unavailable or
+On Pi and Antigravity an unasked check prefers Claude Code. If the preferred provider is unavailable or
 unqualified on this machine, the other serves. Claude Code needs no separate grant. For Codex, use “Allow Codex to
 run unasked checks” in the session’s Drift card; Attention points to that toggle when saved typed
-goals are waiting for permission. The grant covers Codex at the disclosed destination across sessions.
+goals are waiting for permission. A harness with no session record reader shows an explanation
+instead of the grant switch and stays out of that Attention queue. A stored Codex grant keeps
+its revoke switch beside the explanation. The grant covers Codex at the disclosed destination across sessions.
 Revoking it stops Codex checks; Analyze and Resume never grant it. Pause model calls stops either
 provider, and Pause followed by Resume clears the Codex grant. With the startup flag off, neither the toggle nor the Attention cue appears.
 It checks on an observed state

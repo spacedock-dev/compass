@@ -1848,7 +1848,11 @@ records their admission and publication shapes. No new session field is added.
   those uses for reader-started calls. Codex unasked checks require explicit `words.codex`
   coverage at the current destination; Claude Code uses the owner's acceptance without a separate
   grant. `unasked_routes[harness]`, published only while the lane is attached, is the route an
-  unasked check of that harness takes, and its `disclosure_parts` is the words disclosure,
+  unasked check of that harness takes. A harness with no session record reader carries an empty
+  provider, reason `no-record-reader`, its explanatory `note` and no disclosure. The Drift card
+  renders the note and keeps only revocation for a stored grant; Attention does not ask for a grant.
+  A grant POST for that harness returns 409 `no-record-reader` without storing coverage; revocation
+  still works. For supported harnesses, `disclosure_parts` is the words disclosure,
   excluding agent messages and outcome lines, and excluding tool output except the failed results a Claude
   Code unasked check of a Claude Code session sends, where Compass can name the destination. The explicit toggle posts
   `unasked_grant: bool` with the session identity, provider, model, `words_destination`, `press: true`

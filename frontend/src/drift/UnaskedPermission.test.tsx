@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { driftBoard, json, mountDrift, press, readingPosts, ROUTE, POLICY } from './testing';
 
@@ -157,5 +157,112 @@ describe('Unasked check permission', () => {
     const cue = screen.getByRole('region', { name: 'Unasked checks waiting for permission' });
     expect(cue.textContent).toContain('they are not being checked now');
     expect(cue.textContent).not.toContain('none of them has been checked');
+  });
+});
+
+const unavailableNote =
+  'Compass cannot run unasked checks for this harness because it has no session record reader.';
+const unavailableRoute = {
+  provider: '',
+  reason: 'no-record-reader',
+  note: unavailableNote,
+  disclosure_parts: [],
+};
+const harnessPayload = (harness: string, route = unavailableRoute, allowed = false) => ({
+  unasked: true,
+  reading: policy(allowed),
+  unasked_routes: { [harness]: route },
+});
+
+describe('A session without a record reader', () => {
+  it.each(['gemini', 'copilot', 'cursor', 'opencode', 'goose', 'droid'])(
+    'tells a reader why %s cannot run unasked checks and never asks for permission',
+    async (harness) => {
+      const page = mountDrift({
+        hash: `#n=session:alpha%2Fapp:${harness}:s1`,
+        session: { harness },
+        store: { goal_source: 'typed' },
+        payload: harnessPayload(harness),
+      });
+      await page.settle();
+      expect(screen.getByText(unavailableNote)).toBeTruthy();
+      expect(screen.queryByRole('switch', { name: /Codex/ })).toBeNull();
+      await page.go('#n=attention');
+      expect(
+        screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+      ).toBeNull();
+      expect(readingPosts(page)).toHaveLength(0);
+    },
+  );
+
+  it.each(['pi', 'antigravity'])(
+    'still offers a reader Codex permission for %s in Attention and Drift',
+    async (harness) => {
+      const page = mountDrift({
+        hash: '#n=attention',
+        session: { harness },
+        store: { goal_source: 'typed' },
+        payload: { unasked: true, reading: policy(false), unasked_routes: { [harness]: CODEX } },
+      });
+      await page.settle();
+      const cue = screen.getByRole('region', { name: 'Unasked checks waiting for permission' });
+      await press(cue.querySelector('a'));
+      expect(screen.getByRole('switch', { name: /Codex/ }).getAttribute('aria-checked')).toBe(
+        'false',
+      );
+      expect(readingPosts(page)).toHaveLength(0);
+    },
+  );
+
+  it('lets a reader revoke stored Codex coverage beside the unavailable explanation', async () => {
+    const page = mountDrift({
+      hash: '#n=session:alpha%2Fapp:gemini:s1',
+      session: { harness: 'gemini' },
+      payload: harnessPayload('gemini', unavailableRoute, true),
+      routes: {
+        '/api/reading': () => {
+          page.state.data = driftBoard({
+            session: { harness: 'gemini' },
+            payload: harnessPayload('gemini'),
+          });
+          return json({ ok: true, reading: policy(false), produced: false });
+        },
+      },
+    });
+    await page.settle();
+    expect(screen.getByText(unavailableNote)).toBeTruthy();
+    const toggle = screen.getByRole('switch', { name: /Codex/ });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await press(toggle);
+    expect(readingPosts(page)[0]?.body).toMatchObject({ unasked_grant: false, provider: 'codex' });
+    expect(screen.queryByRole('switch', { name: /Codex/ })).toBeNull();
+    expect(screen.getByText(unavailableNote)).toBeTruthy();
+  });
+
+  it('removes an obsolete grant offer when a reader receives an unavailable route on refresh', async () => {
+    const page = mountDrift({ store: { goal_source: 'typed' }, payload: payload() });
+    await page.settle();
+    expect(screen.getByRole('switch', { name: /Codex/ })).toBeTruthy();
+    await page.poll(
+      driftBoard({ store: { goal_source: 'typed' }, payload: harnessPayload('claude') }),
+    );
+    expect(screen.getByText(unavailableNote)).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: /Codex/ })).toBeNull();
+    expect(readingPosts(page)).toHaveLength(0);
+  });
+
+  it('explains to a reader why an obsolete grant press was refused', async () => {
+    const page = mountDrift({
+      payload: payload(),
+      routes: {
+        '/api/reading': () => json({ ok: false, reason: 'no-record-reader' }, 409),
+      },
+    });
+    await page.settle();
+    await press(screen.getByRole('switch', { name: /Codex/ }));
+    expect(
+      within(screen.getByRole('region', { name: 'Unasked checks' })).getByRole('status')
+        .textContent,
+    ).toContain(unavailableNote);
   });
 });
