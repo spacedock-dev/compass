@@ -33,14 +33,119 @@ def recorded(name: str) -> dict[str, Any]:
 
 class ProjectTest(unittest.TestCase):
     def test_a_person_reads_the_board_members_counts_order_and_brief(self) -> None:
-        expected = json.loads((FIXTURES / "terminal-project.json").read_text())
-        for name in ("data-terminal-project", "sessions-terminal-project"):
-            self.assertEqual(
-                expected,
-                terminal_project.derive(
-                    recorded(name), recorded("context-terminal-project"), label="terminal-project"
-                ),
+        for fixture in ("terminal-project", "terminal-project-fo"):
+            expected = json.loads((FIXTURES / (fixture + ".json")).read_text())
+            for name in ("data-" + fixture, "sessions-" + fixture):
+                with self.subTest(fixture=fixture, name=name):
+                    self.assertEqual(
+                        expected,
+                        terminal_project.derive(
+                            recorded(name), recorded("context-" + fixture), label="terminal-project"
+                        ),
+                    )
+
+    def test_a_person_is_not_needed_when_only_the_first_officer_has_follow_ups(self) -> None:
+        payload = recorded("data-terminal-project")
+        for row in payload["sessions"]:
+            if row["state"] == "needs_input":
+                row["state"] = "idle"
+        payload["sessions"][0]["spacedock"] = {"role": "first-officer"}
+        brief = terminal_project.derive(
+            payload, recorded("context-terminal-project"), label="terminal-project"
+        )
+        output = "\n".join(terminal_project.render(brief, caller=("claude", "a1b2c3d4")))
+        self.assertIn("FO INSPECTING", output)
+        self.assertIn("Captain not needed", output)
+        self.assertIn("FO · REFRESH · refresh workflow discovery", output)
+        self.assertIn(
+            "FO is the first officer, the agent driving this workflow; Captain is you.", output
+        )
+        self.assertNotIn("Follow-up ·", output)
+        self.assertNotIn("CAPTAIN NEEDED", output)
+
+    def test_a_persons_attention_is_not_cleared_past_a_wait_question_or_incomplete_scan(
+        self,
+    ) -> None:
+        for workflow in (False, True):
+            for state in ("incomplete", "unavailable", "wait", "question"):
+                with self.subTest(workflow=workflow, state=state):
+                    payload = recorded("data-terminal-project-fo")
+                    if not workflow:
+                        for row in payload["sessions"]:
+                            row["spacedock"] = None
+                    context = recorded("context-terminal-project-fo")
+                    projections = context["semantic"]["projections"]
+                    if state in ("incomplete", "unavailable"):
+                        projections["command_attention_coverage"]["state"] = state
+                    if state == "wait":
+                        next(row for row in payload["sessions"] if row["sid"] == "a1b2c3d4")[
+                            "state"
+                        ] = "needs_input"
+                    if state == "question":
+                        projections["command_attention"] = [
+                            {"owner": "CAPTAIN", "question": "Approve the parser?"}
+                        ]
+                    output = "\n".join(
+                        terminal_project.render(
+                            terminal_project.derive(payload, context, label="terminal-project"),
+                            caller=("claude", "a1b2c3d4"),
+                        )
+                    )
+                    not_needed = "Captain not needed" if workflow else "You are not needed"
+                    self.assertNotIn(not_needed, output)
+                    if state in ("incomplete", "unavailable"):
+                        self.assertIn(
+                            "Captain state unknown" if workflow else "Your attention is unknown",
+                            output,
+                        )
+                    if state == "question":
+                        self.assertIn("CAPTAIN NEEDED" if workflow else "NEEDS YOU", output)
+                        self.assertIn(
+                            ("CAPTAIN" if workflow else "YOU") + " · ANSWER · Approve the parser?",
+                            output,
+                        )
+
+    def test_a_person_reads_the_first_published_handoff_when_return_times_tie(self) -> None:
+        payload = {
+            "generated": 1000,
+            "sessions": [
+                {
+                    "harness": "claude",
+                    "sid": "first",
+                    "project": "p",
+                    "state": "idle",
+                    "last_activity": 900,
+                    "subagent_events": [{"kind": "subagent_complete", "name": "First", "at": 800}],
+                },
+                {
+                    "harness": "claude",
+                    "sid": "second",
+                    "project": "p",
+                    "state": "working",
+                    "last_activity": 950,
+                    "subagent_events": [{"kind": "subagent_complete", "name": "Second", "at": 800}],
+                },
+            ],
+        }
+        output = "\n".join(
+            terminal_project.render(
+                terminal_project.derive(payload, {}, label="p"), caller=("claude", "first")
             )
+        )
+        self.assertIn("recover First handoff", output)
+        self.assertNotIn("recover Second handoff", output)
+
+    def test_a_person_reads_indented_members_execution_and_attention(self) -> None:
+        brief = terminal_project.derive(
+            recorded("data-terminal-project"),
+            recorded("context-terminal-project"),
+            label="terminal-project",
+        )
+        lines = terminal_project.render(brief, caller=("claude", "a1b2c3d4"))
+        self.assertTrue(any(line.startswith("  claude:a1b2c3d4 [this session]") for line in lines))
+        for heading in ("Running now:", "Needs you:"):
+            self.assertTrue(lines[lines.index(heading) + 1].startswith("  "), lines)
+        self.assertTrue(any(line.startswith("  Reader · active") for line in lines))
 
     def test_a_person_keeps_same_label_members_when_repository_keys_disagree(self) -> None:
         payload = recorded("data-terminal-project")
@@ -289,6 +394,19 @@ class ProjectCommandTest(unittest.TestCase):
             self.assertEqual("GET", method)
             for forbidden in ("refresh", "observer_model", "/api/data"):
                 self.assertNotIn(forbidden, path)
+
+    def test_a_person_is_not_marked_as_a_peer_with_the_same_short_session_id(self) -> None:
+        answers = self.answers()
+        payload = recorded("sessions-terminal-project")
+        peer = next(row for row in payload["sessions"] if row["sid"] == "a1b2c3d4")
+        peer["resume_id"] = "a1b2c3d4-9999-2222-3333-444455556666"
+        answers["/api/sessions"] = (200, {}, json.dumps(payload).encode())
+        with FakeDashboard(answers=answers) as fake:
+            code, out, err = self.run_project(fake)
+        self.assertEqual((1, ""), (code, out))
+        self.assertIn("outside the current board", err)
+        self.assertNotIn("[this session]", out)
+        self.assertFalse(any(path.startswith("/api/project-context") for _, path in fake.requests))
 
     def test_a_person_reads_their_project_when_the_cold_session_list_takes_six_seconds(
         self,

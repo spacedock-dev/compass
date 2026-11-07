@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import dataclasses
 import datetime
 import hashlib
@@ -1070,6 +1071,32 @@ def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
                 get(path, query),
                 "Four project members: working, waiting, ended and quiet; "
                 "child execution and redacted peer words.",
+            )
+    finally:
+        rig.close()
+
+    follow_ups = copy.deepcopy(rows)
+    first, second, ended = follow_ups["claude"]
+    first["state"] = "idle"
+    first["last_activity"] = NOW - 120
+    first["spacedock"] = {"role": "first-officer"}
+    first["subagents"] = []
+    first["subagent_events"] = [{"kind": "subagent_complete", "name": "First", "at": NOW - 100}]
+    second["state"] = "idle"
+    second["subagent_events"] = [{"kind": "subagent_complete", "name": "Second", "at": NOW - 100}]
+    ended["subagent_events"] = []
+    rig = Rig(scratch, "terminal-project-fo", rows=follow_ups)
+    try:
+        for name, path, query in (
+            ("data-terminal-project-fo", "/api/data", ""),
+            ("sessions-terminal-project-fo", "/api/sessions", ""),
+            ("context-terminal-project-fo", "/api/project-context", "project=key-terminal-project"),
+        ):
+            recorder.capture(
+                rig,
+                name,
+                get(path, query),
+                "Only the first officer has follow-ups; tied child returns retain published order.",
             )
     finally:
         rig.close()

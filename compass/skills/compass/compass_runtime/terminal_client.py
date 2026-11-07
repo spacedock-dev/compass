@@ -1088,7 +1088,11 @@ def run_project(
             return 0
         payload = read_sessions(found.port, timeout=remaining(LIST_REQUEST_TIMEOUT_SEC))
         caller = (own["harness"], own["sid"])
-        matching = [row for row in payload["sessions"] if (row["harness"], row["sid"]) == caller]
+        matching = [
+            row
+            for row in payload["sessions"]
+            if row["harness"] == named.harness and terminal_sessions.names(row, named.sid)
+        ]
         if len(matching) != 1 or matching[0]["project"] != label:
             print(
                 "This session is outside the current board or its project changed; read again.",

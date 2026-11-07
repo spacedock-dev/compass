@@ -1,0 +1,139 @@
+{
+  "format": 1,
+  "name": "context-terminal-project-fo",
+  "notes": "Only the first officer has follow-ups; tied child returns retain published order.",
+  "request": {
+    "body": null,
+    "headers": {},
+    "method": "GET",
+    "path": "/api/project-context",
+    "query": "project=key-terminal-project"
+  },
+  "response": {
+    "body": {
+      "child_assignments": [],
+      "events": [],
+      "focus": null,
+      "observer_model": {
+        "disclosure": "A focused refresh sends redacted transcript excerpts and workflow stage through Codex to OpenAI for a goal summary. Each prompt is capped at 16 KiB, with a 60-second timeout and one call in flight per session. A focused refresh can include up to three active child sessions. Pause model calls or --no-observer-model stops these calls.",
+        "enabled": false,
+        "max_prompt_bytes": 16384
+      },
+      "observers": [],
+      "project": "key-terminal-project",
+      "semantic": {
+        "contributors": [],
+        "facts": [],
+        "history": {
+          "cursors": {},
+          "event_count": 0,
+          "events": [],
+          "persisted": true,
+          "window_sec": 86400
+        },
+        "projections": {
+          "activity": {
+            "historical_unresolved": 0,
+            "history_nodes": [],
+            "nodes": [],
+            "steering": []
+          },
+          "assignments": [],
+          "candidate_goal_shifts": [],
+          "command_attention": [],
+          "command_attention_coverage": {
+            "omitted": 0,
+            "scanned": 2,
+            "source": "bounded active-session final-output scan",
+            "state": "complete",
+            "total": 2
+          },
+          "operator_intents": [],
+          "steering_episodes": [],
+          "trail_heads": []
+        },
+        "relations": [],
+        "work_items": []
+      },
+      "sources": {
+        "gate": {
+          "live": 0,
+          "status_history": "unavailable",
+          "untimestamped_prepare": 0
+        },
+        "observer": {
+          "live": 0,
+          "omitted": [],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            },
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "a1b2c3d4"
+            }
+          ]
+        },
+        "scope": "selected project",
+        "steer": {
+          "live": 0,
+          "omitted": [],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            },
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "a1b2c3d4"
+            }
+          ]
+        },
+        "surrounding_active": 0,
+        "work": {
+          "live": 0,
+          "omitted": [],
+          "support": {
+            "collapsed_contributors": 0,
+            "dispatch_builds": 0,
+            "pending_subagents": 0,
+            "subagent_calls": 0,
+            "suppressed_tool_calls": 0,
+            "tool_calls": 0
+          },
+          "tool_reports": [],
+          "unavailable": [
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "deadbeef"
+            },
+            {
+              "harness": "claude",
+              "reason": "transcript not found",
+              "sid": "a1b2c3d4"
+            }
+          ]
+        }
+      },
+      "workflow_discovery": {
+        "reason": "project root unavailable from observed sessions",
+        "source": "spacedock status --discover",
+        "state": "unavailable",
+        "workflows": []
+      }
+    },
+    "headers": {
+      "Cache-Control": "no-store",
+      "Content-Length": "2053",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}
