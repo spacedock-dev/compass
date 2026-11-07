@@ -21,6 +21,7 @@ from compass_runtime import (
     http_api,
     live_lease,
     reading,
+    reading_jobs,
     reading_policy,
     reading_route,
     terminal_client,
@@ -667,7 +668,7 @@ class PauseAndShutdown(LeaseRoute):
             with self.subTest(source=source), self.serving() as port:
                 reading_policy.set_consent(self.config, True, now=self.application.clock())
                 self.lease(port, "start")
-                job = reading.start_job(
+                job = reading_jobs.start_job(
                     self.config, "codex:ordinary", provider="codex", label="Codex", now=NOW
                 )
                 assert job is not None
