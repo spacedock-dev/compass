@@ -11,12 +11,14 @@ module, and a test holds the two copies equal.
 from __future__ import annotations
 
 import contextlib
+import copy
 import hashlib
 import json
 import os
 import re
 import threading
-from typing import TYPE_CHECKING, Any, Final
+from collections import Counter
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from compass_runtime import io as runtime_io
 from compass_runtime import terminal_sessions
@@ -38,6 +40,16 @@ _OWNED_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}-[0-9a-f]{32}\.json")
 
 Body = dict[str, Any]
 Built = dict[tuple[str, str], Body]
+
+
+class MonitorSource(Protocol):
+    """Lease lookup is cheap; the page projection may read context and the newest record page."""
+
+    def state(self, row: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def view(
+        self, collection: Mapping[str, Any], row: Mapping[str, Any], lease: Mapping[str, Any]
+    ) -> Mapping[str, Any] | None: ...
 
 
 def line_name(harness: str, sid: str) -> str:
@@ -130,9 +142,9 @@ def build(collection: Mapping[str, Any], *, pid: int, now: float) -> Built:
             "pid": pid,
             "waiting": queue - own if measured else None,
             "blind": list(blind),
-            # Left for the monitor to fill. The client prints no drift while `monitor` is not true.
-            "monitor": None,
+            "monitor": False,
             "level": None,
+            "last_end": None,
         }
     return built
 
@@ -149,6 +161,7 @@ class Lines:
         home: str,
         *,
         pid: int | None = None,
+        monitor: MonitorSource | None = None,
         diagnostic_sink: Callable[[str], None] | None = None,
     ) -> None:
         self.directory = os.path.join(home, DIRECTORY)
@@ -163,28 +176,166 @@ class Lines:
         self._current: set[str] = set()
         self._last_sweep: float | None = None
         self._said = False
+        self._monitor = monitor
+        self._collection: Body = {}
+        self._generation = 0
+        self._sessions: dict[str, Mapping[str, Any]] = {}
+        self._ambiguous: set[str] = set()
+        # Desired bodies survive write failure. In particular, an end must never fall back to
+        # restamping the previous live body when a replacement fails.
+        self._desired: dict[str, Body] = {}
+        self._retired: set[str] = set()
+        self._levels: dict[str, tuple[object, str | None]] = {}
+        self._attempted: dict[str, float] = {}
+        self._inflight: set[str] = set()
 
     def update(self, collection: Mapping[str, Any], now: float) -> None:
+        """Publish counts and lease state under collection's lock; never project here."""
         try:
-            built = build(collection, pid=self._pid, now=now)
+            snapshot = copy.deepcopy(dict(collection))
+            built = build(snapshot, pid=self._pid, now=now)
+            sessions = {
+                line_name("claude", _identity(row)): row
+                for row in _rows(snapshot)
+                if row["harness"] == "claude"
+            }
+            # Two rows with one lease identity cannot be assigned an unambiguous page view.
+            identities = Counter((r["harness"], r["sid"]) for r in _rows(snapshot))
+            ambiguous = {
+                name
+                for name, row in sessions.items()
+                if identities[(row["harness"], row["sid"])] != 1
+            }
             with self._lock:
-                self._current = {line_name(h, s) for h, s in built}
-                wrote = False
+                if {k: v for k, v in snapshot.items() if k != "generated"} != {
+                    k: v for k, v in self._collection.items() if k != "generated"
+                }:
+                    self._generation += 1
+                    self._levels.clear()
+                for name in self._current - sessions.keys():
+                    body = self._desired[name]
+                    previous = self._written.get(name)
+                    if body["monitor"] is True or (
+                        previous is not None and previous[0]["monitor"] is True
+                    ):
+                        lease = self._state(self._sessions[name])
+                        self._desired[name] = {
+                            **body,
+                            "monitor": False,
+                            "level": None,
+                            "last_end": lease.get("last_end"),
+                        }
+                        self._retired.add(name)
+                    elif name not in self._retired:
+                        self._desired.pop(name, None)
+                    self._levels.pop(name, None)
+                self._collection = snapshot
+                self._sessions = sessions
+                self._ambiguous = ambiguous
+                self._current = set(sessions)
                 for (harness, sid), body in built.items():
-                    wrote |= self._write(line_name(harness, sid), body, now)
-                if wrote:
-                    self._sweep(now)
+                    name = line_name(harness, sid)
+                    self._retired.discard(name)
+                    self._desired[name] = body
+                    row = sessions[name]
+                    if name not in self._ambiguous:
+                        self._apply_state(name, self._state(row))
+                self._flush(now)
         except Exception as exc:  # noqa: BLE001 — a status line file must never fail a request
             self._report(exc)
 
+    def _state(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        return self._monitor.state(row) if self._monitor is not None else {"on": False}
+
+    def _apply_state(self, name: str, lease: Mapping[str, Any]) -> None:
+        body = self._desired[name]
+        on = lease.get("on") is True
+        cached = self._levels.get(name)
+        body["monitor"] = on
+        body["last_end"] = None if on else lease.get("last_end")
+        body["level"] = (
+            cached[1]
+            if on and cached is not None and cached[0] == lease.get("started_at")
+            else None
+        )
+        if not on:
+            self._levels.pop(name, None)
+
+    def _flush(self, now: float) -> None:
+        wrote = False
+        for name in sorted(self._current | self._retired):
+            body = {**self._desired[name], "at": now}
+            wrote |= self._write(name, body, now)
+            previous = self._written.get(name)
+            if (
+                name in self._retired
+                and previous is not None
+                and _content(previous[0]) == _content(body)
+            ):
+                self._retired.remove(name)
+                self._desired.pop(name, None)
+        if wrote:
+            self._sweep(now)
+
     def touch(self, now: float) -> None:
-        """Refresh the time on files that are still current and have aged, content unchanged."""
+        """Service ends every pass, and project at most once per session per refresh.
+
+        The coordinator calls this after collection has released its non-reentrant lock. Reserve
+        attempts before releasing our lock, so concurrent touches cannot multiply transcript reads.
+        Recheck both lease episode and collection generation before accepting a slow answer.
+        """
         try:
+            jobs = []
             with self._lock:
-                for name in sorted(self._current):
-                    previous = self._written.get(name)
-                    if previous is not None:
-                        self._write(name, {**previous[0], "at": now}, now)
+                for name, row in self._sessions.items():
+                    lease = self._state(row) if name not in self._ambiguous else {"on": False}
+                    self._apply_state(name, lease)
+                    if (
+                        lease.get("on") is True
+                        and name not in self._inflight
+                        and now - self._attempted.get(name, -float("inf")) >= REFRESH_SEC
+                    ):
+                        self._attempted[name] = now
+                        self._inflight.add(name)
+                        jobs.append((name, row, lease, self._collection, self._generation))
+                self._flush(now)
+            for name, row, lease, collection, generation in jobs:
+                view = None
+                try:
+                    with self._lock:
+                        current = (
+                            self._state(self._sessions[name])
+                            if name in self._current and name not in self._ambiguous
+                            else {"on": False}
+                        )
+                        ready = (
+                            current.get("on") is True
+                            and current.get("started_at") == lease.get("started_at")
+                            and generation == self._generation
+                        )
+                    if ready and self._monitor is not None:
+                        view = self._monitor.view(collection, row, current)
+                except Exception as exc:  # noqa: BLE001 - a projection failure costs only its level
+                    self._report(exc)
+                finally:
+                    with self._lock:
+                        self._inflight.discard(name)
+                        if name in self._current:
+                            current = (
+                                self._state(self._sessions[name])
+                                if name not in self._ambiguous
+                                else {"on": False}
+                            )
+                            if (
+                                current.get("on") is True
+                                and current.get("started_at") == lease.get("started_at")
+                                and generation == self._generation
+                            ):
+                                pill = view.get("pill") if view is not None else None
+                                level = pill.get("level") if isinstance(pill, dict) else None
+                                self._levels[name] = (lease.get("started_at"), level)
+                            self._apply_state(name, current)
+                            self._flush(max(now, self._written.get(name, ({}, now))[1]))
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
 
@@ -196,9 +347,19 @@ class Lines:
                     os.unlink(os.path.join(self.directory, name))
             self._written.clear()
             self._current.clear()
+            self._sessions.clear()
+            self._ambiguous.clear()
+            self._desired.clear()
+            self._retired.clear()
+            self._levels.clear()
+            self._attempted.clear()
+            self._generation += 1
 
     def _write(self, name: str, body: Body, now: float) -> bool:
         previous = self._written.get(name)
+        if previous is not None:
+            now = max(now, previous[1])
+            body = {**body, "at": now}
         if (
             previous is not None
             and _content(previous[0]) == _content(body)
@@ -230,6 +391,7 @@ class Lines:
                             # Forgotten with its file, so a later `remove_all` and the refresh
                             # never name a file that is gone.
                             self._written.pop(entry.name, None)
+                            self._attempted.pop(entry.name, None)
         except OSError:
             return
 

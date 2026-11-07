@@ -19,7 +19,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 from unittest import mock
 
-from compass_runtime import cli, entry, footer_lines, lifecycle, terminal_client
+from compass_runtime import (
+    cli,
+    entry,
+    footer_lines,
+    levels,
+    lifecycle,
+    live_lease,
+    terminal_client,
+    terminal_drift,
+)
 
 from .support import SERVER_PATH
 
@@ -648,6 +657,121 @@ class ReadLineTest(unittest.TestCase):
         self.assertEqual(("Cursor",), got.blind)
 
 
+class MonitorFooterTest(ReadLineTest):
+    def footer(self, *, now: float = NOW, **fields: object) -> str:
+        line_file(self.home, "claude", "sess-1", good_line(waiting=0, **fields))
+        line = terminal_client.read_line(self.home, self.session, now)
+        return terminal_client.compose_footer(None, line, now)
+
+    def test_a_person_with_the_monitor_off_sees_only_the_existing_blind_segment(self) -> None:
+        self.assertEqual(
+            "waits not reported for Antigravity",
+            self.footer(monitor=False, level="high", blind=["Antigravity"]),
+        )
+
+    def test_a_person_sees_the_pages_level_first_or_a_stated_absence(self) -> None:
+        for token, label in terminal_drift.LEVEL_NAMES.items():
+            with self.subTest(token=token):
+                self.assertEqual(
+                    f"drift {label} · waits not reported for Antigravity",
+                    self.footer(monitor=True, level=token, blind=["Antigravity"]),
+                )
+        self.assertEqual("drift: no level yet", self.footer(monitor=True, level=None))
+
+    def test_a_person_never_sees_an_unknown_level_or_a_truthy_monitor(self) -> None:
+        for monitor, level in (
+            (True, "bogus"),
+            (True, "no_live_level"),
+            (True, []),
+            (1, "high"),
+            ("true", "high"),
+            (None, "high"),
+        ):
+            with self.subTest(monitor=monitor, level=level):
+                self.assertEqual(
+                    "waits not reported for Antigravity",
+                    self.footer(monitor=monitor, level=level, blind=["Antigravity"]),
+                )
+
+    def test_a_persons_unknown_live_level_never_revives_an_old_end_note(self) -> None:
+        self.assertEqual(
+            "waits not reported for Antigravity",
+            self.footer(
+                monitor=True,
+                level="bogus",
+                last_end={"reason": "paused", "at": NOW},
+                blind=["Antigravity"],
+            ),
+        )
+
+    def test_a_person_sees_why_the_monitor_ended_for_five_minutes_only(self) -> None:
+        notes = {
+            "ended": "monitor off: session ended",
+            "left": "monitor off: check-in expired",
+            "paused": "monitor off: model calls paused",
+            "unanswered": "monitor off: no answer",
+            "declined": "monitor off: as you asked",
+            "cap": "monitor off: check limit reached",
+            "stopped": "",
+        }
+        for reason, note in notes.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    note,
+                    self.footer(
+                        monitor=False, level="high", last_end={"reason": reason, "at": NOW - 299}
+                    ),
+                )
+                self.assertEqual(
+                    "",
+                    self.footer(
+                        monitor=False, level="high", last_end={"reason": reason, "at": NOW - 300}
+                    ),
+                )
+        self.assertEqual(
+            "drift High",
+            self.footer(monitor=True, level="high", last_end={"reason": "paused", "at": NOW}),
+        )
+
+    def test_a_person_keeps_other_segments_when_an_end_is_malformed(self) -> None:
+        ends: tuple[object, ...] = (
+            {"reason": "bogus", "at": NOW},
+            {"reason": [], "at": NOW},
+            {"reason": "ended", "at": True},
+            {"reason": "ended", "at": float("nan")},
+            {"reason": "ended", "at": NOW + 6},
+            [],
+            None,
+        )
+        for end in ends:
+            with self.subTest(end=end):
+                self.assertEqual(
+                    "waits not reported for Antigravity",
+                    self.footer(monitor=False, last_end=end, blind=["Antigravity"]),
+                )
+
+    def test_a_person_with_an_old_monitor_file_still_sees_fresh_stdin_quota(self) -> None:
+        for age in (61, -6):
+            with self.subTest(age=age):
+                line_file(
+                    self.home,
+                    "claude",
+                    "sess-1",
+                    good_line(monitor=True, level="extreme", at=NOW - age),
+                )
+                line = self.read()
+                self.assertEqual(
+                    "5h 82% resets in 2h 10m",
+                    terminal_client.compose_footer(pro_payload(), line, NOW),
+                )
+
+    def test_the_persons_level_and_end_vocabularies_agree_with_the_producers(self) -> None:
+        self.assertEqual(
+            set(levels.DRIFT_SCALE) | {levels.NOT_ENOUGH}, set(terminal_client.FOOTER_LEVELS)
+        )
+        self.assertEqual(set(live_lease.END_REASONS), set(terminal_client.MONITOR_END_NOTES))
+
+
 class ComposeFooterTest(unittest.TestCase):
     def compose(self, payload: dict[str, object] | None, line: terminal_client.Line | None) -> str:
         return terminal_client.compose_footer(payload, line, NOW)
@@ -841,7 +965,7 @@ class RunFooterTest(unittest.TestCase):
         self.assertEqual(0, code)
 
     def test_it_opens_no_socket(self) -> None:
-        line_file(self.home, "claude", "sess-1", good_line())
+        line_file(self.home, "claude", "sess-1", good_line(monitor=True, level="high"))
         boom = AssertionError("the footer touched the network")
         with (
             mock.patch.object(socket.socket, "connect", side_effect=boom),
@@ -851,7 +975,7 @@ class RunFooterTest(unittest.TestCase):
             code, out, _ = self.run_footer(["--footer"], json.dumps(pro_payload()))
 
         self.assertEqual(0, code)
-        self.assertTrue(out.startswith("2 waiting"))
+        self.assertTrue(out.startswith("drift High · 2 waiting"))
 
 
 class FooterDispatchTest(unittest.TestCase):
@@ -934,7 +1058,9 @@ class FooterLightPathTest(unittest.TestCase):
 
     def test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client(self) -> None:
         with tempfile.TemporaryDirectory() as home:
-            line_file(home, "claude", "sess-1", good_line(at=time.time()))
+            line_file(
+                home, "claude", "sess-1", good_line(at=time.time(), monitor=True, level="medium")
+            )
             payload = pro_payload(
                 rate_limits={"five_hour": {"used_percentage": 12, "resets_at": time.time() + 3600}}
             )
@@ -942,7 +1068,9 @@ class FooterLightPathTest(unittest.TestCase):
             done = self.run_server("--footer", stdin=json.dumps(payload), home=home)
 
         self.assertEqual(0, done.returncode)
-        self.assertTrue(done.stdout.startswith("2 waiting · 5h 12% resets in "), done.stdout)
+        self.assertTrue(
+            done.stdout.startswith("drift Medium · 2 waiting · 5h 12% resets in "), done.stdout
+        )
         loaded = [
             name
             for name in (

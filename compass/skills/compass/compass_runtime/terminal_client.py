@@ -679,6 +679,30 @@ class Line(NamedTuple):
 
     waiting: int | None
     blind: tuple[str, ...]
+    monitor: bool = False
+    level: str | None = None
+    last_end: tuple[str, float] | None = None
+
+
+# Copies of the producer vocabularies, held equal by tests without importing the runtime here.
+FOOTER_LEVELS: Final = {
+    "none_or_low": "None or low",
+    "medium": "Medium",
+    "high": "High",
+    "extreme": "Extreme",
+    "not_enough": "Not enough recorded yet",
+}
+# Short forms of the page's `drift/monitor.ts` END_NOTES; the reader's own Off stays silent.
+MONITOR_END_NOTES: Final = {
+    "ended": "monitor off: session ended",
+    "left": "monitor off: check-in expired",
+    "paused": "monitor off: model calls paused",
+    "unanswered": "monitor off: no answer",
+    "declined": "monitor off: as you asked",
+    "cap": "monitor off: check limit reached",
+    "stopped": "",
+}
+MONITOR_END_SEC: Final = 300.0
 
 
 _WINDOWS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
@@ -800,15 +824,42 @@ def read_line(home: str, session: Session, now: float) -> Line | None:
     count = waiting if type(waiting) is int and waiting >= 0 else None
     labels = data.get("blind")
     blind = tuple(x for x in (_label(v) for v in labels) if x) if isinstance(labels, list) else ()
-    return Line(count, blind)
+    monitor = data.get("monitor") is True
+    raw_level = data.get("level")
+    level = raw_level if isinstance(raw_level, str) and raw_level in FOOTER_LEVELS else None
+    # An unknown token is not the stated absence: suppress only its drift segment.
+    monitor = monitor and (raw_level is None or level is not None)
+    raw_end = data.get("last_end")
+    last_end = None
+    if data.get("monitor") is False and isinstance(raw_end, dict):
+        reason, ended_at = raw_end.get("reason"), _number(raw_end.get("at"))
+        if (
+            isinstance(reason, str)
+            and reason in MONITOR_END_NOTES
+            and ended_at is not None
+            and ended_at <= now + LINE_FUTURE_SLACK_SEC
+        ):
+            last_end = (reason, ended_at)
+    return Line(count, blind, monitor, level, last_end)
 
 
 def compose_footer(payload: Mapping[str, Any] | None, line: Line | None, now: float) -> str:
-    """The one line: waiting, then who cannot report a wait, then the tightest quota window.
+    """The one line: monitor, waiting, who cannot report a wait, then the tightest quota window.
 
     An unmeasured or zero count prints nothing, and a steady board prints nothing at all.
     """
     parts: list[str] = []
+    if line is not None:
+        if line.monitor is True:
+            if line.level is None:
+                parts.append("drift: no level yet")
+            elif line.level in FOOTER_LEVELS:
+                parts.append(f"drift {FOOTER_LEVELS[line.level]}")
+        elif line.last_end is not None:
+            reason, ended_at = line.last_end
+            note = MONITOR_END_NOTES.get(reason)
+            if note and -LINE_FUTURE_SLACK_SEC <= now - ended_at < MONITOR_END_SEC:
+                parts.append(note)
     if line is not None and line.waiting:
         parts.append(f"{line.waiting} waiting")
     if line is not None and line.blind:
