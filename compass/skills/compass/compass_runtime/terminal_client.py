@@ -168,6 +168,11 @@ class Option(NamedTuple):
 
 
 OPERATIONS = (
+    Operation(
+        "--goal",
+        "read the goal a reading would use; text saves it, --clear empties it, "
+        "--adopt saves its source",
+    ),
     Operation("--pause-model-calls", "pause Compass model calls; Resume stays on the board"),
     Operation(
         "--monitor",
@@ -201,14 +206,57 @@ OPTIONS = (
     Option(
         "--session",
         "HARNESS:SESSION_ID",
-        "the session --footer, --project or --drift reports for, or --monitor holds; "
+        "the session --footer, --goal, --project or --drift reports for, or --monitor holds; "
         "such as claude:SESSION_ID; "
         "default: the status line's session_id (--footer only), then CLAUDE_CODE_SESSION_ID",
     ),
 )
 
 
-SWITCHES = (Operation("--off", "stop this terminal holder, only with --monitor"),)
+SWITCHES = (
+    Operation("--off", "stop this terminal holder, only with --monitor"),
+    Operation("--clear", "save an empty goal, only with --goal"),
+    Operation("--adopt", "adopt the harness goal or drafted prompt, only with --goal"),
+)
+
+
+class GoalRequest(NamedTuple):
+    text: str | None = None
+    clear: bool = False
+    adopt: bool = False
+    session: str | None = None
+
+    @property
+    def writes(self) -> bool:
+        return self.text is not None or self.clear or self.adopt
+
+
+def parse_goal_args(argv: list[str]) -> GoalRequest | None:
+    """Claim one goal operation, with at most one explicitly named session."""
+    rest = list(argv)
+    text, session = None, None
+    goal = clear = adopt = False
+    while rest:
+        arg = rest.pop(0)
+        if (arg == "--goal" or arg.startswith("--goal=")) and not goal:
+            goal = True
+            if arg.startswith("--goal="):
+                text = arg.split("=", 1)[1]
+            elif rest and not rest[0].startswith("--"):
+                text = rest.pop(0)
+        elif arg == "--clear" and not clear:
+            clear = True
+        elif arg == "--adopt" and not adopt:
+            adopt = True
+        elif session is None and arg.startswith("--session="):
+            session = arg.split("=", 1)[1]
+        elif session is None and arg == "--session" and rest:
+            session = rest.pop(0)
+        else:
+            return None
+    if not goal or sum((text is not None, clear, adopt)) > 1:
+        return None
+    return GoalRequest(text, clear, adopt, session)
 
 
 def release_version() -> str | None:
@@ -386,7 +434,8 @@ def parse_project_args(argv: list[str]) -> tuple[bool, str | None]:
 
 def handles(argv: list[str]) -> bool:
     return (
-        parse_monitor_args(argv)[0]
+        parse_goal_args(argv) is not None
+        or parse_monitor_args(argv)[0]
         or parse_footer_args(argv)[0]
         or parse_drift_args(argv)[0]
         or parse_project_args(argv)[0]
@@ -394,7 +443,10 @@ def handles(argv: list[str]) -> bool:
     )
 
 
-def run(argv: list[str]) -> int:
+def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short operation
+    goal = parse_goal_args(argv)
+    if goal is not None:
+        return run_goal(goal)
     monitor, off, named = parse_monitor_args(argv)
     if monitor:
         return run_monitor(off=off, session=named)
@@ -1263,6 +1315,11 @@ class LoopbackBoard:
     def data(self) -> Any:
         return self._read("/api/data")
 
+    def session(self, harness: str, sid: str) -> Any:
+        from urllib.parse import urlencode  # noqa: PLC0415
+
+        return self._read("/api/session?" + urlencode({"harness": harness, "sid": sid}))
+
     def context(self, project: str, session: str) -> Any:
         from urllib.parse import quote  # noqa: PLC0415 — only a drift reaches this
 
@@ -1277,6 +1334,34 @@ class LoopbackBoard:
         except DashboardUnreachable as error:
             raise Lost(path) from error
         return reply.status, reply.data
+
+
+def run_goal(
+    request: GoalRequest,
+    *,
+    port: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Reads never launch; writes require the person's explicit session and terminal stdout."""
+    from compass_runtime import terminal_goal  # noqa: PLC0415
+
+    if request.writes and (request.session is None or not _is_terminal(sys.stdout)):
+        print("Saving a goal needs an explicit --session and terminal stdout.", file=sys.stderr)
+        return 1
+    env = os.environ if environ is None else environ
+    named = resolve_session(request.session, env, None, payload={})
+    if isinstance(named, Unresolved):
+        print(named.message, file=sys.stderr)
+        return 1
+    found = ensure_dashboard(
+        state_home(env), port=port, spend=request.writes, own_version=release_version()
+    )
+    if isinstance(found, Refusal):
+        print(found.message, file=sys.stderr)
+        return found.code
+    return terminal_goal.run(
+        request, named=named, board=LoopbackBoard(found.port), out=sys.stdout, err=sys.stderr
+    )
 
 
 def run_drift(

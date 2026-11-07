@@ -43,6 +43,7 @@ DEFAULT_TASK = "Write a three-line poem about a lighthouse keeper."
 # spending until it is listed here, so a new action fails closed rather than spending by default.
 FREE_ARGUMENTS = frozenset(
     {
+        ("--goal",),
         ("--project",),
         ("--sessions",),
         ("--sessions", "waiting"),

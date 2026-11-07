@@ -1238,7 +1238,7 @@ class DirectionRouteTest(_ClaudeSession):
                 },
             )
             self.assertEqual(
-                (200, "stored", None), (status, reply["outcome"], reply["saved_revision"])
+                (200, "stored", 5), (status, reply["outcome"], reply["saved_revision"])
             )
             self.assertNotIn("saved_revision", annotation_store.load(self.config)[0])
 

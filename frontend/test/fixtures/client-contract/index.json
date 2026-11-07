@@ -29,7 +29,7 @@
       "method": "POST",
       "name": "annotate-current-revision",
       "route": "/api/annotate",
-      "sha256": "9e0303ac86c3477b2af20ae01ea85b4f7ffec552bc07dc54a7dc1e6a4969eea4",
+      "sha256": "f2355fb3053a69a9f6c0d08e7127c202e1c4dd3be984a66ef21f60d6e86093c8",
       "status": 200
     },
     {
@@ -85,7 +85,7 @@
       "method": "POST",
       "name": "annotate-stored",
       "route": "/api/annotate",
-      "sha256": "907fcfb00680f1d13f6e065e6c8aa1398d3576c8564fd8734d0852a781d725f5",
+      "sha256": "dd18517f03483b8b4b2aa13ebe319b166a0226585e1449172dde1f5ba029c2f7",
       "status": 200
     },
     {
@@ -99,7 +99,7 @@
       "method": "POST",
       "name": "annotate-unchanged",
       "route": "/api/annotate",
-      "sha256": "94e782bfb7c97f6ed17dc41c7be3469c0ddb745d742120f8a60cb7cd31be654b",
+      "sha256": "ba83561c012a14836b59d47aa3862d3298f040a0dba37449e5bb4d8025f56be6",
       "status": 200
     },
     {

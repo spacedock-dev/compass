@@ -242,6 +242,8 @@ def refuse_footer_with_other_options(
     """
     if args.monitor or args.off:
         parser.error("--monitor stands alone or with --off and --session")
+    if args.clear or args.adopt:
+        parser.error("--clear and --adopt need --goal")
     if args.footer or args.session is not None:
         parser.error(
             "--footer and --session stand alone: they read the status line, not a dashboard"
@@ -255,7 +257,11 @@ def build_parser() -> argparse.ArgumentParser:
     # would otherwise be read as a development ticket path instead of an unknown option.
     parser = argparse.ArgumentParser(description=DESCRIPTION, allow_abbrev=False)
     for operation in (*terminal_client.OPERATIONS, *terminal_client.SWITCHES):
-        if operation.choices:
+        if operation.flag == "--goal":
+            parser.add_argument(
+                "--goal", nargs="?", const="", default=None, metavar="TEXT", help=operation.help
+            )
+        elif operation.choices:
             parser.add_argument(
                 operation.flag,
                 nargs="?",
@@ -924,6 +930,22 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     `args.port` always holds 4553 when the flag was left out, and passing that would turn off the
     client's discovery of a dashboard on another port.
     """
+    if args.goal is not None:
+        remaining = list(argv)
+        for index, arg in enumerate(remaining):
+            if arg == "--port":
+                del remaining[index : index + 2]
+                break
+            if arg.startswith("--port="):
+                del remaining[index]
+                break
+        goal = terminal_client.parse_goal_args(remaining)
+        if goal is None:
+            build_parser().error(
+                "--goal accepts text, --clear or --adopt, with --session and --port only"
+            )
+        typed = any(a == "--port" or a.startswith("--port=") for a in argv)
+        return terminal_client.run_goal(goal, port=args.port if typed else None)
     if args.pause_model_calls:
         remaining = [arg for arg in argv if arg != "--pause-model-calls"]
         if not (

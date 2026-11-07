@@ -790,6 +790,40 @@ class SessionLookupTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual({"session": {**self.row, "nested": [{}]}}, body)
 
+    def test_a_person_gets_goal_availability_and_caps_from_the_snapshot_that_found_their_session(
+        self,
+    ) -> None:
+        httpd = make_server()
+        metadata = {
+            "generated": 12345.0,
+            "annotate": False,
+            "annotate_unreadable": "The saved words could not be read",
+            "annotate_cap": 240,
+            "annotate_goal_cap": 1000,
+        }
+
+        def collect(*, show_all: bool) -> tuple[int, bytes]:
+            return 1, json.dumps(
+                {
+                    **metadata,
+                    "generated": metadata["generated"] if show_all else 10.0,
+                    "sessions": [self.row] if show_all else [],
+                }
+            ).encode()
+
+        with mock.patch.object(httpd.application, "collect_json", side_effect=collect):
+            thread = serve_until_closed(httpd)
+            try:
+                status, body = LeaseRoute.call(
+                    httpd.server_port,
+                    "GET",
+                    "/api/session?harness=claude&sid=" + self.row["resume_id"],
+                )
+            finally:
+                httpd.shutdown()
+                thread.join(timeout=5)
+        self.assertEqual((200, {"session": self.row, **metadata}), (status, body))
+
     def test_a_persons_session_row_is_refused_to_navigation_and_nonlocal_callers(self) -> None:
         for headers in (
             {"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate"},
