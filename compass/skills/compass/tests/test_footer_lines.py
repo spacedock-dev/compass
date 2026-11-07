@@ -528,6 +528,7 @@ class MonitorSource:
 
 class MonitorLinesTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.enterContext(mock.patch.object(time, "monotonic", return_value=0.0))
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.home = tmp.name
@@ -640,6 +641,73 @@ class MonitorLinesTest(unittest.TestCase):
         self.assertCountEqual(["short-id", "second"], self.source.calls)
         self.lines.touch(NOW + 15)
         self.assertCountEqual(["short-id", "second"] * 2, self.source.calls)
+
+    def test_a_person_whose_neighbour_lookup_fails_still_gets_their_own_level_on_the_next_refresh(
+        self,
+    ) -> None:
+        for failure_call in (1, 3):
+            with self.subTest(neighbour_lookup=failure_call):
+                self.lines = footer_lines.Lines(
+                    self.home, monitor=self.source, diagnostic_sink=lambda _m: None
+                )
+                self.collection["sessions"] = [
+                    self.collection["sessions"][0],
+                    row("claude", "second"),
+                    row("claude", "third"),
+                ]
+                for sid in ("second", "third"):
+                    self.source.leases[sid] = {"on": True, "started_at": NOW}
+                self.lines.update(self.collection, NOW)
+                self.assertIsNone(self.body()["level"])
+                neighbour_calls = 0
+
+                def state(session: Any, *, fail_at: int = failure_call) -> dict[str, Any]:
+                    nonlocal neighbour_calls
+                    if session["sid"] == "second":
+                        neighbour_calls += 1
+                        if neighbour_calls == fail_at:
+                            raise RuntimeError("neighbour lookup failed")
+                    return MonitorSource.state(self.source, session)
+
+                with mock.patch.object(self.source, "state", side_effect=state):
+                    self.lines.touch(NOW)
+                    self.assertEqual("medium", self.body()["level"])
+                    self.lines.touch(NOW + 15)
+                self.assertEqual("medium", self.body()["level"])
+                self.assertEqual("medium", self.body("third")["level"])
+
+    def test_a_person_whose_neighbour_was_slow_is_not_projected_twice_within_one_refresh(
+        self,
+    ) -> None:
+        self.collection["sessions"].append(row("claude", "second"))
+        self.source.leases["second"] = {"on": True, "started_at": NOW}
+        self.lines.update(self.collection, NOW)
+        clock = [100.0]
+        starts: dict[str, list[float]] = {"short-id": [], "second": []}
+        original = self.source.view
+
+        def view(collection: Any, session: Any, lease: Any) -> dict[str, Any]:
+            sid = session["sid"]
+            starts[sid].append(clock[0])
+            if sid == "short-id" and len(starts[sid]) == 1:
+                clock[0] += 30
+                self.lines.touch(NOW + 30)
+            return original(collection, session, lease)
+
+        with (
+            mock.patch.object(time, "monotonic", side_effect=lambda: clock[0]),
+            mock.patch.object(self.source, "view", side_effect=view),
+        ):
+            self.lines.touch(NOW)
+            self.assertEqual("medium", self.body("second")["level"])
+            self.assertEqual([130.0], starts["second"])
+            clock[0] = 135.0
+            self.lines.touch(NOW + 35)
+            self.assertEqual([130.0], starts["second"])
+            clock[0] = 145.0
+            self.lines.touch(NOW + 45)
+        self.assertEqual([130.0, 145.0], starts["second"])
+        self.assertEqual("medium", self.body("second")["level"])
 
     def test_a_person_whose_monitor_ends_while_another_projects_costs_no_record_read(self) -> None:
         source = self.source

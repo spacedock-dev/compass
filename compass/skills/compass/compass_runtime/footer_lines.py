@@ -17,6 +17,7 @@ import json
 import os
 import re
 import threading
+import time
 from collections import Counter
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
@@ -284,20 +285,25 @@ class Lines:
         attempts before releasing our lock, so concurrent touches cannot multiply transcript reads.
         Recheck both lease episode and collection generation before accepting a slow answer.
         """
+        jobs = []
+        reserved: set[str] = set()
         try:
-            jobs = []
+            reserved_at = time.monotonic()
             with self._lock:
                 for name, row in self._sessions.items():
-                    lease = self._state(row) if name not in self._ambiguous else {"on": False}
-                    self._apply_state(name, lease)
-                    if (
-                        lease.get("on") is True
-                        and name not in self._inflight
-                        and now - self._attempted.get(name, -float("inf")) >= REFRESH_SEC
-                    ):
-                        self._attempted[name] = now
-                        self._inflight.add(name)
-                        jobs.append((name, row, lease, self._collection, self._generation))
+                    try:
+                        lease = self._state(row) if name not in self._ambiguous else {"on": False}
+                        self._apply_state(name, lease)
+                        if (
+                            lease.get("on") is True
+                            and name not in self._inflight
+                            and now - self._attempted.get(name, -float("inf")) >= REFRESH_SEC
+                        ):
+                            self._inflight.add(name)
+                            reserved.add(name)
+                            jobs.append((name, row, lease, self._collection, self._generation))
+                    except Exception as exc:  # noqa: BLE001 - one lease cannot block its neighbours
+                        self._report(exc)
                 self._flush(now)
             for name, row, lease, collection, generation in jobs:
                 view = None
@@ -314,12 +320,16 @@ class Lines:
                             and generation == self._generation
                         )
                     if ready and self._monitor is not None:
+                        with self._lock:
+                            # Queued neighbours may take longer than a refresh to project.
+                            self._attempted[name] = now + (time.monotonic() - reserved_at)
                         view = self._monitor.view(collection, row, current)
                 except Exception as exc:  # noqa: BLE001 - a projection failure costs only its level
                     self._report(exc)
                 finally:
                     with self._lock:
                         self._inflight.discard(name)
+                        reserved.discard(name)
                         if name in self._current:
                             current = (
                                 self._state(self._sessions[name])
@@ -338,6 +348,9 @@ class Lines:
                             self._flush(max(now, self._written.get(name, ({}, now))[1]))
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
+        finally:
+            with self._lock:
+                self._inflight.difference_update(reserved)
 
     def remove_all(self) -> None:
         """Remove what this instance wrote. A crash leaves the rest to the ceiling and the sweep."""
