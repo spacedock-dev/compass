@@ -1932,13 +1932,21 @@ alike.
 
 Owner, 2026-10-20: the lane stays reachable under `--unasked-readings`, and Claude Code is its
 provider by default. Claude Code checks Claude Code sessions and Codex checks Codex sessions. On a
-harness with no producer of its own the lane prefers Claude Code, and Codex serves only when Claude
-Code is unavailable or unqualified on this machine. This is `reading_route.resolve(unasked=True)`,
+supported harness with no producer of its own the lane prefers Claude Code, and Codex serves only
+when Claude Code is unavailable or unqualified on this machine. This is `reading_route.resolve(unasked=True)`,
 with no fallback after a failed launch. A pressed Analyze drift keeps its own rule, Codex first on
 such a harness: the ruling named the unasked lane, and changing who a press sends to was not asked
 for. The board publishes the lane's routes as `unasked_routes`, beside `reading_routes`, only while
 the lane is attached. It replaces the Codex-only restriction in DEC-21's earlier amendments, not the
 default-off ruling.
+
+Unasked checks require a session record reader: Claude Code, Codex and Pi transcripts, or
+Antigravity directions. Other harnesses publish a provider-empty route with reason
+`no-record-reader`, no disclosure and a note explaining the absence. The resolver enforces this
+before looking up a provider, for the board, worker and grant endpoint alike. Requested Analyze
+routing is unchanged. The Drift card shows the note without a grant switch, and Attention omits
+that session from the permission queue. A stored Codex grant still keeps its revoke switch beside
+the note. `UNASKED_REASONS` adds this reason to the requested-route `REASONS` domain.
 
 Claude Code uses the owner's 2026-10-02 producer acceptance, never described as a passed check,
 through `reading_policy.GuardedModel`, the same guarded seam as Codex and requested readings.
@@ -1965,7 +1973,8 @@ the flag off), neither control nor cue is shown.
 words destination and the normal explicit-press guards. It starts no analysis. It refuses paused
 or disabled runs, non-loopback clients and document navigations. A grant is also refused for a
 stale provider, model or destination and for a session Claude Code would check
-(`no-grant-needed`); a revoke is not, and deletes the Codex grant whatever today's route is, since
+(`no-grant-needed`), or for a harness with no session record reader (`no-record-reader`). A revoke
+is not, and deletes the Codex grant whatever today's route is, since
 a grant that could be revoked only while Codex held the route would return with it. Pause followed by Resume
 clears the grant, so a reader who paused grants it again on purpose. Analyze,
 legacy `allow: true` presses and Resume never grant it. Revocation cancels this daemon's running

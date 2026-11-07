@@ -61,6 +61,8 @@ REASONS = (
     REASON_UNQUALIFIED_OTHER_MISSING,
     REASON_UNQUALIFIED,
 )
+REASON_NO_RECORD_READER = "no-record-reader"
+UNASKED_REASONS = (*REASONS, REASON_NO_RECORD_READER)
 _NONE_REASONS = {
     ("missing", "missing"): REASON_NOT_INSTALLED,
     ("missing", "unqualified"): REASON_MISSING_OTHER_UNQUALIFIED,
@@ -632,10 +634,10 @@ def _resolve(
     """The one provider that reads a session on this harness, or why none can.
 
     Own harness first; else the other provider, said before the press; else
-    nothing. `unasked` changes only the choice on a harness with no producer
-    of its own: Claude Code first there, Codex as the fallback. Never a third
-    choice, and never a second provider after a launch failed: the route is
-    decided once, here, before anything is spent.
+    nothing. `unasked` requires a session record reader and changes the choice
+    on a harness with no producer of its own: Claude Code first there, Codex as
+    the fallback. Never a third choice, and never a second provider after a
+    launch failed: the route is decided once, here, before anything is spent.
     """
     which = binary_resolver or shutil.which
     claude_model = runtime_config.validate_claude_reading_model(
@@ -653,6 +655,19 @@ def _resolve(
         if config is None
         else ci_read.setting(config)
     )
+
+    if unasked and harness not in (*observer.TRANSCRIPT_HARNESSES, *observer.DIRECTION_HARNESSES):
+        return _route(
+            harness,
+            "",
+            REASON_NO_RECORD_READER,
+            "Compass cannot run unasked checks for this harness because it has no session record "
+            "reader.",
+            fallback=False,
+            where=where,
+            claude_model=claude_model,
+            ci=ci,
+        )
 
     # The unasked lane prefers Claude Code where no own producer exists (owner,
     # 2026-10-20); Analyze keeps Codex there, which that ruling did not change.

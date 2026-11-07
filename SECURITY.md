@@ -1457,7 +1457,10 @@ They govern Codex unasked checks, which require a stored words-only Allow coveri
 destination. The Drift card's "Allow Codex to run unasked checks" toggle deliberately writes or
 revokes it through a separate `unasked_grant` body on `POST /api/reading`. It requires the startup
 flag, a current provider and destination, a loopback non-navigation press, and refuses while paused
-(409 with `model-calls-paused`, the pause kept) or under `--no-observer-model` (503). It adds no route. Revocation deletes coverage without pausing requested readings.
+(409 with `model-calls-paused`, the pause kept) or under `--no-observer-model` (503). It adds no route.
+A harness with no session record reader refuses a grant with `409 no-record-reader` and stores
+nothing. Its Drift card explains why checks cannot run and keeps a Codex grant that covers the current destination revocable.
+Revocation deletes coverage without pausing requested readings.
 Analyze, an older page's `allow: true`, and Resume never write it. Pause followed by Resume clears
 it. Claude Code unasked checks use the owner's acceptance and need no separate stored grant.
 The board's `providers`, `words`, `rebind` and `tool_output` retain their explicit-coverage meaning;

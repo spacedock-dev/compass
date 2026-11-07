@@ -23,6 +23,8 @@ function typedGoal(session: Row): boolean {
 }
 
 const REFUSED: Readonly<Record<string, string>> = {
+  'no-record-reader':
+    'Compass cannot run unasked checks for this harness because it has no session record reader. Nothing was saved.',
   'destination-changed':
     'Where Codex sends your words changed. Check the destination shown here and try again.',
   'provider-changed': 'Codex no longer runs unasked checks of this session. Nothing was saved.',
@@ -58,11 +60,17 @@ export function UnaskedPermission({
   if (current['unasked'] !== true) return null;
   const provider = route?.['provider'];
   const allowed = granted(current);
+  const unavailable =
+    route?.['reason'] === 'no-record-reader' ? (
+      <section aria-label="Unasked checks unavailable" className="next-session-drift-check">
+        <p className="next-cockpit-reading-why">{String(route['note'] ?? '')}</p>
+      </section>
+    ) : null;
   /* A stored Codex grant keeps its revoke switch on every session page, whichever provider checks this session
      today: a grant that could be revoked only while Codex held the route would take effect again the day Codex
      returned, with no control left to stop it. */
   if (provider !== 'codex' && !allowed)
-    return provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null;
+    return provider === 'claude' && route ? <ClaudeUnasked route={route} /> : unavailable;
   const codexRoute = provider === 'codex' ? route : null;
   const refusal = unaskedRefusal(current);
   const blocked = Boolean(refusal);
@@ -116,6 +124,7 @@ export function UnaskedPermission({
   const labelId = `unasked-grant-${String(session['harness'] ?? '')}-${String(session['sid'] ?? '')}`;
   return (
     <>
+      {unavailable}
       {provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null}
       <section aria-label="Unasked checks" className="next-session-drift-check">
         <p className="next-cockpit-reading-why">

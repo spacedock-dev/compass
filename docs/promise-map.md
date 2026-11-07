@@ -282,10 +282,12 @@ until it is turned off or the session ends, under its caps.
 
 An unasked check raises a departure and never a reassurance, because an unasked "this looks fine" is the output the evidence-floor ruling called
 most damaging and it is worth nothing to someone who is not at the desk. It sends a check only
-with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and other
-harnesses prefer Claude Code, falling back only when the preferred provider is unavailable or
+with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks its own, and Pi
+and Antigravity prefer Claude Code, falling back only when the preferred provider is unavailable or
 unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
 checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
+A harness with no session record reader shows why checks cannot run and offers no grant switch
+or Attention permission entry. A stored Codex grant stays revocable there.
 Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and
 `--no-observer-model` stop checks; Analyze and Resume never grant them. On a Claude Code session an unasked
 check also reads the checks and commands that failed, with their output (not a shell call that ran more than one thing: its line and exit status only), so a failing test run against your

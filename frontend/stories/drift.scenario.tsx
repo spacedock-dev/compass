@@ -11,7 +11,7 @@ import { fakeBackend } from '../test/storage_backends';
    path nobody scripted answers `{}`, so a request nobody meant to make cannot reach a model or a session.
    Not a story file, so Storybook lists nothing from it and the route-reason guard can import its table. */
 
-export type Harness = 'claude' | 'pi' | 'codex' | 'antigravity';
+export type Harness = 'claude' | 'pi' | 'codex' | 'antigravity' | 'gemini';
 
 /* A route as the server publishes it (`reading_route.Route`), so a story edits only what it is about. */
 export interface RouteFields {

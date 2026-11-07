@@ -17,10 +17,12 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
 from compass_runtime import (
+    aggregate,
     departures,
     diagnostics,
     reading,
     reading_policy,
+    sessions,
     supervise,
     unasked,
 )
@@ -260,6 +262,78 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
         payload = application.collect(show_all=False)
         self.assertNotIn("unasked", payload)
         self.assertNotIn("unasked_routes", payload)
+
+    def test_a_reader_sees_unavailable_routes_and_keeps_pi_and_antigravity_checks(self) -> None:
+        application = self._serving("--unasked-readings")
+        harnesses = (
+            "gemini",
+            "copilot",
+            "cursor",
+            "opencode",
+            "goose",
+            "droid",
+            "pi",
+            "antigravity",
+        )
+
+        def spec(harness: str) -> aggregate.HarnessSpec:
+            def collect(*_args: Any) -> list[Any]:
+                row = sessions.base_session(harness, "s1", "proj")
+                row.update(state="working", active=True, last_activity=1_700_000_000.0)
+                return [row]
+
+            return aggregate.HarnessSpec(
+                key=harness, label=harness.title(), discover=lambda *_: True, collect=collect
+            )
+
+        application.harnesses = tuple(spec(h) for h in harnesses)
+        with mock.patch.object(
+            shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+        ):
+            payload = application.collect(show_all=True)
+        routes = payload["unasked_routes"]
+        self.assertEqual(set(harnesses), set(routes))
+        for harness in harnesses[:-2]:
+            self.assertEqual("", routes[harness]["provider"])
+            self.assertEqual("no-record-reader", routes[harness]["reason"])
+            self.assertIn("no session record reader", routes[harness]["note"])
+            self.assertEqual([], routes[harness]["disclosure_parts"])
+        for harness in ("pi", "antigravity"):
+            self.assertEqual("codex", routes[harness]["provider"])
+            self.assertTrue(routes[harness]["disclosure_parts"])
+
+    def test_a_reader_gets_no_check_or_fact_collection_for_an_unreadable_session(self) -> None:
+        config = _config(self.root)
+        state = build_runtime_state(config, started=1_000.0)
+        produce, facts = (
+            mock.Mock(return_value=(None, "ledger-empty", False)),
+            mock.Mock(return_value=[]),
+        )
+        lane = unasked.Lane(
+            config,
+            popup_notifier=lambda *_: None,
+            produce=produce,
+            facts_for=facts,
+            diagnostic_sink=lambda _: None,
+        )
+        with (
+            mock.patch.object(
+                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+            ),
+            mock.patch.object(reading, "CodexReadingModel") as codex,
+            mock.patch.object(reading, "ClaudeReadingModel") as claude,
+        ):
+            lane._read_and_raise(
+                state,
+                {**_row(), "harness": "gemini"},
+                {**_annotation(), "harness": "gemini"},
+                5_000.0,
+            )
+        facts.assert_not_called()
+        produce.assert_not_called()
+        codex.assert_not_called()
+        claude.assert_not_called()
+        self.assertEqual((), departures.load(config))
 
     def test_the_switch_alone_still_attaches_the_lane(self) -> None:
         # The control for the test above, so its refusal is the off switch's
