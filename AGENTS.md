@@ -497,7 +497,9 @@ A flake found only under local load, with its cause known but not fixed, goes in
 second table with that cause. A review that finds one records it there before deferring the fix.
 
 `python3 scripts/flaky_tally.py` reads the last week of CI runs through `gh` and prints what the
-ledger is missing. It writes nothing. Its candidates from failed runs still need the module-alone
+ledger is missing. It writes nothing. It retries a GitHub 5xx or dropped connection up to four
+times with doubling waits; any other `gh` failure, or a 5xx that persists, exits 1 and prints no
+partial tally. Its candidates from failed runs still need the module-alone
 check above.
 
 ## Calibrating Effort
