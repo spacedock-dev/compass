@@ -75,6 +75,22 @@ a GitHub parent tree or one issue. “Container” means its milestone or parent
 `blockedBy`, `blocks`, ready, started and finished are concepts mapped by the adapter, not
 assumed API fields or GitHub states. File discoveries and decision issues in the selected tracker.
 
+## What "burned down" means
+
+A scope is burned down only when every issue in it is closed: implemented with its change on
+`origin/main`, or canceled or marked duplicate with the reason in a comment. "Every issue" is the
+scope's membership when you refetch it at the end, so it includes discoveries and follow-ups this
+run filed into the scope. Shipping the issues the plan started with is not enough.
+
+Before saying a scope is burned down or complete, refetch it and confirm nothing in it is open. If
+anything is, either keep going, or stop and report the scope as not burned down, naming each open
+issue and why it is open (waiting on a capture, a ruling, the estimate). Moving an issue to
+another scope so this one reads complete needs the owner's approval, and the report says it moved.
+
+Measured 2026-11-08: a run shipped all eleven planned issues of a Linear milestone and reported
+it burned down while five follow-ups it had filed into that milestone were still open. The owner
+corrected the claim.
+
 ## Authorization and stop rules
 
 Plan approval authorizes its merges, listed repairs and planned issue corrections/labels. Approval
