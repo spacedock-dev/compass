@@ -84,6 +84,16 @@ def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
     return lines
 
 
+def _nonhuman_origin(record: dict[str, Any]) -> bool:
+    """Whether harness provenance excludes this record from the person's prompts."""
+    origin = records.as_dict(record.get("origin"))
+    return (
+        ("turnOrigin" in record and record["turnOrigin"] != "human")
+        or any(key in record for key in ("scheduledTaskId", "scheduledFireId", "wakeupSource"))
+        or ("kind" in origin and origin["kind"] != "human")
+    )
+
+
 def latest_prompt(lines: Sequence[bytes]) -> dict[str, Any] | None:
     """The newest main-thread prompt, excluding established harness-generated records.
 
@@ -96,6 +106,11 @@ def latest_prompt(lines: Sequence[bytes]) -> dict[str, Any] | None:
         try:
             record = json.loads(raw)
         except (ValueError, RecursionError):
+            continue
+        if isinstance(record, dict) and _nonhuman_origin(record):
+            # A scheduled firing is neither consent nor the person's next message:
+            # skip it without revoking an earlier pending typed command. Measured in
+            # docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl.
             continue
         # A message sent while the agent works has no user turn. The capture distinguishes it
         # from queued background notifications by these closed values, as observer reads it

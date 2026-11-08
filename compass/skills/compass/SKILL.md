@@ -50,8 +50,8 @@ while model calls are paused it is refused without changing the answer. Turning 
 Closed typed action names match in any letter case, never a paraphrase. Recognized harness-written
 compaction summaries and background-task notifications leave a typed command pending; the person's
 next message revokes it. A typed command 24 hours old or older no longer authorizes spending.
-An agent-scheduled or looped command must never authorize spending; Compass cannot yet distinguish
-it from a typed one, so never schedule or loop these actions.
+Never schedule or loop these actions. Compass refuses captured `/loop` firings; cron firings remain
+unmeasured.
 
 `goal` is read-only: it prints the goal a reading would use now, its source, saved revision,
 outcome lines and session page URL. It starts nothing and spends nothing.

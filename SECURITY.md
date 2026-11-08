@@ -497,11 +497,16 @@ compaction preamble without the flag is not sufficient to identify machinery. A 
 `typed_action` with `mode: "long"` is refused before any press. The closed actions authorize ordinary
 drift, not a long analysis.
 
-The guard cannot yet tell an agent-scheduled command from a typed one. The owner ruled on
-2026-11-08 that an agent-scheduled command must never authorize spending; enforcement of that
-ruling waits on a real capture. No committed capture yet distinguishes a scheduled or looped
-command from the person's typed command. A real scheduled-command provenance capture is needed
-before adding a discriminator. Record flags and notification envelopes are also harness-shape evidence,
+An agent-scheduled command never authorizes spending. The guard now enforces the owner's
+2026-11-08 ruling for the `/loop` scheduler, measured in the
+[scheduled-command capture](docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl).
+It skips records with a present `turnOrigin` other than `human`, any `scheduledTaskId`,
+`scheduledFireId` or `wakeupSource` field, or an `origin` mapping with a present `kind` other
+than `human`. Such a record neither authorizes a press nor revokes your earlier pending typed
+command. Interactive human-origin commands and headless commands without origin fields remain
+eligible. The capture covers ScheduleWakeup (`wakeupSource: schedule_wakeup`); a cron-scheduled
+(CronCreate) firing has not been captured. Never schedule or loop these actions.
+Record flags and notification envelopes are also harness-shape evidence,
 not proof of authorship: a person who types an identical whole envelope is indistinguishable from
 that machinery. An explicit `--session` omits `typed_action`, and an arbitrary local process can
 omit it from HTTP too. This guard governs the pre-approved skill path; it does not authenticate

@@ -84,6 +84,18 @@ One has. `reply` on OpenCode's `permission.replied` is a three-literal union —
 refusal. A capture without it could show that a reply arrived and nothing about what an adapter
 reads out of it. The `message` beside it is free text and is refused, exactly as Claude's is. Two smaller values in the same file ride on the reasoning already given above rather than on a new exception: the `session.status` type names — `busy`, `retry`, `idle` — are a closed state vocabulary the harness picks from, and `permission` on `permission.asked` is a permission-kind name, which is the `tool`-name class. Neither is a value a person or a model wrote.
 
+The scheduled-command capture earns each provenance value separately. `origin.kind: human`
+and `turnOrigin: human` are harness-selected author categories on the interactive command;
+`turnOrigin: scheduled` identifies the scheduler firing that admission must skip.
+`wakeupSource: schedule_wakeup` is the harness wakeup-kind name that separates this scheduler
+from an unmeasured cron firing. `queuePriority: later` is a harness queue category, and
+`queueSkipAttachments`, `isMeta`, `turnCompanion` and `isSidechain` are harness boolean flags,
+not written content. `type: user`, `userType: external` and `entrypoint: cli` are harness record,
+user and entrypoint categories. `command_name` retains only the registered command names
+`/compass:compass` and `/loop`; `tags` and `content_kind` retain envelope tag and block-type names,
+never arguments or text. All other strings in `record` are type names, including the scheduler
+ids. The command envelope alone cannot distinguish a typed command from a scheduled one.
+
 A harness is recorded rather than inferred from the filename because the reporter bounds a turn with
 each harness's own pair of event names, and getting that wrong is not a cosmetic error: the first
 Gemini capture reported "no complete turn" across four complete turns, because it was being measured
@@ -118,6 +130,7 @@ the new prompt capture retains those values, never titles or answers. Its
 
 | File | Provenance |
 |---|---|
+| `claude/scheduled-command-shapes-2.1.319-macos.jsonl` | Interactive Claude Code 2.1.319 on macOS, 2026-11-08, with the Compass plugin loaded. Shape-only extract of transcript lines 13 (typed Compass command), 57 (typed `/loop`), 91 (model-invoked skill body), 144 (`/loop` scheduled firing) and 145 (its meta companion). The scheduled command has no `origin`, has `turnOrigin: scheduled`, `wakeupSource: schedule_wakeup`, `scheduledTaskId`, `scheduledFireId`, `queuePriority: later` and `queueSkipAttachments: true`; the typed command has `origin.kind: human` and `turnOrigin: human`. This measures the `/loop` scheduler (ScheduleWakeup); no cron-scheduled (CronCreate) firing was captured. |
 | `codex/hooks-0.146.0-macos.jsonl` | One `codex exec` turn containing one shell tool call. codex-cli 0.146.0, macOS, run against an isolated `CODEX_HOME` so no user configuration was touched, with `--dangerously-bypass-hook-trust` because Codex skips untrusted hooks silently. |
 | `codex/subagents-0.146.0-macos.jsonl` | One `codex exec` turn that spawned one sub-agent via `spawn_agent`/`wait_agent`, 10 hook invocations. codex-cli 0.146.0, macOS, isolated `CODEX_HOME` with the plugin installed through a scratch marketplace, and `--dangerously-bypass-hook-trust` because Codex skips untrusted hooks silently. Settles whether a subagent hook's `session_id` is the parent's. |
 | `codex/identity-subagents-0.146.0-macos.jsonl` | The parentage verdicts for that turn: whether `session_id` matched the parent turn, and whether `agent_id` is the child's own thread id. |

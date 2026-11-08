@@ -24,6 +24,7 @@ from compass_runtime.state import build_runtime_state
 
 from .test_compass_skill_action import NOW, CompassSession
 from .test_history import isolated_environment, no_instance, run_one_shot_cli
+from .test_slash_command_direction import prompt_command
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -56,7 +57,11 @@ class TypedPressCase(unittest.TestCase):
 
     def typed(self, action: str) -> None:
         """The person types the command; the agent's Bash call is running when the press lands."""
+        start = len(self.session.rows)
         self.session.compass(action, stop=False)
+        # The old shape-only fixture filled turnOrigin with an unmeasured "sdk" value.
+        # Use the interactive provenance now measured in the scheduler capture instead.
+        self.session.rows[start].update(origin={"kind": "human"}, turnOrigin="human")
 
     def machinery(self, kind: str) -> None:
         """Reuse the committed corpus fixtures, with no invented origin or scheduling fields.
@@ -87,6 +92,109 @@ class TypedPressCase(unittest.TestCase):
 
 MACHINERY = ("compaction", "notification-string", "notification-blocks", "notification-attachment")
 ACTIONS = ("drift", "drift again", "monitor on", "summary", "summary update", "summary again")
+
+
+class ScheduledPressTest(TypedPressCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.capture_count = 0
+
+    def captured(self, line: int, action: str) -> dict[str, Any]:
+        """Rebuild the captured record shape; text, ids and times are test stand-ins."""
+        path = (
+            Path(__file__).resolve().parents[4]
+            / "docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl"
+        )
+        shapes = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines()]
+        shape = next(item for item in shapes if item["line"] == line)
+
+        def fill(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {key: fill(item) for key, item in value.items()}
+            if value == "str":
+                return "placeholder"
+            if value == "int":
+                return 0
+            return value
+
+        row: dict[str, Any] = fill(shape["record"])
+        self.capture_count += 1
+        row["uuid"] = f"captured-{line}-{self.capture_count}"
+        row["timestamp"] = self.session._stamp()
+        command = shape["command_name"]
+        row["message"] = {
+            "role": "user",
+            "content": (
+                prompt_command(command.lstrip("/"), action)
+                if command
+                else [{"type": "text", "text": "skill body"}]
+                if shape["content_kind"] == ["text"]
+                else "skill body"
+            ),
+        }
+        return row
+
+    def test_a_persons_scheduled_command_cannot_pay_for_any_guarded_action(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.session.rows = [self.captured(144, action), self.captured(145, action)]
+                self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
+        self.assertFalse(typed_press.store_path(self.config).exists())
+
+    def test_a_persons_interactive_command_still_pays_for_each_guarded_action(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                row = self.captured(13, action)
+                row["uuid"] = "human-" + action.replace(" ", "-")
+                self.session.rows = [row]
+                self.assertEqual(self.admitted(action), ("", row["uuid"]))
+
+    def test_a_persons_headless_command_without_provenance_still_pays(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                row = self.captured(13, action)
+                del row["origin"], row["turnOrigin"]
+                self.session.rows = [row]
+                self.assertEqual(self.admitted(action), ("", row["uuid"]))
+
+    def test_a_persons_loop_request_and_model_skill_call_cannot_pay(self) -> None:
+        for line in (57, 91):
+            for action in ACTIONS:
+                with self.subTest(line=line, action=action):
+                    self.session.rows = [self.captured(line, action)]
+                    self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
+
+    def test_a_persons_pending_command_is_not_revoked_by_a_scheduled_firing(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                human = self.captured(13, action)
+                human["uuid"] = "pending-" + action.replace(" ", "-")
+                # A different scheduled action must neither replace nor revoke the person's.
+                other = "summary" if action != "summary" else "drift"
+                self.session.rows = [human, self.captured(144, other), self.captured(145, other)]
+                self.assertEqual(self.admitted(action), ("", human["uuid"]))
+                self.assertEqual(self.admitted(other), (typed_press.REQUIRED, ""))
+
+    def test_a_person_never_pays_when_any_scheduler_marker_is_present_alone(self) -> None:
+        for key in ("turnOrigin", "scheduledTaskId", "scheduledFireId", "wakeupSource"):
+            for action in ACTIONS:
+                for null in (False, True):
+                    with self.subTest(key=key, action=action, null=null):
+                        scheduled = self.captured(144, action)
+                        row = self.captured(13, action)
+                        row[key] = None if null else scheduled[key]
+                        self.session.rows = [row]
+                        self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
+
+    def test_a_person_never_pays_when_the_origin_kind_is_present_and_not_human(self) -> None:
+        # Malformed provenance probes, not claims of additional captured origin kinds.
+        for kind in (None, "", False):
+            for action in ACTIONS:
+                with self.subTest(kind=kind, action=action):
+                    row = self.captured(13, action)
+                    row["origin"]["kind"] = kind
+                    self.session.rows = [row]
+                    self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
 
 
 class TypedPressTest(TypedPressCase):
