@@ -45,8 +45,8 @@ native Windows `python3` is not a reliable spelling; use `python` or `py -3`.
 
 ## Ask Compass from inside a session
 
-Type an action after the skill's name to get the list of your sessions, or the drift reading of the
-session you are in, without opening the dashboard:
+Type an action after the skill's name to read session details or control model calls without
+opening the dashboard:
 
 | Harness | Type | Prints |
 |---|---|---|
@@ -55,6 +55,14 @@ session you are in, without opening the dashboard:
 | Claude Code | `/compass:compass sessions waiting` | Only the sessions waiting on you |
 | Claude Code | `/compass:compass drift` | This session's drift reading against your goal, as `--drift` does. With no stored reading, it asks for one |
 | Claude Code | `/compass:compass drift again` | A new reading of this session, as `--drift again` does |
+| Claude Code | `/compass:compass goal` | This session's effective goal, source, saved revision and outcome lines; read-only |
+| Claude Code | `/compass:compass summary` | Stored cited phases, even when stale or partial; starts a summary only when none is stored |
+| Claude Code | `/compass:compass summary update` | Continue an appendable summary; unchanged work spends nothing |
+| Claude Code | `/compass:compass summary again` | Summarize this session from the start |
+| Claude Code | `/compass:compass summaries off` | Turn summaries off for every session; refused while model calls are paused |
+| Claude Code | `/compass:compass monitor on` | Hold this session's Live monitor without a browser tab; can spend on checks and save a drafted goal |
+| Claude Code | `/compass:compass monitor off` | Stop this terminal holder; browser holders keep running |
+| Claude Code | `/compass:compass pause` | Pause the running dashboard's model calls; Resume stays on the board |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
 
 Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
@@ -76,7 +84,14 @@ the session page. Nothing about later messages is settled; the answer says how m
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
 another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
-`project`, `sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
+`summary` spends only when no summary is stored. `summary update` and `summary again` authorize
+only their own operation; each in-session spend needs your exact typed command once. The command
+waits up to 20 seconds inside the session, then leaves an admitted job running for a later read.
+`monitor on` also needs your typed command before it can save a draft or start checks. These actions
+can start a dashboard if needed. [MANUAL.md](MANUAL.md#starting-and-inspecting-an-instance) owns
+their limits and refusal rules.
+
+`goal`, `project`, `sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
 refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
 belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
 action word. The skill runs the command below, so you can run it yourself to check what the agent
@@ -88,8 +103,8 @@ python3 "$SKILL/launch.py" "$SKILL/server.py" --sessions waiting
 
 What to expect:
 
-- Claude Code runs the command without asking for approval. The skill pre-approves exactly its four
-  commands, each with the skill's own install path written out, and nothing else (measured for the
+- Claude Code runs the command without asking for approval. The skill pre-approves exactly the
+  commands in its [action table](compass/skills/compass/SKILL.md#terminal-actions), each with the skill's own install path written out, and nothing else (measured for the
   two `sessions` commands on Claude Code 2.1.318 on macOS; other systems were not). A `python3 -c` command, an extra flag such as
   `--stop`, or a second command joined on with `&&` is not pre-approved, and was refused when
   measured. Nor is any other spelling of the command, such as `python` on Windows, so on Windows

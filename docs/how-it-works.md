@@ -78,7 +78,12 @@ Haiku, through your Claude Code, about once a minute while you view the page whe
 are heading, and shows the answer labeled Live monitor · Haiku. The monitor's own accuracy check has
 not been run yet. Until an answer arrives, or while the monitor is paused or has reached its limit,
 the card shows an estimate built from the session's checks and file paths. After 20 minutes the
-monitor asks whether you still want it, and turns itself off if nobody answers.
+browser asks whether you still want it, and drops that browser holder if nobody answers.
+You can also start a terminal holder with `--monitor` or the skill's `monitor on` action. It keeps
+checking new work without a tab or a browser question until stopped, its session ends or its
+connection is lost. [The manual](../MANUAL.md#starting-and-inspecting-an-instance) owns the commands
+and limits. A terminal start can save the page's drafted goal when no goal or outcome lines are
+saved; it prints those words and their source before checking.
 
 ## What can leave your machine
 
@@ -132,17 +137,18 @@ your machine.
 | What happens | Which CLI |
 |---|---|
 | You press Analyze drift | Claude Code for a Claude Code session (Codex if `claude` is not installed), Codex for a Codex session, and Codex first for other harnesses |
-| You open a finished Claude Code session, or press Summarize or Update summary | Claude Code, to write the session summary |
+| You open a finished Claude Code session, press Summarize or Update summary, or request a summary from the terminal | Claude Code, to write the session summary; a stored terminal read spends nothing |
 | You press Find goal | A model reads the prompts you typed to find the session's goal |
 | You press Summarize this session in a project's Console | Codex, to summarize the focused session and up to three active child sessions |
-| You turn on the Live monitor on a Claude Code session | Haiku through your Claude Code, about once a minute while you view it |
+| You turn on the Live monitor on a Claude Code session | Haiku through your Claude Code, about once a minute while you view it or a terminal holder keeps it on |
 
 Compass shows what each kind of call sends and where the first time it runs, and again if the
 destination or the kind of content changes. Session summaries run without asking first; the notice
 appears beside them.
 
-To stop model calls, press Pause model calls in the page: it stops all of them, the Live monitor
-included, until you press Resume model calls. `--no-observer-model` does the same for a whole run.
+To stop model calls, press Pause model calls in the page, run `--pause-model-calls` from a shell or
+invoke the skill's `pause` action: it stops all of them, the Live monitor
+included, until you press Resume model calls on the page. `--no-observer-model` does the same for a whole run.
 Turn off summaries stops session summaries only. Checks that read sessions without a press stay off
 unless you start Compass with `--unasked-readings`.
 
