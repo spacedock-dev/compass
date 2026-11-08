@@ -641,6 +641,8 @@ the read-only token every frontend job has, because it runs third-party test dep
 comment comes from `Frontend coverage comment`, a separate job that holds the write token, runs no
 repository or package code, and never gates. Vitest runs `.ts` tests under Node and `.tsx` tests in jsdom
 on VM workers, and a `.ts` test that needs a DOM says so with an `@vitest-environment jsdom` comment.
+The DOM workers recycle between files after their heap reaches `vmMemoryLimit: 1GiB`; a file may
+exceed that trigger before it finishes. Logic tests stay on plain forks.
 
 `Tests + coverage threshold` is split the same way. It restores the pip cache and runs the packages it
 installs, so its token is read-only, and its sticky PR comment comes from `Coverage comment`, which
