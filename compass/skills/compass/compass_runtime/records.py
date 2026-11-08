@@ -1968,6 +1968,51 @@ COMPASS_COMMAND: Final = "/compass:compass"
 _COMMAND_NAME_FIELD_RE = re.compile(r"<command-name>\s*(.*?)\s*</command-name>", re.DOTALL)
 
 
+_CODEX_COMPASS_ACTIONS: Final = frozenset(
+    {
+        "summary",
+        "summary update",
+        "summary again",
+        "summaries off",
+        "goal",
+        "project",
+        "sessions",
+        "sessions waiting",
+        "drift",
+        "drift again",
+        "monitor on",
+        "monitor off",
+        "pause",
+    }
+)
+
+
+def codex_compass_command(content: Any) -> bool:
+    """A whole typed `$compass <closed action>` in Codex's ordinary user text.
+
+    CLI 0.167.0 exec records no skill marker: both captured user shapes carry text blocks
+    (docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl). Read their complete original
+    text, before redaction or clipping can turn a prose mention into a whole command. Case and
+    whitespace follow the typed guard; action names follow the skill's Terminal actions table.
+    This recognises a user message only, never the agent's turn or its output.
+    """
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list) and content:
+        if not all(
+            isinstance(block, dict)
+            and block.get("type") in ("input_text", "text")
+            and isinstance(block.get("text"), str)
+            for block in content
+        ):
+            return False
+        text = " ".join(block["text"] for block in content)
+    else:
+        return False
+    folded = " ".join(text.split()).casefold()
+    return folded.startswith("$compass ") and folded[len("$compass ") :] in _CODEX_COMPASS_ACTIONS
+
+
 def compass_command(text: object) -> bool:
     """Whether a user record's text is the reader typing Compass's own command, any action.
 

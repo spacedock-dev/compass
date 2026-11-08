@@ -348,9 +348,23 @@ reading, the Live monitor or a summary reads (2026-11-05). The page is told whic
 `Compass’s answer, not read` and counts them in its summary line, the Drift card does not call a
 reading stale for them or count them as arrived since it, and the scope sentence says a reading
 leaves out entries so marked. A model-started Compass skill opens no
-such turn, and the work around it stays the agent's evidence. Codex's `$compass` is not recognised
-yet: the command is read like any prompt, and the turn it opens is evidence. One thing the turn
-still moves: the agent's launcher run in it counts, for the drift level, as a command run after a
+such turn, and the work around it stays the agent's evidence.
+
+Codex's ordinary user-message text is recognised as a Compass action only when its whole text,
+with whitespace folded and letter case ignored, is `$compass` followed by one of the skill's
+[closed terminal action names](../compass/skills/compass/SKILL.md#terminal-actions). It publishes
+no message entry or later direction, is neither a drafted nor an adopted goal candidate, and is
+skipped when finding the person's first or latest prompt. Prose that merely mentions `$compass`
+stays the person's direction. Recognition reads complete original text before clipping or
+redaction can turn a prose mention into a whole command. The
+[Codex CLI 0.167.0 capture](captures/codex/skill-action-shapes-0.167.0-macos.jsonl), taken on macOS
+with the shipped skill linked under `.agents/skills/compass`, records `codex exec` only; the
+interactive TUI was not captured. Both `response_item` user messages and `item_completed`
+`UserMessage` events carry ordinary text and no structured skill-mention marker. This is text
+recognition, not proof of skill execution. No Codex whole-turn exclusion is inferred: its agent
+output remains evidence because no boundary for that exclusion was captured (2026-11-08).
+
+One thing a Claude Code Compass turn still moves: the agent's launcher run in it counts, for the drift level, as a command run after a
 passing check (`changed_after` and `last_changing_command_at`, computed in the collector modules
 frozen with the abstention qualification). Typing the command can therefore lower a live estimate
 to Not enough recorded yet and raise a stored reading's level, as it did before this change. The

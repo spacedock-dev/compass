@@ -599,6 +599,10 @@ def _codex_scan_record(record: dict[str, Any]) -> tuple[str, str, float]:
                 found = ("prompt", item.get("content"))
             elif item_type == "ContextCompaction":
                 found = ("compaction", None)
+    # The same whole-message rule the observed-record parser uses, before the excerpt is cut.
+    # Apply it to both captured Codex user shapes, never to agent commentary or other output.
+    if found[0] == "prompt" and records.codex_compass_command(found[1]):
+        return ("", "", at)
     return (found[0], records.extract_text(found[1]), at)
 
 

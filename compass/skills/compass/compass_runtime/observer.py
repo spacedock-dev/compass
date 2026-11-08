@@ -1070,6 +1070,11 @@ def _redacted_message_content(value: Any, depth: int = 0) -> Any:
     return None
 
 
+def _is_codex_compass_command(role: Any, content: Any, harness: str) -> bool:
+    """Recognize a typed user action before text extraction or redaction."""
+    return role == "user" and harness == "codex" and records.codex_compass_command(content)
+
+
 def _message_from(
     role: Any, content: Any, harness: str, cap: int, *, paste_tags: bool = False
 ) -> dict[str, str] | None:
@@ -1094,7 +1099,7 @@ def _message_from(
     """
     if role not in ("user", "assistant"):
         return None
-    if _blocks_carry_tool_result(content):
+    if _blocks_carry_tool_result(content) or _is_codex_compass_command(role, content, harness):
         return None
     text = records.extract_text(_redacted_message_content(content), cap=cap).strip()
     if not text:
