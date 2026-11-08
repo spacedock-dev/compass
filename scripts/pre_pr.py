@@ -418,9 +418,22 @@ def _unlock(handle: IO[str]) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def holder_record(path: Path) -> Path:
+    """Who holds the lock, in a file beside it that is never locked.
+
+    Windows refuses every read of a file another handle holds a byte-range lock on, and `_try_lock`
+    locks the lock file's first byte, so a waiting run could not read its holder out of that file
+    and said only "another run". Kept apart, the record is readable on every platform. It is
+    diagnostics only: the lock file alone decides who runs, so a missing, stale or unreadable record
+    never lets a second run start. Windows was not exercised on a real host (CI has no Windows leg);
+    the tests substitute `msvcrt` and make the lock file refuse reads.
+    """
+    return path.with_name(path.name + ".holder")
+
+
 def _holder(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8").strip() or "another run"
+        return holder_record(path).read_text(encoding="utf-8").strip() or "another run"
     except OSError:
         return "another run"
 
@@ -456,10 +469,12 @@ def hold_lock(
                 raise LockTimeoutError(message)
             sleep(poll if deadline is None else max(0.0, min(poll, deadline - clock())))
         try:
-            handle.seek(0)
-            handle.truncate()
-            handle.write(f"pid {os.getpid()} in {Path.cwd()}\n")
-            handle.flush()
+            # The record may outlive a killed holder, and is briefly the previous holder's until
+            # this write lands; a failed write costs only the name in a waiter's message.
+            with suppress(OSError):
+                holder_record(path).write_text(
+                    f"pid {os.getpid()} in {Path.cwd()}\n", encoding="utf-8"
+                )
             yield
         finally:
             _unlock(handle)
