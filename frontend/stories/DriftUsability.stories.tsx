@@ -290,8 +290,8 @@ export const CopiedLapsesBackToCopy: Story = {
 };
 
 /* Findings 8 and 17: a Sessions row leads with one state word and shows the project label alone, and its
-   drift chip names a level only once this tab holds the analysis evidence. It names the level the
-   session header names, from the same derivation. */
+   drift chip says Medium or higher before this tab holds the analysis evidence. Once held, it names
+   the level the session header names, from the same derivation. */
 const SESSIONS_NAV: { back?: () => void } = {};
 export const TheSessionsRowSaysTheLevel: Story = {
   ...scenario({
@@ -315,9 +315,11 @@ export const TheSessionsRowSaysTheLevel: Story = {
     await expect(first.textContent).not.toContain('Exact location not published');
     await expect(first.textContent).not.toMatch(/NOW · |QUIET/);
     await expect(first.querySelector('[data-next-session-drift-mark]')).toHaveTextContent(
-      /^Drift · /,
+      /^Drift: Medium or higher · /,
     );
-    await expect(first.querySelector('[data-next-row-drift-level]')).toBeNull();
+    await expect(
+      first.querySelector('[data-next-row-drift-level="medium_or_higher"]'),
+    ).not.toBeNull();
     await expect(first.querySelector('.next-session-drift-pill-meter')).toBeNull();
     await userEvent.click(first.querySelector('a.next-operation-route') as HTMLElement);
     await card(canvasElement);

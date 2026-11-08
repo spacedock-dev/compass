@@ -4,7 +4,7 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStor
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isScanOnly, type Row } from '../observed';
+import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { headerAnalysis } from '../drift/model';
@@ -227,10 +227,23 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-/* A departing stored reading names only the analysis level the session header would show now.
-   Missing context, withdrawn evidence and stale readings cannot supply a fallback level. */
-function rowLevel(input: Parameters<typeof headerAnalysis>[0] | null) {
-  return input && readingDeparts(input.session) ? headerAnalysis(input) : null;
+/* Before context arrives, a current stored departure is at least Medium; its exact level is unknown.
+   Once this tab holds context, only the session header's analysis may name a level, even when null. */
+function rowLevel(
+  input: Parameters<typeof headerAnalysis>[0] | null,
+): { readonly level: string | null; readonly label: string } | null {
+  if (!input || !readingDeparts(input.session)) return null;
+  if (input.contexts.get(contextKey(input.projectKey, identityOf(input.session)))?.data) {
+    return headerAnalysis(input);
+  }
+  const { session } = input;
+  if (session['annotation_not_accurate'] === true) return null;
+  const raw = session['annotation_assessment'];
+  if (isRecord(raw) && raw['scope'] === 'withdrawn') return null;
+  const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
+  const current = nextNumber(session['annotation_revision']);
+  if (read === null || (current !== null && current !== read)) return null;
+  return { level: null, label: 'Medium or higher' };
 }
 
 function DriftMarkView({ row }: { readonly row: SessionRow }) {
@@ -270,9 +283,9 @@ function DriftMark({
       {level ? (
         <span
           className="inline-flex items-baseline gap-1.5"
-          data-next-row-drift-level={level.level}
+          data-next-row-drift-level={level.level ?? 'medium_or_higher'}
         >
-          <PillMeter level={level.level} />
+          {level.level ? <PillMeter level={level.level} /> : null}
           <span>
             Drift: <strong className="font-semibold text-foreground">{level.label}</strong>
           </span>

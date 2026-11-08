@@ -183,28 +183,61 @@ describe('the groups', () => {
     ).toBe('PROJECTp');
   });
 
-  it('lets a person see no row level before its analysis is available', async () => {
-    await open(
-      board(
-        [
-          {
-            harness: 'claude',
-            sid: 'read',
-            project: 'p',
-            state: 'idle',
-            annotation_revision: 2,
-            annotation_assessment: {
-              read_at: NOW - 240,
-              revision_read: 2,
-              criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
-            },
-          },
-        ],
-        { annotate: true },
-      ),
+  it('lets a person see a current departure as Medium or higher before opening its session', async () => {
+    const page = await open(current.response.body);
+    const row = document.querySelector('[data-next-session="a1b2c3d4"]');
+    const mark = row?.querySelector('[data-next-session-drift-mark]');
+    expect(mark?.textContent).toMatch(/^Drift: Medium or higher · /);
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+    expect(
+      page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['stale', stale],
+    ['inaccurate', inaccurate],
+  ] as const)('lets a person see no cold row level for a %s reading', async (_case, data) => {
+    await open(data.response.body);
+    const mark = document.querySelector(
+      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
     );
+    expect(mark?.textContent).toMatch(/^Drift · /);
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  it('lets a person see no cold row level when the stored reading was withdrawn', async () => {
+    const data = structuredClone(current.response.body);
+    const session = data.sessions.find((row) => row.sid === 'a1b2c3d4');
+    if (!session) throw new Error('The recorded session is missing');
+    session.annotation_assessment.scope = 'withdrawn';
+    await open(data);
+    const mark = document.querySelector(
+      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
+    );
+    expect(mark?.textContent).toMatch(/^Drift · /);
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  it('lets a person see no level for a notification raise beside a reading that does not depart', async () => {
+    const session = {
+      harness: 'claude',
+      sid: 'raised',
+      project: 'p',
+      state: 'idle',
+      departures: [{ at: NOW - 60, revision: 1 }],
+      annotation_revision: 1,
+      annotation_assessment: {
+        read_at: NOW - 60,
+        revision_read: 1,
+        criteria: { goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' } },
+      },
+    };
+    await open(board([session], { annotate: true }));
     const mark = document.querySelector('[data-next-session-drift-mark]');
-    expect(mark?.textContent).toBe('Drift · 4m ago');
+    expect(mark?.textContent).toBe('Drift · 1m ago');
     expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
     expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
   });
