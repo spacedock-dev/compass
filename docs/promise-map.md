@@ -159,9 +159,10 @@ prints a Codex session's reading the same way, with no level and no correction, 
 none. Another harness gets its session page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
 `/compass:compass drift` and `/compass:compass drift again`, and inside Codex `$compass drift` and
 `$compass drift again`, print that session's reading into it,
-under a line saying it is Compass's reading, written by a model, shown as data. The skill
-pre-approves both. In that ordinary skill output the answer says only that a correction is ready
-and where to copy it, and the reading goes to that session's model provider, as
+under a line saying it is Compass's reading, written by a model, shown as data. Claude Code's skill
+pre-approves both commands. Its ordinary skill output says only that a correction is ready
+and where to copy it; a Codex reading has no correction. Each reading goes to the invoking
+session's model provider, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out.
 
 The Intent log brings every board session and retained annotation/discard record into one list,
@@ -442,12 +443,12 @@ Walking away from the desk is the promise this map most wants to make and cannot
 session that is genuinely wedged to be told apart from one that is merely quiet, and it needs
 Compass to reach you somewhere other than a browser tab you are not looking at. The first half
 reaches Claude only: the turn's failure total and the turn where nothing succeeded are published,
-and the other nine harnesses record tool failure in no shape this can read. The second half is a
-build rather than a call now. DEC-4 ruled on 2026-09-02 that Compass may post a count to an
-endpoint you supply, and [SECURITY.md](../SECURITY.md) writes that boundary down before the code
-lands.
+and the other nine harnesses record tool failure in no shape this can read. The second half ships as an optional count-only webhook to an endpoint you supply. It needs
+that endpoint to reach you, and a successful POST does not prove you saw a notification.
+[SECURITY.md](../SECURITY.md#off-machine-nudges-reaching-the-operator-away-from-the-desk) owns
+the payload and delivery limits.
 
-Gate coverage on the remaining six harnesses is a per-harness measurement job, not a design
+Gate coverage on the remaining four harnesses is a per-harness measurement job, not a design
 question. Today the board is honest about the gap, which is the right behaviour and not the same as
 covering it.
 
