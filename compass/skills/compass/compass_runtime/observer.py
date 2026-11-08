@@ -1096,6 +1096,8 @@ def _message_from(
         return None
     if _blocks_carry_tool_result(content):
         return None
+    if role == "user" and harness == "codex" and records.codex_compass_command(content):
+        return None
     text = records.extract_text(_redacted_message_content(content), cap=cap).strip()
     if not text:
         return None
