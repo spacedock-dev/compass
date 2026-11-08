@@ -1525,6 +1525,10 @@ Concurrent processes share the transaction bound. A denied or corrupt store fail
 reports the cap, once it is spent, and the earliest time another attempt can be admitted. Turning permission off,
 back on, or forgetting it does not erase unexpired spend timestamps or refill the budget.
 
+SQLite failures while saving Allow or Pause model calls, or admitting an ordinary reading,
+log SQLite's error name and numeric code for diagnosis. These warnings contain no exception text,
+database path or reader content; the failed operation still returns `store-unavailable`.
+
 The store is created owner-only; SQLite is required for this permission path. Every
 reader-started model call (Analyze drift, goal summaries and session summaries) records its notice
 there, so without `sqlite3` or a writable state directory each is refused as `store-unavailable`. Deleting the file

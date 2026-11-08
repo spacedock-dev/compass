@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import math
 import os
 import stat
@@ -969,6 +970,16 @@ def _commit_charge(
     return {**answer, "used": answer["used"] + 1}
 
 
+def _log_store_error(exc: BaseException) -> None:
+    """Expose SQLite's closed metadata, never exception text or reader content."""
+    if isinstance(exc, _SQL_ERROR):
+        logging.getLogger(__name__).warning(
+            "Permission store unavailable: sqlite_errorname=%s sqlite_errorcode=%s",
+            getattr(exc, "sqlite_errorname", "unknown"),
+            getattr(exc, "sqlite_errorcode", "unknown"),
+        )
+
+
 def _run(
     config: RuntimeConfig,
     now: float,
@@ -983,7 +994,8 @@ def _run(
         return _transaction(
             config, now, operation, provider, tool_output, job_id, today, content=content
         )[0]
-    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR) as exc:
+        _log_store_error(exc)
         return _answer(reason="store-unavailable")
 
 
@@ -1041,7 +1053,8 @@ def pause(config: RuntimeConfig, *, now: float) -> tuple[Status, LongPermission 
     try:
         answer, _, permission = _transaction(config, now, "off", LEGACY_PROVIDER)
         return answer, cast("LongPermission | None", permission)
-    except (OSError, ValueError, RuntimeError, _SQL_ERROR):
+    except (OSError, ValueError, RuntimeError, _SQL_ERROR) as exc:
+        _log_store_error(exc)
         return _answer(reason="store-unavailable"), None
 
 

@@ -7,6 +7,7 @@ import concurrent.futures
 import contextlib
 import dataclasses
 import functools
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -34,6 +35,61 @@ class ReadingPolicyTest(unittest.TestCase):
         patcher = mock.patch.object(supervise, "_SHUTDOWN", threading.Event())
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def test_a_reader_can_diagnose_a_failed_consent_write_without_logging_their_words(
+        self,
+    ) -> None:
+        assert runtime_io.sqlite_module is not None
+        sqlite = runtime_io.sqlite_module
+        reading_policy.set_consent(self.config, False, now=100.0)
+        before = reading_policy.store_path(self.config).read_bytes()
+        connect = sqlite.connect
+
+        class FailedBegin(sqlite3.Connection):
+            def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
+                if sql == "BEGIN IMMEDIATE":
+                    error = sqlite.OperationalError("private reader words must not be logged")
+                    error.sqlite_errorname = "SQLITE_IOERR_LOCK"
+                    error.sqlite_errorcode = 3850
+                    raise error
+                return super().execute(sql, *args, **kwargs)
+
+        def failing_connect(*args: Any, **kwargs: Any) -> Any:
+            return connect(*args, **kwargs, factory=FailedBegin)
+
+        for operation in ("allow", "off", "pause"):
+            with self.subTest(operation=operation):
+                with (
+                    mock.patch.object(sqlite, "connect", side_effect=failing_connect),
+                    self.assertLogs("compass_runtime.reading_policy", level="WARNING") as logs,
+                ):
+                    if operation == "pause":
+                        answer, permission = reading_policy.pause(self.config, now=101.0)
+                        self.assertIsNone(permission)
+                    else:
+                        answer = reading_policy.set_consent(
+                            self.config, operation == "allow", now=101.0
+                        )
+                    self.assertEqual("store-unavailable", answer["reason"])
+                    self.assertFalse(answer["consent"])
+                    guarded = reading_policy.GuardedModel(
+                        self.config, self._unexpected_model_call, lambda: 101.0
+                    )
+                    with (
+                        self.assertLogs("compass_runtime.reading_policy", level="WARNING"),
+                        self.assertRaises(reading_policy.RefusedError) as refused,
+                    ):
+                        guarded("private reader words", output_cap_bytes=100)
+                    self.assertEqual("store-unavailable", refused.exception.answer["reason"])
+                self.assertIn("SQLITE_IOERR_LOCK", " ".join(logs.output))
+                self.assertIn("3850", " ".join(logs.output))
+                self.assertNotIn("private reader words", " ".join(logs.output))
+                self.assertNotIn(self.home.name, " ".join(logs.output))
+                self.assertEqual(before, reading_policy.store_path(self.config).read_bytes())
+        self.assertTrue(reading_policy.status(self.config, now=102.0)["off"])
+
+    def _unexpected_model_call(self, *_args: Any, **_kwargs: Any) -> Any:
+        self.fail("A model call must not start with an unavailable permission store")
 
     def test_pausing_preserves_the_summary_answer_and_refuses_switch_presses(self) -> None:
         for allowed in (False, True):
