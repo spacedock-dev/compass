@@ -98,6 +98,7 @@ headers and body, including a listener that keeps sending a little at a time.
 
 When no dashboard answers, a read exits `1` and prints the start command for this copy: its
 Python launcher and server paths, or its packaged executable. Paths with spaces are quoted.
+On Windows, the printed command is written for cmd and Bash; in PowerShell prefix it with `&`.
 If a sandbox or permissions blocks the loopback connection, the command says so and starts
 nothing; a blocked connection does not establish whether the dashboard is running.
 

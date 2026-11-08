@@ -176,9 +176,7 @@ def launch_argv() -> list[str]:
 def launch_command(option: str) -> str:
     argv = [*launch_argv(), option]
     if os.name == "nt":
-        import subprocess  # noqa: PLC0415
-
-        return subprocess.list2cmdline(argv)
+        return " ".join(f'"{Path(token).as_posix()}"' for token in argv)
     return shlex.join(argv)
 
 

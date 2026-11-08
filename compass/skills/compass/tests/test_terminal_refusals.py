@@ -8,9 +8,8 @@ import functools
 import io
 import os
 import shlex
-import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest import mock
 
 from compass_runtime import loopback_transport, terminal_client
@@ -45,11 +44,53 @@ class RefusalTest(HomeCase):
             self.assertTrue(message.startswith("Compass is not running; start it with `"))
             command = message.split("`", 2)[1]
             if os.name == "nt":
-                self.assertEqual(subprocess.list2cmdline([*expected, "--daemon"]), command)
+                self.assertEqual(
+                    " ".join(f'"{Path(token).as_posix()}"' for token in [*expected, "--daemon"]),
+                    command,
+                )
             else:
                 self.assertEqual([*expected, "--daemon"], shlex.split(command))
             self.assertNotIn("spacedock-compass", message)
             start.assert_not_called()
+
+    def test_a_person_on_windows_can_copy_the_start_command_into_cmd_or_bash(self) -> None:
+        class WindowsPath(PureWindowsPath):
+            def resolve(self) -> WindowsPath:
+                return self
+
+        windows_os = mock.Mock(wraps=os)
+        windows_os.name = "nt"
+        for folder in ("compass", "compass with spaces"):
+            for frozen in (False, True):
+                with self.subTest(folder=folder, frozen=frozen):
+                    root = WindowsPath("C:/Users/me") / folder / "skills" / "compass"
+                    executable = WindowsPath("C:/Users/me") / folder / "python.exe"
+                    expected = [executable.as_posix()]
+                    if not frozen:
+                        expected += [
+                            (root / "launch.py").as_posix(),
+                            (root / "server.py").as_posix(),
+                        ]
+                    expected.append("--daemon")
+                    err = io.StringIO()
+                    with (
+                        mock.patch.object(terminal_client, "os", windows_os),
+                        mock.patch.object(terminal_client, "Path", WindowsPath),
+                        mock.patch.object(sys, "frozen", frozen, create=True),
+                        mock.patch.object(sys, "executable", str(executable)),
+                        mock.patch.object(
+                            terminal_client,
+                            "__file__",
+                            str(root / "compass_runtime" / "terminal_client.py"),
+                        ),
+                        mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+                        contextlib.redirect_stderr(err),
+                    ):
+                        self.assertEqual(1, terminal_client.run_sessions(environ={}))
+                    command = err.getvalue().split("`", 2)[1]
+                    self.assertEqual(" ".join(f'"{token}"' for token in expected), command)
+                    self.assertNotIn("\\", command)
+                    self.assertEqual(expected, shlex.split(command))
 
     def test_a_person_whose_loopback_connection_is_blocked_is_told_why_and_starts_nothing(
         self,
@@ -191,6 +232,23 @@ class RefusalTest(HomeCase):
                     self.assertIn("not running", err.getvalue())
 
     def test_a_person_without_a_resolvable_caller_gets_their_own_actions_reason(self) -> None:
+        outcomes = {
+            "monitor": "no Live monitor was started or stopped",
+            "project": "no project brief was read",
+            "goal": "no goal was read or changed",
+            "summary": "no summary was read or requested",
+        }
+        drift = {
+            False: (
+                "The drift action reads Claude Code sessions and this command was given no Claude Code "
+                "session id, so nothing was read or spent; a session's page on the board shows its drift.\n"
+            ),
+            True: (
+                "The drift action reads Claude Code sessions and this command runs inside another tool's "
+                "session, so nothing was read or spent; that session's page on the board shows its drift.\n"
+            ),
+        }
+
         class Output(io.StringIO):
             def isatty(self) -> bool:
                 return tty
@@ -244,16 +302,24 @@ class RefusalTest(HomeCase):
                             code = commands[action]()
                         if action == "sessions waiting":
                             self.assertEqual(0, code)
-                            self.assertIn("could not tell which session is asking", out.getvalue())
-                            self.assertIn("this list may include it", out.getvalue())
+                            self.assertEqual(
+                                "Compass could not tell which session is asking, so this list may include it.",
+                                out.getvalue().splitlines()[0],
+                            )
                             self.assertEqual("", err.getvalue())
                         else:
                             self.assertEqual((1, ""), (code, out.getvalue()))
-                            self.assertIn(action + " action", err.getvalue())
-                            self.assertIn(
-                                "another tool's session" if other else "no Claude Code session id",
-                                err.getvalue(),
+                            expected = (
+                                drift[other]
+                                if action == "drift"
+                                else (
+                                    f"The {action} action cannot identify this caller inside another tool's "
+                                    f"session, so {outcomes[action]}.\n"
+                                    if other
+                                    else f"The {action} action was given no Claude Code session id, so {outcomes[action]}.\n"
+                                )
                             )
+                            self.assertEqual(expected, err.getvalue())
                             self.assertEqual([], fake.requests)
                         if not tty or other:
                             self.assertNotIn("--session", err.getvalue())
