@@ -30,6 +30,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -136,6 +137,40 @@ def _run_gh(args: list[str]) -> str:
     if result.returncode != 0:
         raise GhError(result.stderr.strip() or f"gh {' '.join(args)} exited {result.returncode}")
     return result.stdout
+
+
+# A 5xx or a dropped connection from GitHub says nothing about the run being read, and a week's
+# tally makes hundreds of calls, so one blip aborting all of them made the tally unusable. A 4xx,
+# a malformed answer or anything unrecognised is not retried: it will fail the same way again.
+GH_ATTEMPTS = 4
+GH_BACKOFF = 2.0
+TRANSIENT = re.compile(
+    r"\bHTTP 5\d\d\b|\b5\d\d (?:Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)"
+    r"|error connecting to|connection (?:reset|refused|timed out)|\bdial tcp\b|\bi/o timeout\b"
+    r"|TLS handshake timeout|unexpected EOF",
+    re.IGNORECASE,
+)
+
+
+def with_retries(
+    gh: Gh,
+    attempts: int = GH_ATTEMPTS,
+    backoff: float = GH_BACKOFF,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Gh:
+    """`gh`, retried with doubling waits on a transient failure; other errors raise at once."""
+
+    def call(args: list[str]) -> str:
+        for attempt in range(1, attempts + 1):
+            try:
+                return gh(args)
+            except GhError as error:
+                if attempt == attempts or not TRANSIENT.search(str(error)):
+                    raise
+                sleep(backoff * 2 ** (attempt - 1))
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    return call
 
 
 def short_id(full: str) -> str:
@@ -346,7 +381,12 @@ def render(
     return "\n".join(out) + "\n"
 
 
-def main(argv: list[str] | None = None, gh: Gh = _run_gh, today: date | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    gh: Gh = _run_gh,
+    today: date | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
     """Read the window's runs, print the tally and the ledger diff."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--since", type=int, default=7, metavar="DAYS", help="days back to read")
@@ -358,7 +398,9 @@ def main(argv: list[str] | None = None, gh: Gh = _run_gh, today: date | None = N
     since = ((today or datetime.now(UTC).date()) - timedelta(days=args.since)).isoformat()
     try:
         ledger = read_ledger(args.ledger.read_text(encoding="utf-8"))
-        sightings, read = tally(gh, since, args.limit, args.repo, args.jobs)
+        sightings, read = tally(
+            with_retries(gh, sleep=sleep), since, args.limit, args.repo, args.jobs
+        )
     except (GhError, OSError, ValueError) as error:
         print(f"flaky_tally: {error}", file=sys.stderr)
         return 1

@@ -291,6 +291,73 @@ class TallyTest(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("authentication required", err.getvalue())
 
+    def _flaky_gh(self, failures: list[str]) -> tuple[FakeGh, list[float]]:
+        """A gh whose first calls fail with the given messages, then answer from the fixtures."""
+        inner = FakeGh()
+        pending = list(failures)
+
+        def gh(args: list[str]) -> str:
+            if pending:
+                inner.calls.append(list(args))
+                raise flaky_tally.GhError(pending.pop(0))
+            return inner(args)
+
+        waits: list[float] = []
+        self._gh, self._waits = gh, waits
+        return inner, waits
+
+    def _run_main(self, failures: list[str]) -> tuple[int, str, str, list[float], FakeGh]:
+        inner, waits = self._flaky_gh(failures)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = flaky_tally.main(
+                ["--ledger", str(LEDGER)], gh=self._gh, today=TODAY, sleep=waits.append
+            )
+        return code, out.getvalue(), err.getvalue(), waits, inner
+
+    def test_a_bad_gateway_that_clears_on_the_next_try_still_gives_the_whole_tally(self) -> None:
+        code, out, _err, waits, _inner = self._run_main(["HTTP 502: Bad Gateway (api.github.com)"])
+
+        self.assertEqual(0, code)
+        self.assertIn("Flaky-test tally:", out)
+        self.assertEqual(1, len(waits))
+        self.assertGreater(waits[0], 0)
+
+    def test_a_dropped_connection_is_retried_like_a_bad_gateway(self) -> None:
+        code, _out, _err, waits, _inner = self._run_main(
+            ["error connecting to api.github.com\nCheck your internet connection"]
+        )
+
+        self.assertEqual(0, code)
+        self.assertEqual(1, len(waits))
+
+    def test_a_github_that_stays_down_ends_in_an_error_and_prints_no_partial_tally(self) -> None:
+        down = ["HTTP 503: Service Unavailable"] * 50
+        code, out, err, waits, inner = self._run_main(down)
+
+        self.assertEqual(1, code)
+        self.assertEqual("", out)
+        self.assertIn("503", err)
+        self.assertEqual(flaky_tally.GH_ATTEMPTS, len(inner.calls))
+        self.assertEqual(flaky_tally.GH_ATTEMPTS - 1, len(waits))
+        self.assertEqual(sorted(waits), waits)
+        self.assertLess(waits[0], waits[-1])
+
+    def test_a_refused_request_is_not_retried(self) -> None:
+        for message in (
+            "HTTP 401: Bad credentials",
+            "HTTP 403: rate limited",
+            "HTTP 404: Not Found",
+        ):
+            with self.subTest(message=message):
+                code, out, err, waits, inner = self._run_main([message] * 50)
+
+                self.assertEqual(1, code)
+                self.assertEqual("", out)
+                self.assertIn(message, err)
+                self.assertEqual([], waits)
+                self.assertEqual(1, len(inner.calls))
+
 
 if __name__ == "__main__":
     unittest.main()
