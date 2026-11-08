@@ -100,6 +100,43 @@ class APersonCanOpenAndCloseCompassInEveryHarnessTest(unittest.TestCase):
                 )
 
 
+class APersonKnowsTheTerminalConsentLimitsTest(unittest.TestCase):
+    def test_a_person_gets_the_refusal_and_consent_limits_before_running_an_action(self) -> None:
+        skill = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
+        actions = " ".join(skill.split("## Terminal actions\n", 1)[1].split("\n## ", 1)[0].split())
+        for limit in (
+            "report that refusal and do not try to start another dashboard or supply a session id",
+            "Closed typed action names match in any letter case, never a paraphrase",
+            (
+                "Recognized harness-written compaction summaries and background-task notifications "
+                "leave a typed command pending; the person's next message revokes it"
+            ),
+            "A typed command 24 hours old or older no longer authorizes spending",
+            (
+                "An agent-scheduled or looped command must never authorize spending; Compass cannot "
+                "yet distinguish it from a typed one, so never schedule or loop these actions"
+            ),
+            (
+                "The terminal shows the correction only with an explicit `--session` and standard "
+                "output attached to a terminal; other local processes can still access it"
+            ),
+        ):
+            with self.subTest(limit=limit):
+                self.assertIn(limit, actions)
+
+    def test_a_person_reconciling_docs_knows_which_snippets_ci_actually_executes(self) -> None:
+        source = (SERVER_PATH.parents[3] / ".claude/skills/sync-docs/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("nothing in CI checks a command block", source)
+        self.assertIn(
+            "`scripts/tests/test_how_to_use_snippets.py` executes the `$SKILL` blocks and table "
+            "status command against stubs; real harness configuration and external integrations "
+            "still need manual verification",
+            source,
+        )
+
+
 class APersonCanReadEachReferenceOnItsOwnTest(unittest.TestCase):
     def test_a_person_can_resolve_skill_dir_in_every_reference_that_uses_it(self) -> None:
         for path in sorted((SERVER_PATH.parent / "reference").glob("*.md")):
