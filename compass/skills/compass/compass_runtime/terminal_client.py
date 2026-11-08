@@ -817,7 +817,9 @@ def request(
             data = json.loads(raw)
         except (ValueError, RecursionError):
             data = None
-    return Reply(status, data)
+    from compass_runtime.board_explanations import expand  # noqa: PLC0415
+
+    return Reply(status, expand(data))
 
 
 def get(

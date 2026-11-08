@@ -21,7 +21,8 @@
           "phase": "user-role instruction",
           "sid": "a1b2c3d4",
           "source": "timestamped non-meta user-role record",
-          "title": "Build the parser with bounded input"
+          "title": "Build the parser with bounded input and preserve every reader-facing explanation and preserve every reader-facin",
+          "title_truncated": true
         }
       ],
       "focus": null,
@@ -42,7 +43,7 @@
               "confidence": "exact",
               "source": "timestamped non-meta user-role record"
             },
-            "fact_id": "fact:f10b33838b55b534",
+            "fact_id": "fact:f5058c8ae3398ca9",
             "intent_promoted": true,
             "scope": "session",
             "source_kind": "steer",
@@ -50,7 +51,7 @@
               "harness": "claude",
               "sid": "a1b2c3d4"
             },
-            "summary": "Build the parser with bounded input",
+            "summary": "Build the parser with bounded input and preserve every reader-facing explanation and preserve every reader-facin…",
             "type": "user_message",
             "work_item_id": null
           }
@@ -59,18 +60,18 @@
           "cursors": {
             "claude:a1b2c3d4": {
               "at": 1899999940.0,
-              "event_id": "fact:f10b33838b55b534"
+              "event_id": "fact:f5058c8ae3398ca9"
             }
           },
           "event_count": 1,
           "events": [
             {
               "at": 1899999940.0,
-              "event_id": "fact:f10b33838b55b534",
+              "event_id": "fact:f5058c8ae3398ca9",
               "event_type": "operator_direction",
               "source_identity": "claude:a1b2c3d4",
-              "source_ref": "fact:f10b33838b55b534",
-              "summary": "Build the parser with bounded input",
+              "source_ref": "fact:f5058c8ae3398ca9",
+              "summary": "Build the parser with bounded input and preserve every reader-facing explanation and preserve every reader-facin…",
               "work_binding": null
             }
           ],
@@ -100,10 +101,10 @@
             {
               "at": 1899999940.0,
               "confidence": "derived-deterministic",
-              "derived_from": "fact:f10b33838b55b534",
+              "derived_from": "fact:f5058c8ae3398ca9",
               "kind": "operator_intent",
-              "projection_id": "intent:27b3bbfdbe3bd8bd",
-              "summary": "Build the parser with bounded input"
+              "projection_id": "intent:9eccee296ac0e112",
+              "summary": "Build the parser with bounded input and preserve every reader-facing explanation and preserve every reader-facin…"
             }
           ],
           "steering_episodes": [],
@@ -112,9 +113,9 @@
         "relations": [
           {
             "confidence": "exact",
-            "from": "intent:27b3bbfdbe3bd8bd",
+            "from": "intent:9eccee296ac0e112",
             "provenance": "bounded semantic-line extraction",
-            "to": "fact:f10b33838b55b534",
+            "to": "fact:f5058c8ae3398ca9",
             "type": "derived_from"
           }
         ],
@@ -218,7 +219,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "3836",
+      "Content-Length": "4176",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

@@ -22,6 +22,7 @@ from urllib.parse import ParseResult, parse_qs, urlparse
 
 from compass_runtime import (
     analyze_capacity,
+    board_explanations,
     ci_read,
     compass_turns,
     copied_corrections,
@@ -536,7 +537,7 @@ def _lease_row(application: Any, harness: str, sid: str) -> dict[str, Any] | Non
         _, body = application.collect_json(show_all=show_all)
         rows = [
             row
-            for row in json.loads(body)["sessions"]
+            for row in board_explanations.expand(json.loads(body))["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         if rows:
@@ -556,7 +557,7 @@ def _published_row_of(application: Any, harness: str, sid: str) -> dict[str, Any
         _, body = application.collect_json(show_all=show_all)
         rows = [
             row
-            for row in json.loads(body)["sessions"]
+            for row in board_explanations.expand(json.loads(body))["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         if rows:
@@ -1841,7 +1842,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "observer refresh requires an exact focused session")
             return
         _revision, body = application.collect_json(show_all=False)
-        collected = json.loads(body)
+        collected = board_explanations.expand(json.loads(body))
         result = assemble_project_drift(
             application,
             collected,
@@ -1933,7 +1934,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "limit must be an integer")
             return
         _revision, body = application.collect_json(show_all=False)
-        rows = json.loads(body)["sessions"]
+        rows = board_explanations.expand(json.loads(body))["sessions"]
         matching = [
             row
             for row in rows
@@ -1965,7 +1966,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(403)
             return
         _, body = self.server.application.collect_json(show_all=False)
-        answer = terminal_sessions.list_payload(json.loads(body))
+        answer = terminal_sessions.list_payload(board_explanations.expand(json.loads(body)))
         self._send(
             json.dumps(
                 runtime_project_context.for_page(answer), ensure_ascii=False, separators=(",", ":")
@@ -1986,7 +1987,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # Keep board history on the server; a terminal needs only its session's row.
         for show_all in (False, True):
             _, body = self.server.application.collect_json(show_all=show_all)
-            collection = json.loads(body)
+            collection = board_explanations.expand(json.loads(body))
             rows = [
                 row
                 for row in collection["sessions"]
@@ -4075,7 +4076,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             _, body = application.collect_json(show_all=show_all)
             rows = [
                 row
-                for row in json.loads(body)["sessions"]
+                for row in board_explanations.expand(json.loads(body))["sessions"]
                 if row.get("harness") == harness and row.get("sid") == sid
             ]
             if rows:
@@ -4576,7 +4577,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         _revision, body = application.collect_json(show_all=False)
         rows = [
             row
-            for row in json.loads(body)["sessions"]
+            for row in board_explanations.expand(json.loads(body))["sessions"]
             if row.get("harness") == harness and row.get("sid") == sid
         ]
         # From disk under the store's lock, the entry the job is handed: the

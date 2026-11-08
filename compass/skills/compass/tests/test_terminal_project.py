@@ -44,6 +44,21 @@ class ProjectTest(unittest.TestCase):
                         ),
                     )
 
+    def test_a_person_sees_the_servers_cut_task_in_the_terminal(self) -> None:
+        brief = terminal_project.derive(
+            recorded("data-terminal-project"),
+            recorded("context-terminal-project"),
+            label="terminal-project",
+        )
+        expected = (
+            "Build the parser with bounded input and preserve every reader-facing "
+            "explanation and preserve every reader-facin…"
+        )
+        self.assertEqual(expected, brief["task"])
+        self.assertIn(
+            expected, "\n".join(terminal_project.render(brief, caller=("claude", "a1b2c3d4")))
+        )
+
     def test_a_person_is_not_needed_when_only_the_first_officer_has_follow_ups(self) -> None:
         payload = recorded("data-terminal-project")
         for row in payload["sessions"]:

@@ -1,3 +1,4 @@
+import { EXPLANATION_SLOTS } from './explanations';
 // @vitest-environment node
 /* The words, keys and rules the Python producers and the React page each spell, held together. The fixture
    (`frontend/test/fixtures/vocabulary.json`) is read from the Python modules by
@@ -432,4 +433,9 @@ describe('the sentences about words that moved on name times, not revision numbe
     });
     expect(found).toEqual([]);
   });
+});
+
+it('a person gets the same explanation slots from both clients', () => {
+  const vocabulary = JSON.parse(readFileSync('frontend/test/fixtures/vocabulary.json', 'utf8'));
+  expect(EXPLANATION_SLOTS).toEqual(vocabulary.board_explanation_slots);
 });

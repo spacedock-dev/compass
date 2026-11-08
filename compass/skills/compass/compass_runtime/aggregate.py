@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from . import annotations as annotation_store
 from . import (
+    board_explanations,
     copied_corrections,
     deliveries,
     departures,
@@ -35,6 +36,35 @@ from . import events as runtime_events
 from . import io as runtime_io
 from . import snapshot as runtime_snapshot
 from .web import page as frontend_page
+
+# Transport tokens are closed here, over producer-owned sentences. The in-process rows and
+# focused session route stay self-contained, including the footer's collection below.
+_BOARD_EXPLANATIONS = {
+    "why:never-checked": departures.NEVER_CHECKED,
+    "why:nothing-departed": departures.NOTHING_DEPARTED,
+    "why:session-exhausted": departures.SESSION_EXHAUSTED,
+    "why:day-exhausted": departures.DAY_EXHAUSTED,
+    "why:goal-absent": annotation_store.NO_GOAL_TYPED,
+    "why:lines-absent": annotation_store.NO_LINES_TYPED,
+    "why:discarded": annotation_store.DISCARDED_GOAL,
+    "why:discard-record": annotation_store.DISCARD_RECORD,
+    "why:annotation-prefix": annotation_store.BINDING_BY_PREFIX,
+    "why:raise-unknown": deliveries.NO_RECORD,
+    "why:raise-absent": deliveries.NO_RAISE_RECORDED,
+    "why:departure-raise-absent": deliveries.NO_RAISE_BY_LANE[deliveries.LANE_DEPARTURE],
+    "why:raise-mixed": deliveries.MIXED_OUTCOMES,
+    "why:raise-prefix": deliveries.BINDING_BY_PREFIX,
+    "why:browser-unreported": deliveries.BROWSER_LANE_UNREPORTED,
+    **{f"why:delivery-{token}": sentence for token, sentence in deliveries.DELIVERY.items()},
+    **{
+        f"why:press-{reason}-{acquisition}": reading.withheld_sentence(
+            reason, {"harness": "claude", "acquisition": acquisition}
+        )
+        for reason in reading.PRESS_WITHHELD
+        for acquisition in ("event", "poll")
+    },
+}
+
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -1707,7 +1737,7 @@ class Application:
             # write it may have missed, so its body is not kept (DRC-4760).
             generation = self.snapshot.generation()
             collection = self.collect(show_all=show_all)
-            body = json.dumps(collection).encode()
+            body = json.dumps(board_explanations.compact(collection, _BOARD_EXPLANATIONS)).encode()
             revision, kept = self.snapshot.publish(
                 key, body, now=self.clock(), generation=generation
             )

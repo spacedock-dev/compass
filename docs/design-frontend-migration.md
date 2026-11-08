@@ -243,6 +243,10 @@ header names the token rate's unit ("44 tokens/min" where the retired page wrote
 once an intent is saved, with the entries since the intent's start beside it, and a chip for an
 entry before that start keeps its number, muted. Golden files are unchanged.
 
+The row-level placement below is permitted by the
+[2026-11-08 owner amendment](design-reading-a-session.md#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row).
+Live estimates stay off Sessions rows.
+
 2026-10-20, usability review: each Sessions row leads with one state word (Working, Waiting on
 you, Idle, Ended, or State not published where the board publishes no known state) in place of the
 SESSION label, `NOW · <state>` and the QUIET or ENDED tag; WHERE is the project label alone, without

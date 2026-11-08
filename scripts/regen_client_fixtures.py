@@ -61,10 +61,12 @@ TERMINAL_GOALS = FIXTURES.parent / "terminal-goal.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
+from compass_runtime import board_explanations as runtime_board_explanations  # noqa: E402
 from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
 from compass_runtime import claude_data as runtime_claude_data  # noqa: E402 - runtime path
 from compass_runtime import claude_settings as runtime_claude_settings  # noqa: E402 - runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
+from compass_runtime import deliveries as runtime_deliveries  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
@@ -1007,6 +1009,74 @@ def session_states_scenario(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def board_explanations_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """Shared words with varying delivery outcomes and a stored departing analysis."""
+    rows = {
+        "claude": [
+            synthetic_row("claude", sid, "shared-words", title=title, state=state)
+            for sid, title, state in (
+                ("11111111", "No stored words", "idle"),
+                ("22222222", "Refused notification", "idle"),
+                ("33333333", "Mixed notification outcomes", "idle"),
+                ("44444444", "Stored departure", "working"),
+            )
+        ]
+    }
+    rig = Rig(scratch, "shared-words", rows=rows)
+    try:
+        for sid, outcome, at in (
+            ("22222222", runtime_deliveries.OUTCOME_REFUSED, NOW - 120),
+            ("33333333", runtime_deliveries.OUTCOME_REFUSED, NOW - 180),
+            ("33333333", runtime_deliveries.OUTCOME_HANDED_OVER, NOW - 60),
+        ):
+            runtime_deliveries.record(
+                rig.config,
+                harness="claude",
+                sid=sid + "-full-id",
+                lane="departure",
+                outcome=outcome,
+                now=at,
+            )
+        annotation_store.annotate(
+            rig.config, rig.state, "claude", "44444444", goal="Build the parser", now=NOW - 600
+        )
+        assessment: Any = {
+            "revision_read": 1,
+            "revision_read_at": NOW - 600,
+            "read_at": NOW - 240,
+            "stamp": "Synthetic stored reading",
+            "cutoff": "Read the recorded synthetic instruction.",
+            "scope": runtime_reading.SCOPE_MID_FLIGHT,
+            "scope_text": runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_MID_FLIGHT],
+            "criteria": {
+                "goal": {
+                    "result": runtime_reading.RESULT_DEPARTURE,
+                    "cites": ["synthetic-fact"],
+                    "detail": "The work moved to the lexer.",
+                    "clause": "Build the parser",
+                }
+            },
+        }
+        with mock.patch.object(annotation_store, "time", FrozenTime()):
+            annotation_store.record_reading(
+                rig.config, rig.state, "claude", "44444444", assessment=assessment
+            )
+        recorder.capture(
+            rig,
+            "data-shared-explanations",
+            get("/api/data"),
+            "Absent, prefix-bound, refused, mixed and eligible rows; a stored departing analysis.",
+        )
+        recorder.capture(
+            rig,
+            "session-shared-explanations",
+            get("/api/session", "harness=claude&sid=33333333"),
+            "Focused mixed outcomes stay self-contained.",
+        )
+    finally:
+        rig.close()
+
+
 def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     """A project brief recorded through publication, including credential redaction."""
     rows = {
@@ -1071,7 +1141,15 @@ def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     try:
         rig.write_transcript(
             "a1b2c3d4",
-            [_transcript_entry("user", "Build the parser with bounded input", NOW - 60, 0)],
+            [
+                _transcript_entry(
+                    "user",
+                    "Build the parser with bounded input "
+                    + "and preserve every reader-facing explanation " * 4,
+                    NOW - 60,
+                    0,
+                )
+            ],
         )
         for name, path, query in (
             ("data-terminal-project", "/api/data", ""),
@@ -2124,6 +2202,7 @@ def unsupported_record_scenario(recorder: Recorder, scratch: Scratch) -> None:
 
 
 SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
+    board_explanations_scenario,
     data_scenarios,
     session_states_scenario,
     terminal_project_scenario,
@@ -2339,6 +2418,7 @@ def vocabulary() -> dict[str, Any]:
         )
     ]
     return {
+        "board_explanation_slots": list(runtime_board_explanations.SLOTS),
         "format": FORMAT,
         "assessmentKeys": list(reading.ASSESSMENT_KEYS),
         "criterionKeys": list(reading.CRITERION_KEYS),

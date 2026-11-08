@@ -17,6 +17,7 @@ from compass_runtime import (
     observer,
     project_context,
     reading_route,
+    records,
     semantic_history,
     sessions,
     spacedock,
@@ -762,6 +763,34 @@ class ProjectContextTest(unittest.TestCase):
         model.assert_not_called()
         self.assertEqual([], automatic["observers"])
         self.assertEqual(["gate", "steer"], [event["kind"] for event in automatic["events"]])
+
+    def test_a_person_sees_a_cut_task_marked_without_moving_its_citation(self) -> None:
+        limit = min(project_context.MAX_SEMANTIC_LINE, self.config.observer_goal_cap_chars)
+        for length in (limit - 1, limit, limit + 1, limit + 80):
+            text = "Build the parser " + "x" * (length - len("Build the parser "))
+            event = project_context._instruction_event(
+                self.config, codex_message(text, "2026-08-24T20:10:00Z"), "codex", self.SID
+            )
+            assert event is not None
+            fact = project_context._semantic_fact_from_event(event, "steer", "user_message", "")
+            self.assertEqual(
+                records.safe_text(text, limit) + ("…" if length > limit else ""), fact["summary"]
+            )
+            legacy = {key: value for key, value in event.items() if key != "title_truncated"}
+            self.assertEqual(
+                project_context._semantic_fact_from_event(legacy, "steer", "user_message", "")[
+                    "fact_id"
+                ],
+                fact["fact_id"],
+            )
+        secret = "Build " + "sk-abcdefghijklmnopqrstuvwxyz123456" + " parser " * 40
+        event = project_context._instruction_event(
+            self.config, codex_message(secret, "2026-08-24T20:10:00Z"), "codex", self.SID
+        )
+        assert event is not None
+        fact = project_context._semantic_fact_from_event(event, "steer", "user_message", "")
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz", fact["summary"])
+        self.assertTrue(fact["summary"].endswith("…"))
 
     def test_codex_response_item_is_a_timestamped_instruction(self) -> None:
         event = project_context._instruction_event(
