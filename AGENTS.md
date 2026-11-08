@@ -31,7 +31,8 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
 ├── hooks.json                      # Antigravity lifecycle hooks (its path, at the root)
 └── skills/
     └── compass/                   # the dashboard skill
-        ├── SKILL.md                # shared skill body (all harnesses)
+        ├── SKILL.md                # shared action body, complete within 24,000 bytes (all harnesses)
+        ├── reference/             # bundled dashboard, Intent, notification and option references
         ├── launch.py               # starts every hook, the MCP server and server.py; parses on Python 3.6
         ├── server.py               # the stable launcher: calls compass_runtime.entry.main
         ├── notify_hook.py          # loopback POST forwarder for the user-installed Claude hooks
@@ -110,7 +111,7 @@ shipped skill body, lives in the `sync-docs` skill at `.claude/skills/sync-docs/
 | `CONTRIBUTING.md` | The human contributor journey, and the dashboard implementation constraints. |
 | `COMPATIBILITY.md` | The cross-harness and cross-platform contract, and the Python floor. |
 | `SECURITY.md` | Security invariants, accepted exposures, and private reporting. |
-| `compass/skills/compass/SKILL.md` | The shipped product surface. A validated artifact — see the portability rules below. |
+| `compass/skills/compass/SKILL.md` and `reference/*.md` beside it | The shipped product surface: the body holds terminal actions, disclosures and start/status/stop; bundled references hold the details. Validated artifacts — see the portability rules below. |
 | `docs/promise-map.md` | **Canonical** user-facing promise: one promise per stage of the user's day, the shipped capability behind each, and where each stops. Release notes and the README lede restate it rather than reinvent it. |
 | `docs/development-tracking.md` | **Canonical** development taxonomy: promise IDs, journey labels, board columns, moves and tracker copies. It links to the public promise map without putting tracker provenance into that map. |
 | `docs/design-runtime-architecture.md` | **Canonical** module map: what each runtime file owns, which way dependencies run, and how config/state/application are held. |

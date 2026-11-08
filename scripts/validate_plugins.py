@@ -429,6 +429,11 @@ COMPASS_RUNTIME_FILES = (
     "hooks/hooks.json",
     "hooks/codex-hooks.json",
     "hooks.json",
+    # The loaded skill routes to these installed references for disclosures and options.
+    "skills/compass/reference/dashboard.md",
+    "skills/compass/reference/intent-and-drift.md",
+    "skills/compass/reference/notifications.md",
+    "skills/compass/reference/options.md",
     "skills/compass/server.py",
     "skills/compass/launch.py",
     "skills/compass/notify_hook.py",

@@ -55,6 +55,10 @@ class ValidatorTests(unittest.TestCase):
             "collector": "skills/compass/compass_runtime/collectors/goose.py",
             "JavaScript adapter": "skills/compass/opencode_plugin.js",
             "frontend asset": "skills/compass/compass_runtime/web/react.html",
+            "dashboard reference": "skills/compass/reference/dashboard.md",
+            "intent reference": "skills/compass/reference/intent-and-drift.md",
+            "notification reference": "skills/compass/reference/notifications.md",
+            "option reference": "skills/compass/reference/options.md",
         }
         for category, relative in categories.items():
             with self.subTest(category=category):
@@ -110,6 +114,9 @@ class ValidatorTests(unittest.TestCase):
             for path in (plugin_root / "hooks").glob("*.json")
         }
         shipped |= {path.name for path in plugin_root.glob("hooks.json") if path.is_file()}
+        shipped |= {
+            path.relative_to(plugin_root).as_posix() for path in (skill / "reference").glob("*.md")
+        }
         for path in (skill / "compass_runtime").rglob("*"):
             if not path.is_file() or "__pycache__" in path.parts:
                 continue

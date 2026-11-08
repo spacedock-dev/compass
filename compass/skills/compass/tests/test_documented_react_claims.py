@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parents[4]
-SKILL = (ROOT / "compass/skills/compass/SKILL.md").read_text(encoding="utf-8")
+SKILL = "\n".join(
+    path.read_text(encoding="utf-8")
+    for path in (
+        ROOT / "compass/skills/compass/SKILL.md",
+        *sorted((ROOT / "compass/skills/compass/reference").glob("*.md")),
+    )
+)
 STATE_DOC = (ROOT / "docs/design-reader-state.md").read_text(encoding="utf-8")
 SRC = ROOT / "frontend/src"
 
