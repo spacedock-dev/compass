@@ -31,9 +31,15 @@ const REFUSED: Readonly<Record<string, string>> = {
   'no-grant-needed': 'Claude Code runs unasked checks of this session, so no permission is needed.',
 };
 
-function granted(payload: Row): boolean {
+function covered(payload: Row): boolean {
   const policy = payload['reading'];
   return isRecord(policy) && isRecord(policy['words']) && policy['words']['codex'] === true;
+}
+
+function stored(payload: Row): boolean {
+  const policy = payload['reading'];
+  const rebind = isRecord(policy) && isRecord(policy['rebind']) ? policy['rebind']['codex'] : '';
+  return covered(payload) || (typeof rebind === 'string' && Boolean(rebind.trim()));
 }
 
 function unaskedRefusal(payload: Row): string {
@@ -59,7 +65,11 @@ export function UnaskedPermission({
   const pending = useDisplayed((snapshot) => snapshot.pending.includes('unasked-grant:codex'));
   if (current['unasked'] !== true) return null;
   const provider = route?.['provider'];
-  const allowed = granted(current);
+  const allowed = stored(current);
+  const dormant = allowed && !covered(current);
+  const policy = current['reading'];
+  const dormantNote =
+    isRecord(policy) && isRecord(policy['dormant']) ? policy['dormant']['codex'] : '';
   const unavailable =
     route?.['reason'] === 'no-record-reader' ? (
       <section aria-label="Unasked checks unavailable" className="next-session-drift-check">
@@ -128,15 +138,17 @@ export function UnaskedPermission({
       {provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null}
       <section aria-label="Unasked checks" className="next-session-drift-check">
         <p className="next-cockpit-reading-why">
-          {!codexRoute
-            ? 'Codex still has your permission to run unasked checks, though it does not check this session. Turn the switch off to revoke it.'
-            : allowed
-              ? 'Codex has permission to check this session while you are away. Turn the switch off to revoke it.'
-              : typedGoal(session)
-                ? blocked
-                  ? 'Unasked checks of this session are waiting for your permission.'
-                  : 'Unasked checks of this session are waiting for your permission. Turn on the switch below to let Codex check it against your goal while you are away.'
-                : 'Codex needs your permission for unasked checks. Save a typed goal for this session to give those checks something to read against.'}
+          {dormant
+            ? String(dormantNote ?? '')
+            : !codexRoute
+              ? 'Codex still has your permission to run unasked checks, though it does not check this session. Turn the switch off to revoke it.'
+              : allowed
+                ? 'Codex has permission to check this session while you are away. Turn the switch off to revoke it.'
+                : typedGoal(session)
+                  ? blocked
+                    ? 'Unasked checks of this session are waiting for your permission.'
+                    : 'Unasked checks of this session are waiting for your permission. Turn on the switch below to let Codex check it against your goal while you are away.'
+                  : 'Codex needs your permission for unasked checks. Save a typed goal for this session to give those checks something to read against.'}
         </p>
         <div className="flex items-center gap-2">
           <Button
@@ -156,9 +168,11 @@ export function UnaskedPermission({
           <span id={labelId}>Allow Codex to run unasked checks</span>
         </div>
         {blocked ? <p className="next-cockpit-reading-why">{refusal}</p> : null}
-        <p className="next-cockpit-reading-why">
-          This permission covers every session Codex reads at this destination.
-        </p>
+        {!dormant ? (
+          <p className="next-cockpit-reading-why">
+            This permission covers every session Codex reads at this destination.
+          </p>
+        ) : null}
         {Array.isArray(parts) ? <DisclosureParts parts={parts.map(String)} /> : null}
         {message ? <p role="status">{message}</p> : null}
       </section>
@@ -187,7 +201,7 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
   const overlay = useSyncExternalStore(ctx.drift.subscribe, ctx.drift.getOverlay);
   const count = useDisplayed((snapshot) => snapshot.acceptedCount);
   const current = overlaid(payload, overlay, count);
-  if (current['unasked'] !== true || granted(current)) return null;
+  if (current['unasked'] !== true || stored(current)) return null;
   const refusal = unaskedRefusal(current);
   const waiting = payloadSessions(current as never).rows.filter(
     (session) =>

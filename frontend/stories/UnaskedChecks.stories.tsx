@@ -1,3 +1,4 @@
+import dormantBoard from '../test/fixtures/client-contract/data-unasked-dormant.json';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within } from 'storybook/test';
 import { DriftScenario, readingScenario, routeOf, type Scenario } from './drift.scenario';
@@ -317,3 +318,77 @@ function supported(harness: 'pi' | 'antigravity'): Story {
 }
 export const PiKeepsPermission = supported('pi');
 export const AntigravityKeepsPermission = supported('antigravity');
+
+const dormantNote = dormantBoard.response.body.reading.dormant.codex;
+function dormantStory(
+  harness: 'codex' | 'claude' | 'gemini',
+  unaskedRoute: Record<string, unknown>,
+): Story {
+  const revoke = readingScenario([]);
+  return {
+    args: {
+      scenario: {
+        harness,
+        reading: revoke,
+        payload: {
+          unasked: true,
+          unasked_routes: { [harness]: unaskedRoute },
+          reading: dormantBoard.response.body.reading,
+        },
+      },
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      const toggle = await canvas.findByRole('switch', { name: off });
+      await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      await expect(canvas.getByText(dormantNote, { exact: true })).toBeVisible();
+      await expect(canvas.queryByText(/allow it again/i)).toBeNull();
+      await expect(canvas.queryByText(/This permission covers every session/)).toBeNull();
+      if (harness === 'gemini')
+        await expect(canvas.getByText(String(unavailable['note']))).toBeVisible();
+      if (harness === 'claude')
+        await expect(
+          canvas.getByRole('region', { name: 'Unasked checks by Claude Code' }),
+        ).toBeVisible();
+      await userEvent.click(toggle);
+      await expect(revoke.posts).toHaveLength(1);
+      await expect(revoke.posts[0]).toMatchObject({ unasked_grant: false, provider: 'codex' });
+      await expect(revoke.posts.some((post) => post['unasked_grant'] === true)).toBe(false);
+      await expect(canvas.queryByText(dormantNote)).toBeNull();
+      if (harness === 'codex')
+        await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute(
+          'aria-checked',
+          'false',
+        );
+      else await expect(canvas.queryByRole('switch', { name: off })).toBeNull();
+    },
+  };
+}
+export const ReaderRevokesDormantGrantOnCodex = dormantStory('codex', route);
+export const ReaderRevokesDormantGrantOnClaude = dormantStory('claude', claudeRoute);
+export const ReaderRevokesDormantGrantOnUnreadable = dormantStory('gemini', unavailable);
+function attentionWithGrant(reading: Record<string, unknown>): Story {
+  return {
+    args: {
+      scenario: scenario({
+        initialView: 'attention',
+        payload: { unasked: true, unasked_routes: { codex: route }, reading },
+      }),
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      await canvas.findByRole('heading', { name: /^Attention$/ });
+      await expect(
+        canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+      ).toBeNull();
+    },
+  };
+}
+export const AttentionDoesNotInviteReaderWithDormantGrant = attentionWithGrant(
+  dormantBoard.response.body.reading,
+);
+export const AttentionDoesNotInviteReaderWithCoveredGrant = attentionWithGrant({
+  consent: true,
+  off: false,
+  words: { codex: true },
+});

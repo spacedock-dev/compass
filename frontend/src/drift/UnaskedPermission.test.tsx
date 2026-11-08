@@ -1,3 +1,6 @@
+import dormantBoard from '../../test/fixtures/client-contract/data-unasked-dormant.json';
+import revokedBoard from '../../test/fixtures/client-contract/data-unasked-revoked.json';
+import revokeReply from '../../test/fixtures/client-contract/reading-unasked-revoked.json';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { driftBoard, json, mountDrift, press, readingPosts, ROUTE, POLICY } from './testing';
@@ -264,5 +267,90 @@ describe('A session without a record reader', () => {
       within(screen.getByRole('region', { name: 'Unasked checks' })).getByRole('status')
         .textContent,
     ).toContain(unavailableNote);
+  });
+});
+
+const dormantPolicy = dormantBoard.response.body.reading;
+const revokedPolicy = revokedBoard.response.body.reading;
+const dormantNote =
+  'Your saved Codex permission does not apply now because where your words go has changed.';
+
+describe('A reader with a Codex grant saved for an earlier destination', () => {
+  it.each([
+    ['an unreadable session', unavailableRoute],
+    ['a Claude-routed session', ROUTE],
+    ['a Codex-routed session', CODEX],
+  ])('can revoke the saved grant from %s', async (_name, route) => {
+    const nextPayload = {
+      unasked: true,
+      reading: revokedPolicy,
+      unasked_routes: { claude: route },
+    };
+    const page = mountDrift({
+      store: { goal_source: 'typed' },
+      payload: { ...nextPayload, reading: dormantPolicy },
+      routes: {
+        '/api/reading': () => {
+          page.state.data = driftBoard({ store: { goal_source: 'typed' }, payload: nextPayload });
+          return json(revokeReply.response.body);
+        },
+      },
+    });
+    await page.settle();
+    const toggle = screen.getByRole('switch', { name: /Allow Codex/ });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText(dormantNote).textContent).toBe(dormantNote);
+    expect(screen.queryByText(/allow it again/i)).toBeNull();
+    expect(screen.queryByText(/This permission covers every session/)).toBeNull();
+    if (route === unavailableRoute) expect(screen.getByText(unavailableNote)).toBeTruthy();
+    if (route === ROUTE)
+      expect(screen.getByRole('region', { name: 'Unasked checks by Claude Code' })).toBeTruthy();
+    await press(toggle);
+    expect(readingPosts(page)).toHaveLength(1);
+    expect(readingPosts(page)[0]?.body).toMatchObject({ unasked_grant: false, provider: 'codex' });
+    expect(readingPosts(page).some((post) => post.body?.['unasked_grant'] === true)).toBe(false);
+    expect(screen.queryByText(dormantNote)).toBeNull();
+    if (route === CODEX)
+      expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+        'false',
+      );
+    else expect(screen.queryByRole('switch', { name: /Allow Codex/ })).toBeNull();
+  });
+
+  it.each([
+    ['dormant', dormantPolicy],
+    ['covered', policy(true)],
+  ])('is not invited by Attention to grant again while the grant is %s', async (_name, reading) => {
+    const page = mountDrift({
+      hash: '#n=attention',
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading },
+    });
+    await page.settle();
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    expect(readingPosts(page)).toHaveLength(0);
+  });
+
+  it('still sees current coverage when only the requested content changed', async () => {
+    const page = mountDrift({
+      payload: {
+        ...payload(true),
+        reading: {
+          ...policy(true),
+          rebind: {
+            codex: 'What a reading sends has changed since you allowed this, so allow it again.',
+          },
+          dormant: {},
+        },
+      },
+    });
+    await page.settle();
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByText(/This permission covers every session/)).toBeTruthy();
+    expect(screen.queryByText(dormantNote)).toBeNull();
   });
 });

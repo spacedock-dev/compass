@@ -1431,6 +1431,7 @@ class SessionSummaryTest(unittest.TestCase):
                     "reason": "model-calls-paused",
                     "providers": {},
                     "rebind": {},
+                    "dormant": {},
                     "tool_output": {},
                     "words": {},
                 }
@@ -2135,6 +2136,7 @@ def refusal() -> RefusedError:
             "reason": "model-calls-paused",
             "providers": {},
             "rebind": {},
+            "dormant": {},
             "tool_output": {},
             "words": {},
         }

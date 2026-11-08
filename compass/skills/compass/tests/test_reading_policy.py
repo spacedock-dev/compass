@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import concurrent.futures
 import contextlib
+import dataclasses
 import functools
 import tempfile
 import threading
@@ -778,6 +779,33 @@ class PermissionIsPerProviderTest(unittest.TestCase):
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
         self.config, _ = make_runtime(state_dir=Path(self.home.name), state_home=self.home.name)
+
+    def test_a_reader_gets_a_neutral_note_only_for_a_grant_saved_for_another_destination(
+        self,
+    ) -> None:
+        config = dataclasses.replace(self.config, unasked_enabled=True)
+        reading_policy.set_unasked_grant(
+            config, True, now=100.0, provider="codex", destination="old.example"
+        )
+        moved = reading_policy.status(config, now=101.0, destinations={"codex": "OpenAI"})
+        self.assertEqual(
+            {
+                "codex": "Your saved Codex permission does not apply now because where your words go has changed."
+            },
+            moved.get("dormant"),
+        )
+        self.assertEqual(reading_policy.DESTINATION_CHANGED, moved["rebind"]["codex"])
+        self.assertFalse(moved["words"]["codex"])
+        current = reading_policy.status(config, now=102.0, destinations={"codex": "old.example"})
+        self.assertTrue(current["words"]["codex"])
+        self.assertEqual(reading_policy.CONTENT_CHANGED, current["rebind"]["codex"])
+        self.assertEqual({}, current["dormant"])
+        revoked = reading_policy.set_unasked_grant(
+            config, False, now=103.0, provider="codex", destination="OpenAI"
+        )
+        self.assertEqual({}, revoked["dormant"])
+        self.assertEqual({}, revoked["rebind"])
+        self.assertEqual({}, reading_policy._answer()["dormant"])
 
     def _consent(self, provider: str) -> bool:
         return reading_policy.status(self.config, now=100.0, provider=provider)["providers"][

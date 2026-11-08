@@ -1964,7 +1964,15 @@ all sessions routed to that provider at that destination. Claude Code needs no s
 but its Drift card names it and lists what each check sends: a reader who turned the flag on when
 only a Codex grant could start a check would otherwise begin sending words to Anthropic with no
 sign of it. A stored Codex grant keeps its revoke switch on every session page, whichever provider
-checks that session today. The cue's "none of them has been checked yet" is derived from each
+checks that session today, including a grant saved for an earlier destination. The page distinguishes
+stored permission (`words.codex` or a nonempty `rebind.codex`) from current words coverage
+(`words.codex`). A dormant grant has stored permission without words coverage: its switch is checked
+and its press sends `unasked_grant: false`, even on a Codex route. The server publishes the neutral
+revoke explanation verbatim in `reading.dormant.codex`; `rebind` retains its existing consent advice
+because allowing again is a separate action. The card makes no current-destination coverage claim
+for a dormant grant. A content-only rebind with `words.codex: true` retains current coverage and is
+not dormant. Revocation clears both notes. Attention omits its permission cue while any Codex grant
+is stored. The cue's "none of them has been checked yet" is derived from each
 listed session's `departure_checked`. With the flag off, or under `--no-annotations` (which turns
 the flag off), neither control nor cue is shown.
 

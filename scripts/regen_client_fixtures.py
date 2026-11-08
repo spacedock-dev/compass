@@ -72,9 +72,11 @@ from compass_runtime import observation as observation_module  # noqa: E402 - sk
 from compass_runtime import project_context as runtime_project_context  # noqa: E402
 from compass_runtime import reading as runtime_reading  # noqa: E402 - skill runtime path
 from compass_runtime import reading_jobs as runtime_reading_jobs  # noqa: E402 - skill runtime path
+from compass_runtime import reading_policy as runtime_reading_policy  # noqa: E402 - runtime path
 from compass_runtime import reading_route as runtime_reading_route  # noqa: E402 - runtime path
 from compass_runtime import records as runtime_records  # noqa: E402 - skill runtime path
 from compass_runtime import tripwires as runtime_tripwires  # noqa: E402 - runtime path
+from compass_runtime import unasked as runtime_unasked  # noqa: E402 - runtime path
 from compass_runtime.aggregate import Application, HarnessSpec  # noqa: E402 - skill runtime path
 from compass_runtime.asks import PendingAsk  # noqa: E402 - skill runtime path
 from compass_runtime.config import build_runtime_config  # noqa: E402 - skill runtime path
@@ -319,6 +321,10 @@ class Rig:
             clock=lambda: self.now,
             frontend_page_bytes=page,
         )
+        if self.config.unasked_enabled:
+            self.application.unasked_lane = runtime_unasked.Lane(
+                self.config, clock=lambda: self.now, popup_notifier=self._popup
+            )
         self.observation: Any = None
         self.focus_runner = SimpleNamespace(calls=[])
         if with_focus:
@@ -1508,6 +1514,32 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             ),
         )
     )
+    dormant = Rig(scratch, "unasked-dormant", model_calls_disabled=False, unasked_enabled=True)
+    try:
+        runtime_reading_policy.set_unasked_grant(
+            dormant.config, True, now=NOW, provider="codex", destination="old.example"
+        )
+        recorder.capture(
+            dormant,
+            "data-unasked-dormant",
+            get("/api/data"),
+            "A stored Codex grant for an earlier destination covers no words today.",
+        )
+        recorder.capture(
+            dormant,
+            "reading-unasked-revoked",
+            post("/api/reading", {**press, "provider": "codex", "unasked_grant": False}),
+            "Revoking the dormant Codex grant clears its binding even on a Claude-routed session.",
+        )
+        recorder.capture(
+            dormant,
+            "data-unasked-revoked",
+            get("/api/data"),
+            "After revocation no Codex permission or destination-change note remains.",
+        )
+    finally:
+        dormant.close()
+
     rig = Rig(scratch, "reading", model_calls_disabled=False)
     try:
         model = runtime_reading_route.resolve("claude", config=rig.config)["model"]

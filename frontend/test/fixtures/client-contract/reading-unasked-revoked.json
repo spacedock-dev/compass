@@ -1,0 +1,54 @@
+{
+  "format": 1,
+  "name": "reading-unasked-revoked",
+  "notes": "Revoking the dormant Codex grant clears its binding even on a Claude-routed session.",
+  "request": {
+    "body": {
+      "harness": "claude",
+      "observer_model": 1,
+      "press": true,
+      "provider": "codex",
+      "sid": "a1b2c3d4",
+      "unasked_grant": false
+    },
+    "headers": {
+      "Origin": "{origin}"
+    },
+    "method": "POST",
+    "path": "/api/reading",
+    "query": ""
+  },
+  "response": {
+    "body": {
+      "ok": true,
+      "produced": false,
+      "reading": {
+        "consent": true,
+        "dormant": {},
+        "limit": 100,
+        "notices": {},
+        "off": false,
+        "providers": {
+          "claude": false,
+          "codex": false
+        },
+        "reason": "",
+        "rebind": {},
+        "retry_at": null,
+        "tool_output": {},
+        "used": 0,
+        "words": {
+          "claude": false,
+          "codex": false
+        }
+      }
+    },
+    "headers": {
+      "Cache-Control": "no-store",
+      "Content-Length": "253",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}

@@ -82,6 +82,7 @@
       "rate_window_sec": 600,
       "reading": {
         "consent": false,
+        "dormant": {},
         "limit": 100,
         "notices": {},
         "off": false,
@@ -657,7 +658,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23818",
+      "Content-Length": "23833",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000500.1"
