@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2310787,
+    "bytes": 2311283,
     "file": "react.html",
-    "sha256": "0f562afae1208654229773dab1bf7cf9c8b2168b100ce41ecc8b836024448856"
+    "sha256": "9665b8472c599703538a7eeb66ffd44d8909516a8667e96ae74f3175330057ac"
   },
   "format": 1,
   "frontend": "react",
@@ -679,7 +679,7 @@
       },
       {
         "file": "frontend/src/drift/UnaskedPermission.tsx",
-        "sha256": "ff3a271acf39037452db03806ff849865515c4544e65dfbcf836ced87b0c6a08"
+        "sha256": "3731d4bdc9a1534408f016523232072d8ec0c8001a8f654db71b7cadbcec8408"
       },
       {
         "file": "frontend/src/drift/Why.tsx",
