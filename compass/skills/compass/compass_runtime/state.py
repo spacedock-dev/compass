@@ -66,6 +66,9 @@ class RuntimeState:
     # and session. Typed `Any` because `state` imports no module that could name it without a cycle.
     entry_indexes: dict[str, Any] = field(default_factory=dict)
     entry_index_lock: LockType = field(default_factory=threading.Lock)
+    # Focused drift views only: content digests retain no record bytes, bounded per application.
+    drift_view_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
+    drift_view_lock: LockType = field(default_factory=threading.Lock)
     session_outlines: dict[str, Any] = field(default_factory=dict)
     # Registry exchanges only; each outline slot owns its work outside this lock.
     session_outline_lock: LockType = field(default_factory=threading.Lock)

@@ -58,6 +58,56 @@ class APersonReadsASummary(unittest.TestCase):
         )
         return result, out.getvalue(), err.getvalue()
 
+    def test_a_person_reads_the_pages_summary_words_for_every_published_reason(self) -> None:
+        expected = json.loads(
+            (SERVER_PATH.parents[3] / "frontend/test/fixtures/terminal-wording.json").read_text()
+        )["summary"]
+        for reason, sentence in expected["withheld"].items():
+            self.assertEqual(sentence, terminal_summary._shown({"reason": reason}))
+        for reason, sentence in expected["titles"].items():
+            self.assertEqual(sentence, terminal_summary._shown({"reason": reason}, title=True))
+        for reason, sentence in expected["gaps"].items():
+            self.assertEqual(
+                [sentence],
+                terminal_summary._phases(
+                    {"blocks": [{"gap": True, "reason": reason}]}, lambda text, _cites: text
+                ),
+            )
+        self.assertEqual(expected["unknown"], terminal_summary.UNKNOWN)
+        self.assertEqual(expected["relevance"], terminal_summary.RELEVANCE)
+
+    def test_a_person_reads_the_pages_summary_notes_freshness_and_attributed_words(self) -> None:
+        expected = json.loads(
+            (SERVER_PATH.parents[3] / "frontend/test/fixtures/terminal-wording.json").read_text()
+        )["summary"]
+        for case in expected["notes"]:
+            self.assertEqual(case["expected"], terminal_summary._notes(case["input"]))
+        with mock.patch.object(terminal_drift, "clock_text", return_value="03:04"):
+            for case in expected["freshness"]:
+                self.assertEqual([case["expected"]], terminal_summary._freshness(case["input"]))
+        with mock.patch.object(terminal_drift, "clock_text", return_value="03:04"):
+            for case in expected["stamps"]:
+                self.assertEqual(case["expected"], terminal_summary._stamp(case["input"]))
+        self.assertEqual(expected["ledeReasons"], terminal_summary.LEDE_REASONS)
+        for case in expected["unlinked"]:
+            with mock.patch.object(terminal_summary, "_unlinked", return_value=case["count"]):
+                self.assertIn(
+                    case["expected"], terminal_summary.render(recorded(), {}, page_url="page")
+                )
+        summary = recorded()
+        summary["blocks"][0]["cut"] = {"reply": True}
+        self.assertIn(
+            expected["replyCut"], terminal_summary._phases(summary, lambda text, _cites: text)
+        )
+        for case in expected["bullets"]:
+            self.assertEqual(
+                case["expected"],
+                terminal_summary.bullet_words(case["input"]["kind"], case["input"]["text"]),
+            )
+        self.assertEqual(
+            expected["lede"]["expected"], terminal_summary.lede_words(expected["lede"]["input"])
+        )
+
     def test_a_person_reads_the_write_time_in_their_local_clock_without_a_utc_date(self) -> None:
         local = time.struct_time((2026, 11, 8, 5, 28, 3, 6, 312, 0))
         for state, wording in (("complete", "summarized at"), ("running", "updated")):

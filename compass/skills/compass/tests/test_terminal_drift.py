@@ -18,6 +18,7 @@ import signal
 import time
 import unittest
 from typing import TYPE_CHECKING, Any
+from unittest import mock
 
 from compass_runtime import terminal_client, terminal_drift
 
@@ -319,6 +320,21 @@ class AllowanceTest(unittest.TestCase):
         )
 
 
+class APersonReadsPageWordingTest(unittest.TestCase):
+    def test_a_person_reads_the_pages_press_levels_and_reason_words(self) -> None:
+        expected = json.loads((ROOT / "frontend/test/fixtures/terminal-wording.json").read_text())[
+            "drift"
+        ]
+        for name, sentence in expected["reasons"].items():
+            self.assertEqual(sentence, getattr(terminal_drift, name), name)
+        self.assertEqual(expected["press"], terminal_drift.PRESS_LINES)
+        self.assertEqual(expected["pressEvents"], terminal_drift.PRESS_EVENTS)
+        self.assertEqual(expected["levels"], terminal_drift.LEVEL_NAMES)
+        self.assertEqual(expected["why"], terminal_drift.WHY_WORDS)
+        self.assertEqual(expected["clause"], terminal_drift.CLAUSE_UNRETAINED)
+        self.assertEqual(expected["unverifiable"], terminal_drift.UNVERIFIABLE)
+
+
 class NativeSessionIdTest(unittest.TestCase):
     """Claude Code gives the command its full session UUID; the board keys the row by its first
     eight characters and carries the full id as `resume_id` (measured on a real board,
@@ -476,8 +492,8 @@ class FreeReadTest(unittest.TestCase):
         board = FakeBoard(a_payload(a_row(annotation_assessment=dict(ASSESSMENT))), view=view)
         _code, out, _err = drift(board)
         self.assertIn(
-            "- Can't tell · Goal: Make the parser accept tabs — a message you sent after your "
-            "goal is not settled",
+            "- Can't tell · Goal: Make the parser accept tabs — You have given a later direction "
+            "that is still unsettled",
             out,
         )
         self.assertNotIn("Level:", out)
@@ -836,7 +852,76 @@ class SpendTest(unittest.TestCase):
         board.post = interrupted  # type: ignore[method-assign]
         code, _out, err = drift(board)
         self.assertEqual(130, code)
-        self.assertEqual(f"{terminal_drift.INTERRUPTED} {PAGE}", err.strip())
+        self.assertIn("no reading is running now", err)
+        self.assertEqual(2, board.gets.count("/api/data"))
+
+    def test_a_person_interrupting_an_uncertain_post_reads_the_board_once_and_cancels_nothing(
+        self,
+    ) -> None:
+        for observed in ("running", "absent", "unknown"):
+            with self.subTest(observed=observed):
+                self._uncertain_post(observed)
+
+    def _uncertain_post(self, observed: str) -> None:
+        board = FakeBoard(job_polls=500)
+        read = board.data
+        reads = 0
+
+        def data() -> Any:
+            nonlocal reads
+            reads += 1
+            if reads == 2 and observed == "unknown":
+                raise terminal_drift.Lost("follow-up failed")
+            return read()
+
+        def post(path: str, body: Mapping[str, Any]) -> tuple[int, Any]:
+            board.posts.append((path, dict(body)))
+            if observed == "running":
+                board._start(body)
+            raise KeyboardInterrupt
+
+        board.data = data  # type: ignore[method-assign]
+        board.post = post  # type: ignore[method-assign]
+        code, out, err = drift(board)
+        self.assertEqual(130, code)
+        self.assertEqual(2, reads)
+        expected = {
+            "running": "A reading is running now; this run could not confirm it started that job",
+            "absent": "no reading is running now",
+            "unknown": "could not confirm whether a reading is running",
+        }[observed]
+        self.assertIn(expected, out + err)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
+
+    def test_a_person_interrupting_after_a_completed_job_is_told_it_ended(self) -> None:
+        board = FakeBoard(job_polls=0)
+        with mock.patch.object(terminal_drift._Run, "ended", side_effect=KeyboardInterrupt):
+            code, out, err = drift(board)
+        self.assertEqual(130, code)
+        self.assertIn("Interrupted after the reading ended", out + err)
+        self.assertNotIn("before Compass said", out + err)
+        self.assertNotIn("its result is on", out + err)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
+
+    def test_a_person_interrupting_after_an_owned_post_can_cancel_its_identified_job(self) -> None:
+        board = FakeBoard(job_polls=500)
+        with mock.patch.object(terminal_drift._Run, "wait", side_effect=KeyboardInterrupt):
+            code, out, err = drift(board)
+        self.assertEqual(130, code)
+        self.assertIn("Cancelled", out + err)
+        self.assertEqual(
+            ["job-1"], [body["job"] for path, body in board.posts if path == "/api/reading/cancel"]
+        )
+
+    def test_a_person_interrupting_after_a_foreign_post_reply_leaves_its_job_running(self) -> None:
+        job = {"id": "foreign", "started_at": NOW}
+        board = FakeBoard(reply=(409, {"job": job}))
+        board.payload["reading_jobs"] = {}
+        with mock.patch.object(terminal_drift._Run, "wait", side_effect=KeyboardInterrupt):
+            code, out, err = drift(board)
+        self.assertEqual(130, code)
+        self.assertNotIn("before Compass said", out + err)
+        self.assertNotIn("/api/reading/cancel", [path for path, _ in board.posts])
 
     def test_a_person_in_a_session_is_told_to_ask_again_when_the_reading_runs_long(self) -> None:
         board = FakeBoard(job_polls=500)

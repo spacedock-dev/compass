@@ -8480,6 +8480,27 @@ the server's field would change the bundle and the recorded oracles, and was lef
 server and the page still differ over what counts as a later direction in two places (a person's gate
 decision, and the floor a reading's rescope uses when no goal is saved); the port follows the page.
 
+A focused view that cannot be built now publishes `state: unavailable` with one of two closed
+reasons: `derivation-failed` or `identity-not-unique`. The terminal says which failure occurred
+before any press. An older dashboard with no view field remains a separate compatibility refusal.
+The server reuses up to 128 derived views per application (or the configured cache limit, if lower),
+keyed by content digests of the derivation inputs: the session's intent and state, annotation
+settings, routes, context facts and levels, monitor standing and level, and the newest record page.
+Collector elapsed-time fields and observation clocks do not enter the derivation. The cache keeps
+views and digests, never record pages; it clears when the server exits.
+
+The remaining shared terminal wording is held to the page by
+`frontend/src/drift/terminalWordingParity.test.ts`, which writes
+`frontend/test/fixtures/terminal-wording.json` from the page's strings and derivations over the
+recorded server exchange and sample summary. Python consumes the same expectations for press and
+level words, refusal reasons, and summary text, coverage notes and update messages.
+
+A terminal interrupt remembers whether the press answered and which job, if any, this invocation
+positively started. After an interrupted POST it makes one bounded board read and reports running,
+absent or unknown; a same-session job found there is never treated as owned. Once the tracked job
+leaves the board, an interrupt says it ended without promising a result. Only a job identified in
+this invocation's successful press response may be cancelled.
+
 ### Amended 2026-10-21: a running turn is unfinished
 
 A reading taken mid-turn reported a departure because "the session ends with the probe still
