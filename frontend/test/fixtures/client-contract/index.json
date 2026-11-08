@@ -223,6 +223,13 @@
     },
     {
       "method": "GET",
+      "name": "context-live-row",
+      "route": "/api/project-context",
+      "sha256": "3c2f74a98fb308aaf84b929c358c915ded8319269eaddac407641055c398f24d",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-malformed-session",
       "route": "/api/project-context",
       "sha256": "2f035b188c5c46ac7309d74b9f6c8fdc87112f211508061d89e991d09947910a",
@@ -352,6 +359,13 @@
       "name": "data-identity-collisions",
       "route": "/api/data",
       "sha256": "7c0bfc79a067fa1fe6ff58b2a03e283af793a2c8e56684e06752a029208c450f",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-live-row",
+      "route": "/api/data",
+      "sha256": "f23702faaa70c4d83a2dc2057c7a751e76626adf2510788ade9d3a00e363856c",
       "status": 200
     },
     {

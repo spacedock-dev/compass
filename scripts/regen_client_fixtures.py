@@ -1077,6 +1077,89 @@ def board_explanations_scenario(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def live_row_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """A real focused model-free level beside a raise, with no stored analysis."""
+    sid = "44444444"
+    row = synthetic_row(
+        "claude",
+        sid,
+        "shared-words",
+        title="Live estimate without a stored reading",
+        state="working",
+    )
+    rig = Rig(scratch, "live-row", rows={"claude": [row]})
+    try:
+        entries = [
+            _transcript_entry("user", "Build the parser", NOW - 1200, 0),
+            _transcript_entry("assistant", "I will inspect the parser", NOW - 900, 1),
+            _transcript_entry("assistant", "", NOW - 800, 2),
+            _transcript_entry("user", "", NOW - 799, 3),
+        ]
+        entries[2]["message"]["content"] = [
+            {
+                "type": "tool_use",
+                "id": "fixture-check",
+                "name": "Bash",
+                "input": {"command": "pytest"},
+                "caller": {"type": "direct"},
+            }
+        ]
+        entries[3]["message"]["content"] = [
+            {
+                "type": "tool_result",
+                "tool_use_id": "fixture-check",
+                "content": "Exit code 1\n1 failed, 4 passed",
+                "is_error": True,
+            }
+        ]
+        entries[3]["toolUseResult"] = {}
+        for item in entries:
+            item["sessionId"] = sid + "-0000-4000-8000-000000000000"
+        rig.write_transcript(sid, entries)
+        annotation_store.annotate(
+            rig.config,
+            rig.state,
+            "claude",
+            sid,
+            goal="Build the parser",
+            lines=["Tests pass"],
+            now=NOW - 1200,
+        )
+        runtime_departures.record(
+            rig.config,
+            [
+                {
+                    "harness": "claude",
+                    "sid": sid,
+                    "at": NOW - 600,
+                    "constraint": "goal",
+                    "clause": "Build the parser",
+                    "reading": "Synthetic earlier check raised a departure.",
+                    "evidence": "Synthetic fixture check",
+                    "revision": 1,
+                    "cutoff": NOW - 600,
+                    "cutoff_text": "Synthetic fixture check.",
+                    "withdrawn": False,
+                }
+            ],
+        )
+        recorder.capture(
+            rig,
+            "data-live-row",
+            get("/api/data"),
+            "A recorded raise without a stored analysis; saved intent admits a model-free "
+            "live estimate.",
+        )
+        recorder.capture(
+            rig,
+            "context-live-row",
+            get("/api/project-context", "project=shared-words&session=claude:44444444"),
+            "The server's real model-free estimate, captured without a model call.",
+        )
+    finally:
+        rig.close()
+
+
 def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     """A project brief recorded through publication, including credential redaction."""
     rows = {
@@ -2203,6 +2286,7 @@ def unsupported_record_scenario(recorder: Recorder, scratch: Scratch) -> None:
 
 SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
     board_explanations_scenario,
+    live_row_scenario,
     data_scenarios,
     session_states_scenario,
     terminal_project_scenario,

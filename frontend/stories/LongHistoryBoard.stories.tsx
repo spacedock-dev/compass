@@ -9,7 +9,9 @@ import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
 import shared from '../test/fixtures/client-contract/data-shared-explanations.json';
-import states from '../test/fixtures/client-contract/data-session-states.json';
+import liveData from '../test/fixtures/client-contract/data-live-row.json';
+import liveContext from '../test/fixtures/client-contract/context-live-row.json';
+import { liveMonitorFor } from '../src/intent/liveMonitor';
 import project from '../test/fixtures/client-contract/data-terminal-project.json';
 import context from '../test/fixtures/client-contract/context-terminal-project.json';
 type MutableRow = Record<string, unknown>;
@@ -24,34 +26,14 @@ function Board({
   readonly liveOnly?: boolean;
 }) {
   const [shell] = useState(() => {
-    const data = structuredClone(
-      view === 'project' ? project.response.body : shared.response.body,
+    const data = (
+      liveOnly
+        ? liveData.response.body
+        : view === 'project'
+          ? project.response.body
+          : shared.response.body
     ) as MutableRow;
-    const ctx = structuredClone(context.response.body) as MutableRow;
-    if (liveOnly) {
-      // Force the absent stored-reading case from the captured row; a live context must not fill it.
-      for (const row of data['sessions'] as MutableRow[]) row['annotation_assessment'] = null;
-      const raised = (states.response.body.sessions as MutableRow[]).find(
-        (row) => row['sid'] === 'f6a7b8c9',
-      );
-      const target = (data['sessions'] as MutableRow[]).find((row) => row['sid'] === '44444444');
-      if (!raised || !target) throw new Error('Captured departure row absent');
-      target['departures'] = structuredClone(raised['departures']);
-      const sources = ctx['sources'] as MutableRow;
-      const work = sources['work'] as MutableRow;
-      work['analysis_levels'] = [];
-      work['live_levels'] = [
-        {
-          harness: 'claude',
-          sid: '44444444',
-          level: 'high',
-          revision: 1,
-          computed_at: data['generated'],
-          reasons: ['check-failed'],
-          cites: [],
-        },
-      ];
-    }
+    const ctx = liveOnly ? liveContext.response.body : context.response.body;
     const hash =
       view === 'project'
         ? '#n=project:terminal-project'
@@ -77,6 +59,7 @@ function Board({
           { status: 200 },
         ),
     });
+    if (liveOnly) liveMonitorFor(made).update('claude:44444444', { fallback: true });
     mounted = made;
     return made;
   });
@@ -114,7 +97,16 @@ export const LiveEstimateNamesNoRowLevel: Story = {
   args: { view: 'rows', liveOnly: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByRole('heading', { name: 'Stored departure' });
+    await canvas.findByRole('heading', { name: 'Live estimate without a stored reading' });
+    await waitFor(() =>
+      expect(canvasElement.querySelector('[data-next-drift-pill] strong')).toHaveTextContent(
+        'High',
+      ),
+    );
+    const live = canvasElement.querySelector('[data-next-drift-level]');
+    await expect(live).toBeVisible();
+    await expect(live).toHaveTextContent('Live estimate');
+    await expect(live).toHaveTextContent('No model assessment for this intent yet.');
     if (!mounted) throw new Error('Board not mounted');
     mounted.router.navigate({ view: 'sessions' });
     await waitFor(() =>
