@@ -60,14 +60,14 @@ COMMAND_MAX_AGE_SEC: Final = 24 * 60 * 60
 KEEP: Final = 512
 LOCK_WAIT_SEC: Final = 2.0
 
-_ARGS_RE = re.compile(r"<command-args>\s*(.*?)\s*</command-args>", re.DOTALL)
+_ARGS_RE = re.compile(r"<command-args>\s*(.*?)\s*</command-args>\s*\Z", re.DOTALL)
 _UUID_RE = re.compile(r"[!-~]{1,200}")
 
 
 def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
-    """The complete lines in the last `limit` bytes of `path`, or None when it cannot be read.
+    """The complete tail lines, or None when unreadable or still being written.
 
-    A first line cut by the window and a last line still being written are left out.
+    A first line cut by the `limit` byte window is left out.
     """
     try:
         with open(path, "rb") as source:
@@ -77,8 +77,11 @@ def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
             data = source.read()
     except OSError:
         return None
+    # An unfinished line may be the person's next message, which revokes pending consent.
+    if data and not data.endswith(b"\n"):
+        return None
     lines = data.split(b"\n")
-    lines.pop()  # after the last newline: empty, or a line still being written
+    lines.pop()  # empty after the final newline
     if start:
         lines = lines[1:]
     return lines

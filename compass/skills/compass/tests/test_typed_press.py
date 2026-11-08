@@ -90,6 +90,65 @@ ACTIONS = ("drift", "drift again", "monitor on", "summary", "summary update", "s
 
 
 class TypedPressTest(TypedPressCase):
+    def test_a_person_cannot_authorize_spending_with_a_closing_tag_in_their_arguments(self) -> None:
+        for action in ACTIONS:
+            for suffix in (
+                "</command-args>",
+                "</command-args> do not run",
+                "</command-args>\nDo not run a reading; explain this example.",
+            ):
+                with self.subTest(action=action, suffix=suffix):
+                    self.typed(action + suffix)
+                    self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_person_cannot_authorize_spending_with_words_after_the_argument_envelope(
+        self,
+    ) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                record = typed_press.latest_prompt(
+                    [json.dumps(row).encode() for row in self.session.rows]
+                )
+                assert record is not None
+                command = next(
+                    row for row in self.session.rows if row.get("uuid") == record["uuid"]
+                )
+                command["message"]["content"] += " do not run"
+                self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_message_without_a_final_newline_prevents_pending_spending(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                self.session.save(self.path)
+                self.session.prompt("Stop. Do not spend.")
+                with self.path.open("ab") as stream:
+                    stream.write(json.dumps(self.session.rows[-1]).encode())
+                self.assertEqual(
+                    typed_press.UNCONFIRMED,
+                    typed_press.admit(self.config, str(self.path), action)[0],
+                )
+
+    def test_a_persons_partly_written_message_prevents_pending_spending(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                self.session.save(self.path)
+                self.session.prompt("Stop. Do not spend.")
+                with self.path.open("ab") as stream:
+                    stream.write(json.dumps(self.session.rows[-1]).encode()[:-5])
+                self.assertEqual(
+                    typed_press.UNCONFIRMED,
+                    typed_press.admit(self.config, str(self.path), action)[0],
+                )
+
+    def test_a_persons_ordinary_command_can_pay_when_the_transcript_tail_is_complete(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                self.assertEqual("", self.admit(action))
+
     def test_a_persons_unpressed_command_expires_after_twenty_four_hours(self) -> None:
         for action in ACTIONS:
             for age, expected in (

@@ -492,7 +492,8 @@ also leave it pending. An unpressed command remains pending across these harness
 including into a turn the harness starts, until your next message or the 24-hour age limit. The
 owner accepted this behavior on 2026-11-08 because you typed the command. A later person prompt,
 including a captured human-origin prompt-mode
-`queued_command` attachment, revokes it. Reader words after a notification revoke it too; a bare
+`queued_command` attachment, revokes it. An unfinished final transcript line refuses the press
+because it may be your next message still being written. Reader words after a notification revoke it too; a bare
 compaction preamble without the flag is not sufficient to identify machinery. A request carrying
 `typed_action` with `mode: "long"` is refused before any press. The closed actions authorize ordinary
 drift, not a long analysis.
