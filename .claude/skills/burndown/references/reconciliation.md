@@ -32,8 +32,11 @@ built from `origin/main`. Each closes on its verdict comment, since a clean walk
 Each defect one finds is fixed or filed as above. An owner-gated one is handed to the owner, not
 walked.
 
-**The scope is complete** when every planned issue has a verified disposition, every issue this
-run closed has its receipt, the Verification issues ran last and the container's acceptance is met.
+**The scope is complete** when every issue in it on a final refetch, including the discoveries
+this run filed into it, has a verified disposition, every issue this run closed has its receipt,
+the Verification issues ran last and the container's acceptance is met. A planned issue list that
+is all closed while a filed discovery is open is not complete; see
+[What "burned down" means](../SKILL.md#what-burned-down-means).
 Use the adapter's **Finish** section to reconcile or close the container. Closed children alone do
 not prove that a parent's promised behavior shipped. A new child or changed requirement found on
 refetch goes through the existing plan-change approval rules.
