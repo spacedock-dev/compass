@@ -23,6 +23,12 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./frontend/src', import.meta.url)) } },
   test: {
     setupFiles: ['frontend/test/setup.ts'],
+    /* Measured 2026-11-09: 115 DOM files at WORKERS=2 grew workers from 106/128 to 2122/2531 MiB
+       (peaks 2548/2661 MiB). The largest adjacent-file increase was 375 MiB, so recycling after 1 GiB
+       leaves room for a file to finish below the hosted macOS worker's roughly 2 GiB old-space ceiling.
+       This is a between-file heap trigger, not a hard cap. Vitest 4.1 reads it from the root config;
+       it applies only to VM pools, so only the DOM project recycles and plain-fork logic is unaffected. */
+    vmMemoryLimit: '1GiB',
     /* Two projects by file kind. A `.tsx` test renders React and needs jsdom; a `.ts` test is logic, and building
        a jsdom window for each of those files was about a third of the suite's environment time (measured
        2026-10-28: 92 of the 108 `.ts` files pass unchanged under Node). A `.ts` file that does need a DOM says so
@@ -30,9 +36,9 @@ export default defineConfig({
        passing. `include` lives on each project because a project's arrays are appended to the root's.
 
        The jsdom project runs in VM contexts inside long-lived workers. Each file gets a fresh VM context, jsdom
-       window and module graph; what the worker keeps is the jsdom package and the source files' bytes, which a
-       fork per file used to load again each time. The whole suite went from 101 to 63 seconds on two workers
-       (measured 2026-10-28). The logic project stays on plain forks, because a VM context gives it a second
+       window and module graph; workers retain jsdom and cached modules until the memory limit recycles them. A
+       fork per file used to load the packages again each time. The whole suite went from 101 to 63 seconds
+       on two workers (measured 2026-10-28). The logic project stays on plain forks, because a VM context gives it a second
        realm: `toBeInstanceOf(Array)` failed on an array built in the test, and Vite's native bundler refused
        plugin objects made inside the context.
 

@@ -128,7 +128,10 @@ behavior, and Storybook checks components and views in Chromium. Vitest runs `.t
 `.tsx` tests in jsdom; a `.ts` test that needs a DOM starts with an `@vitest-environment jsdom` comment, and
 one that forgets fails on a missing `document`. The jsdom tests run on VM workers, which give each file its
 own context only when there are at least two, so the config never runs fewer and `--no-file-parallelism`
-stops with an error. `pnpm test:coverage` runs the same suite under coverage and fails below the thresholds
+stops with an error. After a file takes a VM worker's heap to 1 GiB, Vitest replaces that worker before
+it runs another file. This keeps retained VM modules from filling the hosted macOS worker's heap; it is
+a recycling threshold, so a file can take the heap past it before finishing. The Node tests use plain forks
+and do not use this limit. `pnpm test:coverage` runs the same suite under coverage and fails below the thresholds
 in `vitest.config.mts`. The rule set and what it deliberately
 does not cover are in the [migration contract](docs/design-frontend-migration.md#lint-and-format). Vite and its React plugin own the build and hot
 refresh. Every story is also held to a contrast floor: after its `play` function, each visible text in the
