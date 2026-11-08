@@ -2060,6 +2060,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.probe",
         },
         "compass_runtime.lifecycle": {
+            "compass_runtime.terminal_client",
             "compass_runtime.loopback_transport",
             "compass_runtime.config",
             "compass_runtime.http_api",

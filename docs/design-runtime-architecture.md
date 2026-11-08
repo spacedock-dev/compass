@@ -311,6 +311,9 @@ never on a board poll or Resume model calls.
 Lower layers never import higher ones. `config` imports no runtime module at all; `cli` may import
 any, because it is the assembly point.
 
+`lifecycle` reuses `terminal_client`'s permission-denied predicate and blocked-loopback sentence.
+The client stays below the lifecycle orchestrator and imports no lifecycle or serving module.
+
 `test_runtime_import_graph_matches_the_reviewed_allowlist` parses every runtime file with `ast`,
 normalizes each import to a top-level runtime module, and compares the result to an explicit
 allowlist. Two rules matter more than the table:
