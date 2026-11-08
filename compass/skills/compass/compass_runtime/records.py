@@ -1987,6 +1987,9 @@ _CODEX_COMPASS_ACTIONS: Final = frozenset(
 )
 
 
+_CODEX_IMAGE_OPEN_RE = re.compile(r'<image name=\[Image #[1-9][0-9]*\] path="[^"\r\n]+">')
+
+
 def codex_compass_command(content: Any) -> bool:
     """A whole typed `$compass <closed action>` in Codex's ordinary user text.
 
@@ -1994,19 +1997,30 @@ def codex_compass_command(content: Any) -> bool:
     (docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl). Read their complete original
     text, before redaction or clipping can turn a prose mention into a whole command. Case and
     whitespace follow the typed guard; action names follow the skill's Terminal actions table.
-    This recognises a user message only, never the agent's turn or its output.
+    The image companion capture (skill-action-image-shapes-0.167.0-macos.jsonl beside it)
+    supplies image blocks and exact harness wrapper forms to ignore. Only one text block may
+    remain; extra text is a direction. This recognises a user message only, never the agent's
+    turn or its output.
     """
     if isinstance(content, str):
         text = content
     elif isinstance(content, list) and content:
-        if not all(
-            isinstance(block, dict)
-            and block.get("type") in ("input_text", "text")
-            and isinstance(block.get("text"), str)
-            for block in content
-        ):
+        texts = []
+        for block in content:
+            if not isinstance(block, dict):
+                return False
+            kind = block.get("type")
+            if kind in ("input_image", "local_image"):
+                continue
+            if kind not in ("input_text", "text") or not isinstance(block.get("text"), str):
+                return False
+            value = block["text"]
+            if value == "</image>" or _CODEX_IMAGE_OPEN_RE.fullmatch(value):
+                continue
+            texts.append(value)
+        if len(texts) != 1:
             return False
-        text = " ".join(block["text"] for block in content)
+        text = texts[0]
     else:
         return False
     folded = " ".join(text.split()).casefold()

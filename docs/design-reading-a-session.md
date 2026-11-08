@@ -356,7 +356,15 @@ with whitespace folded and letter case ignored, is `$compass` followed by one of
 no message entry or later direction, is neither a drafted nor an adopted goal candidate, and is
 skipped when finding the person's first or latest prompt. Prose that merely mentions `$compass`
 stays the person's direction. Recognition reads complete original text before clipping or
-redaction can turn a prose mention into a whole command. The
+redaction can turn a prose mention into a whole command. For an attached image, recognition
+ignores `input_image` and `local_image` blocks and exact harness image wrapper text blocks:
+`<image name=[Image #N] path="...">` (a positive decimal image number and a nonempty quoted
+path without a quote or newline) and `</image>`. Matching is case-sensitive and consumes the
+entire wrapper block, without trimming whitespace. Exactly one text block must remain before
+applying the whole-text action rule; prose, a second text block (even empty), an unknown block
+or a wrapper lookalike keeps the message eligible as the person's direction. The
+[image companion capture](captures/codex/skill-action-image-shapes-0.167.0-macos.jsonl)
+records both image-bearing user shapes from a real `codex exec --image` invocation. The
 [Codex CLI 0.167.0 capture](captures/codex/skill-action-shapes-0.167.0-macos.jsonl), taken on macOS
 with the shipped skill linked under `.agents/skills/compass`, records `codex exec` only; the
 interactive TUI was not captured. Both `response_item` user messages and `item_completed`
