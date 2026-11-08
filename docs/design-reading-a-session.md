@@ -7126,14 +7126,23 @@ of 512 and ids consumed or migrated in the last 24 hours. Legacy ids without hol
 window at migration. A refused start still releases the id for a retry within the command's age limit. A marked long-mode request is refused before dispatch: the closed
 typed actions grant no long analysis.
 
-The guard cannot yet tell an agent-scheduled command from a typed one. The owner ruled on
-2026-11-08 that such a command must never authorize spending; enforcement waits on a real capture.
-No committed capture distinguishes a scheduled or looped command record from a typed one.
-The [skill-action capture](captures/claude/skill-action-shapes-2.1.318-macos.jsonl) records `origin.kind`
-only as a string shape, not a discriminator value. Hook `session_crons` fields prove no prompt's
-author. The guard therefore cannot distinguish an otherwise identical scheduled command today.
-Follow-up needs a real scheduled-command capture before a provenance rule can be implemented;
-inventing a scheduler origin would claim enforcement without evidence.
+The same day's [scheduled-command capture](captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl)
+now supports enforcement of the ruling for the `/loop` scheduler in interactive Claude Code
+2.1.319 on macOS. A typed command has `origin.kind: human` and `turnOrigin: human`. A scheduled
+firing has no `origin`, has `turnOrigin: scheduled`, `scheduledTaskId`, `scheduledFireId` and
+`wakeupSource: schedule_wakeup`, and otherwise carries the same command envelope. The guard skips
+any record with a `turnOrigin` outside the closed admitted set of absent, `human` or `sdk`,
+any of those three scheduler fields, or an `origin` mapping with a present non-human `kind`.
+A scheduled record is not the person's next
+message: it neither authorizes a press nor revokes an earlier pending typed command. Human-origin
+interactive commands and headless records with `turnOrigin: sdk` or without origin fields remain
+eligible. The [headless-command capture](captures/claude/headless-command-shapes-2.1.319-macos.jsonl)
+measures `sdk` on both a person's prompt and typed Compass command from `claude -p` in Claude
+Code 2.1.319 on macOS, with `entrypoint: sdk-cli` and no `origin`. Treating every non-human
+`turnOrigin` as machinery refused those commands and prevented later headless person prompts
+from revoking pending consent. Unknown values still fail closed. The scheduler capture
+measures ScheduleWakeup, not a cron-scheduled (CronCreate) firing; cron provenance remains
+unmeasured. Hook `session_crons` fields still prove no prompt's author.
 
 ## DEC-26: four drift levels, and a live estimate after every turn
 

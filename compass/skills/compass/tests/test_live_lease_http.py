@@ -13,6 +13,7 @@ import http.client
 import io
 import json
 import unittest
+from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
@@ -236,6 +237,14 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         session = CompassSession(self.root / "work")
         session.prompt("Ship the parser")
         session.compass("monitor on", stop=False)
+        # Replace the old fixture's unmeasured "sdk" origin with captured human provenance.
+        capture = (
+            Path(__file__).resolve().parents[4]
+            / "docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl"
+        )
+        shapes = [json.loads(line) for line in capture.read_text(encoding="utf-8").splitlines()]
+        human = next(shape["record"] for shape in shapes if shape["line"] == 13)
+        session.rows[1].update(origin=human["origin"], turnOrigin=human["turnOrigin"])
         session.save(self.path)
         with (
             mock.patch.object(

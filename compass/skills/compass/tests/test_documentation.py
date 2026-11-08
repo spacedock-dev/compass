@@ -113,8 +113,8 @@ class APersonKnowsTheTerminalConsentLimitsTest(unittest.TestCase):
             ),
             "A typed command 24 hours old or older no longer authorizes spending",
             (
-                "An agent-scheduled or looped command must never authorize spending; Compass cannot "
-                "yet distinguish it from a typed one, so never schedule or loop these actions"
+                "Never schedule or loop these actions. Compass refuses captured `/loop` firings; "
+                "cron firings remain unmeasured"
             ),
             (
                 "The terminal shows the correction only with an explicit `--session` and standard "
