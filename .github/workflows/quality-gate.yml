@@ -517,14 +517,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -579,14 +575,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -635,14 +627,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       # The same check as the Python job's, on the runner's own Python: stdlib only, before any install.
       - name: Check coverage-exception label
         id: exception
@@ -779,14 +767,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -816,12 +800,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - name: Frozen install with dependency scripts denied
         timeout-minutes: 5
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -867,14 +849,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -930,14 +908,10 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # pnpm/setup@v3.0.0 verifies its native pnpm download's signature/checksum.
-      # Keep Node authoritative above, and run the script-denied install explicitly.
-      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
-        with:
-          version: 12.9.1
-          install: false
-          node-version-file: false
-          cache: false
+      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      - name: Install pinned pnpm
+        timeout-minutes: 3
+        run: npm install --global --ignore-scripts pnpm@12.9.1
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"

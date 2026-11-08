@@ -8,6 +8,7 @@ or a package script shares a job with the key.
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import stat
@@ -20,13 +21,13 @@ from typing import Any, cast
 
 import yaml
 
-from .test_workflow_caches import holds_write_credential
+from .test_workflow_caches import holds_write_credential, restores_a_cache
 
 ROOT = Path(__file__).resolve().parents[4]
 RELEASE = ROOT / ".github/workflows/release.yml"
 GATE = ROOT / ".github/workflows/quality-gate.yml"
 SHA = re.compile(r"^[0-9a-f]{40}$")
-FRONTEND_TOOLS = ("setup-node", "pnpm/setup")
+FRONTEND_TOOLS = ("setup-node", "pnpm/setup", "pnpm/action-setup")
 NODE_COMMAND = re.compile(
     r"(?<![\w./-])(node|nodejs|pnpm|npm|npx|corepack|yarn|bun|deno)(?![\w-])", re.IGNORECASE
 )
@@ -192,36 +193,21 @@ class CiLimitsTest(unittest.TestCase):
 
 
 class NoCacheTest(unittest.TestCase):
-    """No release job uses a cache action, and the one entry a setup action restores is named.
-
-    pnpm/setup v3.0.0 restores `lockfile-verified.jsonl` in `verify-frontend` whatever its `cache`
-    input says, through @actions/cache and so the same `tar -P` extraction described below, and with
-    `install: false` its post step saves the log after the job's dependency code ran (its
-    src/lockfile-verification-cache/index.ts). The log records which lockfile passed pnpm's
-    supply-chain policies, so a restored one lets pnpm skip re-checking them: a known exposure,
-    named here so it is not mistaken for an inert file. Nothing else in this workflow restores or
-    saves an entry.
+    """No release job restores or saves a cache, including setup actions' post steps.
 
     actions/cache extracts an entry with `tar -xf ARCHIVE -P -C WORKSPACE`, and `-P` keeps `../` and
     absolute member names, so an entry writes wherever the runner user can before any later step can
-    check it: over `node_modules/.bin/playwright`, say. Main's gate runs third-party code before it
-    saves the host-package entry, and on a re-run `build-cli` (third-party PyInstaller dependencies, on
-    the tag's ref) could have written the tag's own. A check of the restored `*.deb` files sees none of
-    that. No host package is installed at all, so there is nothing a cache could have served.
+    check it: over `node_modules/.bin/playwright`, say. Main's gate saves pip entries after running
+    third-party code. A release build dependency could also shape a tag's entry if saving were
+    allowed, so a re-run must not restore one. Checking the intended files after extraction cannot
+    detect every write the archive already made. No release job restores or saves an entry.
     """
 
-    def test_the_only_restoring_setup_action_is_the_frontend_verifiers_pnpm(self) -> None:
+    def test_a_release_builder_never_restores_or_saves_a_cache(self) -> None:
         for name, job in jobs().items():
             for step in job["steps"]:
-                action = step.get("uses", "").split("@")[0]
-                with self.subTest(job=name, action=action):
-                    if action == "pnpm/setup":
-                        self.assertEqual("verify-frontend", name)
-                        self.assertIs(False, step["with"]["cache"], "the store is not restored")
-                    elif action == "actions/setup-node":
-                        self.assertIs(False, step["with"]["package-manager-cache"])
-                    elif action.startswith("actions/setup-"):
-                        self.assertNotIn("cache", step.get("with", {}))
+                with self.subTest(job=name, step=step.get("uses")):
+                    self.assertFalse(restores_a_cache(step))
 
     def test_no_job_uses_a_cache_action(self) -> None:
         for name, job in jobs().items():
@@ -252,10 +238,7 @@ HASH = re.compile(r"--hash=sha256:[0-9a-f]{64}\b")
 
 def privileged(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
     """Whether a job holds a write token or a secret, such as a deploy key."""
-    # A secret in the workflow's own `env` or `defaults` reaches every job, which the cache check's
-    # job-level reading does not look for.
-    workflow_wide = {"env": workflow.get("env"), "defaults": workflow.get("defaults")}
-    return holds_write_credential(workflow, job) or "secrets." in serialized(workflow_wide)
+    return holds_write_credential(workflow, job)
 
 
 def pip_installs(job: dict[str, Any]) -> list[str]:
@@ -558,6 +541,34 @@ class PublishingJobRunsNoFrontendCodeTest(unittest.TestCase):
 
 
 class VerificationJobTest(unittest.TestCase):
+    def test_a_reader_gets_the_same_credential_boundary_from_both_workflow_checks(self) -> None:
+        cases: tuple[tuple[dict[str, Any], dict[str, Any], bool], ...] = (
+            ({"permissions": "read-all", "env": {"KEY": "${{ secrets.KEY }}"}}, {}, True),
+            (
+                {"permissions": "read-all", "defaults": {"run": {"shell": "${{ secrets.SHELL }}"}}},
+                {"permissions": {}},
+                True,
+            ),
+            ({"permissions": "write-all"}, {"permissions": {}}, False),
+            (
+                {"permissions": "read-all", "env": {"KEY": "${{ secrets.KEY }}"}},
+                {"env": {"KEY": "public"}},
+                False,
+            ),
+            (
+                {
+                    "permissions": "read-all",
+                    "jobs": {"publisher": {"env": {"KEY": "${{ secrets.KEY }}"}}},
+                },
+                {},
+                False,
+            ),
+        )
+        for workflow, job, expected in cases:
+            with self.subTest(workflow=workflow, job=job):
+                self.assertIs(expected, holds_write_credential(workflow, job))
+                self.assertIs(expected, privileged(workflow, job))
+
     def test_it_checks_out_exactly_the_resolved_target(self) -> None:
         for name in ("verify-frontend", "verify-tree"):
             (checkout,) = uses(name, "actions/checkout")
@@ -573,13 +584,11 @@ class VerificationJobTest(unittest.TestCase):
         (node,) = uses("verify-frontend", "actions/setup-node")
         self.assertEqual(".node-version", node["with"]["node-version-file"])
         self.assertIs(False, node["with"]["check-latest"])
-        (manager,) = uses("verify-frontend", "pnpm/setup")
-        gate_manager = next(
-            s
-            for s in load(GATE)["jobs"]["frontend"]["steps"]
-            if s.get("uses", "").startswith("pnpm/setup@")
+        bootstrap = "npm install --global --ignore-scripts pnpm@12.9.1"
+        self.assertIn(bootstrap, commands("verify-frontend"))
+        self.assertIn(
+            bootstrap, [s.get("run", "") for s in load(GATE)["jobs"]["frontend"]["steps"]]
         )
-        self.assertEqual(gate_manager["with"], manager["with"])
 
     def test_it_installs_without_scripts_and_never_with_corepack(self) -> None:
         run = commands("verify-frontend")
@@ -823,6 +832,52 @@ CLI_TARGETS = {
 }
 
 
+class ArtifactRecoveryTest(unittest.TestCase):
+    def assert_recoverable_uploads(self, workflow: dict[str, Any]) -> None:
+        uploads = 0
+        for job_id, job in workflow["jobs"].items():
+            for step in job.get("steps", []):
+                if not step.get("uses", "").startswith("actions/upload-artifact@"):
+                    continue
+                uploads += 1
+                options = step.get("with", {})
+                if re.search(r"\$\{\{\s*github\.run_attempt\s*\}\}", options.get("name", "")):
+                    continue
+                self.assertIs(
+                    options.get("overwrite"),
+                    True,
+                    f"{job_id}: a maintainer re-running all jobs must replace the prior archive",
+                )
+                self.assertEqual(
+                    options.get("if-no-files-found"),
+                    "error",
+                    f"{job_id}: a maintainer must see missing archives fail",
+                )
+        self.assertGreater(uploads, 0)
+
+    def test_a_maintainer_can_rerun_every_release_archive_upload(self) -> None:
+        self.assert_recoverable_uploads(load(RELEASE))
+
+    def test_a_contributor_keeps_coverage_from_each_attempt_separate(self) -> None:
+        self.assert_recoverable_uploads(load(GATE))
+
+    def test_a_maintainer_cannot_lose_either_archive_recovery_guarantee(self) -> None:
+        for option, message in (
+            ("overwrite", "replace the prior archive"),
+            ("if-no-files-found", "missing archives fail"),
+        ):
+            workflow = copy.deepcopy(load(RELEASE))
+            upload = next(
+                s
+                for s in workflow["jobs"]["build-cli"]["steps"]
+                if s.get("uses", "").startswith("actions/upload-artifact@")
+            )
+            upload["with"].update({"overwrite": True, "if-no-files-found": "error"})
+            del upload["with"][option]
+            with self.subTest(option=option), self.assertRaisesRegex(AssertionError, message):
+                self.assert_recoverable_uploads(workflow)
+
+
 class BuildCliJobTest(unittest.TestCase):
     """The standalone binary: built where no credential is, attached where only the token is."""
 
@@ -1031,6 +1086,7 @@ class GateParityTest(unittest.TestCase):
         run = commands("verify-frontend")
         expected = [
             "assert-head",
+            "npm install --global --ignore-scripts pnpm@12.9.1",
             "node -e",
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm lint",

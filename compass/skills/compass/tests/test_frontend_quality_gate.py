@@ -453,11 +453,10 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertEqual(".node-version", node["with"]["node-version-file"])
         self.assertFalse(node["with"]["check-latest"])
         self.assertFalse(node["with"]["package-manager-cache"])
-        manager = next(step for step in steps if step.get("uses", "").startswith("pnpm/setup@"))
-        self.assertEqual("pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024", manager["uses"])
-        self.assertEqual("12.9.1", manager["with"]["version"])
-        self.assertFalse(manager["with"]["install"])
-        self.assertFalse(manager["with"]["node-version-file"])
+        commands = [step.get("run", "") for step in steps]
+        self.assertIn("npm install --global --ignore-scripts pnpm@12.9.1", commands)
+        bootstrap = commands.index("npm install --global --ignore-scripts pnpm@12.9.1")
+        self.assertLess(steps.index(node), bootstrap)
         checkout = next(
             step for step in steps if step.get("uses", "").startswith("actions/checkout@")
         )
@@ -466,6 +465,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertIn("pnpm install --frozen-lockfile --ignore-scripts", commands)
         self.assertFalse(any("corepack" in command.lower() for command in commands))
         install = commands.index("pnpm install --frozen-lockfile --ignore-scripts")
+        self.assertLess(bootstrap, install)
         for index, step in enumerate(steps):
             self.assertNotIn("registry-url", step.get("with", {}))
             # The coverage-exception label check reads the PR with the job's read-only token. It is the
@@ -661,6 +661,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertLessEqual(job["timeout-minutes"], 15)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
+            "npm install --global --ignore-scripts pnpm@12.9.1",
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
             "pnpm exec playwright install chromium",
@@ -709,7 +710,7 @@ class StorybookChromiumInstallTest(unittest.TestCase):
         # `actions/setup-python` with `cache: pip`, restores through the same `tar -P` extraction.
         # A new action fails here until someone has read what it restores.
         self.assertEqual(
-            {"actions/checkout", "actions/setup-node", "pnpm/setup"},
+            {"actions/checkout", "actions/setup-node"},
             {step["uses"].split("@")[0] for step in steps if "uses" in step},
         )
         for step in steps:
@@ -722,8 +723,6 @@ class StorybookChromiumInstallTest(unittest.TestCase):
                         self.assertIs(False, value)
         node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
         self.assertIs(False, node["with"]["package-manager-cache"])
-        manager = next(s for s in steps if s.get("uses", "").startswith("pnpm/setup@"))
-        self.assertIs(False, manager["with"]["cache"])
         browser = self.step_running("pnpm exec playwright install chromium")
         self.assertLess(steps.index(browser), steps.index(self.step_running("pnpm test:stories")))
 
