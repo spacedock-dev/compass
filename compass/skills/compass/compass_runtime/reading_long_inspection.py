@@ -54,15 +54,7 @@ def _number(value: Any) -> bool:
 
 
 def _connect(config: RuntimeConfig) -> Any:
-    path = reading_policy.store_path(config)
-    if runtime_io.sqlite_module is None or path.is_symlink() or not path.is_file():
-        raise OSError("Reading ledger unavailable")
-    return runtime_io.sqlite_module.connect(
-        path.absolute().as_uri() + "?mode=ro",
-        uri=True,
-        timeout=reading_policy.READ_WAIT_SEC,
-        isolation_level=None,
-    )
+    return reading_policy.inspection_connection(config)
 
 
 def _snapshot(config: RuntimeConfig, job_id: str) -> tuple[Any, Any, list[Any]]:

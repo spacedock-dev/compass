@@ -7,11 +7,12 @@ import contextlib
 import importlib
 import importlib.util
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import io as runtime_io
@@ -22,6 +23,9 @@ from compass_runtime import reading_policy as policy
 from .support import make_runtime
 from .test_reading_long_jobs import binding
 from .test_reading_long_reservation import request
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class Crash(BaseException):
@@ -107,6 +111,158 @@ class LongInspectionTest(unittest.TestCase):
             for path in self.config.state_dir.rglob("*")
             if path.is_file()
         }
+
+    def inspections(self) -> dict[str, Callable[[], Any]]:
+        return {
+            "permission": lambda: policy.long_permission_reason(self.config, self.permission),
+            "charge": lambda: policy.charged(self.config, self.job_id, started_at=100, now=101),
+            "retirement": self.inspect,
+        }
+
+    def test_a_person_can_pause_while_an_inspection_outlives_the_previous_writer(self) -> None:
+        # Apple SQLite can choose the surviving reader's descriptor for the
+        # next writer's lock. A read-only descriptor makes that lock fail.
+        self.assertEqual("", policy.reserve(self.config, now=100, job_id=self.job_id)["reason"])
+        for name, inspect in self.inspections().items():
+            with self.subTest(inspection=name):
+                self._pause_during_inspection(inspect)
+
+    def _pause_during_inspection(self, inspect: Callable[[], Any]) -> None:
+        assert runtime_io.sqlite_module is not None
+        connect = runtime_io.sqlite_module.connect
+        entered, release = threading.Event(), threading.Event()
+        finished = threading.Event()
+
+        class NextWriter(sqlite3.Connection):
+            def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
+                cursor = super().execute(sql, *args, **kwargs)
+                if sql == "BEGIN IMMEDIATE":
+                    release.set()
+                    if not finished.wait(10):
+                        raise TimeoutError("Inspection did not finish")
+                return cursor
+
+        class HeldInspection(sqlite3.Connection):
+            def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
+                cursor = super().execute(sql, *args, **kwargs)
+                if sql.startswith("SELECT") and not entered.is_set():
+                    entered.set()
+                    if not release.wait(10):
+                        raise TimeoutError("Inspection was not released")
+                return cursor
+
+        def inspecting_connect(*args: Any, **kwargs: Any) -> Any:
+            return connect(*args, **kwargs, factory=HeldInspection)
+
+        def writer_connect(*args: Any, **kwargs: Any) -> Any:
+            return connect(*args, **kwargs, factory=NextWriter)
+
+        def inspect_and_finish() -> Any:
+            try:
+                return inspect()
+            finally:
+                finished.set()
+
+        with (
+            contextlib.closing(policy._connect(self.config, 1)) as prior,
+            concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool,
+        ):
+            prior.execute("BEGIN IMMEDIATE")
+            with mock.patch.object(runtime_io.sqlite_module, "connect", side_effect=writer_connect):
+                writer = policy._connect(self.config, 1)
+            with (
+                contextlib.closing(writer),
+                mock.patch.object(
+                    runtime_io.sqlite_module, "connect", side_effect=inspecting_connect
+                ),
+            ):
+                prior.close()
+                pending = pool.submit(inspect_and_finish)
+                try:
+                    self.assertTrue(entered.wait(10), "Inspection must hold a real read")
+                    # B is already open when A closes; its BEGIN waits
+                    # until C holds a read, then lets C finish before COMMIT.
+                    with mock.patch.object(policy, "_connect", return_value=writer):
+                        answer, permission = policy.pause(self.config, now=101)
+                    self.assertEqual("model-calls-paused", answer["reason"])
+                    self.assertTrue(answer["off"])
+                    self.assertIsNotNone(permission)
+                finally:
+                    release.set()
+                    pending.result(timeout=10)
+
+    def test_a_person_s_inspection_cannot_change_their_consent(self) -> None:
+        assert runtime_io.sqlite_module is not None
+        connect = runtime_io.sqlite_module.connect
+        test = self
+
+        class UnintendedWrite(sqlite3.Connection):
+            def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
+                if sql.startswith("SELECT"):
+                    with test.assertRaises(sqlite3.OperationalError):
+                        super().execute("UPDATE permission SET allowed=0")
+                return super().execute(sql, *args, **kwargs)
+
+        def inspecting_connect(*args: Any, **kwargs: Any) -> Any:
+            return connect(*args, **kwargs, factory=UnintendedWrite)
+
+        before = self.tree()
+        for name, inspect in self.inspections().items():
+            with (
+                self.subTest(inspection=name),
+                mock.patch.object(
+                    runtime_io.sqlite_module, "connect", side_effect=inspecting_connect
+                ),
+            ):
+                inspect()
+            self.assertEqual(before, self.tree())
+
+    def test_a_person_s_inspection_cannot_recreate_a_store_removed_during_open(self) -> None:
+        assert runtime_io.sqlite_module is not None
+        connect = runtime_io.sqlite_module.connect
+        path = policy.store_path(self.config)
+        before = path.read_bytes()
+
+        def removed_connect(*args: Any, **kwargs: Any) -> Any:
+            path.unlink()
+            return connect(*args, **kwargs)
+
+        for name, inspect in self.inspections().items():
+            with self.subTest(inspection=name):
+                with mock.patch.object(
+                    runtime_io.sqlite_module, "connect", side_effect=removed_connect
+                ):
+                    result = inspect()
+                self.assertEqual(
+                    {
+                        "permission": "store-unavailable",
+                        "charge": None,
+                        "retirement": "ledger-unavailable",
+                    }[name],
+                    getattr(result, "reason", result),
+                )
+                self.assertFalse(path.exists(), "An inspection must not recreate consent")
+                path.write_bytes(before)
+
+    def test_a_person_s_inspection_refuses_a_symlink_to_their_consent_store(self) -> None:
+        self.assertEqual("", policy.reserve(self.config, now=100, job_id=self.job_id)["reason"])
+        path = policy.store_path(self.config)
+        saved = path.with_suffix(".saved")
+        path.rename(saved)
+        path.symlink_to(saved)
+        before = saved.read_bytes()
+        for name, inspect in self.inspections().items():
+            with self.subTest(inspection=name):
+                result = inspect()
+                self.assertEqual(
+                    {
+                        "permission": "store-unavailable",
+                        "charge": None,
+                        "retirement": "ledger-unavailable",
+                    }[name],
+                    getattr(result, "reason", result),
+                )
+                self.assertEqual(before, saved.read_bytes())
 
     def test_healthy_active_job_has_proven_zero_as_of_snapshot_but_is_unsettled(self) -> None:
         result = self.inspect()
@@ -282,8 +438,8 @@ class LongInspectionTest(unittest.TestCase):
         with contextlib.closing(
             runtime_io.sqlite_module.connect(policy.store_path(self.config))
         ) as writer:
-            # Keep a genuine WAL writer/sidecars open. Read-only inspection
-            # must not create missing WAL support files itself.
+            # Keep a genuine WAL writer/sidecars open for concurrent commits
+            # against the inspection's read snapshot.
             writer.execute("SELECT count(*) FROM long_permission").fetchone()
             with (
                 concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool,

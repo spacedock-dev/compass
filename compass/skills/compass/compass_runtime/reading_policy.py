@@ -493,17 +493,39 @@ def tool_output_allowed(answer: Status, provider: str, destination: str) -> bool
     return bool(destination) and destination in answer.get("tool_output", {}).get(provider, [])
 
 
-def _connect(config: RuntimeConfig, wait: float) -> Any:
+def _connect(config: RuntimeConfig, wait: float, *, create: bool = True) -> Any:
     if runtime_io.sqlite_module is None:
         raise RuntimeError("SQLite is unavailable")
     path = store_path(config)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink():
         raise RuntimeError("Permission store is a symlink")
-    # SQLite inherits this owner-only mode for its rollback journal too.
-    fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
-    os.close(fd)
-    return runtime_io.sqlite_module.connect(path, timeout=wait, isolation_level=None)
+    if create:
+        # SQLite inherits this owner-only mode for its rollback journal too.
+        fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+        os.close(fd)
+    elif not path.is_file():
+        raise OSError("Permission store is missing")
+    return runtime_io.sqlite_module.connect(
+        path if create else path.absolute().as_uri() + "?mode=rw",
+        uri=not create,
+        timeout=wait,
+        isolation_level=None,
+    )
+
+
+def inspection_connection(config: RuntimeConfig) -> Any:
+    """An existing consent store, with SQL writes disabled on this connection."""
+    # Apple SQLite can reuse a surviving reader's fd for another connection's
+    # write lock after a writer closes. Keep the fd writable; forbid SQL writes.
+    db = _connect(config, READ_WAIT_SEC, create=False)
+    try:
+        db.execute("PRAGMA query_only = ON")
+    except BaseException:
+        db.close()
+        raise
+    return db
 
 
 def _allowed(db: Any) -> dict[str, bool]:
@@ -1204,18 +1226,8 @@ def long_permission_reason(config: RuntimeConfig, permission: LongPermission) ->
         return "run-disabled"
     if not _valid_long_permission(permission):
         return "permission-changed"
-    path = store_path(config)
     try:
-        if runtime_io.sqlite_module is None or path.is_symlink() or not path.is_file():
-            return "store-unavailable"
-        with contextlib.closing(
-            runtime_io.sqlite_module.connect(
-                path.absolute().as_uri() + "?mode=ro",
-                uri=True,
-                timeout=READ_WAIT_SEC,
-                isolation_level=None,
-            )
-        ) as db:
+        with contextlib.closing(inspection_connection(config)) as db:
             db.execute("BEGIN")
             return _long_permission_reason(db, permission)
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
@@ -1444,18 +1456,8 @@ def charged(config: RuntimeConfig, job_id: str, *, started_at: Any, now: float) 
     """
     if not job_id or runtime_io.sqlite_module is None:
         return None
-    path = store_path(config)
     try:
-        if path.is_symlink() or not path.is_file():
-            return None
-        with contextlib.closing(
-            runtime_io.sqlite_module.connect(
-                path.absolute().as_uri() + "?mode=ro",
-                uri=True,
-                timeout=READ_WAIT_SEC,
-                isolation_level=None,
-            )
-        ) as db:
+        with contextlib.closing(inspection_connection(config)) as db:
             row = db.execute("SELECT 1 FROM spend_jobs WHERE job = ?", (job_id,)).fetchone()
             since = db.execute("SELECT at FROM spend_jobs_since WHERE id = 1").fetchone()
     except (OSError, ValueError, RuntimeError, _SQL_ERROR):
