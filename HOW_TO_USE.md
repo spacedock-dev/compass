@@ -73,20 +73,22 @@ left out of what a reading, the Live monitor and a summary read. Codex does not 
 
 `drift` and `drift again` read the session you typed them in, and only on Claude Code. Above the
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
-stored reading costs nothing. With none, `drift` asks for one, and `drift again` always does: each is
-one Analyze press, counted against the same daily limit as the page's, and Pause model calls on the
-page stops it. Compass presses only right after you type the command yourself, once per command:
-when the agent starts the skill on its own, or runs it again, the press is refused and nothing is
-read or spent. Inside the session the command stops about 100 seconds after it starts; a longer
-reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
-correction is never printed into the session: the answer says one is ready, and you copy it from
-the session page. Nothing about later messages is settled; the answer says how many it left for the
+stored reading costs nothing. With none, `drift` asks for one, and `drift again` asks for a new one,
+under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one
+Analyze press against the page's daily limit, Pause model calls stops it, and the marked skill
+path needs your typed command once. That rule also states the accepted local-process exposure
+and the unmeasured scheduled-command limit. Inside the session the command stops about 100 seconds
+after it starts; a longer reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
+ordinary skill answer says only that a correction is ready, and you copy it from
+the session page. This is a [presentation guard](SECURITY.md#correction-access-and-local-process-trust),
+with the local-process limits stated there. Nothing about later messages is settled; the answer says how many it left for the
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
 another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
 `summary` spends only when no summary is stored. `summary update` and `summary again` authorize
-only their own operation; each in-session spend needs your exact typed command once. The command
-waits up to 20 seconds inside the session, then leaves an admitted job running for a later read.
+only their own operation; each in-session spend needs the matching typed command once. Closed action
+names accept any letter case, not paraphrases. Known harness machinery leaves the command pending;
+a later person prompt revokes it. The command waits up to 20 seconds inside the session, then leaves an admitted job running for a later read.
 `monitor on` also needs your typed command before it can save a draft or start checks. These actions
 can start a dashboard if needed. [MANUAL.md](MANUAL.md#starting-and-inspecting-an-instance) owns
 their limits and refusal rules.

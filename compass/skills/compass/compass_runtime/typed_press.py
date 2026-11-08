@@ -80,34 +80,66 @@ def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
 
 
 def latest_prompt(lines: Sequence[bytes]) -> dict[str, Any] | None:
-    """The newest main-thread prompt record: never `isMeta`, a tool result or a sidechain record.
+    """The newest main-thread prompt, excluding established harness-generated records.
 
     A model-started skill is a Skill tool call and its result, never a prompt record
     (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl).
     """
     for raw in reversed(lines):
-        if b'"user"' not in raw:
+        if b'"user"' not in raw and b'"queued_command"' not in raw:
             continue
         try:
             record = json.loads(raw)
         except (ValueError, RecursionError):
             continue
+        # A message sent while the agent works has no user turn. The capture distinguishes it
+        # from queued background notifications by these closed values, as observer reads it
+        # (docs/captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl).
+        if isinstance(record, dict) and not record.get("isSidechain"):
+            attachment = records.as_dict(record.get("attachment"))
+            if (
+                record.get("type") == "attachment"
+                and attachment.get("type") == "queued_command"
+                and attachment.get("commandMode") == "prompt"
+                and records.as_dict(attachment.get("origin")).get("kind") == "human"
+            ):
+                return record  # revokes the earlier command; cannot itself authorize a press
         if (
             isinstance(record, dict)
             and "toolUseResult" not in record
             and records.claude_prompt_record(record)
         ):
+            # The committed corpus fixtures in test_claude, test_compass_skill_action and
+            # test_delegated_work establish these non-meta forms. Keep this narrower than
+            # `injected_prompt`: an interrupt or an unfamiliar prompt must revoke consent.
+            # Inspect the complete tail-bounded content, never the publication extractor's
+            # truncated text. Images or other blocks beside the envelope may be reader input.
+            content = records.message_dict(record).get("content")
+            body = content.strip() if isinstance(content, str) else ""
+            if isinstance(content, list) and all(
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+                for block in content
+            ):
+                body = " ".join(block["text"] for block in content).strip()
+            if record.get("isCompactSummary") or (
+                body.startswith("<task-notification>")
+                and body.endswith("</task-notification>")
+                and body.count("</task-notification>") == 1
+            ):
+                continue
             return record
     return None
 
 
 def typed_action(record: dict[str, Any] | None) -> str | None:
-    """The action a typed `/compass:compass` record names, spaces folded; None for any other."""
+    """The typed action, with spaces and letter case folded; None for any other command."""
     if record is None or not records.compass_command_record(record):
         return None
     content = records.message_dict(record).get("content")
     found = _ARGS_RE.search(content) if isinstance(content, str) else None
-    return " ".join(found.group(1).split()) if found else ""
+    return " ".join(found.group(1).split()).casefold() if found else ""
 
 
 def decide(lines: Sequence[bytes], action: str) -> tuple[str, str]:

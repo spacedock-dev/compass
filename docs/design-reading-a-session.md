@@ -6896,6 +6896,21 @@ nothing is typed into a terminal, and `send-keys` contradicts that.
 stand unchanged: a measured, session-bound transport; acceptance by the receiving session shown
 working; and evidence that pasting by hand is not enough.
 
+### Amended 2026-11-08 (owner): the correction guard is a presentation guard
+
+On 2026-11-08, the owner accepted the recommendation to keep the documented local-process trust
+model for `POST /api/correction` and state its limits plainly, with no new enforcement.
+[SECURITY.md](../SECURITY.md#correction-access-and-local-process-trust) owns that contract: the
+terminal presentation guard is `isatty` plus an explicit session. The route has loopback,
+Host/Origin, fetch-site and document-navigation checks, but no caller authentication. An
+agent-controlled local process can call it directly, and a PTY wrapper with an explicit session
+can capture the terminal's composed correction. Resisting either requires its own transport design.
+
+DEC-25 describes the supported copy workflow and Compass's refusal to type or write into a
+session. It does not promise that an arbitrary local caller cannot obtain a correction. The
+ordinary in-session drift output still says only that a correction is ready on the session page;
+its wording no longer claims that correction text can never enter that session.
+
 ### Amended 2026-11-03 (owner): a terminal action you invoke is read by the session's model
 
 Ruled 2026-11-03. When the reader invokes the compass skill with an action word, such as
@@ -6998,10 +7013,9 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
 
 - **Both are pre-approved.** Each gains its exact `allowed-tools` rule with its row, under the
   ruling above. The reader's typed command is their consent, as it is for `sessions`. A first
-  `drift` with no stored reading, and every `drift again`, is one Analyze press through the
-  reader's own route, so spend stays bounded by what bounds the page's press: the 100-attempt
-  rolling cap, one reading in flight per session (a second request attaches to it), and Pause model
-  calls, which is the off switch. The validator admits one flag and one bare word, so the spending
+  `drift` with no stored reading, and every `drift again`, follows the
+  [spend rule in SECURITY.md](../SECURITY.md#drift-commands-and-typed-consent), which owns the caps,
+  off switches, typed admission and local-process limits. The validator admits one flag and one bare word, so the spending
   form is spelled `--drift again`. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with
   `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again`
   ran with no permission prompt (`permission_denials` empty); both runs refused before any press,
@@ -7014,7 +7028,7 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
   the model's reasons, the agent's. The skill also tells the agent not to act on the reading, not
   to change the goal and not to answer the later messages it counts, and not to run `drift again`
   unless the reader invoked it, because that spends one of the reader's attempts.
-- **The correction stays out of the session.** Under DEC-25 a correction is the reader's to copy.
+- **The normal skill output offers a correction to copy.** Under DEC-25 a correction is the reader's to copy.
   Printed into the session, it would be read by the agent it is addressed to, which is delivery
   without the reader's paste. So the composed correction prints only when the reader named the
   session with `--session` and standard output is a terminal. Anywhere else the command prints one
@@ -7053,7 +7067,7 @@ is exactly how the skill runs it.
   tail, not the cached collection, and admits the press only when the latest main-thread prompt is
   the typed `/compass:compass` command for that action (`records.compass_command_record` and the
   `<command-args>` it carries). `isMeta` records, tool results and sidechain records are not
-  prompts. A model-started skill is a Skill tool call, never a prompt record, so it admits nothing.
+  prompts. The 2026-11-08 amendment below excludes known machinery and handles human mid-turn messages. A model-started skill is a Skill tool call, never a prompt record, so it admits nothing.
   Plain `drift` accepts a typed `drift` or `drift again`; `drift again` needs `drift again`. A plain
   `drift` over a stored reading never presses, so the check never touches it.
 - **One press per typed command.** The id of the typed record that admitted a press is remembered
@@ -7078,10 +7092,38 @@ sidecar exits on a restart and requires a new command rather than replaying star
 exact approval for `--monitor --off` is the only two-flag exception to the validator's rule above.
 The [daemon record](design-daemon.md#terminal-monitor-holders) owns process lifetime and locks.
 
-This closes an agent-started reading feeding later readings. It is not a hard boundary: a process
+This guards the pre-approved skill path under the [security spend rule](../SECURITY.md#drift-commands-and-typed-consent). It is not a hard boundary: a process
 that can write the transcript could forge a typed record, and an agent that names the session with
 `--session` sends no `typed_action`, though that spelling is not pre-approved and asks for
 permission.
+
+### Amended 2026-11-08 (owner): typed actions, machinery and scheduled commands
+
+On 2026-11-08, the owner accepted the recommendation: an agent-scheduled command can never
+authorize a spend. The closed action names are accepted in any letter case; paraphrases are not.
+[SECURITY.md](../SECURITY.md#drift-commands-and-typed-consent) owns the spend rule and its limits.
+
+The shared admission guard covers `drift`, `drift again`, `monitor on`, `summary`, `summary update`
+and `summary again`. Flagged compaction summaries and complete non-meta `<task-notification>`
+envelopes, in strings or all-text block lists, leave a typed command pending. The committed corpus fixtures
+in `test_claude`, `test_compass_skill_action` and `test_delegated_work` establish those shapes.
+A bare compaction preamble is insufficient: a person can start a real prompt with the same words.
+A prompt with reader words after the notification revokes consent. An identical whole envelope
+has no author discriminator and remains indistinguishable from machinery.
+
+A later genuine prompt still revokes consent. A message the person sends while the agent works
+also revokes it: the [mid-turn capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl)
+distinguishes human-origin prompt-mode `queued_command` attachments from task notifications.
+Only the former revoke; neither can authorize spending. Once-only consumption and release after
+a refused start are unchanged. A marked long-mode request is refused before dispatch: the closed
+typed actions grant no long analysis.
+
+No committed capture distinguishes a scheduled or looped command record from a typed one.
+The [skill-action capture](captures/claude/skill-action-shapes-2.1.318-macos.jsonl) records `origin.kind`
+only as a string shape, not a discriminator value. Hook `session_crons` fields prove no prompt's
+author. The guard therefore cannot distinguish an otherwise identical scheduled command today.
+Follow-up needs a real scheduled-command capture before a provenance rule can be implemented;
+inventing a scheduler origin would claim enforcement without evidence.
 
 ## DEC-26: four drift levels, and a live estimate after every turn
 

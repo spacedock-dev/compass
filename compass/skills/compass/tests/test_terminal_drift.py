@@ -956,6 +956,7 @@ class SpendTest(unittest.TestCase):
         ready = next(line for line in out.splitlines() if "correction is ready" in line)
         self.assertNotIn("spacedock-compass", ready)
         self.assertNotIn("Steer back: keep tabs.", out)
+        self.assertIn("This output shows only that it is ready.", ready)
 
     def test_a_person_in_a_session_is_told_to_type_drift_again_over_a_stale_reading(self) -> None:
         board = stored()

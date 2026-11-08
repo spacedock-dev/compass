@@ -3033,7 +3033,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _reading_dispatch(self, payload: dict[str, Any]) -> None:
         application = self.server.application
         if not reading_long_preview.valid_ingress(payload) or (
-            "typed_action" in payload and payload["typed_action"] not in ("drift", "drift again")
+            "typed_action" in payload
+            and (
+                payload["typed_action"] not in ("drift", "drift again")
+                # Typed actions authorize ordinary drift only, never the long-mode branch.
+                or payload.get("mode") == "long"
+            )
         ):
             self._reject(400)
             return

@@ -1641,6 +1641,24 @@ class DriftCommandTest(HomeCase):
         self.assertNotIn("Correction to copy:", out)
         self.assertIn("A correction is ready to copy on the session page", out)
 
+    def test_a_persons_correction_is_available_to_a_local_caller_with_a_terminal_and_explicit_session(
+        self,
+    ) -> None:
+        # Characterize the accepted exposure: isatty is a presentation guard. A PTY wrapper can
+        # report True even in an agent environment; neither it nor --session proves a person.
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.answers()) as fake:
+            code, out, _err = self.run_drift(
+                session="claude:abc",
+                port=fake.port,
+                environ={terminal_client.CLAUDE_SESSION_ENV: "abc"},
+                tty=True,
+            )
+        self.assertEqual(0, code)
+        self.assertIn("Correction to copy:\nKeep accepting tabs.", out)
+        self.assertIn(("POST", "/api/correction"), fake.requests)
+        self.assertNotIn(("POST", "/api/reading"), fake.requests)
+
     def test_a_person_inside_the_session_is_named_by_the_environment_and_gets_no_correction(
         self,
     ) -> None:
