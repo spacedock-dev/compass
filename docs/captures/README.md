@@ -114,7 +114,7 @@ No prompt text, no tool input, no tool output, no file path. `PreToolUse` record
 
 The captures privacy contract is enforced across all `docs/captures/**/*.jsonl` files by
 `DocumentedCaptureFiguresTest.test_every_capture_file_satisfies_corpus_privacy_contract` in
-`cargento/skills/cargento/tests/test_documentation.py`. The standing assertion traverses every
+`compass/skills/compass/tests/test_documentation.py`. The standing assertion traverses every
 JSONL record—including nested dictionaries, lists, string keys, and duplicate-key values preserved
 by `_every_pair`—and checks for personal absolute paths (such as `/Users/` or `/home/` trees) and
 email-like patterns. Documented closed vocabularies (`notification_type`, OpenCode `reply` and
