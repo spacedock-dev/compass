@@ -150,6 +150,9 @@ first sentence and the same hint, asks whether to keep standing outcome lines wi
 Save intent. A saved line names when you said it ("added from your 11:05 message"). Add on an activity entry
 opens that listed direction too. The prompt menu resolves choices when opened. An unsettled direction at
 or before a stored reading demotes its intent rows; a later message labels the reading as preceding it.
+The correction uses the same rule: your messages and answers to questions count as directions;
+a correction copied from Compass does not. `Leave it` settles directions through and including its
+timestamp, and a reading includes directions at its cutoff.
 
 Delegated work has no line on the Drift card. An unpaired launch followed by thirty quiet
 minutes in the last turn adds an At-risk item and a question to copy into the session, and that

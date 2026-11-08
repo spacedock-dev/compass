@@ -201,7 +201,7 @@ claude plugin validate ./compass --strict
 agy plugin validate ./compass
 ```
 
-<!-- docs-synced-through: 10f4636f (2026-11-08) -->
+<!-- docs-synced-through: 5506283a (2026-11-08) -->
 <!-- Reconciled 8b8eff39..0d6a42c5: CI and test tooling, with no runtime change.
      `scripts/pre_pr.py` runs the pre-PR checks for the lanes a change touches, behind a bounded
      lock that stops a check's whole process group on macOS too; `ci_scope.py` runs a doc change
