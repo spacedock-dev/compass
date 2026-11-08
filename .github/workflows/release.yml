@@ -157,6 +157,8 @@ jobs:
       verified: ${{ steps.verified.outputs.sha }}
     env:
       TARGET: ${{ needs.resolve.outputs.target }}
+      # pnpm's wrapper must never download a missing optional binary outside the lock.
+      COREPACK_ENABLE_NETWORK: "0"
     steps:
       - name: Checkout exactly the target, without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -177,10 +179,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:

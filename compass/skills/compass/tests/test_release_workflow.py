@@ -21,7 +21,12 @@ from typing import Any, cast
 
 import yaml
 
-from .test_workflow_caches import holds_write_credential, restores_a_cache
+from .test_workflow_caches import (
+    BOOTSTRAP_RUN,
+    assert_locked_pnpm,
+    holds_write_credential,
+    restores_a_cache,
+)
 
 ROOT = Path(__file__).resolve().parents[4]
 RELEASE = ROOT / ".github/workflows/release.yml"
@@ -584,8 +589,8 @@ class VerificationJobTest(unittest.TestCase):
         (node,) = uses("verify-frontend", "actions/setup-node")
         self.assertEqual(".node-version", node["with"]["node-version-file"])
         self.assertIs(False, node["with"]["check-latest"])
-        bootstrap = "npm install --global --ignore-scripts pnpm@12.9.1"
-        self.assertIn(bootstrap, commands("verify-frontend"))
+        bootstrap = BOOTSTRAP_RUN
+        assert_locked_pnpm(self, jobs()["verify-frontend"])
         self.assertIn(
             bootstrap, [s.get("run", "") for s in load(GATE)["jobs"]["frontend"]["steps"]]
         )
@@ -1086,7 +1091,7 @@ class GateParityTest(unittest.TestCase):
         run = commands("verify-frontend")
         expected = [
             "assert-head",
-            "npm install --global --ignore-scripts pnpm@12.9.1",
+            BOOTSTRAP_RUN,
             "node -e",
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm lint",

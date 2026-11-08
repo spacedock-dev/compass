@@ -14,9 +14,14 @@ including the verification log a setup action can restore and save behind a disa
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -106,6 +111,312 @@ def restores_a_cache(step: dict[str, Any]) -> bool:
         # read before it, so only both held off restores nothing.
         return bool(options.get("cache")) or options.get("package-manager-cache") is not False
     return action not in RESTORES_NOTHING
+
+
+BOOTSTRAP_RUN = (
+    "npm ci --ignore-scripts --prefix tools/pnpm-bootstrap\n"
+    'echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"\n'
+)
+
+
+def assert_locked_pnpm(test: unittest.TestCase, job: dict[str, Any]) -> None:
+    """A runner must execute the binary whose bytes this checkout pins, before project code."""
+    steps = job["steps"]
+    test.assertEqual(
+        "0",
+        job.get("env", {}).get("COREPACK_ENABLE_NETWORK"),
+        "a missing optional binary must never download outside the lock",
+    )
+    commands = [step.get("run", "") for step in steps]
+    test.assertEqual(
+        1, commands.count(BOOTSTRAP_RUN), "install pnpm from the committed bootstrap lock"
+    )
+    bootstrap = commands.index(BOOTSTRAP_RUN)
+    step = steps[bootstrap]
+    test.assertEqual("bash", step.get("shell"), "bootstrap must stop if npm rejects an integrity")
+    test.assertNotIn("if", step, "bootstrap cannot be skipped")
+    test.assertNotIn("continue-on-error", step, "bootstrap integrity failures must stop the job")
+    test.assertGreater(step.get("timeout-minutes", 0), 0)
+    for action in ("actions/checkout@", "actions/setup-node@"):
+        matches = [i for i, item in enumerate(steps) if item.get("uses", "").startswith(action)]
+        test.assertEqual(1, len(matches), action)
+        test.assertLess(matches[0], bootstrap, "bootstrap uses this checkout and the pinned Node")
+    for index, item in enumerate(steps):
+        action = item.get("uses", "").lower()
+        test.assertFalse(action.startswith("pnpm/"), "pnpm setup actions bypass the bootstrap lock")
+        test.assertEqual(
+            "0",
+            item.get("env", {}).get("COREPACK_ENABLE_NETWORK", "0"),
+            "steps must keep the wrapper download fallback disabled",
+        )
+        command = item.get("run", "")
+        test.assertNotRegex(command.lower(), r"\b(?:corepack|npx)\b", "alternate pnpm installer")
+        if re.search(r"\bnpm\s", command):
+            test.assertEqual(BOOTSTRAP_RUN, command, "npm must use the committed bootstrap lock")
+        if re.search(r"(?:^|[\s;&|])pnpm\s", command):
+            test.assertLess(bootstrap, index, "pnpm must run after the locked binary reaches PATH")
+            test.assertNotRegex(command, r"\bpnpm\s+(?:env|self-update|setup)\b")
+
+
+class PnpmBootstrapTest(unittest.TestCase):
+    def test_a_builder_installs_only_the_pnpm_bytes_the_checkout_approves(self) -> None:
+        seen = set()
+        for name, workflow in workflows().items():
+            for job_id, job in workflow["jobs"].items():
+                text = json.dumps(job).lower()
+                if "pnpm" in text or "corepack" in text:
+                    seen.add((name, job_id))
+                    with self.subTest(workflow=name, job=job_id):
+                        assert_locked_pnpm(self, job)
+        self.assertLessEqual(
+            {
+                ("quality-gate.yml", job)
+                for job in (
+                    "frontend",
+                    "frontend-macos",
+                    "frontend-coverage",
+                    "frontend-production",
+                    "storybook",
+                    "frontend-contract",
+                    "frontend-docs",
+                )
+            }
+            | {("release.yml", "verify-frontend")},
+            seen,
+        )
+
+    def test_a_maintainer_cannot_add_an_alternate_installer_under_an_unfamiliar_job_name(
+        self,
+    ) -> None:
+        for step in (
+            {"run": "npm install --global --ignore-scripts pnpm@12.9.1"},
+            {"run": "npm i -g pnpm@12.9.1"},
+            {"run": "npm exec --package=pnpm -- pnpm --version"},
+            {"run": "corepack prepare pnpm@12.9.1 --activate"},
+            {"uses": "pnpm/setup@sha", "with": {"cache": False}},
+            {"uses": "pnpm/action-setup@sha"},
+        ):
+            planted = copy.deepcopy(workflows())
+            planted["quality-gate.yml"]["jobs"]["new-builder"] = copy.deepcopy(
+                planted["quality-gate.yml"]["jobs"]["frontend"]
+            )
+            planted["quality-gate.yml"]["jobs"]["new-builder"]["steps"].append(step)
+            result = unittest.TestResult()
+            with mock.patch(__name__ + ".workflows", return_value=planted):
+                PnpmBootstrapTest(
+                    "test_a_builder_installs_only_the_pnpm_bytes_the_checkout_approves"
+                ).run(result)
+            with self.subTest(step=step):
+                self.assertTrue(result.failures, "a maintainer sees an unlocked installer rejected")
+
+    def test_a_builder_has_reviewable_hashes_for_every_supported_ci_platform(self) -> None:
+        directory = ROOT / "tools/pnpm-bootstrap"
+        for name in ("package.json", "package-lock.json"):
+            self.assertTrue(
+                (directory / name).is_file(), "pnpm needs a committed bootstrap manifest and lock"
+            )
+        manifest = json.loads((directory / "package.json").read_text())
+        lock = json.loads((directory / "package-lock.json").read_text())
+        project = json.loads((ROOT / "package.json").read_text())
+        version = project["packageManager"].removeprefix("pnpm@")
+        self.assertIs(True, manifest["private"])
+        self.assertNotIn("scripts", manifest)
+        self.assertEqual({"pnpm": version}, manifest["dependencies"])
+        self.assertEqual(version, project["engines"]["pnpm"])
+        self.assertEqual(3, lock["lockfileVersion"])
+        packages = lock["packages"]
+        self.assertEqual(manifest["dependencies"], packages[""]["dependencies"])
+        self.assertEqual(version, packages["node_modules/pnpm"]["version"])
+        for key, package in packages.items():
+            if not key:
+                continue
+            with self.subTest(package=key):
+                self.assertEqual(version, package["version"])
+                self.assertRegex(
+                    package["resolved"], r"^https://registry\.npmjs\.org/(?:pnpm|@pnpm/)"
+                )
+                algorithm, digest = package["integrity"].split("-", 1)
+                self.assertEqual("sha512", algorithm)
+                self.assertEqual(64, len(base64.b64decode(digest, validate=True)))
+        optional = packages["node_modules/pnpm"]["optionalDependencies"]
+        self.assertEqual(
+            {"", "node_modules/pnpm"} | {f"node_modules/{name}" for name in optional}, set(packages)
+        )
+        for system in ("linux", "darwin"):
+            for cpu in ("x64", "arm64"):
+                name = f"@pnpm/exe.{system}-{cpu}"
+                self.assertEqual(version, optional[name])
+                package = packages[f"node_modules/{name}"]
+                self.assertEqual([system], package["os"])
+                self.assertEqual([cpu], package["cpu"])
+                self.assertIs(True, package["optional"])
+
+
+@unittest.skipUnless(
+    os.environ.get("COMPASS_PNPM_TEST_CACHE"),
+    "populate an isolated npm cache for the offline bootstrap proof",
+)
+class PnpmOfflineBootstrapTest(unittest.TestCase):
+    """Run with COMPASS_PNPM_TEST_CACHE pointing to a cache populated by the locked npm ci.
+
+    No network or user npm configuration is used, and every mutation lives in a temporary copy.
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name).resolve()
+        self.workspace = self.home / "workspace with spaces"
+        self.bootstrap = self.workspace / "tools/pnpm-bootstrap"
+        self.bootstrap.mkdir(parents=True)
+        for name in ("package.json", "package-lock.json"):
+            shutil.copyfile(ROOT / "tools/pnpm-bootstrap" / name, self.bootstrap / name)
+        for name in ("user.npmrc", "global.npmrc"):
+            (self.home / name).write_text("")
+        self.env = {
+            key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "TMPDIR") if key in os.environ
+        }
+        self.env.update(
+            {
+                "HOME": str(self.home),
+                "NPM_CONFIG_USERCONFIG": str(self.home / "user.npmrc"),
+                "NPM_CONFIG_GLOBALCONFIG": str(self.home / "global.npmrc"),
+                "NPM_CONFIG_CACHE": os.environ["COMPASS_PNPM_TEST_CACHE"],
+                "NPM_CONFIG_UPDATE_NOTIFIER": "false",
+                "COREPACK_ENABLE_NETWORK": "0",
+            }
+        )
+
+    def install(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                shutil.which("npm") or "npm",
+                "ci",
+                "--offline",
+                "--ignore-scripts",
+                "--prefix",
+                str(self.bootstrap),
+                "--no-audit",
+                "--no-fund",
+            ],
+            cwd=self.bootstrap,
+            env=self.env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def corrupt(self, key: str) -> None:
+        path = self.bootstrap / "package-lock.json"
+        lock = json.loads(path.read_text())
+        integrity = lock["packages"][key]["integrity"]
+        lock["packages"][key]["integrity"] = (
+            "sha512-" + ("A" if integrity[7] != "A" else "B") + integrity[8:]
+        )
+        path.write_text(json.dumps(lock))
+
+    def version(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(self.bootstrap / "node_modules/.bin/pnpm"), "--version"],
+            cwd=self.home,
+            env=self.env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_a_builder_can_run_the_locked_binary_offline_with_scripts_denied(self) -> None:
+        before = (self.bootstrap / "package-lock.json").read_bytes()
+        installed = self.install()
+        self.assertEqual(0, installed.returncode, installed.stderr)
+        version = self.version()
+        self.assertEqual(0, version.returncode, version.stderr)
+        self.assertEqual("12.9.1", version.stdout.strip())
+        self.assertEqual(before, (self.bootstrap / "package-lock.json").read_bytes())
+        self.assertFalse(
+            (self.bootstrap / "node_modules/pnpm/pnpm-native").exists(),
+            "the wrapper must use the locked optional package",
+        )
+
+    def test_a_builder_finds_the_locked_binary_through_the_workflow_path_even_with_spaces(
+        self,
+    ) -> None:
+        path_file = self.home / "github path"
+        env = {
+            **self.env,
+            "GITHUB_WORKSPACE": str(self.workspace),
+            "GITHUB_PATH": str(path_file),
+            "NPM_CONFIG_OFFLINE": "true",
+        }
+        installed = subprocess.run(
+            [
+                shutil.which("bash") or "bash",
+                "--noprofile",
+                "--norc",
+                "-e",
+                "-o",
+                "pipefail",
+                "-c",
+                BOOTSTRAP_RUN,
+            ],
+            cwd=self.workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(0, installed.returncode, installed.stderr)
+        self.assertEqual(
+            [str(self.bootstrap / "node_modules/.bin")], path_file.read_text().splitlines()
+        )
+        env["PATH"] = path_file.read_text().strip() + os.pathsep + env["PATH"]
+        executable = shutil.which("pnpm", path=env["PATH"])
+        self.assertEqual(str(self.bootstrap / "node_modules/.bin/pnpm"), executable)
+        assert executable is not None
+        version = subprocess.run(
+            [executable, "--version"],
+            cwd=self.workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(0, version.returncode, version.stderr)
+        self.assertEqual("12.9.1", version.stdout.strip())
+
+    def test_a_builder_rejects_a_changed_pnpm_integrity_before_running_it(self) -> None:
+        baseline = self.install()
+        self.assertEqual(0, baseline.returncode, baseline.stderr)
+        self.corrupt("node_modules/pnpm")
+        installed = self.install()
+        self.assertNotEqual(
+            0,
+            installed.returncode,
+            "npm ci must reject bytes that differ from the checkout's integrity",
+        )
+        # npm's content-addressed offline cache cannot serve the same tarball under a changed
+        # digest; online it reports EINTEGRITY after fetching the bytes again.
+        self.assertRegex(installed.stderr, r"EINTEGRITY|ENOTCACHED")
+
+    def test_a_builder_cannot_download_around_a_rejected_optional_binary(self) -> None:
+        # Corrupt both Linux libc variants: the wrapper accepts either if installed.
+        lock = json.loads((self.bootstrap / "package-lock.json").read_text())
+        for key in lock["packages"]:
+            if key.startswith("node_modules/@pnpm/exe."):
+                self.corrupt(key)
+        installed = self.install()
+        # npm treats optional failures as optional; the wrapper must fail closed instead.
+        self.assertEqual(0, installed.returncode, installed.stderr)
+        version = self.version()
+        self.assertNotEqual(
+            0, version.returncode, "a failed optional package must never escape the committed lock"
+        )
+        self.assertIn("Network access is disabled", version.stderr)
+        self.assertNotIn("Downloading the pnpm", version.stderr)
 
 
 class FrontendCachesTest(unittest.TestCase):

@@ -14,6 +14,7 @@ from typing import Any, cast
 import yaml
 
 from . import test_quality_gate as detector
+from .test_workflow_caches import BOOTSTRAP_RUN, assert_locked_pnpm
 
 ROOT = Path(__file__).resolve().parents[4]
 WORKFLOW = ROOT / ".github/workflows/quality-gate.yml"
@@ -30,6 +31,8 @@ class FrontendDetectorControlsTest(unittest.TestCase):
             "frontend/src/main.tsx",
             "frontend/test/setup.ts",
             "pnpm-lock.yaml",
+            "tools/pnpm-bootstrap/package.json",
+            "tools/pnpm-bootstrap/package-lock.json",
             "pnpm-workspace.yaml",
             ".node-version",
             ".npmrc",
@@ -437,13 +440,14 @@ class FrontendWiringControlsTest(unittest.TestCase):
             "frontend-docs",
         ):
             with self.subTest(job=name):
-                self.check_bootstrap(jobs()[name]["steps"])
+                self.check_bootstrap(jobs()[name])
 
     @staticmethod
     def label_check(step: dict[str, Any]) -> bool:
         return step.get("id") == "exception"
 
-    def check_bootstrap(self, steps: list[dict[str, Any]]) -> None:
+    def check_bootstrap(self, job: dict[str, Any]) -> None:
+        steps = job["steps"]
         node = next(
             step for step in steps if step.get("uses", "").startswith("actions/setup-node@")
         )
@@ -454,8 +458,8 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertFalse(node["with"]["check-latest"])
         self.assertFalse(node["with"]["package-manager-cache"])
         commands = [step.get("run", "") for step in steps]
-        self.assertIn("npm install --global --ignore-scripts pnpm@12.9.1", commands)
-        bootstrap = commands.index("npm install --global --ignore-scripts pnpm@12.9.1")
+        assert_locked_pnpm(self, job)
+        bootstrap = commands.index(BOOTSTRAP_RUN)
         self.assertLess(steps.index(node), bootstrap)
         checkout = next(
             step for step in steps if step.get("uses", "").startswith("actions/checkout@")
@@ -661,7 +665,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
         self.assertLessEqual(job["timeout-minutes"], 15)
         commands = [step["run"] for step in job["steps"] if "run" in step]
         ordered = [
-            "npm install --global --ignore-scripts pnpm@12.9.1",
+            BOOTSTRAP_RUN,
             "pnpm install --frozen-lockfile --ignore-scripts",
             "pnpm build:storybook",
             "pnpm exec playwright install chromium",
