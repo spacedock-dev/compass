@@ -16,10 +16,14 @@ import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pre_pr
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Lock holders and checks run as real processes that are signalled and reaped.
 REAL_TIME_TESTS = True
@@ -517,12 +521,13 @@ class DeadHolderTest(unittest.TestCase):
             path = Path(tmp) / "pre-pr.lock"
             holder = HolderProcess(path)
             dead = holder.process.pid
-            self.assertIn(f"pid {dead} ", path.read_text(encoding="utf-8"))
+            record = pre_pr.holder_record(path)
+            self.assertIn(f"pid {dead} ", record.read_text(encoding="utf-8"))
             holder.kill()
             # Killed outright, so nothing of its own released the lock or cleared its record.
-            self.assertIn(f"pid {dead} ", path.read_text(encoding="utf-8"))
+            self.assertIn(f"pid {dead} ", record.read_text(encoding="utf-8"))
             with pre_pr.hold_lock(path, timeout=0):
-                self.assertIn(f"pid {os.getpid()} ", path.read_text(encoding="utf-8"))
+                self.assertIn(f"pid {os.getpid()} ", record.read_text(encoding="utf-8"))
 
     def test_a_live_holders_lock_is_not_taken(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -536,10 +541,105 @@ class DeadHolderTest(unittest.TestCase):
                 ):
                     self.fail("took the lock a live process holds")
                 self.assertIn(f"pid {holder.process.pid} ", str(raised.exception))
-                self.assertIn(f"pid {holder.process.pid} ", path.read_text(encoding="utf-8"))
+                record = pre_pr.holder_record(path)
+                self.assertIn(f"pid {holder.process.pid} ", record.read_text(encoding="utf-8"))
                 self.assertEqual(clock.now, 5)
             finally:
                 holder.kill()
+
+
+class FakeMsvcrt:
+    """`msvcrt.locking` as `_try_lock` calls it, backed by a real lock so exclusion is genuine."""
+
+    LK_NBLCK = 2
+    LK_UNLCK = 0
+
+    def locking(self, fileno: int, mode: int, _nbytes: int) -> None:
+        import fcntl  # noqa: PLC0415 - POSIX-only; this stand-in runs on the POSIX hosts CI has
+
+        if mode == self.LK_UNLCK:
+            fcntl.flock(fileno, fcntl.LOCK_UN)
+        else:
+            fcntl.flock(fileno, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+class WindowsHolderRecordTest(unittest.TestCase):
+    """On Windows a waiting run names the run holding the lock.
+
+    Not verified on a real Windows host: CI has no Windows leg. These tests run the Windows branch
+    of the lock with `msvcrt.locking` substituted, and make the locked file refuse every read, as
+    Windows does for a file with a byte-range lock held on it.
+    """
+
+    @contextlib.contextmanager
+    def windows(self, lock: Path) -> Iterator[None]:
+        real_read_text = Path.read_text
+
+        def refuse(target: Path) -> None:
+            if target == lock:
+                message = f"[WinError 33] another process has locked a portion of {target}"
+                raise PermissionError(message)
+
+        def read_text(target: Path, *args: object, **kwargs: object) -> str:
+            refuse(target)
+            return real_read_text(target, *args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch.object(pre_pr, "msvcrt", FakeMsvcrt(), create=True),
+            mock.patch.object(Path, "read_text", read_text),
+        ):
+            yield
+
+    def test_a_waiting_windows_run_names_the_pid_and_worktree_of_the_holder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            holder = HolderProcess(path)
+            waited: list[str] = []
+            try:
+                with (
+                    self.windows(path),
+                    self.assertRaises(pre_pr.LockTimeoutError) as raised,
+                    pre_pr.hold_lock(path, on_wait=waited.append, poll=0.01, timeout=0.2),
+                ):
+                    self.fail("took the lock a live process holds")
+            finally:
+                holder.kill()
+            expected = f"pid {holder.process.pid} in "
+            self.assertEqual(len(waited), 1)
+            self.assertIn(expected, waited[0])
+            self.assertIn(str(Path.cwd()), waited[0])
+            self.assertIn(expected, str(raised.exception))
+
+    def test_a_windows_run_still_waits_when_the_holder_record_cannot_be_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            holder = HolderProcess(path)
+            waited: list[str] = []
+            try:
+                pre_pr.holder_record(path).unlink()
+                with (
+                    self.windows(path),
+                    self.assertRaises(pre_pr.LockTimeoutError) as raised,
+                    pre_pr.hold_lock(path, on_wait=waited.append, poll=0.01, timeout=0.2),
+                ):
+                    self.fail("took the lock because the record of its holder was gone")
+            finally:
+                holder.kill()
+            self.assertEqual(waited, ["another run"])
+            self.assertIn("held by another run", str(raised.exception))
+
+    def test_a_windows_holder_that_cannot_write_its_record_still_holds_the_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pre-pr.lock"
+            pre_pr.holder_record(path).mkdir()  # a directory where the record goes: unwritable
+            with (
+                self.windows(path),
+                pre_pr.hold_lock(path),
+                self.assertRaises(pre_pr.LockTimeoutError),
+                pre_pr.hold_lock(path, poll=0.01, timeout=0.1),
+            ):
+                self.fail("took a lock whose holder could not write its record")
 
 
 # A run whose one check starts a grandchild, as `run_tests.py` starts workers and pnpm starts node.
