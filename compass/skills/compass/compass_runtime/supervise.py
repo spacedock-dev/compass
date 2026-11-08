@@ -400,8 +400,12 @@ class Group:
             if running is False:
                 return
             remaining = deadline - time.monotonic()
-            if running is None or remaining <= 0:
+            if remaining <= 0:
                 raise UnstoppedError(self.pid)
+            # An unknown snapshot is asked again, not believed: under heavy load `ps` prints a
+            # process that is mid-exit as `?Es` (measured at a load average near 100), and the
+            # next snapshot is definite. Only a definite "no live member" ends the wait, so an
+            # observation that never succeeds still fails at the one deadline.
             time.sleep(min(_LIMIT_POLL_SEC, remaining))
 
     def close(self) -> None:
