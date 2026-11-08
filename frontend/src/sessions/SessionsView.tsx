@@ -4,7 +4,7 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, useSyncExternalStor
 import { IntentHowTo } from '../intent/HowTo';
 import { CapacityStrip } from '../capacity';
 import { Disclosure, disclosureKey } from '../controls';
-import { gapNames, isRecord, isScanOnly, type Row } from '../observed';
+import { gapNames, isScanOnly, type Row } from '../observed';
 import { nextNumber } from '../api/bootstrap';
 import { contextKey } from '../api/identity';
 import { headerAnalysis } from '../drift/model';
@@ -227,27 +227,10 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-/* The level the chip names for this row. Only a stored reading that itself departs names one: a row whose
-   drift is a raise alone names no level, and a raise beside a consistent reading would otherwise borrow that
-   reading's "None or low". Where this tab holds the analysis row, the level is the one the session page's
-   header pill shows, from the same derivation (`headerAnalysis`), so the two cannot differ. Without it, a
-   departing reading is at least Medium (`levels.analysis_level`: a departure reads Medium, and only a fresh
-   failed check reads higher), so the chip says that much and draws no meter, which would show Medium for
-   what may be High. */
-function rowLevel(
-  input: Parameters<typeof headerAnalysis>[0] | null,
-): { readonly level: string | null; readonly label: string } | null {
-  if (!input || !readingDeparts(input.session)) return null;
-  const shown = headerAnalysis(input);
-  if (shown) return { level: shown.level, label: shown.label };
-  const { session } = input;
-  if (session['annotation_not_accurate'] === true) return null;
-  /* A reading over words the reader has since replaced is the stale line's to describe, not a level's. */
-  const raw = session['annotation_assessment'];
-  const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
-  const current = nextNumber(session['annotation_revision']);
-  if (read === null || (current !== null && current !== read)) return null;
-  return { level: null, label: 'Medium or higher' };
+/* A departing stored reading names only the analysis level the session header would show now.
+   Missing context, withdrawn evidence and stale readings cannot supply a fallback level. */
+function rowLevel(input: Parameters<typeof headerAnalysis>[0] | null) {
+  return input && readingDeparts(input.session) ? headerAnalysis(input) : null;
 }
 
 function DriftMarkView({ row }: { readonly row: SessionRow }) {
@@ -287,9 +270,9 @@ function DriftMark({
       {level ? (
         <span
           className="inline-flex items-baseline gap-1.5"
-          data-next-row-drift-level={level.level ?? 'medium_or_higher'}
+          data-next-row-drift-level={level.level}
         >
-          {level.level ? <PillMeter level={level.level} /> : null}
+          <PillMeter level={level.level} />
           <span>
             Drift: <strong className="font-semibold text-foreground">{level.label}</strong>
           </span>

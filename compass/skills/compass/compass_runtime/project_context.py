@@ -525,12 +525,17 @@ def _instruction_event(
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
     message = (
-        observer.parse_reader_record(record) if observer.reader_record_candidate(record) else None
+        observer.parse_reader_record(record, cap=len(json.dumps(record)))
+        if observer.reader_record_candidate(record)
+        else None
     )
     if message is None or message.get("role") != "user":
         return None
     at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
-    text = message["text"].strip()
+    # Parse against the original record before applying the extraction bound. A sentinel
+    # character is insufficient: the parser strips trailing whitespace, including that sentinel.
+    text_clipped = len(message["text"]) > records.EXTRACT_TEXT_CAP_CHARS
+    text = message["text"][: records.EXTRACT_TEXT_CAP_CHARS].strip()
     if at is None or not text:
         return None
     title = _message_title(config, text, harness)
@@ -542,8 +547,8 @@ def _instruction_event(
         "kind": "steer",
         "phase": "user-role instruction",
         "title": title,
-        "title_truncated": len(_message_title(config, text, harness, limit=len(title) + 1))
-        > len(title),
+        "title_truncated": text_clipped
+        or len(_message_title(config, text, harness, limit=len(title) + 1)) > len(title),
         **({ID_TITLE_FIELD: hashed} if hashed else {}),
         READER_WORDS_FIELD: _message_words(config, text, harness),
         "source": message.get("source") or "timestamped non-meta user-role record",

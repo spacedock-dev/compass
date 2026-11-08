@@ -2,6 +2,16 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
 import { rowState } from './rows';
+import current from '../../test/fixtures/client-contract/data-focused-drift-medium.json';
+import currentContext from '../../test/fixtures/client-contract/context-focused-drift-medium.json';
+import missing from '../../test/fixtures/client-contract/data-focused-drift-missing-evidence.json';
+import missingContext from '../../test/fixtures/client-contract/context-focused-drift-missing-evidence.json';
+import stale from '../../test/fixtures/client-contract/data-focused-drift-stale.json';
+import staleContext from '../../test/fixtures/client-contract/context-focused-drift-stale.json';
+import inaccurate from '../../test/fixtures/client-contract/data-focused-drift-inaccurate.json';
+import inaccurateContext from '../../test/fixtures/client-contract/context-focused-drift-inaccurate.json';
+import withdrawn from '../../test/fixtures/client-contract/data-focused-drift-withdrawn.json';
+import withdrawnContext from '../../test/fixtures/client-contract/context-focused-drift-withdrawn.json';
 import type { ObservedSession } from '../observed';
 
 const NOW = 5000;
@@ -173,7 +183,7 @@ describe('the groups', () => {
     ).toBe('PROJECTp');
   });
 
-  it('names the level of a departing stored reading on the drift chip', async () => {
+  it('lets a person see no row level before its analysis is available', async () => {
     await open(
       board(
         [
@@ -194,12 +204,8 @@ describe('the groups', () => {
       ),
     );
     const mark = document.querySelector('[data-next-session-drift-mark]');
-    // This tab holds no analysis for the project, so the chip says what a departure is at least, and draws
-    // no meter, which would show Medium for what may be High.
-    expect(mark?.textContent).toBe('Drift: Medium or higher · 4m ago');
-    expect(
-      mark?.querySelector('[data-next-row-drift-level]')?.getAttribute('data-next-row-drift-level'),
-    ).toBe('medium_or_higher');
+    expect(mark?.textContent).toBe('Drift · 4m ago');
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
     expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
   });
 
@@ -306,6 +312,34 @@ describe('the groups', () => {
       expect(chip()?.querySelector('[data-next-row-drift-level]')).toBeNull();
     });
   });
+
+  it.each([
+    ['current', current, currentContext, 'Medium'],
+    ['missing evidence', missing, missingContext, null],
+    ['stale', stale, staleContext, null],
+    ['inaccurate', inaccurate, inaccurateContext, null],
+    ['withdrawn', withdrawn, withdrawnContext, null],
+  ] as const)(
+    'lets a person read the same analysis level in the row and header for %s',
+    async (_case, data, context, expected) => {
+      const page = mountSessions({
+        hash: '#n=session:alpha-app:claude:a1b2c3d4',
+        data: data.response.body,
+        context: context.response.body,
+      });
+      await page.settle();
+      const header = document.querySelector('[data-next-drift-pill] strong')?.textContent ?? null;
+      expect(header).toBe(expected);
+      await act(async () => page.router.navigate({ view: 'sessions' }));
+      await page.settle();
+      const row = document.querySelector('[data-next-session="a1b2c3d4"]');
+      expect(row).not.toBeNull();
+      const level = row?.querySelector('[data-next-row-drift-level] strong')?.textContent ?? null;
+      expect(level).toBe(header);
+      expect(row?.textContent).not.toContain('Medium or higher');
+      page.unmount();
+    },
+  );
 
   it('shows Idle only for a published idle state', () => {
     const session = (state: unknown) =>

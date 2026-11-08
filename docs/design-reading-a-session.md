@@ -7286,8 +7286,9 @@ Six sub-questions were ruled the same day, each as recommended.
 
 On 2026-11-08, the owner accepted the recommendation: a departing stored analysis may name its
 level beside the Sessions row's Drift mark. It uses the same analysis derivation as the session
-header. Until that tab holds the evidence needed to distinguish Medium from High, a current stored
-departure says "Medium or higher" without a meter. A stale or withdrawn reading names no level.
+header. The row names a level only while the header would name that same analysis level for the
+reading now. Missing evidence, a not-enough result, and stale, inaccurate or withdrawn readings
+name no level.
 
 A notification raise alone names no level, including beside a reading that does not depart.
 A live estimate never supplies a row level, including when a raised departure also appears.

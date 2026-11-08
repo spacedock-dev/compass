@@ -188,9 +188,37 @@
     },
     {
       "method": "GET",
+      "name": "context-focused-drift-inaccurate",
+      "route": "/api/project-context",
+      "sha256": "7c5771d5f5a67528a6c05eef46bbaa93804062ab247f847cd8cec30bde8b50f0",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-focused-drift-medium",
       "route": "/api/project-context",
       "sha256": "72fe86cdb81a0f4cc4aa26d69acce975aa5c0f399cafcc06c3d4607b09c26194",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-missing-evidence",
+      "route": "/api/project-context",
+      "sha256": "79d8b6e7bcfce1ca6e9833dcc3bbe86e4367f4ac29c5e9fcfbb559f1ffd54b0b",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-stale",
+      "route": "/api/project-context",
+      "sha256": "6f7cdd9348d4818afa64a806fd0eb7b3547990fe1cf3752ab6c62325ebec14dd",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-withdrawn",
+      "route": "/api/project-context",
+      "sha256": "fd2d839ef32a48137f794abbd5ac4ad3c2b968e5792d21aad8cc9b0a652079aa",
       "status": 200
     },
     {
@@ -279,6 +307,20 @@
     },
     {
       "method": "GET",
+      "name": "context-task-preview-whole",
+      "route": "/api/project-context",
+      "sha256": "3efa554e95f6388290c8a99c68f63a07779f755fd00c93abad63069d82bdebd0",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-task-preview-xml",
+      "route": "/api/project-context",
+      "sha256": "4bf0ada9d9ee7911ce39d9881f87ec09269cb2517a645f893437cc2c0b23695e",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-terminal-project",
       "route": "/api/project-context",
       "sha256": "8bb789984d6dd5b705eb3a69272cbc9b07c9ffa47bd53364f0d03979e78346e4",
@@ -328,9 +370,37 @@
     },
     {
       "method": "GET",
+      "name": "data-focused-drift-inaccurate",
+      "route": "/api/data",
+      "sha256": "da166019297e15ee0eb14b45a80f62189bf0c700d9687ba268840527aa169199",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "data-focused-drift-medium",
       "route": "/api/data",
       "sha256": "633c65bceecc255698a607b7b5407afa1846fff68f60d58bf5c406579d40d933",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-missing-evidence",
+      "route": "/api/data",
+      "sha256": "073f7f3e29bbe11e17bbad38bbf3fbcddb957651b407111b4f6d8615776cab88",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-stale",
+      "route": "/api/data",
+      "sha256": "95e515b30ea32d1a749716d62fbf4a897e7409a38cd529f1fd9c87ea889f1dce",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-withdrawn",
+      "route": "/api/data",
+      "sha256": "6bfd23e362de0b1c207221c8c49de4578c123e236f3adb293439bf26f4d5d31c",
       "status": 200
     },
     {
@@ -394,6 +464,20 @@
       "name": "data-show-all",
       "route": "/api/data",
       "sha256": "8ee46ee014d8803caf263922bad474fd6fa3b509905e856a20b424e78a6d2cad",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-task-preview-whole",
+      "route": "/api/data",
+      "sha256": "367f5716d4857b80a9cca1891a1096d55d4bbffe4d16a6f06c201dc2a38f8e6c",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-task-preview-xml",
+      "route": "/api/data",
+      "sha256": "bc6392d797f3a2c61146454fa0c682312647965aaafd03afc1dc435612e88eb2",
       "status": 200
     },
     {

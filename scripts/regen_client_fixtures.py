@@ -1160,6 +1160,40 @@ def live_row_scenario(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def task_preview_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """The real parser's first clip follows 1,984 characters of skipped XML context."""
+    for case, text in (
+        (
+            "xml",
+            "<context>"
+            + "x" * 1963
+            + "</context>\n\n"
+            + "Build the parser with bounded input and preserve every requirement.",
+        ),
+        ("whole", "Build the parser"),
+    ):
+        row = synthetic_row(
+            "claude", "a1b2c3d4", "task-preview", title="Build the parser", state="working"
+        )
+        rig = Rig(scratch, "task-preview-" + case, rows={"claude": [row]})
+        try:
+            rig.write_transcript("a1b2c3d4", [_transcript_entry("user", text, NOW - 60, 0)])
+            for kind, path, query in (
+                ("data", "/api/data", ""),
+                ("context", "/api/project-context", "project=task-preview"),
+            ):
+                recorder.capture(
+                    rig,
+                    kind + "-task-preview-" + case,
+                    get(path, query),
+                    "A task preview after skipped XML."
+                    if case == "xml"
+                    else "A complete task preview needs no ellipsis.",
+                )
+        finally:
+            rig.close()
+
+
 def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     """A project brief recorded through publication, including credential redaction."""
     rows = {
@@ -2051,9 +2085,13 @@ def adoption_scenarios(recorder: Recorder, scratch: Scratch) -> None:
 def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
     _drift_view_recording(recorder, scratch, medium=False)
     _drift_view_recording(recorder, scratch, medium=True)
+    for case in ("missing-evidence", "stale", "inaccurate", "withdrawn"):
+        _drift_view_recording(recorder, scratch, medium=True, case=case)
 
 
-def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool) -> None:
+def _drift_view_recording(
+    recorder: Recorder, scratch: Scratch, *, medium: bool, case: str = ""
+) -> None:
     """A stored reading with a departure, and a direction given after the words were saved.
 
     The page demotes that departure to "can't tell" (a later direction still unsettled), and
@@ -2061,7 +2099,7 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
     derivation is held to on the real server's bytes.
     """
     first_at, later_at = NOW - 3600, NOW - 1800
-    suffix = "-medium" if medium else ""
+    suffix = ("-" + case) if case else ("-medium" if medium else "")
     goal_at = first_at if medium else first_at - 60
     row = synthetic_row(
         "claude",
@@ -2145,6 +2183,38 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
             if stored != annotation_store.OUTCOME_STORED:
                 raise RuntimeError(stored)
 
+        if case == "missing-evidence":
+            rig.write_transcript("a1b2c3d4", entries[:1])
+        elif case == "stale":
+            annotation_store.annotate(
+                rig.config,
+                rig.state,
+                "claude",
+                "a1b2c3d4",
+                goal="Document retry with backoff",
+                now=NOW - 300,
+            )
+        elif case == "inaccurate":
+            with mock.patch.object(annotation_store, "time", FrozenTime()):
+                annotation_store.mark_not_accurate(
+                    rig.config,
+                    rig.state,
+                    "claude",
+                    "a1b2c3d4",
+                    read_at=NOW - 600,
+                    on=True,
+                )
+        elif case == "withdrawn":
+            # The cited assistant text is now absent. The frozen reading remains stored,
+            # but publication withdraws the verdict whose evidence it can no longer find.
+            rig.write_transcript(
+                "a1b2c3d4",
+                [
+                    *entries[:1],
+                    _transcript_entry("assistant", "I will inspect the files.", first_at + 120, 2),
+                ],
+            )
+
         recorder.capture(
             rig,
             "data-focused-drift" + suffix,
@@ -2156,7 +2226,9 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
             rig,
             "context-focused-drift" + suffix,
             get("/api/project-context", scope),
-            "The focused context has a supported departure and draws Medium."
+            f"The focused context after {case}; analysis is recomputed from current evidence."
+            if case
+            else "The focused context has a supported departure and draws Medium."
             if medium
             else "The focused context of that session: sources.work.drift_views holds the Drift "
             "card's answer. The reading departs, and a message the reader sent after saving "
@@ -2290,6 +2362,7 @@ SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
     data_scenarios,
     session_states_scenario,
     terminal_project_scenario,
+    task_preview_scenario,
     stream_scenarios,
     context_scenarios,
     unsupported_record_scenario,
