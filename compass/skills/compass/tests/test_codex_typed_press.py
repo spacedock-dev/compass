@@ -320,3 +320,42 @@ class ACodexPressRouteTest(CodexTypedPressCase):
         )
         handler._reading_press.assert_not_called()
         self.assertEqual(typed_press.UNCONFIRMED, self.reason(handler))
+
+
+TUI_CAPTURE = CAPTURE.with_name("skill-action-tui-shapes-0.167.0-macos.jsonl")
+
+
+def tui_rows(text: str) -> list[dict[str, Any]]:
+    """The interactive TUI capture's two user-role messages, value slots filled.
+
+    The TUI injects project instructions and its environment context as one user-role message
+    with provenance `agents_md` and `harness`, then records the typed line as its own message
+    with provenance `user`, as `codex exec` does. Nothing follows the typed line.
+    """
+    rows = []
+    for line in TUI_CAPTURE.read_text(encoding="utf-8").splitlines():
+        record = copy.deepcopy(json.loads(line)["record"])
+        payload = record["payload"]
+        if record["type"] != "response_item" or payload.get("role") != "user":
+            continue
+        for block in payload["content"]:
+            block["text"] = text if isinstance(block["text"], dict) else "Project instructions."
+        payload["id"] = f"m{len(rows)}"
+        payload["internal_chat_message_metadata_passthrough"]["turn_id"] = f"t{len(rows)}"
+        record["timestamp"] = f"2026-11-08T12:00:{10 + len(rows):02d}Z"
+        rows.append(record)
+    if len(rows) != 2:
+        raise AssertionError("the TUI capture must hold the injected and the typed message")
+    return rows
+
+
+class APersonTypingInTheCodexTuiTest(CodexTypedPressCase):
+    def test_a_person_who_types_drift_in_the_interactive_tui_gets_one_press(self) -> None:
+        self.rows = tui_rows("$compass drift")
+        self.agent_works()
+        self.assertEqual("", self.admit("drift"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift"))
+
+    def test_the_tuis_injected_instructions_alone_cannot_pay_for_a_reading(self) -> None:
+        self.rows = tui_rows("$compass drift")[:1]
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift"))
