@@ -321,7 +321,8 @@ class ACommandIsNeverShownWholeWhenItWasCutTest(_SlashSession):
         self.assertGreater(len(prompt_command("pr-review-response", HUGE_ARGS)), 2000)
         fact, _ = self.opened(HUGE_ARGS)
         self.assertTrue(str(fact["summary"]).startswith("/pr-review-response word0 word1"), fact)
-        self.assertLessEqual(len(str(fact["summary"])), project_context.MAX_SEMANTIC_LINE)
+        self.assertLessEqual(len(str(fact["summary"])), project_context.MAX_SEMANTIC_LINE + 1)
+        self.assertTrue(str(fact["summary"]).endswith("…"), fact["summary"])
 
     def test_add_it_to_my_intent_says_a_cut_command_was_clipped(self) -> None:
         _, body = self.opened(HUGE_ARGS)
@@ -336,12 +337,13 @@ class ACommandIsNeverShownWholeWhenItWasCutTest(_SlashSession):
         fact, body = self.opened(WIDE_ARGS)
         got = {key: body[key] for key in ("text", "clipped", "fits")}
         self.assertEqual({"text": typed, "clipped": False, "fits": False}, got)
-        # The published summary stays one title long; a reading reads the command whole
+        # The preview keeps its content cap plus a cut marker; a reading reads the command whole
         # (the 2026-10-01 ruling `test_reader_words` covers).
-        self.assertEqual(typed[: project_context.MAX_SEMANTIC_LINE], fact["summary"])
+        preview = typed[: project_context.MAX_SEMANTIC_LINE] + "…"
+        self.assertEqual(preview, fact["summary"])
         ledger = reading.build_ledger(self.facts(), "claude", SHORT)
         (entry,) = [row for row in ledger if row["id"] == fact["fact_id"]]
-        self.assertEqual(typed[: project_context.MAX_SEMANTIC_LINE], entry["summary"])
+        self.assertEqual(preview, entry["summary"])
         self.assertEqual(typed, entry.get("words"))
 
 
