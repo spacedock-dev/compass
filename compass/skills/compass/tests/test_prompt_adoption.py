@@ -14,6 +14,7 @@ from unittest import mock
 
 from compass_runtime import annotations as annotation_store
 from compass_runtime import history, http_api, reading, reading_route, transcripts
+from compass_runtime.state import build_runtime_state
 
 from . import test_http_api, test_reading, test_transcripts, test_unasked
 from .support import make_runtime
@@ -209,6 +210,115 @@ class AdoptionRouteTest(unittest.TestCase):
             handler._reading()
         self.assertEqual(0, compose.call_count, "check ran against the replacement goal")
         self.assertTrue(replies[-1]["adoption_refused"])
+
+
+class APersonAnalyzesADraft(unittest.TestCase):
+    def setUp(self) -> None:
+        self.route = test_http_api.ReadingRouteTest()
+        self.addCleanup(self.route.doCleanups)
+        self.config, self.state = self.route._runtime()
+        self.application = self.route._app(
+            self.config,
+            self.state,
+            harness="claude",
+            row={"first_prompt": "Build the parser", "first_prompt_at": 1_700_000_000.0},
+        )
+        Path(annotation_store.store_path(self.config)).unlink()
+        self.payload = self.route._press(
+            harness="claude",
+            adopt="first-prompt",
+            expected_prompt="Build the parser",
+            expected_prompt_at=1_700_000_000.0,
+            expected_revision=0,
+        )
+
+    def entry(self) -> Any:
+        return annotation_store.find(annotation_store.load(self.config), "claude", "s1")
+
+    def test_a_persons_discard_survives_analyze_before_and_after_prompt_recollection(self) -> None:
+        # Removing the locked discard guard, or failing to opt Analyze into it,
+        # resurrects the goal and starts a model from words the reader discarded.
+        for boundary in (
+            "before recollection",
+            "before locked write",
+            "Keep before recollection",
+            "Keep before locked write",
+        ):
+            for other_dashboard in (False, True):
+                with self.subTest(boundary=boundary, other_dashboard=other_dashboard):
+                    Path(annotation_store.store_path(self.config)).unlink(missing_ok=True)
+                    writer = (
+                        build_runtime_state(self.config, started=1_700_000_100.0)
+                        if other_dashboard
+                        else self.state
+                    )
+                    discarded: list[Any] = []
+                    target = (
+                        http_api._RequestHandler
+                        if boundary.endswith("before recollection")
+                        else annotation_store
+                    )
+                    name = "_adopt_prompt" if boundary.endswith("before recollection") else "adopt"
+                    original = getattr(target, name)
+
+                    def discard_then_adopt(
+                        *args: Any,
+                        writer: Any = writer,
+                        discarded: list[Any] = discarded,
+                        original: Any = original,
+                        **kwargs: Any,
+                    ) -> str:
+                        annotation_store.annotate(
+                            self.config, writer, "claude", "s1", goal="Another tabs goal"
+                        )
+                        annotation_store.clear(self.config, writer, "claude", "s1")
+                        discarded.append(self.entry())
+                        return cast("str", original(*args, **kwargs))
+
+                    with (
+                        self.route._counting_model(harness="claude") as calls,
+                        self.route._serving(self.application) as port,
+                        mock.patch.object(
+                            target, name, autospec=True, side_effect=discard_then_adopt
+                        ),
+                    ):
+                        status, raw = self.route._post(
+                            port,
+                            {
+                                **self.payload,
+                                **(
+                                    {"settle_through": 1_700_000_050.0}
+                                    if boundary.startswith("Keep")
+                                    else {}
+                                ),
+                            },
+                        )
+                    answer = json.loads(raw)
+                    self.assertFalse(answer["ok"], "Analyze claimed success after a discard")
+                    self.assertTrue(annotation_store.is_discarded(self.entry()))
+                    self.assertEqual(discarded[0], self.entry())
+                    self.assertEqual(
+                        (422, False, False, True),
+                        (status, answer["ok"], answer["produced"], answer["adoption_refused"]),
+                    )
+                    self.assertEqual([], calls, "Analyze read resurrected words")
+                    self.assertEqual({}, reading.published_jobs(self.config))
+
+    def test_a_person_can_analyze_a_draft_without_losing_saved_outcome_lines(self) -> None:
+        annotation_store.annotate(
+            self.config, self.state, "claude", "s1", goal="", lines=["An AST", "Parser tests pass"]
+        )
+        before = self.entry()["revisions"][-1]["lines"]
+        with (
+            self.route._counting_model(harness="claude") as calls,
+            self.route._serving(self.application) as port,
+        ):
+            status, raw = self.route._post(port, {**self.payload, "expected_revision": 1})
+        self.assertEqual(202, status, raw)
+        self.assertTrue(json.loads(raw)["ok"])
+        self.assertEqual(1, len(calls))
+        self.assertEqual("Build the parser", self.entry()["revisions"][-1]["goal"])
+        self.assertEqual(before, self.entry()["revisions"][-1]["lines"])
 
 
 class PromptHistoryTest(unittest.TestCase):

@@ -10112,8 +10112,13 @@ was rejected for this command. `--adopt` uses the page's adoption route, recheck
 words, source time and expected revision, including outside the default session window.
 An unsaved goal and a discard both publish revision zero. Terminal adoption of an unsaved
 goal opts into the store's empty-intent guard, so a board discard that follows the read wins.
-The terminal names that refusal. The page can still deliberately adopt after a discard,
-and Analyze keeps its own adoption path.
+The terminal names that refusal. Analyze, including a Keep that starts an analysis over an
+unsaved draft, uses a discard-specific guard under the same writer lock: a discard saved before prompt recollection
+or before the locked write survives, and the press returns adoption refused without starting
+a model reading. Unlike the terminal empty-intent guard, this allows a draft to become the
+goal while preserving saved outcome lines. The page can still deliberately adopt after a
+discard through its explicit adoption action. A Keep that starts no analysis (no reader, or
+model calls paused) saves through that same standalone adoption and is not guarded yet.
 Typed saves and adoptions return their own locked revision receipt. A later read may already
 show another writer's revision. Saving supplies intent; a monitor check still has to produce
 a level. No save starts that monitor.

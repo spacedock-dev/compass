@@ -2978,6 +2978,7 @@ def _save_refused(
             options.get("empty_intent_only")
             and (has_typed_words(existing) or is_discarded(existing))
         )
+        or (options.get("reject_discarded") and is_discarded(existing))
         or (
             options.get("empty_goal_only")
             and existing
@@ -3860,12 +3861,17 @@ def adopt(  # noqa: PLR0913
     receipt: MutableMapping[str, int] | None = None,
     read_from_now: bool = False,
     empty_intent_only: bool = False,
+    reject_discarded: bool = False,
 ) -> str:
     """Adopt a prompt as the goal. Returns an `OUTCOMES` token.
 
     `chosen` is the server's own `prompt_choices` entry for a `chosen-prompt`
     adoption, found by the fact id the page sent; it is the only source that
     resolves that token, so a page cannot name its own words.
+
+    `reject_discarded` keeps Analyze from reviving words discarded meanwhile,
+    checked under the writer lock without forbidding saved outcome lines.
+    Explicit board adoption leaves it off to allow deliberate re-adoption.
 
     `settle_through` is Keep over an unsaved draft: the adoption and the
     later-direction settlement in one write, because `settle` refuses a
@@ -3897,6 +3903,7 @@ def adopt(  # noqa: PLR0913
             **options,
             "empty_goal_only": expected_revision is None,
             "empty_intent_only": empty_intent_only,
+            "reject_discarded": reject_discarded,
             "expected_revision": expected_revision,
             "read_from_now": read_from_now,
             **({"settle_through": float(settle_through), "goal_empty_or": text} if keep else {}),
