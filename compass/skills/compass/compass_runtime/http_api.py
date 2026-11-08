@@ -4084,9 +4084,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             receipt=receipt,
             read_from_now=payload.get("read_from_now") is True,
             empty_intent_only=empty_intent_only,
-            # Analyze (including Keep) must not resurrect a discarded draft.
+            # Analyze and Keep (even without analysis) must not resurrect a discarded draft.
             # The explicit board adoption may deliberately replace a discard.
-            reject_discarded=not standalone,
+            reject_discarded=not standalone or settle_through is not None,
             chosen=(
                 self._chosen_prompt(rows[0], payload.get("prompt_fact"))
                 if source == runtime_reading.PROMPT_CHOSEN

@@ -10136,7 +10136,8 @@ or before the locked write survives, and the press returns adoption refused with
 a model reading. Unlike the terminal empty-intent guard, this allows a draft to become the
 goal while preserving saved outcome lines. The page can still deliberately adopt after a
 discard through its explicit adoption action. A Keep that starts no analysis (no reader, or
-model calls paused) saves through that same standalone adoption and is not guarded yet.
+model calls paused) uses the same locked discard guard: its settlement mark distinguishes
+it from deliberate standalone adoption, so it cannot undo another dashboard's discard.
 Typed saves and adoptions return their own locked revision receipt. A later read may already
 show another writer's revision. Saving supplies intent; a monitor check still has to produce
 a level. No save starts that monitor.
