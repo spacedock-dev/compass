@@ -312,7 +312,7 @@ hours are forwarded.
 |---|---|
 | `0` | Help, the version, a session listing, a drift reading or diagnosis completed; `--footer` always, including when it printed nothing; status found a running Compass; serving ended normally; daemon startup or stop succeeded; or forget stored model calls as paused and finished its summary-store cleanup. `--stop` can succeed when no instance is running. |
 | `1` | Status found no running Compass, or startup/stop/forget failed or was refused. A foreign process is not stopped. `--sessions` found no running Compass, or its answer could not be read. `--drift` refused, or no new reading was produced. |
-| `130` | `--drift` was interrupted with Ctrl+C: it asked the dashboard to cancel a reading it started, or stopped waiting on one it found running and left it running. |
+| `130` | `--drift` was interrupted with Ctrl+C. It cancels only a job positively identified as started by this invocation. After an interrupted POST it reads the board once and reports running, absent or unknown without cancelling a job it found there. After a completed job it says the reading ended. |
 | `2` | Invalid command-line syntax or rejected values/combinations, reported by the argument parser. |
 
 Diagnosis can exit `0` while reporting missing or unreadable stores; inspect its report.

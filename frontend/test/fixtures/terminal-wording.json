@@ -1,0 +1,778 @@
+{
+  "provenance": "scripts/regen_client_fixtures.py: drift_view_scenario",
+  "view": {
+    "live_on": false,
+    "revision": 1,
+    "analysis": {
+      "level": "not_enough",
+      "reasons": [
+        "line-not-shown-by-a-check",
+        "later-direction"
+      ],
+      "withheld": false
+    },
+    "estimate": null,
+    "pill": null,
+    "so_far": false,
+    "stale": null,
+    "harness": "claude",
+    "sid": "a1b2c3d4",
+    "annotate": true,
+    "reading": true,
+    "malformed": "",
+    "unsettled": true,
+    "unsettled_count": 2,
+    "drafted": false,
+    "limited": true,
+    "entry_count": 3,
+    "window_count": null,
+    "lines": [
+      {
+        "key": "goal",
+        "state": "cant-tell",
+        "result": "not verifiable from available evidence",
+        "why": "baseline-open",
+        "rests_on": "",
+        "limit": "",
+        "clause": "Add retry with backoff",
+        "detail": "",
+        "cites": [
+          "fact:1b3f7a63986acb47"
+        ],
+        "numbers": [
+          "1"
+        ],
+        "unloaded": 0,
+        "partial": false
+      }
+    ],
+    "departures": [],
+    "cited": [],
+    "priors": []
+  },
+  "drift": {
+    "press": {
+      "idle-unknown": "Analyze opens while this session runs.",
+      "unobservable": "This harness sends no events, so Analyze opens only while it runs.",
+      "turn-stop": "Analyze opens while a turn runs or once the session ends.",
+      "settling": "Ready in a few seconds.",
+      "stop-settling": "Ready in a few seconds.",
+      "revision-after-end": "Your intent was saved after this session ended."
+    },
+    "pressEvents": "Analyze opens while this session runs or once it ends.",
+    "levels": {
+      "none_or_low": "None or low",
+      "medium": "Medium",
+      "high": "High",
+      "extreme": "Extreme",
+      "not_enough": "Not enough recorded yet"
+    },
+    "why": {
+      "baseline-open": "You have given a later direction that is still unsettled, so this reads against a baseline that may not be the one you want."
+    },
+    "clause": "the words of the revision this reading read are not retained",
+    "unverifiable": "not verifiable from available evidence",
+    "reasons": {
+      "ADOPTION_REFUSED": "The prompt or saved goal changed. Review the current goal before analyzing again.",
+      "NOTHING_PRODUCED": "No new reading was produced.",
+      "PROMPT_TIME_UNPUBLISHED": "The prompt time was not published, so it cannot be adopted. Type a goal to analyze drift.",
+      "MODEL_UNREAD": "Reading availability has not been read, so no reading can be offered. Compass asks again with the next update.",
+      "MODEL_OFF": "Model calls are off for this run. Restart without --no-observer-model or its alias --no-harness-usage to allow a reading.",
+      "ROUTE_UNREAD": "Who would read this session is not published, so no analysis is offered. Compass asks again with the next update.",
+      "READINGS_OFF": "Model calls are paused. Nothing is sent until you resume.",
+      "STORE_BUSY": "Another tab or dashboard is saving to the store of what you typed, so nothing was started or spent. Try again in a moment.",
+      "STORE_UNUSABLE": "Compass could not use the file that holds what you typed, so nothing was started or spent.",
+      "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift."
+    }
+  },
+  "summary": {
+    "withheld": {
+      "completion_claim": "Left out: this line said work was done or working, and the record does not back that.",
+      "no_citation": "Left out: this line cited no entry.",
+      "shape_fault": "Left out: this line could not be shown in a form Compass accepts.",
+      "too_long_cut": "Left out: this line was too long to show whole."
+    },
+    "gaps": {
+      "before_window": "This part was not summarized: the summary starts later in the session.",
+      "no_valid_reply": "This part could not be summarized: the model’s reply could not be read.",
+      "no_output": "This part could not be summarized: the model returned nothing, twice.",
+      "refused": "This part could not be summarized: the model call was refused.",
+      "stopped": "This part was not summarized: the summary stopped before it.",
+      "ceiling": "This part was not summarized: the summary reached one of its limits first.",
+      "bytes": "This part was left out: the summary reached the largest size it may be saved at."
+    },
+    "titles": {
+      "completion_claim": "Phase title left out: it used a word that can say work is done, such as “fix” or “done”, which a title may not.",
+      "shape_fault": "Phase title left out: it could not be shown in a form Compass accepts.",
+      "too_long_cut": "Phase title left out: it was too long to show whole."
+    },
+    "unknown": "Compass could not read the whole record now, so it cannot tell whether this summary is current.",
+    "relevance": "Each line cites the entries it rests on. Compass checks that a cited entry exists and what kind it is, not that it supports the line.",
+    "stamps": [
+      {
+        "input": {
+          "model_stamp": "claude:claude-sonnet-5-5:abd972d8a04f77a1a0a13471942962c6",
+          "made_at": 1778585375.403,
+          "job": {
+            "state": "complete"
+          }
+        },
+        "expected": "claude-sonnet-5-5 · summarized at 03:04"
+      },
+      {
+        "input": {
+          "model_stamp": "claude:claude-sonnet-5-5:abd972d8a04f77a1a0a13471942962c6",
+          "made_at": 1778585375.403,
+          "job": {
+            "state": "running"
+          }
+        },
+        "expected": "claude-sonnet-5-5 · updated 03:04 · still running"
+      },
+      {
+        "input": {
+          "model_stamp": "claude:claude-sonnet-5-5:abd972d8a04f77a1a0a13471942962c6",
+          "made_at": 1778585375.403,
+          "job": {
+            "state": "stopping"
+          }
+        },
+        "expected": "claude-sonnet-5-5 · updated 03:04 · still running"
+      }
+    ],
+    "replyCut": "The model’s reply for this part was cut short, so only the phases it finished are shown.",
+    "unlinked": [
+      {
+        "count": 1,
+        "expected": "1 cited entry is an earlier check or file that Full activity does not list, so it cannot be opened from here."
+      },
+      {
+        "count": 3,
+        "expected": "3 cited entries are earlier checks or files that Full activity does not list, so they cannot be opened from here."
+      }
+    ],
+    "ledeReasons": {
+      "stopped": "The summary stopped before every part was summarized.",
+      "bytes": "The summary reached the largest size it may be saved at, so its newest parts were left out.",
+      "ceiling": "The summary reached one of its limits on calls, bytes or time, so the parts after it were not summarized.",
+      "refused": "A model call was refused, so the summary stopped."
+    },
+    "notes": [
+      {
+        "input": {
+          "coverage": {
+            "agent_replies": "read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 2230423,
+            "notes": [],
+            "start_offset": 0,
+            "starts_at": null,
+            "unread": []
+          },
+          "blocks": [
+            {},
+            {}
+          ]
+        },
+        "expected": [
+          "This saved summary used message excerpts; full message coverage was not recorded."
+        ]
+      },
+      {
+        "input": {
+          "coverage": {
+            "agent_replies": "not_read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 2230423,
+            "notes": [],
+            "start_offset": 1,
+            "starts_at": null,
+            "unread": [
+              {
+                "reason": "source_bytes"
+              },
+              {
+                "reason": "source_time"
+              },
+              {
+                "reason": "source_memory"
+              },
+              {
+                "reason": "source_stalled"
+              },
+              {
+                "reason": "source_changed"
+              },
+              {
+                "reason": "oversized_line"
+              },
+              {
+                "reason": "unreadable_record"
+              },
+              {
+                "reason": "unreadable_subagent"
+              }
+            ]
+          },
+          "blocks": [
+            {
+              "span": {
+                "text_version": 1,
+                "first_offset": 1,
+                "first_total": 2,
+                "last_offset": 1,
+                "last_total": 2
+              }
+            },
+            {
+              "gap": true,
+              "reason": "stopped"
+            }
+          ]
+        },
+        "expected": [
+          "Source collection finished for this summary. Some parts were not summarized.",
+          "Long messages were split into fragments. Some fragments were not summarized; citations still open the original entries.",
+          "This saved summary used message excerpts; full message coverage was not recorded.",
+          "This summary starts partway through the session, not at its first entry. Earlier entries were not summarized here.",
+          "The agent’s replies were not read for this harness, so the summary has none.",
+          "Compass reached its source-reading byte limit. Part of the record remains unread.",
+          "Compass reached its source-reading time limit. Part of the record remains unread.",
+          "Compass reached its source-reading memory limit. Part of the record remains unread.",
+          "Compass could not advance through the record within a source page. Part of it remains unread.",
+          "The record changed while Compass was reading it, so the summary stopped before sending it.",
+          "A record line too large to read was skipped.",
+          "A record line could not be read and was skipped.",
+          "Part of a subagent’s record could not be read."
+        ]
+      },
+      {
+        "input": {
+          "coverage": {
+            "agent_replies": "not_read",
+            "checks_and_files": "read",
+            "complete": true,
+            "end_offset": 2230423,
+            "notes": [],
+            "start_offset": 1,
+            "starts_at": null,
+            "unread": [
+              {
+                "reason": "source_bytes"
+              },
+              {
+                "reason": "source_time"
+              },
+              {
+                "reason": "source_memory"
+              },
+              {
+                "reason": "source_stalled"
+              },
+              {
+                "reason": "source_changed"
+              },
+              {
+                "reason": "oversized_line"
+              },
+              {
+                "reason": "unreadable_record"
+              },
+              {
+                "reason": "unreadable_subagent"
+              }
+            ]
+          },
+          "blocks": [
+            {
+              "span": {
+                "text_version": 1,
+                "first_offset": 1,
+                "first_total": 2,
+                "last_offset": 1,
+                "last_total": 2
+              }
+            }
+          ]
+        },
+        "expected": [
+          "Long messages were read in fragments; citations open the original entries.",
+          "This summary starts partway through the session, not at its first entry. Earlier entries were not summarized here.",
+          "The agent’s replies were not read for this harness, so the summary has none.",
+          "Compass reached its source-reading byte limit. Part of the record remains unread.",
+          "Compass reached its source-reading time limit. Part of the record remains unread.",
+          "Compass reached its source-reading memory limit. Part of the record remains unread.",
+          "Compass could not advance through the record within a source page. Part of it remains unread.",
+          "The record changed while Compass was reading it, so the summary stopped before sending it.",
+          "A record line too large to read was skipped.",
+          "A record line could not be read and was skipped.",
+          "Part of a subagent’s record could not be read."
+        ]
+      }
+    ],
+    "freshness": [
+      {
+        "input": {
+          "made_at": 1778585375.403,
+          "out_of_date": {
+            "kind": "unchanged",
+            "action": "update",
+            "new_entries": 0,
+            "affected_blocks": []
+          }
+        },
+        "expected": "Some message text remains unsummarized. Update summary continues from where it stopped."
+      },
+      {
+        "input": {
+          "made_at": 1778585375.403,
+          "out_of_date": {
+            "kind": "appended",
+            "action": "update",
+            "new_entries": 2,
+            "affected_blocks": []
+          }
+        },
+        "expected": "2 new entries since 03:04."
+      },
+      {
+        "input": {
+          "made_at": 1778585375.403,
+          "out_of_date": {
+            "kind": "appended",
+            "action": "update",
+            "new_entries": 1,
+            "affected_blocks": []
+          }
+        },
+        "expected": "1 new entry since 03:04."
+      },
+      {
+        "input": {
+          "made_at": 1778585375.403,
+          "out_of_date": {
+            "kind": "appended",
+            "action": "update",
+            "new_entries": 0,
+            "affected_blocks": []
+          }
+        },
+        "expected": "A check’s result arrived since 03:04."
+      }
+    ],
+    "bullets": [
+      {
+        "input": {
+          "cites": [
+            "fact:44ef45f0bbc5e664"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person asked the agent to coordinate Haiku, Codex and AGY in parallel, with 5-minute monitoring and no machine overload."
+        },
+        "expected": "You asked the agent to coordinate Haiku, Codex and AGY in parallel, with 5-minute monitoring and no machine overload."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:76a0023b5669a9bb"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said it would first check codex and agy installs, core count, and what remained in the milestone."
+        },
+        "expected": "The agent said it would first check codex and agy installs, core count, and what remained in the milestone."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:ca2f0171cb1cbfe1"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent started a monitor that reports every 5 minutes and pauses heavy jobs when load gets too high."
+        },
+        "expected": "The agent started a monitor that reports every 5 minutes and pauses heavy jobs when load gets too high."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:e09919d485eb7012",
+            "fact:2d538043c8a2ec7f"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent found AGY had exited immediately with no output and tested it with a trivial prompt."
+        },
+        "expected": "The agent found AGY had exited immediately with no output and tested it with a trivial prompt."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:613fb5326995b67a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent noticed load climbing to 7.97 with only reviewers running and checked what used the CPU."
+        },
+        "expected": "The agent noticed load climbing to 7.97 with only reviewers running and checked what used the CPU."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:13e168cbcb1fa05c"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent ran the documentation unittest suite, and the check reported not-recorded, as the tool reported."
+        },
+        "expected": "The agent ran the documentation unittest suite, and the check reported not-recorded, as the tool reported."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:c097f89316cd4a2b",
+            "fact:863f72a5df0411d1"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent opened docs PR #9325 after correcting the attribution footer."
+        },
+        "expected": "The agent opened docs PR #9325 after correcting the attribution footer."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:30de88d517812dee"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the docs PR checks were clean and held its merge as outside the milestone plan."
+        },
+        "expected": "The agent said the docs PR checks were clean and held its merge as outside the milestone plan."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:3ac79396453a208e",
+            "fact:b11be3a6e202dcba"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent read the CI workflow files to check the builder's Python 3.11 claim."
+        },
+        "expected": "The agent read the CI workflow files to check the builder's Python 3.11 claim."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:b808925921ba9350",
+            "fact:db06bf80f3cbba16"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent opened stories PR #9326 and said it was merged as 21dab6b6."
+        },
+        "expected": "The agent opened stories PR #9326 and said it was merged as 21dab6b6."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:5116fb88ea89a227",
+            "fact:a6c22bbfdb489016"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent re-armed the monitor after its 30-minute limit."
+        },
+        "expected": "The agent re-armed the monitor after its 30-minute limit."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:86880d81d7eb164c",
+            "fact:5682713503c5035a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent added receipts to DASH-3622 and DASH-3625 and posted a readback on DASH-3628."
+        },
+        "expected": "The agent added receipts to DASH-3622 and DASH-3625 and posted a readback on DASH-3628."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:5682713503c5035a",
+            "fact:28365942599c3f40"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the milestone stood at 97.3% with two issues open."
+        },
+        "expected": "The agent said the milestone stood at 97.3% with two issues open."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:e0802dd26765b328"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent shut down the monitor and checked that nothing it started was still running."
+        },
+        "expected": "The agent shut down the monitor and checked that nothing it started was still running."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:28365942599c3f40"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said load peaked at 12.3 once, when the safety valve paused a builder's job."
+        },
+        "expected": "The agent said load peaked at 12.3 once, when the safety valve paused a builder's job."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:da72601f57ebc7d0"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person asked for a walk of Intent and Drift on this session for DASH-3589."
+        },
+        "expected": "You asked for a walk of Intent and Drift on this session for DASH-3589."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:88fa8eabc2626bfa"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person said the agent could start the latest main on a new port for the walk."
+        },
+        "expected": "You said the agent could start the latest main on a new port for the walk."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:8e8c3a91791d8955",
+            "fact:983eb4c2b518d57a"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent saved the intent on the sidecar at port 4701 while the session was live."
+        },
+        "expected": "The agent saved the intent on the sidecar at port 4701 while the session was live."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:8ea21a94ef4d6137",
+            "fact:118f2a86be50475e",
+            "fact:fae50dbff09e6ebf"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent wrote CopiedCorrectionPresses.test.tsx and mutated SteerBack.tsx to prove the test fails."
+        },
+        "expected": "The agent wrote CopiedCorrectionPresses.test.tsx and mutated SteerBack.tsx to prove the test fails."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:87cbef452e4acb86",
+            "fact:8857baf0328cfa95"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent edited design-frontend-migration.md and ran the documentation unittest suite, which reported not-recorded, as the tool reported."
+        },
+        "expected": "The agent edited design-frontend-migration.md and ran the documentation unittest suite, which reported not-recorded, as the tool reported."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:5f895ecab5024a67",
+            "fact:a31cedb36cb0cacd",
+            "fact:5a2f4f74fd025f65"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent opened PR #9327 and said the reading must wait for the turn to end."
+        },
+        "expected": "The agent opened PR #9327 and said the reading must wait for the turn to end."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:eb5647d25e5b49c0"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person asked the agent to try Analyze on 4701 first."
+        },
+        "expected": "You asked the agent to try Analyze on 4701 first."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:ef8fbc775fbbae2c",
+            "fact:b1446798f0c8c1ed"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent ran a vitest run inside a pipeline, and the tool reported exit 0."
+        },
+        "expected": "The agent ran a vitest run inside a pipeline, and the tool reported exit 0."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:6b8c6576df5a6eb3",
+            "fact:e906eccc17f734b7"
+          ],
+          "kind": "did",
+          "kind_overridden": false,
+          "text": "The agent reran the vitest command bare. The check reported not-recorded, as the tool reported."
+        },
+        "expected": "The agent reran the vitest command bare. The check reported not-recorded, as the tool reported."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:68596527f1479936"
+          ],
+          "kind": "failed",
+          "kind_overridden": true,
+          "text": "The agent ran vitest as a lone command. The check reported failed, as the tool reported."
+        },
+        "expected": "Failed: The agent ran vitest as a lone command. The check reported failed, as the tool reported."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:d36257efc78e5856",
+            "fact:8af070a8ef96ea73"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the second reading was High, citing the failing run at #9, with Steer back offered."
+        },
+        "expected": "The agent said the second reading was High, citing the failing run at #9, with Steer back offered."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:bb8ca4ef66c81feb",
+            "fact:9873f89e9049ea9c"
+          ],
+          "kind": "failed",
+          "kind_overridden": true,
+          "text": "The agent said the vitest runs came from the wrong directory and went back to the worktree."
+        },
+        "expected": "Failed as the tool reported: The agent said the vitest runs came from the wrong directory and went back to the worktree."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:9b2daa6eeb3b2cfc"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person's next message was the pasted correction asking for evidence that the milestone issues were closed."
+        },
+        "expected": "You said: The person's next message was the pasted correction asking for evidence that the milestone issues were closed."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:8acaf99fb6ae8d23",
+            "fact:195110a5dd861259"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent probed the direction endpoint directly. The server opened both directions."
+        },
+        "expected": "The agent probed the direction endpoint directly. The server opened both directions."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:f2f82d6884004230",
+            "fact:f91229580f4c8163",
+            "fact:7c7e394a4429130d",
+            "fact:3acdf4715fae4514"
+          ],
+          "kind": "said",
+          "kind_overridden": true,
+          "text": "The agent captured the page's own request and replayed it in-page. The page still got a refusal."
+        },
+        "expected": "The agent captured the page's own request and replayed it in-page. The page still got a refusal."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:8d9a97cc2010ab9e"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the third reading did not run and the milestone could not close."
+        },
+        "expected": "The agent said the third reading did not run and the milestone could not close."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:8d9a97cc2010ab9e"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said the pasted text had the person's own prefix, so Dashboard did not match it as a copy."
+        },
+        "expected": "The agent said the pasted text had the person's own prefix, so Dashboard did not match it as a copy."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:f68e1f8422d88a04"
+          ],
+          "kind": "asked",
+          "kind_overridden": false,
+          "text": "The person asked the agent to merge PR 9325 and PR 9327 and then dig into DASH-3801."
+        },
+        "expected": "You asked the agent to merge PR 9325 and PR 9327 and then dig into DASH-3801."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:d5e713ad0690df2d"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said #9327 was clean and #9325 was behind main."
+        },
+        "expected": "The agent said #9327 was clean and #9325 was behind main."
+      },
+      {
+        "input": {
+          "cites": [
+            "fact:d5e713ad0690df2d"
+          ],
+          "kind": "said",
+          "kind_overridden": false,
+          "text": "The agent said it would merge #9327 first, update #9325, and wait for its CI."
+        },
+        "expected": "The agent said it would merge #9327 first, update #9325, and wait for its CI."
+      }
+    ],
+    "lede": {
+      "input": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801.",
+      "expected": "The agent coordinated parallel builders on the milestone and opened PRs #9325, #9326 and #9327. The agent said it was merging #9327 first, then updating #9325, after the person asked to merge both and dig into DASH-3801."
+    }
+  }
+}

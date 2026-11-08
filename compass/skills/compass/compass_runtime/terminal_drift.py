@@ -225,7 +225,10 @@ SO_FAR_LINE: Final = (
 # Why a line reads "Can't tell", for the one reason the terminal itself explains: the later message
 # it leaves unsettled. Any other reason is on the session page.
 WHY_WORDS: Final[dict[str, str]] = {
-    "baseline-open": "a message you sent after your goal is not settled",
+    "baseline-open": (
+        "You have given a later direction that is still unsettled, so this reads against "
+        "a baseline that may not be the one you want."
+    ),
 }
 PROVIDER_LABELS: Final[dict[str, str]] = {"codex": "Codex", "claude": "Claude Code"}
 
@@ -831,6 +834,18 @@ def publishes_views(context: object) -> bool:
     return work is not None and isinstance(work.get("drift_views"), list)
 
 
+def unavailable_sentence(view: Mapping[str, Any] | None) -> str:
+    if view is None or view.get("state") != "unavailable":
+        return ""
+    sentence = {
+        "derivation-failed": "Compass could not build this session's drift view",
+        "identity-not-unique": (
+            "Compass could not uniquely identify this session for its drift view"
+        ),
+    }.get(_text(view.get("reason")), "Compass could not read this session's drift view")
+    return f"{sentence}, so nothing was read or spent."
+
+
 def _numbers(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
@@ -1119,6 +1134,8 @@ class _Run:
         self.in_session, self.began, self.note = in_session, began, note
         self.out, self.err, self.clock, self.sleep = out, err, clock, sleep
         self.page = ""
+        self.stage = "before-press"
+        self.owned_job: str | None = None
 
     def left(self) -> float | None:
         """Seconds left of the in-session budget; None at a shell, which waits for the job."""
@@ -1138,7 +1155,34 @@ class _Run:
         return [self.note, *lines] if self.note else lines
 
     def interrupted(self) -> int:
-        _emit(self.err, self.noted([f"{INTERRUPTED} {self.page}".rstrip()]))
+        if self.stage == "ended":
+            sentence = (
+                "Interrupted after the reading ended; check the session page for what it stored:"
+            )
+        elif self.owned_job is not None:
+            return self.cancel(self.owned_job)
+        elif self.stage in {"posting", "answered", "waiting"}:
+            # One bounded exchange, never a search for an owned job: even a job for this same
+            # session may have been started by a tab or another invocation during the POST.
+            payload = self.data()
+            if payload is None:
+                sentence = (
+                    "Interrupted; Compass could not confirm whether a reading is running, "
+                    "so nothing was cancelled:"
+                )
+            elif _job_of(payload, self.key) is not None:
+                sentence = (
+                    "A reading is running now; this run could not confirm it started that job, "
+                    "so nothing was cancelled:"
+                )
+            else:
+                sentence = (
+                    "Interrupted; no reading is running now, so nothing was cancelled; "
+                    "a reading may have finished:"
+                )
+        else:
+            sentence = INTERRUPTED
+        _emit(self.err, self.noted([f"{sentence} {self.page}".rstrip()]))
         return EXIT_INTERRUPTED
 
     def refuse(self, sentence: str) -> int:
@@ -1191,16 +1235,22 @@ class _Run:
             context = self.board.context(_context_project(row), self.key)
         except Lost:
             context = None
-        if _work(context) is None:
-            return self.refuse(f"{CONTEXT_UNREAD} {self.url(row)}")
-        if not publishes_views(context):
-            return self.refuse(
-                "This dashboard does not publish the reading this command prints, so nothing was "
-                f"read. Read the session on its page: {self.url(row)}"
-            )
+        refusal = self.context_refusal(context, row)
+        if refusal:
+            return self.refuse(refusal)
         if _rec(row.get("annotation_assessment")) and not self.again:
             return self.show(payload, row, context, adopted=None)
         return self.press(payload, row)
+
+    def context_refusal(self, context: object, row: Mapping[str, Any]) -> str:
+        if _work(context) is None:
+            return f"{CONTEXT_UNREAD} {self.url(row)}"
+        if not publishes_views(context):
+            return (
+                "This dashboard does not publish the reading this command prints, so nothing was "
+                f"read. Read the session on its page: {self.url(row)}"
+            )
+        return unavailable_sentence(view_of(context, self.harness, self.sid))
 
     def press(self, payload: Mapping[str, Any], row: Mapping[str, Any]) -> int:
         now = self.clock()
@@ -1217,11 +1267,16 @@ class _Run:
         if self.in_session:
             # The server reads the transcript for the person's own typed command for this action.
             body["typed_action"] = "drift again" if self.again else "drift"
+        self.stage = "posting"
         try:
             status, answer = self.board.post("/api/reading", body)
         except Lost:
             return self.refuse(LOST)
+        self.stage = "answered"
         pressed = press_outcome(status, answer, row, now)
+        if 200 <= status < 300 and pressed.job is not None:
+            job_id = pressed.job.get("id")
+            self.owned_job = job_id if isinstance(job_id, str) and job_id else None
         if pressed.refusal:
             return self.refuse(pressed.refusal)
         if pressed.notice is not None:
@@ -1251,6 +1306,7 @@ class _Run:
         Inside a session SIGTERM is the harness ending the tool call, never the reader asking to
         cancel, so it leaves the job running and says so, as running out of time does.
         """
+        self.stage = "waiting"
         job_id = str(job.get("id"))
         seen = _assessment(row)
         said = ""
@@ -1266,6 +1322,8 @@ class _Run:
                     return self.still_reading() if out_of_time else self.refuse(LOST)
                 running = _job_of(payload, self.key)
                 if running is None or running.get("id") != job_id:
+                    self.stage = "ended"
+                    self.owned_job = None
                     break
                 step = self.step(running)
                 if step and step != said:
@@ -1277,7 +1335,7 @@ class _Run:
         except _Terminated:
             return self.still_reading()
         except KeyboardInterrupt:
-            if not pressed:
+            if not pressed or self.owned_job != job_id:
                 _emit(self.out, [f"{STOPPED_WAITING} {self.page}".rstrip()])
                 return EXIT_INTERRUPTED
             return self.cancel(job_id)
@@ -1381,6 +1439,9 @@ class _Run:
         *,
         adopted: str | None,
     ) -> int:
+        refusal = self.context_refusal(context, row)
+        if refusal:
+            return self.refuse(refusal)
         raw = view_of(context, self.harness, self.sid)
         view = adapt(raw) if raw is not None else None
         if view is None or view.malformed:
@@ -1469,5 +1530,5 @@ def run(  # noqa: PLR0913 — the seams `terminal_client` fills and the tests re
     try:
         return drift.main()
     except KeyboardInterrupt:
-        # Only outside the wait, which answers its own interrupt: here no job id is known yet.
+        # The stage and a positively identified owned job survive leaving the wait.
         return drift.interrupted()

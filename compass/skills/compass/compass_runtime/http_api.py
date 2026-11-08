@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import copy
 import errno
 import hashlib
 import ipaddress
@@ -64,6 +65,9 @@ from compass_runtime import reading as runtime_reading
 from compass_runtime import reading_jobs as runtime_reading_jobs
 from compass_runtime import reading_route as runtime_reading_route
 from compass_runtime import snapshot as runtime_snapshot
+from compass_runtime import (
+    state as runtime_state,
+)
 from compass_runtime import stream as runtime_stream
 from compass_runtime.frontend_dev import DevelopmentFrontend
 
@@ -700,9 +704,20 @@ def _with_drift_view(
     and after the copied and Compass-turn marks and the ordinals, because it counts and numbers the
     facts as marked. Unlike `_with_levels` it has no harness gate: Codex gets its line states,
     departures and earlier departures, and no level, which is what the page shows for the same
-    reading. It can never cost the page its context: a reading it cannot derive is left out.
+    reading. It can never cost the page its context: a view it cannot derive is explicitly
+    unavailable.
     """
+
+    def attach(view: dict[str, Any]) -> dict[str, Any]:
+        raw_sources = context.get("sources")
+        sources = raw_sources if isinstance(raw_sources, dict) else {}
+        raw_work = sources.get("work")
+        work = dict(raw_work) if isinstance(raw_work, dict) else {}
+        work["drift_views"] = [copy.deepcopy(view)]
+        return {**context, "sources": {**sources, "work": work}}
+
     harness, sid = focus
+    unavailable = {"harness": harness, "sid": sid, "state": "unavailable"}
     matching = [
         row
         for row in payload.get("sessions", [])
@@ -712,7 +727,7 @@ def _with_drift_view(
         in {str(row.get("project_key") or row.get("project") or ""), str(row.get("project") or "")}
     ]
     if len(matching) != 1:
-        return context
+        return attach({**unavailable, "reason": "identity-not-unique"})
     record: list[dict[str, Any]] | None = None
     try:
         page = _record_page(
@@ -732,19 +747,74 @@ def _with_drift_view(
             application.diagnostic_sink,
         )
     try:
-        view = drift_view.derive(matching[0], payload, context, record)
-    except Exception as exc:  # noqa: BLE001 - a reading this build cannot derive costs no context
+        # Pass the exact derivation inputs as well as digesting them. Collector age/turn clocks
+        # must not rebuild an unchanged reading, and a new dependency must enter this projection.
+        session = {
+            key: value
+            for key, value in matching[0].items()
+            if key.startswith("annotation_")
+            or key
+            in {
+                "harness",
+                "sid",
+                "state",
+                "ended_at",
+                "copied_prompts",
+                "instruction",
+                "first_prompt",
+                "first_prompt_at",
+                "prompt_states_work",
+                "title",
+                "prompt_at",
+                "session_goal",
+                "first_prompt_control",
+            }
+        }
+        inputs = {
+            key: payload.get(key) for key in ("annotate", "annotate_unreadable", "reading_routes")
+        }
+        raw_sources = context.get("sources")
+        sources = raw_sources if isinstance(raw_sources, dict) else {}
+        raw_work = sources.get("work")
+        work = raw_work if isinstance(raw_work, dict) else {}
+        raw_semantic = context.get("semantic")
+        semantic = raw_semantic if isinstance(raw_semantic, dict) else {}
+        work_inputs = {
+            key: work.get(key)
+            for key in ("omitted", "line_requests", "analysis_levels", "live_levels")
+        }
+        monitor = work.get("live_monitor")
+        work_inputs["live_monitor"] = (
+            {"on": monitor.get("on"), "level": monitor.get("level")}
+            if isinstance(monitor, dict)
+            else None
+        )
+        keyed_context = {
+            "semantic": {"facts": semantic.get("facts")},
+            "sources": {"work": work_inputs},
+        }
+        digest = hashlib.sha256(
+            json.dumps([session, inputs, keyed_context, record], sort_keys=True).encode()
+        ).hexdigest()
+        state = application.state
+        with state.drift_view_lock:
+            cached = state.drift_view_cache.get(digest)
+            if cached is not None:
+                return attach(cached)
+            view = drift_view.derive(session, inputs, keyed_context, record)
+            runtime_state.bounded_put(
+                state.drift_view_cache,
+                digest,
+                view,
+                limit=min(128, application.config.max_cache_entries),
+            )
+            return attach(view)
+    except Exception as exc:  # noqa: BLE001 - an unavailable view costs no context
         runtime_io.diag(
             f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
             application.diagnostic_sink,
         )
-        return context
-    raw_sources = context.get("sources")
-    sources: dict[str, Any] = raw_sources if isinstance(raw_sources, dict) else {}
-    raw_work = sources.get("work")
-    work: dict[str, Any] = dict(raw_work) if isinstance(raw_work, dict) else {}
-    work["drift_views"] = [view]
-    return {**context, "sources": {**sources, "work": work}}
+        return attach({**unavailable, "reason": "derivation-failed"})
 
 
 def _with_levels(
