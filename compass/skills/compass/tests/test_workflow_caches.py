@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -47,17 +48,27 @@ def workflows() -> dict[str, dict[str, Any]]:
     }
 
 
+# Any expression that names the secrets context: `secrets.X`, `secrets['X']`, `toJSON(secrets)`,
+# in any letter case. A plain "secrets" in a run script is not an expression and does not count.
+_EXPRESSION_RE = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
+_SECRETS_RE = re.compile(r"\bsecrets\b", re.IGNORECASE)
+
+
+def names_a_secret(value: object) -> bool:
+    return any(_SECRETS_RE.search(expr) for expr in _EXPRESSION_RE.findall(json.dumps(value)))
+
+
 def holds_write_credential(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
     """Whether the job's token can write, or it holds a secret. Fails closed on an unread shape."""
     # A deploy key arrives as a secret beside a read-only token (release.yml's `marketplace` and
     # `homebrew`), and nothing here can tell which secrets write, so every one counts.
-    if "secrets" in job or "secrets." in json.dumps(job):
+    if "secrets" in job or names_a_secret(job):
         return True
     # Workflow env reaches this job except for names the job replaces. Do not scan the whole
     # workflow: that would attribute a publisher's secret to unrelated read-only jobs.
     inherited_env = {**(workflow.get("env") or {}), **(job.get("env") or {})}
     inherited = {"env": inherited_env, "defaults": workflow.get("defaults")}
-    if "secrets." in json.dumps(inherited):
+    if names_a_secret(inherited):
         return True
     if "permissions" in job:
         permissions = job["permissions"]
@@ -233,6 +244,23 @@ class WriteCredentialRestoresNoCacheTest(unittest.TestCase):
                         holds_write_credential(workflow, job),
                         "an inherited secret must close the cache boundary",
                     )
+
+    def test_a_reader_is_protected_from_every_spelling_of_a_secret(self) -> None:
+        for reference in (
+            "${{ secrets['DEPLOY_KEY'] }}",
+            '${{ secrets["DEPLOY_KEY"] }}',
+            "${{ toJSON(secrets) }}",
+            "${{ SECRETS.DEPLOY_KEY }}",
+        ):
+            for place in ("job", "workflow"):
+                workflow: dict[str, Any] = {"permissions": "read-all"}
+                job: dict[str, Any] = {"permissions": {"contents": "read"}}
+                (job if place == "job" else workflow)["env"] = {"KEY": reference}
+                with self.subTest(reference=reference, place=place):
+                    self.assertTrue(holds_write_credential(workflow, job))
+        workflow = {"permissions": "read-all", "env": {"TOKEN": "${{ github.token }}"}}
+        job = {"permissions": {"contents": "read"}, "steps": [{"run": "echo no secrets here"}]}
+        self.assertFalse(holds_write_credential(workflow, job))
 
     def test_a_reader_does_not_inherit_another_jobs_secret_or_replaced_environment(self) -> None:
         reference = "${{ secrets.DEPLOY_KEY }}"

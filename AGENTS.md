@@ -659,7 +659,10 @@ do either. The verification-log exposure is closed: every frontend job installs 
 with scripts denied and no setup action to restore or save `lockfile-verified.jsonl`. The previous pnpm/setup
 restored that log unconditionally, letting a saved verdict skip pnpm's supply-chain policy checks.
 Every frontend job now starts without that shared verdict; the frozen lockfile, package integrity
-checks and script-denied dependency install remain enforced. `test_workflow_caches.py` rejects both
+checks and script-denied dependency install remain enforced. One check was lost: pnpm/setup verified
+the pnpm download against a signing key pinned in the action, while the npm install checks only the
+integrity the registry itself serves, so the pnpm binary is pinned by version alone until a committed
+bootstrap lockfile holds its hashes (DRC-5247). No job that holds a write token or a secret runs npm or pnpm. `test_workflow_caches.py` rejects both
 implicit setup caches and explicit cache restore/save actions in these jobs.
 Every frontend job, `frontend-contract` and
 `frontend-docs` are in the aggregator's `needs` (the comment job is not), and a skipped result passes
