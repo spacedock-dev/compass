@@ -31,6 +31,11 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
     def _post(self, port: Any, payload: Any, **kwargs: Any) -> tuple[int, bytes]:
         return self.api._post(port, payload, **kwargs)
 
+    def _board(self, port: Any) -> tuple[Any, bytes]:
+        code, headers, body = api_tests.CompassServerTest._get_headers(port, "/api/data")
+        self.assertEqual(200, code, body)
+        return headers, body
+
     def _body(self, **changes: Any) -> dict[str, Any]:
         return {
             "harness": "codex",
@@ -52,13 +57,12 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
             mock.patch.object(shutil, "which", return_value="/bin/codex"),
             self._serving(app) as port,
         ):
-            get = api_tests.CompassServerTest._get_headers
-            _, before, _ = get(port, "/api/data")
+            before, _ = self._board(port)
             for allowed in (True, False):
                 status, raw = self._post(port, self._body(unasked_grant=allowed))
                 self.assertEqual(200, status, raw)
                 reply = json.loads(raw)
-                _, headers, board = get(port, "/api/data")
+                headers, board = self._board(port)
                 self.assertEqual(headers["X-Compass-Revision"], reply.get("board_revision"))
                 self.assertEqual(json.loads(board)["reading"], reply["reading"])
                 self.assertEqual(allowed, reply["reading"]["words"]["codex"])
