@@ -296,6 +296,8 @@ with `--unasked-readings` on. Claude Code checks its own sessions, Codex checks 
 and Antigravity prefer Claude Code, falling back only when the preferred provider is unavailable or
 unqualified. Codex needs permission for the current destination from "Allow Codex to run unasked
 checks" in the session's Drift card; Attention points to it when saved typed goals are waiting.
+If a stored Codex grant no longer applies, Attention says "Unasked checks cannot run", explains
+why when the server can say, and links the affected sessions without inviting another grant.
 A harness with no session record reader shows why checks cannot run and offers no grant switch
 or Attention permission entry. A stored Codex grant stays revocable there.
 Claude Code needs no separate grant. Revoking Codex permission, Pause model calls and

@@ -179,6 +179,7 @@ export interface CorrectionReceipt {
 }
 
 export interface ReadingReceipt {
+  readonly board_revision?: string;
   readonly notice?: ModelNoticeRecord;
   readonly ok?: boolean;
   readonly produced?: boolean;

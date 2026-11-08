@@ -1307,6 +1307,16 @@
       "disposition": "stable-identity"
     },
     {
+      "name": "A Codex unasked-check permission reply",
+      "owner": "DRC-4825",
+      "oracles": [
+        "frontend/src/drift/UnaskedPermission.test.tsx",
+        "frontend/stories/UnaskedChecks.stories.tsx"
+      ],
+      "contract": "Permission replies and announcements apply only to the accepted board generation at dispatch. A newer accepted board remains authoritative even if the follow-up refresh fails. Without a newer board, the reply updates the switch and Attention until the next accepted board replaces its overlay.",
+      "disposition": "store-held"
+    },
+    {
       "name": "A reader-requested reading in the drift block",
       "owner": "DRC-4825",
       "oracles": [

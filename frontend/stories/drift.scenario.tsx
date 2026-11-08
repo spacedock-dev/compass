@@ -144,6 +144,16 @@ export interface Scenario {
     readonly refreshedPlan: unknown;
   };
   readonly reading?: ReadingScenario;
+  /** A delayed permission reply, with a newer board arriving before it and a failed follow-up read. */
+  readonly permissionReply?: {
+    readonly body: Record<string, unknown> | null;
+    readonly posts: Record<string, unknown>[];
+    readonly status?: number;
+    boardReading?: Record<string, unknown>;
+    boardRevision?: string;
+    failRefresh?: boolean;
+    release?: () => void;
+  };
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
   readonly lease?: LeaseScenario;
   /** Filled in on mount: the tab, which a story hides and shows as a reader's browser does. */
@@ -265,7 +275,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
     const env = createFakeEnvironment({ clock });
     let generation = 1000;
     let marked: boolean | null = null;
-    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
     let job: Record<string, unknown> | null = null;
     /* The page's switch for the GitHub read: a server that holds it, and `flag-off` is the run's own flag,
        which a press cannot lift. */
@@ -348,6 +358,13 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const index = scenario.reading.posts.length;
           scenario.reading.posts.push(body);
           if (typeof body['unasked_grant'] === 'boolean') {
+            if (scenario.permissionReply) {
+              const permission = scenario.permissionReply;
+              permission.posts.push(body);
+              return new Promise<Response>((resolve) => {
+                permission.release = () => resolve(json(permission.body, permission.status ?? 200));
+              });
+            }
             reading = {
               ...POLICY,
               words: { codex: body['unasked_grant'] },
@@ -412,8 +429,10 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           );
           return json(scenario.correction);
         }
-        if (url.startsWith('/api/data'))
-          return json({
+        if (url.startsWith('/api/data') && scenario.permissionReply?.failRefresh)
+          return new Response('{}', { status: 503 });
+        if (url.startsWith('/api/data')) {
+          const response = json({
             generated: generation++,
             annotate: true,
             annotate_cap: 240,
@@ -424,7 +443,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             },
             ...(scenario.payload ?? {}),
             ...afterRefusal,
-            reading,
+            reading: scenario.permissionReply?.boardReading ?? reading,
             ...(job ? { reading_jobs: { [`${harness}:s1`]: job } } : {}),
             sessions: [
               {
@@ -444,6 +463,9 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
               },
             ],
           });
+          response.headers.set('X-Compass-Revision', scenario.permissionReply?.boardRevision ?? '');
+          return response;
+        }
         if (url.startsWith('/api/project-context'))
           return json({
             semantic: { facts: scenario.facts ?? [] },

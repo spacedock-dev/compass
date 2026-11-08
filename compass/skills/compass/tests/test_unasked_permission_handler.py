@@ -9,6 +9,7 @@ from email.message import Message
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
+from urllib.parse import urlparse
 
 from compass_runtime import http_api, reading_policy
 
@@ -19,6 +20,17 @@ class UnaskedGrantHandlerTest(socket_tests.UnaskedGrantHTTPTest):
     @contextlib.contextmanager
     def _serving(self, application: Any) -> Any:
         yield application
+
+    def _board(self, port: Any) -> tuple[Any, bytes]:
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(application=port)
+        sent: list[tuple[Any, bytes]] = []
+        handler._send = mock.Mock(
+            side_effect=lambda body, _ctype, **kwargs: sent.append((kwargs["headers"], body))
+        )
+        handler._data(urlparse("/api/data"))
+        self.assertEqual(1, len(sent))
+        return sent[0]
 
     def _post(self, port: Any, payload: Any, **kwargs: Any) -> tuple[int, bytes]:
         handler: Any = object.__new__(http_api._RequestHandler)

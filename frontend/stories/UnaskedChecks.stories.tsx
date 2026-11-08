@@ -1,6 +1,9 @@
+import overtakenReply from '../test/fixtures/client-contract/reading-unasked-revoke-overtaken.json';
+import regrantedBoard from '../test/fixtures/client-contract/data-unasked-regranted.json';
+import revokeReply from '../test/fixtures/client-contract/reading-unasked-revoked.json';
 import dormantBoard from '../test/fixtures/client-contract/data-unasked-dormant.json';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { DriftScenario, readingScenario, routeOf, type Scenario } from './drift.scenario';
 
 const meta = { title: 'Drift/Unasked check permission', component: DriftScenario } satisfies Meta<
@@ -33,6 +36,16 @@ const scenario = (patch: Partial<Scenario> = {}): Scenario => ({
 });
 const off = 'Allow Codex to run unasked checks';
 const on = off;
+
+async function expectCueLinkColour(cue: HTMLElement) {
+  const token = document.createElement('span');
+  token.style.color = 'var(--ink)';
+  cue.append(token);
+  const colour = getComputedStyle(token).color;
+  token.remove();
+  for (const link of within(cue).getAllByRole('link'))
+    await expect(getComputedStyle(link).color).toBe(colour);
+}
 
 export const WaitingWithToggleOff: Story = {
   args: { scenario: scenario() },
@@ -69,10 +82,12 @@ export const Granting: Story = {
 };
 
 const revoking = readingScenario([]);
+const revokingNav: NonNullable<Scenario['nav']> = {};
 export const Revoking: Story = {
   args: {
     scenario: scenario({
       reading: revoking,
+      nav: revokingNav,
       payload: {
         unasked: true,
         unasked_routes: { codex: route },
@@ -92,6 +107,11 @@ export const Revoking: Story = {
     );
     await expect(revoking.posts).toHaveLength(1);
     await expect(revoking.posts[0]).toMatchObject({ unasked_grant: false });
+    revokingNav.go?.('#n=attention');
+    await expect(
+      await canvas.findByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
   },
 };
 
@@ -201,6 +221,7 @@ export const AttentionPointsToTheToggle: Story = {
     const cue = await canvas.findByRole('region', {
       name: 'Unasked checks waiting for permission',
     });
+    await expectCueLinkColour(cue);
     await expect(cue).toHaveTextContent('Allow Codex to run unasked checks');
     await userEvent.click(within(cue).getByRole('link', { name: 'Synthetic session' }));
     await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
@@ -403,3 +424,239 @@ export const AttentionDoesNotInviteReaderWithCoveredGrant = attentionWithGrant({
   off: false,
   words: { codex: true },
 });
+
+const dormantNav: NonNullable<Scenario['nav']> = {};
+
+// No check has ever run: a dormant grant cannot establish a history of stopped checks.
+export const ReaderFindsSessionsWhoseStoredGrantCannotRunChecks: Story = {
+  args: {
+    scenario: scenario({
+      initialView: 'attention',
+      session: { departure_checked: false },
+      nav: dormantNav,
+      payload: {
+        unasked: true,
+        unasked_routes: { codex: route },
+        reading: dormantBoard.response.body.reading,
+      },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cue = await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+    await expect(
+      within(cue).getByRole('heading', { name: 'Unasked checks cannot run' }),
+    ).toBeVisible();
+    await expect(within(cue).getByText(dormantNote, { exact: true })).toBeVisible();
+    await expectCueLinkColour(cue);
+    const links = within(cue).getAllByRole('link');
+    await expect(links).toHaveLength(1);
+    await expect(links[0]).toHaveAccessibleName('Synthetic session');
+    await expect(links[0]).toHaveAttribute('href', expect.stringContaining('codex'));
+    await expect(cue).not.toHaveTextContent(/stopped|needs your permission|Allow Codex/);
+    await expect(
+      canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    await expect(within(cue).queryByRole('switch')).toBeNull();
+    const link = links[0];
+    if (!link) throw new Error('The affected session is missing');
+    await userEvent.click(link);
+    await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(canvas.getByText(dormantNote, { exact: true })).toBeVisible();
+    dormantNav.go?.('#n=attention');
+    await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+  },
+};
+
+const lateRevoke = {
+  body: revokeReply.response.body,
+  posts: [] as Record<string, unknown>[],
+} satisfies NonNullable<Scenario['permissionReply']>;
+const lateRevokeScenario = scenario({
+  reading: readingScenario([]),
+  permissionReply: lateRevoke,
+  board: {},
+  nav: {},
+  payload: {
+    unasked: true,
+    unasked_routes: { codex: route },
+    reading: dormantBoard.response.body.reading,
+  },
+});
+export const ReaderKeepsNewerGrantWhenAnOldRevokeArrives: Story = {
+  args: { scenario: lateRevokeScenario },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const permission = lateRevokeScenario.permissionReply;
+    if (!permission) throw new Error('The delayed permission reply is missing');
+    await userEvent.click(await canvas.findByRole('switch', { name: off }));
+    await expect(permission.posts.at(-1)).toMatchObject({ unasked_grant: false });
+    permission.boardReading = regrantedBoard.response.body.reading;
+    permission.boardRevision = regrantedBoard.response.headers['X-Compass-Revision'];
+    await lateRevokeScenario.board?.refresh?.();
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    permission.failRefresh = true;
+    permission.release?.();
+    await waitFor(() => expect(canvas.getByRole('switch', { name: off })).toBeEnabled());
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    await expect(canvas.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+    lateRevokeScenario.nav?.go?.('#n=attention');
+    await canvas.findByRole('heading', { name: /^Attention$/ });
+    await expect(
+      canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  },
+};
+
+export const ReaderIsToldWhenTheDormantExplanationIsMissing: Story = {
+  args: {
+    scenario: scenario({
+      initialView: 'attention',
+      payload: {
+        unasked: true,
+        unasked_routes: { codex: route },
+        reading: { ...dormantBoard.response.body.reading, dormant: {} },
+      },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cue = await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+    await expect(cue).toHaveTextContent(
+      'Your saved Codex permission does not cover these sessions now. The reason is not available.',
+    );
+    await expect(within(cue).getByRole('link', { name: 'Synthetic session' })).toBeVisible();
+    await expect(cue).not.toHaveTextContent(/stopped|needs your permission|Allow Codex/);
+  },
+};
+
+const earlierBoardScenario = scenario({
+  reading: readingScenario([]),
+  permissionReply: {
+    body: revokeReply.response.body,
+    posts: [],
+    boardRevision: dormantBoard.response.headers['X-Compass-Revision'],
+  },
+  board: {},
+  payload: {
+    unasked: true,
+    unasked_routes: { codex: route },
+    reading: dormantBoard.response.body.reading,
+  },
+});
+export const ReaderSeesRevokeAfterAnOlderBoardArrives: Story = {
+  args: { scenario: earlierBoardScenario },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const permission = earlierBoardScenario.permissionReply;
+    if (!permission) throw new Error('The delayed permission reply is missing');
+    await userEvent.click(await canvas.findByRole('switch', { name: off }));
+    await earlierBoardScenario.board?.refresh?.();
+    permission.failRefresh = true;
+    permission.release?.();
+    await waitFor(() => expect(canvas.getByRole('switch', { name: off })).toBeEnabled());
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    await expect(
+      canvas.getByText('Codex permission for unasked checks revoked.'),
+    ).toBeInTheDocument();
+  },
+};
+
+function unansweredAfterBoard(
+  status: number,
+  body: Record<string, unknown> | null,
+  message: string,
+): Story {
+  const pending = scenario({
+    reading: readingScenario([]),
+    board: {},
+    permissionReply: { body, status, posts: [] },
+  });
+  return {
+    args: { scenario: pending },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.click(await canvas.findByRole('switch', { name: off }));
+      await pending.board?.refresh?.();
+      if (!pending.permissionReply) throw new Error('The delayed permission reply is missing');
+      pending.permissionReply.failRefresh = true;
+      pending.permissionReply.release?.();
+      await expect(await canvas.findByText(message)).toBeVisible();
+      await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+    },
+  };
+}
+export const ReaderSeesRefusalAfterAnotherBoardArrives = unansweredAfterBoard(
+  409,
+  { ok: false, reason: 'destination-changed' },
+  'Where Codex sends your words changed. Check the destination shown here and try again.',
+);
+export const ReaderSeesUnconfirmedReplyAfterAnotherBoardArrives = unansweredAfterBoard(
+  500,
+  null,
+  'Permission could not be confirmed. Refresh before trying again.',
+);
+
+function endedSession(reading: Record<string, unknown>): Story {
+  return {
+    args: {
+      scenario: scenario({
+        initialView: 'attention',
+        session: { state: 'ended', ended_at: 1000 },
+        payload: { unasked: true, reading, unasked_routes: { codex: route } },
+      }),
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      await canvas.findByRole('heading', { name: /^Attention$/ });
+      await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+      await expect(
+        canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+      ).toBeNull();
+    },
+  };
+}
+export const ReaderIsNotAskedToRebindAnEndedSession = endedSession(
+  dormantBoard.response.body.reading,
+);
+export const ReaderIsNotAskedToGrantAnEndedSession = endedSession(
+  revokeReply.response.body.reading,
+);
+
+const overtakenScenario = scenario({
+  reading: readingScenario([]),
+  permissionReply: { body: overtakenReply.response.body, posts: [] },
+  payload: {
+    unasked: true,
+    unasked_routes: { codex: route },
+    reading: dormantBoard.response.body.reading,
+  },
+});
+export const ReaderHearsTheGrantThatOvertookTheirRevoke: Story = {
+  args: { scenario: overtakenScenario },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const permission = overtakenScenario.permissionReply;
+    if (!permission) throw new Error('The delayed permission reply is missing');
+    await userEvent.click(await canvas.findByRole('switch', { name: off }));
+    await expect(permission.posts.at(-1)).toMatchObject({ unasked_grant: false });
+    permission.failRefresh = true;
+    permission.release?.();
+    await waitFor(() => expect(canvas.getByRole('switch', { name: off })).toBeEnabled());
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    await expect(
+      canvas.getByText('Codex permission for unasked checks granted.'),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+  },
+};

@@ -3332,8 +3332,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # The reader-requested cap is not the lane's bound, so a spent day still saves.
         accepted = answer["reason"] in {"", "daily-cap"}
         application.state.snapshot.clear()
+        # Collect behind any in-flight pre-write board. The policy and revision
+        # travel together from one immutable snapshot, exactly as /api/data serves
+        # them; stamping the earlier `answer` with a later cursor would misorder a
+        # concurrent grant. See docs/design-reader-state.md.
+        revision, board = application.collect_json(show_all=False)
         self._send(
-            self._reading_json({"ok": accepted, "produced": False, "reading": answer}),
+            self._reading_json(
+                {
+                    "ok": accepted,
+                    "produced": False,
+                    "reading": json.loads(board)["reading"],
+                    "board_revision": runtime_snapshot.format_revision(revision),
+                }
+            ),
             "application/json",
             200 if accepted else 409 if answer["off"] else 503,
         )

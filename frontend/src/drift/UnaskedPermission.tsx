@@ -3,7 +3,8 @@ import { payloadSessions } from '../api/bootstrap';
 import { exactIdentity } from '../api/identity';
 import { annotationOf } from '../intent/annotation';
 import { answered } from '../intent/context';
-import { isRecord, type Row } from '../observed';
+import { endedAt, isRecord, type Row } from '../observed';
+import { revisionNewer } from '../transport/revision';
 import { RouteAnchor } from '../sessions';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
@@ -94,6 +95,7 @@ export function UnaskedPermission({
     );
     if (!press) return;
     setMessage('');
+    const requestedCount = shell.runtime.store.getSnapshot().acceptedCount;
     try {
       const response = answered(
         await shell.runtime.client.postReading(
@@ -111,20 +113,35 @@ export function UnaskedPermission({
       );
       if (response.kind === 'answered' && response.body) {
         const body = response.body as Row;
-        if (isRecord(body['reading'])) showReading(ctx, body['reading']);
         if (!response.ok || body['ok'] !== true)
           setMessage(
             REFUSED[String(body['reason'] ?? '')] ||
               (isRecord(body['reading']) ? policyReason(body['reading']) : '') ||
               'Permission was not saved. Try again.',
           );
-        else
-          shell.announcer.announce(
-            'unasked-grant',
-            allowed
-              ? 'Codex permission for unasked checks revoked.'
-              : 'Codex permission for unasked checks granted.',
-          );
+        else {
+          const snapshot = shell.runtime.store.getSnapshot();
+          // Only success competes with board state. Refused and lost replies
+          // changed nothing and always answer the reader. With a board since the
+          // press, compare the policy's own revision, not its arrival time.
+          // See docs/design-reader-state.md.
+          if (
+            typeof body['board_revision'] === 'string'
+              ? revisionNewer(body['board_revision'], snapshot.revision)
+              : snapshot.acceptedCount === requestedCount
+          ) {
+            if (isRecord(body['reading'])) showReading(ctx, body['reading']);
+            const granted = isRecord(body['reading'])
+              ? stored({ reading: body['reading'] })
+              : !allowed;
+            shell.announcer.announce(
+              'unasked-grant',
+              granted
+                ? 'Codex permission for unasked checks granted.'
+                : 'Codex permission for unasked checks revoked.',
+            );
+          }
+        }
       } else setMessage('Permission could not be confirmed. Refresh before trying again.');
       await shell.runtime.refresh();
     } finally {
@@ -212,10 +229,16 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
   const overlay = useSyncExternalStore(ctx.drift.subscribe, ctx.drift.getOverlay);
   const count = useDisplayed((snapshot) => snapshot.acceptedCount);
   const current = overlaid(payload, overlay, count);
-  if (current['unasked'] !== true || stored(current)) return null;
+  if (current['unasked'] !== true) return null;
+  const dormant = stored(current);
+  const policy = current['reading'];
+  const words = isRecord(policy) ? policy['words'] : null;
+  // Only an explicit uncovered answer establishes dormancy; a missing answer is not a finding.
+  if (dormant && (!isRecord(words) || words['codex'] !== false)) return null;
   const refusal = unaskedRefusal(current);
   const waiting = payloadSessions(current as never).rows.filter(
     (session) =>
+      endedAt(session as unknown as Row) === null &&
       typedGoal(session as unknown as Row) &&
       unaskedRoute(current, session as unknown as Row)?.['provider'] === 'codex',
   );
@@ -224,23 +247,34 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
   const never = waiting.every(
     (session) => (session as unknown as Row)['departure_checked'] !== true,
   );
+  const heading = dormant ? 'Unasked checks cannot run' : 'Unasked checks waiting for permission';
+  const dormantNote =
+    isRecord(policy) && isRecord(policy['dormant']) ? policy['dormant']['codex'] : '';
   return (
     <section
-      aria-label="Unasked checks waiting for permission"
+      aria-label={heading}
       className="next-attention-section"
       data-next-attention-section="unasked"
     >
       <div className="next-attention-section-heading">
-        <h2>Unasked checks waiting for permission</h2>
+        <h2>{heading}</h2>
       </div>
-      <p>
-        Compass is set to check these sessions against the goal you typed while you are away, and
-        Codex runs those checks. Codex needs your permission first, so{' '}
-        {never ? 'none of them has been checked yet.' : 'they are not being checked now.'} Open a
-        session below and use “Allow Codex to run unasked checks” in its Drift card.
-      </p>
+      {dormant ? (
+        <p>
+          {typeof dormantNote === 'string' && dormantNote.trim()
+            ? dormantNote
+            : 'Your saved Codex permission does not cover these sessions now. The reason is not available.'}
+        </p>
+      ) : (
+        <p>
+          Compass is set to check these sessions against the goal you typed while you are away, and
+          Codex runs those checks. Codex needs your permission first, so{' '}
+          {never ? 'none of them has been checked yet.' : 'they are not being checked now.'} Open a
+          session below and use “Allow Codex to run unasked checks” in its Drift card.
+        </p>
+      )}
       {refusal ? <p>{refusal}</p> : null}
-      <ul>
+      <ul className="next-attention-risk-identity">
         {waiting.map((session) => (
           <li key={`${session.harness}:${session.sid}`}>
             <RouteAnchor

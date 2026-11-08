@@ -1,3 +1,5 @@
+import overtakenReply from '../../test/fixtures/client-contract/reading-unasked-revoke-overtaken.json';
+import regrantedBoard from '../../test/fixtures/client-contract/data-unasked-regranted.json';
 import dormantBoard from '../../test/fixtures/client-contract/data-unasked-dormant.json';
 import revokedBoard from '../../test/fixtures/client-contract/data-unasked-revoked.json';
 import revokeReply from '../../test/fixtures/client-contract/reading-unasked-revoked.json';
@@ -379,5 +381,285 @@ describe('A reader with a Codex grant saved for an earlier destination', () => {
     );
     expect(screen.getByText(/This permission covers every session/)).toBeTruthy();
     expect(screen.queryByText(dormantNote)).toBeNull();
+  });
+});
+
+describe('A reader following permission changes across board refreshes', () => {
+  it('a reader hears the returned grant when another reader overtakes their revoke', async () => {
+    const page = mountDrift({
+      payload: { ...payload(), reading: dormantPolicy },
+      routes: { '/api/reading': () => json(overtakenReply.response.body) },
+    });
+    await page.settle();
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    expect(readingPosts(page)[0]?.body?.['unasked_grant']).toBe(false);
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByText('Codex permission for unasked checks granted.')).toBeTruthy();
+    expect(screen.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+  });
+
+  it.each([
+    [
+      409,
+      { ok: false, reason: 'destination-changed' },
+      'Where Codex sends your words changed. Check the destination shown here and try again.',
+    ],
+    [500, null, 'Permission could not be confirmed. Refresh before trying again.'],
+  ])(
+    'a reader sees the %s answer after an unrelated board arrives mid-grant',
+    async (status, body, message) => {
+      const page = mountDrift({
+        payload: payload(),
+        routes: { '/api/reading': () => 'hold' },
+      });
+      await page.settle();
+      await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+      await page.poll(
+        driftBoard({
+          payload: payload(),
+          session: { title: 'An unrelated wake refreshed the board' },
+        }),
+      );
+      page.state.routes['/api/data'] = () => json({}, 503);
+      await page.release('/api/reading', json(body, status));
+      expect(
+        within(screen.getByRole('region', { name: 'Unasked checks' })).getByRole('status')
+          .textContent,
+      ).toBe(message);
+      expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+        'false',
+      );
+    },
+  );
+
+  it('a reader sees the revoke after an older in-flight board arrives and refresh fails', async () => {
+    const page = mountDrift({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading: dormantPolicy },
+      routes: { '/api/reading': () => 'hold' },
+    });
+    await page.settle();
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    // This is the board collected before the revoke, delivered while its reply is held.
+    page.state.routes['/api/data'] = () =>
+      new Response(
+        JSON.stringify(
+          driftBoard({
+            store: { goal_source: 'typed' },
+            payload: { ...payload(), reading: dormantPolicy },
+          }),
+        ),
+        { headers: dormantBoard.response.headers },
+      );
+    await page.poll(page.state.data);
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await page.release('/api/reading', json(revokeReply.response.body));
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    expect(screen.getByText('Codex permission for unasked checks revoked.')).toBeTruthy();
+    await page.go('#n=attention');
+    expect(
+      screen.getByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  });
+
+  it('keeps the newer grant when a late revoke arrives and the next refresh fails', async () => {
+    const page = mountDrift({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading: dormantPolicy },
+      routes: { '/api/reading': () => 'hold' },
+    });
+    await page.settle();
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    expect(readingPosts(page)[0]?.body?.['unasked_grant']).toBe(false);
+    page.state.routes['/api/data'] = () =>
+      new Response(
+        JSON.stringify(
+          driftBoard({
+            store: { goal_source: 'typed' },
+            payload: { ...payload(), reading: regrantedBoard.response.body.reading },
+          }),
+        ),
+        { headers: regrantedBoard.response.headers },
+      );
+    await page.poll(page.state.data);
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await page.release('/api/reading', json(revokeReply.response.body));
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+    await page.go('#n=attention');
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  });
+
+  it('sees an ordinary revoke in both the switch and Attention even if refresh fails', async () => {
+    const page = mountDrift({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading: regrantedBoard.response.body.reading },
+      routes: {
+        '/api/reading': () => json(revokeReply.response.body),
+      },
+    });
+    await page.settle();
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    await page.go('#n=attention');
+    expect(
+      screen.getByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  });
+});
+
+const cannotRun = 'Unasked checks cannot run';
+describe('A reader finding sessions a dormant grant cannot check', () => {
+  it('finds each affected session once with the server explanation and no fresh grant invitation', async () => {
+    const data = driftBoard({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading: dormantPolicy },
+    });
+    const first = data.sessions[0];
+    if (!first) throw new Error('The affected session fixture is missing');
+    const page = mountDrift({ hash: '#n=attention' });
+    await page.settle();
+    await page.poll({
+      ...data,
+      sessions: [first, { ...first, sid: 's2', title: 'Second affected session' }],
+    });
+    const cue = screen.getByRole('region', { name: cannotRun });
+    expect(within(cue).getByRole('heading', { name: cannotRun })).toBeTruthy();
+    expect(within(cue).getByText(dormantNote, { exact: true })).toBeTruthy();
+    const links = within(cue).getAllByRole('link');
+    expect(links).toHaveLength(2);
+    expect(links.map((link) => link.textContent)).toEqual([first.title, 'Second affected session']);
+    expect(links[0]?.getAttribute('href')).toContain('s1');
+    expect(links[1]?.getAttribute('href')).toContain('s2');
+    expect(cue.textContent).not.toMatch(/stopped|needs your permission|Allow Codex/);
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    expect(within(cue).queryByRole('switch')).toBeNull();
+    expect(readingPosts(page)).toHaveLength(0);
+  });
+
+  it.each([
+    ['covered grant', policy(true), CODEX, {}, true],
+    ['revoked grant', revokedPolicy, CODEX, {}, true],
+    ['Claude-routed session', dormantPolicy, ROUTE, {}, true],
+    ['unsupported record reader', dormantPolicy, unavailableRoute, {}, true],
+    ['missing route', dormantPolicy, {}, {}, true],
+    ['no typed goal', dormantPolicy, CODEX, { goal: '' }, true],
+    ['adopted goal', dormantPolicy, CODEX, { goal_source: 'first-prompt' }, true],
+    ['discarded goal', dormantPolicy, CODEX, { discarded_at: 1000 }, true],
+    ['unasked lane off', dormantPolicy, CODEX, {}, false],
+  ])(
+    'does not warn the reader about a dormant Codex grant for %s',
+    async (_name, reading, route, store, unasked) => {
+      const page = mountDrift({
+        hash: '#n=attention',
+        store: { goal_source: 'typed', ...store },
+        session: 'discarded_at' in store ? { annotation_discarded_at: store.discarded_at } : {},
+        payload: { unasked, reading, unasked_routes: { claude: route } },
+      });
+      await page.settle();
+      expect(screen.queryByRole('region', { name: cannotRun })).toBeNull();
+      expect(screen.queryByText(dormantNote)).toBeNull();
+    },
+  );
+
+  it.each([undefined, '', 37])(
+    'states the missing explanation for the reader when the server note is %s',
+    async (note) => {
+      const page = mountDrift({
+        hash: '#n=attention',
+        store: { goal_source: 'typed' },
+        payload: { ...payload(), reading: { ...dormantPolicy, dormant: { codex: note } } },
+      });
+      await page.settle();
+      const cue = screen.getByRole('region', { name: cannotRun });
+      expect(cue.textContent).toContain(
+        'Your saved Codex permission does not cover these sessions now. The reason is not available.',
+      );
+      expect(cue.textContent).not.toContain('Allow Codex');
+    },
+  );
+});
+
+it.each([undefined, null, {}, { codex: 'unknown' }])(
+  'does not tell the reader checks cannot run when words coverage is missing: %s',
+  async (words) => {
+    const page = mountDrift({
+      hash: '#n=attention',
+      store: { goal_source: 'typed' },
+      payload: {
+        ...payload(),
+        reading: {
+          ...dormantPolicy,
+          words,
+          rebind: {
+            codex: 'What a reading sends has changed since you allowed this, so allow it again.',
+          },
+          dormant: {},
+        },
+      },
+    });
+    await page.settle();
+    expect(screen.queryByRole('region', { name: cannotRun })).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+  },
+);
+
+describe('A reader considering checks of ended sessions', () => {
+  it.each([
+    ['dormant', dormantPolicy],
+    ['waiting', revokedPolicy],
+  ])('is not asked to act on an ended session in the %s cue', async (_name, reading) => {
+    const page = mountDrift({
+      hash: '#n=attention',
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading },
+    });
+    await page.settle();
+    const data = driftBoard({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading },
+    });
+    const first = data.sessions[0];
+    if (!first) throw new Error('The live session is missing');
+    await page.poll({
+      ...data,
+      sessions: [
+        first,
+        { ...first, sid: 'ended', title: 'Ended session', ended_at: 1000, state: 'ended' },
+      ],
+    });
+    const cue = screen.getByRole('region', {
+      name:
+        _name === 'dormant' ? 'Unasked checks cannot run' : 'Unasked checks waiting for permission',
+    });
+    expect(within(cue).getAllByRole('link')).toHaveLength(1);
+    expect(within(cue).queryByRole('link', { name: 'Ended session' })).toBeNull();
+    await page.poll({ ...data, sessions: [{ ...first, ended_at: 1000, state: 'ended' }] });
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
   });
 });

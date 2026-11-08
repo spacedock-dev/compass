@@ -20,6 +20,7 @@
   },
   "response": {
     "body": {
+      "board_revision": "1900000000.2",
       "ok": true,
       "produced": false,
       "reading": {
@@ -45,7 +46,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "253",
+      "Content-Length": "285",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

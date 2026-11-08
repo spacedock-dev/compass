@@ -398,6 +398,13 @@
     },
     {
       "method": "GET",
+      "name": "data-unasked-regranted",
+      "route": "/api/data",
+      "sha256": "6f7886b61503122da0c9f136caffd296f9389d4aa4c813065700f69d04898ba4",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "data-unasked-revoked",
       "route": "/api/data",
       "sha256": "cd7a3f5b685438127b4243a526ae5b5870155e74ee0c079ae422b50b0d992e94",
@@ -664,9 +671,16 @@
     },
     {
       "method": "POST",
+      "name": "reading-unasked-revoke-overtaken",
+      "route": "/api/reading",
+      "sha256": "ae19a06febcc6b2aae8d198663fc2a55b358479c20842649ddf2bc3f00029eaa",
+      "status": 200
+    },
+    {
+      "method": "POST",
       "name": "reading-unasked-revoked",
       "route": "/api/reading",
-      "sha256": "9d3a8d35858f66e54227ca84a5cce41d836f030482e3a6e20a8f9311e9b60b51",
+      "sha256": "9e70b677296acc54d918944413397703ae44be11d6363bfac6f323ef39278f85",
       "status": 200
     },
     {
