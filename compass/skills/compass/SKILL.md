@@ -800,8 +800,10 @@ On Pi and Antigravity an unasked check prefers Claude Code. If the preferred pro
 unqualified on this machine, the other serves. Claude Code needs no separate grant. For Codex, use “Allow Codex to
 run unasked checks” in the session’s Drift card; Attention points to that toggle when saved typed
 goals are waiting for permission. A harness with no session record reader shows an explanation
-instead of the grant switch and stays out of that Attention queue. A stored Codex grant keeps
-its revoke switch beside the explanation. The grant covers Codex at the disclosed destination across sessions.
+instead of the grant switch and stays out of that Attention queue. Every stored Codex grant, including one saved for an earlier destination, keeps a checked revoke
+switch on every session's Drift card while the unasked controls are on. The card explains when
+saved permission no longer applies; Attention does not ask for it again. Granting covers Codex at
+the disclosed destination across sessions.
 Revoking it stops Codex checks; Analyze and Resume never grant it. Pause model calls stops either
 provider, and Pause followed by Resume clears the Codex grant. With the startup flag off, neither the toggle nor the Attention cue appears.
 It checks on an observed state

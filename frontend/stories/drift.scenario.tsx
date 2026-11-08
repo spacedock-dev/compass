@@ -348,7 +348,12 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const index = scenario.reading.posts.length;
           scenario.reading.posts.push(body);
           if (typeof body['unasked_grant'] === 'boolean') {
-            reading = { ...POLICY, words: { codex: body['unasked_grant'] } };
+            reading = {
+              ...POLICY,
+              words: { codex: body['unasked_grant'] },
+              rebind: {},
+              dormant: {},
+            };
             return json({ ok: true, produced: false, reading });
           }
           if (body['consent'] === 'off') {

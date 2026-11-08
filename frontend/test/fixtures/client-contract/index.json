@@ -302,14 +302,14 @@
       "method": "GET",
       "name": "data-empty",
       "route": "/api/data",
-      "sha256": "494fff95b3bf2aa3874024a81924574541926b9f237ba64f31447507fa7f17e2",
+      "sha256": "9e31bb021c4580ae8244094c1be694ed157c731496444cd4ffab3f5227dc53ce",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift",
       "route": "/api/data",
-      "sha256": "79b13f33d5a812020438812f7c2161f8e24d5c3e609cf1664c49addaeaafa5ed",
+      "sha256": "b9573fc545b6936417fd4be5416158fc72a875d56d586b6547c649bcbe1e3c6b",
       "status": 200
     },
     {
@@ -330,56 +330,70 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "c6660a6f7ecce81ea2375532e71607bb16d4c58bb6419d4f4348c8b56ea3ce49",
+      "sha256": "9cb33b82dc0d69e08f675174b4d8c71af86e78b593f4102de85998e614ea0b93",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "60c419e3ea5025656faf1686f488bf785e5bb7d897f7e45bf60cd8364169cd7b",
+      "sha256": "6930d737e263882055f159b6e8b8cb1de04d9efd10da8115d6f9bd1ea3ef2938",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "2a37020bea654ffeda6c8a15712add29dd7e8ad46aa5d883fed31e1336a0853b",
+      "sha256": "9abe46ac50d51994acf64aafbbd5fa2c16b989ae9545107067e5283153f657c2",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-session-states",
       "route": "/api/data",
-      "sha256": "9f5069344cf7a4f5d0708f79b3f04e7d1d29e44ed683887de9d2e7591832f81e",
+      "sha256": "3ca889e91133fc78c8a40b6eb3a26b85ab54153bed83b2c8fdfb137e0868efb7",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "971852967409b3e6e24d6ed77a6505c21d97b7ed6722f134c5db03aee0e149a0",
+      "sha256": "67ec17aefac54b8a885a9000b1025224122748c7d315ee60a07d37ba1867c9db",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project",
       "route": "/api/data",
-      "sha256": "e824a27e8fe688b2a3fef13ccae5d71b8a914fe14cfa61028ceef470e72aefa3",
+      "sha256": "87914ac0ef91428d3d365bdd44c4e5c167e35c9093c66ec43345fc528ffa14ef",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project-fo",
       "route": "/api/data",
-      "sha256": "6ac25e7098c90fa1b81f1f90b44ea8e5941fe557ce566f2ce94e0ddc04659c18",
+      "sha256": "de797f2292d0faf37b004215b0e2c3523e7d1b3f65fe720bf6d27e4ac7acebf1",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-unasked-dormant",
+      "route": "/api/data",
+      "sha256": "1c4a04310250911e6d6d1efb4fd8315b6c9ebd5f610d0e623a881171f623dd44",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-unasked-revoked",
+      "route": "/api/data",
+      "sha256": "cd7a3f5b685438127b4243a526ae5b5870155e74ee0c079ae422b50b0d992e94",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unavailable",
       "route": "/api/data",
-      "sha256": "641920d5c10eddfa5166f4f81fcc39719cced5e0d4ff15cd05030dc5c9387f2e",
+      "sha256": "0b64018c7a1eb08ad7804673371b41bbc97ce0a77fb980cc17a0d1f66f0b6e76",
       "status": 200
     },
     {
@@ -596,7 +610,7 @@
       "method": "POST",
       "name": "reading-off",
       "route": "/api/reading",
-      "sha256": "0014955a05e6f06248c350b26e86a2ada11feae00859ae044076db7b2309d6a6",
+      "sha256": "66bbd9f6a7b37382aafa657162358fac3e20fa4c717ed6548736a8f91c84b073",
       "status": 403
     },
     {
@@ -633,6 +647,13 @@
       "route": "/api/reading",
       "sha256": "20dc9fd529ffb685de6bcf603833f723dca9bf91105d0283e85f1d817c378c59",
       "status": 400
+    },
+    {
+      "method": "POST",
+      "name": "reading-unasked-revoked",
+      "route": "/api/reading",
+      "sha256": "9d3a8d35858f66e54227ca84a5cce41d836f030482e3a6e20a8f9311e9b60b51",
+      "status": 200
     },
     {
       "method": "POST",

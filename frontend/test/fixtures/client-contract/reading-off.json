@@ -24,6 +24,7 @@
       "produced": false,
       "reading": {
         "consent": false,
+        "dormant": {},
         "limit": 100,
         "notices": {},
         "off": true,
@@ -85,7 +86,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "3716",
+      "Content-Length": "3729",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

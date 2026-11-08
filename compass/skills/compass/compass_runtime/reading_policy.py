@@ -58,6 +58,10 @@ DESTINATION_CHANGED = "Where your words go has changed since you allowed this, s
 # The reason a job's reservation is refused when the destination moved after
 # the press was admitted: the token the press answers `409` with.
 DESTINATION_MOVED = "destination-changed"
+# A revoke control needs a statement about the saved grant, not advice to allow it again.
+DORMANT_CODEX = (
+    "Your saved Codex permission does not apply now because where your words go has changed."
+)
 # The content epoch serves both notices and legacy explicit coverage. Epoch 2 added agent
 # messages, 3 added the newest final reply whole within 4,096 bytes, and 4 repaired the
 # ambiguity of a version-3 Allow written from a narrower harness disclosure. Words-only
@@ -144,6 +148,8 @@ class Status(TypedDict):
     # Provider to `DESTINATION_CHANGED`, for each Allow on record that does not
     # cover today's destination. Never for a refusal, which holds anywhere.
     rebind: dict[str, str]
+    # Server-authored revoke note, only when stored Codex words coverage is dormant.
+    dormant: dict[str, str]
     # The tool-output grants, provider to the destinations the reader allowed
     # it to reach, item 7 of the ruling `reading.build_ledger` cites.
     # Its own table: no answer in the two above is
@@ -472,6 +478,11 @@ def _answer(
         "providers": dict(providers) if providers else dict.fromkeys(PROVIDERS, False),
         "tool_output": {name: list(where) for name, where in (tool_output or {}).items()},
         "rebind": dict(rebind or {}),
+        "dormant": (
+            {"codex": DORMANT_CODEX}
+            if rebind and "codex" in rebind and not (words or {}).get("codex", False)
+            else {}
+        ),
         "words": dict(words) if words else dict.fromkeys(PROVIDERS, False),
     }
 
