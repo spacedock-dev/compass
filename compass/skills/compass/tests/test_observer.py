@@ -20,6 +20,7 @@ from unittest import mock
 from compass_runtime import claude_settings, cli, observer, project_context, records, supervise
 from compass_runtime import io as runtime_io
 
+from .supervise_support import controlled_reap
 from .support import (
     RuntimeTestCase,
     make_config,
@@ -2661,9 +2662,13 @@ class SupervisedModelCallTest(unittest.TestCase):
                 )
                 fake.chmod(0o700)
                 started = time.monotonic()
-                output, status = call(
-                    config, "prompt", output_cap_bytes=64, binary_resolver=lambda _n, f=fake: str(f)
-                )
+                with controlled_reap():
+                    output, status = call(
+                        config,
+                        "prompt",
+                        output_cap_bytes=64,
+                        binary_resolver=lambda _n, f=fake: str(f),
+                    )
                 self.assertEqual(("", "oversized"), (output, status))
                 # The bound is checked every 10 ms and a chunk lands every 50 ms, so ten chunks
                 # is a half-second stall. A 20 ms gap left the count to the scheduler, and a

@@ -79,10 +79,11 @@ class ProjectScriptTestCase(ClaudeChecksTestCase):
         git(self.cwd, "init", "-q")
 
     def fresh_repo(self) -> None:
-        """A new repository in the same folder, for a subtest that commits again."""
+        """A fresh history without removing objects a pending Git reader may use."""
         project_scripts.reset()
-        shutil.rmtree(self.cwd / ".git")
-        git(self.cwd, "init", "-q")
+        branch = "case-" + os.urandom(8).hex()
+        git(self.cwd, "checkout", "--orphan", branch)
+        git(self.cwd, "read-tree", "--empty")
 
     def commit(self, files: dict[str, str], *, when: str = BEFORE_THE_SESSION) -> None:
         for name, text in files.items():

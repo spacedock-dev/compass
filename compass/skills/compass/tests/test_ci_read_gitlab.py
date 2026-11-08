@@ -24,6 +24,7 @@ from unittest import mock
 from compass_runtime import ci_read, http_api, project_context, reading, supervise
 
 from . import test_reading as base
+from .supervise_support import controlled_reap
 from .test_ci_read import ELSEWHERE_HEAD, SESSION_HEAD, ci_goal_row
 
 if TYPE_CHECKING:
@@ -118,6 +119,7 @@ sys.exit(answer.get("rc", 0))
 """
 
     def __init__(self, test: unittest.TestCase) -> None:
+        test.enterContext(controlled_reap())
         self.folder = pathlib.Path(tempfile.mkdtemp())
         test.addCleanup(shutil.rmtree, self.folder, True)
         self.bin = self.folder / "bin"

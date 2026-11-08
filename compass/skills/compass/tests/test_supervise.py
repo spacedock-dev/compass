@@ -25,6 +25,7 @@ from unittest import mock
 
 from compass_runtime import supervise
 
+from .supervise_support import controlled_reap
 from .support import process_alive
 
 # Real children against real timeouts and group deadlines: load stretches them (run 42225631356).
@@ -302,6 +303,7 @@ class SupervisedRunTest(unittest.TestCase):
         pid_file = self.home / "grandchild.pid"
         own = os.getpgrp()
         with (
+            controlled_reap(),
             mock.patch.object(os, "killpg", wraps=os.killpg) as killpg,
             self.assertRaises(subprocess.TimeoutExpired),
         ):
@@ -1210,6 +1212,7 @@ class AnOutputFileHasABoundTest(unittest.TestCase):
         out, pid_file = self.home / "reply.txt", self.home / "helper.pid"
         started = time.monotonic()
         with (
+            controlled_reap(),
             mock.patch.object(supervise, "_state", return_value="unknown"),
             out.open("wb") as handle,
             self.assertRaises(supervise.OversizedError),

@@ -524,7 +524,32 @@ class InstalledFrontendTest(unittest.TestCase):
             env = self.child_environment(root)
             launcher = str(plugin / "skills/compass/server.py")
             quiet = ("--no-usage", "--no-git", "--no-focus", "--no-reach", "--no-history")
-            port = self.free_port()
+            # Let the real installed server bind port zero and retain its socket.
+            # Selecting a free port and releasing it before --daemon races every
+            # other process on the host. EOF owns this fixture's shutdown.
+            helper = repo / "frontend/test/installed_backend.py"
+            running = subprocess.Popen(
+                [sys.executable, str(helper), "--plugin-root", str(plugin), "--port", "0"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+            assert running.stdin is not None and running.stdout is not None
+            assert running.stderr is not None
+            self.addCleanup(running.stdin.close)
+            self.addCleanup(running.stdout.close)
+            self.addCleanup(running.stderr.close)
+            self.addCleanup(running.wait, 60)
+            self.addCleanup(running.kill)
+            ready = running.stdout.readline()
+            if not ready:
+                assert running.stderr is not None
+                self.fail(running.stderr.read())
+            health = json.loads(ready)
+            self.assertTrue(health["ready"], "the installed dashboard never became ready")
+            port = health["port"]
             base = [sys.executable, launcher, "--port", str(port), *quiet]
 
             def run(*extra: str) -> subprocess.CompletedProcess[str]:
@@ -538,8 +563,6 @@ class InstalledFrontendTest(unittest.TestCase):
                 )
 
             try:
-                started = run("--daemon")
-                self.assertEqual(0, started.returncode, started.stdout + started.stderr)
                 status = run("--status")
                 self.assertEqual(0, status.returncode, status.stdout + status.stderr)
                 self.assertNotIn("frontend", status.stdout)
@@ -548,7 +571,14 @@ class InstalledFrontendTest(unittest.TestCase):
                     self.assertEqual(1, again.returncode, again.stdout + again.stderr)
                     self.assertIn("use it", again.stdout + again.stderr)
             finally:
-                run("--stop")
+                assert running.stdin is not None
+                running.stdin.close()
+                self.assertEqual(
+                    0, running.wait(timeout=60), "the installed dashboard failed to stop"
+                )
+                running.stdout.close()
+                assert running.stderr is not None
+                running.stderr.close()
 
     @staticmethod
     def free_port() -> int:
