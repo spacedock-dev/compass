@@ -5,6 +5,7 @@ import functools
 import json
 import os
 import random
+import sys
 import tempfile
 import threading
 import time
@@ -25,9 +26,6 @@ from .support import (
     make_runtime,
     runtime,
 )
-
-# The backward reader's linearity is a best-of-three timing ratio.
-REAL_TIME_TESTS = True
 
 CONFIG, STATE = make_runtime()
 
@@ -930,36 +928,48 @@ class ReviewFixTest(unittest.TestCase):
     NOW = 1_700_000_000.0
 
     def test_reverse_lines_stays_linear_on_one_long_record(self) -> None:
-        # chunk + carry per chunk made this quadratic: a 64 MB single-line
-        # transcript took 0.9s, and large tool results do produce such records.
-        #
-        # Best-of-three per size, because a single sample is what made this
-        # flaky on the Windows runner: one slow read reported a 9.0x ratio for
-        # 4x the bytes on code that really scales at ~4x. The minimum is the
-        # least contaminated estimate, and a quadratic regression cannot hide
-        # in it.
-        #
-        # 16/64 MB rather than 4/16 so the measured time clears the floor below
-        # on every runner. The floor stops a fast machine's near-zero baseline
-        # from collapsing the budget into the noise, but it also caps
-        # sensitivity: the comparison only fails a quadratic regression while
-        # timings[0] > floor / 2, so the floor has to stay well under a real
-        # measurement rather than replace it.
+        # Charge each distinct byte string materialized in reader locals, also
+        # looking inside its chunk list. Prepending chunk + carry creates a
+        # growing bytes object each loop; keeping chunks assembles it once.
+        # (id, length) avoids retaining quadratic amounts of copied data while
+        # distinguishing a reused address holding a larger carry.
+        work = []
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "long.jsonl"
-            timings = []
-            for megabytes in (16, 64):
-                path.write_bytes(b"x" * (megabytes * 1024 * 1024))
-                samples = []
-                for _ in range(3):
-                    start = time.perf_counter()
-                    list(runtime_io.reverse_lines(make_config(), str(path)))
-                    samples.append(time.perf_counter() - start)
-                timings.append(min(samples))
-        # Quadratic would be ~16x for 4x the bytes. Linear is ~4x, and a loaded
-        # hosted macOS runner measured 8.3x (13 ms against 112 ms) on code that is
-        # linear, so allow 12x: still a clear margin under a quadratic regression.
-        self.assertLess(timings[1], max(timings[0], 0.01) * 12, f"non-linear: {timings}")
+            for megabytes in (4, 16):
+                record = b"x" * (megabytes * 1024 * 1024)
+                path.write_bytes(record)
+                charged = 0
+                seen: set[tuple[int, int]] = set()
+
+                def trace(
+                    frame: Any, event: str, _arg: Any, *, observed: set[tuple[int, int]] = seen
+                ) -> Any:
+                    nonlocal charged
+                    if frame.f_code is runtime_io.reverse_lines.__code__:
+                        if event == "line":
+                            for value in frame.f_locals.values():
+                                for part in value if isinstance(value, list) else (value,):
+                                    if isinstance(part, bytes):
+                                        key = (id(part), len(part))
+                                        if key not in observed:
+                                            observed.add(key)
+                                            charged += len(part)
+                        return trace
+                    return None
+
+                previous = sys.gettrace()
+                try:
+                    sys.settrace(trace)
+                    self.assertEqual(
+                        [record], list(runtime_io.reverse_lines(make_config(), str(path)))
+                    )
+                finally:
+                    sys.settrace(previous)
+                work.append(charged)
+        self.assertGreater(work[0], 0, "the reader performed no measured work")
+        # Four times the record is linear at ~4x; prepending is ~16x.
+        self.assertLess(work[1], work[0] * 8, f"non-linear byte work: {work}")
 
 
 class CodexInstructionTest(unittest.TestCase):

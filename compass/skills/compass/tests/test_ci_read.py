@@ -33,6 +33,7 @@ from compass_runtime import (
 )
 
 from . import test_reading as base
+from .supervise_support import controlled_reap
 from .test_goal_verdict import goal_row
 
 if TYPE_CHECKING:
@@ -93,6 +94,7 @@ sys.exit(answer.get("rc", 0))
 """
 
     def __init__(self, test: unittest.TestCase) -> None:
+        test.enterContext(controlled_reap())
         self.folder = pathlib.Path(tempfile.mkdtemp())
         test.addCleanup(shutil.rmtree, self.folder, True)
         self.bin = self.folder / "bin"

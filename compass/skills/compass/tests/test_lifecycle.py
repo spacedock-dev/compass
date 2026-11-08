@@ -2295,10 +2295,10 @@ from compass_runtime import lifecycle, supervise
 lifecycle._register_sigterm_exit()
 cli_pid, done = sys.argv[2], sys.argv[3]
 script = "import os, time; open(%r, 'w').write(str(os.getpid())); time.sleep(120)" % cli_pid
-threading.Thread(
-    target=lambda: supervise.run([sys.executable, "-c", script], timeout=120), daemon=True
-).start()
 try:
+    threading.Thread(
+        target=lambda: supervise.run([sys.executable, "-c", script], timeout=120), daemon=True
+    ).start()
     time.sleep(120)
 finally:
     supervise.kill_all()
