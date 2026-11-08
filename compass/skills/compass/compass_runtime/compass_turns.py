@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import threading
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ class _Read:
     # The type of the newest main-thread `user`/`assistant` record since the command: the context
     # `claude_data.is_turn_stop_record` reads a stop in, so a Stop hook that blocks keeps it open.
     after: str | None = None
+    skill_dir: str | None = None
+    launchers: tuple[tuple[str, str], ...] = ()
 
 
 _LOCK = threading.Lock()
@@ -90,8 +93,26 @@ def _ends(record: dict[str, Any], after: str | None) -> bool:
     )
 
 
+def _launcher_ids(record: dict[str, Any], directory: str | None) -> tuple[str, ...]:
+    """Exact Bash launcher operations in a parent assistant record."""
+    content = records.message_dict(record).get("content")
+    if record.get("type") != "assistant" or not isinstance(content, list):
+        return ()
+    return tuple(
+        block["id"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and block.get("name") == "Bash"
+        and isinstance(block.get("input"), dict)
+        and launcher(block["input"].get("command"), directory)
+        and isinstance(block.get("id"), str)
+    )
+
+
 def _advance(path: str, held: _Read) -> _Read:
     closed, open_at, offset, after = list(held.closed), held.open_at, held.offset, held.after
+    skill_dir, launchers = held.skill_dir, dict(held.launchers)
     with open(path, "rb") as source:
         source.seek(offset)
         for raw in source:
@@ -105,25 +126,44 @@ def _advance(path: str, held: _Read) -> _Read:
             if records.compass_command_record(record):
                 if open_at is not None:
                     closed.append((open_at, at))
-                open_at, after = at, None
+                open_at, after, skill_dir = at, None, None
             elif open_at is not None and _ends(record, after):
                 closed.append((open_at, at))
-                open_at, after = None, None
+                open_at, after, skill_dir = None, None, None
+            if open_at is not None and not record.get("isSidechain"):
+                content = records.message_dict(record).get("content")
+                if (
+                    record.get("type") == "user"
+                    and record.get("isMeta") is True
+                    and record.get("turnCompanion") is True
+                    and not record.get("sourceToolUseID")
+                ):
+                    tags = re.findall(
+                        r"<skill-dir>([^<>\r\n]+)</skill-dir>", records.extract_text(content)
+                    )
+                    # Missing or conflicting publications cannot establish an exemption.
+                    skill_dir = tags[0] if len(tags) == 1 and os.path.isabs(tags[0]) else None
+                else:
+                    launchers.update(
+                        (call_id, skill_dir or "") for call_id in _launcher_ids(record, skill_dir)
+                    )
             if (
                 open_at is not None
                 and record.get("type") in ("user", "assistant")
                 and not record.get("isSidechain")
             ):
                 after = record["type"]
-    return _Read(held.identity, offset, tuple(closed), open_at, after)
+    return _Read(
+        held.identity, offset, tuple(closed), open_at, after, skill_dir, tuple(launchers.items())
+    )
 
 
-def spans(path: str) -> tuple[Span, ...]:
-    """Each turn a typed Compass command opened in this transcript, oldest first."""
+def _read(path: str) -> _Read | None:
+    """The cached turns and positively identified launcher calls."""
     try:
         info = os.stat(path)
     except OSError:
-        return ()
+        return None
     identity = (info.st_dev, info.st_ino)
     with _LOCK:
         held = _CACHE.get(path)
@@ -133,12 +173,20 @@ def spans(path: str) -> tuple[Span, ...]:
         try:
             held = _advance(path, held)
         except OSError:
-            return ()
+            return None
         with _LOCK:
             _CACHE.pop(path, None)
             _CACHE[path] = held
             while len(_CACHE) > _CACHE_FILES:
                 _CACHE.pop(next(iter(_CACHE)))
+    return held
+
+
+def spans(path: str) -> tuple[Span, ...]:
+    """Each turn a typed Compass command opened in this transcript, oldest first."""
+    held = _read(path)
+    if held is None:
+        return ()
     return (*held.closed, (held.open_at, None)) if held.open_at is not None else held.closed
 
 
@@ -216,7 +264,7 @@ _ACTIONS: Final = frozenset(
 )
 
 
-def launcher(command: Any) -> bool:
+def launcher(command: Any, directory: str | None) -> bool:
     """Only the skill's single terminal action, with no shell expansion or extra operation."""
     if not isinstance(command, str) or any(mark in command for mark in "\n\r$`;&|<>()"):
         return False
@@ -227,24 +275,45 @@ def launcher(command: Any) -> bool:
     if len(words) < 4 or words[0] not in {"python", "python3"}:
         return False
     launch, server = words[1:3]
-    directory = os.path.dirname(launch)
     return (
-        os.path.basename(launch) == "launch.py"
-        and os.path.basename(server) == "server.py"
-        and os.path.dirname(server) == directory
-        and os.path.basename(directory) == "compass"
+        directory is not None
+        and launch == os.path.join(directory, "launch.py")
+        and server == os.path.join(directory, "server.py")
         and tuple(words[3:]) in _ACTIONS
     )
 
 
 def launcher_calls(path: str, calls: Iterable[Any]) -> frozenset[str]:
     """Parent launcher calls positively inside typed Compass turns; children remain work."""
-    turns = spans(path)
+    held = _read(path)
+    identified = dict(held.launchers) if held else {}
     return frozenset(
         call[2]
         for call in calls
         if not call[5]
         and call[3] == "Bash"
-        and within(turns, call[0])
-        and launcher(call[4].get("command"))
+        and call[2] in identified
+        and launcher(call[4].get("command"), identified[call[2]])
     )
+
+
+def accounting_facts(path: str, facts: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Work for check eligibility, including ordinary operations inside a Compass turn.
+
+    Evidence sent to the producer keeps its original turn flags. Only the exact launcher
+    identified in the transcript is omitted here; the agent's repeated answer remains omitted
+    by the ledger's agent-message rule.
+    """
+    held = _read(path)
+    identified = dict(held.launchers) if held else {}
+    return [
+        {**fact, reading.COMPASS_TURN_FLAG: False, "read_incomplete": False}
+        for fact in facts
+        if not (
+            fact.get(reading.COMPASS_TURN_FLAG)
+            and isinstance(fact.get("branch"), dict)
+            and fact["branch"].get("record_id") in identified
+            # A hook can substitute an ordinary command while keeping the original call id.
+            and launcher(fact.get("summary"), identified[fact["branch"]["record_id"]])
+        )
+    ]

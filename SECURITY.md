@@ -4529,7 +4529,7 @@ The operator-cockpit prototype also reads dispatch evidence:
   output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states the
   bounds of the rest.
 
-These are evidence reads, not command execution. In total, eleven expressions in `compass_runtime`
+These are evidence reads, not command execution. In total, thirteen expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
 DEC-23's named read for the checks a Claude Code session ran is the eighth, and
 [its entry](#tool-output-in-a-claude-code-reading) states its bounds. The ninth is the same
@@ -4539,10 +4539,14 @@ is that read's one look at a `write_stdin` call's `arguments`, parsed only to as
 `chars` is empty; nothing of them is kept. The eleventh is its look at an `exec` script's `input`,
 read only to ask whether a `write_stdin` call in it sends anything but an empty `chars`; nothing of
 the script is kept. Every read of a call's `output` is counted the same way.
-The same inventory counts `compass_turns.launcher_calls`, which inspects an already collected
-parent Claude `Bash` command to identify the skill's single terminal action inside a recognised
-Compass turn. It keeps call IDs for the command-accounting exemption, reads no result text and
-executes nothing. Other commands and child calls remain work.
+Two expressions in `compass_turns._launcher_ids` inspect a parent Claude `Bash` call's `input`:
+one checks its shape, and one reads its command. They identify only the closed launcher action
+whose paths match the isMeta skill companion's `<skill-dir>` tag. The cache keeps call IDs and
+published directories, without retaining tool inputs or reading result text. It executes nothing.
+The same inventory counts both that command read and `compass_turns.launcher_calls`, which
+rechecks an already collected command against the same directory binding. Work accounting also
+checks the effective command summary, so a hook-substituted command cannot inherit the original
+launcher's exemption. Other commands and child calls remain work.
 
 The prototype has no additional switch that disables just these dispatch reads.
 

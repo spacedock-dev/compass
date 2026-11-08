@@ -391,8 +391,15 @@ class Lane:
         # completed result changes an existing row. Compass answers never enter this ledger.
         # Coverage becoming partial adds no project work. Normalize it before summary wording is
         # composed; the producer below still receives the original facts, including that warning.
+        path = (
+            runtime_observer.resolve_transcript(
+                self.config, state, str(row.get("harness") or ""), str(row.get("sid") or "")
+            )
+            if row.get("harness") == "claude"
+            else ""
+        )
         ledger = runtime_reading.build_ledger(
-            ({**fact, "read_incomplete": False} for fact in facts),
+            compass_turns.accounting_facts(path or "", facts),
             str(row.get("harness") or ""),
             str(row.get("sid") or ""),
             tool_output={},
@@ -403,6 +410,10 @@ class Lane:
             ).hexdigest()
             for entry in ledger
         }
+        latest: Mapping[str, Any] = entry["revisions"][-1] if entry["revisions"] else {}
+        fingerprints["intent"] = hashlib.sha256(
+            json.dumps(latest, sort_keys=True, ensure_ascii=True).encode()
+        ).hexdigest()
         key = f"{row.get('harness')}:{row.get('sid')}"
         checked = self._checked.get(key)
         # Losing old rows to a partial read is absence, not new work.

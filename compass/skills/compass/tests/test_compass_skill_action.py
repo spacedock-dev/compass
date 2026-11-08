@@ -12,7 +12,9 @@ record whose string content opens with `<command-message>` and names `/compass:c
 `<command-name>`, then the `isMeta` skill body, a `command_permissions` attachment, and
 `last-prompt` records that repeat the command and name no prompt. The capture also measured that
 `attributionSkill` stays on the agent's later work after the model starts the skill itself, so
-nothing here keys on attribution. Every text is placeholder prose.
+nothing here keys on attribution. The `<skill-dir>` publication in the isMeta companion is
+recorded in `scheduled-command-shapes-2.1.319-macos.jsonl`; its path here is a stand-in.
+Every text is placeholder prose.
 """
 
 from __future__ import annotations
@@ -55,7 +57,7 @@ from compass_runtime.state import build_runtime_state
 
 from . import test_reading, test_reading_source_final, test_unasked
 from .support import make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
+from .test_claude_checks import SHORT, START, hook_stdout
 from .test_slash_command_direction import CAVEAT, Session, local_command, prompt_command
 
 REPO = Path(__file__).resolve().parents[4]
@@ -143,7 +145,14 @@ class CompassSession(Session):
     def _attributed(self) -> dict[str, Any]:
         return {"attributionSkill": "compass:compass", "attributionPlugin": "compass"}
 
-    def compass(self, action: str = "sessions", *, stop: bool = True, command: str = RUN) -> float:
+    def compass(
+        self,
+        action: str = "sessions",
+        *,
+        stop: bool = True,
+        command: str = RUN,
+        rewritten_command: str | None = None,
+    ) -> float:
         """The reader types Compass's command; the agent runs it and repeats what it printed."""
         arm = "typed-headless" if action else "typed-bare-headless"
         text = (
@@ -155,7 +164,10 @@ class CompassSession(Session):
         self._shaped("user", text, arm, "typed-command")
         at = START.timestamp() + self.seconds
         body = [
-            {"type": "text", "text": "Base directory for this skill: /skills/compass\n\n# Compass"}
+            {
+                "type": "text",
+                "text": "Base directory for this skill: /skills/compass\n<skill-dir>/skills/compass</skill-dir>\n\n# Compass",
+            }
         ]
         self._shaped("user", body, arm, "skill-body", isMeta=True)
         self.rows.append(
@@ -172,6 +184,8 @@ class CompassSession(Session):
         self._last_prompt(typed)
         call = self.call("Bash", {"command": command, "description": "List sessions"})
         self.rows[-1].update(self._attributed())
+        if rewritten_command is not None:
+            self.hook_rewrite(call, hook_stdout(rewritten_command))
         self.result(call, PRINTED, is_error=False)
         self.rows[-1]["toolUseResult"] = {
             "stdout": PRINTED,
@@ -980,6 +994,51 @@ class APersonAskingCompassKeepsTheirPassingCheckTest(_Case):
         self.assertEqual(levels.NONE_OR_LOW, level.level)
         self.assertNotIn(levels.REASON_PASS_THEN_WRITE, level.reasons)
 
+    def test_a_persons_unrelated_launcher_inside_compass_still_ages_the_pass(self) -> None:
+        self.assertEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+        self.session.compass(
+            command='python3 "/project/tools/compass/launch.py" '
+            '"/project/tools/compass/server.py" --sessions'
+        )
+        self.save()
+        self.assertNotEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+
+    def test_a_person_without_a_published_skill_directory_has_their_command_counted(self) -> None:
+        self.session.compass(command=LAUNCH)
+        for row in self.session.rows:
+            if row.get("isMeta"):
+                row["message"]["content"] = [{"type": "text", "text": "# Compass"}]
+        self.save()
+        self.assertNotEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+
+    def test_a_persons_nested_skill_cannot_exempt_another_directorys_launcher(self) -> None:
+        self.session.compass(command=LAUNCH, stop=False)
+        call = self.session.call("Skill", {"skill": "other:compass"})
+        self.session.result(call, "Launching skill: other:compass")
+        self.session._shaped(
+            "user",
+            [{"type": "text", "text": "<skill-dir>/project/tools/compass</skill-dir>"}],
+            "model-started-headless",
+            "skill-body",
+            isMeta=True,
+            sourceToolUseID=call,
+        )
+        self.session.bash(
+            'python3 "/project/tools/compass/launch.py" '
+            '"/project/tools/compass/server.py" --sessions'
+        )
+        self.save()
+        self.assertNotEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+
     def test_a_persons_ordinary_command_in_the_same_turn_still_ages_the_pass(self) -> None:
         self.session.compass(stop=False, command=LAUNCH + " && touch retry.py")
         self.save()
@@ -1075,6 +1134,98 @@ class APersonDoesNotSpendAnotherCheckOnCompassAloneTest(_Case):
         self.assertEqual(1, len(self.calls))
         self.assertEqual(1, len(departures.load(self.config)))
 
+    def test_a_persons_changed_saved_goal_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        revision: annotation_store.Revision = {
+            **self.entry["revisions"][-1],
+            "n": 5,
+            "goal": "Investigate only; do not change the webhook handler.",
+            "at": self.now,
+        }
+        self.entry["revisions"] = (*self.entry["revisions"], revision)
+        self.consider("working")
+        self.consider("idle")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_changed_outcome_lines_reopen_an_unasked_check(self) -> None:
+        self.checked_once()
+        revision: annotation_store.Revision = {
+            **self.entry["revisions"][-1],
+            "n": 5,
+            "lines": ({"text": "Keep the handler unchanged", "source": "typed"},),
+            "at": self.now,
+        }
+        self.entry["revisions"] = (*self.entry["revisions"], revision)
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_person_with_unchanged_intent_and_work_spends_no_second_check(self) -> None:
+        self.checked_once()
+        self.consider("working")
+        self.consider("idle")
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(1, len(departures.load(self.config)))
+
+    def test_a_persons_hook_rewritten_launcher_is_checked_as_the_command_that_ran(self) -> None:
+        self.checked_once()
+        self.session.compass(command=LAUNCH, rewritten_command="touch retry.py")
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_command_inside_compass_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        self.session.compass(command=LAUNCH, stop=False)
+        self.session.bash("touch retry.py")
+        self.consider("working")
+        self.consider("idle")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_edit_inside_compass_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        self.session.compass(command=LAUNCH, stop=False)
+        self.session.edit(self.work, "old retry logic", "new retry logic")
+        self.session.stopped()
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_command_outside_compass_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        self.session.bash("touch retry.py")
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_edit_outside_compass_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        self.session.edit(self.work, "old retry logic", "new retry logic")
+        self.session.stopped()
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_ordinary_command_completion_reopens_an_unasked_check(self) -> None:
+        call = self.session.call("Bash", {"command": "python3 long_job.py"})
+        self.checked_once()
+        self.session.result(call, "project artifact generated", is_error=False)
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
+    def test_a_persons_unrelated_launcher_inside_compass_reopens_an_unasked_check(self) -> None:
+        self.checked_once()
+        self.session.compass(
+            command='python3 "/project/tools/compass/launch.py" '
+            '"/project/tools/compass/server.py" --sessions'
+        )
+        self.consider("working")
+        self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
+
     def test_a_persons_newly_completed_result_is_checked_even_without_a_new_fact(self) -> None:
         call = self.session.call("Bash", {"command": "node --test tests/later.test.js"})
         self.checked_once()
@@ -1091,8 +1242,8 @@ class APersonDoesNotSpendAnotherCheckOnCompassAloneTest(_Case):
         )
         self.assertEqual(before, after)
         self.consider("working")
-        self.assertEqual(2, len(self.calls))
         self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
 
     def test_a_persons_compass_only_transition_does_not_delay_new_real_work(self) -> None:
         self.checked_once()
@@ -1102,8 +1253,8 @@ class APersonDoesNotSpendAnotherCheckOnCompassAloneTest(_Case):
         self.session.asked(LATER)
         self.now = skipped_at + 1
         self.consider("idle")
-        self.assertEqual(2, len(self.calls))
         self.assertEqual(2, len(departures.load(self.config)))
+        self.assertEqual(2, len(self.calls))
 
     def test_a_person_with_only_compass_turns_has_no_charged_check(self) -> None:
         self.session = CompassSession(Path(self.session.cwd))
