@@ -176,7 +176,8 @@ function readingParts(input: ReadingInput) {
   const limit = outputLimit(payload, harness);
   /* The same open set gates the question and the reading's demotion, so those two cannot disagree about
      whether a baseline is settled. */
-  const unsettled = annotate && conflictCandidates(annotation, entries, session, draft).length > 0;
+  const openDirections = annotate ? conflictCandidates(annotation, entries, session, draft) : [];
+  const unsettled = openDirections.length > 0;
   const shape = raw
     ? readingShape(
         raw,
@@ -186,6 +187,7 @@ function readingParts(input: ReadingInput) {
         unsettled,
         (line) => lineSource(line, source),
         lineRequestFloors(session, annotation, source),
+        openDirections,
       )
     : null;
   const generated = nextNumber(payload['generated']) ?? 0;

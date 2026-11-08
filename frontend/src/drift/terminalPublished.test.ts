@@ -43,3 +43,20 @@ describe('the drift view the server attached, against the page', () => {
     expect(view?.departures).toEqual([]);
   });
 });
+
+it('a person sees a supported Medium from a second real-server recording', () => {
+  const payload = read('data-focused-drift-medium').response.body;
+  const context = read('context-focused-drift-medium').response.body;
+  const session = (payload['sessions'] as Record<string, unknown>[]).find(
+    (row) => row['sid'] === 'a1b2c3d4',
+  ) as Record<string, unknown>;
+  const attached = (
+    (context['sources'] as Record<string, unknown>)['work'] as Record<string, unknown[]>
+  )['drift_views'];
+  const drawn = pageView({ name: 'recorded-medium', rules: [], session, payload, context });
+  expect(attached).toEqual([drawn]);
+  expect(drawn).toMatchObject({
+    pill: { level: 'medium', source: 'analysis', so_far: true },
+    analysis: { level: 'medium', withheld: false },
+  });
+});

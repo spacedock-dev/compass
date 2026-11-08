@@ -113,7 +113,7 @@ def a_view(**fields: Any) -> dict[str, Any]:
         "unsettled": False,
         "drafted": False,
         "malformed": "",
-        "pill": {"level": "medium", "source": "analysis", "so_far": False},
+        "pill": {"level": "medium", "source": "analysis", "so_far": True},
         "analysis": {"level": "medium", "reasons": ["departure"], "withheld": False},
         "estimate": None,
         "lines": [
@@ -1604,6 +1604,27 @@ class AdapterTest(unittest.TestCase):
         out = "\n".join(terminal_drift.render(row, {}, adapted, adopted=None, again_hint=""))
         self.assertNotIn("So far:", out)
         self.assertIn("Level: Medium so far", out)
+
+    def test_a_person_reads_a_supported_medium_from_the_recorded_server_in_the_terminal(
+        self,
+    ) -> None:
+        path = RECORDED_CONTEXT.with_name("context-focused-drift-medium.json")
+        self.assertTrue(path.is_file(), "the second server recording must exist")
+        recorded = json.loads(path.read_text(encoding="utf-8"))["response"]["body"]
+        found = terminal_drift.view_of(recorded, "claude", "a1b2c3d4")
+        self.assertIsNotNone(found)
+        assert found is not None
+        expected = json.loads((ROOT / "frontend/test/fixtures/terminal-wording.json").read_text())
+        self.assertEqual(expected["mediumView"], found)
+        self.assertEqual({"level": "medium", "source": "analysis", "so_far": True}, found["pill"])
+        self.assertFalse(found["analysis"]["withheld"])
+        adapted = terminal_drift.adapt(found)
+        out = "\n".join(
+            terminal_drift.render(
+                {"harness": "claude", "sid": "a1b2c3d4"}, {}, adapted, adopted=None, again_hint=""
+            )
+        )
+        self.assertIn("Level: Medium", out)
 
     def test_the_recorded_server_row_reads_through_adapt_and_render(self) -> None:
         # The fixture is layer B's own recorded response, so this stays bound to what is published.

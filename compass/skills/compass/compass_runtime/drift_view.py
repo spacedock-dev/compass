@@ -455,11 +455,13 @@ def intent_draft(  # noqa: PLR0911 - one early return per way a goal-less sessio
 # --- later directions -----------------------------------------------------------------------------
 
 
+def _direction_fact(entry: Entry) -> dict[str, Json]:
+    return {"type": entry.type, "by": entry.by, "copied": entry.copied, "at": entry.at}
+
+
 def person_authored(entry: Entry) -> bool:
-    """A message the server recognised as a correction copied from Compass is Compass's words."""
-    if entry.type == "user_message":
-        return not entry.copied
-    return entry.type == "gate_decision" and entry.by.startswith("person:")
+    """The shared evidence authorship rule, including copied Compass corrections."""
+    return reading.author_of(_direction_fact(entry)) == reading.AUTHOR_PERSON
 
 
 def baseline_at(
@@ -484,13 +486,11 @@ def later_directions(
     session: dict[str, Json] | None,
     draft: dict[str, Json] | None,
 ) -> list[Entry]:
-    typed_at = baseline_at(annotation, session, draft)
-    if typed_at is None:
-        return []
+    floor = baseline_at(annotation, session, draft)
     return [
         entry
         for entry in entries
-        if (at := _number(entry.at)) is not None and at > typed_at and person_authored(entry)
+        if reading.unsettled_direction(_direction_fact(entry), floor=floor)
     ]
 
 
@@ -499,13 +499,20 @@ def conflict_candidates(
     entries: list[Entry],
     session: dict[str, Json] | None,
     draft: dict[str, Json] | None,
+    *,
+    until: Json = None,
 ) -> list[Entry]:
-    """The directions still open: later than the baseline and not settled through."""
-    settled = _number(_get(annotation, "settled_through"))
+    """The shared open set, using the existing draft-aware baseline."""
+    floor = baseline_at(annotation, session, draft)
     return [
         entry
-        for entry in later_directions(annotation, entries, session, draft)
-        if settled is None or (_number(entry.at) or 0) > settled
+        for entry in entries
+        if reading.unsettled_direction(
+            _direction_fact(entry),
+            floor=floor,
+            settled=_get(annotation, "settled_through"),
+            until=until,
+        )
     ]
 
 
@@ -1343,6 +1350,7 @@ def reading_shape(
     limit: bool,
     unsettled: bool,
     line_requests: dict[str, float],
+    open_directions: list[Entry] | None = None,
 ) -> Shape:
     """`readingShape`: a stored reading held to the shape contract, row by row.
 
@@ -1384,7 +1392,11 @@ def reading_shape(
     if read_at is not None and read_at > 0 and unsettled:
         unsettled = any(
             (_number(entry.at) or 0) <= read_at
-            for entry in conflict_candidates(annotation, entries, None, None)
+            for entry in (
+                open_directions
+                if open_directions is not None
+                else conflict_candidates(annotation, entries, None, None)
+            )
         )
     keys = reading_constraints(
         rows,
@@ -1545,7 +1557,8 @@ def _read(
     limit = output_limit(payload, harness)
     # The same open set gates the question and the reading's demotion, so those two cannot disagree
     # about whether a baseline is settled.
-    unsettled = annotate and bool(conflict_candidates(annotation, entries, session, draft))
+    open_directions = conflict_candidates(annotation, entries, session, draft) if annotate else []
+    unsettled = bool(open_directions)
     shape = (
         reading_shape(
             stored,
@@ -1554,6 +1567,7 @@ def _read(
             limit=limit,
             unsettled=unsettled,
             line_requests=line_request_floors(session, annotation, entries, context),
+            open_directions=open_directions,
         )
         if _truthy(stored)
         else None
