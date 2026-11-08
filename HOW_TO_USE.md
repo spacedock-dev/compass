@@ -22,22 +22,46 @@ This page owns none of the following, and links to it instead:
 
 ## Find the copy your commands will run
 
-Every command below runs `server.py` through the `launch.py` beside it, and there are usually two on the machine: the
-one your harness installed and the one in a checkout. They are different builds and they answer
-differently.
+Every command below runs `server.py` through the `launch.py` beside it. A checkout and several
+cached versions can coexist. Use the installation your harness reports as active, even when a newer
+version is cached. A cache search cannot tell you which one the harness loaded.
+
+Run the listing for your harness from the project where you use Compass:
+
+| Harness | Inspect | Which path to use |
+|---|---|---|
+| Claude Code | `claude plugin list --json` | The enabled Compass entry's `installPath`, then `skills/compass`. Check `scope` and `projectEnabled` for this project. The install records in `~/.claude/plugins/installed_plugins.json` also carry `installPath` and `scope`, but do not alone establish that a plugin is enabled. |
+| Antigravity / AGY | `agy plugin list --json` | The enabled Compass entry's `path`, then `skills/compass`. The local listing exposed `name`, `enabled` and `path`; no Compass entry was installed there during verification. |
+| Codex | `codex plugin list --json` | Use the loaded Compass skill's directory if the harness exposes it. The local CLI listing failed during verification, so an active-path field could not be verified. If you cannot identify it, choose explicitly from the candidates below. |
+
+If a listing is unavailable, omits the path, or leaves several applicable entries, stop and choose
+the copy you intend to run. Do the same for other harnesses or a checkout. Do not take the first
+search result or the highest cached version as the active installation.
+
+This Bash snippet lists candidates in the default install locations and waits for your choice. Paste
+the absolute skill directory from the harness report, or your explicit choice, without quotes or a
+`~` abbreviation. For a relocated installation, paste its absolute directory even if it is not listed.
+An empty answer or a directory missing either launcher runs nothing and clears any earlier `SKILL`:
 
 ```bash
-# The installed copy. The directory carries the plugin version, so it moves on every update.
-find ~/.claude/plugins/cache -name server.py -path '*compass*'
+unset SKILL
+find "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache" "$HOME/.gemini/config/plugins" \
+  -type f -path '*/skills/compass/server.py' -exec dirname {} \; 2>/dev/null || true
+printf 'Choose the active Compass skill directory (absolute path): '
+if IFS= read -r compass_skill &&
+   [ -f "$compass_skill/launch.py" ] &&
+   [ -f "$compass_skill/server.py" ]; then
+  SKILL="$compass_skill"
+  python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
+else
+  printf 'Choose a directory containing both launch.py and server.py; nothing ran.\n' >&2
+  false
+fi
 ```
 
-On the machine this was written on that printed a 0.10.0 path while the checkout was 0.12.0. Pin
-whichever you meant, and use it for everything in the session including `--status` and `--stop`:
-
-```bash
-SKILL="$(dirname "$(find ~/.claude/plugins/cache -name server.py -path '*compass*' | head -1)")"
-python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
-```
+Keep that `SKILL` for every command in this shell, including `--status` and `--stop`. Repeat the
+selection after a plugin update or when switching harnesses. The `$SKILL` snippets were checked with
+an isolated home and stub launchers, including paths with spaces; they did not contact a real board.
 
 Use the same interpreter every time. The one that started the server is recorded in its state file,
 and a second Python on the PATH is the usual reason a hook works from one shell and not another. On
@@ -173,8 +197,7 @@ Your installed copy has to contain `mcp_server.py`, beside `server.py` in the sk
 is missing, your release predates the ask lane and no amount of configuration will help:
 
 ```bash
-ls ~/.claude/plugins/cache/*/compass/*/skills/compass/mcp_server.py     # Claude Code
-ls ~/.codex/plugins/cache/*/compass/*/skills/compass/mcp_server.py      # Codex
+ls "$SKILL/mcp_server.py"
 ```
 
 The examples below use port 4601, because that is where they were run. The default is 4553.
@@ -234,16 +257,16 @@ a scratch directory. No port needs configuring.
 
 ### Register the MCP server in Codex
 
-The plugin does not register it. Point Codex at `launch.py` and the `mcp_server.py` beside it inside the
-installed plugin. The CLI writes the table for you:
+The plugin does not register it. Select Codex's installed copy in the first section, then point Codex
+at `launch.py` and the `mcp_server.py` beside it. The CLI writes the table for you:
 
 ```bash
 codex mcp add compass --env COMPASS_HOME="$HOME/.compass" \
-  -- python3 ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/launch.py \
-     ~/.codex/plugins/cache/<marketplace>/compass/<version>/skills/compass/mcp_server.py
+  -- python3 "$SKILL/launch.py" "$SKILL/mcp_server.py"
 ```
 
-That is the whole configuration, and writing it by hand into `~/.codex/config.toml` is equivalent:
+That is the whole configuration, and writing it by hand into `~/.codex/config.toml` is equivalent.
+Replace both example paths with the directory you selected above:
 
 ```toml
 [mcp_servers.compass]
