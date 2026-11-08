@@ -11,6 +11,7 @@ import http.client
 import json
 import math
 import os
+import queue
 import select
 import signal
 import socket
@@ -962,6 +963,24 @@ def run_producer(
 # `finally` too, the CLI outlives the daemon untimed (review F1, measured).
 _EXIT_SIGNALS = ("SIGTERM", "SIGHUP", "SIGQUIT")
 
+# Set by `serve` for the span of `serve_forever`, None otherwise. While it is
+# set, the handlers ask the serving loop to stop instead of raising: a
+# `SystemExit` landing inside socketserver's `Thread.start` surfaces from
+# `Condition._acquire_restore` as "release unlocked lock", a plain Exception
+# that `handle_error` swallows, and the server then served on. The request is a
+# `SimpleQueue.put`, which Python documents as safe in a signal handler: a
+# handler runs on the thread it interrupted, so a lock (an `Event`'s included)
+# could deadlock against a second signal landing inside the first handler.
+_serving_stop: Callable[[], None] | None = None
+
+
+def _on_exit_signal(_sig: int, _frame: Any) -> None:
+    stop = _serving_stop
+    if stop is not None:
+        stop()
+        return
+    sys.exit(0)
+
 
 def _register_sigterm_exit() -> Any:
     """Exit cleanly on SIGTERM, SIGHUP and SIGQUIT so finally blocks can run.
@@ -984,7 +1003,7 @@ def _register_sigterm_exit() -> Any:
             if name != "SIGTERM" and signal.getsignal(number) is signal.SIG_IGN:
                 continue
         with contextlib.suppress(ValueError, AttributeError):
-            previous[number] = signal.signal(number, lambda _sig, _frame: sys.exit(0))
+            previous[number] = signal.signal(number, _on_exit_signal)
     return previous or None
 
 
@@ -1056,6 +1075,7 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
     # the moment it appears must unwind through the cleanup below. Installed
     # after recovery, a SIGTERM that arrived first met the inherited ignore
     # and was lost, and the server served on (DRC-4737).
+    global _serving_stop  # noqa: PLW0603 - read by the signal handler, which takes no arguments
     orig_term = _register_sigterm_exit()
     try:
         write_state(
@@ -1096,8 +1116,21 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
                 target=run_producer, args=(server,), kwargs={"stop": producer_stop}, daemon=True
             )
             producer.start()
+        stop_serving: queue.SimpleQueue[bool] = queue.SimpleQueue()
+
+        def _shutdown_when_asked() -> None:
+            stop_serving.get()
+            server.shutdown()
+
+        # `shutdown` blocks until `serve_forever` returns, so it cannot run on
+        # the serving thread. One that arrives before the loop starts still
+        # works: the loop sees the request and returns at once.
+        # Armed first, so a signal inside this `start` is a request too.
+        _serving_stop = functools.partial(stop_serving.put, True)
+        threading.Thread(target=_shutdown_when_asked, daemon=True).start()
         server.serve_forever()
     finally:
+        _serving_stop = None
         # First, while the jobs can still write what the kill did to them. A
         # supervised CLI leads its own group, so a foreground Ctrl-C no longer
         # reaches it, and without this it would outlive the daemon.

@@ -1627,6 +1627,67 @@ class DaemonLifecycleTest(unittest.TestCase):
                     proc.kill()
                     proc.wait()
 
+    # Runs server.py in the foreground. The serving thread takes SIGTERM at the
+    # first bytecode of `Condition._acquire_restore` while it finishes the first
+    # request thread's start handshake: the exact window that turned the old
+    # handler's `SystemExit` into "release unlocked lock", which socketserver
+    # swallows. The kill is sent from that call itself, so no timing is involved.
+    _TERM_DURING_THREAD_START = """
+import os, signal, sys, threading
+armed = []
+real_restore = threading.Condition._acquire_restore
+def restore(self, state):
+    if armed:
+        armed.clear()
+        os.kill(os.getpid(), signal.SIGTERM)
+    return real_restore(self, state)
+threading.Condition._acquire_restore = restore
+real_start = threading.Thread.start
+def start(self):
+    if getattr(self._target, "__name__", "") == "process_request_thread":
+        armed.append(True)
+    return real_start(self)
+threading.Thread.start = start
+sys.path.insert(0, sys.argv[1])
+from compass_runtime.entry import main
+raise SystemExit(main(sys.argv[2:]))
+"""
+
+    def test_a_sigterm_while_a_request_thread_is_starting_still_stops_the_dashboard(
+        self,
+    ) -> None:
+        if not hasattr(signal, "SIGTERM") or sys.platform == "win32":
+            self.skipTest("SIGTERM not available or catchable on this platform")
+        port = self._free_port()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "COMPASS_HOME": tmp}
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    self._TERM_DURING_THREAD_START,
+                    str(Path(self.SERVER).parent),
+                    "--port",
+                    str(port),
+                ],
+                env=env,
+            )
+            try:
+                state_file = Path(tmp, f"compass-{port}.json")
+                deadline = time.monotonic() + 60.0
+                while not state_file.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(state_file.exists(), "state file was not written")
+                # One connection is what starts the request thread.
+                with contextlib.suppress(OSError):
+                    lifecycle.probe_port(port, timeout=5)
+                proc.wait(timeout=60)
+                self.assertFalse(state_file.exists(), "state file was left behind")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+
     def test_startup_sweeps_stale_state_files(self) -> None:
         """DRC-4181: Startup sweeps state files for dead runs whose port is closed."""
         with tempfile.TemporaryDirectory() as tmp:
