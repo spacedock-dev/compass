@@ -166,7 +166,14 @@ it('a person reads the page wording and derived reading in their terminal', () =
     const payload = recorded('data-focused-drift');
     const context = recorded('context-focused-drift');
     const session = payload.sessions[0];
+    const mediumPayload = recorded('data-focused-drift-medium');
+    const mediumContext = recorded('context-focused-drift-medium');
     const actual = {
+      mediumView: pageView({
+        session: mediumPayload.sessions[0],
+        payload: mediumPayload,
+        context: mediumContext,
+      } as DriftCase),
       provenance: 'scripts/regen_client_fixtures.py: drift_view_scenario',
       view: pageView({ session, payload, context } as DriftCase),
       drift: {

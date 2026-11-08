@@ -1846,6 +1846,11 @@ def adoption_scenarios(recorder: Recorder, scratch: Scratch) -> None:
 
 
 def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    _drift_view_recording(recorder, scratch, medium=False)
+    _drift_view_recording(recorder, scratch, medium=True)
+
+
+def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool) -> None:
     """A stored reading with a departure, and a direction given after the words were saved.
 
     The page demotes that departure to "can't tell" (a later direction still unsettled), and
@@ -1853,6 +1858,8 @@ def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
     derivation is held to on the real server's bytes.
     """
     first_at, later_at = NOW - 3600, NOW - 1800
+    suffix = "-medium" if medium else ""
+    goal_at = first_at if medium else first_at - 60
     row = synthetic_row(
         "claude",
         "a1b2c3d4",
@@ -1862,28 +1869,34 @@ def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
         age=5.0,
         first_prompt=FIRST_PROMPT,
         first_prompt_at=first_at,
-        last_prompt=LATER_PROMPT,
-        prompt_at=later_at,
+        last_prompt=FIRST_PROMPT if medium else LATER_PROMPT,
+        prompt_at=first_at if medium else later_at,
     )
     entries = [
         _transcript_entry("user", FIRST_PROMPT, first_at, 0),
         _transcript_entry("assistant", "Done.", first_at + 60, 1),
-        _transcript_entry("user", LATER_PROMPT, later_at, 2),
+        *([] if medium else [_transcript_entry("user", LATER_PROMPT, later_at, 2)]),
     ]
     scope = "project=alpha-app&session=claude:a1b2c3d4"
     # The reading cites a fact id, and a fact id is a hash of the record, so it is read from a
     # probe of the same transcript. The probe is its own rig because a board once collected is
     # held for the run, so the words saved afterwards would not reach it.
-    probe = Rig(scratch, "drift-view-probe", rows={"claude": [row], "codex": []})
+    probe = Rig(scratch, "drift-view-probe" + suffix, rows={"claude": [row], "codex": []})
     try:
         probe.write_transcript("a1b2c3d4", entries)
         facts = probe.send(get("/api/project-context", scope))["body"]["semantic"]["facts"]
     finally:
         probe.close()
     first = next(
-        fact for fact in facts if fact["type"] == "user_message" and fact["at"] == first_at
+        fact
+        for fact in facts
+        if (
+            fact["type"] == "agent_message"
+            if medium
+            else fact["type"] == "user_message" and fact["at"] == first_at
+        )
     )
-    rig = Rig(scratch, "drift-view", rows={"claude": [row], "codex": []})
+    rig = Rig(scratch, "drift-view" + suffix, rows={"claude": [row], "codex": []})
     try:
         rig.write_transcript("a1b2c3d4", entries)
         # The store stamps its write from the wall clock, which would move the board's revision.
@@ -1895,7 +1908,7 @@ def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
                 "a1b2c3d4",
                 goal="Add retry with backoff",
                 lines=[],
-                now=first_at - 60,
+                now=goal_at,
             )
             if saved != annotation_store.OUTCOME_STORED:
                 raise RuntimeError(saved)
@@ -1913,8 +1926,8 @@ def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
                     "ended_at_read": None,
                     "read_at": NOW - 600,
                     "evidence_through": NOW - 600,
-                    "revision_read_at": first_at - 60,
-                    "window_start": first_at - 60,
+                    "revision_read_at": goal_at,
+                    "window_start": goal_at,
                     "criteria": {
                         "goal": {
                             "result": runtime_reading.RESULT_DEPARTURE,
@@ -1931,16 +1944,18 @@ def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
 
         recorder.capture(
             rig,
-            "data-focused-drift",
+            "data-focused-drift" + suffix,
             get("/api/data"),
             "The board with a stored reading on one session: the row the page derives the Drift "
             "card from, beside the focused context captured next.",
         )
         recorder.capture(
             rig,
-            "context-focused-drift",
+            "context-focused-drift" + suffix,
             get("/api/project-context", scope),
-            "The focused context of that session: sources.work.drift_views holds the Drift "
+            "The focused context has a supported departure and draws Medium."
+            if medium
+            else "The focused context of that session: sources.work.drift_views holds the Drift "
             "card's answer. The reading departs, and a message the reader sent after saving "
             "the words is still unsettled, so the departure reads as can't tell.",
         )

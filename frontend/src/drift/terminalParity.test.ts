@@ -124,3 +124,49 @@ describe('the shape the terminal is held to', () => {
     });
   });
 });
+
+// Assert the reader's meaning before recording the oracle: agreement alone can preserve a bug.
+it('a person sees the draft direction held open even after saving only outcomes', () => {
+  for (const name of [
+    'a-person-keeps-the-draft-floor-after-saving-only-outcomes',
+    'a-person-keeps-the-open-directions-against-a-draft',
+  ]) {
+    const item = namedCases().find((item) => item.name === name);
+    if (!item) throw new Error(name);
+    expect(pageView(item)).toMatchObject({
+      lines: expect.arrayContaining([
+        expect.objectContaining({ key: 'goal', state: 'cant-tell', why: 'baseline-open' }),
+      ]),
+    });
+  }
+});
+
+it('a person has a named drawn example of every reachable level and source', () => {
+  const cases = read(NAMED_FILE).cases;
+  type LevelView = {
+    pill: { source: string; level: string } | null;
+    stale: { kind: string } | null;
+  };
+  const views = cases.map((item) => item.expected as LevelView);
+  const shown = new Set(
+    views.flatMap((view) => (view.pill ? [`${view.pill.source}:${view.pill.level}`] : [])),
+  );
+  const reachable = [
+    ...['none_or_low', 'medium', 'high'].map((level) => `analysis:${level}`),
+    ...['live', 'monitor'].flatMap((source) =>
+      ['none_or_low', 'medium', 'high', 'extreme'].map((level) => `${source}:${level}`),
+    ),
+  ];
+  expect([...shown].sort()).toEqual(reachable.sort());
+  expect(shown.has('analysis:extreme')).toBe(false);
+  const fallback = cases
+    .filter((item) => {
+      const assessment = item.session['annotation_assessment'] as
+        | Record<string, unknown>
+        | undefined;
+      return assessment && !('evidence_through' in assessment) && 'read_at' in assessment;
+    })
+    .map((item) => item.expected as LevelView);
+  expect(fallback.some((view) => view.stale === null)).toBe(true);
+  expect(fallback.some((view) => view.stale?.kind === 'work')).toBe(true);
+});

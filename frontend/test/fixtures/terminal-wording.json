@@ -1,4 +1,61 @@
 {
+  "mediumView": {
+    "live_on": false,
+    "revision": 1,
+    "analysis": {
+      "level": "medium",
+      "reasons": [
+        "departure"
+      ],
+      "withheld": false
+    },
+    "estimate": null,
+    "pill": {
+      "level": "medium",
+      "source": "analysis",
+      "so_far": true
+    },
+    "so_far": false,
+    "stale": null,
+    "harness": "claude",
+    "sid": "a1b2c3d4",
+    "annotate": true,
+    "reading": true,
+    "malformed": "",
+    "unsettled": false,
+    "unsettled_count": 0,
+    "drafted": false,
+    "limited": true,
+    "entry_count": 2,
+    "window_count": null,
+    "lines": [
+      {
+        "key": "goal",
+        "state": "departs",
+        "result": "departure",
+        "why": "",
+        "rests_on": "",
+        "limit": "",
+        "clause": "Add retry with backoff",
+        "detail": "It asked for a different change",
+        "cites": [
+          "fact:97096f7eb5b6d42d"
+        ],
+        "numbers": [
+          "2"
+        ],
+        "unloaded": 0,
+        "partial": false
+      }
+    ],
+    "departures": [
+      "goal"
+    ],
+    "cited": [
+      "fact:97096f7eb5b6d42d"
+    ],
+    "priors": []
+  },
   "provenance": "scripts/regen_client_fixtures.py: drift_view_scenario",
   "view": {
     "live_on": false,

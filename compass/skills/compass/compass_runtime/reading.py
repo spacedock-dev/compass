@@ -1837,6 +1837,29 @@ def author_of(fact: Mapping[str, Any]) -> str:
     return AUTHOR_AGENT
 
 
+def unsettled_direction(
+    fact: Mapping[str, Any], *, floor: Any, settled: Any = None, until: Any = None
+) -> bool:
+    """A person's direction after the baseline, still open at the reading's cutoff.
+
+    Both the correction and the Drift card use this rule, including person-authored gate
+    decisions and the exclusion of a correction copied from Compass. Keep settles through
+    its timestamp; a reading includes directions at its timestamp.
+    """
+    start = _number(floor)
+    at = _number(fact.get("at"))
+    through = _number(settled)
+    stopped = _number(until)
+    return (
+        author_of(fact) == AUTHOR_PERSON
+        and start is not None
+        and at is not None
+        and at > start
+        and (through is None or at > through)
+        and (stopped is None or at <= stopped)
+    )
+
+
 def demonstrates_work(entry: Mapping[str, Any]) -> bool:
     """Whether this entry is evidence that work happened, not that it was asked for.
 

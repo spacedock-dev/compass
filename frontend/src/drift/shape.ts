@@ -897,6 +897,7 @@ export function readingShape(
   unsettledIn: boolean,
   lineSource: (line: ReturnType<typeof annotationLines>[number]) => string,
   lineRequests: Record<string, number> = {},
+  openDirections?: readonly WorkEntry[],
 ): Shape {
   const source: Row = isRecord(raw) ? raw : {};
   /* Unknown keys are fatal; MISSING keys are not. A producer that omits a field renders a reading with less
@@ -955,7 +956,7 @@ export function readingShape(
   const readAt = nextNumber(source['read_at']);
   let unsettled = unsettledIn;
   if (readAt !== null && readAt > 0 && unsettled) {
-    unsettled = conflictCandidates(annotation, entries, null, null).some(
+    unsettled = (openDirections ?? conflictCandidates(annotation, entries, null, null)).some(
       (entry) => (nextNumber(entry.at) || 0) <= readAt,
     );
   }

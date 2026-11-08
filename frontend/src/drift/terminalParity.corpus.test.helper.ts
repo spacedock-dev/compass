@@ -852,12 +852,54 @@ export function namedCases(): DriftCase[] {
     build('a-saved-goal-is-not-a-draft', ['L11']),
     build('with-the-store-off-nothing-is-read', ['L11'], { payload: { annotate: false } }),
     build('a-session-with-no-reading-has-no-lines', ['S17'], { reading: null }),
+    ...directionBoundaryCases(),
     ...levelCases(),
     ...recordCases(),
     build('an-empty-record-reads-as-empty', ['W1'], { facts: [] }),
     build('a-session-the-scan-left-out-reads-as-partial', ['W1'], {
       facts: [],
       work: { omitted: [{ harness: 'claude', sid: 's1' }] },
+    }),
+  ];
+}
+
+/* One open set, including a person's gate decision, at the reading's cutoff. The outcomes-only
+   save deliberately comes after the draft's direction: saving a line must not move that floor. */
+function directionBoundaryCases(): DriftCase[] {
+  const facts = [
+    fact('settled', 'user_message', 110),
+    fact('gate', 'gate_decision', 120, { by: 'person:me' }),
+    fact('copied', 'user_message', 130, { copied: true }),
+    fact('agent-gate', 'gate_decision', 140),
+    M1,
+    fact('after-reading', 'user_message', 210),
+  ];
+  const spec: Spec = { annotation: { settled_through: 110 }, facts };
+  return [
+    build('a-person-keeps-the-same-open-directions-with-a-saved-goal', ['S3'], spec),
+    build('a-person-includes-a-direction-at-the-reading-cutoff', ['S3'], {
+      facts: [
+        M1,
+        fact('gate', 'gate_decision', 200, { by: 'person:me' }),
+        fact('after-reading', 'user_message', 210),
+      ],
+    }),
+    build('a-person-keeps-the-draft-floor-after-saving-only-outcomes', ['S3'], {
+      ...spec,
+      annotation: { ...NO_DRAFT, ...LINE_1, revision: 3, at: 160, settled_through: 110 },
+      session: { first_prompt: 'Ship the queue', first_prompt_at: 100 },
+    }),
+    build('a-person-keeps-the-open-directions-against-a-draft', ['S3'], {
+      ...spec,
+      annotation: { ...NO_DRAFT, revision: 3, settled_through: 110 },
+      session: { first_prompt: 'Ship the queue', first_prompt_at: 100 },
+    }),
+    build('a-person-keeps-a-reading-after-settling-every-direction-it-saw', ['S3'], {
+      ...spec,
+      annotation: { settled_through: 120 },
+    }),
+    build('a-person-keeps-a-reading-when-only-a-later-direction-remains', ['S3'], {
+      facts: [M1, fact('after-reading', 'user_message', 210)],
     }),
   ];
 }
@@ -899,6 +941,34 @@ const NO_DRAFT: Json = {
 /* The level precedence and the stale note: which level the page shows, from what, and why none. */
 function levelCases(): DriftCase[] {
   return [
+    build('a-person-sees-a-fresh-reading-without-an-evidence-timestamp', ['W3'], {
+      reading: { evidence_through: undefined },
+      facts: [M1, fact('before-read', 'agent_message', 200)],
+      analysis: ANALYSIS(),
+    }),
+    build('a-person-sees-new-work-after-a-reading-without-an-evidence-timestamp', ['W3'], {
+      reading: { evidence_through: undefined },
+      facts: [M1, fact('after-read', 'agent_message', 201)],
+      analysis: ANALYSIS(),
+    }),
+    build('a-person-sees-a-drawn-high-analysis', ['L5', 'L9'], {
+      facts: [M1, check('failed', 180, 'failed')],
+      analysis: ANALYSIS({ level: 'high', reasons: ['failed-check'] }),
+    }),
+    ...(['none_or_low', 'extreme'] as const).map((level) =>
+      build(`a-person-sees-an-active-${level}-live-estimate`, ['L1', 'L2'], {
+        reading: null,
+        lease: LEASE(),
+        live: LIVE({ level }),
+      }),
+    ),
+    ...(['medium', 'extreme'] as const).map((level) =>
+      build(`a-person-sees-an-active-${level}-monitor-reading`, ['L2'], {
+        reading: null,
+        lease: LEASE({ level: CHECKED(level) }),
+      }),
+    ),
+
     build('a-departure-reading-draws-the-level-the-server-computed', ['L5', 'L9'], {
       analysis: ANALYSIS(),
     }),

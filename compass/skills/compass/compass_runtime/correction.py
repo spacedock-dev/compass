@@ -349,43 +349,24 @@ def _as_evidence(fact: Mapping[str, Any], harness: str) -> dict[str, Any]:
     }
 
 
-def _later_directions(facts: list[dict[str, Any]], floor: float | None) -> list[dict[str, Any]]:
-    """The reader's own messages after the words, as `nextCockpitLaterDirections` took them."""
-    if floor is None:
-        return []
+def unsettled_direction_facts(
+    row: Mapping[str, Any], facts: Iterable[Any], *, floor: float | None, until: Any = None
+) -> list[dict[str, Any]]:
+    """The same open directions the Drift card reads, in the session's record order."""
     return [
-        f
-        for f in facts
-        if f.get("type") == "user_message"
-        and reading.author_of(f) == reading.AUTHOR_PERSON
-        and (at := reading.valid_prompt_time(f.get("at"))) is not None
-        and at > floor
-    ]
-
-
-def _unsettled(row: Mapping[str, Any], later: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The later directions the reader has not settled with Keep."""
-    settled = reading.valid_prompt_time(row.get("annotation_settled_through"))
-    return [
-        f
-        for f in later
-        if settled is None or (reading.valid_prompt_time(f.get("at")) or 0.0) > settled
+        fact
+        for fact in _own(row, facts)
+        if reading.unsettled_direction(
+            fact, floor=floor, settled=row.get("annotation_settled_through"), until=until
+        )
     ]
 
 
 def unsettled_directions(
     row: Mapping[str, Any], facts: Iterable[Any], *, floor: float | None, until: Any = None
 ) -> int:
-    """How many later directions stand unsettled, by the rule `compose` steers from.
-
-    The live estimate's `unsettled_directions` (DRC-4696), so the two never
-    disagree about whether a direction is still open.
-    """
-    stopped = reading.valid_prompt_time(until)
-    return sum(
-        stopped is None or (reading.valid_prompt_time(f.get("at")) or 0.0) <= stopped
-        for f in _unsettled(row, _later_directions(_own(row, facts), floor))
-    )
+    """How many of the reader's later directions remain open at the reading's cutoff."""
+    return len(unsettled_direction_facts(row, facts, floor=floor, until=until))
 
 
 def _failed_checks(

@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
 import collected from '../test/fixtures/collected-directions.json';
+import driftParity from '../test/fixtures/drift-parity.json';
+import { BASELINE_OPEN } from '../src/drift/sentences';
 import { neverDone } from './drift.checks';
 import {
   DEPARTURE_READING,
@@ -110,5 +112,29 @@ export const TheReadersDirectionsAreNotTheAgentsDrift: Story = {
     // The answer is the option the reader picked, said as they picked it.
     await expect(ANSWER_WORDS).toBe('Ruling: Same folder in its checkout');
     await neverDone(shown);
+  },
+};
+
+// The shared corpus records this outcomes-only save after the still-open draft direction.
+const draftCase = driftParity.cases.find(
+  (item) => item.name === 'a-person-keeps-the-draft-floor-after-saving-only-outcomes',
+);
+if (!draftCase) throw new Error('the recorded draft direction case must exist');
+export const APersonSeesTheDraftDirectionAfterSavingOnlyOutcomes: Story = {
+  args: {
+    scenario: {
+      session: draftCase.session,
+      facts: draftCase.context.semantic.facts,
+      work: draftCase.context.sources.work,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drift = await within(canvasElement).findByRole('region', { name: 'Drift' });
+    await expect(await within(drift).findByText(BASELINE_OPEN)).toBeVisible();
+    await expect(drift.querySelector('[data-next-departure="goal"]')).toBeNull();
+    await expect(drift.querySelector('[data-next-result-goal]')?.textContent).toContain(
+      "Can't tell",
+    );
+    await neverDone(drift);
   },
 };

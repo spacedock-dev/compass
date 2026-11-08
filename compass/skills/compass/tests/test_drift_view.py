@@ -14,7 +14,8 @@ import re
 import unittest
 from typing import Any
 
-from compass_runtime import drift_view, record_pages
+from compass_runtime import annotations as annotation_store
+from compass_runtime import correction, drift_view, levels, record_pages
 
 from .support import SERVER_PATH
 
@@ -211,10 +212,6 @@ class StaleReadingTest(unittest.TestCase):
         self.assertIsNone(view(BY_NAME["compass-s-own-turn-is-not-new-work"])["stale"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RecordPageSizeTest(unittest.TestCase):
     def test_the_drift_view_merges_the_same_first_page_the_page_loads(self) -> None:
         source = (
@@ -223,3 +220,115 @@ class RecordPageSizeTest(unittest.TestCase):
         match = re.search(r"RECORD_PAGE_SIZE = (\d+);", source)
         assert match is not None
         self.assertEqual(int(match.group(1)), record_pages.PAGE_SIZE)
+
+
+class DirectionAgreementTest(unittest.TestCase):
+    def test_a_person_sees_the_same_open_message_ids_in_the_correction_and_drift(self) -> None:
+        for name in (
+            "a-person-keeps-the-same-open-directions-with-a-saved-goal",
+            "a-person-includes-a-direction-at-the-reading-cutoff",
+            "a-person-keeps-the-draft-floor-after-saving-only-outcomes",
+            "a-person-keeps-the-open-directions-against-a-draft",
+        ):
+            with self.subTest(name=name):
+                case = BY_NAME[name]
+                row, payload, context = case["session"], case["payload"], case["context"]
+                ann = drift_view.annotation_of(row)
+                draft = drift_view.intent_draft(payload, row, ann)
+                facts = context["semantic"]["facts"]
+                entries = drift_view.work_entries(row, {"facts": facts})
+                floor = drift_view.baseline_at(ann, row, draft)
+                # The route uses the store's floor; represent the same persisted revision.
+                stored: Any = {
+                    "revisions": [
+                        {
+                            "goal": row.get("annotation_goal"),
+                            "at": row.get("annotation_at"),
+                            "goal_saved_at": row.get("annotation_goal_saved_at"),
+                        }
+                    ]
+                }
+                self.assertEqual(floor, annotation_store.direction_floor(stored, row))
+                until = row["annotation_assessment"]["read_at"]
+                self.assertEqual(
+                    1, correction.unsettled_directions(row, facts, floor=floor, until=until)
+                )
+                self.assertEqual("baseline-open", view(case)["lines"][0]["why"])
+                corrected = correction.unsettled_direction_facts(
+                    row, facts, floor=floor, until=until
+                )
+                opened = drift_view.conflict_candidates(ann, entries, row, draft, until=until)
+                self.assertEqual(["gate"], [f["fact_id"] for f in corrected])
+                self.assertEqual(["gate"], [entry.id for entry in opened])
+
+    def test_a_person_keeps_the_reading_after_settlement_or_a_direction_after_it(self) -> None:
+        for name in (
+            "a-person-keeps-a-reading-after-settling-every-direction-it-saw",
+            "a-person-keeps-a-reading-when-only-a-later-direction-remains",
+        ):
+            with self.subTest(name=name):
+                case = BY_NAME[name]
+                row = case["session"]
+                ann = drift_view.annotation_of(row)
+                draft = drift_view.intent_draft(case["payload"], row, ann)
+                facts = case["context"]["semantic"]["facts"]
+                floor = drift_view.baseline_at(ann, row, draft)
+                until = row["annotation_assessment"]["read_at"]
+                self.assertEqual(
+                    [], correction.unsettled_direction_facts(row, facts, floor=floor, until=until)
+                )
+                self.assertEqual(
+                    [],
+                    drift_view.conflict_candidates(
+                        ann, drift_view.work_entries(row, {"facts": facts}), row, draft, until=until
+                    ),
+                )
+                self.assertEqual("departs", view(case)["lines"][0]["state"])
+
+
+class SemanticLevelCoverageTest(unittest.TestCase):
+    def test_a_person_has_a_named_example_of_every_reachable_level_and_source(self) -> None:
+        shown = {
+            (pill["source"], pill["level"])
+            for case in NAMED["cases"]
+            if (pill := case["expected"].get("pill"))
+        }
+        reachable = {("analysis", level) for level in ("none_or_low", "medium", "high")}
+        reachable |= {
+            (source, level)
+            for source in ("live", "monitor")
+            for level in ("none_or_low", "medium", "high", "extreme")
+        }
+        self.assertEqual(reachable, shown)
+        self.assertNotIn(("analysis", "extreme"), shown)
+
+    def test_a_person_can_read_both_freshness_outcomes_without_an_evidence_timestamp(self) -> None:
+        fallback = [
+            case
+            for case in NAMED["cases"]
+            if "evidence_through" not in case["session"].get("annotation_assessment", {})
+            and "read_at" in case["session"].get("annotation_assessment", {})
+        ]
+        self.assertTrue(any(case["expected"]["stale"] is None for case in fallback))
+        self.assertTrue(
+            any(case["expected"]["stale"] == {"kind": "work", "before": None} for case in fallback)
+        )
+        for case in fallback:
+            with self.subTest(case["name"]):
+                self.assertEqual(case["expected"]["stale"], view(case)["stale"])
+
+    def test_a_person_never_receives_extreme_from_the_analysis_producer(self) -> None:
+        for case in NAMED["cases"]:
+            raw = case["session"].get("annotation_assessment")
+            facts = case["context"]["semantic"]["facts"]
+            # A failed scan and writes outside the goal's folders can reach Extreme only live.
+            evidence = levels.Evidence(
+                facts=tuple(facts), scan={"failed": 1, "written_paths": 1}, unsettled_directions=0
+            )
+            result = levels.analysis_level(raw, evidence, outcome_lines=0)
+            with self.subTest(case["name"]):
+                self.assertNotEqual(levels.EXTREME, result.level)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -188,6 +188,13 @@
     },
     {
       "method": "GET",
+      "name": "context-focused-drift-medium",
+      "route": "/api/project-context",
+      "sha256": "4da070bae17309d56d1d314d5a475730657dd19c90325a58c177b468413b74a1",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
       "sha256": "0344f438263a32c6b2c24078ee10fc7d022867d7d97ea914a9fc3e3cef237152",
@@ -310,6 +317,13 @@
       "name": "data-focused-drift",
       "route": "/api/data",
       "sha256": "b9573fc545b6936417fd4be5416158fc72a875d56d586b6547c649bcbe1e3c6b",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-medium",
+      "route": "/api/data",
+      "sha256": "e069039c30ddf374974d98e45bf4fb53d176835a3795de1ad9413d237b691ef7",
       "status": 200
     },
     {

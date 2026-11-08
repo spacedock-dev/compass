@@ -8528,9 +8528,16 @@ merge an errored one. The
 field carries closed tokens, ids, numbers and the reader's own words, never a sentence of the page's.
 It has no harness gate: Codex gets its line states, departures and earlier departures, and no level,
 because no analysis level is computed for it. The page keeps its own implementation; making it read
-the server's field would change the bundle and the recorded oracles, and was left for later. The
-server and the page still differ over what counts as a later direction in two places (a person's gate
-decision, and the floor a reading's rescope uses when no goal is saved); the port follows the page.
+the server's field would change the bundle and the recorded oracles, and was left for later.
+Correction and the Python view share `reading.author_of` and `reading.unsettled_direction`:
+a person's gate decision counts alongside their messages, and a copied Compass correction does
+not. Settlement includes its timestamp; a reading includes directions at its cutoff. Both the
+page and the Python view carry the draft-aware open set into the cutoff check, so saving only
+outcomes cannot move that check past an open direction of the draft. The shared corpus asserts
+message IDs for saved goals, outcomes-only saves and drafts, as well as the page's visible result.
+Its named expected views cover every reachable drawn level/source pair, both freshness outcomes
+when an older reading lacks `evidence_through`, and no Extreme analysis. Two real-server exchanges
+hold the attached view to the page and terminal: one withheld departure and one drawn Medium.
 
 A focused view that cannot be built now publishes `state: unavailable` with one of two closed
 reasons: `derivation-failed` or `identity-not-unique`. The terminal says which failure occurred
@@ -8547,7 +8554,8 @@ views and digests, never record pages; it clears when the server exits.
 The remaining shared terminal wording is held to the page by
 `frontend/src/drift/terminalWordingParity.test.ts`, which writes
 `frontend/test/fixtures/terminal-wording.json` from the page's strings and derivations over the
-recorded server exchange and sample summary. Python consumes the same expectations for press and
+recorded server exchanges and sample summary. Python consumes the same expectations for the
+drawn Medium view, press and
 level words, refusal reasons, and summary text, coverage notes and update messages.
 
 A terminal interrupt remembers whether the press answered and which job, if any, this invocation
