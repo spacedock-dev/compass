@@ -14,7 +14,8 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from compass_runtime import annotations, observer, project_context, records, transcripts
+from compass_runtime import annotations as annotation_store
+from compass_runtime import observer, project_context, records, transcripts
 
 from . import test_transcripts
 from .support import make_runtime
@@ -91,7 +92,9 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
                     self.assertIsNone(transcripts._first_prompt_record(record, "codex"))
                 row = self.candidates(pair)
                 self.assertEqual("", row["last_prompt"])
-                self.assertEqual(("", None), annotations.prompt_candidate(row, "latest-prompt"))
+                self.assertEqual(
+                    ("", None), annotation_store.prompt_candidate(row, "latest-prompt")
+                )
 
     def test_a_persons_action_is_not_a_later_direction_or_a_derived_goal(self) -> None:
         rows = captured_messages(FIRST, command=False) + captured_messages(
@@ -115,8 +118,8 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
                 self.assertEqual("", row["last_prompt"])
                 self.assertIsNone(row["instruction"])
                 for source in ("first-prompt", "latest-prompt"):
-                    self.assertEqual(("", None), annotations.prompt_candidate(row, source))
-                    outcome = annotations.adopt(
+                    self.assertEqual(("", None), annotation_store.prompt_candidate(row, source))
+                    outcome = annotation_store.adopt(
                         self.config,
                         self.state,
                         row,
@@ -125,8 +128,8 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
                         expected_at=NOW + 10,
                         now=NOW + 60,
                     )
-                    self.assertNotEqual(annotations.OUTCOME_STORED, outcome)
-                self.assertFalse(annotations.load(self.config))
+                    self.assertNotEqual(annotation_store.OUTCOME_STORED, outcome)
+                self.assertFalse(annotation_store.load(self.config))
                 self.assertEqual(
                     observer.NO_GOAL,
                     observer.analyze(
@@ -141,13 +144,13 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
         )
         self.assertEqual(FIRST, row["last_prompt"])
         for source in ("first-prompt", "latest-prompt"):
-            self.assertEqual((FIRST, NOW + 10), annotations.prompt_candidate(row, source))
+            self.assertEqual((FIRST, NOW + 10), annotation_store.prompt_candidate(row, source))
 
     def test_a_persons_next_work_prompt_supplies_the_draft_after_an_opening_action(self) -> None:
         row = self.candidates(
             captured_messages("$compass goal") + captured_messages(FIRST, command=False, second=20)
         )
-        self.assertEqual((FIRST, NOW + 20), annotations.prompt_candidate(row, "first-prompt"))
+        self.assertEqual((FIRST, NOW + 20), annotation_store.prompt_candidate(row, "first-prompt"))
 
     def test_a_persons_prose_mentioning_compass_stays_a_direction_and_a_goal(self) -> None:
         rows = captured_messages(MENTION, command=False)
@@ -158,7 +161,7 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
         )
         self.assertEqual([MENTION], [event["title"] for event in events])
         for source in ("first-prompt", "latest-prompt"):
-            self.assertEqual((MENTION, NOW + 10), annotations.prompt_candidate(row, source))
+            self.assertEqual((MENTION, NOW + 10), annotation_store.prompt_candidate(row, source))
         self.assertEqual(
             MENTION,
             observer.analyze(
@@ -166,8 +169,8 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
             )["goal"],
         )
         self.assertEqual(
-            annotations.OUTCOME_STORED,
-            annotations.adopt(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.adopt(
                 self.config,
                 self.state,
                 row,
@@ -177,7 +180,7 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
                 now=NOW + 60,
             ),
         )
-        saved = annotations.find(annotations.load(self.config), "codex", row["sid"])
+        saved = annotation_store.find(annotation_store.load(self.config), "codex", row["sid"])
         assert saved is not None
         self.assertEqual(MENTION, saved["revisions"][-1]["goal"])
 
@@ -218,14 +221,15 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
             )
 
     def test_a_persons_unknown_content_block_is_not_assumed_to_be_a_typed_action(self) -> None:
-        for content in (
+        contents: tuple[Any, ...] = (
             None,
             {},
             [],
             ["$compass goal"],
             [{"type": "image", "text": "$compass goal"}],
             [{"type": "input_text", "text": 42}],
-        ):
+        )
+        for content in contents:
             with self.subTest(content=content):
                 self.assertFalse(records.codex_compass_command(content))
 
