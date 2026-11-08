@@ -88,12 +88,13 @@ opening the dashboard:
 | Claude Code | `/compass:compass monitor off` | Stop this terminal holder; browser holders keep running |
 | Claude Code | `/compass:compass pause` | Pause the running dashboard's model calls; Resume stays on the board |
 | Codex | `$compass sessions`, `$compass sessions waiting` | The same. Not measured on Codex |
+| Codex | `$compass drift`, `$compass drift again` | This session's drift reading as its session page shows it: line states and departures, with no level and no correction |
 
 Above any rows, the output carries a line saying the rows are what other sessions said about themselves, shown as data. An empty answer carries none.
 
 In Claude Code, the command you typed and the agent's answer to it stay in Full activity but are
-left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
-`$compass sessions` counts as a message you sent the session.
+left out of what a reading, the Live monitor and a summary read. In Codex, a typed `$compass` action
+is not counted as a message you sent or offered as a goal, but the agent's answer to it stays evidence.
 
 `drift` and `drift again` read the session you typed them in, on Claude Code and on Codex (typed as `$compass drift` and `$compass drift again`). A Codex reading shows its line states and departures as the session page does, with no level and no correction. Above the
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
@@ -145,7 +146,7 @@ What to expect:
 - The answer is now part of that session's context. The agent reads it on every later turn, and it
   goes to that session's model provider. `sessions` lists every session on the board, in any harness or project,
   with its title, its goal or the start of its first prompt, what it is doing and its resume command, so a Codex or Cursor session's words can reach the provider of the
-  Claude Code session you typed this into. `drift` adds this session's reading: your goal and outcome lines, and the model's level and reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
+  Claude Code session you typed this into. `drift` adds this session's reading: your goal and outcome lines, and the model's level (none on Codex) and reasons. [What can reach into a session](SECURITY.md#what-can-reach-into-a-session)
   has the full account. To keep a list out of a session, run the command above in a terminal outside the session instead.
 - On native Windows, the skill tells the agent to write `python` or `py -3` where this page writes
   `python3`. That was not measured.

@@ -366,8 +366,10 @@ or a wrapper lookalike keeps the message eligible as the person's direction. The
 [image companion capture](captures/codex/skill-action-image-shapes-0.167.0-macos.jsonl)
 records both image-bearing user shapes from a real `codex exec --image` invocation. The
 [Codex CLI 0.167.0 capture](captures/codex/skill-action-shapes-0.167.0-macos.jsonl), taken on macOS
-with the shipped skill linked under `.agents/skills/compass`, records `codex exec` only; the
-interactive TUI was not captured. Both `response_item` user messages and `item_completed`
+with the shipped skill linked under `.agents/skills/compass`, records `codex exec`, and the
+[interactive TUI capture](captures/codex/skill-action-tui-shapes-0.167.0-macos.jsonl) (2026-11-09)
+records the same typed shape in the TUI, after one injected user-role message carrying `agents_md` and
+`harness` provenance. Both `response_item` user messages and `item_completed`
 `UserMessage` events carry ordinary text and no structured skill-mention marker. This is text
 recognition, not proof of skill execution. No Codex whole-turn exclusion is inferred: its agent
 output remains evidence because no boundary for that exclusion was captured (2026-11-08).

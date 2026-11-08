@@ -332,7 +332,7 @@ def tui_rows(text: str) -> list[dict[str, Any]]:
     with provenance `agents_md` and `harness`, then records the typed line as its own message
     with provenance `user`, as `codex exec` does. Nothing follows the typed line.
     """
-    rows = []
+    rows: list[dict[str, Any]] = []
     for line in TUI_CAPTURE.read_text(encoding="utf-8").splitlines():
         record = copy.deepcopy(json.loads(line)["record"])
         payload = record["payload"]

@@ -154,9 +154,11 @@ the reason, earlier departures, why it is stale, and, run in your own terminal, 
 copy. Under the [spend rule](../SECURITY.md#drift-commands-and-typed-consent), a stored reading costs
 nothing. With none, or with `--drift again`, it prints the route's allowance, asks for one reading
 as Analyze does and waits for it, and Ctrl+C cancels a reading it started. It settles no later message you sent; it
-says how many it left and that the session page can answer them. Another harness gets its session
-page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
-`/compass:compass drift` and `/compass:compass drift again` print that session's reading into it,
+says how many it left and that the session page can answer them. `--session codex:SESSION_ID`
+prints a Codex session's reading the same way, with no level and no correction, as its page shows
+none. Another harness gets its session page's address. The [manual](../MANUAL.md#options) has the details. Inside a Claude Code session,
+`/compass:compass drift` and `/compass:compass drift again`, and inside Codex `$compass drift` and
+`$compass drift again`, print that session's reading into it,
 under a line saying it is Compass's reading, written by a model, shown as data. The skill
 pre-approves both. In that ordinary skill output the answer says only that a correction is ready
 and where to copy it, and the reading goes to that session's model provider, as
