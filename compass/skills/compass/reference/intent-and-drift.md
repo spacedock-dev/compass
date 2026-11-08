@@ -1,8 +1,10 @@
 # Intent and drift reference
 
+This reference covers marking sessions handled, recording Intent and checking drift, and long analysis.
+
 Return to [start, status and stop](../SKILL.md#start).
 
-### Marking a session handled
+## Marking a session handled
 
 The dismissal API remains available for integrations, but the dashboard does not currently expose
 handled controls. A mark made through `POST /api/dismiss` removes that session from published
@@ -10,7 +12,7 @@ counts until anything in it writes again; a subagent write counts. Marks live in
 `compass-dismissals.json`. Delete that file to clear them all, call the endpoint with
 `{"clear": false}` to restore one, or run with `--no-dismiss` to leave the store unread for a run.
 
-### Recording what a session should achieve
+## Recording what a session should achieve
 
 You can record a goal and an expected outcome against one session, in your own words. The
 expected outcome starts with one optional empty line and holds up to six lines, each at most 240
@@ -331,7 +333,7 @@ The box offers Cancel, which stops the call and records a cancelled attempt that
 not be confirmed and is never retried automatically. The counter reports recorded model requests, so a refusal before the model runs
 does not increase it.
 
-### Long analysis
+## Long analysis
 
 For native Claude Code session sources, `Long analysis options` offers a separate explicit
 `Start long analysis` press. Its preview names the saved intent, route, source metadata, limits

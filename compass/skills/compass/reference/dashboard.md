@@ -2,6 +2,8 @@
 
 Return to [start, status and stop](../SKILL.md#start).
 
+`<skill-dir>` is the directory holding `SKILL.md`, one level above this file's `reference/` directory; see [Start in SKILL.md](../SKILL.md#start).
+
 ## About Compass
 
 Use Intent and drift to compare a session's recorded work with your goal. Open a session, set a

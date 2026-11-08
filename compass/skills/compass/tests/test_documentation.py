@@ -100,6 +100,42 @@ class APersonCanOpenAndCloseCompassInEveryHarnessTest(unittest.TestCase):
                 )
 
 
+class APersonCanReadEachReferenceOnItsOwnTest(unittest.TestCase):
+    def test_a_person_can_resolve_skill_dir_in_every_reference_that_uses_it(self) -> None:
+        for path in sorted((SERVER_PATH.parent / "reference").glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            if "<skill-dir>" not in text:
+                continue
+            with self.subTest(reference=path.name):
+                self.assertTrue(
+                    re.search(
+                        r"`<skill-dir>` is the directory holding `SKILL\.md`[^\n]*"
+                        r"one level above[^\n]*`reference/`",
+                        text,
+                    ),
+                    "A person cannot resolve <skill-dir> from this reference alone",
+                )
+                self.assertIn(
+                    "../SKILL.md#start",
+                    text,
+                    "A person cannot find the owning skill-directory rule",
+                )
+
+    def test_a_person_can_follow_named_see_references_to_a_heading(self) -> None:
+        for path in sorted((SERVER_PATH.parent / "reference").glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            headings = {
+                title.casefold() for title in re.findall(r"^#{1,6} (.+)$", text, flags=re.MULTILINE)
+            }
+            for title in re.findall(r"\(see ([A-Z][^\n)]+)\)", text):
+                with self.subTest(reference=path.name, heading=title):
+                    self.assertIn(
+                        title.casefold(),
+                        headings,
+                        "A person needs a link to a heading outside this reference",
+                    )
+
+
 class TerminalActionsMatchTheClientTest(unittest.TestCase):
     """The skill's Terminal actions table is held to the terminal client's own operations."""
 

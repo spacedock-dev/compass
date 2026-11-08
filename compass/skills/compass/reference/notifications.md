@@ -2,6 +2,8 @@
 
 Return to [start, status and stop](../SKILL.md#start).
 
+`<skill-dir>` is the directory holding `SKILL.md`, one level above this file's `reference/` directory; see [Start in SKILL.md](../SKILL.md#start).
+
 ## Notifications
 
 Three paths manage Claude's needs-input state, and a question registered through the ask lane is a
