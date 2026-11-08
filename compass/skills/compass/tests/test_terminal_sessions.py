@@ -17,14 +17,17 @@ import unittest
 from typing import Any
 
 from compass_runtime import events, terminal_sessions
+from compass_runtime.board_explanations import expand
 
 from .support import SERVER_PATH
 
 ROOT = SERVER_PATH.parents[3]
 FIXTURES = ROOT / "frontend" / "test" / "fixtures"
-PAYLOAD: dict[str, Any] = json.loads(
-    (FIXTURES / "client-contract" / "data-session-states.json").read_text(encoding="utf-8")
-)["response"]["body"]
+PAYLOAD: dict[str, Any] = expand(
+    json.loads(
+        (FIXTURES / "client-contract" / "data-session-states.json").read_text(encoding="utf-8")
+    )["response"]["body"]
+)
 EXPECTED: dict[str, Any] = json.loads(
     (FIXTURES / "session-groups.json").read_text(encoding="utf-8")
 )["board"]

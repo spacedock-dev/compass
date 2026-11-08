@@ -55,6 +55,8 @@ def _top(payload: dict[str, Any], change: Callable[[Any], Any]) -> dict[str, Any
 
 def compact(payload: dict[str, Any], vocabulary: dict[str, str]) -> dict[str, Any]:
     """Copy only transport-owned slots, retaining each row's varying values verbatim."""
+    if not isinstance(payload.get("sessions"), list):
+        return payload
     tokens = {sentence: token for token, sentence in vocabulary.items() if sentence}
     used: dict[str, str] = {}
 
@@ -69,7 +71,7 @@ def compact(payload: dict[str, Any], vocabulary: dict[str, str]) -> dict[str, An
         **payload,
         **_top(payload, change),
         "sessions": [_row(row, change) for row in payload["sessions"]],
-        "explanations": used,
+        **({"explanations": used} if used else {}),
     }
 
 
