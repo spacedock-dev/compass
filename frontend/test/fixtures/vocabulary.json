@@ -72,6 +72,18 @@
     "ci",
     "criteria"
   ],
+  "board_explanation_slots": [
+    "annotation_goal_why",
+    "annotation_lines_why",
+    "annotation_discarded_why",
+    "annotation_binding_why",
+    "delivery_why",
+    "delivery_none_why",
+    "delivery_mixed_why",
+    "delivery_binding_why",
+    "browser_lane_why",
+    "departure_why"
+  ],
   "checkBeforeLastChange": "before the last change",
   "checkEarlierFailed": "an earlier run failed",
   "checkListedByReader": "counted because you listed it",

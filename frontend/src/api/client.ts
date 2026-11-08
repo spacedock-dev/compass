@@ -1,6 +1,7 @@
 import type { ReadingLongHistoryBody, ReadingLongDiscardBody } from './longHistory';
 import type { ReadingLongPlanBody } from './longPlan';
 import { dataPath } from './bootstrap';
+import { expandExplanations } from './explanations';
 import type {
   AnnotateReceipt,
   AnnotateRequest,
@@ -118,7 +119,7 @@ async function settle<T>(
   return {
     kind: 'ok',
     status: response.status,
-    body: body as T,
+    body: expandExplanations(body) as T,
     revision: readRevision ? (response.headers.get(REVISION_HEADER) ?? '') : '',
   };
 }

@@ -227,23 +227,19 @@ function GoalCellView({ row }: { readonly row: SessionRow }) {
   );
 }
 
-/* The level the chip names for this row. Only a stored reading that itself departs names one: a row whose
-   drift is a raise alone names no level, and a raise beside a consistent reading would otherwise borrow that
-   reading's "None or low". Where this tab holds the analysis row, the level is the one the session page's
-   header pill shows, from the same derivation (`headerAnalysis`), so the two cannot differ. Without it, a
-   departing reading is at least Medium (`levels.analysis_level`: a departure reads Medium, and only a fresh
-   failed check reads higher), so the chip says that much and draws no meter, which would show Medium for
-   what may be High. */
+/* Before context arrives, a current stored departure is at least Medium; its exact level is unknown.
+   Once this tab holds context, only the session header's analysis may name a level, even when null. */
 function rowLevel(
   input: Parameters<typeof headerAnalysis>[0] | null,
 ): { readonly level: string | null; readonly label: string } | null {
   if (!input || !readingDeparts(input.session)) return null;
-  const shown = headerAnalysis(input);
-  if (shown) return { level: shown.level, label: shown.label };
+  if (input.contexts.get(contextKey(input.projectKey, identityOf(input.session)))?.data) {
+    return headerAnalysis(input);
+  }
   const { session } = input;
   if (session['annotation_not_accurate'] === true) return null;
-  /* A reading over words the reader has since replaced is the stale line's to describe, not a level's. */
   const raw = session['annotation_assessment'];
+  if (isRecord(raw) && raw['scope'] === 'withdrawn') return null;
   const read = isRecord(raw) ? nextNumber(raw['revision_read']) : null;
   const current = nextNumber(session['annotation_revision']);
   if (read === null || (current !== null && current !== read)) return null;

@@ -183,28 +183,56 @@
       "method": "GET",
       "name": "context-focused-drift",
       "route": "/api/project-context",
-      "sha256": "4d5f9796963448210695fc7b98355c47776aac21d385fb07f738fe5d62de345e",
+      "sha256": "42c7a3a35045cb9118b8eced10fdc76ee2287776fd74dea5e4bc839ee0932737",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-inaccurate",
+      "route": "/api/project-context",
+      "sha256": "7c5771d5f5a67528a6c05eef46bbaa93804062ab247f847cd8cec30bde8b50f0",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-drift-medium",
       "route": "/api/project-context",
-      "sha256": "4da070bae17309d56d1d314d5a475730657dd19c90325a58c177b468413b74a1",
+      "sha256": "72fe86cdb81a0f4cc4aa26d69acce975aa5c0f399cafcc06c3d4607b09c26194",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-missing-evidence",
+      "route": "/api/project-context",
+      "sha256": "79d8b6e7bcfce1ca6e9833dcc3bbe86e4367f4ac29c5e9fcfbb559f1ffd54b0b",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-stale",
+      "route": "/api/project-context",
+      "sha256": "6f7cdd9348d4818afa64a806fd0eb7b3547990fe1cf3752ab6c62325ebec14dd",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-focused-drift-withdrawn",
+      "route": "/api/project-context",
+      "sha256": "fd2d839ef32a48137f794abbd5ac4ad3c2b968e5792d21aad8cc9b0a652079aa",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-facts",
       "route": "/api/project-context",
-      "sha256": "0344f438263a32c6b2c24078ee10fc7d022867d7d97ea914a9fc3e3cef237152",
+      "sha256": "011ab8e42790e69abe26fb6698daf53f083b6b11568b609c6448e0b1dc4f31f9",
       "status": 200
     },
     {
       "method": "GET",
       "name": "context-focused-prompts",
       "route": "/api/project-context",
-      "sha256": "1c369d7cda2989e1976f22c1735f0f550bf682e738723cf751d7e3307817c2a9",
+      "sha256": "c786aa690a8cb356008725abd51eebfa67f84451396abc928deb94c2b48757d0",
       "status": 200
     },
     {
@@ -220,6 +248,13 @@
       "route": "/api/project-context",
       "sha256": "716a62c872a8d459ffa61da147edc24e3b7d9937178ee80bf9382f3c27480ceb",
       "status": 403
+    },
+    {
+      "method": "GET",
+      "name": "context-live-row",
+      "route": "/api/project-context",
+      "sha256": "3c2f74a98fb308aaf84b929c358c915ded8319269eaddac407641055c398f24d",
+      "status": 200
     },
     {
       "method": "GET",
@@ -272,9 +307,23 @@
     },
     {
       "method": "GET",
+      "name": "context-task-preview-whole",
+      "route": "/api/project-context",
+      "sha256": "3efa554e95f6388290c8a99c68f63a07779f755fd00c93abad63069d82bdebd0",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "context-task-preview-xml",
+      "route": "/api/project-context",
+      "sha256": "4bf0ada9d9ee7911ce39d9881f87ec09269cb2517a645f893437cc2c0b23695e",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "context-terminal-project",
       "route": "/api/project-context",
-      "sha256": "2615f2c24c3ca4a3241d325dc3ae2b52e79e9a113f7cd185f2ba5db30d174802",
+      "sha256": "8bb789984d6dd5b705eb3a69272cbc9b07c9ffa47bd53364f0d03979e78346e4",
       "status": 200
     },
     {
@@ -309,21 +358,49 @@
       "method": "GET",
       "name": "data-empty",
       "route": "/api/data",
-      "sha256": "9e31bb021c4580ae8244094c1be694ed157c731496444cd4ffab3f5227dc53ce",
+      "sha256": "bfdc88a99fbed8a5435e3ddbbefd875e8a50e787e9c664eb714b5efd26fc73d4",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift",
       "route": "/api/data",
-      "sha256": "b9573fc545b6936417fd4be5416158fc72a875d56d586b6547c649bcbe1e3c6b",
+      "sha256": "07a89a29038acb11065798bebe3283121054fb91ea8951b69399f9ca87e2bd6d",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-inaccurate",
+      "route": "/api/data",
+      "sha256": "da166019297e15ee0eb14b45a80f62189bf0c700d9687ba268840527aa169199",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-focused-drift-medium",
       "route": "/api/data",
-      "sha256": "e069039c30ddf374974d98e45bf4fb53d176835a3795de1ad9413d237b691ef7",
+      "sha256": "633c65bceecc255698a607b7b5407afa1846fff68f60d58bf5c406579d40d933",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-missing-evidence",
+      "route": "/api/data",
+      "sha256": "073f7f3e29bbe11e17bbad38bbf3fbcddb957651b407111b4f6d8615776cab88",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-stale",
+      "route": "/api/data",
+      "sha256": "95e515b30ea32d1a749716d62fbf4a897e7409a38cd529f1fd9c87ea889f1dce",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-focused-drift-withdrawn",
+      "route": "/api/data",
+      "sha256": "6bfd23e362de0b1c207221c8c49de4578c123e236f3adb293439bf26f4d5d31c",
       "status": 200
     },
     {
@@ -344,77 +421,105 @@
       "method": "GET",
       "name": "data-healthy",
       "route": "/api/data",
-      "sha256": "9cb33b82dc0d69e08f675174b4d8c71af86e78b593f4102de85998e614ea0b93",
+      "sha256": "78ba2376da6a85515499c357409f024f5e753ce44508de1c3caa0b7180f7938b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-identity-collisions",
       "route": "/api/data",
-      "sha256": "6930d737e263882055f159b6e8b8cb1de04d9efd10da8115d6f9bd1ea3ef2938",
+      "sha256": "7c0bfc79a067fa1fe6ff58b2a03e283af793a2c8e56684e06752a029208c450f",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-live-row",
+      "route": "/api/data",
+      "sha256": "f23702faaa70c4d83a2dc2057c7a751e76626adf2510788ade9d3a00e363856c",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-restarted-build",
       "route": "/api/data",
-      "sha256": "9abe46ac50d51994acf64aafbbd5fa2c16b989ae9545107067e5283153f657c2",
+      "sha256": "6a5e85f5b428e0c57c35bbf41cafb456c3b7c4045477e4b4beac36abce4011e6",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-session-states",
       "route": "/api/data",
-      "sha256": "3ca889e91133fc78c8a40b6eb3a26b85ab54153bed83b2c8fdfb137e0868efb7",
+      "sha256": "2546908c718b5bdb8e66af8a48bc391ebcda13fabc340e02331d97e49ed53c4b",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-shared-explanations",
+      "route": "/api/data",
+      "sha256": "618add35aea1a77143ff8d756825184ec1c86e8b10b8669d4b9be2355ff61235",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-show-all",
       "route": "/api/data",
-      "sha256": "67ec17aefac54b8a885a9000b1025224122748c7d315ee60a07d37ba1867c9db",
+      "sha256": "8ee46ee014d8803caf263922bad474fd6fa3b509905e856a20b424e78a6d2cad",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-task-preview-whole",
+      "route": "/api/data",
+      "sha256": "367f5716d4857b80a9cca1891a1096d55d4bbffe4d16a6f06c201dc2a38f8e6c",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "data-task-preview-xml",
+      "route": "/api/data",
+      "sha256": "bc6392d797f3a2c61146454fa0c682312647965aaafd03afc1dc435612e88eb2",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project",
       "route": "/api/data",
-      "sha256": "87914ac0ef91428d3d365bdd44c4e5c167e35c9093c66ec43345fc528ffa14ef",
+      "sha256": "0cdb69927d66ec0359bc8ec62231c0c86f731890ab635dc5ee49c39ea64bcc4a",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-terminal-project-fo",
       "route": "/api/data",
-      "sha256": "de797f2292d0faf37b004215b0e2c3523e7d1b3f65fe720bf6d27e4ac7acebf1",
+      "sha256": "dd306353cb978bdeed64fcecff1303c0f4f5840e30689dc74ac9557b0ecce906",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-dormant",
       "route": "/api/data",
-      "sha256": "1c4a04310250911e6d6d1efb4fd8315b6c9ebd5f610d0e623a881171f623dd44",
+      "sha256": "20416df77db8b421f0e923eaa6d8a45ca164a633641ed724d0d96b602cda662b",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-regranted",
       "route": "/api/data",
-      "sha256": "6f7886b61503122da0c9f136caffd296f9389d4aa4c813065700f69d04898ba4",
+      "sha256": "47114edd1fe40c96dea950ee614fc794b61cc7cc05bffa3a09325f0c94ffa829",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unasked-revoked",
       "route": "/api/data",
-      "sha256": "cd7a3f5b685438127b4243a526ae5b5870155e74ee0c079ae422b50b0d992e94",
+      "sha256": "b991edf24d00649f75f2f135e513b6ab6544cda36752771e41578c3e79194fef",
       "status": 200
     },
     {
       "method": "GET",
       "name": "data-unavailable",
       "route": "/api/data",
-      "sha256": "0b64018c7a1eb08ad7804673371b41bbc97ce0a77fb980cc17a0d1f66f0b6e76",
+      "sha256": "f1b70e779e84902ab8828113babced37ac4d28334f8ee0674e33d756ba109c1a",
       "status": 200
     },
     {
@@ -723,6 +828,13 @@
       "name": "record-unsupported",
       "route": "/api/session-record",
       "sha256": "a28f751590e0ccb62a53b86f057e926ccaba50fc7046bcd57ff58c9e10b05a4f",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "name": "session-shared-explanations",
+      "route": "/api/session",
+      "sha256": "78fb0b79a5d13a8907b80ec8ca42b827c513f174f64e48a5c46f052a253daa81",
       "status": 200
     },
     {

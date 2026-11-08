@@ -290,9 +290,8 @@ export const CopiedLapsesBackToCopy: Story = {
 };
 
 /* Findings 8 and 17: a Sessions row leads with one state word and shows the project label alone, and its
-   drift chip names a level: before this tab has read the project, the least a departure reads (a departure
-   reads Medium unless a fresh failed check makes it High) with no meter, and once it has, the level the
-   session header names, from the same derivation. */
+   drift chip says Medium or higher before this tab holds the analysis evidence. Once held, it names
+   the level the session header names, from the same derivation. */
 const SESSIONS_NAV: { back?: () => void } = {};
 export const TheSessionsRowSaysTheLevel: Story = {
   ...scenario({

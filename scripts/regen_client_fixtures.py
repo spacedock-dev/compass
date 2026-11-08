@@ -61,10 +61,12 @@ TERMINAL_GOALS = FIXTURES.parent / "terminal-goal.json"
 sys.path.insert(0, str(SKILL))
 from compass_runtime import aggregate as runtime_aggregate  # noqa: E402 - skill runtime path
 from compass_runtime import annotations as annotation_store  # noqa: E402 - skill runtime path
+from compass_runtime import board_explanations as runtime_board_explanations  # noqa: E402
 from compass_runtime import ci_read as runtime_ci_read  # noqa: E402 - skill runtime path
 from compass_runtime import claude_data as runtime_claude_data  # noqa: E402 - runtime path
 from compass_runtime import claude_settings as runtime_claude_settings  # noqa: E402 - runtime path
 from compass_runtime import copied_corrections as runtime_copied_corrections  # noqa: E402
+from compass_runtime import deliveries as runtime_deliveries  # noqa: E402
 from compass_runtime import departures as runtime_departures  # noqa: E402 - runtime path
 from compass_runtime import levels as runtime_levels  # noqa: E402 - skill runtime path
 from compass_runtime import notifications as runtime_notifications  # noqa: E402 - runtime path
@@ -1007,6 +1009,191 @@ def session_states_scenario(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def board_explanations_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """Shared words with varying delivery outcomes and a stored departing analysis."""
+    rows = {
+        "claude": [
+            synthetic_row("claude", sid, "shared-words", title=title, state=state)
+            for sid, title, state in (
+                ("11111111", "No stored words", "idle"),
+                ("22222222", "Refused notification", "idle"),
+                ("33333333", "Mixed notification outcomes", "idle"),
+                ("44444444", "Stored departure", "working"),
+            )
+        ]
+    }
+    rig = Rig(scratch, "shared-words", rows=rows)
+    try:
+        for sid, outcome, at in (
+            ("22222222", runtime_deliveries.OUTCOME_REFUSED, NOW - 120),
+            ("33333333", runtime_deliveries.OUTCOME_REFUSED, NOW - 180),
+            ("33333333", runtime_deliveries.OUTCOME_HANDED_OVER, NOW - 60),
+        ):
+            runtime_deliveries.record(
+                rig.config,
+                harness="claude",
+                sid=sid + "-full-id",
+                lane="departure",
+                outcome=outcome,
+                now=at,
+            )
+        annotation_store.annotate(
+            rig.config, rig.state, "claude", "44444444", goal="Build the parser", now=NOW - 600
+        )
+        assessment: Any = {
+            "revision_read": 1,
+            "revision_read_at": NOW - 600,
+            "read_at": NOW - 240,
+            "stamp": "Synthetic stored reading",
+            "cutoff": "Read the recorded synthetic instruction.",
+            "scope": runtime_reading.SCOPE_MID_FLIGHT,
+            "scope_text": runtime_reading.SCOPE_TEXT[runtime_reading.SCOPE_MID_FLIGHT],
+            "criteria": {
+                "goal": {
+                    "result": runtime_reading.RESULT_DEPARTURE,
+                    "cites": ["synthetic-fact"],
+                    "detail": "The work moved to the lexer.",
+                    "clause": "Build the parser",
+                }
+            },
+        }
+        with mock.patch.object(annotation_store, "time", FrozenTime()):
+            annotation_store.record_reading(
+                rig.config, rig.state, "claude", "44444444", assessment=assessment
+            )
+        recorder.capture(
+            rig,
+            "data-shared-explanations",
+            get("/api/data"),
+            "Absent, prefix-bound, refused, mixed and eligible rows; a stored departing analysis.",
+        )
+        recorder.capture(
+            rig,
+            "session-shared-explanations",
+            get("/api/session", "harness=claude&sid=33333333"),
+            "Focused mixed outcomes stay self-contained.",
+        )
+    finally:
+        rig.close()
+
+
+def live_row_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """A real focused model-free level beside a raise, with no stored analysis."""
+    sid = "44444444"
+    row = synthetic_row(
+        "claude",
+        sid,
+        "shared-words",
+        title="Live estimate without a stored reading",
+        state="working",
+    )
+    rig = Rig(scratch, "live-row", rows={"claude": [row]})
+    try:
+        entries = [
+            _transcript_entry("user", "Build the parser", NOW - 1200, 0),
+            _transcript_entry("assistant", "I will inspect the parser", NOW - 900, 1),
+            _transcript_entry("assistant", "", NOW - 800, 2),
+            _transcript_entry("user", "", NOW - 799, 3),
+        ]
+        entries[2]["message"]["content"] = [
+            {
+                "type": "tool_use",
+                "id": "fixture-check",
+                "name": "Bash",
+                "input": {"command": "pytest"},
+                "caller": {"type": "direct"},
+            }
+        ]
+        entries[3]["message"]["content"] = [
+            {
+                "type": "tool_result",
+                "tool_use_id": "fixture-check",
+                "content": "Exit code 1\n1 failed, 4 passed",
+                "is_error": True,
+            }
+        ]
+        entries[3]["toolUseResult"] = {}
+        for item in entries:
+            item["sessionId"] = sid + "-0000-4000-8000-000000000000"
+        rig.write_transcript(sid, entries)
+        annotation_store.annotate(
+            rig.config,
+            rig.state,
+            "claude",
+            sid,
+            goal="Build the parser",
+            lines=["Tests pass"],
+            now=NOW - 1200,
+        )
+        runtime_departures.record(
+            rig.config,
+            [
+                {
+                    "harness": "claude",
+                    "sid": sid,
+                    "at": NOW - 600,
+                    "constraint": "goal",
+                    "clause": "Build the parser",
+                    "reading": "Synthetic earlier check raised a departure.",
+                    "evidence": "Synthetic fixture check",
+                    "revision": 1,
+                    "cutoff": NOW - 600,
+                    "cutoff_text": "Synthetic fixture check.",
+                    "withdrawn": False,
+                }
+            ],
+        )
+        recorder.capture(
+            rig,
+            "data-live-row",
+            get("/api/data"),
+            "A recorded raise without a stored analysis; saved intent admits a model-free "
+            "live estimate.",
+        )
+        recorder.capture(
+            rig,
+            "context-live-row",
+            get("/api/project-context", "project=shared-words&session=claude:44444444"),
+            "The server's real model-free estimate, captured without a model call.",
+        )
+    finally:
+        rig.close()
+
+
+def task_preview_scenario(recorder: Recorder, scratch: Scratch) -> None:
+    """The real parser's first clip follows 1,984 characters of skipped XML context."""
+    for case, text in (
+        (
+            "xml",
+            "<context>"
+            + "x" * 1963
+            + "</context>\n\n"
+            + "Build the parser with bounded input and preserve every requirement.",
+        ),
+        ("whole", "Build the parser"),
+    ):
+        row = synthetic_row(
+            "claude", "a1b2c3d4", "task-preview", title="Build the parser", state="working"
+        )
+        rig = Rig(scratch, "task-preview-" + case, rows={"claude": [row]})
+        try:
+            rig.write_transcript("a1b2c3d4", [_transcript_entry("user", text, NOW - 60, 0)])
+            for kind, path, query in (
+                ("data", "/api/data", ""),
+                ("context", "/api/project-context", "project=task-preview"),
+            ):
+                recorder.capture(
+                    rig,
+                    kind + "-task-preview-" + case,
+                    get(path, query),
+                    "A task preview after skipped XML."
+                    if case == "xml"
+                    else "A complete task preview needs no ellipsis.",
+                )
+        finally:
+            rig.close()
+
+
 def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     """A project brief recorded through publication, including credential redaction."""
     rows = {
@@ -1071,7 +1258,15 @@ def terminal_project_scenario(recorder: Recorder, scratch: Scratch) -> None:
     try:
         rig.write_transcript(
             "a1b2c3d4",
-            [_transcript_entry("user", "Build the parser with bounded input", NOW - 60, 0)],
+            [
+                _transcript_entry(
+                    "user",
+                    "Build the parser with bounded input "
+                    + "and preserve every reader-facing explanation " * 4,
+                    NOW - 60,
+                    0,
+                )
+            ],
         )
         for name, path, query in (
             ("data-terminal-project", "/api/data", ""),
@@ -1890,9 +2085,13 @@ def adoption_scenarios(recorder: Recorder, scratch: Scratch) -> None:
 def drift_view_scenario(recorder: Recorder, scratch: Scratch) -> None:
     _drift_view_recording(recorder, scratch, medium=False)
     _drift_view_recording(recorder, scratch, medium=True)
+    for case in ("missing-evidence", "stale", "inaccurate", "withdrawn"):
+        _drift_view_recording(recorder, scratch, medium=True, case=case)
 
 
-def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool) -> None:
+def _drift_view_recording(
+    recorder: Recorder, scratch: Scratch, *, medium: bool, case: str = ""
+) -> None:
     """A stored reading with a departure, and a direction given after the words were saved.
 
     The page demotes that departure to "can't tell" (a later direction still unsettled), and
@@ -1900,7 +2099,7 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
     derivation is held to on the real server's bytes.
     """
     first_at, later_at = NOW - 3600, NOW - 1800
-    suffix = "-medium" if medium else ""
+    suffix = ("-" + case) if case else ("-medium" if medium else "")
     goal_at = first_at if medium else first_at - 60
     row = synthetic_row(
         "claude",
@@ -1984,6 +2183,38 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
             if stored != annotation_store.OUTCOME_STORED:
                 raise RuntimeError(stored)
 
+        if case == "missing-evidence":
+            rig.write_transcript("a1b2c3d4", entries[:1])
+        elif case == "stale":
+            annotation_store.annotate(
+                rig.config,
+                rig.state,
+                "claude",
+                "a1b2c3d4",
+                goal="Document retry with backoff",
+                now=NOW - 300,
+            )
+        elif case == "inaccurate":
+            with mock.patch.object(annotation_store, "time", FrozenTime()):
+                annotation_store.mark_not_accurate(
+                    rig.config,
+                    rig.state,
+                    "claude",
+                    "a1b2c3d4",
+                    read_at=NOW - 600,
+                    on=True,
+                )
+        elif case == "withdrawn":
+            # The cited assistant text is now absent. The frozen reading remains stored,
+            # but publication withdraws the verdict whose evidence it can no longer find.
+            rig.write_transcript(
+                "a1b2c3d4",
+                [
+                    *entries[:1],
+                    _transcript_entry("assistant", "I will inspect the files.", first_at + 120, 2),
+                ],
+            )
+
         recorder.capture(
             rig,
             "data-focused-drift" + suffix,
@@ -1995,7 +2226,9 @@ def _drift_view_recording(recorder: Recorder, scratch: Scratch, *, medium: bool)
             rig,
             "context-focused-drift" + suffix,
             get("/api/project-context", scope),
-            "The focused context has a supported departure and draws Medium."
+            f"The focused context after {case}; analysis is recomputed from current evidence."
+            if case
+            else "The focused context has a supported departure and draws Medium."
             if medium
             else "The focused context of that session: sources.work.drift_views holds the Drift "
             "card's answer. The reading departs, and a message the reader sent after saving "
@@ -2124,9 +2357,12 @@ def unsupported_record_scenario(recorder: Recorder, scratch: Scratch) -> None:
 
 
 SCENARIO_SECTIONS: tuple[Callable[[Recorder, Scratch], None], ...] = (
+    board_explanations_scenario,
+    live_row_scenario,
     data_scenarios,
     session_states_scenario,
     terminal_project_scenario,
+    task_preview_scenario,
     stream_scenarios,
     context_scenarios,
     unsupported_record_scenario,
@@ -2339,6 +2575,7 @@ def vocabulary() -> dict[str, Any]:
         )
     ]
     return {
+        "board_explanation_slots": list(runtime_board_explanations.SLOTS),
         "format": FORMAT,
         "assessmentKeys": list(reading.ASSESSMENT_KEYS),
         "criterionKeys": list(reading.CRITERION_KEYS),

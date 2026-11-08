@@ -31,7 +31,8 @@
           "phase": "user-role instruction",
           "sid": "a1b2c3d4",
           "source": "timestamped non-meta user-role record",
-          "title": "Add retry with backoff to the webhook handler."
+          "title": "Add retry with backoff to the webhook handler.",
+          "title_truncated": false
         }
       ],
       "focus": {
@@ -416,7 +417,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "6783",
+      "Content-Length": "6807",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },

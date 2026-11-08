@@ -525,12 +525,17 @@ def _instruction_event(
     if harness in observer.DIRECTION_HARNESSES:
         return _direction_event(config, record, harness, sid)
     message = (
-        observer.parse_reader_record(record) if observer.reader_record_candidate(record) else None
+        observer.parse_reader_record(record, cap=len(json.dumps(record)))
+        if observer.reader_record_candidate(record)
+        else None
     )
     if message is None or message.get("role") != "user":
         return None
     at = records.parse_ts(_reader_stamp(record) or record.get("timestamp") or "")
-    text = message["text"].strip()
+    # Parse against the original record before applying the extraction bound. A sentinel
+    # character is insufficient: the parser strips trailing whitespace, including that sentinel.
+    text_clipped = len(message["text"]) > records.EXTRACT_TEXT_CAP_CHARS
+    text = message["text"][: records.EXTRACT_TEXT_CAP_CHARS].strip()
     if at is None or not text:
         return None
     title = _message_title(config, text, harness)
@@ -542,6 +547,8 @@ def _instruction_event(
         "kind": "steer",
         "phase": "user-role instruction",
         "title": title,
+        "title_truncated": text_clipped
+        or len(_message_title(config, text, harness, limit=len(title) + 1)) > len(title),
         **({ID_TITLE_FIELD: hashed} if hashed else {}),
         READER_WORDS_FIELD: _message_words(config, text, harness),
         "source": message.get("source") or "timestamped non-meta user-role record",
@@ -618,9 +625,12 @@ def _reader_stamp(record: dict[str, Any]) -> Any:
     return None
 
 
-def _message_title(config: RuntimeConfig, text: str, harness: str) -> str:
+def _message_title(
+    config: RuntimeConfig, text: str, harness: str, *, limit: int | None = None
+) -> str:
     """A user message's one-line title, or "" when it names nothing."""
-    limit = min(MAX_SEMANTIC_LINE, config.observer_goal_cap_chars)
+    if limit is None:
+        limit = min(MAX_SEMANTIC_LINE, config.observer_goal_cap_chars)
     # A slash command is the reader's direction in the harness's markup, every
     # line of which opens with `<` and so reads as empty to `_semantic_line`
     # (DRC-4764). `records`' note on the command tags is the other half.
@@ -1095,6 +1105,7 @@ def _direction_event(
         "kind": "steer",
         "phase": "user-role instruction",
         "title": title,
+        "title_truncated": len(_semantic_line(text, len(title) + 1)) > len(title),
         READER_WORDS_FIELD: _message_words(config, text, harness),
         "source": "timestamped explicit user input record",
         "harness": harness,
@@ -11950,7 +11961,12 @@ def _semantic_fact_from_event(
         "at": source_event.get("at"),
         "type": fact_type,
         "source_kind": raw_kind,
-        "summary": source_event.get("title"),
+        # The preview marker is display punctuation; the citation above keeps its old title.
+        "summary": (
+            str(source_event.get("title") or "") + "…"
+            if source_event.get("title_truncated") is True
+            else source_event.get("title")
+        ),
         "scope": "project" if raw_kind == "gate" else "session",
         "actor_claim": _semantic_actor_claim(source_event, raw_kind),
         "work_item_id": work_item_id or None,

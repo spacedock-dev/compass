@@ -33,7 +33,7 @@
       "harness": "Claude Code"
     }
   ],
-  "task": "Build the parser with bounded input",
+  "task": "Build the parser with bounded input and preserve every reader-facing explanation and preserve every reader-facin…",
   "task_stage": "",
   "task_source": "Exact operator direction",
   "instruction": "Check sk-…REDACTED",

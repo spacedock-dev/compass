@@ -50,6 +50,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         │   ├── terminal_monitor.py # detached per-session terminal lease holder
         │   ├── monitor_store.py    # private control records and persistent OS lock paths
         │   ├── terminal_drift.py   # stdlib-only: --drift, rendered from the server's drift_views, and its press
+        │   ├── board_explanations.py # stdlib-only full-board sentence tokens and client resolution
         │   ├── terminal_sessions.py # stdlib-only: what --sessions prints, ported from the board's own rules
         │   ├── terminal_summary.py # stdlib-only: stored cited phases and explicit summary requests
         │   ├── terminal_goal.py    # stdlib-only: fresh Intent goal reads and guarded terminal saves

@@ -1064,6 +1064,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            "compass_runtime.board_explanations",
             # Each row's small summary state; no blocks and no transcript read.
             "compass_runtime.summary_store",
             # The summary grant on the board and each row's `summary.job` metadata.
@@ -1241,6 +1242,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.terminal_sessions",
         },
         "compass_runtime.terminal_client": {
+            "compass_runtime.board_explanations",
             "compass_runtime.terminal_summary",
             "compass_runtime.terminal_goal",
             "compass_runtime.terminal_project",
@@ -1263,6 +1265,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         "compass_runtime.terminal_drift": {"compass_runtime.terminal_sessions"},
         "compass_runtime.terminal_sessions": set(),
+        "compass_runtime.board_explanations": set(),
         # One small file per Claude session for the status line, written through the owner-only
         # writer. A leaf over `io` and `terminal_sessions`, so the module that owns collection never
         # imports it. The second edge is the one definition of what waits, shared with `--sessions`.
@@ -1970,6 +1973,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.board_explanations",
             # Per-application focused views use the state owner's bounded cache insertion.
             "compass_runtime.state",
             # Single-row lookup shares the terminal native-id predicate, a stdlib-only leaf.

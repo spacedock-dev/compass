@@ -2,6 +2,16 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { mountSessions } from './testing';
 import { rowState } from './rows';
+import current from '../../test/fixtures/client-contract/data-focused-drift-medium.json';
+import currentContext from '../../test/fixtures/client-contract/context-focused-drift-medium.json';
+import missing from '../../test/fixtures/client-contract/data-focused-drift-missing-evidence.json';
+import missingContext from '../../test/fixtures/client-contract/context-focused-drift-missing-evidence.json';
+import stale from '../../test/fixtures/client-contract/data-focused-drift-stale.json';
+import staleContext from '../../test/fixtures/client-contract/context-focused-drift-stale.json';
+import inaccurate from '../../test/fixtures/client-contract/data-focused-drift-inaccurate.json';
+import inaccurateContext from '../../test/fixtures/client-contract/context-focused-drift-inaccurate.json';
+import withdrawn from '../../test/fixtures/client-contract/data-focused-drift-withdrawn.json';
+import withdrawnContext from '../../test/fixtures/client-contract/context-focused-drift-withdrawn.json';
 import type { ObservedSession } from '../observed';
 
 const NOW = 5000;
@@ -173,33 +183,62 @@ describe('the groups', () => {
     ).toBe('PROJECTp');
   });
 
-  it('names the level of a departing stored reading on the drift chip', async () => {
-    await open(
-      board(
-        [
-          {
-            harness: 'claude',
-            sid: 'read',
-            project: 'p',
-            state: 'idle',
-            annotation_revision: 2,
-            annotation_assessment: {
-              read_at: NOW - 240,
-              revision_read: 2,
-              criteria: { goal: { result: 'departure', cites: ['f1'], detail: '', clause: 'x' } },
-            },
-          },
-        ],
-        { annotate: true },
-      ),
-    );
-    const mark = document.querySelector('[data-next-session-drift-mark]');
-    // This tab holds no analysis for the project, so the chip says what a departure is at least, and draws
-    // no meter, which would show Medium for what may be High.
-    expect(mark?.textContent).toBe('Drift: Medium or higher · 4m ago');
+  it('lets a person see a current departure as Medium or higher before opening its session', async () => {
+    const page = await open(current.response.body);
+    const row = document.querySelector('[data-next-session="a1b2c3d4"]');
+    const mark = row?.querySelector('[data-next-session-drift-mark]');
+    expect(mark?.textContent).toMatch(/^Drift: Medium or higher · /);
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
     expect(
-      mark?.querySelector('[data-next-row-drift-level]')?.getAttribute('data-next-row-drift-level'),
-    ).toBe('medium_or_higher');
+      page.state.requests.some((request) => request.url.startsWith('/api/project-context')),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['stale', stale],
+    ['inaccurate', inaccurate],
+  ] as const)('lets a person see no cold row level for a %s reading', async (_case, data) => {
+    await open(data.response.body);
+    const mark = document.querySelector(
+      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
+    );
+    expect(mark?.textContent).toMatch(/^Drift · /);
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  it('lets a person see no cold row level when the stored reading was withdrawn', async () => {
+    const data = structuredClone(current.response.body);
+    const session = data.sessions.find((row) => row.sid === 'a1b2c3d4');
+    if (!session) throw new Error('The recorded session is missing');
+    session.annotation_assessment.scope = 'withdrawn';
+    await open(data);
+    const mark = document.querySelector(
+      '[data-next-session="a1b2c3d4"] [data-next-session-drift-mark]',
+    );
+    expect(mark?.textContent).toMatch(/^Drift · /);
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
+    expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
+  });
+
+  it('lets a person see no level for a notification raise beside a reading that does not depart', async () => {
+    const session = {
+      harness: 'claude',
+      sid: 'raised',
+      project: 'p',
+      state: 'idle',
+      departures: [{ at: NOW - 60, revision: 1 }],
+      annotation_revision: 1,
+      annotation_assessment: {
+        read_at: NOW - 60,
+        revision_read: 1,
+        criteria: { goal: { result: 'consistent', cites: ['f1'], detail: '', clause: 'x' } },
+      },
+    };
+    await open(board([session], { annotate: true }));
+    const mark = document.querySelector('[data-next-session-drift-mark]');
+    expect(mark?.textContent).toBe('Drift · 1m ago');
+    expect(mark?.querySelector('[data-next-row-drift-level]')).toBeNull();
     expect(mark?.querySelector('.next-session-drift-pill-meter')).toBeNull();
   });
 
@@ -306,6 +345,34 @@ describe('the groups', () => {
       expect(chip()?.querySelector('[data-next-row-drift-level]')).toBeNull();
     });
   });
+
+  it.each([
+    ['current', current, currentContext, 'Medium'],
+    ['missing evidence', missing, missingContext, null],
+    ['stale', stale, staleContext, null],
+    ['inaccurate', inaccurate, inaccurateContext, null],
+    ['withdrawn', withdrawn, withdrawnContext, null],
+  ] as const)(
+    'lets a person read the same analysis level in the row and header for %s',
+    async (_case, data, context, expected) => {
+      const page = mountSessions({
+        hash: '#n=session:alpha-app:claude:a1b2c3d4',
+        data: data.response.body,
+        context: context.response.body,
+      });
+      await page.settle();
+      const header = document.querySelector('[data-next-drift-pill] strong')?.textContent ?? null;
+      expect(header).toBe(expected);
+      await act(async () => page.router.navigate({ view: 'sessions' }));
+      await page.settle();
+      const row = document.querySelector('[data-next-session="a1b2c3d4"]');
+      expect(row).not.toBeNull();
+      const level = row?.querySelector('[data-next-row-drift-level] strong')?.textContent ?? null;
+      expect(level).toBe(header);
+      expect(row?.textContent).not.toContain('Medium or higher');
+      page.unmount();
+    },
+  );
 
   it('shows Idle only for a published idle state', () => {
     const session = (state: unknown) =>

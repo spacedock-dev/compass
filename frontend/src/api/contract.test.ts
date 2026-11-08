@@ -15,6 +15,7 @@ import {
 import { createLiveTransport } from '../transport/live';
 import { createRevisionMemo, revisionNewer } from '../transport/revision';
 import { createFakeClock, createFakeEnvironment, createFakeStorageHub } from '../transport/testing';
+import { expandExplanations } from './explanations';
 import { createApiClient, type ApiClient, type FetchLike } from './client';
 import type { ApiResult, FocusOutcome, PayloadData } from './types';
 
@@ -79,13 +80,13 @@ function expectClassified(result: ApiResult<unknown>, fixture: Fixture): void {
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
       expect(result.status).toBe(status);
-      expect(result.body).toEqual(fixture.response.body);
+      expect(result.body).toEqual(expandExplanations(fixture.response.body));
     }
     return;
   }
   expect(result).toMatchObject({ kind: 'http-error', status });
   if (fixture.response.body !== undefined && result.kind === 'http-error')
-    expect(result.body).toEqual(fixture.response.body);
+    expect(result.body).toEqual(expandExplanations(fixture.response.body));
   if (fixture.response.error_page && result.kind === 'http-error') {
     // An error page is HTML: the status is kept and no JSON is invented for it.
     expect(typeof result.body).toBe('string');

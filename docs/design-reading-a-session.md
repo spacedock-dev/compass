@@ -7262,8 +7262,10 @@ Six sub-questions were ruled the same day, each as recommended.
    an unsaved draft there is no live level: the Drift section reads "Save your intent to see a live
    estimate" and the pill is hidden. "Analysis" derives the level from a reading's per-line
    results, with no new model output. Each source says what it is and when it was computed.
-3. Where it shows: the Drift section and the session header pill. Not a Sessions row, not a total
-   and not a sort key. DEC-20's "Drift" row mark, its table, and DEC-23's no-row-field rule stay.
+3. Where it shows: the Drift section and the session header pill. The
+   [2026-11-08 amendment](#amended-2026-11-08-owner-a-stored-departing-analysis-may-name-its-level-on-a-sessions-row)
+   also permits a departing stored analysis to name its level on a Sessions row. A live estimate
+   stays off the row. Neither level is a total or a sort key.
 4. The live monitor switch is off by default, as the design's "Turn on for a quick, low-cost drift
    check after every turn" says. It is remembered per session in the browser only, and never sent
    to the server: there is no server-side store and no new route. DRC-4696 adds its row to
@@ -7279,6 +7281,20 @@ Six sub-questions were ruled the same day, each as recommended.
    "Rose from Medium at #33" from recorded evidence within the run. Each source keeps its own line
    from item 1: the live estimate says it reads checks and file paths, not what the intent says, and
    the analysis says it read each line of the intent against the checks and messages it cited.
+
+### Amended 2026-11-08 (owner): a stored departing analysis may name its level on a Sessions row
+
+On 2026-11-08, the owner accepted the recommendation: a departing stored analysis may name its
+level beside the Sessions row's Drift mark. It uses the same analysis derivation as the session
+header. Until that tab holds the evidence needed to distinguish Medium from High, a current stored
+departure says "Medium or higher" without a meter. A stale or withdrawn reading names no level.
+Once the tab holds the context, the row follows the page's analysis level alone, including when it
+names no level.
+
+A notification raise alone names no level, including beside a reading that does not depart.
+A live estimate never supplies a row level, including when a raised departure also appears.
+Neither source becomes a total or a sort key. This amends item 3 and the earlier row-placement
+restriction only; the evidence and freshness rules remain.
 
 DRC-4728 amends that recomputation on 2026-09-29. A stored departure must still have current,
 citable evidence inside the reading's window, under the same source, authorship, work and check

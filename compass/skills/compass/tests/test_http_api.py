@@ -53,6 +53,7 @@ from compass_runtime import reading_jobs as runtime_reading_jobs
 from compass_runtime import reading_route as runtime_reading_route
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime import supervise as runtime_supervise
+from compass_runtime.board_explanations import expand
 from compass_runtime.config import COMPASS_HOME_ENV
 from compass_runtime.web import page as frontend_page
 
@@ -532,7 +533,9 @@ class SessionListRouteTest(RuntimeTestCase):
             self.assertNotIn("history", json.loads(body))
             self.assertNotIn("tokens", json.loads(body)["sessions"][0])
             self.assertLess(len(body), terminal_client.DATA_CAP_BYTES)
-            self.assertEqual(before, self.get(httpd.server_port, "/api/data")[1])
+            self.assertEqual(
+                expand(payload), expand(json.loads(self.get(httpd.server_port, "/api/data")[1]))
+            )
             collect_board.assert_called_once_with(show_all=False)
         self.assertEqual(before, json.dumps(payload).encode())
 
@@ -4779,7 +4782,7 @@ class ReadingRouteTest(unittest.TestCase):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
         try:
             conn.request("GET", "/api/data")
-            rows = json.loads(conn.getresponse().read())["sessions"]
+            rows = expand(json.loads(conn.getresponse().read()))["sessions"]
         finally:
             conn.close()
         row: dict[str, Any] = next(r for r in rows if r["harness"] == harness)

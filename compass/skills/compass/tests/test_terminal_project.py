@@ -44,6 +44,47 @@ class ProjectTest(unittest.TestCase):
                         ),
                     )
 
+    def test_a_person_sees_the_servers_cut_task_in_the_terminal(self) -> None:
+        brief = terminal_project.derive(
+            recorded("data-terminal-project"),
+            recorded("context-terminal-project"),
+            label="terminal-project",
+        )
+        expected = (
+            "Build the parser with bounded input and preserve every reader-facing "
+            "explanation and preserve every reader-facin…"
+        )
+        self.assertEqual(expected, brief["task"])
+        self.assertIn(
+            expected, "\n".join(terminal_project.render(brief, caller=("claude", "a1b2c3d4")))
+        )
+
+    def test_a_person_sees_when_the_parser_cut_a_task_after_skipped_xml(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "scripts"))
+        try:
+            recorder = importlib.import_module("regen_client_fixtures")
+        finally:
+            sys.path.pop(0)
+        captures = recorder.Recorder()
+        scratch = recorder.Scratch()
+        try:
+            with recorder.guarded():
+                recorder.task_preview_scenario(captures, scratch)
+        finally:
+            scratch.close()
+        for case, expected in (("xml", "Build the parser…"), ("whole", "Build the parser")):
+            with self.subTest(case=case):
+                payload = captures.scenarios["data-task-preview-" + case]["response"]["body"]
+                context = captures.scenarios["context-task-preview-" + case]["response"]["body"]
+                fact = next(f for f in context["semantic"]["facts"] if f["type"] == "user_message")
+                self.assertEqual(expected, fact["summary"])
+                brief = terminal_project.derive(payload, context, label="task-preview")
+                self.assertEqual(expected, brief["task"])
+                self.assertIn(
+                    expected,
+                    "\n".join(terminal_project.render(brief, caller=("claude", "a1b2c3d4"))),
+                )
+
     def test_a_person_is_not_needed_when_only_the_first_officer_has_follow_ups(self) -> None:
         payload = recorded("data-terminal-project")
         for row in payload["sessions"]:
