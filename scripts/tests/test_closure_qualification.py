@@ -190,6 +190,7 @@ class RepeatedQualification(GrantFourAllowance):
         import score_abstention  # noqa: PLC0415 - isolated test fixture modules
 
         self.score_module = score_abstention
+        self.seal_a_copy_of_the_sources()
         self.config = _Config()
         self.binding = dict(BINDING)
         self.model_key = ledger.digest(
@@ -430,6 +431,35 @@ class RepeatedQualification(GrantFourAllowance):
         self.output = self.result_paths[3]
         self.local = self.root / "private-repeated.json"
 
+    def seal_a_copy_of_the_sources(self) -> None:
+        """Point the qualification's source and scorer seals at private copies.
+
+        The scorer re-hashes `compass_runtime` and its own file on every admission and every
+        request. Against the live tree, a sibling worktree edit (or this one's) between the fixture's
+        stamp and a later request turned a scored case into a "source changed" refusal, and these
+        tests then failed as bare count mismatches (`0 != 2`). The seal stays exactly as strict;
+        it just reads a tree nothing else is writing.
+        """
+        import shutil  # noqa: PLC0415 - only this fixture copies sources
+
+        from compass_runtime import observer  # noqa: PLC0415 - the module the seal hashes
+
+        self.sealed_runtime = self.root / "sealed-runtime"
+        live = Path(observer.__file__).parent
+        for source in live.rglob("*.py"):  # the seal hashes exactly these
+            target = self.sealed_runtime / source.relative_to(live)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        self.sealed_scorer = self.root / "sealed-score_abstention.py"
+        self.sealed_scorer.write_bytes(Path(self.score_module.__file__).read_bytes())
+        for module, path in (
+            (observer, self.sealed_runtime / "observer.py"),
+            (self.score_module, self.sealed_scorer),
+        ):
+            patch = mock.patch.object(module, "__file__", str(path))
+            patch.start()
+            self.addCleanup(patch.stop)
+
     def run_score(self, model: Any, *, review: bool = True, vouch: Any = None) -> int:
 
         kwargs = {
@@ -489,6 +519,39 @@ class RepeatedQualification(GrantFourAllowance):
         state = self.campaign_module.Campaign()._state()
         self.assertNotIn("stop", state)
         self.assertEqual(1, sum(c["lane"] == "qualification" for c in state["calls"]))
+
+    def test_a_runtime_source_edited_after_sealing_refuses_before_any_provider_attempt(
+        self,
+    ) -> None:
+        with (self.sealed_runtime / "observer.py").open("a") as sealed:
+            sealed.write("\n# edited after the seal\n")
+        model = self.model_class((self.safe_reply, "ok"))
+        with mock.patch("builtins.print") as printed:
+            result = self.score_module.score(
+                1,
+                self.corpus,
+                config=self.config,
+                model=model,
+                results_path=str(self.local),
+                summary_path=str(self.output),
+                now=1000.0,
+                binding=self.binding,
+                tool_destination="Anthropic",
+                ledger_path=str(self.ledger_path),
+                max_calls=59,
+                vouch=lambda _case: [],
+            )
+        shown = " ".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+        self.assertEqual(2, result, shown)
+        self.assertIn("the qualification source, scorer or blind marks changed", shown)
+        self.assertEqual([], model.prompts)
+
+    def test_a_scorer_edited_after_sealing_refuses_before_any_provider_attempt(self) -> None:
+        with self.sealed_scorer.open("a") as sealed:
+            sealed.write("\n# edited after the seal\n")
+        model = self.model_class((self.safe_reply, "ok"))
+        self.assertEqual(2, self.run_score(model, review=False))
+        self.assertEqual([], model.prompts)
 
     def test_a_changed_final_prompt_cannot_reach_the_qualification_executor(self) -> None:
         reading = self.score_module._runtime()[1]
