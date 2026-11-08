@@ -7996,6 +7996,24 @@ Terminal-only state publishes null `started_at`, `banner_due_at`, `deadline` and
 Holder kind is fixed until that holder leaves; a beat, confirmation or repeated start cannot
 reclassify it. A terminal start with neither saved intent nor a draft keeps the monitor on without checks until intent is saved. Saved outcome lines still allow checks, for terminal, browser and mixed holders. An already-running terminal command reads the focused board's published notice status without a new action, lease renewal or typed-command consumption.
 
+The owner amended stop/restart accounting on 2026-11-08: removing the final holder still
+cancels any in-flight check immediately and discards transcript signature, seen ids, recent
+turns and published levels. It retains only the charged count, period anchor and last-start
+time in the running server, shared with any reservation still settling. Off/on from the page
+or terminal cannot refill the current period or bypass the one-minute floor. A restarted
+monitor has no model level until a new check completes.
+
+Browser accounting starts with its consent window and, across off/on, rolls at the original
+period boundary. Starting again may establish new browser consent without moving that
+accounting boundary. Browser Yes keeps its existing browser-only allowance renewal policy;
+it does not reset spacing. Terminal periods keep their original anchor while their accounting
+is retained. A first terminal joining after a browser period expires gets a fresh allowance,
+while preserving spacing. Expired inactive accounting is pruned on a later monitor start once
+its spacing floor has also elapsed; it keeps no session text. A server process restart resets
+per-session counts, anchors and spacing. The durable rolling-day board ledger survives it.
+Keeping whole stopped sessions was rejected because counts require no transcript content;
+forgetting their counts would let repeated starts evade the cap.
+
 ### Amended 2026-10-23 (owner): the Haiku level's own None or low floor
 
 The owner ruled on 2026-10-23 that the Haiku level has a floor of its own for "None or low", apart from

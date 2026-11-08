@@ -3075,11 +3075,15 @@ with a `monitor` notice shown before the first charged call. A terminal start ch
   the Compass home stores identities, status and a start receipt bounded below 8 KiB. That receipt can contain the adopted goal, its source and time, the session page URL and the disclosure. It survives holder exit until a later start replaces it; no transcript is stored there. The dashboard alone writes
   footer line files; the sidecar's status is not yet merged into the footer.
 - What caps it. At least 60 seconds between checks of a session. The per-session allowance counts
-  30 charged attempts per browser consent window; Yes renews that allowance for a browser-only
-  monitor. Once a terminal joins, the allowance uses fixed 30-minute buckets anchored at its first
+  30 charged attempts per browser accounting period, initially its consent window; Yes renews
+  that allowance for a browser-only monitor. Once a terminal joins, the allowance uses fixed 30-minute buckets anchored at its first
   start. These are elapsed monitoring periods, not accumulated busy time. Only charged attempts
   reset at a boundary; the level and evidence stay. Browser Yes and holders joining or leaving
-  do not replenish terminal buckets. The separate rolling 24-hour board cap is 240 charged
+  do not replenish terminal buckets. Turning the monitor off and on, from the page or terminal,
+  keeps the current period's charged count and last check start within the running server.
+  Stop still cancels the check and clears its turns and level. The retained record holds only
+  counts and times; restarting the server resets these per-session counts and spacing. The
+  separate rolling 24-hour board cap is 240 charged
   attempts, apart from Analyze's. An unchanged transcript or no new admitted turns sends nothing
   and spends nothing. Failed or cancelled calls still consume a reserved attempt. A working
   loop eventually stops at the board cap. The [terminal monitor ruling](docs/design-reading-a-session.md#terminal-monitor-lifetime-and-accounting)
