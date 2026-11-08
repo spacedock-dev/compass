@@ -160,7 +160,7 @@ line. See [HOW_TO_USE.md](HOW_TO_USE.md) for one procedure per task.
 
 | Skill | What it does | Standalone invocation |
 |-------|--------------|------------------------|
-| `compass` | Live agent-cartography dashboard: maps sessions, subagents, task progress, ETAs, and token rate across ten coding-agent harnesses, with input-wait notifications (native on macOS, browser notifications elsewhere) | `/compass:compass` |
+| `compass` | Live agent-cartography dashboard: maps sessions, subagents, task progress, ETAs, and token rate across ten coding-agent harnesses, with input-wait notifications (native on macOS, browser notifications elsewhere), plus terminal reads and model-call controls | `/compass:compass` |
 
 In Codex, invoke it as `$compass`. In any harness you can also just ask: "open compass" or "monitor my agents".
 Add `sessions` or `sessions waiting` (`/compass:compass sessions`, `$compass sessions`) to list your sessions in the session you typed it in, without opening the dashboard (measured on Claude Code; [COMPATIBILITY.md](COMPATIBILITY.md) has the rest). In Claude Code, `/compass:compass project` reads this session's project label, its other sessions and the project brief. `/compass:compass drift` prints that session's drift reading, asking for one when none is stored, and `drift again` asks for a new one; each request counts against the daily reading limit. The answer becomes part of that session's context and goes to its model provider: [what that includes](SECURITY.md#what-can-reach-into-a-session).
@@ -186,7 +186,11 @@ exposes it to your network with no password, so read that section before you use
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a finished
 drift check first, open "See a sample session (view only)" above the Sessions list.
 
-See [compass/skills/compass/SKILL.md](compass/skills/compass/SKILL.md) for data sources, session states, options, and troubleshooting.
+The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
+Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),
+[Intent and drift](compass/skills/compass/reference/intent-and-drift.md),
+[notifications](compass/skills/compass/reference/notifications.md), and
+[options and troubleshooting](compass/skills/compass/reference/options.md).
 
 ## 4. Validation
 
