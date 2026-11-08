@@ -11,6 +11,7 @@ import http.client
 import json
 import math
 import os
+import queue
 import select
 import signal
 import socket
@@ -966,9 +967,10 @@ _EXIT_SIGNALS = ("SIGTERM", "SIGHUP", "SIGQUIT")
 # set, the handlers ask the serving loop to stop instead of raising: a
 # `SystemExit` landing inside socketserver's `Thread.start` surfaces from
 # `Condition._acquire_restore` as "release unlocked lock", a plain Exception
-# that `handle_error` swallows, and the server then served on. Only a flag is
-# touched here, because a handler runs on the thread it interrupted and must not
-# take a lock that thread may hold.
+# that `handle_error` swallows, and the server then served on. The request is a
+# `SimpleQueue.put`, which Python documents as safe in a signal handler: a
+# handler runs on the thread it interrupted, so a lock (an `Event`'s included)
+# could deadlock against a second signal landing inside the first handler.
 _serving_stop: Callable[[], None] | None = None
 
 
@@ -1114,17 +1116,17 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
                 target=run_producer, args=(server,), kwargs={"stop": producer_stop}, daemon=True
             )
             producer.start()
-        stop_serving = threading.Event()
+        stop_serving: queue.SimpleQueue[bool] = queue.SimpleQueue()
 
         def _shutdown_when_asked() -> None:
-            stop_serving.wait()
+            stop_serving.get()
             server.shutdown()
 
         # `shutdown` blocks until `serve_forever` returns, so it cannot run on
         # the serving thread. One that arrives before the loop starts still
         # works: the loop sees the request and returns at once.
         # Armed first, so a signal inside this `start` is a request too.
-        _serving_stop = stop_serving.set
+        _serving_stop = functools.partial(stop_serving.put, True)
         threading.Thread(target=_shutdown_when_asked, daemon=True).start()
         server.serve_forever()
     finally:
