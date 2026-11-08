@@ -149,6 +149,25 @@ class SidecarTest(unittest.TestCase):
         self.assertLessEqual(self.now, 31)
         self.assertEqual([], self.actions)
 
+    def test_a_person_s_blocked_monitor_connection_ends_as_unreachable_without_a_heartbeat(
+        self,
+    ) -> None:
+        post = mock.Mock(side_effect=AssertionError("sent a heartbeat after blocked discovery"))
+        reason = monitor.hold(
+            self.dashboard,
+            "one",
+            "generation",
+            clock=lambda: self.now,
+            wait=self.wait,
+            stopped=lambda: False,
+            alive=lambda: True,
+            post=post,
+            probe=lambda *_a, **_k: client.Refusal(client.sentence("loopback_blocked")),
+        )
+        self.assertEqual("unreachable", reason)
+        self.assertLessEqual(self.now, 31)
+        post.assert_not_called()
+
     def test_a_person_s_holder_checks_the_harness_without_starting_ps_on_every_file_poll(
         self,
     ) -> None:
@@ -327,6 +346,46 @@ class ReadinessTest(unittest.TestCase):
                     self.assertIn("/api/project-context?", get.call_args.args[1])
                     post.assert_not_called()
                     spawn.assert_not_called()
+
+    def test_a_person_is_told_when_the_monitor_worker_is_blocked_before_its_first_lease(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            generation = "a" * 32
+            store.write(
+                "run",
+                {
+                    "generation": generation,
+                    "sid": "one",
+                    "dashboard": [4999, 42, 100.0, "1.0.0"],
+                    "ancestor": {},
+                },
+            )
+            with (
+                mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+                mock.patch("signal.signal"),
+                mock.patch.object(client, "post", side_effect=client.LoopbackBlockedError),
+                mock.patch.object(client, "probe", return_value=None),
+            ):
+                self.assertEqual(1, monitor.sidecar("one", generation))
+            out, err = io.StringIO(), io.StringIO()
+            with (
+                mock.patch.object(monitor, "spawn"),
+                mock.patch.object(
+                    monitor,
+                    "command",
+                    side_effect=lambda *_a, **_k: monitor._await_start(store, "one", generation),
+                ),
+                contextlib.redirect_stdout(out),
+                contextlib.redirect_stderr(err),
+            ):
+                code = client.run_monitor(session="claude:one", environ={"COMPASS_HOME": home})
+            self.assertEqual((1, ""), (code, out.getvalue()))
+            self.assertEqual(
+                "Compass's connection to the dashboard was blocked by a sandbox or permissions.\n",
+                err.getvalue(),
+            )
 
     def test_a_person_s_long_unicode_goal_keeps_the_start_receipt_readable(self) -> None:
         answer = {

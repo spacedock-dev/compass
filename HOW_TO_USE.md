@@ -116,9 +116,9 @@ can start a dashboard if needed. [MANUAL.md](MANUAL.md#starting-and-inspecting-a
 their limits and refusal rules.
 
 `goal`, `project`, `sessions` and `sessions waiting` read a running dashboard and never start one. With none running, the agent prints the
-refusal, ``Compass is not running. Start it with `spacedock-compass --daemon`.`` That start command
-belongs to the standalone install. With the plugin, start the dashboard by invoking the skill with no
-action word. The skill runs the command below, so you can run it yourself to check what the agent
+refusal, ``Compass is not running; start it with `<this copy's launch command>`.`` The placeholder
+stands for this copy's own launcher command. With the plugin, start the dashboard by invoking the
+skill with no action word. The skill runs the command below, so you can run it yourself to check what the agent
 should print:
 
 ```bash

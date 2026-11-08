@@ -277,6 +277,7 @@ class APersonUsesTheirGoal(LeaseRoute):
             for extra, tty in (((), True), (("--session", "claude:" + SID), False)):
                 with (
                     self.subTest(mode=mode, extra=extra),
+                    mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": SID}, clear=True),
                     mock.patch.object(terminal_client, "post") as post,
                     mock.patch.object(terminal_client, "ensure_dashboard") as ensure,
                 ):
