@@ -25,6 +25,7 @@ from compass_runtime import (
     reading_policy,
     reading_route,
     terminal_client,
+    typed_press,
 )
 
 from .support import make_server, serve_until_closed
@@ -236,7 +237,12 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         session.prompt("Ship the parser")
         session.compass("monitor on", stop=False)
         session.save(self.path)
-        with self.serving() as port:
+        with (
+            mock.patch.object(
+                typed_press, "time", return_value=START.timestamp() + session.seconds + 1
+            ),
+            self.serving() as port,
+        ):
             with mock.patch.object(
                 annotation_store, "adopt", return_value=annotation_store.OUTCOME_REFUSED
             ):

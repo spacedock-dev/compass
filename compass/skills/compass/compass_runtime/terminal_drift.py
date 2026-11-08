@@ -160,8 +160,7 @@ CORRECTION_READY: Final = (
     "it in your own terminal."
 )
 CORRECTION_READY_IN_SESSION: Final = (
-    "A correction is ready to copy on the session page. Compass prints it only there or in your "
-    "own terminal, never into this session."
+    "A correction is ready to copy on the session page. This output shows only that it is ready."
 )
 # Plain `--drift`, spelled out: `--drift again` presses, and would spend a second reading once this
 # one has ended. Plain `--drift` presses only where nothing was stored, which the line says.

@@ -17,12 +17,12 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
-from compass_runtime import http_api, observer, typed_press
+from compass_runtime import http_api, observer, reading_long_preview, records, typed_press
 from compass_runtime import io as runtime_io
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .test_compass_skill_action import CompassSession
+from .test_compass_skill_action import NOW, CompassSession
 from .test_history import isolated_environment, no_instance, run_one_shot_cli
 
 if TYPE_CHECKING:
@@ -41,6 +41,9 @@ class TypedPressCase(unittest.TestCase):
             launcher_path=root / "server.py",
         )
         self.path = root / "claude" / "projects" / "-work" / "session.jsonl"
+        self.clock = self.enterContext(
+            mock.patch.object(typed_press, "time", return_value=NOW, create=True)
+        )
         self.session = CompassSession(root / "work")
         self.session.prompt("Teach the parser about tabs.")
 
@@ -55,8 +58,192 @@ class TypedPressCase(unittest.TestCase):
         """The person types the command; the agent's Bash call is running when the press lands."""
         self.session.compass(action, stop=False)
 
+    def machinery(self, kind: str) -> None:
+        """Reuse the committed corpus fixtures, with no invented origin or scheduling fields.
+
+        `test_claude.ClaudeInstructionTest` records the measured compaction flag;
+        `test_compass_skill_action` and `test_delegated_work` carry the non-meta notification
+        as a string and text blocks respectively. `records` documents the corpus derivation.
+        """
+        if kind == "compaction":
+            self.session._text("compaction summary", isCompactSummary=True)
+        elif kind == "notification-attachment":
+            # Closed values from mid-turn-and-answer-shapes-2.1.305-macos.jsonl.
+            self.session.queued("Background task completed.")
+            self.session.rows[-1]["attachment"].update(
+                commandMode="task-notification",
+                origin={"kind": "task-notification", "producer": "session-task"},
+            )
+        else:
+            text = (
+                "<task-notification><task-id>b1</task-id>"
+                "<status>completed</status></task-notification>"
+            )
+            if kind == "notification-string":
+                self.session._text(text)
+            else:
+                self.session._entry("user", [{"type": "text", "text": text}])
+
+
+MACHINERY = ("compaction", "notification-string", "notification-blocks", "notification-attachment")
+ACTIONS = ("drift", "drift again", "monitor on", "summary", "summary update", "summary again")
+
 
 class TypedPressTest(TypedPressCase):
+    def test_a_persons_unpressed_command_expires_after_twenty_four_hours(self) -> None:
+        for action in ACTIONS:
+            for age, expected in (
+                (25 * 3600, typed_press.REQUIRED),
+                (60, ""),
+                (86400, typed_press.REQUIRED),
+            ):
+                with self.subTest(action=action, age=age):
+                    self.typed(action)
+                    record = typed_press.latest_prompt(
+                        [json.dumps(row).encode() for row in self.session.rows]
+                    )
+                    assert record is not None
+                    stamp = records.iso_epoch(record["timestamp"])
+                    assert stamp is not None
+                    self.clock.return_value = stamp + age
+                    self.assertEqual(expected, self.admit(action))
+
+    def test_a_persons_command_needs_a_readable_timestamp_before_it_can_pay(self) -> None:
+        for stamp in (None, "not a timestamp", 123, True, "9999-12-31T00:00:00Z"):
+            with self.subTest(stamp=stamp):
+                self.typed("drift again")
+                for row in self.session.rows:
+                    if typed_press.typed_action(row) == "drift again":
+                        row["timestamp"] = stamp
+                self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+        self.typed("drift again")
+        for row in self.session.rows:
+            if typed_press.typed_action(row) == "drift again":
+                row.pop("timestamp", None)
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
+    def test_a_persons_words_after_a_long_quoted_notification_still_revoke_consent(self) -> None:
+        opening, closing = "<task-notification>", "</task-notification>"
+        envelope = opening + "x" * (2000 - len(opening + closing)) + closing
+        for action in ACTIONS:
+            for blocks in (False, True):
+                with self.subTest(action=action, blocks=blocks):
+                    self.typed(action)
+                    text = envelope + " Stop the reading and work on the lexer instead."
+                    if blocks:
+                        self.session._entry("user", [{"type": "text", "text": text}])
+                    else:
+                        self.session.prompt(text)
+                    self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_command_survives_a_complete_long_notification(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                self.session._text("<task-notification>" + "x" * 2100 + "</task-notification>")
+                self.assertEqual("", self.admit(action))
+
+    def test_a_persons_image_beside_a_quoted_notification_revokes_consent(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                # Image block shape from test_mid_turn_directions and its capture.
+                self.session._entry(
+                    "user",
+                    [
+                        {"type": "text", "text": "<task-notification>example</task-notification>"},
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": "PRIVATE_IMAGE_BYTES",
+                            },
+                        },
+                    ],
+                )
+                self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_message_sent_mid_turn_revokes_every_pending_action(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                self.typed(action)
+                self.session.queued("Stop the reading and work on the lexer instead.")
+                self.machinery("notification-attachment")
+                self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_prompt_that_quotes_harness_text_still_revokes_their_command(self) -> None:
+        for action in ACTIONS:
+            for text in (
+                "This session is being continued from a previous conversation, but stop the reading.",
+                "<task-notification>example</task-notification>\nStop the reading.",
+                (
+                    "<task-notification>first</task-notification> Stop the reading. "
+                    "<task-notification>second</task-notification>"
+                ),
+                "<task-notification>example</task-notification>",
+            ):
+                for blocks in (False, True):
+                    with self.subTest(action=action, text=text, blocks=blocks):
+                        self.typed(action)
+                        if blocks:
+                            self.session._entry(
+                                "user",
+                                [
+                                    {"type": "text", "text": text},
+                                    {"type": "text", "text": "Stop the reading."},
+                                ],
+                            )
+                        elif text == "<task-notification>example</task-notification>":
+                            # An otherwise identical notification alone has no author discriminator.
+                            continue
+                        else:
+                            self.session.prompt(text)
+                        self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_pending_command_survives_known_harness_machinery(self) -> None:
+        for action in ACTIONS:
+            for kind in MACHINERY:
+                with self.subTest(action=action, kind=kind):
+                    self.typed(action)
+                    self.machinery(kind)
+                    self.assertEqual("", self.admit(action))
+                    self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_later_prompt_revokes_every_pending_action_despite_machinery(self) -> None:
+        for action in ACTIONS:
+            for kind in MACHINERY:
+                with self.subTest(action=action, kind=kind):
+                    self.typed(action)
+                    self.machinery(kind)
+                    self.session.prompt("Now fix the lexer, then explain <task-notification>.")
+                    self.machinery(kind)
+                    self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_person_can_type_the_closed_action_names_in_any_letter_case(self) -> None:
+        for action in ACTIONS:
+            for spelling in (action.upper(), action.title(), "  " + action.title() + "  "):
+                with self.subTest(action=action, spelling=spelling):
+                    self.typed(spelling)
+                    self.assertEqual("", self.admit(action))
+
+    def test_a_persons_paraphrase_never_authorizes_a_closed_action(self) -> None:
+        for action, paraphrase in zip(
+            ACTIONS,
+            (
+                "check drift",
+                "drift once more",
+                "start monitor",
+                "summarize",
+                "update summary",
+                "redo summary",
+            ),
+            strict=True,
+        ):
+            with self.subTest(action=action):
+                self.typed(paraphrase)
+                self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
     def test_a_person_summary_command_authorizes_only_its_exact_action_once(self) -> None:
         actions = ("summary", "summary update", "summary again")
         for typed in actions:
@@ -85,6 +272,29 @@ class TypedPressTest(TypedPressCase):
         for action in ("drift again", "drift"):
             with self.subTest(action=action):
                 self.assertEqual(typed_press.REQUIRED, self.admit(action))
+
+    def test_a_persons_spent_command_stays_spent_when_the_legacy_store_is_migrated(self) -> None:
+        self.typed("drift again")
+        self.assertEqual("", self.admit("drift again"))
+        path = typed_press.store_path(self.config)
+        legacy = {"consumed": json.loads(path.read_text())["consumed"]}
+        path.write_text(json.dumps(legacy))
+        for index in range(512):
+            self.assertEqual("", typed_press.consume(self.config, f"other-{index}"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
+    def test_a_persons_spent_command_stays_spent_near_the_end_of_its_age_window(self) -> None:
+        self.typed("drift again")
+        record = typed_press.latest_prompt([json.dumps(row).encode() for row in self.session.rows])
+        assert record is not None
+        stamp = records.iso_epoch(record["timestamp"])
+        assert stamp is not None
+        self.clock.return_value = stamp + 60
+        self.assertEqual("", self.admit("drift again"))
+        self.clock.return_value = stamp + 86400 - 1
+        for index in range(512):
+            self.assertEqual("", typed_press.consume(self.config, f"other-{index}"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
 
     def test_the_once_holds_across_a_restart_of_the_dashboard(self) -> None:
         self.typed("drift")
@@ -230,9 +440,75 @@ class ReadingRouteTest(TypedPressCase):
         self.assertEqual((False, False), (answer["ok"], answer["produced"]))
         return str(answer["reason"])
 
+    def test_a_persons_spent_command_cannot_pay_again_after_many_other_consumptions(self) -> None:
+        for kind in ("none", "notification-string", "compaction"):
+            with self.subTest(after=kind):
+                self.typed("drift again")
+                self.press(typed_action="drift again")._reading_press.assert_called_once()
+                if kind != "none":
+                    self.machinery(kind)
+                for index in range(512):
+                    self.assertEqual("", typed_press.consume(self.config, f"{kind}-other-{index}"))
+                self.assertEqual(
+                    typed_press.REQUIRED,
+                    self.refused_with(self.press(typed_action="drift again")),
+                )
+
     def test_a_typed_press_reaches_the_page_s_press(self) -> None:
         self.typed("drift")
         self.press(typed_action="drift")._reading_press.assert_called_once()
+
+    def test_a_persons_drift_press_survives_machinery_and_a_later_prompt_revokes_it(self) -> None:
+        for action in ("drift", "drift again"):
+            for kind in MACHINERY:
+                with self.subTest(action=action, kind=kind):
+                    self.typed(action.title())
+                    self.machinery(kind)
+                    self.press(typed_action=action)._reading_press.assert_called_once()
+                    self.typed(action)
+                    self.session.prompt("Work on the lexer instead.")
+                    self.machinery(kind)
+                    self.refused_with(self.press(typed_action=action))
+
+    def test_a_person_cannot_pay_for_a_long_reading_through_a_typed_action(self) -> None:
+        for action in ("drift", "drift again"):
+            for typed in (False, True):
+                with self.subTest(action=action, typed=typed):
+                    if typed:
+                        self.typed(action)
+                    else:
+                        self.session.prompt("Keep working on the lexer.")
+                    fields: dict[str, Any] = {
+                        "mode": "long",
+                        "plan_binding": "a" * 64,
+                        "expected_revision": 1,
+                        "provider": "claude",
+                        "destination": "local-cli",
+                        "model": "sonnet",
+                        "words_destination": "local-cli",
+                        "typed_action": action,
+                    }
+                    self.assertTrue(
+                        reading_long_preview.valid_ingress(
+                            {
+                                "harness": "claude",
+                                "sid": "abc",
+                                **fields,
+                            }
+                        )
+                    )
+                    with (
+                        mock.patch.object(reading_long_preview, "describe", return_value={}),
+                        mock.patch.object(reading_long_preview, "changed", return_value=False),
+                        mock.patch.object(
+                            reading_long_preview, "_published", return_value=(None, None)
+                        ),
+                        mock.patch.object(typed_press, "admit") as admission,
+                    ):
+                        handler = self.press(**fields)
+                    handler._reading_press.assert_not_called()
+                    handler._reject.assert_called_once_with(400)
+                    admission.assert_not_called()
 
     def test_an_untyped_press_from_a_session_is_refused_before_anything_is_spent(self) -> None:
         self.session.model_started_compass("Keep going.")
@@ -284,6 +560,19 @@ class ReadingRouteTest(TypedPressCase):
 
 
 class MonitorRouteTest(TypedPressCase):
+    def test_a_persons_monitor_command_survives_machinery_and_a_later_prompt_revokes_it(
+        self,
+    ) -> None:
+        for kind in MACHINERY:
+            with self.subTest(kind=kind):
+                self.typed("Monitor On")
+                self.machinery(kind)
+                self.press().admission.assert_called_once()
+                self.typed("monitor on")
+                self.session.prompt("Work on the lexer instead.")
+                self.machinery(kind)
+                self.press().admission.assert_not_called()
+
     def press(
         self, *, accepted: bool = True, failure: Exception | None = None, **fields: Any
     ) -> Any:
@@ -353,6 +642,24 @@ class MonitorRouteTest(TypedPressCase):
 
 
 class SummaryRouteTest(TypedPressCase):
+    def test_a_persons_summary_command_survives_machinery_and_a_later_prompt_revokes_it(
+        self,
+    ) -> None:
+        for action, command in (
+            ("start", "summary"),
+            ("update", "summary update"),
+            ("rerun", "summary again"),
+        ):
+            for kind in MACHINERY:
+                with self.subTest(action=action, kind=kind):
+                    self.typed(command.title())
+                    self.machinery(kind)
+                    self.press(action)._summary_start.assert_called_once()
+                    self.typed(command)
+                    self.session.prompt("Work on the lexer instead.")
+                    self.machinery(kind)
+                    self.press(action)._summary_start.assert_not_called()
+
     def press(self, action: str, *, starts: bool = True, typed: str | None = None) -> Any:
         self.session.save(self.path)
         handler: Any = object.__new__(http_api._RequestHandler)

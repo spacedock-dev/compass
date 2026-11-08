@@ -6,7 +6,8 @@ on its own could spend a reading, and that reading would feed the session's late
 client marks a press from inside a session with `typed_action`; the reading route then reads the
 session's transcript tail at press time, not the collection, and admits the press only when the
 latest main-thread prompt is the person's typed `/compass:compass` command for that action. Each
-typed record pays for one press that starts, remembered beside the reading permission store, so a
+typed record with a readable timestamp less than 24 hours old pays for one press that starts,
+remembered beside the reading permission store for at least that long, so a
 retry, a loop or a second call cannot spend again on it; a press refused before it starts gives
 the record back. The owner ruled it on 2026-11-06, after the pre-approval;
 docs/design-reading-a-session.md records the ruling.
@@ -17,8 +18,10 @@ This is not a hard boundary: a process that can write the transcript can forge a
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
+from time import time
 from typing import TYPE_CHECKING, Any, Final
 
 from . import io as runtime_io
@@ -50,8 +53,10 @@ UNCONFIRMED: Final = "typed-command-unconfirmed"
 # this release; four MiB leaves room for a long session's last records without reading it whole.
 TAIL_BYTES: Final = 4 * 1024 * 1024
 STORE_NAME: Final = "compass-typed-presses.json"
-# A typed record is consumed once; the newest this many are kept, which is more presses than the
-# 100-attempt rolling cap allows in a day.
+# A day bounds pending consent and keeps every consumed id for its entire admission window,
+# so count-based pruning can never make a still-admissible typed command spend twice.
+COMMAND_MAX_AGE_SEC: Final = 24 * 60 * 60
+# Soft count cap: retain the newest 512 plus every consumption younger than the age limit.
 KEEP: Final = 512
 LOCK_WAIT_SEC: Final = 2.0
 
@@ -80,34 +85,66 @@ def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
 
 
 def latest_prompt(lines: Sequence[bytes]) -> dict[str, Any] | None:
-    """The newest main-thread prompt record: never `isMeta`, a tool result or a sidechain record.
+    """The newest main-thread prompt, excluding established harness-generated records.
 
     A model-started skill is a Skill tool call and its result, never a prompt record
     (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl).
     """
     for raw in reversed(lines):
-        if b'"user"' not in raw:
+        if b'"user"' not in raw and b'"queued_command"' not in raw:
             continue
         try:
             record = json.loads(raw)
         except (ValueError, RecursionError):
             continue
+        # A message sent while the agent works has no user turn. The capture distinguishes it
+        # from queued background notifications by these closed values, as observer reads it
+        # (docs/captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl).
+        if isinstance(record, dict) and not record.get("isSidechain"):
+            attachment = records.as_dict(record.get("attachment"))
+            if (
+                record.get("type") == "attachment"
+                and attachment.get("type") == "queued_command"
+                and attachment.get("commandMode") == "prompt"
+                and records.as_dict(attachment.get("origin")).get("kind") == "human"
+            ):
+                return record  # revokes the earlier command; cannot itself authorize a press
         if (
             isinstance(record, dict)
             and "toolUseResult" not in record
             and records.claude_prompt_record(record)
         ):
+            # The committed corpus fixtures in test_claude, test_compass_skill_action and
+            # test_delegated_work establish these non-meta forms. Keep this narrower than
+            # `injected_prompt`: an interrupt or an unfamiliar prompt must revoke consent.
+            # Inspect the complete tail-bounded content, never the publication extractor's
+            # truncated text. Images or other blocks beside the envelope may be reader input.
+            content = records.message_dict(record).get("content")
+            body = content.strip() if isinstance(content, str) else ""
+            if isinstance(content, list) and all(
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+                for block in content
+            ):
+                body = " ".join(block["text"] for block in content).strip()
+            if record.get("isCompactSummary") or (
+                body.startswith("<task-notification>")
+                and body.endswith("</task-notification>")
+                and body.count("</task-notification>") == 1
+            ):
+                continue
             return record
     return None
 
 
 def typed_action(record: dict[str, Any] | None) -> str | None:
-    """The action a typed `/compass:compass` record names, spaces folded; None for any other."""
+    """The typed action, with spaces and letter case folded; None for any other command."""
     if record is None or not records.compass_command_record(record):
         return None
     content = records.message_dict(record).get("content")
     found = _ARGS_RE.search(content) if isinstance(content, str) else None
-    return " ".join(found.group(1).split()) if found else ""
+    return " ".join(found.group(1).split()).casefold() if found else ""
 
 
 def decide(lines: Sequence[bytes], action: str) -> tuple[str, str]:
@@ -119,6 +156,9 @@ def decide(lines: Sequence[bytes], action: str) -> tuple[str, str]:
         return REQUIRED, ""
     if not _UUID_RE.fullmatch(uuid):
         return REQUIRED, ""
+    stamp = records.iso_epoch(record.get("timestamp")) if record is not None else None
+    if stamp is None or not 0 <= time() - stamp < COMMAND_MAX_AGE_SEC:
+        return REQUIRED, ""
     return "", uuid
 
 
@@ -126,12 +166,15 @@ def store_path(config: RuntimeConfig) -> Path:
     return config.state_dir / STORE_NAME
 
 
-def _consumed(path: Path) -> list[str] | None:
-    """The consumed uuids, oldest first; empty when none was ever written, None when unreadable."""
+def _consumed(path: Path) -> dict[str, float] | None:
+    """Consumed ids and hold times, oldest first; None when unreadable.
+
+    Legacy ids have no hold time: retain them for a full window from migration.
+    """
     try:
         raw = path.read_bytes()
     except FileNotFoundError:
-        return []
+        return {}
     except OSError:
         return None
     try:
@@ -141,12 +184,31 @@ def _consumed(path: Path) -> list[str] | None:
     held = data.get("consumed") if isinstance(data, dict) else None
     if not isinstance(held, list) or not all(isinstance(item, str) for item in held):
         return None
-    return held
+    stamps = data.get("consumed_at")
+    if stamps is None:
+        stamps = dict.fromkeys(held, time())
+    if not isinstance(stamps, dict) or any(
+        not isinstance(stamp := stamps.get(uuid), (int, float))
+        or isinstance(stamp, bool)
+        or not math.isfinite(stamp)
+        or stamp <= 0
+        for uuid in held
+    ):
+        return None
+    return {uuid: float(stamps[uuid]) for uuid in held}
 
 
-def _write(path: Path, consumed: list[str]) -> bool:
+def _write(path: Path, consumed: dict[str, float]) -> bool:
+    cutoff = time() - COMMAND_MAX_AGE_SEC
+    retained = {
+        uuid: stamp
+        for index, (uuid, stamp) in enumerate(consumed.items())
+        if index >= len(consumed) - KEEP or stamp > cutoff
+    }
     try:
-        runtime_io.atomic_write_owner_only(str(path), json.dumps({"consumed": consumed[-KEEP:]}))
+        runtime_io.atomic_write_owner_only(
+            str(path), json.dumps({"consumed": list(retained), "consumed_at": retained})
+        )
     except OSError:
         return False
     return True
@@ -174,7 +236,7 @@ def consume(config: RuntimeConfig, uuid: str) -> str:
             return UNCONFIRMED
         if uuid in consumed:
             return REQUIRED
-        if not _write(path, [*consumed, uuid]):
+        if not _write(path, {**consumed, uuid: time()}):
             return UNCONFIRMED
     return ""
 
@@ -191,7 +253,7 @@ def release(config: RuntimeConfig, uuid: str) -> None:
             return
         consumed = _consumed(path)
         if consumed and uuid in consumed:
-            _write(path, [item for item in consumed if item != uuid])
+            _write(path, {item: stamp for item, stamp in consumed.items() if item != uuid})
 
 
 def admit(config: RuntimeConfig, transcript: str | None, action: str) -> tuple[str, str]:
