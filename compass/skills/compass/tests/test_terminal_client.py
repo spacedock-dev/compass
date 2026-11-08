@@ -1495,7 +1495,7 @@ class DriftCommandTest(HomeCase):
         self.assertEqual((1, ""), (code, out))
         self.assertEqual(terminal_client.sentence("no_session_in_session") + "\n", err)
         self.assertNotIn("--session", err)
-        self.assertIn("reads Claude Code sessions", err)
+        self.assertIn("reads Claude Code and Codex sessions", err)
         self.assertIn("nothing was read or spent", err)
         self.assertEqual([], fake.requests)
 
@@ -1517,6 +1517,63 @@ class DriftCommandTest(HomeCase):
                 self.assertEqual(terminal_client.sentence("other_harness") + "\n", err)
                 self.assertNotIn("on the board, so nothing was read", err)
                 self.assertEqual([], fake.requests)
+
+    def codex_answers(self) -> dict[str, tuple[int, dict[str, str], bytes]]:
+        json_type = {"Content-Type": "application/json"}
+        row = {**self.ROW, "harness": "codex"}
+        view = {**self.VIEW, "harness": "codex", "pill": None, "analysis": None}
+        board = {"annotate": True, "generated": 1100.0, "sessions": [row], "reading_jobs": {}}
+        context = {"sources": {"work": {"drift_views": [view]}}}
+        return {
+            "/api/data": (200, json_type, json.dumps(board).encode()),
+            "/api/project-context?project=compass&session=codex%3Aabc": (
+                200,
+                json_type,
+                json.dumps(context).encode(),
+            ),
+        }
+
+    def test_a_person_in_a_codex_session_reads_that_session_s_drift_with_no_level(self) -> None:
+        env = {"CODEX_THREAD_ID": "abc"}
+        version = terminal_client.release_version()
+        for tty in (False, True):
+            with (
+                self.subTest(tty=tty),
+                FakeDashboard(version=version, answers=self.codex_answers()) as fake,
+            ):
+                code, out, err = self.run_drift(port=fake.port, environ=env, tty=tty)
+
+                self.assertEqual((0, ""), (code, err))
+                self.assertIn("Drift · codex:abc", out)
+                self.assertIn("Departures:", out)
+                self.assertNotIn("Level:", out)
+                self.assertNotIn("/api/correction", [r[1] for r in fake.requests])
+
+    def test_a_person_in_codex_may_name_a_codex_session_with_the_flag(self) -> None:
+        version = terminal_client.release_version()
+        with FakeDashboard(version=version, answers=self.codex_answers()) as fake:
+            code, out, _err = self.run_drift(session="codex:abc", port=fake.port, tty=True)
+
+        self.assertEqual(0, code)
+        self.assertIn("Drift · codex:abc", out)
+
+    def test_a_person_in_codex_is_not_read_as_a_session_the_marker_does_not_name(self) -> None:
+        # Another action cannot identify a Codex caller: only drift resolves the marker.
+        got = terminal_client.resolve_session(
+            None, {"CODEX_THREAD_ID": "abc"}, None, payload={}, action="goal"
+        )
+        self.assertEqual(
+            terminal_client.unresolved_caller("other_harness", "goal"),
+            got,
+        )
+
+    def test_a_codex_thread_id_that_is_not_a_session_id_names_no_session(self) -> None:
+        for value in ("has space", "x" * 201, ""):
+            with self.subTest(value=value):
+                got = terminal_client.resolve_session(
+                    None, {"CODEX_THREAD_ID": value}, None, payload={}, action="drift"
+                )
+                self.assertIsInstance(got, terminal_client.Unresolved)
 
     def test_a_person_in_another_tool_s_session_may_still_name_a_claude_session(self) -> None:
         env = {terminal_client.CLAUDE_SESSION_ENV: "abc", "CODEX_THREAD_ID": "thread-1"}
@@ -1782,13 +1839,13 @@ class WordingTest(unittest.TestCase):
             terminal_client.sentence("no_session"),
         )
         self.assertEqual(
-            "The drift action reads Claude Code sessions and this command runs inside another "
-            "tool's session, so nothing was read or spent; that session's page on the board shows "
-            "its drift.",
+            "The drift action reads Claude Code and Codex sessions and this command cannot tell "
+            "which of the tools it runs inside is its own, so nothing was read or spent; that "
+            "session's page on the board shows its drift.",
             terminal_client.sentence("other_harness"),
         )
         self.assertEqual(
-            "The drift action reads Claude Code sessions and this command was given no Claude Code "
+            "The drift action reads Claude Code and Codex sessions and this command was given no "
             "session id, so nothing was read or spent; a session's page on the board shows its "
             "drift.",
             terminal_client.sentence("no_session_in_session"),

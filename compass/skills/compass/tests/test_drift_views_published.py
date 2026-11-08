@@ -102,6 +102,31 @@ class WhereTheViewRidesTest(unittest.TestCase):
         self.assertIsNone(view["analysis"])
         self.assertEqual(drift_view.derive(row, _payload(row), attached), view)
 
+    def test_a_codex_session_s_context_carries_no_level_for_the_page_or_the_terminal(self) -> None:
+        # A Codex reading draws no level because nothing publishes one: the page reads
+        # `analysis_levels` and the live levels from the context, and the terminal reads the view.
+        row = _row("codex")
+        context = _context("codex")
+
+        leveled = http_api._with_levels(_application(), context, [row], ("codex", "s1"), "p")
+        attached = http_api._with_drift_view(
+            _application(), leveled, _payload(row), ("codex", "s1"), "p", b"k"
+        )
+
+        work = attached["sources"]["work"]
+        self.assertNotIn("analysis_levels", work)
+        self.assertEqual([], work["live_levels"])
+        (view,) = work["drift_views"]
+        self.assertEqual((None, None, None), (view["pill"], view["analysis"], view["estimate"]))
+        self.assertNotIn(
+            "Level:",
+            "\n".join(
+                terminal_drift.render(
+                    row, _payload(row), terminal_drift.adapt(view), adopted=None, again_hint=""
+                )
+            ),
+        )
+
     def test_a_line_resting_on_a_message_only_the_record_page_holds_keeps_it(self) -> None:
         row = _row("claude")
         row["annotation_assessment"]["criteria"]["goal"]["cites"] = ["m0"]

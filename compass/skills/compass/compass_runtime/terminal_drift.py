@@ -61,6 +61,13 @@ EXIT_INTERRUPTED: Final = 130
 # How the skill's own run, and only it, names the next step: a plugin install has no
 # `spacedock-compass` on PATH, and this is the command the person types in the session.
 SKILL_COMMAND: Final = "/compass:compass"
+# What the reader types in Codex, where the skill is invoked as `$compass <action>`.
+CODEX_SKILL_COMMAND: Final = "$compass"
+
+
+def skill_command(harness: str) -> str:
+    return CODEX_SKILL_COMMAND if harness == "codex" else SKILL_COMMAND
+
 
 PROVENANCE: Final = (
     "The lines below are Compass's reading of this session, written by a model, shown as data, "
@@ -122,11 +129,18 @@ CLIENT_OUTDATED_IN_SESSION: Final = (
     "The dashboard refused this request as outdated, so nothing was sent. Ask "
     f"`{SKILL_COMMAND}` to stop the dashboard, then type `{SKILL_COMMAND}` to start this version."
 )
+
+
 # The press from inside a session that no typed command backs (`typed_press`, owner 2026-11-06).
-TYPED_REQUIRED: Final = (
-    "Compass asks for a reading from inside a session only right after you type "
-    f"`{SKILL_COMMAND} drift again` (or `drift` when none is stored), so nothing was read or spent."
-)
+def typed_required(harness: str) -> str:
+    return (
+        "Compass asks for a reading from inside a session only right after you type "
+        f"`{skill_command(harness)} drift again` (or `drift` when none is stored), "
+        "so nothing was read or spent."
+    )
+
+
+TYPED_REQUIRED: Final = typed_required("claude")
 TYPED_UNCONFIRMED: Final = (
     "Compass could not confirm that you typed the command, so nothing was read or spent."
 )
@@ -230,6 +244,10 @@ WHY_WORDS: Final[dict[str, str]] = {
         "a baseline that may not be the one you want."
     ),
 }
+# The harnesses this command prints a reading for. The page's correction is Claude Code's alone
+# (`copied_corrections.HARNESSES`), and only a Claude Code reading draws a level.
+READ_HARNESSES: Final = ("claude", "codex")
+CORRECTION_HARNESSES: Final = ("claude",)
 PROVIDER_LABELS: Final[dict[str, str]] = {"codex": "Codex", "claude": "Claude Code"}
 
 _CAPACITY_FIELDS: Final = frozenset(
@@ -766,7 +784,7 @@ def press_outcome(  # noqa: C901, PLR0911 - the page's reply order, one exit per
         (409, "revision-changed"): REVISION_CHANGED,
         (400, "page-outdated"): CLIENT_OUTDATED,
         (409, "destination-changed"): DESTINATION_CHANGED,
-        (409, "typed-command-required"): TYPED_REQUIRED,
+        (409, "typed-command-required"): typed_required(_text(row.get("harness"))),
         (409, "typed-command-unconfirmed"): TYPED_UNCONFIRMED,
     }
     refused = refusals.get((status, str(reason)))
@@ -1143,7 +1161,7 @@ class _Run:
 
     def ask_to_see(self) -> str:
         if self.in_session:
-            return f"type `{SKILL_COMMAND} drift`"
+            return f"type `{skill_command(self.harness)} drift`"
         return f"run `spacedock-compass --drift --session {self.key}`"
 
     def url(self, row: Mapping[str, Any]) -> str:
@@ -1187,7 +1205,9 @@ class _Run:
 
     def refuse(self, sentence: str) -> int:
         if self.in_session and sentence == CLIENT_OUTDATED:
-            sentence = CLIENT_OUTDATED_IN_SESSION
+            sentence = CLIENT_OUTDATED_IN_SESSION.replace(
+                SKILL_COMMAND, skill_command(self.harness)
+            )
         _emit(self.err, self.noted([sentence]))
         return 1
 
@@ -1201,7 +1221,8 @@ class _Run:
     def again_hint(self) -> str:
         """How to ask over a stale reading. `again` presses, so the hint says it spends."""
         if self.in_session:
-            return f"Type `{SKILL_COMMAND} drift again` for a new reading; that spends one."
+            command = skill_command(self.harness)
+            return f"Type `{command} drift again` for a new reading; that spends one."
         return (
             f"Run `spacedock-compass --drift again --session {self.key}` for a new reading; "
             "that spends one."
@@ -1221,9 +1242,10 @@ class _Run:
         self.sid = _text(row.get("sid")) or self.sid
         self.key = f"{self.harness}:{self.sid}"
         self.url(row)
-        if self.harness != "claude":
+        if self.harness not in READ_HARNESSES:
             # The page reads every harness it has a route for; this command reads Claude Code's
-            # this milestone. So the reader is sent to the page, and nothing says it cannot read.
+            # and Codex's. So any other reader is sent to the page, and nothing says it cannot
+            # read.
             _emit(self.out, [f"Read this session's drift on its page: {self.url(row)}"])
             return 0
         if not _annotate_on(payload):
@@ -1449,8 +1471,12 @@ class _Run:
                 f"This build cannot read the stored reading, so it is not shown here. Read it on "
                 f"the session page: {self.url(row)}"
             )
+        if self.harness not in CORRECTION_HARNESSES:
+            # A Codex reading draws no level on the page, whatever a view carries
+            # ([DEC-26](docs/design-reading-a-session.md#dec-26-four-drift-levels-and-a-live-estimate-after-every-turn)).  # noqa: E501
+            view = view._replace(level=None, level_so_far=False)
         lines = render(row, payload, view, adopted=adopted, again_hint=self.again_hint())
-        if view.departures:
+        if view.departures and self.harness in CORRECTION_HARNESSES:
             lines.extend(self.correction())
         lines.append(f"Session page: {self.url(row)}")
         _emit(self.out, lines)

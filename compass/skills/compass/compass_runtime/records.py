@@ -1990,8 +1990,10 @@ _CODEX_COMPASS_ACTIONS: Final = frozenset(
 _CODEX_IMAGE_OPEN_RE = re.compile(r'<image name=\[Image #[1-9][0-9]*\] path="[^"\r\n]+">')
 
 
-def codex_compass_command(content: Any) -> bool:
-    """A whole typed `$compass <closed action>` in Codex's ordinary user text.
+def codex_compass_action(content: Any) -> str | None:
+    """The closed action of a whole typed `$compass <closed action>` in Codex's user text.
+
+    Spaces and letter case are folded, as the typed guard folds them; None for anything else.
 
     CLI 0.167.0 exec records no skill marker: both captured user shapes carry text blocks
     (docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl). Read their complete original
@@ -2008,23 +2010,34 @@ def codex_compass_command(content: Any) -> bool:
         texts = []
         for block in content:
             if not isinstance(block, dict):
-                return False
+                return None
             kind = block.get("type")
             if kind in ("input_image", "local_image"):
                 continue
             if kind not in ("input_text", "text") or not isinstance(block.get("text"), str):
-                return False
+                return None
             value = block["text"]
             if value == "</image>" or _CODEX_IMAGE_OPEN_RE.fullmatch(value):
                 continue
             texts.append(value)
         if len(texts) != 1:
-            return False
+            return None
         text = texts[0]
     else:
-        return False
+        return None
     folded = " ".join(text.split()).casefold()
-    return folded.startswith("$compass ") and folded[len("$compass ") :] in _CODEX_COMPASS_ACTIONS
+    action = folded[len("$compass ") :] if folded.startswith("$compass ") else ""
+    return action if action in _CODEX_COMPASS_ACTIONS else None
+
+
+def codex_compass_command(content: Any) -> bool:
+    """A whole typed `$compass <closed action>` in Codex's ordinary user text.
+
+    CLI 0.167.0 exec records no skill marker: both captured user shapes carry text blocks
+    (docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl). `codex_compass_action` holds
+    the reading of their complete original text.
+    """
+    return codex_compass_action(content) is not None
 
 
 def compass_command(text: object) -> bool:

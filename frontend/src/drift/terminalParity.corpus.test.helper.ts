@@ -453,6 +453,22 @@ export function namedCases(): DriftCase[] {
       harness: 'codex',
       reading: { goal_verdict: { at: 150, check: 'unconfirmed', why: 'check-failed', cites: [] } },
     }),
+    /* The terminal prints a Codex reading as the page draws it, so the page's own answers for Codex are
+       held in the corpus the terminal is checked against. */
+    build('a-codex-earlier-departure-is-listed-beside-a-message-only-pass', ['P1', 'P2'], {
+      harness: 'codex',
+      annotation: LINE_1,
+      facts: [M1, W0],
+      priors: [PRIOR()],
+      reading: { criteria: { goal: goalRow(), line_1: lineRow() } },
+    }),
+    build('a-codex-not-reached-line-stands-in-a-last-turn-scope', ['S3', 'S17'], {
+      harness: 'codex',
+      annotation: LINE_1,
+      reading: {
+        criteria: { goal: goalRow(), line_1: lineRow({ result: NOT_REACHED, detail: 'Stopped' }) },
+      },
+    }),
     twin('a-later-direction-unsettled-demotes-the-departure', ['S7'], {
       facts: [M1, U170],
     }),

@@ -3181,10 +3181,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         application = self.server.application
         transcript = (
             runtime_observer.resolve_transcript(application.config, application.state, harness, sid)
-            if harness == "claude"
+            if harness in ("claude", "codex")
             else None
         )
-        reason, uuid = typed_press.admit(application.config, transcript, action)
+        reason, uuid = typed_press.admit(application.config, transcript, action, harness)
         if not reason:
             return uuid
         self._send(

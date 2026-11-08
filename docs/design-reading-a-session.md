@@ -366,8 +366,10 @@ or a wrapper lookalike keeps the message eligible as the person's direction. The
 [image companion capture](captures/codex/skill-action-image-shapes-0.167.0-macos.jsonl)
 records both image-bearing user shapes from a real `codex exec --image` invocation. The
 [Codex CLI 0.167.0 capture](captures/codex/skill-action-shapes-0.167.0-macos.jsonl), taken on macOS
-with the shipped skill linked under `.agents/skills/compass`, records `codex exec` only; the
-interactive TUI was not captured. Both `response_item` user messages and `item_completed`
+with the shipped skill linked under `.agents/skills/compass`, records `codex exec`, and the
+[interactive TUI capture](captures/codex/skill-action-tui-shapes-0.167.0-macos.jsonl) (2026-11-09)
+records the same typed shape in the TUI, after one injected user-role message carrying `agents_md` and
+`harness` provenance. Both `response_item` user messages and `item_completed`
 `UserMessage` events carry ordinary text and no structured skill-mention marker. This is text
 recognition, not proof of skill execution. No Codex whole-turn exclusion is inferred: its agent
 output remains evidence because no boundary for that exclusion was captured (2026-11-08).
@@ -7086,6 +7088,21 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
   so with no `--session` the action refuses there, saying that it reads Claude Code sessions and
   nothing was read or spent. A harness or shell with no marker of its own cannot be told apart, so
   started under Claude Code it reads the outer session.
+
+  *Owner accepted the recommendation, 2026-11-08: Codex readings print without a level; a level
+  waits on DRC-5248's qualification.* The terminal now prints a Codex reading from the same
+  `drift_views` row the page's card is held to: line states, current departures and earlier
+  departures, and neither a level nor a correction (the correction stays Claude Code's:
+  `copied_corrections.HARNESSES`). It prints no level whatever a published view carries, because
+  the page draws none for Codex and nothing publishes one. `CODEX_THREAD_ID` alone now names the
+  caller for `--drift` only; with `CLAUDE_CODE_SESSION_ID` also set the action still refuses,
+  because the two cannot be told apart. A fresh or `again` press from a Codex session goes through
+  the same consent, pause and daily-cap guards as the page's Analyze, and the typed-command rule
+  below reads the Codex rollout for it: the newest person message must be the whole typed
+  `$compass drift` or `$compass drift again`. No new consent surface: the same once-per-typed-command
+  store, with the Codex ids namespaced `codex:`. Other non-Claude harnesses keep the one line naming
+  their session page: the server publishes the drift view for them too, but nothing here has
+  admitted them.
 
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists what enters the session and what
 stops the spend.

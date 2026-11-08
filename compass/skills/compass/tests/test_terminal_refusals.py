@@ -240,12 +240,13 @@ class RefusalTest(HomeCase):
         }
         drift = {
             False: (
-                "The drift action reads Claude Code sessions and this command was given no Claude Code "
+                "The drift action reads Claude Code and Codex sessions and this command was given no "
                 "session id, so nothing was read or spent; a session's page on the board shows its drift.\n"
             ),
             True: (
-                "The drift action reads Claude Code sessions and this command runs inside another tool's "
-                "session, so nothing was read or spent; that session's page on the board shows its drift.\n"
+                "The drift action reads Claude Code and Codex sessions and this command cannot tell which "
+                "of the tools it runs inside is its own, so nothing was read or spent; that session's page "
+                "on the board shows its drift.\n"
             ),
         }
 

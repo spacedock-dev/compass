@@ -179,12 +179,13 @@ class FakeBoard:
         self.posts: list[tuple[str, dict[str, Any]]] = []
         self.gets: list[str] = []
         self.model_calls = 0
+        self.key = KEY
         self._polls_left: int | None = None
 
     def data(self) -> Any:
         self.gets.append("/api/data")
         jobs = self.payload.get("reading_jobs") or {}
-        if KEY in jobs and self._polls_left is not None:
+        if self.key in jobs and self._polls_left is not None:
             if self._polls_left <= 0:
                 self._finish()
             else:
@@ -220,7 +221,7 @@ class FakeBoard:
             "phase": "preparing",
             "phase_at": NOW,
             "started_at": NOW,
-            "provider": "claude",
+            "provider": self.key.split(":")[0],
             "cancelling": False,
             "steps": [
                 {"phase": "preparing", "text": "Preparing what is sent"},
@@ -228,7 +229,7 @@ class FakeBoard:
                 {"phase": "checking", "text": "Checking the reply"},
             ],
         }
-        self.payload["reading_jobs"] = {KEY: job}
+        self.payload["reading_jobs"] = {self.key: job}
         self._polls_left = self.job_polls
         self._adopt = body.get("adopt")
         return 202, {"ok": True, "job": job}
@@ -1296,16 +1297,121 @@ class SessionLinkTest(unittest.TestCase):
 
 
 class OtherHarnessTest(unittest.TestCase):
-    def test_a_person_on_another_harness_is_sent_to_the_session_page(self) -> None:
-        row = a_row(harness="codex")
+    def test_a_person_on_a_harness_with_no_terminal_reading_is_sent_to_the_session_page(
+        self,
+    ) -> None:
+        row = a_row(harness="pi")
         board = FakeBoard(a_payload(row))
-        code, out, err = drift(board, harness="codex")
+        code, out, err = drift(board, harness="pi")
         self.assertEqual(0, code)
         text = out + err
         self.assertEqual(1, len(text.strip().splitlines()))
-        self.assertIn("http://127.0.0.1:4553/#n=session:compass:codex:abc", text)
+        self.assertIn("http://127.0.0.1:4553/#n=session:compass:pi:abc", text)
         self.assertNotIn("cannot", text.lower())
         self.assertEqual([], board.posts)
+
+
+CODEX_KEY = "codex:abc"
+CODEX_ROUTE = {"provider": "codex", "model": "", "note": "", "capacity": CAPACITY}
+
+
+def a_codex_view(**fields: Any) -> dict[str, Any]:
+    """What the server publishes for a Codex reading: line states and departures, no level."""
+    return a_view(
+        **{"harness": "codex", "pill": None, "analysis": None, **fields},
+    )
+
+
+def a_codex_board(*, assessed: bool = True, view: dict[str, Any] | None = None, **top: Any) -> Any:
+    row = a_row(harness="codex")
+    if assessed:
+        row["annotation_assessment"] = dict(ASSESSMENT)
+    top.setdefault("reading_routes", {"codex": dict(CODEX_ROUTE)})
+    payload = a_payload(row, **top)
+    board = FakeBoard(
+        payload, view=a_codex_view() if view is None else view, finished_view=a_codex_view()
+    )
+    board.key = CODEX_KEY
+    return board
+
+
+class ACodexReadingTest(unittest.TestCase):
+    """A Codex reading prints what the session page shows for it: no level, no correction."""
+
+    def test_a_person_reads_a_stored_codex_reading_as_the_page_shows_it(self) -> None:
+        board = a_codex_board()
+        code, out, err = drift(board, harness="codex")
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn("Departs · Goal: Make the parser accept tabs", out)
+        self.assertIn("Consistent · Line 1 (typed): The tests pass", out)
+        self.assertIn("Departures:", out)
+        self.assertNotIn("Read this session's drift on its page", out)
+        self.assertEqual(0, board.readings_started())
+
+    def test_a_person_reading_codex_is_shown_no_level_and_is_offered_no_correction(self) -> None:
+        board = a_codex_board()
+        _code, out, _err = drift(board, harness="codex")
+        self.assertNotIn("Level:", out)
+        self.assertNotIn("orrection", out)
+        self.assertNotIn("/api/correction", [path for path, _ in board.posts])
+
+    def test_a_person_is_shown_no_level_even_if_a_codex_view_carried_one(self) -> None:
+        carried = a_codex_view(analysis={"level": "high", "reasons": [], "withheld": False})
+        _code, out, _err = drift(a_codex_board(view=carried), harness="codex")
+        self.assertNotIn("Level:", out)
+
+    def test_a_person_sees_a_codex_earlier_departure_the_page_keeps_in_view(self) -> None:
+        prior = {
+            "key": "goal",
+            "read_at": NOW - 900,
+            "numbers": ["12"],
+            "clause": "Make the parser accept tabs",
+            "detail": "The lexer rejected tabs.",
+        }
+        board = a_codex_board(view=a_codex_view(departures=[], priors=[prior]))
+        _code, out, _err = drift(board, harness="codex")
+        self.assertIn("Earlier departures:", out)
+        self.assertIn("The lexer rejected tabs.", out)
+
+    def test_a_person_asking_for_a_codex_reading_spends_one_with_no_model_named(self) -> None:
+        board = a_codex_board(assessed=False)
+        code, out, _err = drift(board, harness="codex")
+        self.assertEqual(0, code)
+        self.assertEqual(1, board.model_calls)
+        body = board.posts[0][1]
+        self.assertEqual(("codex", "abc", True), (body["provider"], body["sid"], body["press"]))
+        self.assertNotIn("model", body)
+        self.assertNotIn("Level:", out)
+
+    def test_a_person_who_has_not_allowed_codex_readings_spends_nothing(self) -> None:
+        for check in ("", "blocked", None):
+            with self.subTest(check=check):
+                board = a_codex_board(assessed=False, reading_check=check)
+                code, out, err = drift(board, harness="codex")
+                self.assertEqual((1, ""), (code, out))
+                self.assertEqual(terminal_drift.UNAUTHORIZED, err.strip())
+                self.assertEqual((0, 0), (board.model_calls, board.readings_started()))
+
+    def test_a_person_with_no_codex_route_spends_nothing(self) -> None:
+        board = a_codex_board(assessed=False, reading_routes={})
+        code, _out, err = drift(board, harness="codex")
+        self.assertEqual(1, code)
+        self.assertEqual(terminal_drift.ROUTE_UNREAD, err.strip())
+        self.assertEqual(0, board.model_calls)
+
+    def test_a_person_in_codex_names_the_typed_action_and_is_told_to_type_the_codex_command(
+        self,
+    ) -> None:
+        board = a_codex_board(assessed=False)
+        drift(board, harness="codex", at_shell=False, in_session=True)
+        self.assertEqual("drift", board.posts[0][1]["typed_action"])
+        refused = a_codex_board(assessed=False)
+        refused.reply = (409, {"ok": False, "produced": False, "reason": "typed-command-required"})
+        code, _out, err = drift(refused, harness="codex", at_shell=False, in_session=True)
+        self.assertEqual(1, code)
+        self.assertIn("$compass drift again", err)
+        self.assertNotIn("/compass:compass", err)
+        self.assertEqual(0, refused.model_calls)
 
 
 class RefusalTest(unittest.TestCase):
