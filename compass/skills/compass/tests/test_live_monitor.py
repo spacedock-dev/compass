@@ -14,6 +14,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -326,6 +327,186 @@ class ATerminalReadersAllowance(Case):
         self.assertEqual("ran", self.tick(NOW + 3600).status)
         self.assertEqual("cap", self.tick(NOW + 3660).reason)
         self.assertEqual(2, len(self.runner.calls))
+
+
+class AReaderRestartingTheMonitor(Case):
+    def start(self, kind: str, now: float) -> None:
+        live_monitor.begin_window(self.config, KEY, now=now, holder=kind, holder_kind=kind)
+
+    def test_a_person_switching_off_and_on_keeps_spacing_and_spent_checks(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=2)
+        for kind in ("browser", "terminal"):
+            with self.subTest(kind=kind):
+                key = f"claude:{kind}"
+                for start in (NOW, NOW + 10, NOW + 20):
+                    live_monitor.begin_window(
+                        self.config, key, now=start, holder=kind, holder_kind=kind
+                    )
+                    if start == NOW:
+                        self.assertEqual("ran", self.tick(start, key=key).status)
+                    else:
+                        self.assertEqual("too-soon", self.tick(start, key=key).reason)
+                    self.assertTrue(live_monitor.end(self.config, key, holder=kind))
+                    self.assertIsNone(live_monitor.window(self.config, key))
+                    self.assertIsNone(live_monitor.published(self.config, key))
+                    self.assertEqual("not-monitored", self.tick(start + 1, key=key).reason)
+                live_monitor.begin_window(
+                    self.config, key, now=NOW + 30, holder=kind, holder_kind=kind
+                )
+                self.assertEqual("ran", self.tick(NOW + 60, key=key).status)
+                self.assertTrue(live_monitor.end(self.config, key))
+                live_monitor.begin_window(
+                    self.config, key, now=NOW + 70, holder=kind, holder_kind=kind
+                )
+                self.grow()
+                self.assertEqual("cap", self.tick(NOW + 120, key=key).reason)
+        self.assertEqual(4, len(self.runner.calls))
+        self.assertEqual(4, reading_policy.monitor_status(self.config, now=NOW + 120)["used"])
+
+    def test_a_person_restarting_after_the_period_gets_fresh_checks_at_the_original_boundary(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        for kind in ("browser", "terminal"):
+            with self.subTest(kind=kind):
+                key = f"claude:{kind}"
+                live_monitor.begin_window(self.config, key, now=NOW, holder=kind, holder_kind=kind)
+                self.assertEqual("ran", self.tick(NOW, key=key).status)
+                live_monitor.end(self.config, key)
+                live_monitor.begin_window(
+                    self.config, key, now=NOW + 1700, holder=kind, holder_kind=kind
+                )
+                self.assertEqual("cap", self.tick(NOW + 1799, key=key).reason)
+                self.assertEqual("ran", self.tick(NOW + 1800, key=key).status)
+                live_monitor.end(self.config, key)
+                live_monitor.begin_window(
+                    self.config, key, now=NOW + 7200, holder=kind, holder_kind=kind
+                )
+                self.assertEqual("ran", self.tick(NOW + 7200, key=key).status)
+
+    def test_a_person_stopping_a_running_check_cancels_it_without_refunding_it(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start("terminal", NOW)
+        runner = FakeRunner(hold=True)
+        results: list[live_monitor.Tick] = []
+        thread = threading.Thread(target=lambda: results.append(self.tick(NOW, runner=runner)))
+        thread.start()
+        try:
+            self.assertTrue(runner.started.wait(timeout=10))
+            self.assertTrue(live_monitor.end(self.config, KEY, holder="terminal"))
+            self.assertIsNone(live_monitor.window(self.config, KEY))
+            self.assertTrue(runner.groups[0].cancelled.wait(timeout=2))
+            self.start("terminal", NOW + 10)
+            self.assertEqual("cap", self.tick(NOW + 60).reason)
+        finally:
+            live_monitor.cancel_all(self.config, "test-cleanup")
+            thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(("cancelled", "stopped"), (results[0].status, results[0].reason))
+        self.assertIsNone(live_monitor.published(self.config, KEY))
+        self.assertEqual(1, reading_policy.monitor_status(self.config, now=NOW + 60)["used"])
+
+    def test_a_person_restarting_after_yes_keeps_the_renewed_allowance_period(self) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start("browser", NOW)
+        self.assertEqual("ran", self.tick().status)
+        live_monitor.begin_window(self.config, KEY, now=NOW + 1200, holder="browser", renew=True)
+        self.grow()
+        self.assertEqual("ran", self.tick(NOW + 1260).status)
+        live_monitor.end(self.config, KEY)
+        self.start("browser", NOW + 1700)
+        self.assertEqual("cap", self.tick(NOW + 1800).reason)
+        self.assertEqual("ran", self.tick(NOW + 3000).status)
+
+    def test_a_person_changing_from_browser_to_terminal_after_the_period_gets_fresh_checks(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start("browser", NOW)
+        self.assertEqual("ran", self.tick(NOW + 1790).status)
+        live_monitor.end(self.config, KEY)
+        self.start("terminal", NOW + 1800)
+        self.assertEqual("too-soon", self.tick(NOW + 1800).reason)
+        self.assertEqual("ran", self.tick(NOW + 1850).status)
+
+    def test_a_person_restarting_at_a_bucket_boundary_still_waits_a_full_minute(self) -> None:
+        for kind in ("browser", "terminal"):
+            with self.subTest(kind=kind):
+                key = f"claude:{kind}"
+                live_monitor.begin_window(self.config, key, now=NOW, holder_kind=kind)
+                self.assertEqual("ran", self.tick(NOW + 1790, key=key).status)
+                live_monitor.end(self.config, key)
+                live_monitor.begin_window(self.config, key, now=NOW + 1800, holder_kind=kind)
+                self.assertEqual("too-soon", self.tick(NOW + 1800, key=key).reason)
+                self.assertEqual("ran", self.tick(NOW + 1850, key=key).status)
+
+    def test_a_person_stopping_during_reservation_keeps_the_charge_in_the_restarted_monitor(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start("terminal", NOW)
+        entered, release = threading.Event(), threading.Event()
+        reserve = reading_policy.reserve_monitor
+        results: list[live_monitor.Tick] = []
+
+        def slow_reserve(config: Any, *, now: float) -> Any:
+            answer = reserve(config, now=now)
+            entered.set()
+            if not release.wait(timeout=10):
+                raise TimeoutError("reservation not released")
+            return answer
+
+        thread = threading.Thread(target=lambda: results.append(self.tick(NOW)))
+        with mock.patch.object(reading_policy, "reserve_monitor", slow_reserve):
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(timeout=10))
+                self.assertTrue(live_monitor.end(self.config, KEY))
+                self.start("terminal", NOW + 10)
+            finally:
+                release.set()
+                thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual("cancelled", results[0].status)
+        self.assertEqual("cap", self.tick(NOW + 60).reason)
+        self.assertEqual(1, reading_policy.monitor_status(self.config, now=NOW + 60)["used"])
+        self.assertEqual([], self.runner.calls)
+
+    def test_a_person_restarting_the_server_resets_session_caps_but_keeps_the_daily_charge(
+        self,
+    ) -> None:
+        self.config = dataclasses.replace(self.config, live_monitor_session_tick_cap=1)
+        self.start("terminal", NOW)
+        self.assertEqual("ran", self.tick().status)
+        live_monitor.end(self.config, KEY)
+        self.start("terminal", NOW + 10)
+        self.assertEqual("cap", self.tick(NOW + 10).reason)
+        live_monitor.end(self.config, KEY)
+        # A separate interpreter has a fresh server's memory, using the same durable ledger.
+        script = """
+import dataclasses, json, sys
+from pathlib import Path
+from compass.skills.compass.tests.test_live_monitor import Case, KEY, NOW, live_monitor, reading_policy
+case = Case()
+case.setUp()
+try:
+    case.config = dataclasses.replace(case.config, state_dir=Path(sys.argv[1]),
+                                      live_monitor_session_tick_cap=1)
+    live_monitor.begin_window(case.config, KEY, now=NOW + 10, holder_kind="terminal")
+    result = case.tick(NOW + 10)
+    print(json.dumps([result.status, reading_policy.monitor_status(case.config, now=NOW + 10)["used"]]))
+finally:
+    live_monitor.end(case.config, KEY)
+    case.doCleanups()
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(self.config.state_dir)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        self.assertEqual(["ran", 2], json.loads(result.stdout))
 
 
 class SpacingAndTheReadingSlot(Case):
@@ -891,6 +1072,7 @@ class TheReplyIsHeldToTheShapeContract(Case):
         ):
             with self.subTest(reasons=reasons):
                 live_monitor._SESSIONS.clear()
+                live_monitor._ACCOUNTING.clear()
                 result = self._ran(
                     reply("none_or_low"), estimate={"level": "not_enough", "reasons": reasons}
                 )
@@ -909,6 +1091,7 @@ class TheReplyIsHeldToTheShapeContract(Case):
         ):
             with self.subTest(reasons=reasons):
                 live_monitor._SESSIONS.clear()
+                live_monitor._ACCOUNTING.clear()
                 result = self._ran(
                     reply("none_or_low"), estimate={"level": "not_enough", "reasons": reasons}
                 )
@@ -929,6 +1112,7 @@ class TheReplyIsHeldToTheShapeContract(Case):
         ):
             with self.subTest(model=model, estimate=estimate["level"]):
                 live_monitor._SESSIONS.clear()
+                live_monitor._ACCOUNTING.clear()
                 cites = () if model == "not_enough" else (1,)
                 result = self._ran(reply(model, "A turn moved.", cites), estimate=estimate)
                 assert result.level is not None
@@ -949,6 +1133,7 @@ class TheReplyIsHeldToTheShapeContract(Case):
         ):
             with self.subTest(reason=reason):
                 live_monitor._SESSIONS.clear()
+                live_monitor._ACCOUNTING.clear()
                 result = self._ran(reply("none_or_low", reason))
                 self.assertEqual(("failed", "verdict-stated"), (result.status, result.reason))
                 self.assertIsNone(live_monitor.published(self.config, KEY))
@@ -969,6 +1154,7 @@ class TheReplyIsHeldToTheShapeContract(Case):
         for text in bad:
             with self.subTest(text=text[:40]):
                 live_monitor._SESSIONS.clear()
+                live_monitor._ACCOUNTING.clear()
                 result = self._ran(text)
                 self.assertEqual(("failed", "malformed"), (result.status, result.reason))
                 self.assertIsNone(live_monitor.published(self.config, KEY))
