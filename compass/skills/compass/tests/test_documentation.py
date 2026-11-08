@@ -58,6 +58,48 @@ class CommandManualOptionsTest(unittest.TestCase):
         self.assertEqual(len(documented), len(set(documented)), "Document each spelling once")
 
 
+class APersonCanOpenAndCloseCompassInEveryHarnessTest(unittest.TestCase):
+    def test_a_person_gets_complete_lifecycle_instructions_before_the_load_limit(self) -> None:
+        skill = (SERVER_PATH.parent / "SKILL.md").read_bytes()
+        # AGY truncates the installed skill at this byte boundary, including frontmatter.
+        # Moving a whole section or just its final instructions past it must fail.
+        for heading in (b"Terminal actions", b"Start", b"Stop"):
+            with self.subTest(section=heading.decode()):
+                match = re.search(
+                    rb"^## " + heading + rb"\n.*?(?=^## |\Z)", skill, re.MULTILINE | re.DOTALL
+                )
+                self.assertIsNotNone(match, "The person cannot find this action")
+                assert match is not None
+                self.assertLess(match.end(), 24_000, "The harness cuts off this action")
+        prefix = skill[:24_000].decode("utf-8", errors="replace")
+        for instruction in (
+            '"<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --daemon',
+            '"<skill-dir>/server.py" --port 4553 --status',
+            '"<skill-dir>/server.py" --port 4553 --stop',
+            "Resolve `server.py` relative to this `SKILL.md`",
+            "python3 -m webbrowser -t http://127.0.0.1:4553/",
+            "port belongs to some other process",
+            "without touching anything",
+        ):
+            with self.subTest(instruction=instruction):
+                self.assertTrue(instruction in prefix, f"The harness never sees {instruction}")
+
+    def test_a_person_can_find_the_bundled_reference_from_the_loaded_body(self) -> None:
+        skill = (SERVER_PATH.parent / "SKILL.md").read_bytes()
+        self.assertLess(len(skill), 24_000, "Every harness should load the complete action body")
+        for name in ("dashboard", "intent-and-drift", "notifications", "options"):
+            relative = f"reference/{name}.md"
+            with self.subTest(reference=relative):
+                self.assertTrue(
+                    f"]({relative}".encode() in skill[:24_000],
+                    f"The harness cannot find {relative}",
+                )
+                self.assertTrue(
+                    (SERVER_PATH.parent / relative).is_file(),
+                    f"The installed reference is missing: {relative}",
+                )
+
+
 class TerminalActionsMatchTheClientTest(unittest.TestCase):
     """The skill's Terminal actions table is held to the terminal client's own operations."""
 
@@ -283,7 +325,13 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
     """Reviewers found documentation describing behaviour the code no longer
     had, twice. These assert the claims against the implementation."""
 
-    SKILL = (SERVER_PATH.parent / "SKILL.md").read_text(encoding="utf-8")
+    SKILL = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            SERVER_PATH.parent / "SKILL.md",
+            *sorted((SERVER_PATH.parent / "reference").glob("*.md")),
+        )
+    )
 
     def posix_roots(self) -> dict[str, list[str]]:
         roots: dict[str, list[str]] = runtime_config.resolve_store_roots(
@@ -304,6 +352,8 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         )
         for relative in (
             "compass/skills/compass/SKILL.md",
+            "compass/skills/compass/reference/dashboard.md",
+            "compass/skills/compass/reference/intent-and-drift.md",
             "docs/promise-map.md",
             "docs/design-reader-state.md",
             "README.md",
@@ -320,7 +370,7 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
         # says an outcome line is needed for a level, as the 2026-10-21 wording did.
         root = SERVER_PATH.parents[3]
         for relative in (
-            "compass/skills/compass/SKILL.md",
+            "compass/skills/compass/reference/dashboard.md",
             "docs/promise-map.md",
             "frontend/src/intent/HowTo.tsx",
         ):
@@ -333,7 +383,13 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
                     r"(?i)no outcome line, Compass reads your goal's end state"
                     r"[;,.] a goal too vague to read is\s+refused",
                 )
-        for relative in ("README.md", "docs/promise-map.md", "compass/skills/compass/SKILL.md"):
+        for relative in (
+            "README.md",
+            "docs/promise-map.md",
+            "compass/skills/compass/SKILL.md",
+            "compass/skills/compass/reference/dashboard.md",
+            "compass/skills/compass/reference/intent-and-drift.md",
+        ):
             text = " ".join((root / relative).read_text(encoding="utf-8").split())
             with self.subTest(relative=relative, sentence="needed"):
                 self.assertNotIn("why an expected outcome line is needed for a drift level", text)
@@ -2696,6 +2752,10 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         "SECURITY.md",
         "docs/promise-map.md",
         "compass/skills/compass/SKILL.md",
+        "compass/skills/compass/reference/dashboard.md",
+        "compass/skills/compass/reference/intent-and-drift.md",
+        "compass/skills/compass/reference/notifications.md",
+        "compass/skills/compass/reference/options.md",
     )
 
     def _text(self, relative: str) -> str:
@@ -2725,7 +2785,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         for relative in (
             "docs/how-it-works.md",
             "docs/promise-map.md",
-            "compass/skills/compass/SKILL.md",
+            "compass/skills/compass/reference/intent-and-drift.md",
         ):
             text = self._text(relative)
             with self.subTest(page=relative):

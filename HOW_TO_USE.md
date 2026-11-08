@@ -363,7 +363,7 @@ session that never called the tool.
 
 Without hooks, state comes from reading session stores on a cadence. With them, a harness pushes
 lifecycle events to the dashboard and the board reacts as things happen.
-[SKILL.md](compass/skills/compass/SKILL.md#notifications) owns the hook JSON, the event names, and
+[SKILL.md](compass/skills/compass/reference/notifications.md#notifications) owns the hook JSON, the event names, and
 which ones matter. What it cannot own is the absolute path those snippets need, because the shipped
 skill body is installed without the repository and is forbidden to name one. Resolve it with `$SKILL`
 from the first section, then paste the resolved path into the snippet.
@@ -748,7 +748,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-observer-model` | Every model call, including goal summaries, session summaries, reader-requested analyses and unasked checks. It overrides `--unasked-readings` for both Claude Code and Codex |
 | `--no-reach` | Off-machine reach nudges. Outbound webhook nudges are disabled for this run |
 
-[SKILL.md](compass/skills/compass/SKILL.md#options) owns the full option reference.
+[SKILL.md](compass/skills/compass/reference/options.md#options) owns the full option reference.
 
 ### Select the Claude reading model
 
