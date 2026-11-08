@@ -163,6 +163,33 @@ class GroupQuiescenceTest(unittest.TestCase):
             group._wait_group(time.monotonic() - 1)
         probe.assert_not_called()
 
+    def test_a_probe_that_reads_unknown_while_a_process_exits_is_asked_again(self) -> None:
+        # Measured under a load average near 100: macOS `ps` prints a process that is mid-exit
+        # with the state `?Es`, which reads as unknown, and the next snapshot is definite. One
+        # unknown snapshot used to fail a call whose output was good.
+        group = supervise.Group(_FakeWindowsProcess(exits=True))  # type: ignore[arg-type]
+        clock = _Clock()
+        with (
+            mock.patch.object(supervise, "time", clock),
+            mock.patch.object(
+                supervise, "_group_running", side_effect=[None, None, False]
+            ) as probe,
+        ):
+            group._wait_group(clock.now + 5.0)
+        self.assertEqual(3, probe.call_count)
+
+    def test_a_probe_that_never_reads_definite_still_ends_at_the_one_deadline(self) -> None:
+        group = supervise.Group(_FakeWindowsProcess(exits=True))  # type: ignore[arg-type]
+        clock = _Clock()
+        deadline = clock.now + 0.5
+        with (
+            mock.patch.object(supervise, "time", clock),
+            mock.patch.object(supervise, "_group_running", return_value=None),
+            self.assertRaises(supervise.UnstoppedError),
+        ):
+            group._wait_group(deadline)
+        self.assertAlmostEqual(deadline, clock.now, msg="the wait did not end at the one deadline")
+
     def test_a_group_that_remains_live_exhausts_the_same_deadline(self) -> None:
         # A real 25 ms deadline could pass before the first probe on a loaded
         # runner, which then started none and read as "False is not true".

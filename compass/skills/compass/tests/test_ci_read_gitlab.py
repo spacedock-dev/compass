@@ -546,6 +546,26 @@ class TheLaunchKeepsEverySafeguard(unittest.TestCase):
 class TheStatusTableIsClosed(unittest.TestCase):
     def setUp(self) -> None:
         self.stub = StubGlab(self)
+        self.causes: list[str] = []
+        original = ci_read._FailureError.__init__
+
+        def remember(failure: Any, token: str) -> None:
+            # `ci_read` keeps only the closed token. The exception being handled when the
+            # token is chosen is the cause, so a failure message can name it.
+            handled = sys.exc_info()[1]
+            self.causes.append(f"{token} <- {handled!r}")
+            original(failure, token)
+
+        patcher = mock.patch.object(ci_read._FailureError, "__init__", remember)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def reading(self, expected: str, record: dict[str, Any], **context: Any) -> None:
+        self.assertEqual(
+            expected,
+            record["error"],
+            f"record={record!r} causes={self.causes!r} calls={self.stub.calls!r} {context!r}",
+        )
 
     def bucket(self, status: str, *, allow_failure: bool = False, pipeline: str = "success") -> str:
         self.stub.set(
@@ -553,7 +573,7 @@ class TheStatusTableIsClosed(unittest.TestCase):
             jobs=[job("only", status, allow_failure=allow_failure)],
         )
         record = read(self.stub, floor=None)
-        self.assertEqual("", record["error"], status)
+        self.reading("", record, status=status)
         return str(record["checks"][0]["bucket"]) if record["checks"] else ""
 
     def test_each_status_has_one_bucket(self) -> None:
@@ -589,9 +609,10 @@ class TheStatusTableIsClosed(unittest.TestCase):
 
     def test_a_status_outside_the_table_is_unreadable(self) -> None:
         self.stub.set(jobs=[job("only", "exploded")])
-        self.assertEqual(ci_read.ERROR_OUTPUT, read(self.stub)["error"])
+        self.reading(ci_read.ERROR_OUTPUT, read(self.stub), step="job status")
+        self.causes.clear()
         self.stub.set(mr=merge_request(status="exploded"))
-        self.assertEqual(ci_read.ERROR_OUTPUT, read(self.stub, now=2_000.0)["error"])
+        self.reading(ci_read.ERROR_OUTPUT, read(self.stub, now=2_000.0), step="pipeline status")
 
     def test_a_pipeline_that_disagrees_with_its_own_jobs_is_named_as_a_check(self) -> None:
         # A trigger job's child pipeline failed: every job of this pipeline passed, and the
