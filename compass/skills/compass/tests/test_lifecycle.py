@@ -721,6 +721,63 @@ class CompassServerTest(support.RuntimeTestCase):
                 code = cli.main()
             self.assertEqual(expected, code, state)
 
+    def test_a_reader_is_told_when_permissions_block_status_or_stop(self) -> None:
+        for command in ("--status", "--stop"):
+            for error in (
+                OSError(errno.EPERM, "blocked"),
+                OSError(errno.EACCES, "blocked"),
+                PermissionError(),
+            ):
+                for recorded in (False, True):
+                    with (
+                        self.subTest(command=command, error=error, recorded=recorded),
+                        tempfile.TemporaryDirectory() as home,
+                        mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+                        mock.patch.object(sys, "argv", ["server.py", "--port", "4587", command]),
+                        mock.patch(
+                            "compass_runtime.loopback_transport.exchange", side_effect=error
+                        ),
+                        mock.patch.object(lifecycle, "await_release") as release,
+                        mock.patch.object(lifecycle, "serve") as serve,
+                        mock.patch.object(http.client, "HTTPConnection") as connection,
+                        contextlib.redirect_stdout(io.StringIO()) as output,
+                        contextlib.redirect_stderr(io.StringIO()) as errors,
+                    ):
+                        state = Path(home) / "compass-4587.json"
+                        if recorded:
+                            lifecycle.write_state(cfg(), 4587, started=SERVER_STARTED)
+                        before = state.read_bytes() if recorded else None
+                        code = cli.main()
+                        self.assertEqual(
+                            "Compass's connection to the dashboard was blocked by a sandbox or permissions.",
+                            (output.getvalue() + errors.getvalue()).strip(),
+                        )
+                        self.assertNotEqual(0, code)
+                        self.assertEqual(before, state.read_bytes() if state.exists() else None)
+                        release.assert_not_called()
+                        serve.assert_not_called()
+                        connection.assert_not_called()
+
+    def test_a_reader_keeps_the_usual_absence_answer_when_no_dashboard_answers(self) -> None:
+        for command, sentence, expected_code in (
+            ("--status", "not running", 1),
+            ("--stop", "nothing running", 0),
+        ):
+            for error in (ConnectionRefusedError(errno.ECONNREFUSED, "absent"), TimeoutError()):
+                with (
+                    self.subTest(command=command, error=error),
+                    tempfile.TemporaryDirectory() as home,
+                    mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+                    mock.patch.object(sys, "argv", ["server.py", "--port", "4587", command]),
+                    mock.patch("compass_runtime.loopback_transport.exchange", side_effect=error),
+                    mock.patch.object(lifecycle, "await_release", return_value=True),
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                ):
+                    self.assertEqual(expected_code, cli.main())
+                    self.assertEqual(
+                        f"Compass: {sentence} on port 4587.", output.getvalue().strip()
+                    )
+
     def test_stop_instance_stops_a_running_server_over_http(self) -> None:
         # The release wait is lifted from 5 s to a minute: the assertions that stop_instance is
         # still waiting must not race its own timeout on a stalled test thread.

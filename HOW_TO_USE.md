@@ -45,7 +45,7 @@ An empty answer or a directory missing either launcher runs nothing and clears a
 
 ```bash
 unset SKILL
-find "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache" "$HOME/.gemini/config/plugins" \
+find -L "$HOME/.claude/plugins/cache" "$HOME/.codex/plugins/cache" "$HOME/.gemini/config/plugins" \
   -type f -path '*/skills/compass/server.py' -exec dirname {} \; 2>/dev/null || true
 printf 'Choose the active Compass skill directory (absolute path): '
 if IFS= read -r compass_skill &&

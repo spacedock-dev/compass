@@ -151,9 +151,12 @@ under `--daemon` too. Check whether a dashboard is already there before killing 
 python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --status
 ```
 
-`--status` reports one of three things, and never guesses: running (with pid and start time), not
+`--status` reports running (with pid and start time), not
 running, or that the port belongs to some other process — in which case it changes nothing. A start
 on a port that already runs a dashboard is refused and points at it.
+If permissions block `--status` or `--stop`, it prints "Compass's connection to the dashboard was
+blocked by a sandbox or permissions." and exits non-zero without changing anything or claiming
+whether a dashboard runs.
 
 The server writes thirteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`):
 `compass-<port>.json`, which records the running instance; `compass-<port>.log`, where a

@@ -121,6 +121,25 @@ class AReaderChoosesTheInstalledCopyTest(unittest.TestCase):
                 self.assertIn("remaining=unset", result.stdout)
                 self.assertIn("choose", (result.stdout + result.stderr).lower())
 
+    def test_a_reader_sees_and_can_choose_a_symlinked_install(self) -> None:
+        real_skill = self.install("linked checkout", "active build")
+        linked_install = self.home / ".codex/plugins/cache/example/compass/linked build"
+        linked_install.parent.mkdir(parents=True)
+        linked_install.symlink_to(real_skill.parents[1], target_is_directory=True)
+        chosen = linked_install / "skills/compass"
+        for answer in ("", str(chosen) + "\n"):
+            with self.subTest(answer=answer):
+                result = self.run_snippet(skill_snippets()[0], answer)
+                self.assertIn(str(chosen), result.stdout)
+                self.assertEqual(
+                    [[str(chosen / "launch.py"), str(chosen / "server.py"), "--diagnose"]]
+                    if answer
+                    else [],
+                    self.recorded_calls(),
+                )
+                if answer:
+                    self.assertEqual(0, result.returncode, result.stderr)
+
     def test_a_reader_cannot_run_a_copy_missing_either_neighboring_launcher(self) -> None:
         for missing in ("launch.py", "server.py"):
             with self.subTest(missing=missing):

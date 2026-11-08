@@ -22,7 +22,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import config as runtime_config
-from compass_runtime import http_api, reading_jobs, reading_long_recovery, summary_jobs, supervise
+from compass_runtime import (
+    http_api,
+    reading_jobs,
+    reading_long_recovery,
+    summary_jobs,
+    supervise,
+    terminal_client,
+)
 from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
 
@@ -159,9 +166,9 @@ def remove_state(config: RuntimeConfig, port: int) -> None:
 
 
 def probe_port(port: int, timeout: float = 1.0) -> tuple[str, dict[str, Any] | None]:
-    """What is listening on `port`: Compass, something else, or nothing.
+    """What is listening on `port`, or whether permissions blocked the probe.
 
-    Returns ("compass", health) | ("foreign", None) | ("closed", None).
+    Returns ("compass", health), or ("foreign" | "closed" | "blocked", None).
 
     The distinction is the entire point of this function. "Something is
     listening" reading as "Compass is running" is how a stop command ends up
@@ -174,7 +181,9 @@ def probe_port(port: int, timeout: float = 1.0) -> tuple[str, dict[str, Any] | N
         if status != 200 or len(body) > 4096:
             return ("foreign", None)
         data = json.loads(body)
-    except (OSError, http.client.HTTPException):
+    except (OSError, http.client.HTTPException) as exc:
+        if terminal_client.permission_denied(exc):
+            return ("blocked", None)
         return ("closed", None)
     except (ValueError, RecursionError):
         return ("foreign", None)  # answered 200 with something that is not JSON
@@ -428,6 +437,8 @@ def sweep_stale_states(config: RuntimeConfig) -> list[int]:
 def instance_status(config: RuntimeConfig, port: int) -> dict[str, Any]:
     """Whether Compass is on `port`, and what to say about it if not."""
     kind, health = probe_port(port)
+    if kind == "blocked":
+        return {"state": "blocked", "port": port}
     state = read_state(config, port)
     recorded_log = (state or {}).get("log") or log_path(config, port)
     if kind == "compass" and health is not None:
@@ -452,6 +463,8 @@ def render_status(status: dict[str, Any]) -> str:
     """One line describing an instance, for --status and --stop."""
     port = status["port"]
     state = status["state"]
+    if state == "blocked":
+        return terminal_client.sentence("loopback_blocked")
     if state == "running":
         started = status.get("started")
         since = "unknown"
@@ -488,7 +501,7 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
     """
     status = instance_status(config, port)
     state = status["state"]
-    if state == "foreign":
+    if state in ("foreign", "blocked"):
         # The state file is evidence about a port we do not own. Leave it.
         return (render_status(status), 1)
     if state == "running":
