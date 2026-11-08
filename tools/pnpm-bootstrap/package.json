@@ -1,0 +1,7 @@
+{
+  "name": "compass-pnpm-bootstrap",
+  "private": true,
+  "dependencies": {
+    "pnpm": "12.9.1"
+  }
+}

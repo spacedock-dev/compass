@@ -86,6 +86,9 @@ investigation, but no pull request needs them.
 
 The root package builds React source in `frontend/`. Install the exact Node and pnpm versions
 declared above using verified distributions; Node does not provide pnpm through bundled Corepack.
+CI installs pnpm from the npm-generated lock under `tools/pnpm-bootstrap/`, which pins the wrapper
+and its native binaries by hash. The [pnpm bump procedure](AGENTS.md#quality-gate) keeps that lock,
+the project lock and the manifest pins together.
 Dependency install scripts are denied, and no dependency currently has a build approval.
 Tailwind 4 runs in the preview builder, the owned development worker and Vitest. Its entry imports
 theme and utilities only; the existing sheets live in the `legacy` layer. Preflight is absent.

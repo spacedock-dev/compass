@@ -499,6 +499,9 @@ jobs:
   # Every frontend change, on Linux. The Vitest suite runs on Linux in `frontend-coverage`, so this
   # job runs the Node build tests that `pnpm test` adds to it rather than the suite a second time.
   frontend:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend (ubuntu-latest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -517,10 +520,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -560,6 +566,9 @@ jobs:
   # The same suite natively on macOS, where `pnpm test:dev`'s process handling differs, only when
   # `platform` is on. Lint, types and the CSS ratchet read no platform, so they stay on Linux.
   frontend-macos:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend (macos-latest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.platform == 'true'
@@ -575,10 +584,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -609,6 +621,9 @@ jobs:
   # the Vitest suite; `frontend-macos` runs it natively when `platform` is on. The token here stays read-only, because this job runs the frontend's
   # third-party test dependencies: the sticky comment is posted by `frontend-coverage-comment`, which runs none.
   frontend-coverage:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests + coverage threshold
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -627,10 +642,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       # The same check as the Python job's, on the runner's own Python: stdlib only, before any install.
       - name: Check coverage-exception label
         id: exception
@@ -752,6 +770,9 @@ jobs:
   # platform-independent bytes, and a stale artifact has been caught here that a local build did not show. The
   # parity proofs that used to run against the bundle are retired from the gate (owner, 2026-10-12).
   frontend-production:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend production bundle (ubuntu-latest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -767,10 +788,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -786,6 +810,9 @@ jobs:
         run: pnpm build:check
 
   storybook:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Storybook (ubuntu-latest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -800,10 +827,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Frozen install with dependency scripts denied
         timeout-minutes: 5
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -834,6 +864,9 @@ jobs:
   # these instead of the whole frontend lane; when that lane runs, it already includes them. On macOS when
   # `platform` is on, as `frontend-macos` is, and on Linux otherwise.
   frontend-contract:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests that read the runtime
     needs: changes
     if: needs.changes.outputs.contract == 'true'
@@ -849,10 +882,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         id: python
         with:
@@ -893,6 +929,9 @@ jobs:
   # A document only Vitest files read (the citation check, for a document a frontend file cites) runs those
   # files on Linux instead of the whole frontend lane. When that lane runs, it already includes them.
   frontend-docs:
+    # pnpm's script-denied wrapper must never download a missing optional binary.
+    env:
+      COREPACK_ENABLE_NETWORK: "0"
     name: Frontend tests that read the changed documents
     needs: changes
     if: needs.changes.outputs.frontend_docs == 'true'
@@ -908,10 +947,13 @@ jobs:
           node-version-file: .node-version
           check-latest: false
           package-manager-cache: false
-      # npm comes from the pinned Node above; no setup action registers a cache post step.
+      # npm from the pinned Node checks the committed bootstrap hashes; no setup cache post step.
       - name: Install pinned pnpm
         timeout-minutes: 3
-        run: npm install --global --ignore-scripts pnpm@12.9.1
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --prefix tools/pnpm-bootstrap
+          echo "$GITHUB_WORKSPACE/tools/pnpm-bootstrap/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Verify effective builder versions
         timeout-minutes: 1
         run: node -e "const fs=require('node:fs');const wanted=fs.readFileSync('.node-version','utf8').trim();if(process.versions.node!==wanted)throw Error('Unexpected Node '+process.versions.node);console.log('Node '+process.versions.node)"
