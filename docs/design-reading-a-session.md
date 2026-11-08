@@ -7131,10 +7131,16 @@ now supports enforcement of the ruling for the `/loop` scheduler in interactive 
 2.1.319 on macOS. A typed command has `origin.kind: human` and `turnOrigin: human`. A scheduled
 firing has no `origin`, has `turnOrigin: scheduled`, `scheduledTaskId`, `scheduledFireId` and
 `wakeupSource: schedule_wakeup`, and otherwise carries the same command envelope. The guard skips
-any record with a present non-human `turnOrigin`, any of those three scheduler fields, or an
-`origin` mapping with a present non-human `kind`. A scheduled record is not the person's next
+any record with a `turnOrigin` outside the closed admitted set of absent, `human` or `sdk`,
+any of those three scheduler fields, or an `origin` mapping with a present non-human `kind`.
+A scheduled record is not the person's next
 message: it neither authorizes a press nor revokes an earlier pending typed command. Human-origin
-interactive commands and headless records without origin fields remain eligible. This capture
+interactive commands and headless records with `turnOrigin: sdk` or without origin fields remain
+eligible. The [headless-command capture](captures/claude/headless-command-shapes-2.1.319-macos.jsonl)
+measures `sdk` on both a person's prompt and typed Compass command from `claude -p` in Claude
+Code 2.1.319 on macOS, with `entrypoint: sdk-cli` and no `origin`. Treating every non-human
+`turnOrigin` as machinery refused those commands and prevented later headless person prompts
+from revoking pending consent. Unknown values still fail closed. The scheduler capture
 measures ScheduleWakeup, not a cron-scheduled (CronCreate) firing; cron provenance remains
 unmeasured. Hook `session_crons` fields still prove no prompt's author.
 

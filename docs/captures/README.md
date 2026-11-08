@@ -96,6 +96,12 @@ user and entrypoint categories. `command_name` retains only the registered comma
 never arguments or text. All other strings in `record` are type names, including the scheduler
 ids. The command envelope alone cannot distinguish a typed command from a scheduled one.
 
+The separate headless-command capture measures `turnOrigin: sdk` and `entrypoint: sdk-cli`
+on a person's prompt and typed Compass command from `claude -p`. These are harness-selected
+origin and entrypoint categories, earned on the same basis as `human` and `cli` above.
+Both records lack `origin`. The rest uses the scheduled capture's shape-only format and
+exceptions. This is a separate smoke session, so its two shapes live in their own file.
+
 A harness is recorded rather than inferred from the filename because the reporter bounds a turn with
 each harness's own pair of event names, and getting that wrong is not a cosmetic error: the first
 Gemini capture reported "no complete turn" across four complete turns, because it was being measured
@@ -130,6 +136,7 @@ the new prompt capture retains those values, never titles or answers. Its
 
 | File | Provenance |
 |---|---|
+| `claude/headless-command-shapes-2.1.319-macos.jsonl` | Headless `claude -p`, Claude Code 2.1.319 on macOS, 2026-11-08. Shape-only extract supplied from the real-session smoke transcript: line 3 is the person's first prompt with `promptSource` and `permissionMode`; line 34 is the typed `/compass:compass` command. Both carry `turnOrigin: sdk` and `entrypoint: sdk-cli`, with no `origin`. Free text, ids, paths, timestamps and other string values are replaced by type names; no command arguments are retained. |
 | `claude/scheduled-command-shapes-2.1.319-macos.jsonl` | Interactive Claude Code 2.1.319 on macOS, 2026-11-08, with the Compass plugin loaded. Shape-only extract of transcript lines 13 (typed Compass command), 57 (typed `/loop`), 91 (model-invoked skill body), 144 (`/loop` scheduled firing) and 145 (its meta companion). The scheduled command has no `origin`, has `turnOrigin: scheduled`, `wakeupSource: schedule_wakeup`, `scheduledTaskId`, `scheduledFireId`, `queuePriority: later` and `queueSkipAttachments: true`; the typed command has `origin.kind: human` and `turnOrigin: human`. This measures the `/loop` scheduler (ScheduleWakeup); no cron-scheduled (CronCreate) firing was captured. |
 | `codex/hooks-0.146.0-macos.jsonl` | One `codex exec` turn containing one shell tool call. codex-cli 0.146.0, macOS, run against an isolated `CODEX_HOME` so no user configuration was touched, with `--dangerously-bypass-hook-trust` because Codex skips untrusted hooks silently. |
 | `codex/subagents-0.146.0-macos.jsonl` | One `codex exec` turn that spawned one sub-agent via `spawn_agent`/`wait_agent`, 10 hook invocations. codex-cli 0.146.0, macOS, isolated `CODEX_HOME` with the plugin installed through a scratch marketplace, and `--dangerously-bypass-hook-trust` because Codex skips untrusted hooks silently. Settles whether a subagent hook's `session_id` is the parent's. |

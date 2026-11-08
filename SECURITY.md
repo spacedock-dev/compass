@@ -500,11 +500,15 @@ drift, not a long analysis.
 An agent-scheduled command never authorizes spending. The guard now enforces the owner's
 2026-11-08 ruling for the `/loop` scheduler, measured in the
 [scheduled-command capture](docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl).
-It skips records with a present `turnOrigin` other than `human`, any `scheduledTaskId`,
+It admits only absent, `human` or `sdk` values of `turnOrigin`, and skips every other value.
+The [headless-command capture](docs/captures/claude/headless-command-shapes-2.1.319-macos.jsonl)
+measures `sdk` on both a person's prompt and typed command from `claude -p`.
+It also skips records with any `scheduledTaskId`,
 `scheduledFireId` or `wakeupSource` field, or an `origin` mapping with a present `kind` other
 than `human`. Such a record neither authorizes a press nor revokes your earlier pending typed
-command. Interactive human-origin commands and headless commands without origin fields remain
-eligible. The capture covers ScheduleWakeup (`wakeupSource: schedule_wakeup`); a cron-scheduled
+command. Interactive human-origin commands and headless commands with `turnOrigin: sdk` or
+without origin fields remain eligible. The scheduler capture covers ScheduleWakeup
+(`wakeupSource: schedule_wakeup`); a cron-scheduled
 (CronCreate) firing has not been captured. Never schedule or loop these actions.
 Record flags and notification envelopes are also harness-shape evidence,
 not proof of authorship: a person who types an identical whole envelope is indistinguishable from

@@ -59,8 +59,8 @@ class TypedPressCase(unittest.TestCase):
         """The person types the command; the agent's Bash call is running when the press lands."""
         start = len(self.session.rows)
         self.session.compass(action, stop=False)
-        # The old shape-only fixture filled turnOrigin with an unmeasured "sdk" value.
-        # Use the interactive provenance now measured in the scheduler capture instead.
+        # Use the interactive provenance measured in the scheduler capture. The headless
+        # sdk provenance is measured separately in headless-command-shapes-2.1.319-macos.jsonl.
         self.session.rows[start].update(origin={"kind": "human"}, turnOrigin="human")
 
     def machinery(self, kind: str) -> None:
@@ -99,11 +99,13 @@ class ScheduledPressTest(TypedPressCase):
         super().setUp()
         self.capture_count = 0
 
-    def captured(self, line: int, action: str) -> dict[str, Any]:
+    def captured(
+        self, line: int, action: str, *, capture: str = "scheduled-command"
+    ) -> dict[str, Any]:
         """Rebuild the captured record shape; text, ids and times are test stand-ins."""
         path = (
             Path(__file__).resolve().parents[4]
-            / "docs/captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl"
+            / f"docs/captures/claude/{capture}-shapes-2.1.319-macos.jsonl"
         )
         shapes = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines()]
         shape = next(item for item in shapes if item["line"] == line)
@@ -156,6 +158,35 @@ class ScheduledPressTest(TypedPressCase):
                 del row["origin"], row["turnOrigin"]
                 self.session.rows = [row]
                 self.assertEqual(self.admitted(action), ("", row["uuid"]))
+
+    def test_a_persons_headless_sdk_command_pays_for_every_guarded_action(self) -> None:
+        for action in ACTIONS:
+            with self.subTest(action=action):
+                row = self.captured(34, action, capture="headless-command")
+                self.session.rows = [row]
+                self.assertEqual(self.admitted(action), ("", row["uuid"]))
+
+    def test_a_persons_later_headless_sdk_prompt_revokes_their_pending_command(self) -> None:
+        for action in ACTIONS:
+            for capture, line in (("scheduled-command", 13), ("headless-command", 34)):
+                with self.subTest(action=action, pending=capture):
+                    pending = self.captured(line, action, capture=capture)
+                    later = self.captured(3, action, capture="headless-command")
+                    self.session.rows = [pending, later]
+                    self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
+        self.assertFalse(typed_press.store_path(self.config).exists())
+
+    def test_a_person_never_pays_for_a_command_with_an_unknown_turn_origin(self) -> None:
+        # Deliberately unmeasured provenance probes: future values must fail closed.
+        origins: tuple[object, ...] = ("future-origin", None, {}, [])
+        for origin in origins:
+            for action in ACTIONS:
+                with self.subTest(origin=origin, action=action):
+                    row = self.captured(34, action, capture="headless-command")
+                    row["turnOrigin"] = origin
+                    self.session.rows = [row]
+                    self.assertEqual(self.admitted(action), (typed_press.REQUIRED, ""))
+        self.assertFalse(typed_press.store_path(self.config).exists())
 
     def test_a_persons_loop_request_and_model_skill_call_cannot_pay(self) -> None:
         for line in (57, 91):
