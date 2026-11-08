@@ -7072,7 +7072,7 @@ is exactly how the skill runs it.
   `drift` over a stored reading never presses, so the check never touches it.
 - **One press per typed command.** The id of the typed record that admitted a press is remembered
   in `compass-typed-presses.json` beside the reading permission store, under a file lock, so a
-  retry, a loop or a second call cannot spend again on it. The newest 512 ids are kept. It is held
+  retry, a loop or a second call cannot spend again on it. The [2026-11-08 amendment](#amended-2026-11-08-owner-typed-actions-machinery-and-scheduled-commands) adds a 24-hour age limit and retains consumed ids for that entire window. It is held
   before the press, so a concurrent press on the same record is refused, and given back when the
   press is refused or fails before a reading starts (the daily cap, a pause, consent, a changed
   revision, a reading already running), so a refusal does not use up the person's command. A lock
@@ -7105,7 +7105,10 @@ authorize a spend. The closed action names are accepted in any letter case; para
 
 The shared admission guard covers `drift`, `drift again`, `monitor on`, `summary`, `summary update`
 and `summary again`. Flagged compaction summaries and complete non-meta `<task-notification>`
-envelopes, in strings or all-text block lists, leave a typed command pending. The committed corpus fixtures
+envelopes, in strings or all-text block lists, leave a typed command pending. On 2026-11-08 the
+owner's DRC-5196 acceptance intended that an unpressed command persist across harness-written task
+notifications and flagged compaction, including into a turn the harness starts, until the person's
+next message or the 24-hour age limit: the person typed the command. The committed corpus fixtures
 in `test_claude`, `test_compass_skill_action` and `test_delegated_work` establish those shapes.
 A bare compaction preamble is insufficient: a person can start a real prompt with the same words.
 A prompt with reader words after the notification revokes consent. An identical whole envelope
@@ -7114,10 +7117,17 @@ has no author discriminator and remains indistinguishable from machinery.
 A later genuine prompt still revokes consent. A message the person sends while the agent works
 also revokes it: the [mid-turn capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl)
 distinguishes human-origin prompt-mode `queued_command` attachments from task notifications.
-Only the former revoke; neither can authorize spending. Once-only consumption and release after
-a refused start are unchanged. A marked long-mode request is refused before dispatch: the closed
+Only the former revoke; neither can authorize spending. A typed command with a readable transcript
+timestamp less than 24 hours old authorizes at most one press that starts. Missing, unreadable or
+future timestamps refuse admission. `COMMAND_MAX_AGE_SEC` bounds pending consent at 24 hours;
+consumed ids remain for at least that window, so count-based pruning cannot resurrect an admissible
+command. The store retains the newest 512 ids plus every younger consumption, bounded by the larger
+of 512 and ids consumed or migrated in the last 24 hours. Legacy ids without hold times start their retention
+window at migration. A refused start still releases the id for a retry within the command's age limit. A marked long-mode request is refused before dispatch: the closed
 typed actions grant no long analysis.
 
+The guard cannot yet tell an agent-scheduled command from a typed one. The owner ruled on
+2026-11-08 that such a command must never authorize spending; enforcement waits on a real capture.
 No committed capture distinguishes a scheduled or looped command record from a typed one.
 The [skill-action capture](captures/claude/skill-action-shapes-2.1.318-macos.jsonl) records `origin.kind`
 only as a string shape, not a discriminator value. Hook `session_crons` fields prove no prompt's

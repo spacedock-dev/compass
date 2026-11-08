@@ -264,7 +264,7 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-tripwires.json` | Saved workflow stage conditions. |
 | `compass-copied-corrections.json` | Digests recording copied corrections, without their text. |
 | `compass-reading-permission.sqlite3` | Reading permissions, the model-call pause, the session-summary switch, the one-time notices shown, and the spend admission timestamps for readings and for session summaries, kept apart. Long analysis adds word-free job and per-pass bindings and reservation receipts; these do not authorize resume. |
-| `compass-typed-presses.json` | The ids of the typed `/compass:compass drift` and `drift again` commands that a press from inside a session started a reading on, and `monitor on` commands that admitted a terminal lease, the newest 512, and nothing else; owner-only (mode `0600`). A press refused before it starts leaves its command out. `--forget` keeps it. |
+| `compass-typed-presses.json` | The ids of the typed `/compass:compass drift` and `drift again` commands that a press from inside a session started a reading on, and `monitor on` commands that admitted a terminal lease, with their consumption times, no command words; the newest 512 and every consumption in the last 24 hours, as [typed consent](SECURITY.md#drift-commands-and-typed-consent) explains; owner-only (mode `0600`). A press refused before it starts leaves its command out. `--forget` keeps it. |
 | `reading-long-jobs/` | Word-free long-analysis owner, plan, pass and accounting markers under the state directory. Recovery preserves uncertain accounting and never resumes model calls. |
 | `reach_url`, `quiet_hours` | Optional plain-text defaults for reach and quiet hours. |
 

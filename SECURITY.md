@@ -470,10 +470,15 @@ it, as above. By the [owner's later
 ruling](docs/design-reading-a-session.md#owner-ruling-2026-11-06-later-a-press-from-inside-a-session-needs-the-persons-typed-command),
 a press from inside the session is sent only when the latest person prompt in the session's
 transcript, read at press time, is your own typed `/compass:compass drift` or `drift again`, and
-`drift again` only when you typed `drift again`. Each typed command pays for one press that starts:
-Compass remembers the typed record's id, and nothing else, in `compass-typed-presses.json` in its
-state directory, holding it under a file lock while the press is decided so a concurrent press on it
-is refused, and giving it back when the press is refused before a reading starts, such as by the
+`drift again` only when you typed `drift again`. A typed command with a readable transcript
+timestamp less than 24 hours old authorizes at most one press that starts; missing, unreadable or
+future timestamps refuse the press. Compass remembers the typed record's id and consumption time,
+with no command words, in `compass-typed-presses.json` in its state directory. It retains each
+consumed id for at least 24 hours and keeps the newest 512 even when older. The store therefore holds
+at most the larger of 512 and the number of ids consumed or migrated in the last 24 hours. Existing ids without
+a consumption time are kept for a full 24 hours from migration. A file lock holds the id while the
+press is decided so a concurrent press on it is refused. Compass gives it back when the press is
+refused before a reading starts, such as by the
 daily limit, a pause or a reading already running, so a retry can still use it. A store it cannot
 lock, read or write refuses the press. Under the marked skill path, a press with no matching typed
 command is refused with nothing read or spent. It is not a hard boundary: a process that can write
@@ -483,16 +488,20 @@ The closed typed action names accept any letter case and folded whitespace, not 
 `drift`, `drift again`, `monitor on`, `summary`, `summary update` and `summary again`. A flagged
 compaction summary (`isCompactSummary`) and a complete non-meta `<task-notification>` envelope,
 as a string or an all-text block list, do not revoke the pending command. Queued task-notification attachments
-also leave it pending. A later person prompt, including a captured human-origin prompt-mode
+also leave it pending. An unpressed command remains pending across these harness-written records,
+including into a turn the harness starts, until your next message or the 24-hour age limit. The
+owner accepted this behavior on 2026-11-08 because you typed the command. A later person prompt,
+including a captured human-origin prompt-mode
 `queued_command` attachment, revokes it. Reader words after a notification revoke it too; a bare
 compaction preamble without the flag is not sufficient to identify machinery. A request carrying
 `typed_action` with `mode: "long"` is refused before any press. The closed actions authorize ordinary
 drift, not a long analysis.
 
-An agent-scheduled command can never authorize spending. No committed capture yet distinguishes a
-scheduled or looped command from the person's typed command, so the guard cannot enforce that
-ruling for indistinguishable records. A real scheduled-command provenance capture is needed before
-adding a discriminator. Record flags and notification envelopes are also harness-shape evidence,
+The guard cannot yet tell an agent-scheduled command from a typed one. The owner ruled on
+2026-11-08 that an agent-scheduled command must never authorize spending; enforcement of that
+ruling waits on a real capture. No committed capture yet distinguishes a scheduled or looped
+command from the person's typed command. A real scheduled-command provenance capture is needed
+before adding a discriminator. Record flags and notification envelopes are also harness-shape evidence,
 not proof of authorship: a person who types an identical whole envelope is indistinguishable from
 that machinery. An explicit `--session` omits `typed_action`, and an arbitrary local process can
 omit it from HTTP too. This guard governs the pre-approved skill path; it does not authenticate

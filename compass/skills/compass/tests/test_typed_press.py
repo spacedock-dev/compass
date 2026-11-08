@@ -17,12 +17,12 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 
-from compass_runtime import http_api, observer, reading_long_preview, typed_press
+from compass_runtime import http_api, observer, reading_long_preview, records, typed_press
 from compass_runtime import io as runtime_io
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .test_compass_skill_action import CompassSession
+from .test_compass_skill_action import NOW, CompassSession
 from .test_history import isolated_environment, no_instance, run_one_shot_cli
 
 if TYPE_CHECKING:
@@ -41,6 +41,9 @@ class TypedPressCase(unittest.TestCase):
             launcher_path=root / "server.py",
         )
         self.path = root / "claude" / "projects" / "-work" / "session.jsonl"
+        self.clock = self.enterContext(
+            mock.patch.object(typed_press, "time", return_value=NOW, create=True)
+        )
         self.session = CompassSession(root / "work")
         self.session.prompt("Teach the parser about tabs.")
 
@@ -87,6 +90,38 @@ ACTIONS = ("drift", "drift again", "monitor on", "summary", "summary update", "s
 
 
 class TypedPressTest(TypedPressCase):
+    def test_a_persons_unpressed_command_expires_after_twenty_four_hours(self) -> None:
+        for action in ACTIONS:
+            for age, expected in (
+                (25 * 3600, typed_press.REQUIRED),
+                (60, ""),
+                (86400, typed_press.REQUIRED),
+            ):
+                with self.subTest(action=action, age=age):
+                    self.typed(action)
+                    record = typed_press.latest_prompt(
+                        [json.dumps(row).encode() for row in self.session.rows]
+                    )
+                    assert record is not None
+                    stamp = records.iso_epoch(record["timestamp"])
+                    assert stamp is not None
+                    self.clock.return_value = stamp + age
+                    self.assertEqual(expected, self.admit(action))
+
+    def test_a_persons_command_needs_a_readable_timestamp_before_it_can_pay(self) -> None:
+        for stamp in (None, "not a timestamp", 123, True, "9999-12-31T00:00:00Z"):
+            with self.subTest(stamp=stamp):
+                self.typed("drift again")
+                for row in self.session.rows:
+                    if typed_press.typed_action(row) == "drift again":
+                        row["timestamp"] = stamp
+                self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+        self.typed("drift again")
+        for row in self.session.rows:
+            if typed_press.typed_action(row) == "drift again":
+                row.pop("timestamp", None)
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
     def test_a_persons_words_after_a_long_quoted_notification_still_revoke_consent(self) -> None:
         opening, closing = "<task-notification>", "</task-notification>"
         envelope = opening + "x" * (2000 - len(opening + closing)) + closing
@@ -238,6 +273,29 @@ class TypedPressTest(TypedPressCase):
             with self.subTest(action=action):
                 self.assertEqual(typed_press.REQUIRED, self.admit(action))
 
+    def test_a_persons_spent_command_stays_spent_when_the_legacy_store_is_migrated(self) -> None:
+        self.typed("drift again")
+        self.assertEqual("", self.admit("drift again"))
+        path = typed_press.store_path(self.config)
+        legacy = {"consumed": json.loads(path.read_text())["consumed"]}
+        path.write_text(json.dumps(legacy))
+        for index in range(512):
+            self.assertEqual("", typed_press.consume(self.config, f"other-{index}"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
+    def test_a_persons_spent_command_stays_spent_near_the_end_of_its_age_window(self) -> None:
+        self.typed("drift again")
+        record = typed_press.latest_prompt([json.dumps(row).encode() for row in self.session.rows])
+        assert record is not None
+        stamp = records.iso_epoch(record["timestamp"])
+        assert stamp is not None
+        self.clock.return_value = stamp + 60
+        self.assertEqual("", self.admit("drift again"))
+        self.clock.return_value = stamp + 86400 - 1
+        for index in range(512):
+            self.assertEqual("", typed_press.consume(self.config, f"other-{index}"))
+        self.assertEqual(typed_press.REQUIRED, self.admit("drift again"))
+
     def test_the_once_holds_across_a_restart_of_the_dashboard(self) -> None:
         self.typed("drift")
         self.assertEqual("", self.admit("drift"))
@@ -381,6 +439,20 @@ class ReadingRouteTest(TypedPressCase):
         answer = json.loads(payload)
         self.assertEqual((False, False), (answer["ok"], answer["produced"]))
         return str(answer["reason"])
+
+    def test_a_persons_spent_command_cannot_pay_again_after_many_other_consumptions(self) -> None:
+        for kind in ("none", "notification-string", "compaction"):
+            with self.subTest(after=kind):
+                self.typed("drift again")
+                self.press(typed_action="drift again")._reading_press.assert_called_once()
+                if kind != "none":
+                    self.machinery(kind)
+                for index in range(512):
+                    self.assertEqual("", typed_press.consume(self.config, f"{kind}-other-{index}"))
+                self.assertEqual(
+                    typed_press.REQUIRED,
+                    self.refused_with(self.press(typed_action="drift again")),
+                )
 
     def test_a_typed_press_reaches_the_page_s_press(self) -> None:
         self.typed("drift")
