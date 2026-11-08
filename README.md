@@ -165,6 +165,12 @@ line. See [HOW_TO_USE.md](HOW_TO_USE.md) for one procedure per task.
 In Codex, invoke it as `$compass`. In any harness you can also just ask: "open compass" or "monitor my agents".
 Add `sessions` or `sessions waiting` (`/compass:compass sessions`, `$compass sessions`) to list your sessions in the session you typed it in, without opening the dashboard (measured on Claude Code; [COMPATIBILITY.md](COMPATIBILITY.md) has the rest). In Claude Code, `/compass:compass project` reads this session's project label, its other sessions and the project brief. `/compass:compass drift` prints that session's drift reading, asking for one when none is stored, and `drift again` asks for a new one; each request counts against the daily reading limit. The answer becomes part of that session's context and goes to its model provider: [what that includes](SECURITY.md#what-can-reach-into-a-session).
 
+Claude Code also has `goal` to read your intent, `summary` to read cited phases (starting a summary
+only when none is stored), `summary update` and `summary again` to request more, `monitor on` and
+`monitor off` to control a terminal Live monitor, and `pause` and `summaries off` to stop model calls
+or summaries. [Ask Compass from inside a session](HOW_TO_USE.md#ask-compass-from-inside-a-session)
+explains which actions can spend and how they are guarded.
+
 ## 3. How it works
 
 Compass is a small Python server that runs on your machine. It reads the session records your agents

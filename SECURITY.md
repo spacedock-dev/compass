@@ -2854,6 +2854,12 @@ naming the read is part of the notice a press shows, and a reader who turns the 
 Ruled 2026-10-19 by the owner ([DEC-28](docs/design-session-summary.md)). Summary jobs run on a reader's open or press and keep finished parts as they arrive.
 Opening a stored summary makes no summary call or charge.
 
+The focused `GET /api/summary?harness=claude&sid=SESSION_ID` returns one exact published session,
+its stored summary, the summary grant and available citation labels. It falls back to the all-sessions
+collection and refuses ambiguous matches. It starts no job, requests no model refresh and does not
+assemble a project context. It uses the same loopback, cross-site and navigation guards as terminal
+session reads. A terminal cancellation supplies an expected job id; a replacement job is left running.
+
 - What it is. A model-written summary of what a session did: a lede and phases with titled bullets,
   each bullet citing at least one entry by fact id, in the
   [closed shape](docs/design-session-summary.md#the-closed-summary-shape). Unlike a reading, which
@@ -2976,7 +2982,7 @@ with a `monitor` notice shown before the first charged call. A terminal start ch
   once per accepted run. The typed guard and ordinary start refusals precede any goal save, notice record or lease. With no saved goal or outcome lines, a terminal start adopts the page's draft through the same annotation writer as Analyze, before its first tick. A concurrent goal or outcome save wins, and a concurrent discard stays discarded and refuses the start. Failed adoption releases the typed command and starts no lease. With no draft it starts but makes no check until a goal is saved; saved outcome lines still allow checks. Beats, stops and a repeat of an already-running command consume no command. The repeat only reads the board's published notice status. A full session id must match
   `resume_id`; a same-prefix different id is refused.
   The holder exits on a recorded lease end, an absent or ended row, 30 seconds of continuously
-  failed dashboard exchanges, or two hours with no new published activity. On POSIX it records the
+  failed dashboard exchanges, or two hours with no new published activity. On POSIX, when the monitored row matches `CLAUDE_CODE_SESSION_ID`, it records the
   nearest ancestor executable named `claude`, its PID and start time, and exits when that process
   dies or its start time changes. On Windows, and when no such ancestor exists, only the other
   bounds apply. A restarted dashboard ends the holder with a status-file reason and never replays
@@ -4919,13 +4925,13 @@ the paragraph below grants another account on the machine, a non-default bind gr
 can reach the port. Reading `/api/data` is the whole board: every session's titles, prompts and
 project paths. Writing is the twenty-four POST routes enabled without terminal registration, `/api/shutdown` and `/api/answer` among them, so a
 reachable dashboard can be killed, and a question a session is waiting on can be answered by
-somebody other than you. Three of the twenty-four store nothing durable of their own: `POST /api/direction` returns the whole text
-of a direction a session's user gave, which `/api/project-context` names by its first sentence,
+somebody other than you. Two of the twenty-four store nothing durable of their own: `POST /api/direction` returns the whole text
+of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
-message's published title of at most 112 characters, and `POST /api/live-monitor` holds the Live
-monitor's lease in memory only. All three answer only a loopback peer, so a non-default bind does not widen them;
-the first two have their bounds in Analyze drift, Cancel and copied corrections. There is nothing to authenticate with on twenty-two of them, for the reason the
+message's published title of at most 112 characters. Both answer only a loopback peer, so a
+non-default bind does not widen them; both have their bounds in Analyze drift, Cancel and copied
+corrections. There is nothing to authenticate with on twenty-two of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
 Two carry a capability and they are not worth the same. `POST /api/events/<harness>` takes a per-run
 token published only in the state file at mode `0600` and never served to the page, so a client
@@ -5163,9 +5169,3 @@ You can expect an acknowledgment within a few days. Please allow time for a fix 
 ## Supported versions
 
 Only the latest released version of the plugin receives security fixes.
-
-The focused `GET /api/summary?harness=claude&sid=SESSION_ID` returns one exact published session,
-its stored summary, the summary grant and available citation labels. It falls back to the all-sessions
-collection and refuses ambiguous matches. It starts no job, requests no model refresh and does not
-assemble a project context. It uses the same loopback, cross-site and navigation guards as terminal
-session reads. A terminal cancellation supplies an expected job id; a replacement job is left running.

@@ -67,8 +67,9 @@ board would not. The [manual](../MANUAL.md#starting-and-inspecting-an-instance) 
 
 Inside a Claude Code session, `/compass:compass sessions` and `/compass:compass sessions waiting`
 print the same list into that session, where the agent can read it too. The skill pre-approves
-those two commands, and its own `drift` commands under P2, and no others, so they run without a
-permission prompt. A line above the listed
+the exact commands in its [terminal action table](../compass/skills/compass/SKILL.md#terminal-actions),
+so they run without a permission prompt on Claude Code. `project` reads this session's project
+label, members and brief without starting a dashboard or calling a model. A line above the listed
 sessions says they are what other sessions said about themselves, and the list goes to that session's model provider with the rest of its context, as
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) sets out. Compass leaves the command you
 typed, and the agent's answer to it, out of what it reads about the session, and the session page
@@ -114,6 +115,14 @@ and missing source times refuse adoption. Claude Code and Codex hooks also repor
 destructive command shapes; a match does not prove success. Compass saves a stage you choose for a
 Spacedock workflow and alerts once when it observes an entity enter that stage; gaps and unavailable
 sources are stated, and a notification request does not prove a banner appeared.
+
+The terminal's `goal` reads the effective intent, source, saved revision and outcome lines without
+spending. Saves, clears and adoptions require an explicit session and terminal output, as
+[the manual](../MANUAL.md#starting-and-inspecting-an-instance) sets out. `summary` reads stored
+phases, even when stale or partial, and starts only when none is stored. `summary update` continues
+an appendable summary; `summary again` starts from the beginning. Each in-session spend needs that
+exact typed action once. `summaries off` stops summaries for every session; while model calls are
+paused it is refused without changing the saved answer.
 
 Backed by the current-turn elapsed and ETA estimate with its progress bar, the warning that fires
 when a request runs or is projected to run past fifteen minutes, a pill per subagent carrying its
