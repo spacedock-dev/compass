@@ -1,0 +1,57 @@
+{
+  "format": 1,
+  "name": "reading-unasked-revoke-overtaken",
+  "notes": "Another reader grants after this revoke and before its reply collects: the reply's policy and revision describe that later grant together.",
+  "request": {
+    "body": {
+      "harness": "claude",
+      "observer_model": 1,
+      "press": true,
+      "provider": "codex",
+      "sid": "a1b2c3d4",
+      "unasked_grant": false
+    },
+    "headers": {
+      "Origin": "{origin}"
+    },
+    "method": "POST",
+    "path": "/api/reading",
+    "query": ""
+  },
+  "response": {
+    "body": {
+      "board_revision": "1900000000.4",
+      "ok": true,
+      "produced": false,
+      "reading": {
+        "consent": true,
+        "dormant": {},
+        "limit": 100,
+        "notices": {},
+        "off": false,
+        "providers": {
+          "claude": false,
+          "codex": false
+        },
+        "reason": "",
+        "rebind": {
+          "codex": "What a reading sends has changed since you allowed this, so allow it again."
+        },
+        "retry_at": null,
+        "tool_output": {},
+        "used": 0,
+        "words": {
+          "claude": false,
+          "codex": true
+        }
+      }
+    },
+    "headers": {
+      "Cache-Control": "no-store",
+      "Content-Length": "369",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}

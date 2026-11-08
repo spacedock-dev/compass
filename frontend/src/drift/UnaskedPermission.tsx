@@ -131,11 +131,14 @@ export function UnaskedPermission({
               : snapshot.acceptedCount === requestedCount
           ) {
             if (isRecord(body['reading'])) showReading(ctx, body['reading']);
+            const granted = isRecord(body['reading'])
+              ? stored({ reading: body['reading'] })
+              : !allowed;
             shell.announcer.announce(
               'unasked-grant',
-              allowed
-                ? 'Codex permission for unasked checks revoked.'
-                : 'Codex permission for unasked checks granted.',
+              granted
+                ? 'Codex permission for unasked checks granted.'
+                : 'Codex permission for unasked checks revoked.',
             );
           }
         }

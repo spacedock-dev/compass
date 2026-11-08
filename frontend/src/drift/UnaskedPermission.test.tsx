@@ -1,3 +1,4 @@
+import overtakenReply from '../../test/fixtures/client-contract/reading-unasked-revoke-overtaken.json';
 import regrantedBoard from '../../test/fixtures/client-contract/data-unasked-regranted.json';
 import dormantBoard from '../../test/fixtures/client-contract/data-unasked-dormant.json';
 import revokedBoard from '../../test/fixtures/client-contract/data-unasked-revoked.json';
@@ -384,6 +385,22 @@ describe('A reader with a Codex grant saved for an earlier destination', () => {
 });
 
 describe('A reader following permission changes across board refreshes', () => {
+  it('a reader hears the returned grant when another reader overtakes their revoke', async () => {
+    const page = mountDrift({
+      payload: { ...payload(), reading: dormantPolicy },
+      routes: { '/api/reading': () => json(overtakenReply.response.body) },
+    });
+    await page.settle();
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    expect(readingPosts(page)[0]?.body?.['unasked_grant']).toBe(false);
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByText('Codex permission for unasked checks granted.')).toBeTruthy();
+    expect(screen.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+  });
+
   it.each([
     [
       409,

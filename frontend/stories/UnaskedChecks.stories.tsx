@@ -1,3 +1,4 @@
+import overtakenReply from '../test/fixtures/client-contract/reading-unasked-revoke-overtaken.json';
 import regrantedBoard from '../test/fixtures/client-contract/data-unasked-regranted.json';
 import revokeReply from '../test/fixtures/client-contract/reading-unasked-revoked.json';
 import dormantBoard from '../test/fixtures/client-contract/data-unasked-dormant.json';
@@ -631,3 +632,31 @@ export const ReaderIsNotAskedToRebindAnEndedSession = endedSession(
 export const ReaderIsNotAskedToGrantAnEndedSession = endedSession(
   revokeReply.response.body.reading,
 );
+
+const overtakenScenario = scenario({
+  reading: readingScenario([]),
+  permissionReply: { body: overtakenReply.response.body, posts: [] },
+  payload: {
+    unasked: true,
+    unasked_routes: { codex: route },
+    reading: dormantBoard.response.body.reading,
+  },
+});
+export const ReaderHearsTheGrantThatOvertookTheirRevoke: Story = {
+  args: { scenario: overtakenScenario },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const permission = overtakenScenario.permissionReply;
+    if (!permission) throw new Error('The delayed permission reply is missing');
+    await userEvent.click(await canvas.findByRole('switch', { name: off }));
+    await expect(permission.posts.at(-1)).toMatchObject({ unasked_grant: false });
+    permission.failRefresh = true;
+    permission.release?.();
+    await waitFor(() => expect(canvas.getByRole('switch', { name: off })).toBeEnabled());
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    await expect(
+      canvas.getByText('Codex permission for unasked checks granted.'),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+  },
+};

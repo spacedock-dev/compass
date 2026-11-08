@@ -1472,6 +1472,47 @@ def copy_and_direction_scenarios(recorder: Recorder, scratch: Scratch) -> None:
         rig.close()
 
 
+def record_regranted_permission(recorder: Recorder, dormant: Rig, press: dict[str, Any]) -> None:
+    runtime_reading_policy.set_unasked_grant(
+        dormant.config,
+        True,
+        now=NOW,
+        provider="codex",
+        destination=runtime_reading_route.destination("codex"),
+    )
+    dormant.state.snapshot.clear()
+    recorder.capture(
+        dormant,
+        "data-unasked-regranted",
+        get("/api/data"),
+        "A fresh Codex grant after revocation covers the current destination.",
+    )
+    collect = dormant.application.collect_json
+
+    def grant_before_reply_collection(*, show_all: bool) -> Any:
+        # A second reader's write lands after this revoke, before its reply
+        # collects. Change the real store, never the recorded response.
+        runtime_reading_policy.set_unasked_grant(
+            dormant.config,
+            True,
+            now=NOW,
+            provider="codex",
+            destination=runtime_reading_route.destination("codex"),
+        )
+        return collect(show_all=show_all)
+
+    with mock.patch.object(
+        dormant.application, "collect_json", side_effect=grant_before_reply_collection
+    ):
+        recorder.capture(
+            dormant,
+            "reading-unasked-revoke-overtaken",
+            post("/api/reading", {**press, "provider": "codex", "unasked_grant": False}),
+            "Another reader grants after this revoke and before its reply collects: "
+            "the reply's policy and revision describe that later grant together.",
+        )
+
+
 def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
     press = {**SESSION, "observer_model": 1, "press": True}
     rig = Rig(scratch, "reading-disabled")
@@ -1537,20 +1578,7 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             get("/api/data"),
             "After revocation no Codex permission or destination-change note remains.",
         )
-        runtime_reading_policy.set_unasked_grant(
-            dormant.config,
-            True,
-            now=NOW,
-            provider="codex",
-            destination=runtime_reading_route.destination("codex"),
-        )
-        dormant.state.snapshot.clear()
-        recorder.capture(
-            dormant,
-            "data-unasked-regranted",
-            get("/api/data"),
-            "A fresh Codex grant after revocation covers the current destination.",
-        )
+        record_regranted_permission(recorder, dormant, press)
     finally:
         dormant.close()
 
