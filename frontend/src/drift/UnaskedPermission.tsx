@@ -3,7 +3,8 @@ import { payloadSessions } from '../api/bootstrap';
 import { exactIdentity } from '../api/identity';
 import { annotationOf } from '../intent/annotation';
 import { answered } from '../intent/context';
-import { isRecord, type Row } from '../observed';
+import { endedAt, isRecord, type Row } from '../observed';
+import { revisionNewer } from '../transport/revision';
 import { RouteAnchor } from '../sessions';
 import { useDisplayed, useShell } from '../shell/context';
 import { Button } from '../ui/button';
@@ -110,27 +111,35 @@ export function UnaskedPermission({
           press.signal,
         ),
       );
-      // Permission feedback belongs to the board the press began on. A newer accepted board wins,
-      // including when the refresh below fails. See docs/design-reader-state.md.
-      if (shell.runtime.store.getSnapshot().acceptedCount === requestedCount) {
-        if (response.kind === 'answered' && response.body) {
-          const body = response.body as Row;
-          if (isRecord(body['reading'])) showReading(ctx, body['reading']);
-          if (!response.ok || body['ok'] !== true)
-            setMessage(
-              REFUSED[String(body['reason'] ?? '')] ||
-                (isRecord(body['reading']) ? policyReason(body['reading']) : '') ||
-                'Permission was not saved. Try again.',
-            );
-          else
+      if (response.kind === 'answered' && response.body) {
+        const body = response.body as Row;
+        if (!response.ok || body['ok'] !== true)
+          setMessage(
+            REFUSED[String(body['reason'] ?? '')] ||
+              (isRecord(body['reading']) ? policyReason(body['reading']) : '') ||
+              'Permission was not saved. Try again.',
+          );
+        else {
+          const snapshot = shell.runtime.store.getSnapshot();
+          // Only success competes with board state. Refused and lost replies
+          // changed nothing and always answer the reader. With a board since the
+          // press, compare the policy's own revision, not its arrival time.
+          // See docs/design-reader-state.md.
+          if (
+            typeof body['board_revision'] === 'string'
+              ? revisionNewer(body['board_revision'], snapshot.revision)
+              : snapshot.acceptedCount === requestedCount
+          ) {
+            if (isRecord(body['reading'])) showReading(ctx, body['reading']);
             shell.announcer.announce(
               'unasked-grant',
               allowed
                 ? 'Codex permission for unasked checks revoked.'
                 : 'Codex permission for unasked checks granted.',
             );
-        } else setMessage('Permission could not be confirmed. Refresh before trying again.');
-      }
+          }
+        }
+      } else setMessage('Permission could not be confirmed. Refresh before trying again.');
       await shell.runtime.refresh();
     } finally {
       shell.runtime.pending.end('unasked-grant:codex', press);
@@ -226,6 +235,7 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
   const refusal = unaskedRefusal(current);
   const waiting = payloadSessions(current as never).rows.filter(
     (session) =>
+      endedAt(session as unknown as Row) === null &&
       typedGoal(session as unknown as Row) &&
       unaskedRoute(current, session as unknown as Row)?.['provider'] === 'codex',
   );
@@ -261,7 +271,7 @@ export function UnaskedAttentionCue({ payload }: { readonly payload: Row }) {
         </p>
       )}
       {refusal ? <p>{refusal}</p> : null}
-      <ul>
+      <ul className="next-attention-risk-identity">
         {waiting.map((session) => (
           <li key={`${session.harness}:${session.sid}`}>
             <RouteAnchor

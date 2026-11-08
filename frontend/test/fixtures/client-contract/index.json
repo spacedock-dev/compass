@@ -673,7 +673,7 @@
       "method": "POST",
       "name": "reading-unasked-revoked",
       "route": "/api/reading",
-      "sha256": "9d3a8d35858f66e54227ca84a5cce41d836f030482e3a6e20a8f9311e9b60b51",
+      "sha256": "9e70b677296acc54d918944413397703ae44be11d6363bfac6f323ef39278f85",
       "status": 200
     },
     {

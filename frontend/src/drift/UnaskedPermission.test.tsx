@@ -384,6 +384,73 @@ describe('A reader with a Codex grant saved for an earlier destination', () => {
 });
 
 describe('A reader following permission changes across board refreshes', () => {
+  it.each([
+    [
+      409,
+      { ok: false, reason: 'destination-changed' },
+      'Where Codex sends your words changed. Check the destination shown here and try again.',
+    ],
+    [500, null, 'Permission could not be confirmed. Refresh before trying again.'],
+  ])(
+    'a reader sees the %s answer after an unrelated board arrives mid-grant',
+    async (status, body, message) => {
+      const page = mountDrift({
+        payload: payload(),
+        routes: { '/api/reading': () => 'hold' },
+      });
+      await page.settle();
+      await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+      await page.poll(
+        driftBoard({
+          payload: payload(),
+          session: { title: 'An unrelated wake refreshed the board' },
+        }),
+      );
+      page.state.routes['/api/data'] = () => json({}, 503);
+      await page.release('/api/reading', json(body, status));
+      expect(
+        within(screen.getByRole('region', { name: 'Unasked checks' })).getByRole('status')
+          .textContent,
+      ).toBe(message);
+      expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+        'false',
+      );
+    },
+  );
+
+  it('a reader sees the revoke after an older in-flight board arrives and refresh fails', async () => {
+    const page = mountDrift({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading: dormantPolicy },
+      routes: { '/api/reading': () => 'hold' },
+    });
+    await page.settle();
+    await press(screen.getByRole('switch', { name: /Allow Codex/ }));
+    // This is the board collected before the revoke, delivered while its reply is held.
+    page.state.routes['/api/data'] = () =>
+      new Response(
+        JSON.stringify(
+          driftBoard({
+            store: { goal_source: 'typed' },
+            payload: { ...payload(), reading: dormantPolicy },
+          }),
+        ),
+        { headers: dormantBoard.response.headers },
+      );
+    await page.poll(page.state.data);
+    page.state.routes['/api/data'] = () => json({}, 503);
+    await page.release('/api/reading', json(revokeReply.response.body));
+    expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    expect(screen.getByText('Codex permission for unasked checks revoked.')).toBeTruthy();
+    await page.go('#n=attention');
+    expect(
+      screen.getByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  });
+
   it('keeps the newer grant when a late revoke arrives and the next refresh fails', async () => {
     const page = mountDrift({
       store: { goal_source: 'typed' },
@@ -393,12 +460,17 @@ describe('A reader following permission changes across board refreshes', () => {
     await page.settle();
     await press(screen.getByRole('switch', { name: /Allow Codex/ }));
     expect(readingPosts(page)[0]?.body?.['unasked_grant']).toBe(false);
-    await page.poll(
-      driftBoard({
-        store: { goal_source: 'typed' },
-        payload: { ...payload(), reading: regrantedBoard.response.body.reading },
-      }),
-    );
+    page.state.routes['/api/data'] = () =>
+      new Response(
+        JSON.stringify(
+          driftBoard({
+            store: { goal_source: 'typed' },
+            payload: { ...payload(), reading: regrantedBoard.response.body.reading },
+          }),
+        ),
+        { headers: regrantedBoard.response.headers },
+      );
+    await page.poll(page.state.data);
     expect(screen.getByRole('switch', { name: /Allow Codex/ }).getAttribute('aria-checked')).toBe(
       'true',
     );
@@ -536,3 +608,41 @@ it.each([undefined, null, {}, { codex: 'unknown' }])(
     ).toBeNull();
   },
 );
+
+describe('A reader considering checks of ended sessions', () => {
+  it.each([
+    ['dormant', dormantPolicy],
+    ['waiting', revokedPolicy],
+  ])('is not asked to act on an ended session in the %s cue', async (_name, reading) => {
+    const page = mountDrift({
+      hash: '#n=attention',
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading },
+    });
+    await page.settle();
+    const data = driftBoard({
+      store: { goal_source: 'typed' },
+      payload: { ...payload(), reading },
+    });
+    const first = data.sessions[0];
+    if (!first) throw new Error('The live session is missing');
+    await page.poll({
+      ...data,
+      sessions: [
+        first,
+        { ...first, sid: 'ended', title: 'Ended session', ended_at: 1000, state: 'ended' },
+      ],
+    });
+    const cue = screen.getByRole('region', {
+      name:
+        _name === 'dormant' ? 'Unasked checks cannot run' : 'Unasked checks waiting for permission',
+    });
+    expect(within(cue).getAllByRole('link')).toHaveLength(1);
+    expect(within(cue).queryByRole('link', { name: 'Ended session' })).toBeNull();
+    await page.poll({ ...data, sessions: [{ ...first, ended_at: 1000, state: 'ended' }] });
+    expect(screen.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+  });
+});

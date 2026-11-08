@@ -43,6 +43,31 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
             **changes,
         }
 
+    def test_a_reader_can_order_the_permission_reply_against_the_board_it_answers(self) -> None:
+        config, state = self._runtime(unasked_enabled=True)
+        app = self._app(config, state, "codex")
+        app.unasked_lane = mock.Mock()
+        with (
+            named_machine(),
+            mock.patch.object(shutil, "which", return_value="/bin/codex"),
+            self._serving(app) as port,
+        ):
+            get = api_tests.CompassServerTest._get_headers
+            _, before, _ = get(port, "/api/data")
+            for allowed in (True, False):
+                status, raw = self._post(port, self._body(unasked_grant=allowed))
+                self.assertEqual(200, status, raw)
+                reply = json.loads(raw)
+                _, headers, board = get(port, "/api/data")
+                self.assertEqual(headers["X-Compass-Revision"], reply.get("board_revision"))
+                self.assertEqual(json.loads(board)["reading"], reply["reading"])
+                self.assertEqual(allowed, reply["reading"]["words"]["codex"])
+                self.assertGreater(
+                    int(reply["board_revision"].rsplit(".", 1)[1]),
+                    int(before["X-Compass-Revision"].rsplit(".", 1)[1]),
+                )
+                before = headers
+
     def test_a_deliberate_toggle_grants_and_revokes_without_starting_analysis(self) -> None:
         config, state = self._runtime(unasked_enabled=True)
         reading_policy.store_path(config).unlink()
