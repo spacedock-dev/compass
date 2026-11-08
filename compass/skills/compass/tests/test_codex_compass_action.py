@@ -22,6 +22,7 @@ from .support import make_runtime
 
 REPO = Path(__file__).resolve().parents[4]
 CAPTURE = REPO / "docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl"
+IMAGE_CAPTURE = REPO / "docs/captures/codex/skill-action-image-shapes-0.167.0-macos.jsonl"
 FIRST = "Build the placeholder parser and test every token type."
 MENTION = "Finish the placeholder parser, then use $compass sessions waiting to inspect it."
 NOW = 1794139200.0
@@ -51,6 +52,30 @@ def actions() -> list[str]:
         (REPO / "compass/skills/compass/SKILL.md").read_text().split("## Terminal actions", 1)[1]
     )
     return re.findall(r"^\| `([^`]+)` \|", table.split("`summary` prints", 1)[0], re.MULTILINE)
+
+
+def captured_image_messages(text: str = "$compass sessions waiting") -> list[dict[str, Any]]:
+    """Fill the real image capture's value slots without storing image bytes or paths."""
+    result = []
+    for line in IMAGE_CAPTURE.read_text(encoding="utf-8").splitlines():
+        record = json.loads(line)["record"]
+        payload = record["payload"]
+        content = payload.get("content") or payload.get("item", {}).get("content")
+        if not content or not any(b["type"] in ("input_image", "local_image") for b in content):
+            continue
+        for block in content:
+            if isinstance(block.get("text"), dict):
+                form = block["text"]["text_form"]
+                block["text"] = {
+                    "<image name=[Image #N] path=...>": '<image name=[Image #1] path="placeholder.png">',
+                    "</image>": "</image>",
+                    "$compass <closed action>": text,
+                }[form]
+        record["timestamp"] = "2026-11-08T12:00:20Z"
+        result.append(record)
+    if len(result) != 2:
+        raise AssertionError("image capture must supply both Codex user shapes")
+    return result
 
 
 class APersonsCodexCompassActionTest(unittest.TestCase):
@@ -241,6 +266,142 @@ class APersonsCodexCompassActionTest(unittest.TestCase):
         self.assertIsNotNone(
             observer.parse_message_record(captured_messages(text, command=False)[0])
         )
+
+    def test_a_persons_action_with_an_image_offers_no_direction_or_goal(self) -> None:
+        # Rejecting either captured image block (or retaining its markers) leaks an action.
+        for record in captured_image_messages():
+            with self.subTest(shape=record["type"]):
+                self.assertIsNone(observer.parse_message_record(record))
+                row = self.candidates([record])
+                self.assertEqual("", row["first_prompt"])
+                self.assertEqual("", row["last_prompt"])
+                self.assertIsNone(row["instruction"])
+                self.assertEqual(
+                    [],
+                    project_context.instruction_events(self.config, str(self.path), "codex", "p"),
+                )
+                for source in ("first-prompt", "latest-prompt"):
+                    self.assertEqual(("", None), annotation_store.prompt_candidate(row, source))
+                    self.assertNotEqual(
+                        annotation_store.OUTCOME_STORED,
+                        annotation_store.adopt(
+                            self.config,
+                            self.state,
+                            row,
+                            source=source,
+                            expected_text="$compass sessions waiting",
+                            expected_at=NOW + 20,
+                            now=NOW + 60,
+                        ),
+                    )
+                self.assertEqual(
+                    observer.NO_GOAL,
+                    observer.analyze(
+                        self.config, self.state, str(self.path), now=NOW + 60, window_sec=86400
+                    )["goal"],
+                )
+
+    def test_a_persons_image_action_keeps_their_previous_work_as_the_latest_goal_offer(
+        self,
+    ) -> None:
+        for record in captured_image_messages():
+            with self.subTest(shape=record["type"]):
+                previous = next(
+                    r
+                    for r in captured_messages(FIRST, command=False)
+                    if r["type"] == record["type"]
+                )
+                row = self.candidates([previous, record])
+                self.assertEqual(FIRST, row["last_prompt"])
+                self.assertEqual(
+                    (FIRST, NOW + 10), annotation_store.prompt_candidate(row, "latest-prompt")
+                )
+                self.assertEqual("", transcripts._codex_scan_record(record)[0])
+                if record["type"] == "response_item":
+                    self.assertEqual(
+                        [FIRST],
+                        [
+                            e["title"]
+                            for e in project_context.instruction_events(
+                                self.config, str(self.path), "codex", "p"
+                            )
+                        ],
+                    )
+                    self.assertEqual(
+                        FIRST,
+                        observer.analyze(
+                            self.config, self.state, str(self.path), now=NOW + 60, window_sec=86400
+                        )["goal"],
+                    )
+
+    def test_a_persons_words_beside_an_image_stay_a_direction_and_goal_offer(self) -> None:
+        # An overbroad action prefix or discarded extra text would hide the person's work.
+        for text in (FIRST, "$compass sessions and fix it"):
+            for record in captured_image_messages(text):
+                with self.subTest(text=text, shape=record["type"]):
+                    self.assert_image_direction(record, text)
+                    if record["type"] == "response_item":
+                        self.assertTrue(
+                            project_context.instruction_events(
+                                self.config, str(self.path), "codex", "p"
+                            )
+                        )
+
+    def assert_image_direction(self, record: dict[str, Any], text: str) -> None:
+        self.assertEqual("prompt", transcripts._codex_scan_record(record)[0])
+        row = self.candidates([record])
+        self.assertIn(text, row["first_prompt"])
+        self.assertIn(text, row["last_prompt"])
+        for source in ("first-prompt", "latest-prompt"):
+            candidate, at = annotation_store.prompt_candidate(row, source)
+            self.assertIn(text, candidate)
+            self.assertEqual(NOW + 20, at)
+        if record["type"] == "response_item":
+            self.assertIsNotNone(observer.parse_message_record(record))
+
+    def test_a_persons_second_text_block_beside_an_image_stays_a_direction(self) -> None:
+        for text, extra_text in (
+            ("$compass", "sessions waiting"),
+            ("$compass sessions waiting", FIRST),
+            ("$compass sessions waiting", ""),
+        ):
+            for record in captured_image_messages(text):
+                content = record["payload"].get("content") or record["payload"]["item"]["content"]
+                extra = copy.deepcopy(content[-1])
+                extra["text"] = extra_text
+                content.append(extra)
+                with self.subTest(text=text, extra=extra_text, shape=record["type"]):
+                    self.assert_image_direction(record, text)
+
+    def test_a_persons_unrecognised_block_beside_an_image_keeps_their_direction(self) -> None:
+        for extra in (None, {"type": "audio"}, {"type": "input_text", "text": 42}):
+            for record in captured_image_messages():
+                content = record["payload"].get("content") or record["payload"]["item"]["content"]
+                content.append(extra)
+                with self.subTest(extra=extra, shape=record["type"]):
+                    self.assert_image_direction(record, "$compass sessions waiting")
+
+    def test_a_persons_text_that_resembles_an_image_marker_stays_a_direction(self) -> None:
+        # Prefix searches, case folding or whitespace trimming must not swallow real text.
+        for marker in (
+            '<image name=[Image #1] path="placeholder.png"> please fix it',
+            ' <image name=[Image #1] path="placeholder.png">',
+            '<image name=[Image #0] path="placeholder.png">',
+            "<image name=[Image #1] path=placeholder.png>",
+            '<Image name=[Image #1] path="placeholder.png">',
+            '<image name=[Image #1] path="placeholder.png">\n',
+            "</image> please fix it",
+            " </image>",
+            "</IMAGE>",
+            "</image>\n",
+        ):
+            for record in captured_image_messages():
+                content = record["payload"].get("content") or record["payload"]["item"]["content"]
+                extra = copy.deepcopy(content[-1])
+                extra["text"] = marker
+                content.insert(0, extra)
+                with self.subTest(marker=marker, shape=record["type"]):
+                    self.assert_image_direction(record, "$compass")
 
 
 if __name__ == "__main__":
