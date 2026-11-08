@@ -485,8 +485,10 @@ command is refused with nothing read or spent. It is not a hard boundary: a proc
 the transcript could forge the typed record.
 
 The closed typed action names accept any letter case and folded whitespace, not paraphrases:
-`drift`, `drift again`, `monitor on`, `summary`, `summary update` and `summary again`. A flagged
-compaction summary (`isCompactSummary`) and a complete non-meta `<task-notification>` envelope,
+`drift`, `drift again`, `monitor on`, `summary`, `summary update` and `summary again`.
+An embedded closing tag in the arguments or any non-whitespace text after the command's argument
+envelope refuses the press. A flagged compaction summary (`isCompactSummary`) and a complete
+non-meta `<task-notification>` envelope,
 as a string or an all-text block list, do not revoke the pending command. Queued task-notification attachments
 also leave it pending. An unpressed command remains pending across these harness-written records,
 including into a turn the harness starts, until your next message or the 24-hour age limit. The
