@@ -1537,6 +1537,20 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
             get("/api/data"),
             "After revocation no Codex permission or destination-change note remains.",
         )
+        runtime_reading_policy.set_unasked_grant(
+            dormant.config,
+            True,
+            now=NOW,
+            provider="codex",
+            destination=runtime_reading_route.destination("codex"),
+        )
+        dormant.state.snapshot.clear()
+        recorder.capture(
+            dormant,
+            "data-unasked-regranted",
+            get("/api/data"),
+            "A fresh Codex grant after revocation covers the current destination.",
+        )
     finally:
         dormant.close()
 

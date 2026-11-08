@@ -144,6 +144,14 @@ export interface Scenario {
     readonly refreshedPlan: unknown;
   };
   readonly reading?: ReadingScenario;
+  /** A delayed permission reply, with a newer board arriving before it and a failed follow-up read. */
+  readonly permissionReply?: {
+    readonly body: Record<string, unknown>;
+    readonly posts: Record<string, unknown>[];
+    boardReading?: Record<string, unknown>;
+    failRefresh?: boolean;
+    release?: () => void;
+  };
   /** The Live monitor's lease, for a story about the switch, its level, its notes or its question. */
   readonly lease?: LeaseScenario;
   /** Filled in on mount: the tab, which a story hides and shows as a reader's browser does. */
@@ -348,6 +356,13 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           const index = scenario.reading.posts.length;
           scenario.reading.posts.push(body);
           if (typeof body['unasked_grant'] === 'boolean') {
+            if (scenario.permissionReply) {
+              const permission = scenario.permissionReply;
+              permission.posts.push(body);
+              return new Promise<Response>((resolve) => {
+                permission.release = () => resolve(json(permission.body));
+              });
+            }
             reading = {
               ...POLICY,
               words: { codex: body['unasked_grant'] },
@@ -412,6 +427,8 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
           );
           return json(scenario.correction);
         }
+        if (url.startsWith('/api/data') && scenario.permissionReply?.failRefresh)
+          return new Response('{}', { status: 503 });
         if (url.startsWith('/api/data'))
           return json({
             generated: generation++,
@@ -424,7 +441,7 @@ function DriftScenario({ scenario }: { readonly scenario: Scenario }) {
             },
             ...(scenario.payload ?? {}),
             ...afterRefusal,
-            reading,
+            reading: scenario.permissionReply?.boardReading ?? reading,
             ...(job ? { reading_jobs: { [`${harness}:s1`]: job } } : {}),
             sessions: [
               {

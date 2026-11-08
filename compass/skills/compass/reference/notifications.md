@@ -35,7 +35,9 @@ run unasked checks” in the session’s Drift card; Attention points to that to
 goals are waiting for permission. A harness with no session record reader shows an explanation
 instead of the grant switch and stays out of that Attention queue. Every stored Codex grant, including one saved for an earlier destination, keeps a checked revoke
 switch on every session's Drift card while the unasked controls are on. The card explains when
-saved permission no longer applies; Attention does not ask for it again. Granting covers Codex at
+saved permission no longer applies. Attention lists affected sessions under "Unasked checks cannot
+run", with the server's explanation when available, and does not ask for permission again. Only
+sessions with a typed goal routed to Codex appear there. Granting covers Codex at
 the disclosed destination across sessions.
 Revoking it stops Codex checks; Analyze and Resume never grant it. Pause model calls stops either
 provider, and Pause followed by Resume clears the Codex grant. With the startup flag off, neither the toggle nor the Attention cue appears.

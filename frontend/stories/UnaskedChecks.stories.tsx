@@ -1,6 +1,8 @@
+import regrantedBoard from '../test/fixtures/client-contract/data-unasked-regranted.json';
+import revokeReply from '../test/fixtures/client-contract/reading-unasked-revoked.json';
 import dormantBoard from '../test/fixtures/client-contract/data-unasked-dormant.json';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { DriftScenario, readingScenario, routeOf, type Scenario } from './drift.scenario';
 
 const meta = { title: 'Drift/Unasked check permission', component: DriftScenario } satisfies Meta<
@@ -69,10 +71,12 @@ export const Granting: Story = {
 };
 
 const revoking = readingScenario([]);
+const revokingNav: NonNullable<Scenario['nav']> = {};
 export const Revoking: Story = {
   args: {
     scenario: scenario({
       reading: revoking,
+      nav: revokingNav,
       payload: {
         unasked: true,
         unasked_routes: { codex: route },
@@ -92,6 +96,11 @@ export const Revoking: Story = {
     );
     await expect(revoking.posts).toHaveLength(1);
     await expect(revoking.posts[0]).toMatchObject({ unasked_grant: false });
+    revokingNav.go?.('#n=attention');
+    await expect(
+      await canvas.findByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
   },
 };
 
@@ -403,3 +412,110 @@ export const AttentionDoesNotInviteReaderWithCoveredGrant = attentionWithGrant({
   off: false,
   words: { codex: true },
 });
+
+const dormantNav: NonNullable<Scenario['nav']> = {};
+
+// No check has ever run: a dormant grant cannot establish a history of stopped checks.
+export const ReaderFindsSessionsWhoseStoredGrantCannotRunChecks: Story = {
+  args: {
+    scenario: scenario({
+      initialView: 'attention',
+      session: { departure_checked: false },
+      nav: dormantNav,
+      payload: {
+        unasked: true,
+        unasked_routes: { codex: route },
+        reading: dormantBoard.response.body.reading,
+      },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cue = await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+    await expect(
+      within(cue).getByRole('heading', { name: 'Unasked checks cannot run' }),
+    ).toBeVisible();
+    await expect(within(cue).getByText(dormantNote, { exact: true })).toBeVisible();
+    const links = within(cue).getAllByRole('link');
+    await expect(links).toHaveLength(1);
+    await expect(links[0]).toHaveAccessibleName('Synthetic session');
+    await expect(links[0]).toHaveAttribute('href', expect.stringContaining('codex'));
+    await expect(cue).not.toHaveTextContent(/stopped|needs your permission|Allow Codex/);
+    await expect(
+      canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    await expect(within(cue).queryByRole('switch')).toBeNull();
+    const link = links[0];
+    if (!link) throw new Error('The affected session is missing');
+    await userEvent.click(link);
+    await expect(await canvas.findByRole('switch', { name: off })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(canvas.getByText(dormantNote, { exact: true })).toBeVisible();
+    dormantNav.go?.('#n=attention');
+    await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+  },
+};
+
+const lateRevoke = {
+  body: revokeReply.response.body,
+  posts: [] as Record<string, unknown>[],
+} satisfies NonNullable<Scenario['permissionReply']>;
+const lateRevokeScenario = scenario({
+  reading: readingScenario([]),
+  permissionReply: lateRevoke,
+  board: {},
+  nav: {},
+  payload: {
+    unasked: true,
+    unasked_routes: { codex: route },
+    reading: dormantBoard.response.body.reading,
+  },
+});
+export const ReaderKeepsNewerGrantWhenAnOldRevokeArrives: Story = {
+  args: { scenario: lateRevokeScenario },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const permission = lateRevokeScenario.permissionReply;
+    if (!permission) throw new Error('The delayed permission reply is missing');
+    await userEvent.click(await canvas.findByRole('switch', { name: off }));
+    await expect(permission.posts.at(-1)).toMatchObject({ unasked_grant: false });
+    permission.boardReading = regrantedBoard.response.body.reading;
+    await lateRevokeScenario.board?.refresh?.();
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    permission.failRefresh = true;
+    permission.release?.();
+    await waitFor(() => expect(canvas.getByRole('switch', { name: off })).toBeEnabled());
+    await expect(canvas.getByRole('switch', { name: off })).toHaveAttribute('aria-checked', 'true');
+    await expect(canvas.queryByText('Codex permission for unasked checks revoked.')).toBeNull();
+    lateRevokeScenario.nav?.go?.('#n=attention');
+    await canvas.findByRole('heading', { name: /^Attention$/ });
+    await expect(
+      canvas.queryByRole('region', { name: 'Unasked checks waiting for permission' }),
+    ).toBeNull();
+    await expect(canvas.queryByRole('region', { name: 'Unasked checks cannot run' })).toBeNull();
+  },
+};
+
+export const ReaderIsToldWhenTheDormantExplanationIsMissing: Story = {
+  args: {
+    scenario: scenario({
+      initialView: 'attention',
+      payload: {
+        unasked: true,
+        unasked_routes: { codex: route },
+        reading: { ...dormantBoard.response.body.reading, dormant: {} },
+      },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cue = await canvas.findByRole('region', { name: 'Unasked checks cannot run' });
+    await expect(cue).toHaveTextContent(
+      'Your saved Codex permission does not cover these sessions now. The reason is not available.',
+    );
+    await expect(within(cue).getByRole('link', { name: 'Synthetic session' })).toBeVisible();
+    await expect(cue).not.toHaveTextContent(/stopped|needs your permission|Allow Codex/);
+  },
+};

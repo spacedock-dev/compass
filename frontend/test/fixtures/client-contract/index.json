@@ -398,6 +398,13 @@
     },
     {
       "method": "GET",
+      "name": "data-unasked-regranted",
+      "route": "/api/data",
+      "sha256": "6f7886b61503122da0c9f136caffd296f9389d4aa4c813065700f69d04898ba4",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "name": "data-unasked-revoked",
       "route": "/api/data",
       "sha256": "cd7a3f5b685438127b4243a526ae5b5870155e74ee0c079ae422b50b0d992e94",
