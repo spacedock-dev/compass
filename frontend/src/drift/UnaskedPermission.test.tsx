@@ -276,7 +276,25 @@ const dormantNote =
   'Your saved Codex permission does not apply now because where your words go has changed.';
 
 describe('A reader with a Codex grant saved for an earlier destination', () => {
+  it.each([undefined, '', 37])(
+    'still sees how to revoke when the server note is %s',
+    async (note) => {
+      const page = mountDrift({
+        payload: {
+          ...payload(),
+          reading: { ...dormantPolicy, dormant: { codex: note } },
+        },
+      });
+      await page.settle();
+      const card = screen.getByRole('region', { name: 'Unasked checks' });
+      expect(Array.from(card.querySelectorAll('p'), (paragraph) => paragraph.textContent)).toEqual([
+        'Turn the switch off to revoke it. You can then allow Codex again for where your words go now.',
+      ]);
+    },
+  );
+
   it.each([
+    ['a session with no provider', {}],
     ['an unreadable session', unavailableRoute],
     ['a Claude-routed session', ROUTE],
     ['a Codex-routed session', CODEX],
@@ -300,6 +318,15 @@ describe('A reader with a Codex grant saved for an earlier destination', () => {
     const toggle = screen.getByRole('switch', { name: /Allow Codex/ });
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     expect(screen.getByText(dormantNote).textContent).toBe(dormantNote);
+    expect(
+      screen.getByText(
+        route === CODEX
+          ? 'Turn the switch off to revoke it. You can then allow Codex again for where your words go now.'
+          : 'Turn the switch off to revoke it.',
+        { exact: true },
+      ),
+    ).toBeTruthy();
+    if (route !== CODEX) expect(screen.queryByText(/You can then allow Codex again/)).toBeNull();
     expect(screen.queryByText(/allow it again/i)).toBeNull();
     expect(screen.queryByText(/This permission covers every session/)).toBeNull();
     if (route === unavailableRoute) expect(screen.getByText(unavailableNote)).toBeTruthy();

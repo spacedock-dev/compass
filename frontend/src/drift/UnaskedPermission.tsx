@@ -137,10 +137,20 @@ export function UnaskedPermission({
       {unavailable}
       {provider === 'claude' && route ? <ClaudeUnasked route={route} /> : null}
       <section aria-label="Unasked checks" className="next-session-drift-check">
-        <p className="next-cockpit-reading-why">
-          {dormant
-            ? String(dormantNote ?? '')
-            : !codexRoute
+        {dormant ? (
+          <>
+            {typeof dormantNote === 'string' && dormantNote.trim() ? (
+              <p className="next-cockpit-reading-why">{dormantNote}</p>
+            ) : null}
+            <p className="next-cockpit-reading-why">
+              {codexRoute
+                ? 'Turn the switch off to revoke it. You can then allow Codex again for where your words go now.'
+                : 'Turn the switch off to revoke it.'}
+            </p>
+          </>
+        ) : (
+          <p className="next-cockpit-reading-why">
+            {!codexRoute
               ? 'Codex still has your permission to run unasked checks, though it does not check this session. Turn the switch off to revoke it.'
               : allowed
                 ? 'Codex has permission to check this session while you are away. Turn the switch off to revoke it.'
@@ -149,7 +159,8 @@ export function UnaskedPermission({
                     ? 'Unasked checks of this session are waiting for your permission.'
                     : 'Unasked checks of this session are waiting for your permission. Turn on the switch below to let Codex check it against your goal while you are away.'
                   : 'Codex needs your permission for unasked checks. Save a typed goal for this session to give those checks something to read against.'}
-        </p>
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <Button
             variant="native"

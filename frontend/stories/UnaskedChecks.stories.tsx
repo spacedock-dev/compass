@@ -342,9 +342,19 @@ function dormantStory(
       const toggle = await canvas.findByRole('switch', { name: off });
       await expect(toggle).toHaveAttribute('aria-checked', 'true');
       await expect(canvas.getByText(dormantNote, { exact: true })).toBeVisible();
+      await expect(
+        canvas.getByText(
+          unaskedRoute['provider'] === 'codex'
+            ? 'Turn the switch off to revoke it. You can then allow Codex again for where your words go now.'
+            : 'Turn the switch off to revoke it.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      if (unaskedRoute['provider'] !== 'codex')
+        await expect(canvas.queryByText(/You can then allow Codex again/)).toBeNull();
       await expect(canvas.queryByText(/allow it again/i)).toBeNull();
       await expect(canvas.queryByText(/This permission covers every session/)).toBeNull();
-      if (harness === 'gemini')
+      if (unaskedRoute['reason'] === 'no-record-reader')
         await expect(canvas.getByText(String(unavailable['note']))).toBeVisible();
       if (harness === 'claude')
         await expect(
@@ -367,6 +377,7 @@ function dormantStory(
 export const ReaderRevokesDormantGrantOnCodex = dormantStory('codex', route);
 export const ReaderRevokesDormantGrantOnClaude = dormantStory('claude', claudeRoute);
 export const ReaderRevokesDormantGrantOnUnreadable = dormantStory('gemini', unavailable);
+export const ReaderRevokesDormantGrantWithoutProvider = dormantStory('gemini', {});
 function attentionWithGrant(reading: Record<string, unknown>): Story {
   return {
     args: {
