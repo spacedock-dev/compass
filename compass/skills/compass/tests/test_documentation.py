@@ -2064,6 +2064,7 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
                 "analyze_diagnostics.py": 2,
                 "claude_data.py": 1,
                 "codex.py": 1,
+                "compass_turns.py": 2,
                 "project_context.py": 6,
                 "reading_long_coordinator.py": 1,
                 "reading_long_diagnostics.py": 3,
@@ -2073,7 +2074,7 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             },
             self.counted(self.INPUT_READS),
         )
-        self.assertIn("eleven expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn("thirteen expressions in `compass_runtime` reach an input payload", self.FLAT)
         self.assertIn(
             "Long coordinator, worker, reconciliation and diagnostic `input` fields are closed "
             "call measurements, not tool payloads.",
@@ -2081,6 +2082,8 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         )
         for named in (
             "`claude_data.input_summary`",
+            "`compass_turns._launcher_ids`",
+            "`compass_turns.launcher_calls`",
             "`transcripts.codex_plan`",
             "`collectors.codex._child_assignment`",
             "`project_context._tool_call_events`",
@@ -2104,12 +2107,13 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # otherwise. The fourth match is Claude Code's hook attachment `stdout`, which the
         # rewritten-command read names.
         # A `command` key is counted on any receiver, not only one named `item` (DRC-5033 item
-        # 9): the other fifteen read a Claude Code, Pi or hook record's command (`claude_data`,
-        # `session_source`, eight in `project_context`) or Spacedock's own boot envelope (five in
-        # `spacedock`, one of them a docstring and one a write).
+        # 9): other matches read Claude, Pi or hook commands, or Spacedock's boot envelope.
+        # `compass_turns` binds a raw Claude Bash call to the captured skill directory, then
+        # rechecks the collected command. SECURITY.md names both reads and their narrow purpose.
         self.assertEqual(
             {
                 "claude_data.py": 1,
+                "compass_turns.py": 2,
                 "project_context.py": 12,
                 "reading_ci_acquire.py": 2,
                 "session_source.py": 1,

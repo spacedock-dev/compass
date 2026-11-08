@@ -1723,7 +1723,7 @@ def capture_prefix(transcript: str, captured: float) -> int:
 # The files whose code turns a transcript into the facts and checks a case holds
 # (review, Scoring F7). A packet frozen under other code is named as such
 # rather than read as tampered, since every case would then differ.
-_PARSER_FILES = ("io.py", "project_context.py", "reading.py")
+_PARSER_FILES = ("io.py", "project_context.py", "reading.py", "compass_turns.py")
 
 
 def parser_digest() -> str:

@@ -1121,8 +1121,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading",
             "compass_runtime.records",
         },
-        # The turns a typed Compass command opened, read from the transcript itself, as
-        # `copied_corrections` reads it, so the frozen collector modules are not edited.
+        # The turn detector also identifies launcher calls for check accounting; its source is
+        # included in the qualification parser stamp.
         "compass_runtime.compass_turns": {
             "compass_runtime.claude_data",
             "compass_runtime.config",
@@ -2087,6 +2087,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # A recorded CI poll is bound to the folder's remote and the session's own pull request.
             "compass_runtime.ci_read",
             "compass_runtime.claude_data",
+            # Shared typed-turn boundaries keep only the known launcher from aging a pass.
+            "compass_runtime.compass_turns",
             # The focused session's message index, for the fixed position of each check and file.
             "compass_runtime.entry_numbers",
             # Exact parent-source binding shares the canonical collector-key normalizer.

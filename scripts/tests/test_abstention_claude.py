@@ -1728,7 +1728,7 @@ class DRC4731CodeSensitiveParserStampTest(unittest.TestCase):
 
     def test_shared_byte_reader_change_invalidates_a_frozen_packet(self) -> None:
         runtime = Path(self.temp.name, "compass_runtime")
-        for name in ("project_context.py", "reading.py", "io.py"):
+        for name in self.actual_parser_files:
             shutil.copy2(SKILL / "compass_runtime" / name, runtime / name)
         with mock.patch.object(mark_abstention, "_PARSER_FILES", self.actual_parser_files):
             before = mark_abstention.parser_digest()

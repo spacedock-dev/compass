@@ -372,11 +372,14 @@ interactive TUI was not captured. Both `response_item` user messages and `item_c
 recognition, not proof of skill execution. No Codex whole-turn exclusion is inferred: its agent
 output remains evidence because no boundary for that exclusion was captured (2026-11-08).
 
-One thing a Claude Code Compass turn still moves: the agent's launcher run in it counts, for the drift level, as a command run after a
-passing check (`changed_after` and `last_changing_command_at`, computed in the collector modules
-frozen with the abstention qualification). Typing the command can therefore lower a live estimate
-to Not enough recorded yet and raise a stored reading's level, as it did before this change. The
-evidence a reading sends is not affected, and correcting the level needs a qualified run.
+Within a recognised Claude Code Compass turn, the skill's single launcher action does not age a
+passing check or move the live estimate. The isMeta skill companion must publish one absolute
+`<skill-dir>` tag, and both paths must be exactly that directory's `launch.py` and `server.py`,
+followed by a closed terminal action argument list. A model-started skill companion
+(`sourceToolUseID`) cannot replace that directory. A missing directory, another directory's
+launcher, other commands, extra shell operations and work in child sessions still count. The
+launcher remains visible in Full activity. The parser stamp includes the turn detector, so a
+qualification frozen before this accounting change cannot certify the new parser.
 
 **Not detected: whether it conflicts.** Deciding that a later instruction contradicts a typed goal
 is a reading of two prose strings, which DEC-15 refused and DEC-18 permits only behind four
@@ -1949,6 +1952,19 @@ raise that does not carry its own baseline cannot be understood on return.
 The cumulative cap is per session and per day, and exhaustion is visible on the board. The reader is
 by construction not present, so "nothing departed" and "nothing was checked" must never render
 alike.
+
+A state change alone does not spend another check on evidence already checked by the running
+lane. It compares individual evidence entries, including completed results on existing calls,
+and the saved Intent revision that the producer reads. A changed goal or outcome line can reopen
+eligibility once spacing and caps allow. Within a Compass turn, only the positively identified
+launcher operation described above is exempt from work accounting; ordinary commands and edits
+can reopen eligibility. A hook-rewritten command must still match that launcher operation; retaining
+the original call id does not exempt a substitute command. The agent's repeated answer remains excluded. The producer still receives
+the original evidence flags, so reopening eligibility does not turn Compass's answer into evidence.
+Losing entries or receiving a coverage warning from a partial read is not new work. The producer
+still receives that warning when a check runs. A skipped
+transition moves neither the charged count nor the check-spacing clock. These bounded fingerprints
+live only in memory; a server restart does not retain this evidence history.
 
 ### Amended 2026-10-20: unasked checks remain reachable
 
