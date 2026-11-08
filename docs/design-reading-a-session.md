@@ -7117,8 +7117,12 @@ has no author discriminator and remains indistinguishable from machinery.
 A later genuine prompt still revokes consent. A message the person sends while the agent works
 also revokes it: the [mid-turn capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl)
 distinguishes human-origin prompt-mode `queued_command` attachments from task notifications.
-Only the former revoke; neither can authorize spending. A typed command with a readable transcript
-timestamp less than 24 hours old authorizes at most one press that starts. Missing, unreadable or
+Only the former revoke; neither can authorize spending. An unfinished final transcript line refuses
+admission because it may be the person's next message still being written. An embedded closing tag
+in the command arguments or non-whitespace text after their envelope also refuses admission: a
+closed action must occupy the complete argument envelope, with no reader words after it.
+A typed command with a readable transcript timestamp less than 24 hours old authorizes at most
+one press that starts. Missing, unreadable or
 future timestamps refuse admission. `COMMAND_MAX_AGE_SEC` bounds pending consent at 24 hours;
 consumed ids remain for at least that window, so count-based pruning cannot resurrect an admissible
 command. The store retains the newest 512 ids plus every younger consumption, bounded by the larger

@@ -101,7 +101,7 @@ stored reading costs nothing. With none, `drift` asks for one, and `drift again`
 under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one
 Analyze press against the page's daily limit, Pause model calls stops it, and the marked skill
 path needs your typed command once. That rule also states the accepted local-process exposure
-and the unmeasured scheduled-command limit. Inside the session the command stops about 100 seconds
+and the measured `/loop` refusal and unmeasured cron limit. Inside the session the command stops about 100 seconds
 after it starts; a longer reading keeps running, and typing `/compass:compass drift` again collects it without spending. The
 ordinary skill answer says only that a correction is ready, and you copy it from
 the session page. This is a [presentation guard](SECURITY.md#correction-access-and-local-process-trust),
