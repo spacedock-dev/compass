@@ -280,6 +280,8 @@ def _await_start(  # noqa: C901 — readiness and cleanup share ownership of the
                     # Keep Popen owned until exit so it is reaped without a ResourceWarning.
                     threading.Thread(target=worker.wait, daemon=True).start()
                     return _say("started")
+                if status.get("reason") == "loopback_blocked":
+                    raise client.LoopbackBlockedError
                 if status.get("reason"):
                     reason = "failed" if status["reason"] == "unreachable" else "refused"
                     return _say(reason, failed=True)
@@ -312,7 +314,7 @@ def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state 
     stopped: Callable[[], bool],
     alive: Callable[[], bool],
     post: Callable[..., client.Reply] = client.post,
-    probe: Callable[..., client.Dashboard | None] = client.probe,
+    probe: Callable[..., client.Dashboard | client.Refusal | None] = client.probe,
 ) -> str:
     failed_at: float | None = None
     activity_at = clock()
@@ -336,7 +338,7 @@ def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state 
             if remaining <= 0:
                 return "unreachable"
             found = probe(dashboard.port, timeout=min(0.3, remaining))
-            if found is not None and found[1:3] != dashboard[1:3]:
+            if isinstance(found, client.Dashboard) and found[1:3] != dashboard[1:3]:
                 return "restarted"
             try:
                 reply = (
@@ -352,10 +354,10 @@ def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state 
                         },
                         timeout=min(5.0, max(0.001, FAILURE_SEC - (clock() - failed_at))),
                     )
-                    if found is not None
+                    if isinstance(found, client.Dashboard)
                     else None
                 )
-            except client.DashboardUnreachable:
+            except (client.DashboardUnreachable, client.LoopbackBlockedError):
                 reply = None
             if reply is not None:
                 data = reply.data
@@ -427,8 +429,12 @@ def sidecar(sid: str, generation: str) -> int:
                 ),
                 alive=lambda: ancestor_alive(record.get("ancestor", {})),
             )
-        except (OSError, ValueError, KeyError):
-            reason = "unreachable"
+        except (OSError, ValueError, KeyError, client.LoopbackBlockedError) as error:
+            reason = (
+                "loopback_blocked"
+                if isinstance(error, client.LoopbackBlockedError)
+                else "unreachable"
+            )
             return 1
         else:
             return 0
@@ -450,8 +456,8 @@ def _stop_holder(dashboard: client.Dashboard, sid: str, generation: str) -> None
     # An unanswered start may have been accepted. Stop that holder too. A restarted
     # dashboard must receive no stop aimed at a different generation of the server.
     current = client.probe(dashboard.port)
-    if current is not None and current[1:3] == dashboard[1:3]:
-        with contextlib.suppress(client.DashboardUnreachable):
+    if isinstance(current, client.Dashboard) and current[1:3] == dashboard[1:3]:
+        with contextlib.suppress(client.DashboardUnreachable, client.LoopbackBlockedError):
             client.post(
                 dashboard.port,
                 "/api/live-monitor",

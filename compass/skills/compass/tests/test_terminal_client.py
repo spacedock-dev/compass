@@ -9,6 +9,7 @@ import io
 import itertools
 import json
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -475,7 +476,7 @@ class DiscoveryTest(HomeCase):
 
             found = terminal_client.find_dashboard(self.home, timeout=30)
 
-        assert found is not None
+        assert isinstance(found, terminal_client.Dashboard)
         self.assertEqual((fake.port, "3.2.1"), (found.port, found.version))
 
     def test_a_stale_state_file_over_a_closed_port_finds_nothing(self) -> None:
@@ -494,7 +495,7 @@ class DiscoveryTest(HomeCase):
         with FakeDashboard(version=None) as fake:
             found = terminal_client.find_dashboard(self.home, port=fake.port, timeout=30)
 
-        assert found is not None
+        assert isinstance(found, terminal_client.Dashboard)
         self.assertIsNone(found.version)
 
 
@@ -575,7 +576,12 @@ class VersionGuardTest(unittest.TestCase):
         sentence = terminal_client.version_guard(self.found("1.2.2"), "1.2.3")
 
         assert sentence is not None
-        for part in ("1.2.2", "1.2.3", terminal_client.STOP_COMMAND, terminal_client.START_COMMAND):
+        for part in (
+            "1.2.2",
+            "1.2.3",
+            terminal_client.launch_command("--stop"),
+            terminal_client.launch_command("--daemon"),
+        ):
             self.assertIn(part, sentence)
         self.assertNotIn("\n", sentence)
 
@@ -587,12 +593,15 @@ class VersionGuardTest(unittest.TestCase):
             option for action in cli.build_parser()._actions for option in action.option_strings
         }
         for command, option in (
-            (terminal_client.STOP_COMMAND, "--stop"),
-            (terminal_client.START_COMMAND, "--daemon"),
+            (terminal_client.launch_command("--stop"), "--stop"),
+            (terminal_client.launch_command("--daemon"), "--daemon"),
         ):
             with self.subTest(command=command):
-                # `spacedock compass` exists only from Spacedock 0.28; this name works on both.
-                self.assertEqual(["spacedock-compass", option], command.split(" "))
+                argv = [*terminal_client.launch_argv(), option]
+                if os.name == "nt":
+                    self.assertEqual(subprocess.list2cmdline(argv), command)
+                else:
+                    self.assertEqual(argv, shlex.split(command))
                 self.assertIn(option, parser_options)
 
 
@@ -607,7 +616,7 @@ class MissingDashboardTest(HomeCase):
 
         assert isinstance(result, terminal_client.Refusal)
         self.assertEqual(1, result.code)
-        self.assertIn(terminal_client.START_COMMAND, result.message)
+        self.assertIn(terminal_client.launch_command("--daemon"), result.message)
         self.assertNotIn("\n", result.message)
         self.assertEqual([], started)
 
@@ -1474,7 +1483,7 @@ class DriftCommandTest(HomeCase):
             code, out, err = self.run_drift(port=fake.port, tty=True)
 
         self.assertEqual((1, ""), (code, out))
-        self.assertEqual(terminal_client.sentence("no_session") + "\n", err)
+        self.assertEqual(terminal_client.sentence("no_session_in_session") + "\n", err)
         self.assertEqual([], fake.requests)
 
     def test_a_person_whose_agent_has_no_session_id_is_not_told_to_pass_a_flag(self) -> None:
@@ -1725,7 +1734,13 @@ class WordingTest(unittest.TestCase):
         for key in terminal_client.SENTENCES:
             with self.subTest(key=key):
                 text = terminal_client.sentence(
-                    key, own="1.0.0", theirs="0.9.0", stop="S", start="T"
+                    key,
+                    own="1.0.0",
+                    theirs="0.9.0",
+                    stop="S",
+                    start="T",
+                    action="monitor",
+                    outcome="no Live monitor was started or stopped",
                 )
 
                 self.assertNotIn("\n", text)
@@ -1733,16 +1748,16 @@ class WordingTest(unittest.TestCase):
 
     def test_the_sentences_a_reader_sees_are_pinned(self) -> None:
         self.assertEqual(
-            "Compass is not running. Start it with `spacedock-compass --daemon`.",
-            terminal_client.sentence("not_running"),
+            "Compass is not running; start it with `START --daemon`.",
+            terminal_client.sentence("not_running", start="START --daemon"),
         )
         self.assertEqual(
             "Compass was not running, so this started it as `--daemon` does.",
             terminal_client.sentence("starting"),
         )
         self.assertEqual(
-            "Compass could not start the dashboard. Start it with `spacedock-compass --daemon`.",
-            terminal_client.sentence("start_failed"),
+            "Compass could not start the dashboard; start it with `START --daemon`.",
+            terminal_client.sentence("start_failed", start="START --daemon"),
         )
         self.assertEqual(
             "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
@@ -1766,9 +1781,14 @@ class WordingTest(unittest.TestCase):
         )
         self.assertEqual(
             "The running dashboard is version 0.9.0 and this is version 1.0.0, so nothing was sent. "
-            "Stop it with `spacedock-compass --stop` and start it again with "
-            "`spacedock-compass --daemon`.",
-            terminal_client.sentence("version_mismatch", own="1.0.0", theirs="0.9.0"),
+            "Stop it with `START --stop` and start it again with `START --daemon`.",
+            terminal_client.sentence(
+                "version_mismatch",
+                own="1.0.0",
+                theirs="0.9.0",
+                stop="START --stop",
+                start="START --daemon",
+            ),
         )
 
 

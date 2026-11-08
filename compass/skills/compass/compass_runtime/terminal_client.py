@@ -19,10 +19,13 @@ keeps it out of this command's import set.
 
 from __future__ import annotations
 
+import errno
+import functools
 import json
 import math
 import os
 import re
+import shlex
 import stat
 import sys
 import time
@@ -75,12 +78,6 @@ SHAPE_VERSION: Final = 1
 FOOTER_DIRECTORY: Final = "footer"
 _MS_EPOCH_FLOOR: Final = 1e11  # a seconds value this large is the year 5138; it is milliseconds
 
-# One place each, because the sentences name them and a restart that tells a reader to type a
-# command that does not exist is worse than none. `--stop` and `--daemon` are Compass's own
-# options (MANUAL.md); Spacedock has no restart command of its own to name instead.
-START_COMMAND: Final = "spacedock-compass --daemon"
-STOP_COMMAND: Final = "spacedock-compass --stop"
-
 _STATE_NAME = re.compile(r"compass-([1-9][0-9]{0,4})\.json")
 _PATH = re.compile(r"/[!-~]*")
 _SESSION_FLAG = re.compile(r"([a-z][a-z0-9_-]{0,31}):([!-~]{1,200})")
@@ -110,9 +107,12 @@ SENTENCES: Final[dict[str, str]] = {
     "monitor_no-observer-model": "Live monitor cannot start under --no-observer-model.",
     "monitor_ended": "Live monitor cannot start because this session has ended.",
     "monitor_missing": "Live monitor is on and makes no check until a goal is saved.",
-    "not_running": "Compass is not running. Start it with `{start}`.",
+    "not_running": "Compass is not running; start it with `{start}`.",
+    "loopback_blocked": (
+        "Compass's connection to the dashboard was blocked by a sandbox or permissions."
+    ),
     "starting": "Compass was not running, so this started it as `--daemon` does.",
-    "start_failed": "Compass could not start the dashboard. Start it with `{start}`.",
+    "start_failed": "Compass could not start the dashboard; start it with `{start}`.",
     "start_failed_in_session": (
         "Compass could not start the dashboard. Type `/compass:compass` to start it."
     ),
@@ -124,6 +124,13 @@ SENTENCES: Final[dict[str, str]] = {
     "other_harness": (
         "The drift action reads Claude Code sessions and this command runs inside another tool's "
         "session, so nothing was read or spent; that session's page on the board shows its drift."
+    ),
+    "no_session_for_action": (
+        "The {action} action was given no Claude Code session id, so {outcome}."
+    ),
+    "other_harness_for_action": (
+        "The {action} action cannot identify this caller inside another tool's session, "
+        "so {outcome}."
     ),
     "bad_session_flag": "The session must look like claude:SESSION_ID, with no spaces.",
     "unreadable_reply": "Compass answered, but its session list could not be read.",
@@ -154,9 +161,47 @@ SENTENCES: Final[dict[str, str]] = {
 
 def sentence(key: str, **values: str) -> str:
     """The wording for `key`, with the two commands filled in unless a caller names others."""
-    values.setdefault("start", START_COMMAND)
-    values.setdefault("stop", STOP_COMMAND)
+    values.setdefault("start", launch_command("--daemon"))
+    values.setdefault("stop", launch_command("--stop"))
     return SENTENCES[key].format(**values)
+
+
+def launch_argv() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    root = Path(__file__).resolve().parents[1]
+    return [sys.executable, str(root / "launch.py"), str(root / "server.py")]
+
+
+def launch_command(option: str) -> str:
+    argv = [*launch_argv(), option]
+    if os.name == "nt":
+        import subprocess  # noqa: PLC0415
+
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+class LoopbackBlockedError(Exception):
+    """Permission denial survives adapters that turn an absent reply into an unreadable one."""
+
+
+def permission_denied(error: BaseException) -> bool:
+    return isinstance(error, PermissionError) or (
+        isinstance(error, OSError) and error.errno in (errno.EPERM, errno.EACCES)
+    )
+
+
+def report_blocked_connection[**P](command: Callable[P, int]) -> Callable[P, int]:
+    @functools.wraps(command)
+    def run(*args: P.args, **kwargs: P.kwargs) -> int:
+        try:
+            return command(*args, **kwargs)
+        except LoopbackBlockedError:
+            print(sentence("loopback_blocked"), file=sys.stderr)
+            return 1
+
+    return run
 
 
 class Operation(NamedTuple):
@@ -299,13 +344,14 @@ def parse_summary_args(argv: list[str]) -> SummaryRequest | None:
     return None
 
 
+@report_blocked_connection
 def run_summary(
     request: SummaryRequest, *, port: int | None = None, environ: Mapping[str, str] | None = None
 ) -> int:
     from compass_runtime import terminal_drift, terminal_summary  # noqa: PLC0415
 
     env = os.environ if environ is None else environ
-    named = resolve_session(request.session, env, None, payload={})
+    named = resolve_session(request.session, env, None, payload={}, action="summary")
     if isinstance(named, Unresolved):
         print(named.message, file=sys.stderr)
         return 1
@@ -350,6 +396,7 @@ def run_summary(
     )
 
 
+@report_blocked_connection
 def run_summaries_off(*, port: int | None = None, environ: Mapping[str, str] | None = None) -> int:
     env = os.environ if environ is None else environ
     found = ensure_dashboard(state_home(env), port=port, spend=False, own_version=release_version())
@@ -464,6 +511,7 @@ def parse_monitor_args(argv: list[str]) -> tuple[bool, bool, str | None]:
     return False, False, None
 
 
+@report_blocked_connection
 def run_pause_model_calls(
     *, port: int | None = None, environ: Mapping[str, str] | None = None
 ) -> int:
@@ -497,15 +545,16 @@ def run_pause_model_calls(
     return 0
 
 
+@report_blocked_connection
 def run_monitor(
     *, off: bool = False, session: str | None = None, environ: Mapping[str, str] | None = None
 ) -> int:
     from compass_runtime import terminal_monitor  # noqa: PLC0415
 
     env = os.environ if environ is None else environ
-    named = resolve_session(session, env, None)
+    named = resolve_session(session, env, None, action="monitor")
     if isinstance(named, Unresolved):
-        print(sentence("no_session"), file=sys.stderr)
+        print(named.message, file=sys.stderr)
         return 1
     if named.harness != "claude":
         print(sentence("monitor_unavailable"), file=sys.stderr)
@@ -674,8 +723,8 @@ def _valid_port(port: object) -> bool:
     return type(port) is int and 1 <= port <= 65535
 
 
-def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
-    """The dashboard answering `/api/health` on `port`, or None for nothing or something else.
+def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | Refusal | None:
+    """The dashboard, a permission refusal, or None for nothing or something else.
 
     The acceptance rule is `lifecycle.probe_port`'s, written out again because that module is not
     importable from here. An older dashboard answers without `version`; it is still a dashboard.
@@ -689,7 +738,9 @@ def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
         if status != 200 or len(body) > HEALTH_CAP_BYTES:
             return None
         data = json.loads(body)
-    except (OSError, http.client.HTTPException, ValueError, RecursionError):
+    except OSError as error:
+        return Refusal(sentence("loopback_blocked")) if permission_denied(error) else None
+    except (http.client.HTTPException, ValueError, RecursionError):
         return None
     if not isinstance(data, dict):
         return None
@@ -711,10 +762,17 @@ def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | None:
 
 def find_dashboard(
     home: str, *, port: int | None = None, timeout: float = HEALTH_TIMEOUT_SEC
-) -> Dashboard | None:
-    """The newest-started dashboard among the candidate ports."""
-    answers = [d for p in candidate_ports(home, port) if (d := probe(p, timeout)) is not None]
-    return max(answers, key=lambda d: d.started, default=None)
+) -> Dashboard | Refusal | None:
+    """The newest-started dashboard, or a blocked connection when none can be reached."""
+    answers: list[Dashboard] = []
+    blocked = None
+    for candidate in candidate_ports(home, port):
+        answer = probe(candidate, timeout)
+        if isinstance(answer, Dashboard):
+            answers.append(answer)
+        elif isinstance(answer, Refusal):
+            blocked = answer
+    return max(answers, key=lambda d: d.started) if answers else blocked
 
 
 def request(
@@ -748,6 +806,8 @@ def request(
             method, port, path, body, headers=headers, timeout=timeout, cap=limit
         )
     except (OSError, http.client.HTTPException) as error:
+        if permission_denied(error):
+            raise LoopbackBlockedError from error
         msg = f"no answer from 127.0.0.1:{port}"
         raise DashboardUnreachable(msg) from error
     data: Any = None
@@ -803,12 +863,7 @@ def start_daemon(port: int, *, timeout: float = 30.0) -> None:
     """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
-    root = Path(__file__).resolve().parents[1]
-    if getattr(sys, "frozen", False):
-        argv = [sys.executable]
-    else:
-        argv = [sys.executable, str(root / "launch.py"), str(root / "server.py")]
-    argv += ["--daemon", "--port", str(port)]
+    argv = [*launch_argv(), "--daemon", "--port", str(port)]
     try:
         subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
@@ -831,7 +886,7 @@ def ensure_dashboard(
 
     A read with none running says so and stops. A spend starts one and says it did. A spend
     against another release stops before it sends anything; a read is still served. `in_session`
-    words the refusals for the skill, whose person may have no `spacedock-compass` on PATH.
+    words the refusals for the skill instead of giving its agent restart commands.
     """
     found = find_dashboard(home, port=port)
     if found is None:
@@ -842,6 +897,8 @@ def ensure_dashboard(
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
+    if isinstance(found, Refusal):
+        return found
     if spend and (message := version_guard(found, own_version, in_session=in_session)) is not None:
         return Refusal(message)
     return found
@@ -947,6 +1004,7 @@ def resolve_session(
     stdin: TextIO | None,
     *,
     payload: Mapping[str, Any] | None = None,
+    action: str | None = None,
 ) -> Session | Unresolved:
     """Which session this command is in: `--session`, else the status line, else the environment.
 
@@ -966,11 +1024,25 @@ def resolve_session(
     if isinstance(value, str) and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "status line")
     if any(environ.get(name) for name in OTHER_SESSION_ENV):
-        return Unresolved(sentence("other_harness"))
+        return unresolved_caller("other_harness", action)
     value = environ.get(CLAUDE_SESSION_ENV)
     if value is not None and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "environment")
-    return Unresolved(sentence("no_session"))
+    return unresolved_caller("no_session", action)
+
+
+def unresolved_caller(reason: str, action: str | None) -> Unresolved:
+    if action is None:
+        return Unresolved(sentence(reason))
+    if action == "drift":
+        return Unresolved(sentence("no_session_in_session" if reason == "no_session" else reason))
+    outcomes = {
+        "monitor": "no Live monitor was started or stopped",
+        "project": "no project brief was read",
+        "goal": "no goal was read or changed",
+        "summary": "no summary was read or requested",
+    }
+    return Unresolved(sentence(reason + "_for_action", action=action, outcome=outcomes[action]))
 
 
 class Window(NamedTuple):
@@ -1259,6 +1331,7 @@ def read_sessions(port: int, *, timeout: float = LIST_REQUEST_TIMEOUT_SEC) -> di
     return payload
 
 
+@report_blocked_connection
 def run_project(
     *,
     session: str | None = None,
@@ -1271,7 +1344,7 @@ def run_project(
     from compass_runtime import terminal_project  # noqa: PLC0415
 
     env = os.environ if environ is None else environ
-    named = resolve_session(session, env, None)
+    named = resolve_session(session, env, None, action="project")
     if isinstance(named, Unresolved) or named.harness != "claude":
         print(
             named.message
@@ -1357,6 +1430,7 @@ def run_project(
     return 0
 
 
+@report_blocked_connection
 def run_sessions(
     mode: str | bool | None = None,
     *,
@@ -1474,6 +1548,7 @@ class LoopbackBoard:
         return reply.status, reply.data
 
 
+@report_blocked_connection
 def run_goal(
     request: GoalRequest,
     *,
@@ -1483,13 +1558,13 @@ def run_goal(
     """Reads never launch; writes require the person's explicit session and terminal stdout."""
     from compass_runtime import terminal_goal  # noqa: PLC0415
 
-    if request.writes and (request.session is None or not _is_terminal(sys.stdout)):
-        print("Saving a goal needs an explicit --session and terminal stdout.", file=sys.stderr)
-        return 1
     env = os.environ if environ is None else environ
-    named = resolve_session(request.session, env, None, payload={})
+    named = resolve_session(request.session, env, None, payload={}, action="goal")
     if isinstance(named, Unresolved):
         print(named.message, file=sys.stderr)
+        return 1
+    if request.writes and (request.session is None or not _is_terminal(sys.stdout)):
+        print("Saving a goal needs an explicit --session and terminal stdout.", file=sys.stderr)
         return 1
     found = ensure_dashboard(
         state_home(env), port=port, spend=request.writes, own_version=release_version()
@@ -1502,6 +1577,7 @@ def run_goal(
     )
 
 
+@report_blocked_connection
 def run_drift(
     *,
     again: bool = False,
@@ -1526,13 +1602,9 @@ def run_drift(
 
     env = os.environ if environ is None else environ
     tty = _is_terminal(sys.stdout)
-    named = resolve_session(session, env, None, payload={})
+    named = resolve_session(session, env, None, payload={}, action="drift")
     if isinstance(named, Unresolved):
-        message = named.message
-        if not tty and message == sentence("no_session"):
-            # The skill never adds `--session`, so the flag is no step for its agent to take.
-            message = sentence("no_session_in_session")
-        print(message, file=sys.stderr)
+        print(named.message, file=sys.stderr)
         return 1
     # The skill's own run, as `SKILL.md` writes it: named by the environment, read through a pipe.
     in_session = named.source == "environment" and not tty

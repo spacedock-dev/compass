@@ -96,6 +96,15 @@ are capped at 16 MiB each. A refused or oversized reply produces no partial brie
 dashboard modules. Each dashboard probe and request has one wall-clock deadline across connection,
 headers and body, including a listener that keeps sending a little at a time.
 
+When no dashboard answers, a read exits `1` and prints the start command for this copy: its
+Python launcher and server paths, or its packaged executable. Paths with spaces are quoted.
+If a sandbox or permissions blocks the loopback connection, the command says so and starts
+nothing; a blocked connection does not establish whether the dashboard is running.
+
+Without a resolvable caller, `--drift`, `--monitor`, `--project`, `--goal` and `--summary` name
+what they could not do and send no request. They do not ask an agent to supply a Claude Code
+session id. `--sessions waiting` still reads the list and says it may include the caller.
+
 ### Starting and inspecting an instance
 
 | Option | Behavior and default |
