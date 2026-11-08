@@ -235,6 +235,58 @@ class APersonAnalyzesADraft(unittest.TestCase):
     def entry(self) -> Any:
         return annotation_store.find(annotation_store.load(self.config), "claude", "s1")
 
+    def test_a_persons_discard_survives_keep_when_no_analysis_starts(self) -> None:
+        # Losing the Keep opt-in to the locked discard guard resurrects the
+        # draft: both the unsaved page and a discard publish revision zero.
+        for boundary in ("before press", "before locked write"):
+            with self.subTest(boundary=boundary):
+                Path(annotation_store.store_path(self.config)).unlink(missing_ok=True)
+                other = build_runtime_state(self.config, started=1_700_000_050.0)
+                discarded: list[Any] = []
+
+                def discard(other: Any = other, discarded: list[Any] = discarded) -> None:
+                    annotation_store.annotate(
+                        self.config, other, "claude", "s1", goal="Another tabs goal"
+                    )
+                    annotation_store.clear(self.config, other, "claude", "s1")
+                    discarded.append(self.entry())
+
+                original = annotation_store.adopt
+
+                def discard_then_adopt(
+                    *args: Any,
+                    boundary: str = boundary,
+                    discard: Any = discard,
+                    original: Any = original,
+                    **kwargs: Any,
+                ) -> str:
+                    if boundary == "before locked write":
+                        discard()
+                    return cast("str", original(*args, **kwargs))
+
+                if boundary == "before press":
+                    discard()
+                with (
+                    self.route._counting_model(harness="claude") as calls,
+                    self.route._serving(self.application) as port,
+                    mock.patch.object(annotation_store, "adopt", side_effect=discard_then_adopt),
+                ):
+                    status, raw = self.route._post(
+                        port,
+                        {**self.payload, "settle_through": 1_700_000_050.0},
+                        path="/api/annotate",
+                    )
+                answer = json.loads(raw)
+                self.assertEqual((200, "refused"), (status, answer["outcome"]))
+                self.assertFalse(answer["persisted"], "Keep claimed the draft was saved")
+                self.assertIsNone(answer["saved_revision"], "Keep issued a success receipt")
+                self.assertIsNone(answer["revision"])
+                self.assertTrue(annotation_store.is_discarded(self.entry()))
+                self.assertEqual(discarded[0], self.entry(), "Keep changed the discarded words")
+                self.assertEqual([], calls, "Keep started an analysis")
+                self.assertEqual({}, reading.published_jobs(self.config))
+                self.assertEqual([], self.route.outcomes)
+
     def test_a_persons_discard_survives_analyze_before_and_after_prompt_recollection(self) -> None:
         # Removing the locked discard guard, or failing to opt Analyze into it,
         # resurrects the goal and starts a model from words the reader discarded.
