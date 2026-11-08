@@ -2104,12 +2104,13 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
         # otherwise. The fourth match is Claude Code's hook attachment `stdout`, which the
         # rewritten-command read names.
         # A `command` key is counted on any receiver, not only one named `item` (DRC-5033 item
-        # 9): the other fifteen read a Claude Code, Pi or hook record's command (`claude_data`,
-        # `session_source`, eight in `project_context`) or Spacedock's own boot envelope (five in
-        # `spacedock`, one of them a docstring and one a write).
+        # 9): other matches read Claude, Pi or hook commands, or Spacedock's boot envelope.
+        # `compass_turns` inspects an already admitted Claude Bash command only to identify the
+        # single Compass launcher action; SECURITY.md names that interpretation too.
         self.assertEqual(
             {
                 "claude_data.py": 1,
+                "compass_turns.py": 1,
                 "project_context.py": 12,
                 "reading_ci_acquire.py": 2,
                 "session_source.py": 1,

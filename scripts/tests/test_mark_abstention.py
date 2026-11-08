@@ -638,3 +638,23 @@ class IncompleteFrozenCheckTest(unittest.TestCase):
         self.assertIs(False, entry["changed_after"])
         self.assertIs(True, entry.get("read_incomplete"))
         self.assertIn("work record was not read", entry["summary"])
+
+
+class APersonsQualificationCoversCompassTurnDetectionTest(unittest.TestCase):
+    def test_a_person_cannot_reuse_a_parser_stamp_after_the_compass_turn_guard_changes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Path(folder, "compass_runtime")
+            runtime.mkdir()
+            source = Path(mark_abstention._SKILL, "compass_runtime")
+            for name in {*mark_abstention._PARSER_FILES, "compass_turns.py"}:
+                (runtime / name).write_bytes((source / name).read_bytes())
+            with mock.patch.object(mark_abstention, "_SKILL", folder):
+                before = mark_abstention.parser_digest()
+                guard = runtime / "compass_turns.py"
+                text = guard.read_text()
+                changed = text.replace("start <= at", "start < at")
+                self.assertNotEqual(text, changed)
+                guard.write_text(changed)
+                self.assertNotEqual(before, mark_abstention.parser_digest())

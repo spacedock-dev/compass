@@ -599,10 +599,11 @@ def _replay(  # noqa: PLR0913
             tuple(sorted(scan.declared.listed)),
         ),
     )
+    compass_calls = pc._compass_launcher_calls(scan)  # noqa: SLF001
     calls = [
         call
         for call in pc._merged_check_calls(scan.parent, scan.children)  # noqa: SLF001
-        if call[3] in _MOVING_TOOLS
+        if call[3] in _MOVING_TOOLS and (call[5] or call[2] not in compass_calls)
     ]
     # Check rows keep parent-first result pairing; launches use the call's
     # own stream. A late result in either view invalidates its replay prefix.

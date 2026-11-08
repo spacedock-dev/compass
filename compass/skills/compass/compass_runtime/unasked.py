@@ -37,6 +37,8 @@ owns the four sentences so this module cannot word them a fifth way.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -148,6 +150,7 @@ class Lane:
         # can tell that the file moved on since.
         self._stamps: dict[tuple[str, str], tuple[int, int, int, int] | None] = {}
         self.spawn = spawn
+        self._checked: dict[str, dict[str, str]] = {}
         self._call_lock = threading.Lock()
         self._group: supervise.Group | None = None
         self._provider = ""
@@ -282,9 +285,6 @@ class Lane:
             if today >= self.config.unasked_daily_cap:
                 return False
             state.unasked_inflight.add(key)
-            runtime_state.bounded_put(
-                state.unasked_last, key, now, limit=self.config.max_cache_entries
-            )
         # The producer's own per-session slot, taken AFTER this lane's gates and
         # released in `_run`. Without it a reader pressing `Ask for a reading`
         # while an unasked one runs starts a second subprocess on one session,
@@ -386,6 +386,28 @@ class Lane:
         with self._call_lock:
             self._provider = provider
             self._cancelled = False
+        facts = self.facts_for(state, row, now)
+        # Count the evidence, not the row transition or the number of facts: a pending call's
+        # completed result changes an existing row. Compass answers never enter this ledger.
+        # Coverage becoming partial adds no project work. Normalize it before summary wording is
+        # composed; the producer below still receives the original facts, including that warning.
+        ledger = runtime_reading.build_ledger(
+            ({**fact, "read_incomplete": False} for fact in facts),
+            str(row.get("harness") or ""),
+            str(row.get("sid") or ""),
+            tool_output={},
+        )
+        fingerprints = {
+            entry["id"]: hashlib.sha256(
+                json.dumps(entry, sort_keys=True, ensure_ascii=True).encode()
+            ).hexdigest()
+            for entry in ledger
+        }
+        key = f"{row.get('harness')}:{row.get('sid')}"
+        checked = self._checked.get(key)
+        # Losing old rows to a partial read is absence, not new work.
+        if checked is not None and all(checked.get(k) == v for k, v in fingerprints.items()):
+            return
         model_type = (
             runtime_reading.ClaudeReadingModel
             if provider == reading_route.CLAUDE
@@ -396,7 +418,7 @@ class Lane:
             self.config,
             row,
             entry["revisions"],
-            self.facts_for(state, row, now),
+            facts,
             now=now,
             command_counts_lookup=lambda: self.command_counts_for(state, row),
             record_coverage_lookup=lambda: self.record_coverage_for(state, row),
@@ -411,6 +433,23 @@ class Lane:
                 destination=route["words_destination"],
             ),
         )
+        if _spent:
+            # A Compass-only transition must not move the spacing floor either.
+            with state.unasked_lock:
+                runtime_state.bounded_put(
+                    state.unasked_last, key, now, limit=self.config.max_cache_entries
+                )
+            remembered = dict(checked or {})
+            for fact_id, fingerprint in fingerprints.items():
+                runtime_state.bounded_put(
+                    remembered,
+                    fact_id,
+                    fingerprint,
+                    limit=max(self.config.max_cache_entries, len(fingerprints)),
+                )
+            runtime_state.bounded_put(
+                self._checked, key, remembered, limit=self.config.max_cache_entries
+            )
         with self._call_lock:
             cancelled = self._cancelled
         if (cancelled or assessment is None) and _spent:

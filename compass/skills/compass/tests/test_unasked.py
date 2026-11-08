@@ -118,6 +118,7 @@ class _Harness:
         self.readings: list[str] = []
         self.popups: list[tuple[str, str]] = []
         self.assessment = assessment
+        self.work_epoch = 0
 
         def produce(_config: Any, row: Any, *_args: Any, **_kwargs: Any) -> Any:
             self.readings.append(str(row.get("sid")))
@@ -135,7 +136,15 @@ class _Harness:
             diagnostic_sink=lambda _line: None,
             clock=lambda: 5_000.0,
             produce=produce,
-            facts_for=lambda _state, _row, _now: [{"id": "e1"}],
+            facts_for=lambda _state, row, _now: [
+                {
+                    "fact_id": f"work-{self.work_epoch}",
+                    "type": "user_message",
+                    "summary": "Continue the project work",
+                    "at": 20.0 + self.work_epoch,
+                    "source_session": {"harness": row["harness"], "sid": row["sid"]},
+                }
+            ],
             # Inline rather than threaded, so a test asserts on what happened
             # rather than on what was scheduled. The lane's own threading is
             # covered by the in-flight test below.
@@ -1004,6 +1013,7 @@ class TheCapsStopTheReadingRatherThanTheRaiseTest(unittest.TestCase):
         harness = self._harness()
         harness.consider([_row(state="working")], now=5_000.0)
         harness.consider([_row(state="idle")], now=5_000.0)
+        harness.work_epoch += 1
         harness.consider([_row(state="working")], now=99_000.0)
         harness.consider([_row(state="idle")], now=99_000.0)
 
@@ -1170,6 +1180,7 @@ class TheCapsBoundSpendAndNotFindingsTest(unittest.TestCase):
         )
 
         for n in range(20):
+            harness.work_epoch += 1
             self._flip(harness, "s-1", at=5_000.0 + n)
 
         self.assertEqual(3, len(harness.readings))
@@ -1375,6 +1386,7 @@ class AFailedCallStillSpendsTheCapsTest(unittest.TestCase):
     def test_the_session_cap_stops_a_model_that_keeps_failing(self) -> None:
         harness = self._failing(unasked_session_cap=3)
         for n in range(20):
+            harness.work_epoch += 1
             self._flip(harness, "s-1", at=5_000.0 + n)
         self.assertEqual(3, len(harness.readings))
         stored = departures.load(harness.config)

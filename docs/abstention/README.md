@@ -279,7 +279,7 @@ reads (DRC-4711):
 - `transcript-bytes-differ`: a case frozen at the capture's own length (`transcript_cut` is
   `capture`) names another. A shorter length would shrink the tail and excuse a dropped message.
 - `frozen-on-another-parser`: the case's `parser` stamp, a sha256 over the syntax trees of
-  `io.py`, `project_context.py` and `reading.py` written at freeze, does not match the scorer's. Every case would differ, so this is
+  `io.py`, `project_context.py`, `reading.py` and `compass_turns.py` written at freeze, does not match the scorer's. Every case would differ, so this is
   named on its own rather than read as tampering. Freeze again on the tree you score on, with the
   freeze board started from that same checkout, since the board derives the user messages.
   `--score` does not get this far: it compares every stamp with this checkout's before the ledger

@@ -5991,6 +5991,7 @@ class _ToolReportTally:
     ) -> None:
         self.results = results
         self.edges = edges
+        self.compass_calls: frozenset[str] = frozenset()
         # Without one nothing a CI poll names can be bound, so no poll counts.
         self.ci_binding = ci_binding
         # The project's own check scripts, as the commit the session began on held them.
@@ -6310,7 +6311,7 @@ class _ToolReportTally:
         )
         self.shell_seq += 1
         self._keep_masked_values(call.masked_values)
-        changes = call.changes()
+        changes = call.changes() and (bool(stream) or call_id not in self.compass_calls)
         # On Codex every call that may change files is dated as a change, fixer or not, since a
         # call's order by start cannot place one that overlapped a pass (`_changed_at`).
         dated = changes and self.edges is _CODEX_EDGES
@@ -6335,7 +6336,7 @@ class _ToolReportTally:
         foreground = [i for i in call.meaningful if not call.background(i)]
         if foreground and not [i for i in call.checks if i in foreground]:
             self.scan["other_commands"] += 1
-            self.scan["read_only_commands"] += not call.changes()
+            self.scan["read_only_commands"] += not changes
         result_at = found.at if found is not None else None
         # The tail is the whole call's output, so its checks and commands share one scrub of it:
         # once per check multiplied a heavy set's compile and scan by the checks in the call.
@@ -8259,6 +8260,7 @@ def _tally_of(  # noqa: PLR0913 - the scan's own facts ride beside what it reads
     orphan_unread: bool = False,
     declared: project_scripts.Declarations | None = None,
     ci_binding: _CiBinding | None = None,
+    compass_calls: frozenset[str] = frozenset(),
 ) -> _ToolReportTally:
     """One tally over a parent's calls and its subagents', in call time order.
 
@@ -8277,6 +8279,7 @@ def _tally_of(  # noqa: PLR0913 - the scan's own facts ride beside what it reads
     tally = _ToolReportTally(
         _merged_check_results(parent, subagents), session_dir, declared, ci_binding
     )
+    tally.compass_calls = compass_calls
     tally.reads_from = reads_from
     tally.scan["last_user_at"] = _last_person_at(parent)
     tally.named_unread = named_unread
@@ -8404,6 +8407,13 @@ def _built_tally(
     return _tally_from_scan(scan)
 
 
+def _compass_launcher_calls(scan: _CheckScan) -> frozenset[str]:
+    # The turn detector imports the reading producer, which imports this module.
+    from . import compass_turns  # noqa: PLC0415
+
+    return compass_turns.launcher_calls(scan.source_reads[0][0], _claude_tool_uses(scan.parent))
+
+
 def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
     return _tally_of(
         scan.parent,
@@ -8416,6 +8426,7 @@ def _tally_from_scan(scan: _CheckScan) -> _ToolReportTally:
         session_dir=scan.session_dir,
         declared=scan.declared,
         ci_binding=scan.ci_binding,
+        compass_calls=_compass_launcher_calls(scan),
     )
 
 
@@ -9755,6 +9766,7 @@ def frozen_claude_checks(
         session_dir=scan.session_dir,
         declared=scan.declared,
         ci_binding=scan.ci_binding,
+        compass_calls=_compass_launcher_calls(scan),
     )
     facts = [
         _semantic_fact_from_event(row, str(row["kind"]), _SEMANTIC_FACT_TYPES[row["kind"]], "")

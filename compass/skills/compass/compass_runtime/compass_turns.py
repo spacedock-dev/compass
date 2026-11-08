@@ -14,16 +14,16 @@ model-started Skill call that field stays on the agent's later real work in the 
 (docs/captures/claude/skill-action-shapes-2.1.318-macos.jsonl), and a model-started call is the
 agent's own work, so it opens no turn here.
 
-This module reads the transcript itself, rather than the collector doing it, for the reason
-`copied_corrections` gives: the collector's modules are frozen with the abstention qualification.
-The read is incremental per file, from where the last one stopped, so a growing transcript is read
-once.
+The same turn lookup serves evidence marking and check accounting. It reads incrementally per
+file, from where the last read stopped, so neither caller guesses a boundary from attribution.
+The abstention parser stamp includes this module because its launcher exemption affects checks.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -195,3 +195,56 @@ def mark(
         if turns:
             facts = mark_facts(facts, "claude", sid, turns)
     return {**context, "semantic": {**semantic, "facts": facts}}
+
+
+_ACTIONS: Final = frozenset(
+    {
+        ("--summary",),
+        ("--summary", "--update"),
+        ("--summary", "--again"),
+        ("--summaries", "off"),
+        ("--goal",),
+        ("--project",),
+        ("--sessions",),
+        ("--sessions", "waiting"),
+        ("--drift",),
+        ("--drift", "again"),
+        ("--monitor",),
+        ("--monitor", "--off"),
+        ("--pause-model-calls",),
+    }
+)
+
+
+def launcher(command: Any) -> bool:
+    """Only the skill's single terminal action, with no shell expansion or extra operation."""
+    if not isinstance(command, str) or any(mark in command for mark in "\n\r$`;&|<>()"):
+        return False
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) < 4 or words[0] not in {"python", "python3"}:
+        return False
+    launch, server = words[1:3]
+    directory = os.path.dirname(launch)
+    return (
+        os.path.basename(launch) == "launch.py"
+        and os.path.basename(server) == "server.py"
+        and os.path.dirname(server) == directory
+        and os.path.basename(directory) == "compass"
+        and tuple(words[3:]) in _ACTIONS
+    )
+
+
+def launcher_calls(path: str, calls: Iterable[Any]) -> frozenset[str]:
+    """Parent launcher calls positively inside typed Compass turns; children remain work."""
+    turns = spans(path)
+    return frozenset(
+        call[2]
+        for call in calls
+        if not call[5]
+        and call[3] == "Bash"
+        and within(turns, call[0])
+        and launcher(call[4].get("command"))
+    )

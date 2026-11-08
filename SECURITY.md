@@ -4539,6 +4539,11 @@ is that read's one look at a `write_stdin` call's `arguments`, parsed only to as
 `chars` is empty; nothing of them is kept. The eleventh is its look at an `exec` script's `input`,
 read only to ask whether a `write_stdin` call in it sends anything but an empty `chars`; nothing of
 the script is kept. Every read of a call's `output` is counted the same way.
+The same inventory counts `compass_turns.launcher_calls`, which inspects an already collected
+parent Claude `Bash` command to identify the skill's single terminal action inside a recognised
+Compass turn. It keeps call IDs for the command-accounting exemption, reads no result text and
+executes nothing. Other commands and child calls remain work.
+
 The prototype has no additional switch that disables just these dispatch reads.
 
 The inventory also counts unrelated keys with the same spelling so new reads cannot hide behind

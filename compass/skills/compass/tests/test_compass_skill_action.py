@@ -34,7 +34,10 @@ from compass_runtime import (
     claude_data,
     compass_turns,
     correction,
+    departures,
     http_api,
+    levels,
+    live_estimate,
     live_monitor,
     observer,
     project_context,
@@ -45,11 +48,12 @@ from compass_runtime import (
     transcripts,
     unasked,
 )
+from compass_runtime import annotations as annotation_store
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from . import test_reading, test_reading_source_final
+from . import test_reading, test_reading_source_final, test_unasked
 from .support import make_server, serve_until_closed
 from .test_claude_checks import SHORT, START
 from .test_slash_command_direction import CAVEAT, Session, local_command, prompt_command
@@ -139,7 +143,7 @@ class CompassSession(Session):
     def _attributed(self) -> dict[str, Any]:
         return {"attributionSkill": "compass:compass", "attributionPlugin": "compass"}
 
-    def compass(self, action: str = "sessions", *, stop: bool = True) -> float:
+    def compass(self, action: str = "sessions", *, stop: bool = True, command: str = RUN) -> float:
         """The reader types Compass's command; the agent runs it and repeats what it printed."""
         arm = "typed-headless" if action else "typed-bare-headless"
         text = (
@@ -166,7 +170,7 @@ class CompassSession(Session):
         )
         typed = f"{COMMAND} {action}" if action else None
         self._last_prompt(typed)
-        call = self.call("Bash", {"command": RUN, "description": "List sessions"})
+        call = self.call("Bash", {"command": command, "description": "List sessions"})
         self.rows[-1].update(self._attributed())
         self.result(call, PRINTED, is_error=False)
         self.rows[-1]["toolUseResult"] = {
@@ -922,3 +926,213 @@ class TheTurnEndsWhenTheAgentsTurnDoesTest(_Case):
         self.session.said("SECOND-ECHO", **self.session._attributed())
         self.session.stopped()
         self.assertNotIn("SECOND-ECHO", self.ledger())
+
+
+LAUNCH = 'python3 "/skills/compass/launch.py" "/skills/compass/server.py" --sessions'
+
+
+class APersonAskingCompassKeepsTheirPassingCheckTest(_Case):
+    def setUp(self) -> None:
+        super().setUp()
+        self.session.asked(FIRST)
+        self.session.bash("pytest tests/test_retry.py", "1 passed", is_error=False)
+        self.row = _row(
+            annotation_goal=FIRST, annotation_line_1="Tests pass", annotation_revision=1
+        )
+
+    def estimate(self) -> dict[str, Any]:
+        return live_estimate.for_session(
+            self.config, self.row, self.save(), [], floor=None, now=NOW
+        )
+
+    def test_a_persons_compass_action_leaves_the_pass_and_live_level_fresh(self) -> None:
+        before = self.estimate()
+        self.assertEqual(levels.NONE_OR_LOW, before["level"])
+        self.session.compass(command=LAUNCH)
+        self.save()
+        press = project_context.press_checks(self.config, self.state, "claude", SHORT)
+        self.assertFalse(press.changed_after)
+        rows, scan = project_context.claude_tool_reports(self.config, self.save(), SHORT)
+        self.assertIsNone(scan["last_changing_command_at"])
+        self.assertEqual(before["level"], self.estimate()["level"])
+        # A cold replay must agree with the warm incremental one.
+        live_estimate._cache.clear()
+        self.assertEqual(before["level"], self.estimate()["level"])
+        passed = next(row for row in rows if row.get("result") == "passed")
+        fact = project_context._semantic_fact_from_event(passed, passed["kind"], "tool_report", "")
+        stored = {
+            "read_at": NOW,
+            "window_start": START.timestamp(),
+            "criteria": {
+                name: {
+                    "result": reading.RESULT_CONSISTENT,
+                    "cites": (fact["fact_id"],),
+                    "detail": "",
+                    "clause": "",
+                    "why": reading.WHY_STANDS,
+                }
+                for name in ("goal", "line_1")
+            },
+        }
+        level = levels.analysis_level(
+            stored, levels.Evidence((fact,), scan, 0), outcome_lines=1, lines=("Tests pass",)
+        )
+        self.assertEqual(levels.NONE_OR_LOW, level.level)
+        self.assertNotIn(levels.REASON_PASS_THEN_WRITE, level.reasons)
+
+    def test_a_persons_ordinary_command_in_the_same_turn_still_ages_the_pass(self) -> None:
+        self.session.compass(stop=False, command=LAUNCH + " && touch retry.py")
+        self.save()
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+        self.assertNotEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+
+    def test_a_persons_launcher_outside_a_typed_compass_turn_still_ages_the_pass(self) -> None:
+        self.session.bash(LAUNCH, PRINTED)
+        self.save()
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+
+    def test_a_persons_other_command_inside_the_compass_turn_still_ages_the_pass(self) -> None:
+        self.session.compass(stop=False, command=LAUNCH)
+        self.session.bash("touch retry.py")
+        self.save()
+        self.assertTrue(
+            project_context.press_checks(self.config, self.state, "claude", SHORT).changed_after
+        )
+
+    def test_a_persons_action_in_the_319_captured_command_shapes_keeps_the_pass_fresh(self) -> None:
+        for name in ("headless-command-shapes", "scheduled-command-shapes"):
+            capture = REPO / f"docs/captures/claude/{name}-2.1.319-macos.jsonl"
+            shapes = [json.loads(line) for line in capture.read_text().splitlines()]
+            for shape in shapes:
+                if shape.get("command_name") != COMMAND:
+                    continue
+                with self.subTest(capture=name, line=shape["line"]):
+                    self.session.compass(command=LAUNCH)
+                    command = next(
+                        r for r in reversed(self.session.rows) if records.compass_command_record(r)
+                    )
+                    # Only the captured top-level keys, plus the separately recorded content.
+                    captured = {
+                        k: command.get(k, v)
+                        if isinstance(v, str) and v in {"str", "int", "float", "bool"}
+                        else v
+                        for k, v in shape["record"].items()
+                    }
+                    captured["message"] = command["message"]
+                    command.clear()
+                    command.update(captured)
+                    self.save()
+                    press = project_context.press_checks(self.config, self.state, "claude", SHORT)
+                    self.assertFalse(press.changed_after)
+                    self.assertEqual(levels.NONE_OR_LOW, self.estimate()["level"])
+
+
+class APersonDoesNotSpendAnotherCheckOnCompassAloneTest(_Case):
+    def setUp(self) -> None:
+        super().setUp()
+        test_unasked._installed_providers(self)
+        self.session.asked(FIRST)
+        self.session.bash("pytest tests/test_retry.py", "1 failed", is_error=True)
+        self.calls: list[str] = []
+
+        def produce(*_args: Any, **_kwargs: Any) -> Any:
+            self.calls.append("checked")
+            return test_unasked._assessment(reading.RESULT_CONSISTENT), "", True
+
+        self.lane = unasked.Lane(
+            self.config,
+            popup_notifier=lambda *_: None,
+            produce=produce,
+            spawn=lambda work: work(),
+            diagnostic_sink=lambda _: None,
+        )
+        self.entry: annotation_store.Annotation = {
+            **test_unasked._annotation(SHORT),
+            "revisions": ({"n": 4, "goal": FIRST, "lines": (), "at": START.timestamp()},),
+        }
+        self.now = NOW
+
+    def consider(self, state: str) -> None:
+        self.save()
+        self.lane.consider(self.state, [_row(state=state)], [self.entry], now=self.now)
+        self.now += 3600
+
+    def checked_once(self) -> None:
+        self.consider("working")
+        self.consider("idle")
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(1, len(departures.load(self.config)))
+
+    def test_a_persons_compass_only_turn_spends_no_second_daily_check(self) -> None:
+        self.checked_once()
+        self.session.compass(command=LAUNCH)
+        self.consider("working")
+        self.consider("idle")
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(1, len(departures.load(self.config)))
+
+    def test_a_persons_newly_completed_result_is_checked_even_without_a_new_fact(self) -> None:
+        call = self.session.call("Bash", {"command": "node --test tests/later.test.js"})
+        self.checked_once()
+        before = len(self.lane._facts(self.state, _row(), self.now))
+        self.session.result(call, "# tests 1\n# pass 1\n# fail 0", is_error=False)
+        self.save()
+        # Completion updates an existing call, rather than adding a fact.
+        after = len(
+            [
+                f
+                for f in self.lane._facts(self.state, _row(), self.now)
+                if not f.get(reading.COMPASS_TURN_FLAG)
+            ]
+        )
+        self.assertEqual(before, after)
+        self.consider("working")
+        self.assertEqual(2, len(self.calls))
+        self.assertEqual(2, len(departures.load(self.config)))
+
+    def test_a_persons_compass_only_transition_does_not_delay_new_real_work(self) -> None:
+        self.checked_once()
+        self.session.compass(command=LAUNCH)
+        skipped_at = self.now
+        self.consider("working")
+        self.session.asked(LATER)
+        self.now = skipped_at + 1
+        self.consider("idle")
+        self.assertEqual(2, len(self.calls))
+        self.assertEqual(2, len(departures.load(self.config)))
+
+    def test_a_person_with_only_compass_turns_has_no_charged_check(self) -> None:
+        self.session = CompassSession(Path(self.session.cwd))
+        self.session.compass(command=LAUNCH)
+        self.lane.produce = reading.produce
+        with mock.patch.object(reading.ClaudeReadingModel, "__call__") as model:
+            self.consider("working")
+            self.consider("idle")
+        model.assert_not_called()
+        self.assertEqual((), departures.load(self.config))
+
+    def test_a_persons_partial_record_does_not_recheck_old_work_when_an_entry_disappears(
+        self,
+    ) -> None:
+        self.checked_once()
+        facts = list(self.lane._facts(self.state, _row(), self.now))
+        self.assertGreater(len(facts), 1)
+        self.lane.facts_for = lambda *_: facts[1:]
+        self.consider("working")
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(1, len(departures.load(self.config)))
+
+    def test_a_persons_partial_coverage_does_not_spend_a_check_on_old_work(self) -> None:
+        self.checked_once()
+        facts = [dict(fact) for fact in self.lane._facts(self.state, _row(), self.now)]
+        for fact in facts:
+            if fact.get("type") == "tool_report":
+                fact["read_incomplete"] = True
+        self.lane.facts_for = lambda *_: facts
+        self.consider("working")
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(1, len(departures.load(self.config)))
