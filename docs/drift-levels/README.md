@@ -231,3 +231,44 @@ One of those choices matters for marking: an analysis never reads Extreme, becau
 of High's conditions, and one of them, most writes outside the named folders, is the live estimate's
 alone. A case the owner marks Extreme on the analysis side therefore fails until a ruling says
 otherwise, and that failure is a finding to report, not a figure to tune.
+
+## Prospective Codex analysis-level cohort, 2026-11-09
+
+This is a proposed later check, not a built or executed capability. The current tooling freezes
+Claude cases; no Codex cohort or result is supplied here. It follows the separate
+[Codex producer qualification and owner gates](../abstention/README.md#prospective-codex-qualification-2026-11-09).
+Historical marks, results, readings and allowances above remain unchanged.
+
+After producer acceptance, freeze a separate Codex cohort of up to twelve cases. Before any
+output, specify its final matrix: admissible support, unrelated or partial checks, stale passes,
+failure timing, missing citations, legitimate changes, misleading claims, insufficient evidence
+and goal-only behavior. Mark expected analysis levels blindly against the frozen evidence.
+Commit the marks digest before readings or results, with the case/input bindings and required
+analysis cases fixed. Proposed committed filenames are `codex-marks-digest.json` and
+`codex-results.json` in this directory; neither exists yet. Private cases, marks and detailed
+readings belong to a separate Codex packet, not the historical Claude packet.
+
+This cohort qualifies analysis only. An unsupported Codex live source is outside the claim;
+neither live estimate nor Live monitor gains eligibility. Score with DEC-26's existing level
+rules: a match or a more cautious result passes, but "Not enough recorded yet" is more cautious
+only than "None or low", and analysis never reads Extreme. The None-or-low floor still needs
+consistent intent rows, admissible recorded outcome support, complete-enough evidence and no
+failure, departure, unsettled direction or claim. Words alone cannot supply that floor; a goal
+alone becomes the outcome constraint.
+
+Every prospectively required analysis case must have an admissible reading at PASS. Unlike the
+historical result, missing readings cannot leave `counts.no_reading` alongside a Codex
+qualification PASS. Refusal or missing coverage is a finding, not a reason to drop a required
+case, change its mark or score only a live source. Attach readings by exact inputs, prompt,
+producer and request/charge receipts, not timestamps alone. A prior reading may be reused only
+if those bindings match and the blind level marks predate its output.
+
+Deterministic level scoring calls no model. Any needed readings have a separate, fixed total
+replay allowance of zero to twelve readings approved before replay, outside the thirty producer
+exposures and their one availability retry. Each replay needs the owner's one-call approval as well as the ordinary
+reading consent, tool-output consent and rolling reading budget. Failed or interrupted calls
+remain charged; rerunning cannot silently retry or renew the total allowance. The proposed
+accounting and refusal rules are in
+[SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09).
+Passing the scorer then requires a separate owner decision before Codex analysis levels may be
+enabled or results published.
