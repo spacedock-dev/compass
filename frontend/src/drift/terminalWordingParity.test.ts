@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { parseFocusedSummary, stampModel } from '../api/summary';
 import * as observed from '../observed';
@@ -34,17 +33,21 @@ import { pageView } from './terminalParity.view.test.helper';
 
 // Inputs are the existing real-server recording; wording is read from the page's own owners.
 // Regenerate approved text with COMPASS_WRITE_WORDING_PARITY=1; Python consumes the same file.
-const path = resolve('frontend/test/fixtures/terminal-wording.json');
+const path = new URL('../../test/fixtures/terminal-wording.json', import.meta.url);
 const recorded = (name: string) =>
-  JSON.parse(readFileSync(resolve(`frontend/test/fixtures/client-contract/${name}.json`), 'utf8'))
-    .response.body;
+  JSON.parse(
+    readFileSync(
+      new URL(`../../test/fixtures/client-contract/${name}.json`, import.meta.url),
+      'utf8',
+    ),
+  ).response.body;
 
 // The sample summary was recorded from the session described in sample-session/README.md.
 // Cases change only coverage/freshness metadata, keeping its real blocks and words. The page
 // parser and derivations write every expected sentence; no expected wording is authored here.
 function summaryCases() {
   const sample = JSON.parse(
-    readFileSync(resolve('frontend/src/sample/session.fixture.json'), 'utf8'),
+    readFileSync(new URL('../sample/session.fixture.json', import.meta.url), 'utf8'),
   );
   const base = sample.context.sources.summary;
   const sources = [
@@ -137,8 +140,8 @@ function summaryCases() {
 }
 
 function localPageReasons() {
-  const actions = readFileSync(resolve('frontend/src/drift/actions.ts'), 'utf8');
-  const route = readFileSync(resolve('frontend/src/drift/route.ts'), 'utf8');
+  const actions = readFileSync(new URL('./actions.ts', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('./route.ts', import.meta.url), 'utf8');
   const adoption = actions
     .split("if (answer?.['adoption_refused'])")[1]
     ?.match(/note\.message\s*=\s*'([^']+)'/);

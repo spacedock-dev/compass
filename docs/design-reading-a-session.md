@@ -8482,7 +8482,10 @@ decision, and the floor a reading's rescope uses when no goal is saved); the por
 
 A focused view that cannot be built now publishes `state: unavailable` with one of two closed
 reasons: `derivation-failed` or `identity-not-unique`. The terminal says which failure occurred
-before any press. An older dashboard with no view field remains a separate compatibility refusal.
+on every view read, including after a reading finishes, and exits non-zero without a reading banner,
+outcome lines or model provenance. An older dashboard with no view field remains a separate
+compatibility refusal. Non-dictionary sources, work and semantic inputs count as absent; an
+unexpected projection failure publishes `derivation-failed` while preserving the context response.
 The server reuses up to 128 derived views per application (or the configured cache limit, if lower),
 keyed by content digests of the derivation inputs: the session's intent and state, annotation
 settings, routes, context facts and levels, monitor standing and level, and the newest record page.

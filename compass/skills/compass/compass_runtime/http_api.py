@@ -746,70 +746,75 @@ def _with_drift_view(
             f"({exc.__class__.__name__}).",
             application.diagnostic_sink,
         )
-    # Pass the exact derivation inputs as well as digesting them. Collector age/turn clocks
-    # must not rebuild an unchanged reading, and a new dependency must enter this projection.
-    session = {
-        key: value
-        for key, value in matching[0].items()
-        if key.startswith("annotation_")
-        or key
-        in {
-            "harness",
-            "sid",
-            "state",
-            "ended_at",
-            "copied_prompts",
-            "instruction",
-            "first_prompt",
-            "first_prompt_at",
-            "prompt_states_work",
-            "title",
-            "prompt_at",
-            "session_goal",
-            "first_prompt_control",
+    try:
+        # Pass the exact derivation inputs as well as digesting them. Collector age/turn clocks
+        # must not rebuild an unchanged reading, and a new dependency must enter this projection.
+        session = {
+            key: value
+            for key, value in matching[0].items()
+            if key.startswith("annotation_")
+            or key
+            in {
+                "harness",
+                "sid",
+                "state",
+                "ended_at",
+                "copied_prompts",
+                "instruction",
+                "first_prompt",
+                "first_prompt_at",
+                "prompt_states_work",
+                "title",
+                "prompt_at",
+                "session_goal",
+                "first_prompt_control",
+            }
         }
-    }
-    inputs = {
-        key: payload.get(key) for key in ("annotate", "annotate_unreadable", "reading_routes")
-    }
-    raw_work = context.get("sources", {}).get("work", {})
-    work_inputs = {
-        key: raw_work.get(key)
-        for key in ("omitted", "line_requests", "analysis_levels", "live_levels")
-    }
-    monitor = raw_work.get("live_monitor")
-    work_inputs["live_monitor"] = (
-        {"on": monitor.get("on"), "level": monitor.get("level")}
-        if isinstance(monitor, dict)
-        else None
-    )
-    keyed_context = {
-        "semantic": {"facts": context.get("semantic", {}).get("facts")},
-        "sources": {"work": work_inputs},
-    }
-    digest = hashlib.sha256(
-        json.dumps([session, inputs, keyed_context, record], sort_keys=True).encode()
-    ).hexdigest()
-    state = application.state
-    with state.drift_view_lock:
-        cached = state.drift_view_cache.get(digest)
-        if cached is not None:
-            return attach(cached)
-        try:
-            view = drift_view.derive(session, inputs, keyed_context, record)
-        except Exception as exc:  # noqa: BLE001 - an unavailable view costs no context
-            runtime_io.diag(
-                f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
-                application.diagnostic_sink,
-            )
-            return attach({**unavailable, "reason": "derivation-failed"})
-        runtime_state.bounded_put(
-            state.drift_view_cache,
-            digest,
-            view,
-            limit=min(128, application.config.max_cache_entries),
+        inputs = {
+            key: payload.get(key) for key in ("annotate", "annotate_unreadable", "reading_routes")
+        }
+        raw_sources = context.get("sources")
+        sources = raw_sources if isinstance(raw_sources, dict) else {}
+        raw_work = sources.get("work")
+        work = raw_work if isinstance(raw_work, dict) else {}
+        raw_semantic = context.get("semantic")
+        semantic = raw_semantic if isinstance(raw_semantic, dict) else {}
+        work_inputs = {
+            key: work.get(key)
+            for key in ("omitted", "line_requests", "analysis_levels", "live_levels")
+        }
+        monitor = work.get("live_monitor")
+        work_inputs["live_monitor"] = (
+            {"on": monitor.get("on"), "level": monitor.get("level")}
+            if isinstance(monitor, dict)
+            else None
         )
-        return attach(view)
+        keyed_context = {
+            "semantic": {"facts": semantic.get("facts")},
+            "sources": {"work": work_inputs},
+        }
+        digest = hashlib.sha256(
+            json.dumps([session, inputs, keyed_context, record], sort_keys=True).encode()
+        ).hexdigest()
+        state = application.state
+        with state.drift_view_lock:
+            cached = state.drift_view_cache.get(digest)
+            if cached is not None:
+                return attach(cached)
+            view = drift_view.derive(session, inputs, keyed_context, record)
+            runtime_state.bounded_put(
+                state.drift_view_cache,
+                digest,
+                view,
+                limit=min(128, application.config.max_cache_entries),
+            )
+            return attach(view)
+    except Exception as exc:  # noqa: BLE001 - an unavailable view costs no context
+        runtime_io.diag(
+            f"Compass: the drift view could not be derived ({exc.__class__.__name__}).",
+            application.diagnostic_sink,
+        )
+        return attach({**unavailable, "reason": "derivation-failed"})
 
 
 def _with_levels(

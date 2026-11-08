@@ -1440,6 +1440,9 @@ class _Run:
         *,
         adopted: str | None,
     ) -> int:
+        refusal = self.context_refusal(context, row)
+        if refusal:
+            return self.refuse(refusal)
         raw = view_of(context, self.harness, self.sid)
         view = adapt(raw) if raw is not None else None
         if view is None or view.malformed:

@@ -685,6 +685,41 @@ class FreeReadTest(unittest.TestCase):
 
 
 class SpendTest(unittest.TestCase):
+    def test_a_person_whose_reading_finishes_but_whose_view_cannot_be_built_is_told_so(
+        self,
+    ) -> None:
+        for reason, sentence in (
+            (
+                "derivation-failed",
+                "Compass could not build this session's drift view, so nothing was read or spent.",
+            ),
+            (
+                "identity-not-unique",
+                (
+                    "Compass could not uniquely identify this session for its drift view, "
+                    "so nothing was read or spent."
+                ),
+            ),
+        ):
+            with self.subTest(reason=reason):
+                board = FakeBoard(
+                    view=a_view(),
+                    job_polls=0,
+                    finished_view={
+                        "harness": "claude",
+                        "sid": "abc",
+                        "state": "unavailable",
+                        "reason": reason,
+                    },
+                )
+                code, out, err = drift(board)
+                self.assertEqual(sentence + "\n", err)
+                self.assertEqual(1, code)
+                self.assertNotIn("Drift ·", out)
+                self.assertNotIn("Outcome lines:", out)
+                self.assertNotIn("written by a model", out)
+                self.assertEqual(1, board.readings_started())
+
     def test_a_person_reads_the_allowance_before_the_reading_is_sent(self) -> None:
         board = FakeBoard()
         _code, out, _err = drift(board)

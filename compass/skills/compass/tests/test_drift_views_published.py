@@ -323,6 +323,61 @@ class OverARealServerTest(LeaseRoute):
             model.assert_not_called()
             self.assertEqual(reason, context["sources"]["work"]["drift_views"][0]["reason"])
 
+    def test_a_person_reads_a_focused_view_when_optional_context_is_not_a_dictionary(self) -> None:
+        original = http_api._with_drift_view
+        for key in ("sources", "semantic", "work"):
+            for value in (None, ["not a dictionary"]):
+                with self.subTest(key=key, value=value):
+
+                    def attach(
+                        app: Any, context: Any, *args: Any, key: str = key, value: Any = value
+                    ) -> Any:
+                        context = copy.deepcopy(context)
+                        if key == "work":
+                            context["sources"]["work"] = value
+                        else:
+                            context[key] = value
+                        return original(app, context, *args)
+
+                    with (
+                        mock.patch.object(http_api, "_with_drift_view", side_effect=attach),
+                        self.serving() as port,
+                    ):
+                        status, context = self.call(
+                            port,
+                            "GET",
+                            f"/api/project-context?project=billing&session=claude:{SHORT}",
+                        )
+                    self.assertEqual(200, status)
+                    view = context["sources"]["work"]["drift_views"][0]
+                    self.assertNotEqual("unavailable", view.get("state"))
+                    self.assertEqual(("claude", SHORT), (view["harness"], view["sid"]))
+                    self.assertEqual([], view["lines"])
+
+    def test_a_person_is_told_when_projecting_the_focused_view_fails(self) -> None:
+        with (
+            mock.patch.object(
+                http_api,
+                "hashlib",
+                mock.Mock(sha256=mock.Mock(side_effect=ValueError("private failure"))),
+            ),
+            self.serving() as port,
+        ):
+            status, context = self.call(
+                port, "GET", f"/api/project-context?project=billing&session=claude:{SHORT}"
+            )
+        self.assertEqual(200, status)
+        self.assertEqual(
+            {
+                "harness": "claude",
+                "sid": SHORT,
+                "state": "unavailable",
+                "reason": "derivation-failed",
+            },
+            context["sources"]["work"]["drift_views"][0],
+        )
+        self.assertNotIn("private failure", json.dumps(context))
+
     def test_a_person_polling_an_unchanged_running_session_reuses_its_view(self) -> None:
         self.now = START.timestamp() + 30
         os.utime(self.path, (self.now, self.now))
