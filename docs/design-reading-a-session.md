@@ -7087,6 +7087,21 @@ id Claude Code gives it, and the skill never passes `--session`. The rulings:
   nothing was read or spent. A harness or shell with no marker of its own cannot be told apart, so
   started under Claude Code it reads the outer session.
 
+  *Owner accepted the recommendation, 2026-11-08: Codex readings print without a level; a level
+  waits on DRC-5248's qualification.* The terminal now prints a Codex reading from the same
+  `drift_views` row the page's card is held to: line states, current departures and earlier
+  departures, and neither a level nor a correction (the correction stays Claude Code's:
+  `copied_corrections.HARNESSES`). It prints no level whatever a published view carries, because
+  the page draws none for Codex and nothing publishes one. `CODEX_THREAD_ID` alone now names the
+  caller for `--drift` only; with `CLAUDE_CODE_SESSION_ID` also set the action still refuses,
+  because the two cannot be told apart. A fresh or `again` press from a Codex session goes through
+  the same consent, pause and daily-cap guards as the page's Analyze, and the typed-command rule
+  below reads the Codex rollout for it: the newest person message must be the whole typed
+  `$compass drift` or `$compass drift again`. No new consent surface: the same once-per-typed-command
+  store, with the Codex ids namespaced `codex:`. Other non-Claude harnesses keep the one line naming
+  their session page: the server publishes the drift view for them too, but nothing here has
+  admitted them.
+
 [SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists what enters the session and what
 stops the spend.
 

@@ -88,7 +88,8 @@ CLAUDE_SESSION_ENV: Final = "CLAUDE_CODE_SESSION_ID"
 # inherits CLAUDE_CODE_SESSION_ID too, which names the outer session and not the one asking, so
 # its presence stops the environment from naming a session. A harness with no marker of its own
 # cannot be told apart here; SECURITY.md says so.
-OTHER_SESSION_ENV: Final = ("CODEX_THREAD_ID",)
+CODEX_SESSION_ENV: Final = "CODEX_THREAD_ID"
+OTHER_SESSION_ENV: Final = (CODEX_SESSION_ENV,)
 
 # Every sentence the terminal prints about reaching the dashboard. The page derives its own
 # wording elsewhere; this is the terminal's single copy, so a result reads the same from every
@@ -118,12 +119,13 @@ SENTENCES: Final[dict[str, str]] = {
     ),
     "no_session": "Compass cannot tell which session this is. Pass --session claude:SESSION_ID.",
     "no_session_in_session": (
-        "The drift action reads Claude Code sessions and this command was given no Claude Code "
+        "The drift action reads Claude Code and Codex sessions and this command was given no "
         "session id, so nothing was read or spent; a session's page on the board shows its drift."
     ),
     "other_harness": (
-        "The drift action reads Claude Code sessions and this command runs inside another tool's "
-        "session, so nothing was read or spent; that session's page on the board shows its drift."
+        "The drift action reads Claude Code and Codex sessions and this command cannot tell which "
+        "of the tools it runs inside is its own, so nothing was read or spent; that session's page "
+        "on the board shows its drift."
     ),
     "no_session_for_action": (
         "The {action} action was given no Claude Code session id, so {outcome}."
@@ -996,7 +998,7 @@ def _read_in_thread(stream: TextIO, deadline: float) -> str | None:
     return box[0] if box else None
 
 
-def resolve_session(
+def resolve_session(  # noqa: PLR0911 - one exit per way the caller is named or refused
     flag: str | None,
     environ: Mapping[str, str],
     stdin: TextIO | None,
@@ -1021,6 +1023,13 @@ def resolve_session(
     value = status_line.get("session_id") if status_line is not None else None
     if isinstance(value, str) and _SESSION_ID.fullmatch(value):
         return Session("claude", value, "status line")
+    if action == "drift" and not environ.get(CLAUDE_SESSION_ENV):
+        # Only drift reads a Codex session: a Codex thread id names the session the typed
+        # `$compass drift` came from. Both markers set is Codex started inside Claude Code, or the
+        # reverse, and which one asked cannot be told, so it stays refused below.
+        thread = environ.get(CODEX_SESSION_ENV)
+        if thread is not None and _SESSION_ID.fullmatch(thread):
+            return Session("codex", thread, "environment")
     if any(environ.get(name) for name in OTHER_SESSION_ENV):
         return unresolved_caller("other_harness", action)
     value = environ.get(CLAUDE_SESSION_ENV)
@@ -1585,10 +1594,11 @@ def run_drift(
 ) -> int:
     """`--drift` and `--drift again`: name the session, find the dashboard, hand the rest over.
 
-    The session is `--session`, else `CLAUDE_CODE_SESSION_ID`; stdin is never read, since it is not
-    a status line here. Both refusals come before any dashboard is reached. A Claude Code session
-    may spend, so a missing dashboard is started and another release refused; any other harness is
-    only sent to its page, which needs a running board and starts none.
+    The session is `--session`, else `CLAUDE_CODE_SESSION_ID`, else `CODEX_THREAD_ID` when the
+    Claude marker is absent; stdin is never read, since it is not a status line here. Both
+    refusals come before any dashboard is reached. A Claude Code or Codex session may spend, so a
+    missing dashboard is started and another release refused; any other harness is only sent to
+    its page, which needs a running board and starts none.
 
     A person at a shell is `--session` with standard output a terminal. An agent's shell tool, and
     Claude Code's `!` mode, read the output through a pipe, so a named session alone would print
@@ -1612,7 +1622,7 @@ def run_drift(
     found = ensure_dashboard(
         state_home(env),
         port=port,
-        spend=named.harness == "claude",
+        spend=named.harness in ("claude", "codex"),
         own_version=release_version(),
         start=lambda chosen: start_daemon(chosen, timeout=_budget(deadline, 30.0)),
         # Inside a session the skill shows standard output on success and standard error on a

@@ -95,7 +95,7 @@ In Claude Code, the command you typed and the agent's answer to it stay in Full 
 left out of what a reading, the Live monitor and a summary read. Codex does not recognise them yet, so
 `$compass sessions` counts as a message you sent the session.
 
-`drift` and `drift again` read the session you typed them in, and only on Claude Code. Above the
+`drift` and `drift again` read the session you typed them in, on Claude Code and on Codex (typed as `$compass drift` and `$compass drift again`). A Codex reading shows its line states and departures as the session page does, with no level and no correction. Above the
 reading, a line says it is Compass's reading of this session, written by a model, shown as data. A
 stored reading costs nothing. With none, `drift` asks for one, and `drift again` asks for a new one,
 under the [spend rule in SECURITY.md](SECURITY.md#drift-commands-and-typed-consent): each is one
@@ -107,7 +107,7 @@ ordinary skill answer says only that a correction is ready, and you copy it from
 the session page. This is a [presentation guard](SECURITY.md#correction-access-and-local-process-trust),
 with the local-process limits stated there. Nothing about later messages is settled; the answer says how many it left for the
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
-another tool's session, such as Codex started from Claude Code, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
+another tool's session, such as Codex started from Claude Code, where both tools' session ids are set, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
 `summary` spends only when no summary is stored. `summary update` and `summary again` authorize
 only their own operation; each in-session spend needs the matching typed command once. Closed action

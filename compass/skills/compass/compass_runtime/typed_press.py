@@ -5,7 +5,9 @@ they read, and Claude Code runs them without a permission prompt. So an agent th
 on its own could spend a reading, and that reading would feed the session's later readings. The
 client marks a press from inside a session with `typed_action`; the reading route then reads the
 session's transcript tail at press time, not the collection, and admits the press only when the
-latest main-thread prompt is the person's typed `/compass:compass` command for that action. Each
+latest main-thread prompt is the person's typed `/compass:compass` command for that action. A
+Codex session is read the same way from its rollout (`codex_decide`): the newest person message
+must be the whole typed `$compass <action>`. Each
 typed record with a readable timestamp less than 24 hours old pays for one press that starts,
 remembered beside the reading permission store for at least that long, so a
 retry, a loop or a second call cannot spend again on it; a press refused before it starts gives
@@ -184,6 +186,77 @@ def decide(lines: Sequence[bytes], action: str) -> tuple[str, str]:
     return "", uuid
 
 
+# The harness's own user-role messages: the project instructions and the harness's added context
+# (docs/captures/codex/skill-action-shapes-0.167.0-macos.jsonl and the image capture beside it,
+# provenance `agents_md` and `harness`). Any other provenance, or none, is read as the person's
+# message, so an unfamiliar shape revokes consent instead of passing it.
+_CODEX_INJECTED: Final = frozenset({"agents_md", "harness"})
+
+
+def _codex_provenance(payload: dict[str, Any]) -> list[str]:
+    meta = records.as_dict(payload.get("internal_chat_message_metadata_passthrough"))
+    items = meta.get("content_item_metadata")
+    kinds = [
+        records.as_dict(records.as_dict(item).get("provenance")).get("type")
+        for item in (items if isinstance(items, list) else [])
+    ]
+    return [kind if isinstance(kind, str) else "" for kind in kinds]
+
+
+def codex_latest_prompt(lines: Sequence[bytes]) -> dict[str, Any] | None:
+    """The newest Codex user message that is not the harness's own injected instructions.
+
+    The rollout's `response_item` user messages only: the `event_msg` copy of the same message
+    adds nothing, and an agent's call or output is never a user message.
+    """
+    for raw in reversed(lines):
+        if b'"user"' not in raw:
+            continue
+        try:
+            record = json.loads(raw)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(record, dict) or record.get("type") != "response_item":
+            continue
+        payload = records.as_dict(record.get("payload"))
+        if payload.get("type") != "message" or payload.get("role") != "user":
+            continue
+        kinds = _codex_provenance(payload)
+        if kinds and all(kind in _CODEX_INJECTED for kind in kinds):
+            continue
+        return record
+    return None
+
+
+def codex_decide(lines: Sequence[bytes], action: str) -> tuple[str, str]:
+    """`(reason, id)` as `decide` answers for a Codex rollout, the id namespaced `codex:`.
+
+    The typed message must be a whole `$compass <action>` with provenance `user`, carry a message
+    id, a turn id and a readable timestamp under a day old, and be the newest message the person
+    sent. The capture records the ids and provenance, and no value of them is assumed.
+    """
+    record = codex_latest_prompt(lines)
+    payload = records.as_dict(record.get("payload")) if record is not None else {}
+    typed = records.codex_compass_action(payload.get("content"))
+    turn = records.as_dict(payload.get("internal_chat_message_metadata_passthrough")).get("turn_id")
+    message = payload.get("id")
+    uuid = f"codex:{turn}:{message}"
+    if (
+        typed not in ACCEPTS.get(action, ())
+        or "user" not in _codex_provenance(payload)
+        or not isinstance(turn, str)
+        or not isinstance(message, str)
+        or not turn
+        or not message
+        or not _UUID_RE.fullmatch(uuid)
+    ):
+        return REQUIRED, ""
+    stamp = records.iso_epoch(record.get("timestamp")) if record is not None else None
+    if stamp is None or not 0 <= time() - stamp < COMMAND_MAX_AGE_SEC:
+        return REQUIRED, ""
+    return "", uuid
+
+
 def store_path(config: RuntimeConfig) -> Path:
     return config.state_dir / STORE_NAME
 
@@ -278,15 +351,20 @@ def release(config: RuntimeConfig, uuid: str) -> None:
             _write(path, {item: stamp for item, stamp in consumed.items() if item != uuid})
 
 
-def admit(config: RuntimeConfig, transcript: str | None, action: str) -> tuple[str, str]:
+def admit(
+    config: RuntimeConfig, transcript: str | None, action: str, harness: str = "claude"
+) -> tuple[str, str]:
     """`("", uuid)` when the typed record `uuid` backs this press and is now held for it.
+
+    `harness` names whose transcript it is: Claude Code's, read as `decide` reads it, or Codex's,
+    read as `codex_decide` does.
 
     Otherwise `(reason, "")`. The caller releases the uuid when the press does not start.
     """
     lines = tail_lines(transcript) if transcript else None
     if lines is None:
         return UNCONFIRMED, ""
-    reason, uuid = decide(lines, action)
+    reason, uuid = (codex_decide if harness == "codex" else decide)(lines, action)
     if not reason:
         reason = consume(config, uuid)
     return (reason, "") if reason else ("", uuid)

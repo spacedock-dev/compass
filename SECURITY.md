@@ -470,7 +470,11 @@ it, as above. By the [owner's later
 ruling](docs/design-reading-a-session.md#owner-ruling-2026-11-06-later-a-press-from-inside-a-session-needs-the-persons-typed-command),
 a press from inside the session is sent only when the latest person prompt in the session's
 transcript, read at press time, is your own typed `/compass:compass drift` or `drift again`, and
-`drift again` only when you typed `drift again`. A typed command with a readable transcript
+`drift again` only when you typed `drift again`. In a Codex session the same rule reads the Codex
+rollout instead: the newest message you sent must be your whole typed `$compass drift` or
+`$compass drift again`, with the harness's own `user` provenance, a message id, a turn id and a
+timestamp, and the harness's own injected project instructions and context do not count as a message you sent. A
+message of any other or unknown provenance after it ends it. A typed command with a readable transcript
 timestamp less than 24 hours old authorizes at most one press that starts; missing, unreadable or
 future timestamps refuse the press. Compass remembers the typed record's id and consumption time,
 with no command words, in `compass-typed-presses.json` in its state directory. It retains each

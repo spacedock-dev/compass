@@ -66,7 +66,7 @@ that received the pause. Resume model calls stays on the board.
 `project` reads this Claude Code session's project label, its sessions and the project brief.
 Never add `--session`. It starts nothing and spends nothing.
 
-`drift` reads this session, and only a Claude Code session; never add `--session`. With no stored
+`drift` reads this session, a Claude Code or Codex session; never add `--session`. A Codex reading shows no level and no correction. With no stored
 reading it asks a model for one, and `drift again` always does, which spends one of the person's
 daily readings: run `drift again` only when the person invoked it, and never repeat an action on
 your own. Compass itself refuses a press unless the person's latest prompt is the typed command for
