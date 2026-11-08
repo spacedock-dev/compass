@@ -3669,6 +3669,92 @@ measurement rule above. A false reassurance or a judged should-abstain answer st
 run, and an unusable attempt is the only one that may use the retry. Merged software and passing
 current-head CI come before any spending.
 
+#### Prospective Codex analysis qualification, 2026-11-09
+
+This is a proposed study contract, not implemented tooling or a completed run. The owner has
+directed preparation; each private-source step, provider send and publication still needs the
+approval described in the [ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
+It qualifies Codex analysis levels only. Live estimate and Live monitor stay Claude-only, and
+no Claude grant, ledger allowance or historical acceptance authorizes this work.
+
+The first local read is an owner-approved metadata-only inventory under `~/.codex/sessions`:
+rollout shape, size and dates, with no content. Nothing from that inventory goes to a provider
+or Git. After the owner selects aliases and approves exact parent/child rollouts and capture
+cuts, local processing may read their bounded native content, saved intent revision, messages,
+checks and permitted output, agent source material and lifecycle evidence. The packet binds
+full source identities, prefixes, parser and selection digests. Source mappings, raw rollouts,
+private paths, cases, rubric, marks and detailed readings stay in a private packet under
+`~/.compass`. Packet homes may move; accounting may not.
+
+Where production source recovery needs a transient raw cut, the proposed tooling must use an
+owner-only directory (0700) and file (0600), retain it only during the pinned reader invocation,
+and remove it on completion, refusal or exception. Abrupt termination may leave a private
+temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
+another process running under the same account. Redact before clipping or displaying screens;
+complete recovered replies must not enter a new cache, history or public artifact.
+
+Before each OpenAI exposure, show the exact request digest, case alias, repetition or retry,
+model/effort, verified CLI binding, evidence categories and remaining allowance. The owner
+approves that one request, and its bound receipt must be consumed before launch. OpenAI receives
+the production reader's redacted frozen intent, selected user and agent messages, recorded
+checks, permitted output and agent source material through `reading.CodexReadingModel` and
+`observer.codex_exec`, selected by `reading_route.resolve`. The proposed pin is today's
+`gpt-5.6-luna`, effort `max`, to OpenAI; no fallback inherits it. Preparing a prompt locally
+authorizes no send. A changed request or another slot needs fresh approval.
+
+Before each Google evidence-sharing step, present the exact redacted screens locally and obtain
+owner approval of their payload digest, recipients, model/effort, purpose and call ceiling.
+Google receives only the approved intent, bounded evidence/screens and marking questions for
+two independent blind markers and separate kind review, with an arbiter for disagreements.
+These reviews precede producer output. Subsequent batch or handoff reviews may include approved
+producer answers, rubric grades, cited case material and receipt digests/counts. Record
+`gemini-3.8-flash-medium`/`medium` or `gemini-3.8-flash-high`/`high` in every review receipt.
+The operator would make these approved calls in AGY under their Google account; the dashboard
+does not send the study to Google. Session ids, source mappings, raw rollouts, account
+identifiers, credentials and ledger files must not be sent. Commands and excerpts may still
+name project files; the owner must see those names before approving the screen.
+
+Only separately approved redacted digests, case aliases, marks, outcomes, counts, coverage and
+decision metadata may be committed. Provider-sharing permission does not permit publication.
+Private packets and detailed results remain local until the owner removes them. Accounting and
+approval/charge receipts must be retained to establish allowance and prior spend; deleting a
+packet cannot erase charges. Local cleanup does not delete provider copies; no provider-side
+retention or erasure guarantee is made by this protocol.
+
+The proposed fixed, account-canonical producer ledger is
+`~/.cargento/codex-qualification-spend.json`, with receipts under
+`~/.cargento/codex-qualification-spend.json.receipts/`. These paths are proposed, not implemented.
+They resolve from the operating-system account's home; `HOME`, `COMPASS_HOME`, packet relocation
+and a new process must not redirect or reset them. Review zero-charge genesis once before
+activation. Bind authority and one-use approvals to packet/cases/marks/rubric digests,
+protocol/runtime/scorer, verified transport and exact requests. The proposed allowance registers
+thirty producer exposures plus at most one charged availability retry, not an accuracy retry.
+Google marking and review need their own approved schedule and call ceilings. The proposed
+schedule allows 74 to 96 Google calls across both full cohorts, including two markers,
+independent kind/source reviews, bounded arbitration, handoff, batch and final reviews.
+Together with thirty to thirty-one producer calls and zero to twelve level readings, the
+maximum proposed evaluation budget is 139 calls. These are proposed ceilings, not grants;
+the owner must approve the exact schedule and allowances before calls. Coding-agent turns are
+outside this evaluation budget, and no dollar quote is established here.
+
+Later analysis-level replay needs a separate approved fixed total allowance, tracked at the
+proposed `~/.cargento/codex-levels-replay-spend.json`, with receipts under
+`~/.cargento/codex-levels-replay-spend.json.receipts/`. The same fixed-home and failure rules apply.
+Each replay also needs one-call approval, reading consent, tool-output consent and capacity in
+the ordinary rolling reading-permission ledger. Deterministic level scoring makes no model
+call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating
+the output. This replay allowance is separate from producer qualification and its retry.
+
+After each exposure, checkpoint and return to the owner before any next call. A failure,
+timeout, interruption or orphan reservation remains charged or unresolved until reconciled;
+it never silently becomes unused allowance. Missing activated accounting or receipts, a moved
+binding, missing approval or uncertain source provenance must refuse before launch, rather
+than recreate an empty ledger or fall back to another producer. An availability retry needs
+its own approval and visible charge. A semantic failure cannot be retried away. Preserve prior
+charges, failed results and review records. Exhausted allowance stops the study whatever its
+result. Scorer PASS, producer acceptance, final analysis-level acceptance and approval to
+publish redacted results are separate decisions.
+
 #### Prospective qualification source cuts, 2026-10-05
 
 The opt-in typed-Claude qualification freezer may make an owned transient copy of the raw

@@ -1191,3 +1191,105 @@ only when it carries an `ended_at` later than 1.0 (the yardstick's stamp) and lo
 the run to have settled. An idle row with neither is `idle-unknown`, and the producer withholds it
 before the model, so the case scores nothing. The first fixture written against this format did
 exactly that.
+
+## Prospective Codex qualification, 2026-11-09
+
+This is a protocol for future work. No Codex qualification tooling, admitted packet, grant,
+marks or run exists for this protocol yet. The current scorer refuses Codex scoring. The owner
+has directed preparation of the recommended qualification; that direction authorizes neither
+private source inspection nor provider calls. Historical acceptance, Claude grants, charges and
+results above remain unchanged and confer no authority on this study.
+
+The proposed claim is limited to Codex analysis levels. Live estimate and Live monitor stay
+Claude-only. The [owner ruling](../design-reading-a-session.md#owner-ruling-2026-11-09-prospective-codex-analysis-qualification)
+pins the producer and its acceptance conditions. [SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09)
+owns local reads, provider payloads, retention and proposed accounting paths.
+
+### Cases and blind review
+
+The packet must contain ten distinct cases. Five must be genuine recorded Codex cases, one of
+each kind: supported departure, legitimate change, matching-intent incorrect execution,
+misleading completion and insufficient evidence. The supported departure must be spontaneous;
+a departure the prompt requested cannot fill that kind. The other five are independently
+verified adversaries: goal-unrelated, outcome-unrelated, browser-unrelated, stale-before-write
+and partial-check. Record who authored and who independently verified each adversary, and
+distinguish authored material from recorded material. An owner-selected alias is permission to
+inspect a source, not proof of its kind or provenance.
+
+Two independent blind markers must mark every required constraint against frozen evidence,
+without producer answers. A separate kind review must establish the five genuine recorded
+kinds and the adversaries before any producer output. An independent arbiter resolves marking
+disagreements before the key is sealed. Google marking and review receipts must record
+`gemini-3.8-flash-medium` with effort `medium`, or `gemini-3.8-flash-high` with effort `high`.
+Reviewer routing and call ceilings must be approved before sharing.
+
+Commit the marks digest, kind-review bindings, rubric/input digest and sealed authority before
+any producer output. These are proposed artifacts, separate from every historical file here;
+their publication needs its own owner approval. Cases, source mappings, rubric text and detailed
+answers stay private. The bindings must cover frozen cases, full source identities, capture
+cuts, parser, prompt and required expectations, not just case labels. Marks or kind tags written
+after output cannot qualify that output.
+
+### Repetitions, pass rule and stopping
+
+Register thirty exposures: the same ten distinct cases in three complete repetitions through
+the pinned production reader. Each repetition must pass. PASS requires zero judged
+should-abstain constraints, zero rubric false reassurances, no unscored required expectations,
+and all five recorded kinds reaching the producer in every repetition. A withheld case that
+never reaches the producer cannot fill coverage. Report over-abstention separately; neither
+PASS nor a question count establishes an accuracy threshold or an accuracy claim.
+
+The proposed producer allowance is thirty readings plus at most one charged availability retry.
+The retry must replace an unusable attempt in a registered slot, remain visible with its original
+charge, and receive a fresh one-call approval. A semantic failure earns no retry. Measure every
+registered reading; semantic failures remain failures for the registered batch review, rather
+than reasons to replace a case or rewrite a mark. Review each registered batch before a later
+batch begins. Google reviews have their own approved ceiling, outside the producer allowance;
+the proposed combined study budgets are recorded in the security contract linked above.
+
+After each call, checkpoint charges and results and return to the owner. There is no automatic
+next call or retry. Missing evidence, changed bindings, missing approval or uncertain accounting
+stops execution before another launch. Failure or interruption preserves charges and earlier
+results; moving a packet or starting a new process cannot renew allowance. The study stops when
+the registered readings and permitted retry are exhausted, whatever the result. Any further
+study needs a new prospective decision, with the failed record retained.
+
+### Owner gates, in order
+
+1. (a) Protocol approval, before admission. The owner approves this written protocol, exact
+   producer, case criteria, reviewer routing, budgets, stop/retry rules, privacy boundaries and
+   acceptance rule. No private material leaves. Only the reviewed public protocol text may go
+   to GitHub; this approval does not approve evidence sharing or spending.
+2. (b) Private source admission starts with a local metadata-only inventory of rollouts: shape,
+   size and dates, with no content. Run that inventory under `~/.codex/sessions` only after the
+   owner approves it. The owner then selects aliases and approves the exact parent/child
+   rollouts, capture cuts and local evidence processing. Only then inspect selected content,
+   propose roles and freeze the packet. No raw content, session mapping or source path enters
+   Git or leaves for a provider. Nothing leaves the machine at this gate. Admission must
+   establish the five genuine kinds and five verified adversaries named above.
+3. (c) Google evidence-sharing approval. Present the exact redacted screens locally. Before
+   each sharing step, the owner approves the payload digest, recipients, model/effort, purpose
+   and call ceiling. Google receives only the approved intent, bounded evidence/screens and
+   marking questions; later reviews may include approved answers and grades. Two independent
+   blind marks, separate kind review and any arbitration precede producer output. Session ids,
+   account identifiers, raw rollouts and ledger files stay local. Commands and excerpts can
+   retain project filenames. Commit the marks digest, kind-review bindings, rubric/input digest
+   and sealed authority before producer output; the owner separately approves publication of
+   these redacted artifacts to GitHub. Provider-sharing approval does not approve publication.
+4. (d) Each charged OpenAI producer run. Show the case alias, repetition or retry, request
+   digest, model/effort, CLI binding, evidence categories and remaining allowance. The owner
+   approves that one call; consume its receipt before launch. OpenAI receives the production
+   reader's redacted frozen intent and selected messages, checks, permitted output and agent
+   source material. No next call or retry follows automatically. The allowance is thirty
+   registered readings and at most one charged availability retry. Registered batch reviews
+   precede later batches, with separate approval for each Google sharing step. After producer
+   qualification, admit and blind-mark the separate [analysis-level cohort](../drift-levels/README.md#prospective-codex-analysis-level-cohort-2026-11-09),
+   commit its digest, and approve each needed replay call individually under a separate total
+   allowance. Reuse a reading only when inputs, prompt and producer bindings match exactly and
+   level marks predate that output.
+5. (e) Acceptance. The owner first accepts the producer's three complete repetitions and the
+   charge/review chain. Then run deterministic Codex level scoring and seek the owner's final
+   analysis-level acceptance. Missing coverage and failed criteria remain findings; they do
+   not authorize revised marks. The owner also approves the precise redacted results for
+   GitHub. Acceptance itself sends no session evidence; only the separately approved redacted
+   result artifacts may be published. A scorer PASS and owner acceptance are distinct events.

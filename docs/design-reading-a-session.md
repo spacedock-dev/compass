@@ -1196,6 +1196,61 @@ amendment was scored.
 The format is owned by the
 [abstention documentation](abstention/README.md#how-to-argue-with-a-result).
 
+#### Owner ruling 2026-11-09: prospective Codex analysis qualification
+
+For DRC-5248, the owner directed the recommended Codex qualification to run. The orchestrator
+prepares tooling and cases, then stops for the owner before each step that spends or shares
+evidence. This entry records a prospective protocol: no tooling, packet admission, model run or
+acceptance under it has happened yet. Even the initial metadata-only rollout inventory needs
+owner approval; preparation is not permission to inspect private session content.
+
+The claim is Codex analysis levels only. Live estimate and Live monitor remain Claude-only.
+Existing acceptance records do not establish this qualification, and Claude's historical grants,
+charges, source rules and results remain unchanged. Passing a scorer and the owner's acceptance
+are distinct events; neither this ruling nor a future PASS enables a runtime capability.
+
+Pin the producer to the actual analysis route: `reading_route.resolve` ->
+`reading.CodexReadingModel` -> `observer.codex_exec`. Today, 2026-11-09, that means
+`gpt-5.6-luna`, effort `max`, to OpenAI. Bind the actual native CLI bytes/version, argv,
+destination, explicit effort, final production prompt and output cap, runtime, protocol and
+scorer. A fallback producer inherits none of this qualification. A model name or `--version`
+line alone cannot establish the executable's identity.
+
+Admission must freeze genuine Codex sources before deriving checks, changed-after state and
+messages. Bind full parent/child session identities and prefixes, capture cuts, saved intent
+revision, selected evidence, lifecycle, parser and exact prompt. Account for late results after
+`task_complete`, resumed turns, untimed metadata, child rollouts, unreadable commands and bounded
+scan failures. Missing or uncertain evidence blocks admission. Owner selection is permission,
+not provenance. Claude Stop-hook vouches, installer/signature rules and the reviewed-export
+exception stay Claude-only; neither old packets nor old lifecycle rules are silently relabeled.
+
+The [producer protocol](abstention/README.md#prospective-codex-qualification-2026-11-09) requires
+five genuine recorded kinds and five independently verified adversaries, independent blind
+marks and separate kind review before output, and committed digests and sealed authority. It
+registers ten distinct cases across three complete passing repetitions. Each repetition needs
+zero judged should-abstain constraints, zero rubric false reassurances, no unscored required
+expectations and all five recorded kinds reaching the producer. Report over-abstention
+separately; there is no accuracy claim. Thirty readings and at most one charged availability
+retry are the proposed ceiling, not a current grant. Semantic failures earn no retry.
+
+Owner acceptance of that producer and its charge/review chain comes before the separate
+[analysis-level cohort](drift-levels/README.md#prospective-codex-analysis-level-cohort-2026-11-09).
+Its blind level marks and committed digest must precede readings, every required analysis case
+must have an admissible reading at PASS, and replay has a separate fixed allowance and one-call
+approvals. Deterministic scoring spends nothing. Final owner acceptance is still required;
+publication of precise redacted results has a separate approval.
+
+A changed source prefix or selected identity, intent, prompt, model/effort, CLI binding,
+destination, parser/runtime, protocol, scorer, marks, kind review or rubric invalidates the
+affected qualification binding. Missing required coverage, unscored expectations, a failed
+repetition, post-output marking, missing approval or a broken charge/review chain cannot pass.
+Later appends may be ignored only beyond a verified capture prefix with unchanged selection.
+Any changed binding needs prospective revalidation and owner approval, not transfer of an old
+PASS. Failure and interruption retain charges and earlier results; no packet relocation,
+fallback or fresh ledger can reset allowance. The
+[privacy and accounting contract](../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09)
+owns the proposed paths and failure handling.
+
 #### Amended 2026-10-01: a reader's correction and a transcript stop
 
 The owner ruled two things on 2026-10-01, while looking for DRC-4666's supported-departure case.
