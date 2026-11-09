@@ -1059,9 +1059,10 @@ when `COMPASS_HOME` is unset and the default home was read. A report from the wr
 like a finished key: check that line before posting one.
 
 The marker also refuses a packet this version of the scripts cannot read, before it shows a case:
-a case format other than 3, 4 or 5, or cases missing a field that `--build` (format 3) or
+a case format other than 3, 4, 5 or 6, or cases missing a field that `--build` (format 3) or
 `--freeze` (format 5) writes. Format 5 Claude Code cases also need `tool_output`,
-`transcript_bytes` and `parser`. The usual cause is a checkout older or newer than the one that froze
+`transcript_bytes` and `parser`. Format 6 is Codex-only and additionally requires the native
+source bundle, message refusals and production-source bindings. The usual cause is a checkout older or newer than the one that froze
 the packet, and the message says to `git pull`. If the checkout is already current, the packet is
 older than the scripts and needs building or freezing again in a fresh `COMPASS_HOME`.
 
@@ -1196,7 +1197,8 @@ exactly that.
 
 The offline authority helpers in `scripts/abstention_ledger.py` and
 `scripts/analyze_campaign.py` implement reviewed genesis, one-call approvals and reservations.
-They cannot launch a producer, and the current scorer still refuses Codex scoring. No admitted
+The offline source inventory and freeze are also implemented. The helpers cannot launch a
+producer, and the current scorer still refuses Codex scoring. No admitted
 packet, grant, marks or run exists for this protocol yet. The owner has directed preparation of
 the recommended qualification; that direction authorizes neither private source inspection nor
 provider calls. Historical acceptance, Claude grants, charges and results above remain unchanged
@@ -1204,8 +1206,8 @@ and confer no authority on this study.
 
 `codex_grant()` reads only `docs/abstention/codex-grant.json`, which is not supplied.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
-genesis and freshly recomputed input and transport bindings. Future intake and scorer code must
-establish source provenance and authenticate the installed CLI; these helpers do neither.
+genesis and freshly recomputed input and transport bindings. Source intake establishes provenance separately; future scorer code must authenticate the
+installed CLI. These authority helpers do neither.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
 An approval belongs to one exact request, slot, retry bit and process invocation. Reservation
 consumes it under the account lock before returning a charge. Missing receipts or an interrupted
@@ -1241,6 +1243,58 @@ their publication needs its own owner approval. Cases, source mappings, rubric t
 answers stay private. The bindings must cover frozen cases, full source identities, capture
 cuts, parser, prompt and required expectations, not just case labels. Marks or kind tags written
 after output cannot qualify that output.
+
+### Offline source preparation
+
+`scripts/codex_case_candidates.py --root ROOT --output FILE` reads only the explicitly
+selected rollout tree. It writes private metadata outside the repository: hashed rollout
+aliases, dates, sizes, first-line byte counts (`head_bytes`, including the line ending), whether
+that line parses as `session_meta` (`head_is_session_meta`), parent/child shape, lifecycle counts
+and check-result counts. Empty rollouts report zero head bytes and false. A bounded scan reports
+only the head bytes it read; `bounded: false` means that measurement may be incomplete. It prints
+only aggregate counts. No prompt, title, command, output or project path enters that inventory.
+This command still needs the local-read approval in gate (b).
+
+`mark_abstention.py --freeze-codex SPEC` prepares a new format 6 packet without a dashboard
+or model. The private JSON spec contains `cases`; each entry names `harness: "codex"`, the
+full `sid`, `sessions_root`, `transcript`, every selected descendant path in `children`,
+`captured_at`, the saved `intent` revision (including `n` and `at`), and an idle `row` with
+its native `turn_end_at`. The spec and packet must stay outside the repository. An existing
+packet cannot be overwritten. Source selection is permission; admission independently checks
+the runtime's configured Codex store root, native identity, descendant membership and recorded
+lifecycle. Historical packets retain their original format and lifecycle meaning; they cannot
+be relabelled as format 6. The legacy `--freeze` path refuses Codex entries with
+`codex-requires--freeze-codex`.
+
+Discovery reads every rollout head under the configured native root, independently of the
+selected descendants. An unrelated rollout with a head over 65,536 bytes, an empty or malformed
+first line, a first line other than `session_meta`, or untimed metadata blocks the freeze too.
+Selection cannot scope this scan; ignoring unselected heads could hide a descendant. Check the
+inventory before selecting sources. Malformed case entries or inventory item types refuse with
+closed tokens and no source text, paths or tracebacks.
+
+The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
+messages, lifecycle, parser, selected source identities and actual production prompt digest.
+Checks are derived after the sources are cut, so later failures or writes cannot change the
+latest check at the capture. Revalidation rebuilds the case from those native sources.
+Later appends beyond the boundary are harmless; a changed or truncated prefix, omitted child,
+missing message or check, changed selection or stale parser refuses admission. Unreachable
+scan boundaries and unreadable commands refuse rather than becoming an empty evidence list.
+
+Both provenance-tagged and older untagged person messages use the runtime's reader parser.
+A tagged message must identify the person for every content item. Offline admission additionally
+requires an older untagged message to contain a single plain text item. Leading markup tags,
+known injected prefixes (including the compaction summary), and messages the parser cannot
+attribute stay out, with a hashed source identity and `person-authorship-unconfirmed` in
+`message_refusals`. An untagged single plain-prose message from the user role is admitted as
+the person's on that narrow shape alone, which is an inference rather than proof; every other
+shape is refused rather than guessed. Native `task_complete` supplies
+the stop. Same-turn late results and measured settings metadata follow the collector's rules;
+resumed work, unplaceable work and a child still writing after the parent stop refuse admission.
+Claude Stop-hook provenance and the reviewed Claude export exception do not apply to Codex.
+
+This prepares evidence for review. It supplies no kind verdict, blind mark, provider-sharing
+approval, spend authority or qualification result.
 
 ### Repetitions, pass rule and stopping
 

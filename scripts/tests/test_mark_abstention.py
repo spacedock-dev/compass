@@ -562,7 +562,7 @@ class AMismatchedPacketIsRefusedBeforeItIsShownTest(_Home):
         self.assert_refused({"v": 3, "cases": [case]}, "end_shape", "a" * 16)
 
     def test_a_format_this_version_does_not_know_is_refused(self) -> None:
-        self.assert_refused({"v": 6, "cases": [_built("a" * 16)]}, "format 6")
+        self.assert_refused({"v": 7, "cases": [_built("a" * 16)]}, "format 7")
 
     def test_a_packet_with_no_format_is_refused(self) -> None:
         self.assert_refused({"cases": [_built("a" * 16)]}, "no case format")
@@ -658,3 +658,474 @@ class APersonsQualificationCoversCompassTurnDetectionTest(unittest.TestCase):
                 self.assertNotEqual(text, changed)
                 guard.write_text(changed)
                 self.assertNotEqual(before, mark_abstention.parser_digest())
+
+
+class CodexPacketSourceTest(unittest.TestCase):
+    """A person's permission cannot substitute for independently recorded sources."""
+
+    def setUp(self) -> None:
+        if TYPE_CHECKING:
+            from tests import codex_source_support as support  # noqa: PLC0415
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import codex_source_support as support  # noqa: PLC0415
+
+        self.support = support
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.root = self.home / "codex/sessions"
+        self.path = support.rollout(self.root)
+        self.config = support.config(self.home)
+        self.entry = support.entry(self.root, self.path)
+
+    def freeze(self) -> dict[str, Any]:
+        return mark_abstention.freeze_case(
+            self.config, self.entry, [], observations=(), ends=(), production_reading=True
+        )
+
+    def reasons(self, case: dict[str, Any]) -> list[str]:
+        return mark_abstention.provenance(
+            case,
+            observations=(),
+            ends=(),
+            index={self.support.SID: str(self.path)},
+            config=self.config,
+        )
+
+    def test_a_person_can_freeze_and_revalidate_without_a_dashboard_or_model(self) -> None:
+        case = self.freeze()
+        self.assertEqual(case["origin"], "recorded")
+        self.assertEqual(self.reasons(case), [])
+        self.assertEqual(case["intent"]["n"], 3)
+        self.assertEqual(case["lifecycle_from"], "codex-transcript")
+        self.assertEqual(len(case["production_reading"]["prompt_digest"]), 64)
+        self.assertEqual(mark_abstention.packet_mismatch({"v": 6, "cases": [case]}), "")
+        self.assertTrue(mark_abstention.is_intent_packet({"v": 6}))
+        self.assertTrue(mark_abstention.case_checks({"v": 6}, case)[0])
+
+    def test_a_person_can_append_later_work_without_rewriting_the_frozen_past(self) -> None:
+        case = self.freeze()
+        with self.path.open("a") as f:
+            f.write(json.dumps(self.support.command(40, 1)) + "\n")
+        self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_cannot_substitute_identity_or_mutate_or_truncate_the_prefix(self) -> None:
+        case = self.freeze()
+        original = self.path.read_bytes()
+        for changed in (
+            original.replace(self.support.SID.encode(), self.support.CHILD.encode()),
+            original.replace(b"Please repair", b"Please ignore"),
+            original[:100],
+        ):
+            with self.subTest(change=len(changed)):
+                self.path.write_bytes(changed)
+                self.assertTrue(self.reasons(case))
+                self.path.write_bytes(original)
+
+    def test_a_person_cannot_drop_checks_messages_or_change_the_saved_intent(self) -> None:
+        case = self.freeze()
+        import copy  # noqa: PLC0415
+
+        for field in (
+            "producer_facts",
+            "tool_output",
+            "intent",
+            "row_snapshot",
+            "sources",
+            "parser",
+            "production_reading",
+        ):
+            changed = copy.deepcopy(case)
+            if field == "parser":
+                changed[field] = "stale"
+            elif field == "producer_facts":
+                changed[field] = changed[field][1:]
+            else:
+                changed[field] = {}
+            with self.subTest(field=field):
+                self.assertTrue(self.reasons(changed))
+
+    def test_a_person_cannot_omit_a_child_or_its_failure(self) -> None:
+        child = self.support.rollout(self.root, sid=self.support.CHILD, parent=self.support.SID)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "children"):
+            self.freeze()
+        self.entry["children"] = [str(child)]
+        case = self.freeze()
+        self.assertEqual(len(case["sources"]["children"]), 1)
+        self.assertEqual(self.reasons(case), [])
+        child.write_text(child.read_text().replace('"exit_code": 1', '"exit_code": 0'))
+        self.assertTrue(self.reasons(case))
+
+    def test_a_person_sees_why_an_older_message_could_not_be_attributed(self) -> None:
+        row = self.support.message(
+            "<codex_internal_context>injected</codex_internal_context>", tagged=False, delta=2
+        )
+        rows = [json.loads(line) for line in self.path.read_text().splitlines()]
+        rows.insert(3, row)
+        self.support.write(self.path, rows)
+        case = self.freeze()
+        self.assertEqual(case["message_refusals"][0]["reason"], "person-authorship-unconfirmed")
+        self.assertNotIn("injected", json.dumps(case))
+        self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_is_not_credited_with_untagged_wrappers_or_compaction_or_mixed_text(
+        self,
+    ) -> None:
+        bodies = (
+            "<user_instructions>PRIVATE-INJECTED</user_instructions>",
+            (
+                "Another language model started to solve this problem and produced a summary "
+                "of its thinking process. Here is the summary: PRIVATE-INJECTED"
+            ),
+            "fix it",
+            "\ufeff  <unknown_wrapper>PRIVATE-INJECTED</unknown_wrapper>",
+        )
+        for index, body in enumerate(bodies):
+            with self.subTest(shape=index):
+                self.support.rollout(self.root)
+                row = self.support.message(body, tagged=False, delta=2)
+                if index == 2:
+                    row["payload"]["content"].append(
+                        {
+                            "type": "input_text",
+                            "text": "<environment_context><cwd>/PRIVATE-INJECTED</cwd></environment_context>",
+                        }
+                    )
+                rows = [json.loads(line) for line in self.path.read_text().splitlines()]
+                rows.insert(3, row)
+                self.support.write(self.path, rows)
+                case = self.freeze()
+                self.assertEqual(
+                    [refusal["reason"] for refusal in case["message_refusals"]],
+                    ["person-authorship-unconfirmed"],
+                )
+                self.assertNotIn("PRIVATE-INJECTED", json.dumps(case))
+                self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_cannot_freeze_when_an_unrelated_candidate_head_is_untimed(self) -> None:
+        other = self.support.rollout(self.root, sid=self.support.CHILD)
+        rows = [json.loads(line) for line in other.read_text().splitlines()]
+        rows[0].pop("timestamp")
+        self.support.write(other, rows)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "^codex-source-head-untimed$"):
+            self.freeze()
+
+    def test_a_person_cannot_skip_an_unrelated_blocking_rollout_during_discovery(self) -> None:
+        other = self.support.rollout(self.root, sid=self.support.CHILD)
+        rows = [json.loads(line) for line in other.read_text().splitlines()]
+        rows[0]["payload"]["cwd"] = "x" * 70000
+        oversized = json.dumps(rows[0]) + "\n"
+        for raw, token in (
+            (oversized, "codex-source-head-too-large"),
+            ("", "codex-source-unconfirmed"),
+            ('{"type":"legacy"}\n', "codex-source-identity-unconfirmed"),
+        ):
+            with self.subTest(token=token):
+                other.write_text(raw)
+                with self.assertRaisesRegex(mark_abstention.FreezeError, "^" + token + "$"):
+                    self.freeze()
+
+    def test_a_person_is_directed_to_freeze_codex_before_legacy_checks_can_be_lost(self) -> None:
+        with (
+            mock.patch.object(mark_abstention, "_load", return_value={"cases": [self.entry]}),
+            mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+            mock.patch.object(mark_abstention, "_observed_stores", return_value=((), ())),
+            mock.patch.object(mark_abstention, "_session_facts", return_value=[]),
+            mock.patch.object(mark_abstention, "_write") as written,
+            mock.patch("builtins.print") as printed,
+        ):
+            self.assertEqual(mark_abstention.freeze(1, "synthetic-spec"), 1)
+        written.assert_not_called()
+        self.assertIn("codex-requires--freeze-codex", str(printed.call_args_list))
+
+    def test_a_person_gets_a_closed_refusal_for_malformed_codex_case_entries(self) -> None:
+        spec = self.home / "PRIVATE-SPEC-MARKER.json"
+        packet = self.home / "packet/cases.json"
+        for entry in (None, [], ["PRIVATE-CONTENT-MARKER"], "PRIVATE-CONTENT-MARKER", 7):
+            with self.subTest(shape=type(entry).__name__):
+                spec.write_text(json.dumps({"cases": [entry]}))
+                with (
+                    mock.patch.object(mark_abstention, "CASES_PATH", str(packet)),
+                    mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+                    mock.patch("builtins.print") as printed,
+                ):
+                    self.assertEqual(mark_abstention.main(["--freeze-codex", str(spec)]), 1)
+                self.assertIn("codex-source-unconfirmed", str(printed.call_args_list))
+                for private in (str(self.home), "PRIVATE-", "Traceback", "AttributeError"):
+                    self.assertNotIn(private, str(printed.call_args_list))
+                self.assertFalse(packet.exists())
+
+    def test_a_person_cannot_vouch_a_source_outside_the_selected_native_store(self) -> None:
+        self.entry["sessions_root"] = str(self.home / "elsewhere")
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "source"):
+            self.freeze()
+
+    def test_a_person_gets_the_actual_selected_prompt_and_refuses_a_changed_selection(self) -> None:
+        case = self.freeze()
+        rows = mark_abstention.case_ledger({"v": 6}, case)
+        wanted = [row for row in rows if row["type"] == "user_message"]
+        lookup = mark_abstention.native_case_person_lookup(
+            case, config=self.config, index={self.support.SID: str(self.path)}
+        )
+        assert lookup is not None
+        self.assertTrue(lookup(wanted))
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "selection"):
+            lookup([])
+
+    def test_a_person_cannot_use_codex_as_a_reviewed_claude_export(self) -> None:
+        case = self.freeze()
+        case["reviewed_export"] = {}
+        self.assertIn("codex-export-unsupported", self.reasons(case))
+
+    def test_a_person_can_run_the_offline_command_with_only_explicit_temporary_sources(
+        self,
+    ) -> None:
+        spec = self.home / "spec.json"
+        spec.write_text(json.dumps({"cases": [self.entry]}))
+        packet = self.home / "packet/cases.json"
+        with (
+            mock.patch.object(mark_abstention, "CASES_PATH", str(packet)),
+            mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+            mock.patch.object(
+                mark_abstention, "_get", side_effect=AssertionError("dashboard used")
+            ),
+            mock.patch.object(
+                mark_abstention,
+                "_observed_stores",
+                side_effect=AssertionError("private store used"),
+            ),
+            mock.patch("builtins.print") as printed,
+        ):
+            self.assertEqual(mark_abstention.main(["--freeze-codex", str(spec)]), 0)
+        self.assertEqual(json.loads(packet.read_text())["v"], 6)
+        text = str(printed.call_args_list)
+        self.assertNotIn(str(self.path), text)
+        self.assertNotIn("Please repair", text)
+
+    def test_a_person_cannot_freeze_an_unsettled_or_resumed_turn(self) -> None:
+        self.entry["captured_at"] = self.support.AT + 7
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "before-settled"):
+            self.freeze()
+        self.entry["captured_at"] = self.support.AT + 20
+        with self.path.open("a") as f:
+            f.write(json.dumps(self.support.event("task_started", 9, turn_id="turn-b")) + "\n")
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "lifecycle"):
+            self.freeze()
+
+    def test_a_person_cannot_vouch_a_child_still_writing_after_the_parent_stopped(self) -> None:
+        child = self.support.rollout(self.root, sid=self.support.CHILD, parent=self.support.SID)
+        self.entry["children"] = [str(child)]
+        with child.open("a") as f:
+            f.write(json.dumps(self.support.command(9, 1)) + "\n")
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "child-active"):
+            self.freeze()
+
+    def test_a_person_can_freeze_an_older_untagged_recorded_session(self) -> None:
+        self.path = self.support.rollout(self.root, tagged=False)
+        case = self.freeze()
+        self.assertEqual(case["origin"], "recorded")
+        self.assertEqual(self.reasons(case), [])
+        self.assertTrue(any(fact["type"] == "user_message" for fact in case["producer_facts"]))
+
+    def test_a_person_cannot_use_claude_stop_hook_fields_to_admit_codex(self) -> None:
+        self.entry["row"]["finished_at"] = self.support.AT + 6
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "lifecycle"):
+            self.freeze()
+
+    def test_a_person_cannot_repoint_the_selection_to_a_different_native_path(self) -> None:
+        case = self.freeze()
+        duplicate = self.home / "other" / self.path.name
+        duplicate.parent.mkdir()
+        duplicate.write_bytes(self.path.read_bytes())
+        reasons = mark_abstention.provenance(
+            case,
+            observations=(),
+            ends=(),
+            index={self.support.SID: str(duplicate)},
+            config=self.config,
+        )
+        self.assertTrue(reasons)
+
+    def test_a_person_can_revalidate_codex_without_opening_claude_stores(self) -> None:
+        case = self.freeze()
+        with (
+            mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+            mock.patch.object(
+                mark_abstention, "_observed_stores", side_effect=AssertionError("store used")
+            ),
+            mock.patch.object(
+                mark_abstention, "_transcript_index", side_effect=AssertionError("Claude scan used")
+            ),
+        ):
+            vouch = mark_abstention.machine_vouch(str(self.home))
+            self.assertEqual(vouch(case), [])
+            self.assertEqual(vouch.lifecycle(case), "codex-transcript")
+
+    def test_a_person_cannot_freeze_a_child_that_changes_between_sealing_and_copying(self) -> None:
+        import contextlib  # noqa: PLC0415
+
+        from compass_runtime import project_context as context  # noqa: PLC0415
+
+        child = self.support.rollout(self.root, sid=self.support.CHILD, parent=self.support.SID)
+        self.entry["children"] = [str(child)]
+        original = child.read_bytes()
+        copy_sources = context.frozen_codex_sources
+        raced = False
+
+        @contextlib.contextmanager
+        def racing(*args: Any, **kwargs: Any) -> Any:
+            nonlocal raced
+            if not raced:
+                raced = True
+                child.write_bytes(original.replace(b"Please repair", b"Please ignore"))
+                with copy_sources(*args, **kwargs) as result:
+                    child.write_bytes(original)
+                    yield result
+            else:
+                with copy_sources(*args, **kwargs) as result:
+                    yield result
+
+        with (
+            mock.patch.object(context, "frozen_codex_sources", side_effect=racing),
+            self.assertRaisesRegex(mark_abstention.FreezeError, "source-moved"),
+        ):
+            self.freeze()
+
+    def test_a_person_seals_the_exact_prompt_the_production_reader_selected(self) -> None:
+        import hashlib  # noqa: PLC0415
+
+        reading = mark_abstention._reading()
+        produce = reading.produce
+        prompts: list[str] = []
+
+        def capture(*args: Any, **kwargs: Any) -> Any:
+            sink = kwargs["model"]
+
+            def observed(prompt: str, **options: Any) -> Any:
+                prompts.append(prompt)
+                return sink(prompt, **options)
+
+            kwargs["model"] = observed
+            return produce(*args, **kwargs)
+
+        with mock.patch.object(reading, "produce", side_effect=capture):
+            case = self.freeze()
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(
+            case["production_reading"]["prompt_digest"],
+            hashlib.sha256(prompts[0].encode()).hexdigest(),
+        )
+        self.assertIn("Please repair", prompts[0])
+        self.assertIn("example is repaired", prompts[0])
+        self.assertNotIn(str(self.path), prompts[0])
+
+    def test_a_person_is_told_when_the_parser_has_changed(self) -> None:
+        case = self.freeze()
+        case["parser"] = "stale"
+        self.assertEqual(self.reasons(case), ["frozen-on-another-parser"])
+
+    def test_a_person_cannot_drop_a_failed_check_an_agent_message_or_a_refusal(self) -> None:
+        rows = [json.loads(line) for line in self.path.read_text().splitlines()]
+        rows[3] = self.support.command(3, 1, "python3 -m unittest")
+        rows.insert(
+            3,
+            self.support.message(
+                "<codex_internal_context>hidden</codex_internal_context>", tagged=False, delta=2
+            ),
+        )
+        self.support.write(self.path, rows)
+        case = self.freeze()
+        import copy  # noqa: PLC0415
+
+        self.assertTrue(any(fact.get("result") == "failed" for fact in case["producer_facts"]))
+        for kind in ("failed", "agent_message", "user_message", "message_refusals"):
+            changed = copy.deepcopy(case)
+            if kind == "message_refusals":
+                changed[kind] = []
+            else:
+                changed["producer_facts"] = [
+                    fact
+                    for fact in changed["producer_facts"]
+                    if fact.get("type") != kind and fact.get("result") != kind
+                ]
+            with self.subTest(kind=kind):
+                self.assertEqual(self.reasons(changed), ["codex-frozen-content-differs"])
+
+    def test_a_person_cannot_use_a_claude_case_in_the_new_codex_packet(self) -> None:
+        case = self.freeze()
+        case["harness"] = "claude"
+        self.assertIn("only Codex", mark_abstention.packet_mismatch({"v": 6, "cases": [case]}))
+
+    def test_a_person_sees_no_source_path_in_an_offline_refusal(self) -> None:
+        self.entry["transcript"] = str(self.home / "PRIVATE-PATH-MARKER.jsonl")
+        spec = self.home / "spec.json"
+        spec.write_text(json.dumps({"cases": [self.entry]}))
+        with (
+            mock.patch.object(mark_abstention, "CASES_PATH", str(self.home / "packet/cases.json")),
+            mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+            mock.patch("builtins.print") as printed,
+        ):
+            self.assertEqual(mark_abstention.main(["--freeze-codex", str(spec)]), 1)
+        self.assertNotIn("PRIVATE-PATH-MARKER", str(printed.call_args_list))
+        self.assertFalse((self.home / "packet/cases.json").exists())
+
+    def test_a_person_sees_no_spec_path_or_content_when_json_cannot_be_read(self) -> None:
+        spec = self.home / "PRIVATE-SPEC-MARKER.json"
+        spec.write_text("PRIVATE-CONTENT-MARKER not-json")
+        with (
+            mock.patch.object(mark_abstention, "CASES_PATH", str(self.home / "packet/cases.json")),
+            mock.patch("builtins.print") as printed,
+        ):
+            self.assertEqual(mark_abstention.main(["--freeze-codex", str(spec)]), 1)
+        self.assertNotIn("PRIVATE-SPEC-MARKER", str(printed.call_args_list))
+        self.assertNotIn("PRIVATE-CONTENT-MARKER", str(printed.call_args_list))
+
+    def test_a_person_cannot_admit_another_sessions_native_identity(self) -> None:
+        self.entry["sid"] = self.support.CHILD
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "other-session"):
+            self.freeze()
+
+    def test_a_person_cannot_recover_words_after_an_unselected_prefix_field_changed(self) -> None:
+        case = self.freeze()
+        self.path.write_bytes(self.path.read_bytes().replace(b"0.167.0", b"0.167.1"))
+        wanted = [
+            row
+            for row in mark_abstention.case_ledger({"v": 6}, case)
+            if row["type"] == "user_message"
+        ]
+        lookup = mark_abstention.native_case_person_lookup(
+            case, config=self.config, index={self.support.SID: str(self.path)}
+        )
+        assert lookup is not None
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "source"):
+            lookup(wanted)
+
+    def test_a_person_cannot_call_an_owner_selected_export_a_native_recording(self) -> None:
+        copied = self.home / "exported" / self.path.name
+        copied.parent.mkdir()
+        copied.write_bytes(self.path.read_bytes())
+        self.entry["sessions_root"] = str(copied.parent)
+        self.entry["transcript"] = str(copied)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "native-store"):
+            self.freeze()
+
+    def test_a_person_keeps_late_parent_results_and_settings_in_the_frozen_evidence(self) -> None:
+        with self.path.open("a") as handle:
+            handle.write(json.dumps(self.support.command(9, 1)) + "\n")
+            handle.write(
+                json.dumps({"type": "event_msg", "payload": {"type": "thread_settings_applied"}})
+                + "\n"
+            )
+        case = self.freeze()
+        self.assertEqual(self.reasons(case), [])
+        self.assertTrue(any(fact.get("result") == "failed" for fact in case["producer_facts"]))
+        self.assertEqual(case["row_snapshot"]["turn_end_at"], self.support.AT + 6)
+
+    def test_a_person_cannot_keep_a_stop_after_unplaceable_work_metadata(self) -> None:
+        with self.path.open("a") as handle:
+            handle.write(
+                json.dumps({"type": "event_msg", "payload": {"type": "unknown_work"}}) + "\n"
+            )
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "lifecycle"):
+            self.freeze()

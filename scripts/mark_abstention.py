@@ -145,6 +145,7 @@ OUTPUT = "Something I can check: a diff, a test run, or a file I can open."
 # as they stood at the capture. The constant pair above cannot pose a line a
 # passing test does not cover, which is the class DEC-23 left standing.
 FORMAT_INTENT = 5
+FORMAT_CODEX = 6
 # When a case's intent counts as typed, unless it names its own time: before
 # every session end, for the reason `score_abstention.YARDSTICK_AT` gives.
 INTENT_AT = 1.0
@@ -193,6 +194,15 @@ _CASE_FIELDS: dict[int, tuple[str, ...]] = {
         "unconfirmed",
     ),
 }
+_CASE_FIELDS[FORMAT_CODEX] = _CASE_FIELDS[FORMAT_INTENT] + (
+    "codex_format",
+    "sources",
+    "message_refusals",
+    "tool_output",
+    "transcript_bytes",
+    "parser",
+    "production_reading",
+)
 _CLAUDE_FROZEN_FIELDS = ("tool_output", "transcript_bytes", "parser")
 
 
@@ -223,19 +233,40 @@ def print_packet(path: str, body: dict[str, Any]) -> None:
         print(line)
 
 
+def _codex_sources() -> Any:
+    _reading()
+    import codex_case_sources  # noqa: PLC0415 - offline harness-specific admission
+
+    return codex_case_sources
+
+
+def is_codex_source_case(case: Any) -> bool:
+    """Prospective cases have a native source seal; historical packets stay historical."""
+    return case.get("harness") == "codex" and any(
+        field in case for field in ("codex_format", "sources", "parser", "production_reading")
+    )
+
+
 def packet_mismatch(body: dict[str, Any]) -> str:
     """Why this version cannot read the packet's cases, or empty."""
     version = body.get("v")
     if "v" not in body:
         return "It names no case format."
     if type(version) is not int or version not in _CASE_FIELDS:
-        return f"It is case format {version}, and this version reads formats 3, 4 and 5."
+        return f"It is case format {version}, and this version reads formats 3, 4, 5 and 6."
     raw = body.get("cases")
     cases: list[Any] = raw if isinstance(raw, list) else []
     short: list[str] = []
     for index, case in enumerate(cases, 1):
         if not isinstance(case, dict):
             return f"Its case {index} is not an object."
+        if version == FORMAT_CODEX and (
+            case.get("harness") != "codex" or case.get("codex_format") != FORMAT_CODEX
+        ):
+            return (
+                "Format 6 admits only Codex cases with native source seals; "
+                "historical cases are unchanged."
+            )
         needs = _CASE_FIELDS[version]
         if version == FORMAT_INTENT and case.get("harness") == "claude":
             needs += _CLAUDE_FROZEN_FIELDS
@@ -271,7 +302,7 @@ def cases_digest(body: dict[str, Any]) -> str:
 
 
 def is_intent_packet(body: dict[str, Any]) -> bool:
-    return body.get("v") == FORMAT_INTENT
+    return body.get("v") in {FORMAT_INTENT, FORMAT_CODEX}
 
 
 def _epoch(value: Any) -> TypeGuard[float]:
@@ -291,7 +322,7 @@ def case_revision(case: dict[str, Any]) -> dict[str, Any]:
     raw = case.get("intent")
     intent: dict[str, Any] = raw if isinstance(raw, dict) else {}
     revision: dict[str, Any] = {
-        "n": 1,
+        "n": intent.get("n", 1) if case.get("harness") == "codex" else 1,
         "at": intent["at"] if _epoch(intent.get("at")) else INTENT_AT,
         "goal": str(intent.get("goal") or ""),
         "lines": list(intent.get("lines") or []),
@@ -329,7 +360,10 @@ def case_checks(
     Only a format 5 Claude Code case carries checks. Older packets lack the
     incomplete-read field; an absent field means no such pass was frozen.
     """
-    if not is_intent_packet(body) or case.get("harness") != "claude":
+    if not is_intent_packet(body) or (
+        case.get("harness") != "claude"
+        and not (body.get("v") == FORMAT_CODEX and case.get("harness") == "codex")
+    ):
         return None, frozenset(), frozenset()
     raw = case.get("tool_output")
     frozen: dict[str, Any] = raw if isinstance(raw, dict) else {}
@@ -419,10 +453,18 @@ def _bounded_source_cut(handle: BinaryIO, captured: float, max_bytes: int) -> in
 
 
 @contextlib.contextmanager
-def _historical_source(case: dict[str, Any], transcript: str) -> Iterator[tuple[str, str]]:
+def _historical_source(
+    case: dict[str, Any], transcript: str, *, config: Any = None
+) -> Iterator[tuple[str, str]]:
     """An owned bounded capture prefix; raw/full words never enter the packet."""
     from compass_runtime import project_context  # noqa: PLC0415 - see `_reading`
 
+    if case.get("harness") == "codex":
+        with _codex_sources().historical_source(
+            config if config is not None else _runtime_config(), case, transcript
+        ) as source:
+            yield source
+        return
     size = case.get("transcript_bytes")
     if type(size) is not int or size < 0 or size > project_context.FINAL_WORDS_SCAN_MAX_BYTES:
         raise FreezeError("production-source-too-large")
@@ -464,13 +506,14 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
 
     revision = case_revision(case)
     if (
-        case.get("harness") != "claude"
+        case.get("harness") not in {"claude", "codex"}
         or revision.get("goal_source") in reading.PROMPT_SOURCES
         or reading.has_line_requests(revision)
     ):
         raise FreezeError("production-intent-source-unsupported")
+    harness = str(case["harness"])
     frozen: dict[str, Any] = {"v": 1, "final_wanted": [], "newest_final": None}
-    with _historical_source(case, transcript) as (path, digest):
+    with _historical_source(case, transcript, config=config) as (path, digest):
         frozen["prefix_digest"] = digest
         stamp = project_context.transcript_stamp(path)
 
@@ -479,7 +522,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
             words = project_context.transcript_window_words(
                 config,
                 path,
-                "claude",
+                harness,
                 str(case["sid"]),
                 rows,
                 expected_stamp=stamp,
@@ -489,13 +532,14 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
 
         def final(rows: Sequence[Any]) -> dict[str, Any]:
             frozen["final_wanted"] = _wanted(rows, reading.AGENT_MESSAGE_TYPE)
-            result = project_context.transcript_newest_final_words(
-                config,
-                path,
-                "claude",
-                str(case["sid"]),
-                rows,
-                expected_stamp=stamp,
+            result = (
+                project_context.codex_newest_final_words(
+                    config, path, str(case["sid"]), rows, expected_stamp=stamp
+                )
+                if harness == "codex"
+                else project_context.transcript_newest_final_words(
+                    config, path, harness, str(case["sid"]), rows, expected_stamp=stamp
+                )
             )
             frozen["newest_final"] = _final_metadata(result)
             return result
@@ -506,7 +550,9 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
             prompts.append(prompt)
             return "{}", "ok"
 
-        tails, changed, incomplete = case_checks({"v": FORMAT_INTENT}, case)
+        tails, changed, incomplete = case_checks(
+            {"v": FORMAT_CODEX if harness == "codex" else FORMAT_INTENT}, case
+        )
         assessment, _why, _spent = reading.produce(
             config,
             case["row_snapshot"],
@@ -521,7 +567,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
             # Not the idle admission of 2026-10-20, as `score_abstention` passes it: the cases are
             # marked under the earlier rule, which withheld an idle session with no recorded
             # finish, and a freeze that admitted one would capture a prompt the scorer never sends.
-            admit_idle=False,
+            admit_idle=harness == "codex",
             tool_output=reading.ToolOutput(
                 destination="native-dry",
                 label="native dry",
@@ -541,7 +587,7 @@ def _production_capture(config: Any, case: dict[str, Any], transcript: str) -> d
     return frozen
 
 
-def _native_source_lookup(
+def _native_source_lookup(  # noqa: C901 - separate native harness source recovery
     case: dict[str, Any],
     kind: str,
     *,
@@ -558,15 +604,27 @@ def _native_source_lookup(
     from compass_runtime import project_context  # noqa: PLC0415 - see `_reading`
 
     actual_config = config if config is not None else _runtime_config()
+    harness = str(case.get("harness") or "")
+    if harness == "codex" and case.get("parser") != _codex_sources().parser_digest():
+        raise FreezeError("frozen-on-another-parser")
     exported = "reviewed_export" in case
     if exported:
+        if harness != "claude":
+            raise FreezeError("codex-export-unsupported")
         if reviewed_exports is None:
             raise FreezeError("reviewed-export-opt-in-required")
         reviewed_exports.validate(case, actual_config)
         path = ""
     else:
-        sources = index if index is not None else _transcript_index()
-        path = sources.get(str(case.get("sid") or "")[:8], "")
+        if harness == "codex":
+            path = (
+                index.get(str(case["sid"]), "")
+                if index is not None
+                else str(case.get("sources", {}).get("parent", {}).get("path") or "")
+            )
+        else:
+            sources = index if index is not None else _transcript_index()
+            path = sources.get(str(case.get("sid") or "")[:8], "")
         if not path:
             raise FreezeError("no-transcript")
 
@@ -578,26 +636,27 @@ def _native_source_lookup(
         source_context = (
             reviewed_exports.source(case, actual_config)
             if exported and reviewed_exports is not None
-            else _historical_source(case, path)
+            else _historical_source(case, path, config=actual_config)
         )
         with source_context as (source, _digest):
             stamp = project_context.transcript_stamp(source)
             result: Any
             if final:
-                result = project_context.transcript_newest_final_words(
-                    actual_config,
-                    source,
-                    "claude",
-                    str(case["sid"]),
-                    rows,
-                    expected_stamp=stamp,
+                result = (
+                    project_context.codex_newest_final_words(
+                        actual_config, source, str(case["sid"]), rows, expected_stamp=stamp
+                    )
+                    if harness == "codex"
+                    else project_context.transcript_newest_final_words(
+                        actual_config, source, harness, str(case["sid"]), rows, expected_stamp=stamp
+                    )
                 )
                 matches = _final_metadata(result) == frozen.get("newest_final")
             else:
                 result = project_context.transcript_window_words(
                     actual_config,
                     source,
-                    "claude",
+                    harness,
                     str(case["sid"]),
                     rows,
                     expected_stamp=stamp,
@@ -1752,7 +1811,7 @@ def _stop(snapshot: dict[str, Any]) -> float | None:
 
 # Keep the ordered provenance refusals together: the parser-stamp check must
 # precede any transcript read, and an unreachable check cutoff has its own reason.
-def content_refusal(config: Any, case: dict[str, Any], transcript: str) -> list[str]:  # noqa: C901, PLR0912, PLR0915 - ordered source refusals
+def content_refusal(config: Any, case: dict[str, Any], transcript: str) -> list[str]:  # noqa: C901, PLR0911, PLR0912, PLR0915 - ordered source refusals
     """Why a Claude Code case's contents are not what its transcript holds (DRC-4711).
 
     Rebuilt as the freeze built them, at the case's own `captured_at`, so turns
@@ -1768,6 +1827,8 @@ def content_refusal(config: Any, case: dict[str, Any], transcript: str) -> list[
     back. Older ones may be absent. A transcript now shorter than that size,
     or a case that records none, is `transcript-truncated`.
     """
+    if case.get("harness") == "codex":
+        return cast("list[str]", _codex_sources().content_refusal(config, case, transcript))
     if case.get("parser") != parser_digest():
         return ["frozen-on-another-parser"]
     size = case.get("transcript_bytes")
@@ -1873,7 +1934,7 @@ def content_refusal(config: Any, case: dict[str, Any], transcript: str) -> list[
     return reasons
 
 
-def provenance(  # noqa: C901, PLR0912 - export exception precedes unchanged canonical guards
+def provenance(  # noqa: C901, PLR0911, PLR0912 - explicit harness and export admission
     case: dict[str, Any],
     *,
     observations: Any,
@@ -1891,6 +1952,15 @@ def provenance(  # noqa: C901, PLR0912 - export exception precedes unchanged can
     case's contents are rebuilt from that transcript too (`content_refusal`),
     under `config`, the runtime config the freeze would build when none is given.
     """
+    if is_codex_source_case(case):
+        if "reviewed_export" in case:
+            return ["codex-export-unsupported"]
+        source = (
+            index.get(str(case.get("sid") or ""), "")
+            if index
+            else str(case.get("sources", {}).get("parent", {}).get("path") or "")
+        )
+        return content_refusal(config if config is not None else _runtime_config(), case, source)
     if "reviewed_export" in case:
         if reviewed_exports is None:
             return ["reviewed-export-opt-in-required"]
@@ -1958,6 +2028,8 @@ def make_vouch(
 
     def lifecycle(case: Any) -> str | None:
         """Which record vouched for the case's lifecycle, derived here, never read from it."""
+        if is_codex_source_case(case):
+            return "codex-transcript" if not vouch(case) else None
         if "reviewed_export" in case:
             return "reviewed-export" if reviewed_exports is not None and not vouch(case) else None
         snapshot, captured = case.get("row_snapshot"), case.get("captured_at")
@@ -1980,7 +2052,7 @@ def make_vouch(
     return vouch
 
 
-def machine_vouch(
+def _claude_machine_vouch(
     store_home: str | None, *, reviewed_exports: ReviewedExports | None = None
 ) -> Any:
     """`make_vouch` over this machine's history, ends and Claude Code transcripts."""
@@ -2018,7 +2090,29 @@ def machine_vouch(
     )
 
 
-def freeze_case(  # noqa: C901, PLR0912 - legacy provenance order, opt-in source and prior vouch
+def machine_vouch(
+    store_home: str | None, *, reviewed_exports: ReviewedExports | None = None
+) -> Any:
+    """Codex revalidates explicit packet sources; Claude alone opens its stores."""
+    canonical: Any = None
+    offline = make_vouch(observations=(), ends=(), index={}, config=_runtime_config())
+
+    def selected(case: Any) -> Any:
+        nonlocal canonical
+        if is_codex_source_case(case):
+            return offline
+        if canonical is None:
+            canonical = _claude_machine_vouch(store_home, reviewed_exports=reviewed_exports)
+        return canonical
+
+    def vouch(case: Any) -> list[str]:
+        return cast("list[str]", selected(case)(case))
+
+    vouch.lifecycle = lambda case: selected(case).lifecycle(case)  # type: ignore[attr-defined]
+    return vouch
+
+
+def freeze_case(  # noqa: C901, PLR0912, PLR0915 - separate Codex freeze, legacy Claude order
     config: Any,
     entry: dict[str, Any],
     facts: list[dict[str, Any]],
@@ -2049,6 +2143,18 @@ def freeze_case(  # noqa: C901, PLR0912 - legacy provenance order, opt-in source
     Codex case exists at all: Codex has no session-end hook and is never read
     at a turn stop (DRC-4666, decisions of 2026-09-24).
     """
+    if entry.get("harness") == "codex" and (production_reading or "sessions_root" in entry):
+        # The historical Claude flag cannot infer a Codex source specification.
+        if production_reading and "sessions_root" not in entry:
+            raise FreezeError("production-intent-source-unsupported")
+        if reviewed_exports is not None:
+            raise FreezeError("codex-export-unsupported")
+        try:
+            return cast("dict[str, Any]", _codex_sources().freeze_case(config, entry))
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+            if isinstance(error, FreezeError):
+                raise
+            raise FreezeError("codex-source-unconfirmed") from error
     if reviewed_exports is not None and reviewed_exports.includes(entry):
         if not production_reading:
             raise FreezeError("reviewed-export-production-required")
@@ -2152,7 +2258,7 @@ def _observed_stores(store_home: str | None) -> tuple[Any, Any]:
     return history.load(config)[0], ends.load(config)
 
 
-def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation failure
+def freeze(  # noqa: C901, PLR0911 - refuse each distinct harness/source/identity preparation failure
     port: int,
     spec_path: str,
     *,
@@ -2172,6 +2278,9 @@ def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation 
     entries = spec.get("cases") if isinstance(spec.get("cases"), list) else []
     if not entries:
         print(f"No cases in {spec_path}.")
+        return 1
+    if any(isinstance(entry, dict) and entry.get("harness") == "codex" for entry in entries):
+        print("codex-requires--freeze-codex: use --freeze-codex for a Codex packet.")
         return 1
     if _marks(_load(MARKS_PATH)) and not force:
         print("Marks already exist here and would belong to a different packet.")
@@ -2682,6 +2791,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
         action="store_true",
         help="mark the reviewed fresh case set after a failed run",
     )
+    parser.add_argument(
+        "--freeze-codex",
+        metavar="SPEC",
+        help="freeze a private offline Codex format 6 packet; spends nothing",
+    )
     parser.add_argument("--freeze", metavar="SPEC", help="freeze a format 5 packet from a spec")
     parser.add_argument(
         "--production-reading",
@@ -2704,6 +2818,24 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912 
         "--reviewed-exports-sha256", metavar="SHA256", help="independently pinned manifest digest"
     )
     args = parser.parse_args(argv)
+    if args.freeze_codex:
+        if any(
+            (
+                args.build,
+                args.report,
+                args.reset,
+                args.continue_mark,
+                args.freeze,
+                args.production_reading,
+                args.reviewed_exports,
+                args.reviewed_exports_sha256,
+                args.prior_packet,
+                args.force,
+            )
+        ):
+            print("--freeze-codex must run alone; no Claude export or marking authority applies.")
+            return 2
+        return cast("int", _codex_sources().freeze(args.freeze_codex))
     try:
         reviewed_exports = load_reviewed_exports(
             args.reviewed_exports, args.reviewed_exports_sha256
