@@ -17,6 +17,7 @@ import shlex
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 from collections import OrderedDict, deque
@@ -9753,6 +9754,235 @@ def _frozen_check_scan(config: RuntimeConfig, transcript_path: str, until: float
     )
 
 
+def codex_source_prefix(config: RuntimeConfig, path: str, until: float) -> bytes:
+    """A stable, bounded native prefix, ending before the first future record.
+
+    Untimed records belong to the prefix in file order. They are never assigned a
+    fabricated timestamp; the lifecycle parser decides whether they retire a stop.
+    """
+    before = transcript_stamp(path)
+    if before is None or os.path.islink(path):
+        raise FrozenCheckCutoffUnreachableError("codex source unavailable")
+    chunks: list[bytes] = []
+    used = 0
+    with open(path, "rb") as handle:
+        while raw := handle.readline(config.turn_scan_max_bytes - used + 1):
+            used += len(raw)
+            if used > config.turn_scan_max_bytes:
+                raise FrozenCheckCutoffUnreachableError("codex cutoff exceeds byte budget")
+            record = _json_dict(raw)
+            if record is None or not raw.endswith(b"\n"):
+                raise FrozenCheckCutoffUnreachableError("codex source incomplete")
+            at = _record_timestamp(record)
+            if at is not None and at > until:
+                break
+            chunks.append(raw)
+    if transcript_stamp(path) != before:
+        raise FrozenCheckCutoffUnreachableError("codex source moved")
+    return b"".join(chunks)
+
+
+@contextlib.contextmanager
+def frozen_codex_sources(
+    config: RuntimeConfig, transcript_path: str, *, until: float, child_paths: Sequence[str] = ()
+) -> Iterator[tuple[str, tuple[str, ...]]]:
+    """Private transient native cuts; every derivation sees only these bytes."""
+    with tempfile.TemporaryDirectory(prefix="compass-codex-cut-") as folder:
+        paths: list[str] = []
+        remaining = config.turn_scan_max_bytes
+        for index, source in enumerate((transcript_path, *child_paths)):
+            prefix = codex_source_prefix(config, source, until)
+            remaining -= len(prefix)
+            if remaining < 0:
+                raise FrozenCheckCutoffUnreachableError("codex bundle exceeds byte budget")
+            # Preserve the native filename: the check parser derives worker IDs from it.
+            directory = os.path.join(folder, str(index))
+            os.mkdir(directory, 0o700)
+            path = os.path.join(directory, os.path.basename(source))
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(prefix)
+            paths.append(path)
+        yield paths[0], tuple(paths[1:])
+
+
+def frozen_codex_checks(
+    config: RuntimeConfig,
+    transcript_path: str,
+    sid: str,
+    *,
+    until: float,
+    child_paths: Sequence[str] = (),
+) -> tuple[list[dict[str, Any]], PressChecks]:
+    """Derive latest checks and changed-after only after freezing every rollout.
+
+    Uses the production Codex tally, including missing children and unread calls.
+    No current-file fact is filtered into a historical pass.
+    """
+    with frozen_codex_sources(config, transcript_path, until=until, child_paths=child_paths) as (
+        path,
+        children,
+    ):
+        tally = _codex_tally(config, path, child_paths=children)
+        if tally is None:
+            raise FrozenCheckCutoffUnreachableError("codex commands unreadable")
+        if (
+            tally.named_unread
+            or tally.parent_failed
+            or tally.scan.get("subagent_transcripts_unread")
+            or tally.scan.get("unread_calls")
+        ):
+            raise FrozenCheckCutoffUnreachableError("codex checks incomplete")
+        facts = [
+            _semantic_fact_from_event(row, str(row["kind"]), _SEMANTIC_FACT_TYPES[row["kind"]], "")
+            for row in tally.entries(sid)
+        ]
+        return facts, _press(tally)
+
+
+def codex_person_record(record: dict[str, Any]) -> bool:
+    """Native provenance, when present, must name the person for every content item.
+
+    Older rollouts have no provenance. Their eligibility remains the existing
+    reader parser's: known injected forms and unparseable messages are refused.
+    """
+    payload = records.as_dict(record.get("payload"))
+    metadata = payload.get("internal_chat_message_metadata_passthrough")
+    if metadata is None:
+        return observer.parse_reader_record(record, cap=len(json.dumps(record))) is not None
+    items = records.as_dict(metadata).get("content_item_metadata")
+    content = payload.get("content")
+    return (
+        isinstance(items, list)
+        and isinstance(content, list)
+        and len(items) == len(content)
+        and bool(items)
+        and all(
+            records.as_dict(records.as_dict(item).get("provenance")).get("type") == "user"
+            for item in items
+        )
+    )
+
+
+def _codex_message_facts(
+    config: RuntimeConfig,
+    lines: Iterable[str],
+    sid: str,
+    *,
+    agent: bool,
+) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in lines:
+        record = _json_dict(raw.encode())
+        if record is None or record.get("type") != "response_item":
+            continue
+        payload = records.as_dict(record.get("payload"))
+        if payload.get("type") != "message" or payload.get("role") != (
+            "assistant" if agent else "user"
+        ):
+            continue
+        if agent:
+            # Normalize only the container; eligibility, redaction, clipping and fact
+            # identity still belong to the existing agent-message derivation.
+            normalized = {
+                "type": "assistant",
+                "timestamp": record.get("timestamp"),
+                "uuid": payload.get("id"),
+                "message": payload,
+            }
+            event = _agent_message_event(config, normalized, "claude", sid, text_cap=len(raw))
+            if event is not None:
+                event["harness"] = "codex"
+        else:
+            event = (
+                _instruction_event(config, record, "codex", sid)
+                if codex_person_record(record)
+                else None
+            )
+        if event is None:
+            continue
+        kind = _AGENT_SAY if agent else "steer"
+        fact = _semantic_fact_from_event(event, kind, _SEMANTIC_FACT_TYPES[kind], "")
+        key = str(fact["fact_id"])
+        if key not in seen:
+            facts.append(fact)
+            seen.add(key)
+    return facts
+
+
+def _frozen_codex_messages(
+    config: RuntimeConfig,
+    transcript_path: str,
+    sid: str,
+    *,
+    until: float,
+    size: int | None,
+    agent: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    with frozen_codex_sources(config, transcript_path, until=until) as (path, _children):
+        if size is not None and os.path.getsize(path) != size:
+            raise FrozenCheckCutoffUnreachableError("codex message prefix differs")
+        with open(path, encoding="utf-8") as handle:
+            whole = _codex_message_facts(config, handle, sid, agent=agent)
+        tail = _codex_message_facts(config, runtime_io.read_tail(config, path), sid, agent=agent)
+        return whole, tail
+
+
+def frozen_codex_user_messages(
+    config: RuntimeConfig,
+    transcript_path: str,
+    sid: str,
+    *,
+    until: float,
+    size: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """All and bounded-tail attributable person messages in a historical Codex cut."""
+    return _frozen_codex_messages(config, transcript_path, sid, until=until, size=size, agent=False)
+
+
+def frozen_codex_agent_messages(
+    config: RuntimeConfig,
+    transcript_path: str,
+    sid: str,
+    *,
+    until: float,
+    size: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """All and bounded-tail agent facts, without enabling live Codex claim publication."""
+    return _frozen_codex_messages(config, transcript_path, sid, until=until, size=size, agent=True)
+
+
+def codex_activity_between(transcript_path: str, after: float, until: float) -> bool:
+    """Use the collector's measured closed-turn rules, including late command results.
+
+    A new turn, unknown untimed record or abort retires the stop. Settings and
+    same-turn late results do not. Unknown shapes are work, never evidence of rest.
+    """
+    closed: set[str] = set()
+    with open(transcript_path, "rb") as handle:
+        for raw in handle:
+            record = _json_dict(raw)
+            if record is None:
+                return True
+            at = _record_timestamp(record)
+            if at is not None and at > until:
+                break
+            payload = records.as_dict(record.get("payload"))
+            if (at is None or at > after) and not transcripts._codex_non_turn_record(  # noqa: SLF001 - same measured lifecycle rule as collector
+                record.get("type"), payload, closed
+            ):
+                return True
+            if record.get("type") == "event_msg" and payload.get("type") in {
+                "task_complete",
+                "turn_aborted",
+            }:
+                turn = payload.get("turn_id")
+                if isinstance(turn, str):
+                    closed.add(turn)
+    return False
+
+
 def frozen_claude_checks(
     config: RuntimeConfig, transcript_path: str, sid: str, *, until: float
 ) -> tuple[list[dict[str, Any]], PressChecks]:
@@ -10267,6 +10497,78 @@ def _final_word_outcome(  # noqa: PLR0911 - preserve the existing closed strict-
     if not words:
         return {"outcome": "not-final"}
     return {"outcome": "whole", "fact_id": fact_id, "at": at, "words": words}
+
+
+def codex_newest_final_words(  # noqa: C901 - native identity and finality guards
+    config: RuntimeConfig,
+    path: str,
+    sid: str,
+    wanted: Sequence[Mapping[str, Any]],
+    *,
+    expected_stamp: tuple[int, int, int, int] | None = None,
+) -> dict[str, Any]:
+    """Recover a selected native final_answer; complete words live only in memory.
+
+    The offline source bundle has already proved parent identity and the cutoff.
+    Conflicting message IDs, unavailable selected messages and tied newest replies
+    refuse a whole reply rather than borrowing one from a different record.
+    """
+    before = transcript_stamp(path)
+    if before is None or (expected_stamp is not None and before != expected_stamp):
+        return {"outcome": "unproven"}
+    rows = _final_word_rows(wanted)
+    found: dict[tuple[str, Any], tuple[str, str, str | None]] = {}
+    signatures: dict[str, str] = {}
+    conflicted: set[str] = set()
+    if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
+        return {"outcome": "scan-limit"}
+    with open(path, "rb") as handle:
+        for raw in handle:
+            record = _json_dict(raw)
+            if record is None:
+                return {"outcome": "unproven"}
+            payload = records.as_dict(record.get("payload"))
+            if (
+                record.get("type") != "response_item"
+                or payload.get("type") != "message"
+                or payload.get("role") != "assistant"
+            ):
+                continue
+            identity = payload.get("id")
+            if (
+                not isinstance(identity, str)
+                or not identity
+                or len(raw) > FINAL_WORDS_RECORD_MAX_BYTES
+            ):
+                return {"outcome": "unproven"}
+            signature = hashlib.sha256(raw).hexdigest()
+            if identity in signatures and signatures[identity] != signature:
+                conflicted.add(identity)
+            signatures[identity] = signature
+            facts = _codex_message_facts(config, [raw.decode("utf-8")], sid, agent=True)
+            if not facts:
+                continue
+            key = (str(facts[0]["fact_id"]), facts[0]["at"])
+            if key in rows:
+                status = (
+                    "final"
+                    if payload.get("phase") == "final_answer"
+                    else "nonfinal"
+                    if payload.get("phase") == "commentary"
+                    else "refused"
+                )
+                found[key] = (
+                    status,
+                    identity,
+                    _agent_whole_words(record, len(raw)) if status == "final" else "",
+                )
+    if transcript_stamp(path) != before:
+        return {"outcome": "unproven"}
+    return _final_word_outcome(
+        _FinalWordRead(
+            rows=rows, harness="codex", sid=sid, source_sid=sid, found=found, conflicted=conflicted
+        )
+    )
 
 
 def transcript_newest_final_words(  # noqa: PLR0911 - one bounded scan and its source guards

@@ -3671,9 +3671,10 @@ current-head CI come before any spending.
 
 #### Prospective Codex analysis qualification, 2026-11-09
 
-This study contract has offline authority and approval helpers, but no producer wiring or
-completed run. The owner has directed preparation; each private-source step, provider send and
-publication still needs the approval described in the [ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
+The offline authority and approval helpers, metadata inventory and source freeze are implemented;
+there is no producer wiring or completed study run. The owner has directed preparation; each
+private-source step, provider send and publication still needs the approval described in the
+[ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
 It qualifies Codex analysis levels only. Live estimate and Live monitor stay Claude-only, and
 no Claude grant, ledger allowance or historical acceptance authorizes this work.
 
@@ -3686,9 +3687,9 @@ full source identities, prefixes, parser and selection digests. Source mappings,
 private paths, cases, rubric, marks and detailed readings stay in a private packet under
 `~/.compass`. Packet homes may move; accounting may not.
 
-Where production source recovery needs a transient raw cut, the proposed tooling must use an
-owner-only directory (0700) and file (0600), retain it only during the pinned reader invocation,
-and remove it on completion, refusal or exception. Abrupt termination may leave a private
+The offline source freeze and production source recovery use transient raw cuts in an
+owner-only directory (0700) and file (0600). They retain a cut only during derivation or the
+pinned reader invocation and remove it on completion, refusal or exception. Abrupt termination may leave a private
 temporary copy for the owner to remove. This promises neither secure erasure nor isolation from
 another process running under the same account. Redact before clipping or displaying screens;
 complete recovered replies must not enter a new cache, history or public artifact.

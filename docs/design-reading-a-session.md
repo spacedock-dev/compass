@@ -1200,8 +1200,8 @@ The format is owned by the
 
 For DRC-5248, the owner directed the recommended Codex qualification to run. The orchestrator
 prepares tooling and cases, then stops for the owner before each step that spends or shares
-evidence. This entry records a prospective protocol: no tooling, packet admission, model run or
-acceptance under it has happened yet. Even the initial metadata-only rollout inventory needs
+evidence. The protocol's offline source inventory and freeze are implemented; no packet admission,
+model run or acceptance under it has happened yet. Even the initial metadata-only rollout inventory needs
 owner approval; preparation is not permission to inspect private session content.
 
 The claim is Codex analysis levels only. Live estimate and Live monitor remain Claude-only.
