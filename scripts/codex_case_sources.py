@@ -50,7 +50,7 @@ def parser_digest() -> str:
     return digest.hexdigest()
 
 
-def _head(path: Path) -> tuple[str, str, float | None]:
+def _head(path: Path) -> tuple[str, str, float | None, str]:
     from compass_runtime import project_context as context
     from compass_runtime import records
 
@@ -65,15 +65,16 @@ def _head(path: Path) -> tuple[str, str, float | None]:
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     payload = records.as_dict(row.get("payload"))
     sid = payload.get("id")
-    if (
-        not isinstance(sid, str)
-        or len(sid) != 36
-        or not path.name.endswith(sid + ".jsonl")
-        or payload.get("session_id", sid) != sid
-    ):
+    if not isinstance(sid, str) or len(sid) != 36 or not path.name.endswith(sid + ".jsonl"):
         raise marker.FreezeError("codex-source-identity-unconfirmed")
     parent = context._codex_parent(row, str(path))
-    return sid, parent, context._record_timestamp(row)
+    # A subagent rollout records its chain root as `session_id` (all 697 of the owner's, measured
+    # by metadata on 2026-11-09); a root records its own id. Discovery holds a descendant to the
+    # selected root's id.
+    session = payload.get("session_id", sid)
+    if not isinstance(session, str) or len(session) != 36 or (session != sid and not parent):
+        raise marker.FreezeError("codex-source-identity-unconfirmed")
+    return sid, parent, context._record_timestamp(row), session
 
 
 def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Path]]:  # noqa: C901, PLR0912 - independent native membership guards
@@ -91,7 +92,7 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
     for source in (path, *children):
         if not source.resolve().is_relative_to(root.resolve()) or source.is_symlink():
             raise marker.FreezeError("codex-source-outside-selection")
-    sid, parent, _ = _head(path)
+    sid, parent, _, _ = _head(path)
     if sid != entry.get("sid") or parent:
         raise marker.FreezeError("codex-source-other-session")
     # Metadata-only discovery is independent of the owner's selected children.
@@ -99,8 +100,9 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
     if len(paths) > MAX_FILES:
         raise marker.FreezeError("codex-source-discovery-limit")
     heads: dict[str, tuple[Path, str]] = {}
+    sessions: dict[str, str] = {}
     for candidate in paths:
-        identity, parent, at = _head(candidate)
+        identity, parent, at, session = _head(candidate)
         if at is None:
             raise marker.FreezeError("codex-source-head-untimed")
         if at > float(entry["captured_at"]):
@@ -108,12 +110,15 @@ def _selection(config: Any, entry: dict[str, Any]) -> tuple[Path, Path, list[Pat
         if identity in heads:
             raise marker.FreezeError("codex-source-identity-ambiguous")
         heads[identity] = (candidate, parent)
+        sessions[identity] = session
     wanted = {sid}
     while True:
         more = {identity for identity, (_, parent) in heads.items() if parent in wanted}
         if more <= wanted:
             break
         wanted |= more
+    if any(sessions[identity] != sid for identity in wanted - {sid}):
+        raise marker.FreezeError("codex-source-identity-unconfirmed")
     discovered = sorted(heads[identity][0].absolute() for identity in wanted - {sid})
     if children != discovered or len(set(children)) != len(children):
         raise marker.FreezeError("codex-children-differ")
@@ -124,7 +129,7 @@ def _seal(config: Any, path: Path, captured: float) -> dict[str, Any]:
     from compass_runtime import project_context as context
 
     prefix = context.codex_source_prefix(config, str(path), captured)
-    sid, parent, _ = _head(path)
+    sid, parent, _, _ = _head(path)
     return {
         "path": str(path),
         "sid": sid,

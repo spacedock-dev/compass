@@ -94,7 +94,17 @@ def command(delta: float, code: int = 0, command_text: str = "python3 -m pytest"
     )
 
 
-def rollout(folder: Path, *, sid: str = SID, parent: str = "", tagged: bool = True) -> Path:
+def rollout(
+    folder: Path,
+    *,
+    sid: str = SID,
+    parent: str = "",
+    tagged: bool = True,
+    session: str | None = None,
+) -> Path:
+    """A synthetic rollout. A child records its chain root as `session_id`, as every one of the
+    owner's 697 subagent rollouts did when measured (metadata only, 2026-11-09); a root records its
+    own id."""
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"rollout-2026-11-07T00-00-00-{sid}.jsonl"
     rows = [
@@ -103,6 +113,7 @@ def rollout(folder: Path, *, sid: str = SID, parent: str = "", tagged: bool = Tr
             "type": "session_meta",
             "payload": {
                 "id": sid,
+                "session_id": (session or SID) if parent else sid,
                 "cli_version": "0.167.0",
                 "cwd": "/synthetic/project",
                 "source": {"subagent": {"thread_spawn": {"parent_thread_id": parent}}}

@@ -1262,7 +1262,8 @@ full `sid`, `sessions_root`, `transcript`, every selected descendant path in `ch
 its native `turn_end_at`. The spec and packet must stay outside the repository. An existing
 packet cannot be overwritten. Source selection is permission; admission independently checks
 the runtime's configured Codex store root, native identity, descendant membership and recorded
-lifecycle. Historical packets retain their original format and lifecycle meaning; they cannot
+lifecycle. A subagent rollout records its chain root as `session_id`, and every descendant
+admitted must name the selected root there; a root must name itself. Historical packets retain their original format and lifecycle meaning; they cannot
 be relabelled as format 6. The legacy `--freeze` path refuses Codex entries with
 `codex-requires--freeze-codex`.
 
