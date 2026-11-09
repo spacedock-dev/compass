@@ -441,3 +441,20 @@ class APersonSharingAuthorization(unittest.TestCase):
             self.assert_private(f"{scheme} MadeUpToken99 then retry", "MadeUpToken99")
         for scheme in ("Token", "Negotiate", "NTLM"):
             self.assert_private(f"Authorization: {scheme} dXNlcjpwYXNz then retry", "dXNlcjpwYXNz")
+
+    def test_a_person_can_share_a_bare_scheme_value_inside_markup_or_a_query(self) -> None:
+        value = "dXNlcjpwYXNz"  # made up: base64 of a short user:pass, letters only
+        for raw in (
+            f"<Authorization>Basic {value}</Authorization>",
+            f"<td>Token {value}</td>",
+            f"[Basic {value}]",
+            f"x=Basic {value}&y=1",
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    self.assertNotIn(value, mask(raw))
+
+    def test_a_person_can_end_a_sentence_on_a_product_name_after_a_scheme(self) -> None:
+        for mask in (records.redact_secrets, records.mask_prose):
+            with self.subTest(mask=mask.__name__):
+                self.assertIn("JavaScript", mask("We teach Basic JavaScript."))

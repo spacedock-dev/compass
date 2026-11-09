@@ -572,7 +572,7 @@ _BASIC_PROSE: Final = frozenset(
     }
 )
 # Match at the value's end without slicing the remaining text on each candidate.
-_AUTH_VALUE_END: Final = re.compile(r"[ \t]*(?=$|[\r\n`),;}]|\\?[\"'])")
+_AUTH_VALUE_END: Final = re.compile(r"[ \t]*(?=$|[\r\n`),;}<\]&]|\\?[\"'])")
 
 
 def _explicit_basic_value_is_secret(value: str, *, at_end: bool) -> bool:
