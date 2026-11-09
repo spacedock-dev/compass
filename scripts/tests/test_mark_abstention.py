@@ -769,6 +769,93 @@ class CodexPacketSourceTest(unittest.TestCase):
         self.assertNotIn("injected", json.dumps(case))
         self.assertEqual(self.reasons(case), [])
 
+    def test_a_person_is_not_credited_with_untagged_wrappers_or_compaction_or_mixed_text(
+        self,
+    ) -> None:
+        bodies = (
+            "<user_instructions>PRIVATE-INJECTED</user_instructions>",
+            (
+                "Another language model started to solve this problem and produced a summary "
+                "of its thinking process. Here is the summary: PRIVATE-INJECTED"
+            ),
+            "fix it",
+            "\ufeff  <unknown_wrapper>PRIVATE-INJECTED</unknown_wrapper>",
+        )
+        for index, body in enumerate(bodies):
+            with self.subTest(shape=index):
+                self.support.rollout(self.root)
+                row = self.support.message(body, tagged=False, delta=2)
+                if index == 2:
+                    row["payload"]["content"].append(
+                        {
+                            "type": "input_text",
+                            "text": "<environment_context><cwd>/PRIVATE-INJECTED</cwd></environment_context>",
+                        }
+                    )
+                rows = [json.loads(line) for line in self.path.read_text().splitlines()]
+                rows.insert(3, row)
+                self.support.write(self.path, rows)
+                case = self.freeze()
+                self.assertEqual(
+                    [refusal["reason"] for refusal in case["message_refusals"]],
+                    ["person-authorship-unconfirmed"],
+                )
+                self.assertNotIn("PRIVATE-INJECTED", json.dumps(case))
+                self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_cannot_freeze_when_an_unrelated_candidate_head_is_untimed(self) -> None:
+        other = self.support.rollout(self.root, sid=self.support.CHILD)
+        rows = [json.loads(line) for line in other.read_text().splitlines()]
+        rows[0].pop("timestamp")
+        self.support.write(other, rows)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "^codex-source-head-untimed$"):
+            self.freeze()
+
+    def test_a_person_cannot_skip_an_unrelated_blocking_rollout_during_discovery(self) -> None:
+        other = self.support.rollout(self.root, sid=self.support.CHILD)
+        rows = [json.loads(line) for line in other.read_text().splitlines()]
+        rows[0]["payload"]["cwd"] = "x" * 70000
+        oversized = json.dumps(rows[0]) + "\n"
+        for raw, token in (
+            (oversized, "codex-source-head-too-large"),
+            ("", "codex-source-unconfirmed"),
+            ('{"type":"legacy"}\n', "codex-source-identity-unconfirmed"),
+        ):
+            with self.subTest(token=token):
+                other.write_text(raw)
+                with self.assertRaisesRegex(mark_abstention.FreezeError, "^" + token + "$"):
+                    self.freeze()
+
+    def test_a_person_is_directed_to_freeze_codex_before_legacy_checks_can_be_lost(self) -> None:
+        with (
+            mock.patch.object(mark_abstention, "_load", return_value={"cases": [self.entry]}),
+            mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+            mock.patch.object(mark_abstention, "_observed_stores", return_value=((), ())),
+            mock.patch.object(mark_abstention, "_session_facts", return_value=[]),
+            mock.patch.object(mark_abstention, "_write") as written,
+            mock.patch("builtins.print") as printed,
+        ):
+            self.assertEqual(mark_abstention.freeze(1, "synthetic-spec"), 1)
+        written.assert_not_called()
+        self.assertIn("codex-requires--freeze-codex", str(printed.call_args_list))
+
+    def test_a_person_gets_a_closed_refusal_for_malformed_codex_case_entries(self) -> None:
+        spec = self.home / "PRIVATE-SPEC-MARKER.json"
+        packet = self.home / "packet/cases.json"
+        for entry in (None, [], ["PRIVATE-CONTENT-MARKER"], "PRIVATE-CONTENT-MARKER", 7):
+            with self.subTest(shape=type(entry).__name__):
+                spec.write_text(json.dumps({"cases": [entry]}))
+                with (
+                    mock.patch.object(mark_abstention, "CASES_PATH", str(packet)),
+                    mock.patch.object(mark_abstention, "_runtime_config", return_value=self.config),
+                    mock.patch("builtins.print") as printed,
+                ):
+                    self.assertEqual(mark_abstention.main(["--freeze-codex", str(spec)]), 1)
+                self.assertIn("codex-source-unconfirmed", str(printed.call_args_list))
+                for private in (str(self.home), "PRIVATE-", "Traceback", "AttributeError"):
+                    self.assertNotIn(private, str(printed.call_args_list))
+                self.assertFalse(packet.exists())
+
     def test_a_person_cannot_vouch_a_source_outside_the_selected_native_store(self) -> None:
         self.entry["sessions_root"] = str(self.home / "elsewhere")
         with self.assertRaisesRegex(mark_abstention.FreezeError, "source"):

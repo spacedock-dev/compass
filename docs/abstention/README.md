@@ -1248,7 +1248,10 @@ after output cannot qualify that output.
 
 `scripts/codex_case_candidates.py --root ROOT --output FILE` reads only the explicitly
 selected rollout tree. It writes private metadata outside the repository: hashed rollout
-aliases, dates, sizes, parent/child shape, lifecycle counts and check-result counts. It prints
+aliases, dates, sizes, first-line byte counts (`head_bytes`, including the line ending), whether
+that line parses as `session_meta` (`head_is_session_meta`), parent/child shape, lifecycle counts
+and check-result counts. Empty rollouts report zero head bytes and false. A bounded scan reports
+only the head bytes it read; `bounded: false` means that measurement may be incomplete. It prints
 only aggregate counts. No prompt, title, command, output or project path enters that inventory.
 This command still needs the local-read approval in gate (b).
 
@@ -1260,7 +1263,15 @@ its native `turn_end_at`. The spec and packet must stay outside the repository. 
 packet cannot be overwritten. Source selection is permission; admission independently checks
 the runtime's configured Codex store root, native identity, descendant membership and recorded
 lifecycle. Historical packets retain their original format and lifecycle meaning; they cannot
-be relabelled as format 6.
+be relabelled as format 6. The legacy `--freeze` path refuses Codex entries with
+`codex-requires--freeze-codex`.
+
+Discovery reads every rollout head under the configured native root, independently of the
+selected descendants. An unrelated rollout with a head over 65,536 bytes, an empty or malformed
+first line, a first line other than `session_meta`, or untimed metadata blocks the freeze too.
+Selection cannot scope this scan; ignoring unselected heads could hide a descendant. Check the
+inventory before selecting sources. Malformed case entries or inventory item types refuse with
+closed tokens and no source text, paths or tracebacks.
 
 The packet seals each parent/child prefix and capture boundary, the saved Intent, checks,
 messages, lifecycle, parser, selected source identities and actual production prompt digest.
@@ -1271,9 +1282,13 @@ missing message or check, changed selection or stale parser refuses admission. U
 scan boundaries and unreadable commands refuse rather than becoming an empty evidence list.
 
 Both provenance-tagged and older untagged person messages use the runtime's reader parser.
-A tagged message must identify the person for every content item. An older message the parser
-cannot attribute stays out, with a hashed source identity and `person-authorship-unconfirmed`
-in `message_refusals`; the packet never guesses its author. Native `task_complete` supplies
+A tagged message must identify the person for every content item. Offline admission additionally
+requires an older untagged message to contain a single plain text item. Leading markup tags,
+known injected prefixes (including the compaction summary), and messages the parser cannot
+attribute stay out, with a hashed source identity and `person-authorship-unconfirmed` in
+`message_refusals`. An untagged single plain-prose message from the user role is admitted as
+the person's on that narrow shape alone, which is an inference rather than proof; every other
+shape is refused rather than guessed. Native `task_complete` supplies
 the stop. Same-turn late results and measured settings metadata follow the collector's rules;
 resumed work, unplaceable work and a child still writing after the parent stop refuse admission.
 Claude Stop-hook provenance and the reviewed Claude export exception do not apply to Codex.

@@ -2258,7 +2258,7 @@ def _observed_stores(store_home: str | None) -> tuple[Any, Any]:
     return history.load(config)[0], ends.load(config)
 
 
-def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation failure
+def freeze(  # noqa: C901, PLR0911 - refuse each distinct harness/source/identity preparation failure
     port: int,
     spec_path: str,
     *,
@@ -2278,6 +2278,9 @@ def freeze(  # noqa: PLR0911 - refuse each distinct source/identity preparation 
     entries = spec.get("cases") if isinstance(spec.get("cases"), list) else []
     if not entries:
         print(f"No cases in {spec_path}.")
+        return 1
+    if any(isinstance(entry, dict) and entry.get("harness") == "codex" for entry in entries):
+        print("codex-requires--freeze-codex: use --freeze-codex for a Codex packet.")
         return 1
     if _marks(_load(MARKS_PATH)) and not force:
         print("Marks already exist here and would belong to a different packet.")

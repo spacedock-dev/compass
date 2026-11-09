@@ -177,7 +177,11 @@ def freeze_case(config: Any, entry: dict[str, Any]) -> dict[str, Any]:
     from compass_runtime import transcripts
     from compass_runtime.collectors import codex
 
-    if entry.get("harness") != "codex" or not marker._epoch(entry.get("captured_at")):
+    if (
+        not isinstance(entry, dict)
+        or entry.get("harness") != "codex"
+        or not marker._epoch(entry.get("captured_at"))
+    ):
         raise marker.FreezeError("codex-source-spec-invalid")
     captured = float(entry["captured_at"])
     sid = str(entry.get("sid") or "")
@@ -365,7 +369,7 @@ def freeze(spec_path: str) -> int:
         count = _freeze_packet(spec_path)
     except (marker.FreezeError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         print(
-            "Codex freeze refused; source, lifecycle or packet selection is unconfirmed. "
+            "codex-source-unconfirmed: source, lifecycle or packet selection is unconfirmed. "
             "Nothing was written."
         )
         return 1

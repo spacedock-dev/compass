@@ -48,6 +48,8 @@ def summarize_shape(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR09
         edits=0,
         bad_lines=0,
         bounded=True,
+        head_bytes=0,
+        head_is_session_meta=False,
     )
     date = re.search(r"rollout-(\d{4}-\d{2}-\d{2})", path.name)
     if date:
@@ -62,6 +64,9 @@ def summarize_shape(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR09
         used = 0
         with path.open("rb") as handle:
             while raw := handle.readline(MAX_BYTES - used + 1):
+                first = used == 0
+                if first:
+                    row["head_bytes"] = len(raw)
                 used += len(raw)
                 if used > MAX_BYTES:
                     row["bounded"] = False
@@ -74,6 +79,8 @@ def summarize_shape(path: Path) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR09
                 if not isinstance(record, dict):
                     row["bad_lines"] += 1
                     continue
+                if first:
+                    row["head_is_session_meta"] = record.get("type") == "session_meta"
                 payload = record.get("payload")
                 if not isinstance(payload, dict):
                     continue
@@ -168,8 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         rows = inventory(args.root, output=args.output)
-    except (OSError, ValueError):
-        print("Inventory refused; check the private source and output selection.")
+    except (OSError, ValueError, TypeError):
+        print("inventory-source-unconfirmed: check the private source and output selection.")
         return 1
     print(
         f"Inventoried {len(rows)} rollouts; "

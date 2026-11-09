@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -72,6 +72,21 @@ class FrozenCodexRuntimeTest(unittest.TestCase):
             self.config, str(self.path), SID, until=AT + 10
         )
         self.assertEqual(len(whole), 1)
+
+    def test_a_person_is_not_credited_with_malformed_untagged_content(self) -> None:
+        contents: tuple[Any, ...] = (None, "PRIVATE-INJECTED", [], [None], [{"text": []}])
+        for content in contents:
+            with self.subTest(shape=content):
+                row = message(tagged=False)
+                row["payload"]["content"] = content
+                self.assertFalse(context.codex_person_record(row))
+
+    def test_a_person_keeps_explicit_provenance_for_multiple_text_items_and_markup(self) -> None:
+        row = message("<user_instructions>person text</user_instructions>")
+        self.assertTrue(context.codex_person_record(row))
+        row["payload"]["content"].append({"type": "input_text", "text": "second person item"})
+        row["payload"]["internal_chat_message_metadata_passthrough"]["content_item_metadata"] *= 2
+        self.assertTrue(context.codex_person_record(row))
 
     def test_a_person_gets_redaction_before_message_clipping(self) -> None:
         from compass_runtime import observer  # noqa: PLC0415

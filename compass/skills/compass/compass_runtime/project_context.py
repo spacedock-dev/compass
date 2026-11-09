@@ -9843,12 +9843,23 @@ def frozen_codex_checks(
 def codex_person_record(record: dict[str, Any]) -> bool:
     """Native provenance, when present, must name the person for every content item.
 
-    Older rollouts have no provenance. Their eligibility remains the existing
-    reader parser's: known injected forms and unparseable messages are refused.
+    Older rollouts have no provenance. Offline admission accepts only a single
+    plain text item, then applies the reader parser's existing refusals.
     """
     payload = records.as_dict(record.get("payload"))
     metadata = payload.get("internal_chat_message_metadata_passthrough")
     if metadata is None:
+        content = payload.get("content")
+        if not isinstance(content, list) or len(content) != 1:
+            return False
+        body = records.as_dict(content[0]).get("text")
+        if not isinstance(body, str):
+            return False
+        body = body.lstrip("\ufeff \t\r\n")
+        if re.match(r"^</?[A-Za-z][A-Za-z0-9_:-]*[\s>/]", body):
+            return False
+        if body.startswith("Another language model started to solve this problem"):
+            return False
         return observer.parse_reader_record(record, cap=len(json.dumps(record))) is not None
     items = records.as_dict(metadata).get("content_item_metadata")
     content = payload.get("content")
