@@ -117,7 +117,7 @@ _SECRET_SHAPES: Final = (
     ("anthropic", 7, True, r"sk-ant-[A-Za-z0-9_-]{16,110}"),  # 89 in 35 files
     # Both Langfuse key kinds carry a UUID-shaped body. Keep the kind visible,
     # before the generic `sk-` shape can consume a secret key's more specific prefix.
-    ("langfuse", 6, True, r"(?:sk|pk)-lf-[0-9a-f-]{36}"),
+    ("langfuse", 6, True, r"(?:sk|pk)-lf-[0-9a-fA-F-]{36}"),
     # 32, not the 20 an OpenAI key's body needs. 20 was measured and rejected:
     # it alters 25 further genuine prompts, and every one is a hyphenated
     # identifier that merely opens a token with `sk-`.
@@ -304,9 +304,9 @@ _SECRET_SHAPES: Final = (
         0,
         False,
         (
-            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*[:=][ \t]*"
+            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*(?:[:=]|,)[ \t]*"
             r"(?P<authquote>[\"'])?(?P<authkind>(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
-            r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*))[ \t]+"
+            r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*))(?:[ \t]+|\\[ \t]+)"
             r"(?P<authval>(?(authquote)"
             r"(?:(?!(?P=authquote))[^\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))+"
             r"(?:(?=(?P=authquote))|(?=[\r\n])|$)"
@@ -314,16 +314,37 @@ _SECRET_SHAPES: Final = (
             rf"|{_AUTH_QUOTED_VALUE}|[^\s\"'`,;&)]+)))"
         ),
     ),
+    # A header may carry a token without naming its scheme. The replacer still
+    # requires a credential shape, so `authorization: required for all routes` stays.
+    (
+        "authbare",
+        0,
+        False,
+        (
+            r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*[:=][ \t]*[\"']?"
+            r"(?P<authbareval>[^\s\"'`,;&)]+)"
+        ),
+    ),
+    (
+        "authencoded",
+        0,
+        False,
+        (
+            r"(?<![\w-])(?i:(?:proxy-)?authorization%3a)(?i:%20|\+)*"
+            r"(?P<encodedkind>[A-Za-z][A-Za-z0-9-]*)(?i:%20|\+)+"
+            r"(?P<encodedval>[^\s\"'`,;&)]+)"
+        ),
+    ),
     # These schemes directly name a token, so code wrappers and escaped JSON
-    # need no header grammar. The alphabet, length and digit/symbol requirement
-    # keep ordinary authentication instructions readable.
+    # need no header grammar. The replacer checks the token alphabet and either
+    # a digit/symbol or the mixed-case base64 rule, keeping instructions readable.
     (
         "authscheme",
         0,
         False,
         (
             r"(?<![\w-])(?i:basic|token|negotiate|ntlm)\s+"
-            r"(?P<schemeval>(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,})"
+            r"(?P<schemeval>[A-Za-z0-9._~+/=-]{8,})"
         ),
     ),
     # A credential with no shape of its own, known only by the cue in front of
@@ -374,6 +395,8 @@ _SECRET_VALUE_GROUP: Final = {
     "netrc": "netrcval",
     "querysig": "sigval",
     "authorization": "authval",
+    "authbare": "authbareval",
+    "authencoded": "encodedval",
     "authscheme": "schemeval",
 }
 
@@ -528,6 +551,20 @@ _AUTH_PLACEHOLDER: Final = re.compile(r"(?:<[^<>]*>|\{[^{}]*\}|\.{3,})$")
 # (`dXNlcjpwYXNz`), which `_CREDENTIAL_LIKE_RE` reads as a word. Mixed case past the
 # first letter is what a word lacks: `Authentication` stays readable.
 _BASIC_BASE64: Final = re.compile(r"(?=[^a-z]*[a-z])(?=.[^A-Z]*[A-Z])[A-Za-z0-9+/]{8,}={0,2}")
+_AUTH_TOKEN_SCHEMES: Final = frozenset({"basic", "token", "negotiate", "ntlm"})
+# These are instructions about Basic rather than literal header values. With an
+# explicit Basic header, even a tiny, otherwise shapeless value is a credential.
+_BASIC_PROSE: Final = frozenset({"auth", "authentication", "header", "and", "both", "default"})
+
+
+def _explicit_basic_value_is_secret(value: str) -> bool:
+    value = value.strip("'\"")
+    return (
+        value.lower() not in _BASIC_PROSE
+        and not _CODE_VALUE_RE.match(value)
+        and not _AUTH_PLACEHOLDER.fullmatch(value)
+        and bool(re.fullmatch(r"[A-Za-z0-9+/=]+", value))
+    )
 
 
 def _auth_value_is_secret(value: str, *, cued: bool = False, basic: bool = False) -> bool:
@@ -596,16 +633,44 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         first, last = match.span(value_group)
         if name == "authorization":
             value = match.group(value_group)
-            if not _auth_value_is_secret(
+            kind = match.group("authkind").lower()
+            secret = _auth_value_is_secret(
                 value,
-                cued=bool(match.group("authparams")) or match.group("authkind").lower() == "bearer",
-                basic=match.group("authkind").lower() == "basic",
-            ):
-                return None
-            if value.startswith(("'", '"')):
+                cued=bool(match.group("authparams")) or kind == "bearer",
+                basic=kind in _AUTH_TOKEN_SCHEMES,
+            ) or (kind == "basic" and _explicit_basic_value_is_secret(value))
+            if not secret:
+                # A schemeless token followed by prose can occupy the scheme
+                # slot. Mark that token, keeping the sentence after it.
+                if (
+                    _auth_value_is_secret(match.group("authkind"))
+                    and not _CODE_VALUE_RE.match(value.strip("'\""))
+                    and not _AUTH_PLACEHOLDER.fullmatch(value.strip("'\""))
+                ):
+                    first, last = match.span("authkind")
+                else:
+                    return None
+            elif value.startswith(("'", '"')):
                 first += 1
                 if value[-1:] == value[:1] and len(value) > 1:
                     last -= 1
+        elif name == "authscheme":
+            value = match.group(value_group)
+            if not (_AUTH_CREDENTIAL_WORD.fullmatch(value) or _BASIC_BASE64.fullmatch(value)):
+                return None
+        elif name in {"authbare", "authencoded"}:
+            value = match.group(value_group)
+            explicit_basic = name == "authencoded" and match.group("encodedkind").lower() == "basic"
+            if not (
+                _explicit_basic_value_is_secret(value)
+                if explicit_basic
+                else _auth_value_is_secret(
+                    value,
+                    basic=name == "authencoded"
+                    and match.group("encodedkind").lower() in _AUTH_TOKEN_SCHEMES,
+                )
+            ):
+                return None
         return body[: first - match.start()] + _SECRET_MARKER + body[last - match.start() :]
     from_body = _SECRET_KEEP_TO_BODY.get(name)
     if from_body is not None:
@@ -697,6 +762,41 @@ def _needs_secret_scan(text: str) -> bool:
     return any(hint in lowered for hint in ("authorization", "basic", "token", "negotiate", "ntlm"))
 
 
+# One forward pass tracks curl until a command boundary. Starting a new search
+# at every `curl` and scanning to a later `-u` would rescan long rejected lines.
+_CURL_USER_RE: Final = re.compile(
+    r"(?P<curl>(?<![\w-])curl(?=[ \t]))"
+    r"|(?P<end>[\r\n;|&])"
+    r"|(?<![\w-])(?:-u[ \t]*|--user(?:=|[ \t]+))"
+    r"(?P<userquote>[\"'])?(?P<userval>(?(userquote)"
+    r"(?:(?!(?P=userquote))[^\r\n])+|[^\s\"';|&]+))"
+    r"(?(userquote)(?:(?P=userquote)|(?=[\r\n]|$)))"
+)
+
+
+def _redact_curl_users(text: str) -> str:
+    out: list[str] = []
+    cursor = 0
+    curl = False
+    for match in _CURL_USER_RE.finditer(text):
+        if match.group("curl"):
+            curl = True
+        elif match.group("end"):
+            curl = False
+        elif curl:
+            value = match.group("userval")
+            if ":" not in value:
+                continue
+            user, password = value.split(":", 1)
+            if not user or not _auth_value_is_secret(password, cued=True):
+                continue
+            first, last = match.span("userval")
+            out.extend((text[cursor:first], _SECRET_MARKER))
+            cursor = last
+    out.append(text[cursor:])
+    return "".join(out)
+
+
 def redact_secrets(text: str) -> str:
     """Credential-shaped runs replaced by a visible marker, everything else kept.
 
@@ -715,6 +815,7 @@ def redact_secrets(text: str) -> str:
     """
     # Before hints too: a formatting tag can split the hint itself (AK<em>IA).
     text = _redact_inline_markup(text)
+    text = _redact_curl_users(text) if "-u" in text else text
     return _redact_scan(text) if _needs_secret_scan(text) else text
 
 
@@ -1389,7 +1490,12 @@ def mask_prose(text: str) -> str:
     lines = [line.split() for line in text.splitlines()]
     # Over the lines with words, so a blank line between the halves is no gap.
     for above, below in itertools.pairwise([line for line in lines if line]):
-        if above and below and redact_secrets(above[-1] + below[0]) != above[-1] + below[0]:
+        if (
+            above
+            and below
+            and not _MASK_HEADER_ALONE.fullmatch(above[-1])
+            and redact_secrets(above[-1] + below[0]) != above[-1] + below[0]
+        ):
             above[-1] = below[0] = _SECRET_MARKER
     words: list[str] = []
     header = scheme_next = unshaped_header = False
@@ -1419,7 +1525,14 @@ def mask_prose(text: str) -> str:
                 and scheme_next
                 and (
                     word.strip("'\"").lower() in _MASK_AUTH_SCHEMES
-                    or (index + 1 < len(line) and _SECRET_MARKER in line[index + 1])
+                    or (
+                        index + 1 < len(line)
+                        and (
+                            _SECRET_MARKER in line[index + 1]
+                            or _AUTH_PLACEHOLDER.fullmatch(line[index + 1])
+                            or _CODE_VALUE_RE.match(line[index + 1])
+                        )
+                    )
                     or (index + 1 == len(line) and re.fullmatch(r"[A-Za-z][A-Za-z-]*", word))
                 )
             ):
