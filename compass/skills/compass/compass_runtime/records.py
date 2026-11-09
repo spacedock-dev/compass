@@ -17,6 +17,7 @@ from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol
+from urllib.parse import unquote
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -311,7 +312,8 @@ _SECRET_SHAPES: Final = (
             r"(?:(?!(?P=authquote))[^\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))+"
             r"(?:(?=(?P=authquote))|(?=[\r\n])|$)"
             rf"|(?:(?:{_AUTH_PARAMETER})(?:[ \t]*,[ \t]*(?:{_AUTH_PARAMETER}))*"
-            rf"|{_AUTH_QUOTED_VALUE}|[^\s\"'`,;&)]+)))"
+            rf"|{_AUTH_QUOTED_VALUE}"
+            r"|\{[^{}\s]*\}|[^\s\"'`,;&)}]+)))"
         ),
     ),
     # A header may carry a token without naming its scheme. The replacer still
@@ -337,7 +339,7 @@ _SECRET_SHAPES: Final = (
     ),
     # These schemes directly name a token, so code wrappers and escaped JSON
     # need no header grammar. The replacer checks the token alphabet and either
-    # a digit/symbol or the mixed-case base64 rule, keeping instructions readable.
+    # a digit/symbol or mixed-case base64 at a value end, keeping prose readable.
     (
         "authscheme",
         0,
@@ -554,15 +556,32 @@ _BASIC_BASE64: Final = re.compile(r"(?=[^a-z]*[a-z])(?=.[^A-Z]*[A-Z])[A-Za-z0-9+
 _AUTH_TOKEN_SCHEMES: Final = frozenset({"basic", "token", "negotiate", "ntlm"})
 # These are instructions about Basic rather than literal header values. With an
 # explicit Basic header, even a tiny, otherwise shapeless value is a credential.
-_BASIC_PROSE: Final = frozenset({"auth", "authentication", "header", "and", "both", "default"})
+_BASIC_PROSE: Final = frozenset(
+    {
+        "auth",
+        "authentication",
+        "header",
+        "and",
+        "both",
+        "default",
+        "base",
+        "none",
+        "test",
+        "yes",
+        "user",
+    }
+)
+# Match at the value's end without slicing the remaining text on each candidate.
+_AUTH_VALUE_END: Final = re.compile(r"[ \t]*(?=$|[\r\n`),;}]|\\?[\"'])")
 
 
-def _explicit_basic_value_is_secret(value: str) -> bool:
-    value = value.strip("'\"")
+def _explicit_basic_value_is_secret(value: str, *, at_end: bool) -> bool:
+    value = unquote(value.strip("'\""))
     return (
         value.lower() not in _BASIC_PROSE
         and not _CODE_VALUE_RE.match(value)
         and not _AUTH_PLACEHOLDER.fullmatch(value)
+        and (not value.isalpha() or at_end)
         and bool(re.fullmatch(r"[A-Za-z0-9+/=]+", value))
     )
 
@@ -634,11 +653,16 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         if name == "authorization":
             value = match.group(value_group)
             kind = match.group("authkind").lower()
+            at_end = bool(_AUTH_VALUE_END.match(match.string, last)) or (
+                len(value) > 1 and value[0] in "'\"" and value[-1] == value[0]
+            )
+            # A shell-escaped scheme separator supplies a header, not prose.
+            basic_cued = at_end or match.string[match.end("authkind")] == "\\"
             secret = _auth_value_is_secret(
                 value,
                 cued=bool(match.group("authparams")) or kind == "bearer",
-                basic=kind in _AUTH_TOKEN_SCHEMES,
-            ) or (kind == "basic" and _explicit_basic_value_is_secret(value))
+                basic=kind in _AUTH_TOKEN_SCHEMES and (kind != "basic" or basic_cued),
+            ) or (kind == "basic" and _explicit_basic_value_is_secret(value, at_end=basic_cued))
             if not secret:
                 # A schemeless token followed by prose can occupy the scheme
                 # slot. Mark that token, keeping the sentence after it.
@@ -656,13 +680,18 @@ def _mark_secret(match: re.Match[str]) -> str | None:
                     last -= 1
         elif name == "authscheme":
             value = match.group(value_group)
-            if not (_AUTH_CREDENTIAL_WORD.fullmatch(value) or _BASIC_BASE64.fullmatch(value)):
+            if not (
+                _AUTH_CREDENTIAL_WORD.fullmatch(value)
+                or (_BASIC_BASE64.fullmatch(value) and _AUTH_VALUE_END.match(match.string, last))
+            ):
                 return None
         elif name in {"authbare", "authencoded"}:
             value = match.group(value_group)
             explicit_basic = name == "authencoded" and match.group("encodedkind").lower() == "basic"
             if not (
-                _explicit_basic_value_is_secret(value)
+                _explicit_basic_value_is_secret(
+                    value, at_end=bool(_AUTH_VALUE_END.match(match.string, last))
+                )
                 if explicit_basic
                 else _auth_value_is_secret(
                     value,
@@ -766,6 +795,7 @@ def _needs_secret_scan(text: str) -> bool:
 # at every `curl` and scanning to a later `-u` would rescan long rejected lines.
 _CURL_USER_RE: Final = re.compile(
     r"(?P<curl>(?<![\w-])curl(?=[ \t]))"
+    r"|(?P<continuation>\\\r?\n)"
     r"|(?P<end>[\r\n;|&])"
     r"|(?<![\w-])(?:-u[ \t]*|--user(?:=|[ \t]+))"
     r"(?P<userquote>[\"'])?(?P<userval>(?(userquote)"
@@ -781,6 +811,8 @@ def _redact_curl_users(text: str) -> str:
     for match in _CURL_USER_RE.finditer(text):
         if match.group("curl"):
             curl = True
+        elif match.group("continuation"):
+            continue
         elif match.group("end"):
             curl = False
         elif curl:
@@ -1545,7 +1577,10 @@ def mask_prose(text: str) -> str:
                 and (
                     unshaped_header
                     or _auth_value_is_secret(
-                        word, basic=bool(words) and words[-1].strip("'\"").lower() == "basic"
+                        word,
+                        basic=bool(words)
+                        and words[-1].strip("'\"").lower() == "basic"
+                        and index + 1 == len(line),
                     )
                     or _SECRET_MARKER in word
                 )

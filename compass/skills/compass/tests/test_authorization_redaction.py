@@ -361,3 +361,83 @@ class APersonSharingAuthorization(unittest.TestCase):
             for mask in (records.redact_secrets, records.mask_prose):
                 with self.subTest(mask=mask.__name__):
                     self.assertIn("Authentication", mask(raw))
+
+    def test_a_person_can_share_encoded_basic_padding_without_publishing_the_value(self) -> None:
+        for value in (
+            "YWxpY2U6czNjcmV0%3D",
+            "YWxpY2U6czNjcmV0MTI%3d",
+            "dXNlcjpwYXNzd29yZA%3D%3D",
+            "ZmFrZXVzZXI6ZmFrZXBhc3M%2B%2Fw%3D%3D",
+            "ZmFrZXVzZXI6ZmFrZXBhc3M%2b%2fw%3d%3d",
+        ):
+            for template in (
+                "Authorization%3A%20Basic%20{value}",
+                "?h=Authorization%3a+Basic+{value}&x=1",
+            ):
+                raw = template.format(value=value)
+                self.assert_private(raw, value)
+                for mask in (records.redact_secrets, records.mask_prose):
+                    with self.subTest(raw=raw, mask=mask.__name__):
+                        self.assertEqual(raw.replace(value, records.SECRET_MARKER), mask(raw))
+
+    def test_a_person_can_continue_a_curl_command_without_publishing_the_password(self) -> None:
+        value = "alice:MadeUpPass99"
+        for newline in ("\n", "\r\n"):
+            continuation = "\\" + newline
+            for flag in ("-u ", "--user ", "--user=", "-u"):
+                for prefix in ("curl -X POST https://example.test", "curl -H 'A: b'"):
+                    raw = f"{prefix} {continuation}  {flag}{value}"
+                    self.assert_private(raw, "MadeUpPass99")
+                    expected = raw.replace(value, records.SECRET_MARKER)
+                    self.assertEqual(expected, records.redact_secrets(raw))
+                    self.assertEqual(" ".join(expected.split()), records.mask_prose(raw))
+            raw = f"curl {continuation} -H 'A: b' {continuation} -u '{value}' {continuation} https://example.test"
+            self.assert_private(raw, "MadeUpPass99")
+
+    def test_a_person_can_run_another_command_after_curl_without_hiding_its_arguments(self) -> None:
+        for boundary in ("\n", "\r\n", ";", "|", "&"):
+            raw = f"curl https://example.test{boundary} other -u alice:MadeUpPass99"
+            self.assertEqual(raw, records.redact_secrets(raw))
+
+    def test_a_person_can_discuss_basic_headers_without_losing_prose_words(self) -> None:
+        for words in (
+            "or Bearer",
+            "then Digest",
+            "with a password",
+            "is fine",
+            "test",
+            "Credentials needed",
+            "Auth",
+            "Base",
+            "none",
+            "YES",
+            "user",
+            "JavaScript tutorial",
+            "McDonald menu",
+        ):
+            for header in ("Authorization", "Proxy-Authorization"):
+                raw = f"{header}: Basic {words}"
+                for mask in (records.redact_secrets, records.mask_prose):
+                    with self.subTest(raw=raw, mask=mask.__name__):
+                        self.assertEqual(raw, mask(raw))
+
+    def test_a_person_can_discuss_camelcase_technologies_after_a_scheme(self) -> None:
+        for raw in (
+            "Basic JavaScript tutorial",
+            "Token PostgreSQL connection",
+            "Basic McDonald menu",
+            "Basic JavaScript tutorial and Token PostgreSQL connection",
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    self.assertEqual(raw, mask(raw))
+
+    def test_a_person_keeps_scheme_values_private_at_header_and_token_boundaries(self) -> None:
+        for ending in ("", "\nnext line stays", "'", '"', "`", ", next", "; next", "}"):
+            self.assert_private(f"Authorization: Basic YTpi{ending}", "YTpi")
+        for scheme in ("Basic", "Token", "Negotiate", "NTLM"):
+            for ending in ("", "'", '"', "`", ")", ", next", "; next", "}"):
+                self.assert_private(f"{scheme} dXNlcjpwYXNz{ending}", "dXNlcjpwYXNz")
+            self.assert_private(f"{scheme} MadeUpToken99 then retry", "MadeUpToken99")
+        for scheme in ("Token", "Negotiate", "NTLM"):
+            self.assert_private(f"Authorization: {scheme} dXNlcjpwYXNz then retry", "dXNlcjpwYXNz")
