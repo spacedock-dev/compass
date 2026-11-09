@@ -3750,10 +3750,19 @@ outside this evaluation budget, and no dollar quote is established here.
 Later analysis-level replay needs a separate approved fixed total allowance, tracked in
 `~/.cargento/codex-levels-replay-spend.json`. `levels_cases.py --cohort codex` writes it once,
 privately, and records each approved charge and its settlement as events in that one file under a
-lock; the receipts directory the producer ledger keeps is not built for it. A charge is recorded
-before the call is launched and never removed, and no input is charged twice. The same
-fixed-home rule applies; the file is not authenticated against another process under the same
-account.
+lock. Beside it a receipts folder keeps the zero-charge genesis, with the total, so a ledger file
+that is moved or deleted is never created again and a total edited upward no longer matches its
+genesis; every replay then refuses. A charge is recorded before the call is launched and never
+removed, and no input is charged twice. The settlement records a digest of the reading the call
+returned, and each attached reading carries that digest, so a verdict edited after the call, or
+a reading swapped between cases, is refused at attach and again at scoring. The scored result
+records the genesis the readings were attached under, so a replacement ledger cannot score them.
+The same fixed-home rule applies as for the producer ledger: Windows and a moved `HOME` refuse,
+because the account home there depends on the environment. The file is not authenticated
+against another process under the same account, and restoring a backup of `~/.cargento` taken
+after some charges resets the allowance undetected; only the owner's own record of the approvals
+given can show it. The same digest check is not yet applied to the Claude cohort's replayed
+readings.
 Each replay also needs one-call approval, reading consent, tool-output consent and capacity in
 the ordinary rolling reading-permission ledger. Deterministic level scoring makes no model
 call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating

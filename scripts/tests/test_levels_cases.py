@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1476,6 +1477,93 @@ class CodexAllowanceTest(CodexReplayTestCase):
         ledger.settle(charge, "unusable", now=3.0)
         self.assertEqual(ledger.remaining(), 0)
 
+    def test_a_spent_allowance_cannot_be_renewed_by_moving_the_ledger(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.assertEqual(self.read(case_id), 0, self.out)
+        moved = self.allowance_path.with_name("moved-away.json")
+        os.replace(self.allowance_path, moved)
+        self.assertEqual(self.allow(1), 1)
+        self.assertTrue(any("already" in line for line in self.out), self.out)
+        self.assertFalse(self.allowance_path.exists())
+
+    def test_a_deleted_ledger_is_never_recreated_and_refuses_every_replay(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.allowance_path.unlink()
+        self.assertEqual(self.allow(1), 1)
+        self.assertFalse(self.allowance_path.exists())
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+    def test_a_ledger_rewritten_with_a_larger_allowance_refuses_every_replay(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        ledger = self.ledger()
+        ledger["allowance"] = 12
+        self.allowance_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+    def test_a_ledger_replaced_by_a_fresh_one_does_not_match_the_attached_readings(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.assertEqual(self.read(case_id), 0, self.out)
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        old_events = self.ledger()["events"]
+        shutil.rmtree(str(self.allowance_path) + ".receipts")
+        self.allowance_path.unlink()
+        self.assertEqual(self.allow(1), 0, self.out)
+        fresh = self.ledger()
+        fresh["events"] = old_events
+        self.allowance_path.write_text(json.dumps(fresh), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        self.assertEqual(self.results()["verdict"], levels_cases.VERDICT_REFUSED)
+        row = self.results()["cases"][case_id]["analysis"]
+        self.assertEqual(row["outcome"], "refused:unbound")
+
+    def test_a_replay_on_windows_reads_nothing_and_charges_nothing(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            code = levels_cases.read_cases(
+                home=str(self.home),
+                repo_root=str(self.repo),
+                digest_path=str(self.digest_path),
+                reading_config=self.config,
+                case_ids=[case_id],
+                model=self.model,
+                destination="OpenAI",
+                clock=lambda: time.time() + 60,
+                say=self.say,
+                cohort="codex",
+                approve=self.approve,
+            )
+        self.assertEqual(code, 1)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual(self.charges(), [])
+
+    def test_a_scored_codex_result_records_the_allowance_it_was_fixed_under(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.read(case_id)
+        self.attach_replayed()
+        self.score()
+        ledger = levels_cases.ReplayLedger(str(self.allowance_path))
+        self.assertEqual(self.results()["allowance"], {"genesis": ledger.genesis()})
+
+    def test_the_account_ledger_is_refused_on_windows_and_on_a_moved_home(self) -> None:
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            self.assertIsNone(levels_cases.default_allowance_path())
+        self.assertIsNone(levels_cases.default_allowance_path())  # HOME is the temporary root
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            self.assertEqual(
+                levels_cases.approve_replay_allowance(
+                    levels_cases.default_allowance_path(), 1, now=1.0, say=self.say
+                ),
+                1,
+            )
+
     def test_the_allowance_file_is_private(self) -> None:
         self.allow(1)
         self.assertEqual(self.allowance_path.stat().st_mode & 0o777, 0o600)
@@ -1618,9 +1706,53 @@ class CodexAttachTest(CodexReplayTestCase):
     def test_a_replayed_reading_binds_its_producer_request_inputs_and_charge(self) -> None:
         case_id = self.replay_one()
         binding = self.replayed()["bindings"][case_id]
-        self.assertEqual(set(binding), {"producer", "request", "inputs", "charge"})
+        self.assertEqual(set(binding), {"producer", "request", "inputs", "charge", "reading"})
         self.assertEqual(binding["charge"], self.charges()[0]["id"])
         self.assertEqual(self.attach_replayed(), 0, self.out)
+
+    def edit_replayed(self, case_id: str) -> None:
+        spec = self.replayed()
+        spec["readings"][case_id]["criteria"]["goal"]["detail"] = "edited after it was read"
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+
+    def test_a_person_who_edits_a_replayed_verdict_cannot_attach_it(self) -> None:
+        case_id = self.replay_one()
+        self.edit_replayed(case_id)
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line and "reading" in line for line in self.out), self.out)
+        self.assertFalse(Path(self.files()["readings"]).exists())
+
+    def test_a_reading_edited_after_it_attached_is_refused_when_the_cohort_is_scored(self) -> None:
+        case_id = self.replay_one()
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        readings = json.loads(Path(self.files()["readings"]).read_text(encoding="utf-8"))
+        readings["readings"][case_id]["criteria"]["goal"]["detail"] = "edited after attaching"
+        Path(self.files()["readings"]).write_text(json.dumps(readings), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        row = self.results()["cases"][case_id]["analysis"]
+        self.assertEqual(row["outcome"], "refused:unbound")
+
+    def test_a_person_who_swaps_two_cases_readings_and_bindings_cannot_attach_them(self) -> None:
+        ids = self.marked("n", "n", kinds=["admissible-support", "stale-pass"])
+        self.allow()
+        self.assertEqual(self.read(*ids), 0, self.out)
+        spec = self.replayed()
+        a, b = ids
+        for part in ("readings",):
+            spec[part][a], spec[part][b] = spec[part][b], spec[part][a]
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertFalse(Path(self.files()["readings"]).exists())
+
+    def test_a_ledger_whose_settlement_names_another_reading_refuses_the_attach(self) -> None:
+        case_id = self.replay_one()
+        ledger = self.ledger()
+        for event in ledger["events"]:
+            if event["kind"] == "settlement":
+                event["reading"] = "0" * 64
+        self.allowance_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line for line in self.out))
 
     def test_a_reading_from_another_producer_is_refused(self) -> None:
         case_id = self.replay_one()

@@ -297,9 +297,12 @@ alias, the digest of the exact request and the allowance left, as well as the or
 consent, tool-output consent and rolling reading budget. The call is prepared locally first, which
 sends nothing, and the request approved is the only one sent. Failed or interrupted calls remain
 charged, and no input is ever charged twice, so rerunning cannot silently retry or renew the total
-allowance. The replay sends the prompt the production reader built when the case was frozen, and
-a reading attaches only with its producer, request digest, exact inputs and approved charge, each
-checked again at scoring. The accounting and refusal rules are in
+allowance. A moved or deleted allowance file is never created again, and Windows or a moved `HOME`
+refuses it. The replay sends the prompt the production reader built when the case was frozen, and
+a reading attaches only with its producer, request digest, exact inputs, approved charge and a
+digest of its own contents, each checked again at scoring, so an edited or swapped reading is
+refused. The result records the allowance the readings were attached under. Restoring a backup
+of the account's study folder taken after some charges resets the allowance undetected. The accounting and refusal rules are in
 [SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09).
 Passing the scorer then requires a separate owner decision before Codex analysis levels may be
 enabled or results published.

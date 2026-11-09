@@ -917,12 +917,22 @@ def _admit(config: Any, value: Any) -> Any:
 # ------------------------------------------------------- the Codex replay allowance
 
 
+RECEIPTS_SUFFIX = ".receipts"
+
+
 class ReplayLedgerError(Exception):
     """The replay allowance cannot be read, or refuses the call asked of it."""
 
 
 def default_allowance_path() -> str | None:
-    """The fixed account-level file, or None where the account home cannot be settled."""
+    """The fixed account-level file, or None where the account home cannot be settled.
+
+    None on Windows, where the account home resolves from environment variables, and when `HOME`
+    names another directory than the account's own: either would hand a second, empty ledger to
+    the same inputs, exactly as the producer ledger's authority check refuses.
+    """
+    if sys.platform == "win32" or abstention_ledger.home_moved():
+        return None
     return abstention_ledger.study_path("codex-levels-replay-spend.json")
 
 
@@ -941,11 +951,29 @@ def approve_replay_allowance(
         say(f"Refused: the allowance is a whole number from 0 to {REPLAY_ALLOWANCE_MAX}.")
         return 1
     target = str(path)
+    receipts = target + RECEIPTS_SUFFIX
     with abstention_ledger.locked(target):
-        if os.path.lexists(target):
+        # The receipts folder outlives a moved or deleted ledger file, so an activated allowance
+        # is never created a second time (the producer ledger refuses the same way).
+        if os.path.lexists(target) or os.path.lexists(receipts):
             say("Refused: the replay allowance is already fixed; it is never raised or renewed.")
             return 1
-        _write(target, {"v": 1, "allowance": total, "approved_at": now, "events": []})
+        genesis = {"v": 1, "allowance": total, "approved_at": now, "nonce": uuid.uuid4().hex}
+        os.makedirs(receipts, mode=0o700)
+        with open(os.path.join(receipts, "genesis.json"), "x", encoding="utf-8") as handle:
+            json.dump(genesis, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _write(
+            target,
+            {
+                "v": 1,
+                "allowance": total,
+                "approved_at": now,
+                "genesis": digest(genesis),
+                "events": [],
+            },
+        )
     say(f"Fixed the Codex replay allowance at {total}. Each call still needs its own approval.")
     return 0
 
@@ -974,7 +1002,23 @@ class ReplayLedger:
         ):
             msg = "the replay allowance is not fixed, or its file cannot be read"
             raise ReplayLedgerError(msg)
+        if self._genesis_problem(body):
+            msg = "the replay allowance does not match the genesis it was fixed under"
+            raise ReplayLedgerError(msg)
         return body
+
+    def _genesis_problem(self, body: Mapping[str, Any]) -> bool:
+        """Whether the file's total and anchor differ from the receipt written when it was fixed."""
+        genesis = _load(os.path.join(self.path + RECEIPTS_SUFFIX, "genesis.json"))
+        return (
+            digest(genesis) != body.get("genesis")
+            or genesis.get("allowance") != body.get("allowance")
+            or os.path.islink(self.path + RECEIPTS_SUFFIX)
+        )
+
+    def genesis(self) -> str:
+        """The anchor this allowance was fixed under, which a recreated ledger cannot reproduce."""
+        return str(self.load()["genesis"])
 
     def events(self, kind: str) -> list[dict[str, Any]]:
         return [e for e in self.load()["events"] if e.get("kind") == kind]
@@ -1015,8 +1059,12 @@ class ReplayLedger:
             _write(self.path, body)
         return str(event["id"])
 
-    def settle(self, charge: str, status: str, *, now: float) -> None:
-        """Say how a charged call ended. Nothing here ever gives a charge back."""
+    def settle(self, charge: str, status: str, *, now: float, reading: str | None = None) -> None:
+        """Say how a charged call ended, and the digest of the reading it returned.
+
+        Nothing here ever gives a charge back. The digest is what binds a reading's contents to
+        its charge, so a verdict edited afterwards no longer matches the call that made it.
+        """
         with abstention_ledger.locked(self.path):
             body = self.load()
             if any(
@@ -1029,6 +1077,7 @@ class ReplayLedger:
                     "kind": "settlement",
                     "charge": charge,
                     "status": status,
+                    "reading": reading,
                     "at": now,
                 }
             )
@@ -1049,7 +1098,12 @@ def _producer(case: Mapping[str, Any]) -> str:
     )
 
 
-_BINDING_KEYS = frozenset({"producer", "request", "inputs", "charge"})
+_BINDING_KEYS = frozenset({"producer", "request", "inputs", "charge", "reading"})
+
+
+def reading_digest(reading: Any) -> str:
+    """A hash of a reading as stored, so a file can be held to what the call returned."""
+    return digest(json.loads(json.dumps(reading)))
 
 
 def _binding_problem(
@@ -1057,6 +1111,7 @@ def _binding_problem(
     binding: Any,
     charges: Mapping[str, Mapping[str, Any]],
     committed_at: float,
+    reading: Any,
 ) -> str:
     """Why a Codex reading is not bound to its case's inputs, producer and approved charge."""
     if case is None:
@@ -1079,19 +1134,43 @@ def _binding_problem(
             "its charge was approved for another request",
         ),
         (at is not None and at > committed_at, "its charge predates the committed marks digest"),
+        (
+            binding["reading"] == reading_digest(reading),
+            "its contents differ from the reading the call returned",
+        ),
+        (
+            charge is not None and charge.get("reading") == binding["reading"],
+            "its charge was settled for another reading",
+        ),
     )
     return next((why for holds, why in problems if not holds), "")
 
 
 def _charges_by_id(allowance_path: str | None) -> dict[str, dict[str, Any]]:
-    """Every approved charge by id; none, rather than a guess, when the file cannot be read."""
+    """Every approved charge by id, each with the digest its settlement recorded.
+
+    None, rather than a guess, when the file cannot be read.
+    """
     try:
+        events = ReplayLedger(allowance_path or default_allowance_path()).load()["events"]
+        settled = {
+            str(e["charge"]): e.get("reading") for e in events if e.get("kind") == "settlement"
+        }
         return {
-            str(e["id"]): e
-            for e in ReplayLedger(allowance_path or default_allowance_path()).charges()
+            str(e["id"]): {**e, "reading": settled.get(str(e["id"]))}
+            for e in events
+            if e.get("kind") == "charge"
         }
     except (ReplayLedgerError, KeyError):
         return {}
+
+
+def _genesis(allowance_path: str | None) -> str:
+    """The anchor of the allowance in force, or empty when it cannot be read."""
+    try:
+        return ReplayLedger(allowance_path or default_allowance_path()).genesis()
+    except (ReplayLedgerError, KeyError):
+        return ""
 
 
 def attach_readings(  # noqa: C901 - one refusal per binding
@@ -1144,7 +1223,7 @@ def attach_readings(  # noqa: C901 - one refusal per binding
             problems.append(f"{key}: made before the marks digest was committed")
         elif codex and (
             why := _binding_problem(
-                by_id.get(key), bindings.get(key), charges, committed.committed_at
+                by_id.get(key), bindings.get(key), charges, committed.committed_at, value
             )
         ):
             problems.append(f"{key}: binding refused: {why}")
@@ -1161,7 +1240,15 @@ def attach_readings(  # noqa: C901 - one refusal per binding
             "digest_commit": committed.commit,
             "attached_at": now,
             "readings": readings,
-            **({"cohort": COHORT_CODEX, "bindings": bindings} if codex else {}),
+            **(
+                {
+                    "cohort": COHORT_CODEX,
+                    "bindings": bindings,
+                    "allowance": _genesis(allowance_path),
+                }
+                if codex
+                else {}
+            ),
         },
     )
     say(f"Attached {len(readings)} readings under digest commit {committed.commit[:12]}.")
@@ -1186,7 +1273,11 @@ def _reading_for(
     if value is None:
         return None, ""
     if charges is not None and _binding_problem(
-        case, (attached.get("bindings") or {}).get(str(case["id"])), charges, committed.committed_at
+        case,
+        (attached.get("bindings") or {}).get(str(case["id"])),
+        charges,
+        committed.committed_at,
+        value,
     ):
         return None, "unbound"
     if (
@@ -1295,7 +1386,14 @@ def score(
         return 1
     attached = _load(paths["readings"])
     config = _config()
-    charges = _charges_by_id(allowance_path) if codex else None
+    # A readings file attached under one allowance is not scored against another: a ledger moved
+    # aside and fixed again has a new anchor, so every Codex reading reads as unbound.
+    anchor = _genesis(allowance_path) if codex else ""
+    charges = (
+        (_charges_by_id(allowance_path) if anchor and attached.get("allowance") == anchor else {})
+        if codex
+        else None
+    )
     rows = {
         str(case["id"]): _score_case(
             levels,
@@ -1345,6 +1443,7 @@ def score(
     }
     if codex:
         summary["cohort"] = COHORT_CODEX
+        summary["allowance"] = {"genesis": anchor}
         summary["coverage"] = {
             "matrix": sorted(set(body.get("matrix") or ())),
             "uncovered": uncovered,
@@ -2054,7 +2153,10 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
         assessment, why = None, "store-refused"
     if charge and gate is not None:
         gate.ledger.settle(
-            charge[0], "usable" if assessment is not None else "unusable", now=clock()
+            charge[0],
+            "usable" if assessment is not None else "unusable",
+            now=clock(),
+            reading=reading_digest(assessment) if assessment is not None else None,
         )
     for key in keys:
         if assessment is not None:
@@ -2065,6 +2167,7 @@ def _read_group(  # noqa: C901 - the gate adds one stage to each group
                     "request": request,
                     "inputs": inputs,
                     "charge": charge[0],
+                    "reading": reading_digest(assessment),
                 }
         files.record[key] = {
             "status": STATUS_READ if assessment is not None else STATUS_REFUSED,
