@@ -3747,9 +3747,13 @@ maximum proposed evaluation budget is 139 calls. These are proposed ceilings, no
 the owner must approve the exact schedule and allowances before calls. Coding-agent turns are
 outside this evaluation budget, and no dollar quote is established here.
 
-Later analysis-level replay needs a separate approved fixed total allowance, tracked at the
-proposed `~/.cargento/codex-levels-replay-spend.json`, with receipts under
-`~/.cargento/codex-levels-replay-spend.json.receipts/`. The same fixed-home and failure rules apply.
+Later analysis-level replay needs a separate approved fixed total allowance, tracked in
+`~/.cargento/codex-levels-replay-spend.json`. `levels_cases.py --cohort codex` writes it once,
+privately, and records each approved charge and its settlement as events in that one file under a
+lock; the receipts directory the producer ledger keeps is not built for it. A charge is recorded
+before the call is launched and never removed, and no input is charged twice. The same
+fixed-home rule applies; the file is not authenticated against another process under the same
+account.
 Each replay also needs one-call approval, reading consent, tool-output consent and capacity in
 the ordinary rolling reading-permission ledger. Deterministic level scoring makes no model
 call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating
