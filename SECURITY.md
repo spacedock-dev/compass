@@ -3671,8 +3671,8 @@ current-head CI come before any spending.
 
 #### Prospective Codex analysis qualification, 2026-11-09
 
-The offline authority and approval helpers, metadata inventory and source freeze are implemented;
-there is no producer wiring or completed study run. The owner has directed preparation; each
+The offline authority and approval helpers, metadata inventory, source freeze and one-exposure
+scorer are implemented. No real producer or completed study run exists for this protocol. The owner has directed preparation; each
 private-source step, provider send and publication still needs the approval described in the
 [ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
 It qualifies Codex analysis levels only. Live estimate and Live monitor stay Claude-only, and
@@ -3734,7 +3734,13 @@ protocol/runtime/scorer, verified transport and exact requests. The public grant
 transport digest, never its absolute CLI paths or actual argv. Approval is specific to one
 process invocation and is consumed under the same lock that records the charge. Receipts are
 written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
-allowance. These are operator guards over reviewed artifacts, not authentication of the owner
+allowance. The scorer checkpoints a charge before launch and keeps an exclusive per-charge
+attempt record under `~/.cargento/codex-qualification-spend.json.results/`. Those records hold
+local outcomes and bounded model explanations, not prompts or recovered source replies. Resume
+compares them with the packet's checkpoint and the ledger's charge and settlement receipts;
+missing, changed or symlinked records refuse. The approved argv names a private transient output
+alias of the production executor's temporary file; both names are removed after the invocation.
+Native executable and installation hashes are checked again immediately before its runner. These are operator guards over reviewed artifacts, not authentication of the owner
 or isolation from another process under the same account. The activation anchor binds only the
 empty genesis, so restoring a backup of `~/.cargento` taken after some charges resets the
 allowance undetected. Only the owner's own record of the approvals given can show it. The proposed allowance registers

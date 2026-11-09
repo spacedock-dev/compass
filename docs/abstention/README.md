@@ -1197,17 +1197,20 @@ exactly that.
 
 The offline authority helpers in `scripts/abstention_ledger.py` and
 `scripts/analyze_campaign.py` implement reviewed genesis, one-call approvals and reservations.
-The offline source inventory and freeze are also implemented. The helpers cannot launch a
-producer, and the current scorer still refuses Codex scoring. No admitted
-packet, grant, marks or run exists for this protocol yet. The owner has directed preparation of
+The offline source inventory, freeze and scorer are implemented. The scorer prepares requests
+through a local prompt sink; execution consumes one owner approval, checkpoints one exposure and
+returns. No admitted packet, grant, marks or real producer run exists for this protocol yet. The owner has directed preparation of
 the recommended qualification; that direction authorizes neither private source inspection nor
 provider calls. Historical acceptance, Claude grants, charges and results above remain unchanged
 and confer no authority on this study.
 
 `codex_grant()` reads only `docs/abstention/codex-grant.json`, which is not supplied.
 `CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
-genesis and freshly recomputed input and transport bindings. Source intake establishes provenance separately; future scorer code must authenticate the
-installed CLI. These authority helpers do neither.
+genesis and freshly recomputed input and transport bindings. Source intake establishes provenance;
+the scorer separately verifies the resolved npm installation, package version and actual native
+executable, records their hashes and rechecks their identity immediately before launch. Unknown
+installation layouts refuse. This is a structural installation check with owner-reviewed hashes,
+not a publisher signature; a version string alone is insufficient.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
 An approval belongs to one exact request, slot, retry bit and process invocation. Reservation
 consumes it under the account lock before returning a charge. Missing receipts or an interrupted
@@ -1296,6 +1299,28 @@ Claude Stop-hook provenance and the reviewed Claude export exception do not appl
 
 This prepares evidence for review. It supplies no kind verdict, blind mark, provider-sharing
 approval, spend authority or qualification result.
+
+### Scoring tooling
+
+`score_abstention.py --prepare-codex --producer codex` derives the thirty requests locally and
+prints transport, input and registration bindings. Only a local sink receives the prompts; the
+preparation records no approval and launches no producer. The private packet's
+`codex_kind_reviews` binds each case's digest to its independently reviewed kind, two distinct
+blind markers, a separate kind reviewer and review receipt digest. Supported departure requires
+an explicit spontaneous ruling. Each adversary also names different authors and verifiers.
+Rubric labels cannot supply recorded coverage. Every required expectation must exist before
+preparation succeeds.
+
+`--score --producer codex` requires the separately sealed grant and reviewed genesis. It shows
+the next case alias, repetition/retry, request digest, model/effort, CLI binding, evidence
+categories and remaining allowance before asking for that one approval. Type `approve` to record
+and consume its invocation-bound receipt. Resume with `--score --producer codex --resume`;
+every invocation asks again and handles at most one exposure. There is no unattended approval
+flag. The local results use `abstention-codex-results.json` in the packet home; the committable
+half uses `docs/abstention/codex-results.json`. Neither exists until execution. A pending charge,
+missing immutable attempt record or changed checkpoint blocks resume for owner reconciliation.
+The scorer returns status 2 while qualification is incomplete, 1 for a measured failure and 0
+only for three complete passing repetitions. PASS still requires the owner's separate acceptance.
 
 ### Repetitions, pass rule and stopping
 

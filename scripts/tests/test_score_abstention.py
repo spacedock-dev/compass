@@ -1511,5 +1511,74 @@ class ARubricEntryReachesTheCommittedFileAsClosedTokensOnly(unittest.TestCase):
             self.assertIn(harness, score_abstention.RUBRIC_HARNESSES)
 
 
+class CodexKeepsHistoricalScoringSeparate(unittest.TestCase):
+    def test_a_person_keeps_the_historical_claude_stop_contract(self) -> None:
+        self.assertEqual(("claude",), score_abstention.SCORED_TURN_STOP_HARNESSES)
+
+    def test_a_person_binds_codex_effort_in_every_run_digest(self) -> None:
+        binding = {"producer": "codex", "model": "gpt-5.6-luna", "effort": "max"}
+        before = score_abstention._run_digest({}, binding)
+        self.assertNotEqual(before, score_abstention._run_digest({}, {**binding, "effort": "high"}))
+
+    def test_a_person_keeps_claude_run_digests_byte_compatible(self) -> None:
+        old_keys = (
+            "producer",
+            "model",
+            "argv_digest",
+            "destination",
+            "binary",
+            "binary_sha256",
+            "cli_version",
+            "signature",
+        )
+        binding = {"producer": "claude", "model": "fake-model"}
+        expected = abstention_ledger.digest(
+            {
+                "domain": "compass-scoring-run-v1",
+                "records": {},
+                "binding": {key: binding.get(key) for key in old_keys},
+            }
+        )
+        self.assertEqual(expected, score_abstention._run_digest({}, binding))
+
+    def test_a_person_gets_separate_codex_result_paths(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.object(score_abstention, "HOME", folder),
+        ):
+            self.assertEqual(
+                str(Path(folder) / "abstention-codex-results.json"),
+                score_abstention.results_path_for("codex"),
+            )
+            self.assertEqual(
+                str(ROOT / "docs/abstention/codex-results.json"),
+                score_abstention.summary_path_for("codex", None),
+            )
+
+    def test_a_person_cannot_score_a_stale_or_missing_codex_parser_stamp(self) -> None:
+        for value in ({}, {"parser": "wrong"}):
+            corpus = score_abstention.Corpus({"v": 6, "cases": [value]}, {}, b"", {})
+            self.assertTrue(score_abstention.parser_mismatch(corpus, rechecked=True))
+
+
+class CodexPassKeepsEveryFailureVisible(unittest.TestCase):
+    def test_a_person_cannot_qualify_a_judged_should_abstain_constraint(self) -> None:
+        coverage: dict[str, dict[str, list[str]]] = {
+            harness: {"missing": []} for harness in score_abstention.COVERAGE_HARNESSES
+        }
+        self.assertEqual("failed", score_abstention._verdict({"failed": ["a-case"]}, coverage))
+
+    def test_a_person_cannot_qualify_a_rubric_false_reassurance(self) -> None:
+        coverage: dict[str, dict[str, list[str]]] = {
+            harness: {"missing": []} for harness in score_abstention.COVERAGE_HARNESSES
+        }
+        self.assertEqual(
+            "failed",
+            score_abstention._verdict(
+                {"failed": []}, coverage, {score_abstention.RUBRIC_FALSE_REASSURANCE: 1}
+            ),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
