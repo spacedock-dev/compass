@@ -1960,7 +1960,6 @@ def _plan(
     `spent` is a Codex cohort's own ledger: inputs it has charged are never read again, whatever
     the local record says, because a failed call there is not a call to retry.
 
-
     A case already read is kept. A case whose sibling, with identical inputs,
     holds a reading takes that reading, so splitting siblings across two runs
     never pays twice. A case a stopped run charged and left without an outcome

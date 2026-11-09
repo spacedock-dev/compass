@@ -297,7 +297,8 @@ alias, the digest of the exact request and the allowance left, as well as the or
 consent, tool-output consent and rolling reading budget. The call is prepared locally first, which
 sends nothing, and the request approved is the only one sent. Failed or interrupted calls remain
 charged, and no input is ever charged twice, so rerunning cannot silently retry or renew the total
-allowance. A moved or deleted allowance file is never created again, and Windows or a moved `HOME`
+allowance. While its receipts folder survives, a moved or deleted allowance file is not created again;
+deleting both resets it undetected, as restoring a backup does. Windows or a moved `HOME`
 refuses it. The replay sends the prompt the production reader built when the case was frozen, and
 a reading attaches only with its producer, request digest, exact inputs, approved charge and a
 digest of its own contents, each checked again at scoring, so an edited or swapped reading is

@@ -3750,9 +3750,11 @@ outside this evaluation budget, and no dollar quote is established here.
 Later analysis-level replay needs a separate approved fixed total allowance, tracked in
 `~/.cargento/codex-levels-replay-spend.json`. `levels_cases.py --cohort codex` writes it once,
 privately, and records each approved charge and its settlement as events in that one file under a
-lock. Beside it a receipts folder keeps the zero-charge genesis, with the total, so a ledger file
-that is moved or deleted is never created again and a total edited upward no longer matches its
-genesis; every replay then refuses. A charge is recorded before the call is launched and never
+lock. Beside it a receipts folder keeps the zero-charge genesis, with the total, so while that folder
+survives, a ledger file that is moved or deleted is not created again and a total edited upward
+no longer matches its genesis; every replay then refuses. Deleting both the ledger and its
+receipts, or emptying the ledger's events, resets the allowance undetected, like restoring a
+backup; these are same-account changes this study does not authenticate against. A charge is recorded before the call is launched and never
 removed, and no input is charged twice. The settlement records a digest of the reading the call
 returned, and each attached reading carries that digest, so a verdict edited after the call, or
 a reading swapped between cases, is refused at attach and again at scoring. The scored result
