@@ -757,6 +757,48 @@ class CodexPacketSourceTest(unittest.TestCase):
         child.write_text(child.read_text().replace('"exit_code": 1', '"exit_code": 0'))
         self.assertTrue(self.reasons(case))
 
+    def test_a_person_can_freeze_a_session_whose_subagents_record_its_id_as_their_session(
+        self,
+    ) -> None:
+        grandchild = "00000000-0000-4000-8000-000000000003"
+        child = self.support.rollout(self.root, sid=self.support.CHILD, parent=self.support.SID)
+        nested = self.support.rollout(self.root, sid=grandchild, parent=self.support.CHILD)
+        self.entry["children"] = [str(child), str(nested)]
+        case = self.freeze()
+        self.assertEqual(len(case["sources"]["children"]), 2)
+        self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_is_not_blocked_by_another_sessions_subagents_in_the_store(self) -> None:
+        other = "00000000-0000-4000-8000-0000000000aa"
+        self.support.rollout(self.root / "other", sid=other)
+        self.support.rollout(
+            self.root / "other",
+            sid="00000000-0000-4000-8000-0000000000ab",
+            parent=other,
+            session=other,
+        )
+        case = self.freeze()
+        self.assertEqual(case["sources"]["children"], [])
+        self.assertEqual(self.reasons(case), [])
+
+    def test_a_person_cannot_admit_a_descendant_that_names_another_session(self) -> None:
+        child = self.support.rollout(
+            self.root,
+            sid=self.support.CHILD,
+            parent=self.support.SID,
+            session="00000000-0000-4000-8000-0000000000aa",
+        )
+        self.entry["children"] = [str(child)]
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "identity-unconfirmed"):
+            self.freeze()
+
+    def test_a_person_cannot_select_a_root_that_misstates_its_own_session(self) -> None:
+        rows = [json.loads(line) for line in self.path.read_text().splitlines()]
+        rows[0]["payload"]["session_id"] = "00000000-0000-4000-8000-0000000000aa"
+        self.support.write(self.path, rows)
+        with self.assertRaisesRegex(mark_abstention.FreezeError, "identity-unconfirmed"):
+            self.freeze()
+
     def test_a_person_sees_why_an_older_message_could_not_be_attributed(self) -> None:
         row = self.support.message(
             "<codex_internal_context>injected</codex_internal_context>", tagged=False, delta=2
