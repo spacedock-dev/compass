@@ -632,6 +632,12 @@ class RedactSecretsTest(unittest.TestCase):
         ("bearer value", "Authorization: Bearer placeholder123", "Authorization: Bearer …REDACTED"),
         ("cued flag value", "--password placeholder123", "--password …REDACTED"),
         ("standalone scheme", "Basic ZmFrZTpmYWtlOTk=", "Basic …REDACTED"),
+        ("schemeless header", "Authorization: MadeUpToken99", "Authorization: …REDACTED"),
+        (
+            "encoded header",
+            "Authorization%3A%20Basic%20YTpi",
+            "Authorization%3A%20Basic%20…REDACTED",
+        ),
         ("langfuse secret", "sk-lf-00000000-1111-2222-3333-444444444444", "sk-lf-…REDACTED"),
         ("langfuse public", "pk-lf-abcdef01-2345-6789-abcd-ef0123456789", "pk-lf-…REDACTED"),
     )
