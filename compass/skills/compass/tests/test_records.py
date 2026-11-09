@@ -630,6 +630,10 @@ class RedactSecretsTest(unittest.TestCase):
         # The `cued` shape: no shape of its own, so the cue in front names it and
         # stays, and only the value goes (review, 2026-10-03).
         ("bearer value", "Authorization: Bearer placeholder123", "Authorization: Bearer …REDACTED"),
+        ("cued flag value", "--password placeholder123", "--password …REDACTED"),
+        ("standalone scheme", "Basic ZmFrZTpmYWtlOTk=", "Basic …REDACTED"),
+        ("langfuse secret", "sk-lf-00000000-1111-2222-3333-444444444444", "sk-lf-…REDACTED"),
+        ("langfuse public", "pk-lf-abcdef01-2345-6789-abcd-ef0123456789", "pk-lf-…REDACTED"),
     )
 
     # Every cue the `cued` shape reads, each with a synthetic value, and the forms it

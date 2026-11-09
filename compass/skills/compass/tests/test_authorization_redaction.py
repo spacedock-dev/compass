@@ -1,0 +1,253 @@
+"""A person's authorization values never reach published or model-bound text.
+
+Every credential below is made up for this test; no credential store is read.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from compass_runtime import records
+
+
+class APersonSharingAuthorization(unittest.TestCase):
+    def test_a_person_can_share_any_authorization_scheme_without_its_value(self) -> None:
+        for header in ("Authorization", "Proxy-Authorization", "aUtHoRiZaTiOn"):
+            for scheme, value in (
+                ("Bearer", "MadeUpBearer99"),
+                ("Basic", "ZmFrZTpmYWtlOTk="),
+                ("Digest", 'username="MadeUpUser99", realm="MadeUpRealm99", response="MadeUp99"'),
+                ("Token", "MadeUpToken99"),
+                (
+                    "AWS4-HMAC-SHA256",
+                    "Credential=MadeUp99/scope, SignedHeaders=host, Signature=MadeUpSig99",
+                ),
+                ("Negotiate", "MadeUpTicket99=="),
+                ("Future-Scheme", "MadeUpValue99"),
+            ):
+                for template in (
+                    "{header}: {scheme} {value}",
+                    '{{"{header}": "{scheme} {value}"}}',
+                    "{header}: '{scheme} {value}'",
+                    "curl -H '{header}: {scheme} {value}' https://example.test",
+                    'curl --header "{header}: {scheme} {value}" https://example.test',
+                    "curl --header='{header}: {scheme} {value}' https://example.test",
+                    "{header}='{scheme} {value}' run",
+                    '{header}="{scheme} {value}" run',
+                    "{header}={scheme} {value}",
+                ):
+                    # JSON and a double-quoted shell header escape inner parameter quotes.
+                    escaped = (
+                        value.replace('"', '\\"')
+                        if '"{scheme}' in template or ': "{scheme}' in template
+                        else value
+                    )
+                    raw = template.format(header=header, scheme=scheme, value=escaped)
+                    expected = template.format(
+                        header=header, scheme=scheme, value=records.SECRET_MARKER
+                    )
+                    with self.subTest(header=header, scheme=scheme, template=template):
+                        self.assertEqual(expected, records.redact_secrets(raw))
+                        if template == "{header}: {scheme} {value}":
+                            self.assertEqual(expected, records.mask_prose(raw))
+                        for mask in (records.redact_secrets, records.mask_prose):
+                            masked = mask(raw)
+                            self.assertNotIn("MadeUp", masked)
+                            self.assertNotIn("ZmFrZTpmYWtlOTk=", masked)
+                            self.assertNotIn("madeup", masked)
+                            self.assertIn(records.SECRET_MARKER, masked)
+
+    def test_a_person_can_share_quoted_authorization_values_and_keep_nearby_words(self) -> None:
+        for raw, expected in (
+            (
+                'send Authorization: Basic "MadeUpValue99" then retry',
+                'send Authorization: Basic "…REDACTED" then retry',
+            ),
+            (
+                "send Proxy-Authorization: Custom MadeUpValue99 then retry",
+                "send Proxy-Authorization: Custom …REDACTED then retry",
+            ),
+            (
+                "Authorization: Basic MadeUpValue99\nnext line stays",
+                "Authorization: Basic …REDACTED\nnext line stays",
+            ),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(expected, records.redact_secrets(raw))
+                self.assertNotIn("MadeUpValue99", records.mask_prose(raw))
+                self.assertIn("…REDACTED", records.mask_prose(raw))
+
+    def test_a_person_can_share_either_langfuse_key_without_its_body(self) -> None:
+        for prefix in ("sk-lf-", "pk-lf-"):
+            for body in (
+                "00000000-1111-2222-3333-444444444444",
+                "abcdef01-2345-6789-abcd-ef0123456789",
+            ):
+                raw = f"rotate {prefix}{body} then retry"
+                for mask in (records.redact_secrets, records.mask_prose):
+                    with self.subTest(prefix=prefix, size=len(body), mask=mask.__name__):
+                        self.assertEqual(f"rotate {prefix}…REDACTED then retry", mask(raw))
+
+    def test_a_person_can_discuss_authentication_without_supplying_a_value(self) -> None:
+        for raw in (
+            "use basic auth",
+            "the Authorization header",
+            "Bearer tokens expire",
+            "grep -n 'Authorization:' server.log",
+            "grep -n 'Proxy-Authorization:' server.log",
+            "Authorization: Basic",
+            "Proxy-Authorization: Negotiate",
+            "the prefixes sk-lf- and pk-lf- identify Langfuse keys",
+            'headers["Authorization"] = make_header()',
+            "X-Authorization: Custom madeup",
+            "Authorization: Custom",
+            "use sk-lf-identifier and pk-lf-label as example prefixes",
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    self.assertEqual(
+                        " ".join(raw.split()) if mask is records.mask_prose else raw, mask(raw)
+                    )
+
+    def test_a_person_can_wrap_a_header_without_publishing_its_credential(self) -> None:
+        value = "ZmFrZXVzZXI6ZmFrZXBhc3M+/w=="
+        for header in ("Authorization", "Proxy-Authorization"):
+            for scheme in ("Basic", "Token", "Negotiate", "NTLM", "Bearer"):
+                for raw in (
+                    f"{header}: {scheme}\n{value}",
+                    f"{header}:\n  {scheme} {value}",
+                ):
+                    for mask in (records.redact_secrets, records.mask_prose):
+                        with self.subTest(raw=raw, mask=mask.__name__):
+                            expected = raw.replace(value, records.SECRET_MARKER)
+                            if mask is records.mask_prose:
+                                expected = " ".join(expected.split())
+                            self.assertEqual(expected, mask(raw))
+            with self.subTest(header=header):
+                self.assertEqual(
+                    f"{header}: …REDACTED",
+                    records.mask_prose(f"{header}:\n{value}"),
+                )
+                for raw in (
+                    f"{header}: Basic\nnext line stays",
+                    f"{header}:\nordinary words",
+                    f"{header}: Basic\nshort99",
+                    f"{header}:\nauthenticationrequirements",
+                ):
+                    self.assertEqual(" ".join(raw.split()), records.mask_prose(raw))
+
+    def test_a_person_can_share_a_scheme_in_code_without_publishing_its_credential(self) -> None:
+        value = "ZmFrZXVzZXI6ZmFrZXBhc3M+/w=="
+        for scheme in ("Basic", "Token", "Negotiate", "NTLM", "bAsIc"):
+            for raw in (
+                f'f"{scheme} {value}"',
+                r"{\"Authorization\": \"" + f"{scheme} {value}" + r"\"}",
+                f"HTTP_AUTHORIZATION={scheme} {value}",
+                f'Header.Set("Authorization", "{scheme} {value}")',
+                f"headers.append('Authorization', '{scheme} {value}')",
+                f"('Authorization','{scheme} {value}')",
+                f"Authorization: {scheme}\n{value}",
+                f"{{Authorization: `{scheme} {value}`}}",
+            ):
+                for mask in (records.redact_secrets, records.mask_prose):
+                    with self.subTest(raw=raw, mask=mask.__name__):
+                        expected = raw.replace(value, records.SECRET_MARKER)
+                        if mask is records.mask_prose:
+                            expected = " ".join(expected.split())
+                            if raw.startswith("HTTP_AUTHORIZATION="):
+                                expected = "HTTP_AUTHORIZATION=…REDACTED …REDACTED"
+                        self.assertEqual(expected, mask(raw))
+
+    def test_a_person_can_publish_authentication_instructions_and_placeholders(self) -> None:
+        for raw in (
+            "authorization: required for all routes",
+            "check Authorization= in the config",
+            "set the Authorization: Basic header and retry",
+            "Authorization: Basic auth is weak, use OAuth",
+            "Proxy-Authorization: Basic and Authorization: Basic both fail",
+            "pk-lf-chart-component-renders-the-legend",
+            *(
+                f"Authorization: {scheme} {value}"
+                for scheme in ("Basic", "Token", "Negotiate")
+                for value in ("<base64>", "{token}", "...", "$CREDS", "os.environ['X']")
+            ),
+            *(
+                f"{scheme} {value}"
+                for scheme in ("Basic", "Token", "Negotiate", "NTLM")
+                for value in (
+                    "authentication",
+                    "abcdefghijklmnop",
+                    "short99",
+                    "<base64>",
+                    "{token}",
+                    "...",
+                )
+            ),
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    self.assertEqual(raw, mask(raw))
+
+    def test_a_person_still_keeps_an_api_key_header_value_private(self) -> None:
+        self.assertEqual(
+            "X-Api-Key: …REDACTED then retry", records.mask_prose("X-Api-Key: madeup then retry")
+        )
+
+    def test_a_person_can_show_code_that_reads_an_authorization_value(self) -> None:
+        for value in ("None", "null", "$MADE_UP_TOKEN", "${MADE_UP_TOKEN}", "make_header()"):
+            raw = f"Authorization: Custom {value}"
+            with self.subTest(value=value):
+                self.assertEqual(raw, records.redact_secrets(raw))
+
+    def test_a_person_can_share_long_or_unclosed_quoted_values_without_a_tail(self) -> None:
+        for header in ("Authorization", "Proxy-Authorization"):
+            for ending in ('"}', "", "\r\nnext line stays"):
+                raw = f'{{"{header}": "Custom ' + "MadeUp99" * 1000 + ending
+                with self.subTest(header=header, ending=ending):
+                    for mask in (records.redact_secrets, records.mask_prose):
+                        masked = mask(raw)
+                        self.assertNotIn("MadeUp", masked)
+                        self.assertIn("…REDACTED", masked)
+                        if mask is records.redact_secrets or ending != "\r\nnext line stays":
+                            self.assertEqual(masked, mask(masked))
+
+    def test_a_person_can_share_digest_parameters_with_escaped_quotes(self) -> None:
+        raw = 'Authorization: Digest username="MadeUp\\"User99", response="MadeUpResponse99"'
+        for mask in (records.redact_secrets, records.mask_prose):
+            with self.subTest(mask=mask.__name__):
+                self.assertEqual("Authorization: Digest …REDACTED", mask(raw))
+
+    def test_a_person_does_not_publish_the_tail_of_a_truncated_authorization_value(self) -> None:
+        for header in ("Authorization", "Proxy-Authorization"):
+            for raw, expected in (
+                ('"{header}": "Basic MadeUp99\\', '"{header}": "Basic …REDACTED'),
+                ('{header}: Digest username="MadeUp99', "{header}: Digest …REDACTED"),
+                ('{header}: Basic "MadeUp99\\', '{header}: Basic "…REDACTED'),
+            ):
+                with self.subTest(header=header, raw=raw):
+                    for mask in (records.redact_secrets, records.mask_prose):
+                        masked = mask(raw.format(header=header))
+                        if mask is records.redact_secrets:
+                            self.assertEqual(expected.format(header=header), masked)
+                        self.assertNotIn("MadeUp", masked)
+                        self.assertIn("…REDACTED", masked)
+
+    def test_a_person_can_share_a_short_letters_only_basic_value_without_it(self) -> None:
+        # Base64 of a short user:pass can be letters only with no padding (made up here).
+        value = "dXNlcjpwYXNz"
+        for raw in (
+            f"Authorization: Basic {value}",
+            f"curl -H 'authorization: basic {value}' https://example.test",
+            f'{{"Authorization": "Basic {value}"}}',
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    masked = mask(raw)
+                    self.assertNotIn(value, masked)
+                    self.assertIn("…REDACTED", masked)
+
+    def test_a_person_can_name_basic_authentication_in_prose(self) -> None:
+        for raw in ("Authorization: Basic Authentication is deprecated here",):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(mask=mask.__name__):
+                    self.assertIn("Authentication", mask(raw))
