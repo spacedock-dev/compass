@@ -3671,9 +3671,9 @@ current-head CI come before any spending.
 
 #### Prospective Codex analysis qualification, 2026-11-09
 
-This is a proposed study contract, not implemented tooling or a completed run. The owner has
-directed preparation; each private-source step, provider send and publication still needs the
-approval described in the [ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
+This study contract has offline authority and approval helpers, but no producer wiring or
+completed run. The owner has directed preparation; each private-source step, provider send and
+publication still needs the approval described in the [ordered owner gates](docs/abstention/README.md#owner-gates-in-order).
 It qualifies Codex analysis levels only. Live estimate and Live monitor stay Claude-only, and
 no Claude grant, ledger allowance or historical acceptance authorizes this work.
 
@@ -3721,13 +3721,22 @@ approval/charge receipts must be retained to establish allowance and prior spend
 packet cannot erase charges. Local cleanup does not delete provider copies; no provider-side
 retention or erasure guarantee is made by this protocol.
 
-The proposed fixed, account-canonical producer ledger is
+The fixed, account-canonical producer ledger is
 `~/.cargento/codex-qualification-spend.json`, with receipts under
-`~/.cargento/codex-qualification-spend.json.receipts/`. These paths are proposed, not implemented.
-They resolve from the operating-system account's home; `HOME`, `COMPASS_HOME`, packet relocation
-and a new process must not redirect or reset them. Review zero-charge genesis once before
-activation. Bind authority and one-use approvals to packet/cases/marks/rubric digests,
-protocol/runtime/scorer, verified transport and exact requests. The proposed allowance registers
+`~/.cargento/codex-qualification-spend.json.receipts/`. The offline authority helpers implement
+these paths; no grant or activation is supplied. They resolve from the operating-system
+account's home; `HOME`, `COMPASS_HOME`, packet relocation and a new process cannot redirect or
+reset them. A moved `HOME` refuses. Windows authority also refuses because the current account
+home resolver there depends on environment variables. Review zero-charge genesis once before
+activation. Authority and one-use approvals bind packet/cases/marks/rubric and source digests,
+protocol/runtime/scorer, verified transport and exact requests. The public grant holds the
+transport digest, never its absolute CLI paths or actual argv. Approval is specific to one
+process invocation and is consumed under the same lock that records the charge. Receipts are
+written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
+allowance. These are operator guards over reviewed artifacts, not authentication of the owner
+or isolation from another process under the same account. The activation anchor binds only the
+empty genesis, so restoring a backup of `~/.cargento` taken after some charges resets the
+allowance undetected. Only the owner's own record of the approvals given can show it. The proposed allowance registers
 thirty producer exposures plus at most one charged availability retry, not an accuracy retry.
 Google marking and review need their own approved schedule and call ceilings. The proposed
 schedule allows 74 to 96 Google calls across both full cohorts, including two markers,

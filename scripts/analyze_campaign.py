@@ -173,8 +173,34 @@ def request_digest(
     *,
     shim_digest: str = "",
     contract_digest: str = "",
+    codex_transport: dict[str, Any] | None = None,
 ) -> str:
-    """Bind actual transport words and fixed runtime source without retaining either."""
+    """Bind the final prompt and transport without retaining evidence.
+
+    Codex requires its explicit transport (including effort and actual argv).
+    Existing Claude digests stay byte-for-byte unchanged. No producer runs here.
+    """
+    if producer == "codex" or codex_transport is not None:
+        if producer != "codex":
+            raise authority.LedgerError("Codex transport cannot authorize another producer")
+        validate_codex_transport_binding(codex_transport)
+        if (
+            not authority.codex_digest_valid(source_digest)
+            or type(output_cap_bytes) is not int
+            or output_cap_bytes <= 0
+        ):
+            raise authority.LedgerError("the Codex request lacks source or output bounds")
+        return authority.digest(
+            {
+                "prompt": hashlib.sha256(prompt.encode()).hexdigest(),
+                "producer": "codex",
+                "transport": codex_transport,
+                "source": source_digest,
+                "output_cap_bytes": output_cap_bytes,
+                "study_shim": shim_digest,
+                "study_contract": contract_digest,
+            }
+        )
     return authority.digest(
         {
             "prompt": hashlib.sha256(prompt.encode()).hexdigest(),
@@ -2539,3 +2565,160 @@ class RetryCampaign(TenthCampaign):
             root["epochs"].append(epoch)
             authority._write(self.path, root)  # noqa: SLF001 - append under the existing canonical lock
             return authority.digest(state)
+
+
+def validate_codex_transport_binding(value: Any) -> None:
+    """Validate a separate, explicit Codex pin; never infer effort or inherit Claude authority.
+
+    This validates binding structure, not installation authenticity. The future
+    pinned-binary verifier supplies provenance; no process or producer runs here.
+    """
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "producer",
+            "model",
+            "effort",
+            "binary",
+            "binary_sha256",
+            "cli_version",
+            "argv",
+            "destination",
+            "runtime_digest",
+        }
+        or value.get("producer") != "codex"
+        or value.get("model") != "gpt-5.6-luna"
+        or value.get("effort") != "max"
+        or value.get("destination") != "OpenAI"
+        or not isinstance(value.get("binary"), str)
+        or not os.path.isabs(value["binary"])
+        or not authority.codex_digest_valid(value.get("binary_sha256"))
+        or not authority.codex_digest_valid(value.get("runtime_digest"))
+        or not isinstance(value.get("cli_version"), str)
+        or not value["cli_version"].strip()
+        or not isinstance(value.get("argv"), list)
+        or not value["argv"]
+        or not all(isinstance(part, str) and part and "\0" not in part for part in value["argv"])
+        or value["argv"][0] != value["binary"]
+    ):
+        raise authority.LedgerError(
+            "the Codex transport lacks its exact model, effort, CLI, argv or destination"
+        )
+    argv = value["argv"]
+    if (
+        len(argv) < 2
+        or argv[1] != "exec"
+        or argv.count("--model") != 1
+        or argv.index("--model") + 1 >= len(argv)
+        or argv[argv.index("--model") + 1] != value["model"]
+        or [part for part in argv if "model_reasoning_effort=" in part]
+        != ["model_reasoning_effort=max"]
+        or argv[argv.index("model_reasoning_effort=max") - 1] != "--config"
+        or any(part.startswith("--model=") for part in argv)
+    ):
+        raise authority.LedgerError(
+            "the actual Codex argv does not carry its explicit model and effort"
+        )
+
+
+def verified_codex_transport_binding(
+    verified: Any,
+    *,
+    argv: list[str],
+    model: str,
+    effort: str,
+    destination: str,
+    runtime_digest: str,
+) -> dict[str, Any]:
+    """Bind already verified CLI bytes/version and the exact prepared argv, without execution.
+
+    `verified.path`, `.version` and `.identity[-1]` come from the future native
+    verifier (PR 4). This helper rehashes bytes but does not authenticate an
+    installation or execute --version. Actual source recovery and argv capture
+    are future scorer responsibilities. Nothing here can launch a producer.
+    """
+    path = Path(verified.path)
+    try:
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise authority.LedgerError("the verified Codex CLI cannot be read") from error
+    if actual != verified.identity[-1]:
+        raise authority.LedgerError("the verified Codex CLI bytes changed")
+    value = {
+        "producer": "codex",
+        "model": model,
+        "effort": effort,
+        "binary": str(path),
+        "binary_sha256": actual,
+        "cli_version": verified.version,
+        "argv": list(argv),
+        "destination": destination,
+        "runtime_digest": runtime_digest,
+    }
+    validate_codex_transport_binding(value)
+    return value
+
+
+class CodexCampaign(authority.CodexLedger):
+    """Offline Codex-only approvals and reservations; no producer wiring exists in this PR.
+
+    The operator calls approve_slot only after reviewing one exact request. A
+    future scorer must recompute all input and transport bindings before using
+    this class, consume one receipt, checkpoint one attempt, then return.
+    """
+
+    def approve_slot(self, slot: str, binding: str, *, retry: bool = False) -> str:
+        """Record one owner's approval for this invocation, request, slot and retry bit."""
+        self._authority()
+        with authority.locked(self.path):
+            body, _, calls, reviews = self._state()
+            self._eligible(calls, reviews, slot, binding, retry)
+            return self._append(
+                body,
+                "approval",
+                invocation=self.invocation,
+                slot=slot,
+                request_digest=binding,
+                retry=retry,
+                checkpoint=authority.digest(calls),
+            )
+
+    def reserve(self, slot: str, binding: str, *, approval: str, retry: bool = False) -> str:
+        """Consume one invocation-bound approval and charge atomically under the account lock."""
+        self._authority()
+        with authority.locked(self.path):
+            body, approvals, calls, reviews = self._state()
+            self._eligible(calls, reviews, slot, binding, retry)
+            receipt = approvals.get(approval)
+            if (
+                not receipt
+                or receipt["invocation"] != self.invocation
+                or receipt["slot"] != slot
+                or receipt["request_digest"] != binding
+                or receipt["retry"] != retry
+                or receipt["checkpoint"] != authority.digest(calls)
+                or any(call["approval"] == approval for call in calls)
+            ):
+                raise authority.LedgerError(
+                    "the Codex approval is missing, consumed or belongs to another invocation"
+                )
+            return self._append(body, "charge", approval=approval)
+
+    def review_batch(self, batch: int, proof_digest: str) -> None:
+        """Record owner-reviewed batch results without claiming the batch passed or sending data."""
+        self._authority()
+        with authority.locked(self.path):
+            body, approvals, calls, reviews = self._state()
+            fields = {
+                "batch": batch,
+                "proof_digest": proof_digest,
+                "checkpoint": authority.digest(calls),
+            }
+            self._replay_event(
+                {"id": uuid.uuid4().hex, "kind": "review", "grant_digest": self.binding, **fields},
+                approvals,
+                calls,
+                reviews,
+            )
+            self._append(body, "review", **fields)
