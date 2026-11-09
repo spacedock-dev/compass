@@ -17,8 +17,9 @@ Code result this script wrote still says `failed`.
                                                        re-call only the cases the model failed
     score_abstention.py --probe-argv                   one call to a local stub; writes nothing
 
-`--producer claude` is required to score, and is the only producer that may: no
-Codex spend is authorized. A result names the producer, the model, a digest of
+`--producer` is required to score. Claude retains its historical authority below;
+Codex requires its separate prospective grant and consumes one owner-approved
+exposure per invocation. A result names the producer, the model, a digest of
 the argv, the destination and the CLI it ran under, and goes to its own file,
 `docs/abstention/claude-results.json`, or a continuation's own fixed file beside
 it. Every model call is charged first to the one ledger `abstention_ledger`
@@ -354,6 +355,15 @@ BINDING_KEYS = (
     "cli_version",
     "signature",
 )
+# Keep the historical Claude digest domain byte-compatible. Codex explicitly adds
+# effort and installation/transport identity, rather than adding nulls to old grants.
+CODEX_BINDING_KEYS = (*BINDING_KEYS, "effort", "installation_digest", "transport_digest")
+
+
+def _binding_keys(binding: Mapping[str, str] | None) -> tuple[str, ...]:
+    return CODEX_BINDING_KEYS if (binding or {}).get("producer") == "codex" else BINDING_KEYS
+
+
 WITHHELD_LEDGER = "ledger-refused"
 
 
@@ -364,7 +374,7 @@ def marks_digest(corpus: Corpus) -> str:
 class _Charged:
     """One case's model behind the ledger: charged before, settled after, never past the cap."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - one native or Codex charge and its checkpoint
         self,
         ledger: abstention_ledger.Ledger,
         case_id: str,
@@ -374,14 +384,21 @@ class _Charged:
         retry: bool = False,
         binding: Mapping[str, str] | None = None,
         diagnostics_path: str | None = None,
+        codex_transport: Mapping[str, Any] | None = None,
+        codex_approval: str = "",
+        on_charge: Callable[[str], Any] | None = None,
     ) -> None:
+        self.codex_transport = codex_transport
+        self.codex_approval = codex_approval
+        self.on_charge = on_charge
+        self.transport_status = ""
         self.diagnostics_path = diagnostics_path
         self.diagnostic: dict[str, Any] | None = None
         self.repeat = repeat
         self.retry = retry
         self.binding = binding
         self.charge_id: str | None = None
-        self.ledger = ledger
+        self.ledger: Any = ledger
         self.case_id = case_id
         self.model = model
         self.unavailable_reason: str | None = getattr(model, "unavailable_reason", None)
@@ -389,6 +406,26 @@ class _Charged:
     def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
         from compass_runtime import observer, reading  # noqa: PLC0415 - see `_runtime`
 
+        if self.codex_transport is not None:
+            from analyze_campaign import request_digest  # noqa: PLC0415
+
+            request = request_digest(
+                prompt,
+                "codex",
+                self.codex_transport["runtime_digest"],
+                output_cap_bytes,
+                codex_transport=dict(self.codex_transport),
+            )
+            self.charge_id = self.ledger.reserve(
+                f"{self.case_id}:r{self.repeat}",
+                request,
+                approval=self.codex_approval,
+                retry=self.retry,
+            )
+            if self.on_charge is not None:
+                self.on_charge(self.charge_id)
+            raw, self.transport_status = self.model(prompt, output_cap_bytes=output_cap_bytes)
+            return raw, self.transport_status
         available = getattr(self.model, "available", None)
         if available is not None and not available():
             return "", "unavailable"
@@ -417,7 +454,7 @@ class _Charged:
 
                     request_binding = request_digest(
                         prompt,
-                        {k: (self.binding or {}).get(k) for k in BINDING_KEYS},
+                        {k: (self.binding or {}).get(k) for k in _binding_keys(self.binding)},
                         runtime_source_digest(pathlib.Path(observer.__file__).parent),
                         output_cap_bytes,
                     )
@@ -473,7 +510,7 @@ class _Charged:
                 "retry": self.retry,
                 "request_binding": request_binding,
                 "model_binding": abstention_ledger.digest(
-                    {k: (self.binding or {}).get(k) for k in BINDING_KEYS}
+                    {k: (self.binding or {}).get(k) for k in _binding_keys(self.binding)}
                 ),
                 "diagnostic": self.diagnostic,
             }
@@ -489,7 +526,7 @@ class _Charged:
 
 
 class BinaryError(Exception):
-    """The `claude` on PATH is not an installed Claude Code CLI this check can name."""
+    """The requested producer's CLI installation cannot be independently pinned."""
 
 
 def _display_path(path: str) -> str:
@@ -735,11 +772,167 @@ def _verify_private_claude(
     return VerifiedClaude(_display_path(source), line, copied, signature, identity, directory)
 
 
+@dataclasses.dataclass(frozen=True)
+class VerifiedCodex:
+    """An npm installation and its platform-native executable, pinned independently."""
+
+    path: str
+    version: str
+    identity: Identity
+    installation: tuple[tuple[str, Identity], ...]
+    installation_digest: str
+
+
+class PinnedCodex:
+    """Resolve only the verified native CLI; rehash the installation before every use."""
+
+    def __init__(self, verified: VerifiedCodex) -> None:
+        self.verified = verified
+
+    def __call__(self, name: str) -> str:
+        try:
+            if name != "codex" or any(
+                file_identity(path) != identity for path, identity in self.verified.installation
+            ):
+                raise BinaryError("the verified Codex installation changed")
+            if file_identity(self.verified.path) != self.verified.identity:
+                raise BinaryError("the verified native Codex executable changed")
+        except OSError as error:
+            raise BinaryError("the verified Codex executable is unavailable") from error
+        return self.verified.path
+
+
+def _codex_manifest(path: pathlib.Path) -> dict[str, Any]:
+    with _open_cli(str(path)) as stream:
+        raw = stream.read(128_001)
+    if len(raw) > 128_000:
+        raise BinaryError("the Codex package metadata exceeds its bound")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise BinaryError("the Codex package metadata is not an object")
+    return value
+
+
+def verify_codex_binary(  # noqa: C901, PLR0915 - explicit installation and native identity guards
+    *,
+    binary_resolver: Callable[[str], Any] = shutil.which,
+    runner: Callable[..., Any] = subprocess.run,
+    platform: str = sys.platform,
+    machine: str | None = None,
+) -> VerifiedCodex:
+    """Admit the official npm package layout, never a PATH script by its version claim.
+
+    Installation provenance is structural and owner-reviewed through its hashes; it
+    is not a publisher signature. Unknown installers refuse. No Anthropic signing
+    rule applies. Both legacy bundled and platform optional npm packages are read.
+    """
+    import platform as platform_module  # noqa: PLC0415 - only installation verification
+
+    machine = machine or platform_module.machine()
+    targets = {
+        ("linux", "x86_64"): ("x86_64-unknown-linux-musl", "linux-x64"),
+        ("linux", "aarch64"): ("aarch64-unknown-linux-musl", "linux-arm64"),
+        ("darwin", "x86_64"): ("x86_64-apple-darwin", "darwin-x64"),
+        ("darwin", "arm64"): ("aarch64-apple-darwin", "darwin-arm64"),
+    }
+    try:
+        target, package_suffix = targets[platform, machine]
+        resolved = binary_resolver("codex")
+        if not resolved or not os.path.isabs(resolved):
+            raise BinaryError("an absolute Codex npm installation is required")
+        launcher = pathlib.Path(os.path.realpath(resolved))
+        package = launcher.parent.parent
+        if launcher != package / "bin" / "codex.js" or package.name != "codex":
+            raise BinaryError("the resolved Codex is not a recognized npm installation")
+        manifest_path = package / "package.json"
+        manifest = _codex_manifest(manifest_path)
+        version = manifest.get("version")
+        if (
+            manifest.get("name") != "@openai/codex"
+            or not isinstance(version, str)
+            or re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?", version) is None
+            or not isinstance(manifest.get("bin"), dict)
+            or manifest["bin"].get("codex") != "bin/codex.js"
+        ):
+            raise BinaryError("the resolved Codex package identity is not recognized")
+        platform_package = package.parent / f"codex-{package_suffix}"
+        metadata = [launcher, manifest_path]
+        native_root = package
+        if platform_package.exists():
+            platform_manifest_path = platform_package / "package.json"
+            platform_manifest = _codex_manifest(platform_manifest_path)
+            dependencies = manifest.get("optionalDependencies")
+            native_version = f"{version}-{package_suffix}"
+            target_os, target_cpu = package_suffix.rsplit("-", 1)
+            if (
+                not isinstance(dependencies, dict)
+                or dependencies.get(f"@openai/codex-{package_suffix}")
+                != f"npm:@openai/codex@{native_version}"
+                or platform_manifest.get("name") != "@openai/codex"
+                or platform_manifest.get("version") != native_version
+                or platform_manifest.get("os") != [target_os]
+                or platform_manifest.get("cpu") != [target_cpu]
+            ):
+                raise BinaryError("the native Codex package does not match its installation")
+            metadata.append(platform_manifest_path)
+            native_root = platform_package
+        # The upstream launcher moved the executable from codex/codex to bin/codex.
+        # Exactly one known candidate must exist; no guessed executable or shell wrapper.
+        candidates = [
+            native_root / "vendor" / target / directory / "codex" for directory in ("bin", "codex")
+        ]
+        present = [candidate for candidate in candidates if candidate.is_file()]
+        if len(present) != 1:
+            raise BinaryError("the native Codex installation is missing or ambiguous")
+        native = present[0]
+        if native.is_symlink() or not os.access(native, os.X_OK):
+            raise BinaryError("the native Codex executable is not a regular executable")
+        with _open_cli(str(native)) as stream:
+            magic = stream.read(4)
+        permitted = (
+            {b"\x7fELF"}
+            if platform == "linux"
+            else {
+                b"\xcf\xfa\xed\xfe",
+                b"\xfe\xed\xfa\xcf",
+                b"\xca\xfe\xba\xbe",
+                b"\xca\xfe\xba\xbf",
+            }
+        )
+        if magic not in permitted:
+            raise BinaryError("Codex must resolve to a native executable, not a script")
+        native_identity = file_identity(str(native))
+        installation = tuple((str(path), file_identity(str(path))) for path in metadata)
+        result = runner(
+            [str(native), "--version"], capture_output=True, text=True, check=False, timeout=10
+        )
+        if result.returncode != 0 or result.stdout.strip() != f"codex-cli {version}":
+            raise BinaryError("the native Codex version differs from its npm installation")
+        verified = VerifiedCodex(
+            str(native),
+            result.stdout.strip(),
+            native_identity,
+            installation,
+            abstention_ledger.digest([(path, identity[-1]) for path, identity in installation]),
+        )
+        PinnedCodex(verified)("codex")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        raise BinaryError("the Codex installation could not be independently verified") from error
+    else:
+        return verified
+
+
 class _ArgvCapturedError(Exception):
     pass
 
 
-def argv_digest(producer: str, config: Any, *, claude_executor: Any = None) -> str:
+def argv_digest(
+    producer: str,
+    config: Any,
+    *,
+    claude_executor: Any = None,
+    codex_transport: Mapping[str, Any] | None = None,
+) -> str:
     """sha256 of the argv the producer's exec would run, read without running it.
 
     The exec is handed a runner that records its command and raises, so no
@@ -747,6 +940,8 @@ def argv_digest(producer: str, config: Any, *, claude_executor: Any = None) -> s
     and anything under the throwaway state directory by a placeholder, so the
     digest moves with a flag, a model or an effort and with nothing else.
     """
+    if producer == "codex" and codex_transport is not None:
+        return abstention_ledger.digest(codex_transport["argv"])
     _runtime()
     from compass_runtime import observer  # noqa: PLC0415 - see `_runtime`
 
@@ -904,7 +1099,7 @@ def basis(criterion: Mapping[str, Any] | None, ledger: Sequence[Mapping[str, Any
 
 
 def _production_source(case: Mapping[str, Any]) -> Mapping[str, Any]:  # noqa: C901, PLR0912 - closed prospective source schema
-    """Require the typed Claude protocol; presence alone never proves source parity."""
+    """Require the typed production source protocol; presence never proves parity."""
     frozen = case.get("production_reading")
     fields = {
         "v",
@@ -926,7 +1121,7 @@ def _production_source(case: Mapping[str, Any]) -> Mapping[str, Any]:  # noqa: C
     reading = _runtime()[1]
     revision = mark_abstention.case_revision(dict(case))
     if (
-        case.get("harness") != "claude"
+        case.get("harness") not in {"claude", "codex"}
         or revision.get("goal_source") in reading.PROMPT_SOURCES
         or reading.has_line_requests(revision)
     ):
@@ -1089,11 +1284,19 @@ def score_case(  # noqa: PLR0913 - one keyword per thing a case decides
                 # Claude Code. Not `reading.TURN_STOP_HARNESSES`, which gained Codex on
                 # 2026-11-02: Codex cases were marked with a Codex turn stop withheld, and
                 # re-scoping the check to read one is the owner's decision, not this replay's.
-                admit_turn_stop=harness in SCORED_TURN_STOP_HARNESSES,
+                admit_turn_stop=(
+                    harness in SCORED_TURN_STOP_HARNESSES
+                    or (
+                        harness == "codex"
+                        and case.get("codex_format") == mark_abstention.FORMAT_CODEX
+                    )
+                ),
                 # Not the idle admission of 2026-10-20: these cases were marked under the
                 # earlier rule, which withheld an idle session with no recorded finish, and
                 # re-scoping the check is the owner's decision, not this replay's.
-                admit_idle=False,
+                admit_idle=(
+                    harness == "codex" and case.get("codex_format") == mark_abstention.FORMAT_CODEX
+                ),
                 **source_kwargs,
             )
         except abstention_ledger.SpendCapError:
@@ -1367,7 +1570,9 @@ def summarize(
         rubric_counts[RUBRIC_UNKNOWN] += int(entry.get("unknown_expectations") or 0)
     dec17 = _dec17(records)
     coverage = _coverage(rubric_records, str((binding or {}).get("producer") or ""))
-    bound = {key: str((binding or {})[key]) for key in BINDING_KEYS if key in (binding or {})}
+    bound = {
+        key: str((binding or {})[key]) for key in _binding_keys(binding) if key in (binding or {})
+    }
     return {
         **bound,
         "v": 1,
@@ -2002,7 +2207,7 @@ def _run_digest(records: Mapping[str, Any], binding: Mapping[str, str] | None) -
         {
             "domain": "compass-scoring-run-v1",
             "records": records,
-            "binding": {key: (binding or {}).get(key) for key in BINDING_KEYS},
+            "binding": {key: (binding or {}).get(key) for key in _binding_keys(binding)},
         }
     )
 
@@ -2030,7 +2235,7 @@ def _resume_matches(
         isinstance(records, dict)
         and before.get("inputs_digest") == _inputs_digest(corpus)
         and before.get("marks_digest") == marks_digest(corpus)
-        and all(before.get(k) == (binding or {}).get(k) for k in BINDING_KEYS)
+        and all(before.get(k) == (binding or {}).get(k) for k in _binding_keys(binding))
         and last is not None
         and last["records_digest"] == _run_digest(records, binding)
         and (last["marks_digest"], last["inputs_digest"])
@@ -2171,8 +2376,14 @@ def _vouched(
     return {**case, "origin": ORIGIN_SYNTHETIC, "unconfirmed": list(reasons), "demoted": True}
 
 
-def _binding_refusal(corpus: Corpus, binding: Mapping[str, str] | None) -> str:
+def _binding_refusal(corpus: Corpus, binding: Mapping[str, str] | None) -> str:  # noqa: PLR0911 - harness-specific binding refusals
     """A Claude Code result is written only from a format 5 packet, to Anthropic (F3, F7)."""
+    if (binding or {}).get("producer") == "codex":
+        if corpus.cases.get("v") != mark_abstention.FORMAT_CODEX:
+            return "Codex qualification requires its prospective format 6 packet"
+        if (binding or {}).get("destination") != "OpenAI" or (binding or {}).get("effort") != "max":
+            return "Codex qualification requires OpenAI and explicit max effort"
+        return ""
     if (binding or {}).get("producer") != "claude":
         return ""
     _runtime()
@@ -2196,6 +2407,13 @@ def parser_mismatch(corpus: Corpus, *, rechecked: bool = False) -> list[str]:
     does a recorded Claude Code case with no stamp at all count, since an
     unvouched run never rebuilds it and demotes nothing.
     """
+    if corpus.cases.get("v") == mark_abstention.FORMAT_CODEX:
+        import codex_case_sources  # noqa: PLC0415
+
+        here = codex_case_sources.parser_digest()
+        if any(c.get("parser") != here for c in corpus.cases.get("cases", [])):
+            return ["Refused: the recorded Codex parser stamp changed or is missing."]
+        return []
     if corpus.cases.get("v") != mark_abstention.FORMAT_INTENT:
         return []
     cases = [c for c in corpus.cases.get("cases") or () if isinstance(c, dict)]
@@ -2295,7 +2513,15 @@ def _scoring_ledger(
     corpus: Corpus,
     binding: Mapping[str, str] | None,
     max_calls: int,
-) -> abstention_ledger.Ledger | None:
+    *,
+    codex_transport: Mapping[str, Any] | None = None,
+) -> Any:
+    if (binding or {}).get("producer") == "codex":
+        from analyze_campaign import CodexCampaign  # noqa: PLC0415
+
+        if codex_transport is None:
+            raise abstention_ledger.LedgerError("Codex transport is required")
+        return CodexCampaign(bindings=codex_bindings(corpus), transport=dict(codex_transport))
     grant = abstention_ledger.continuation() if ledger_path else None
     closure = abstention_ledger.closure_allowance(grant)
     campaign = None
@@ -2330,7 +2556,9 @@ def _scoring_ledger(
         except abstention_ledger.LedgerError as error:
             print(f"Refused: {error}.")
             raise
-        model_binding = abstention_ledger.digest({k: (binding or {}).get(k) for k in BINDING_KEYS})
+        model_binding = abstention_ledger.digest(
+            {k: (binding or {}).get(k) for k in _binding_keys(binding)}
+        )
     return (
         abstention_ledger.Ledger(
             ledger_path,
@@ -2363,6 +2591,8 @@ def score(  # noqa: C901, PLR0913 - legacy route plus isolated closure admission
     resume: Mapping[str, Any] | None = None,
     vouch: Callable[[Mapping[str, Any]], list[str]] | None = None,
     reviewed_exports: mark_abstention.ReviewedExports | None = None,
+    codex_transport: Mapping[str, Any] | None = None,
+    codex_approve: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> int:
     """Run the producer once per case, write both halves, print the report.
 
@@ -2378,6 +2608,19 @@ def score(  # noqa: C901, PLR0913 - legacy route plus isolated closure admission
     local half of the last run, whose records are kept except where the model
     failed.
     """
+    if (binding or {}).get("producer") == "codex":
+        return _score_codex(
+            corpus,
+            config=config,
+            model=model,
+            results_path=results_path,
+            summary_path=summary_path,
+            now=now,
+            binding=binding or {},
+            transport=codex_transport,
+            approve=codex_approve,
+            resume=resume,
+        )
     try:
         ledger = _scoring_ledger(ledger_path, corpus, binding, max_calls)
     except abstention_ledger.LedgerError:
@@ -2731,7 +2974,11 @@ def _score_repeated(  # noqa: C901, PLR0912, PLR0913, PLR0915 - explicit charge/
                 ):
                     stopped = True
                 checkpoint = {
-                    **{k: str((binding or {})[k]) for k in BINDING_KEYS if k in (binding or {})},
+                    **{
+                        k: str((binding or {})[k])
+                        for k in _binding_keys(binding)
+                        if k in (binding or {})
+                    },
                     "v": 2,
                     "protocol": "closure-three-repeats",
                     "marks_digest": marks_digest(corpus),
@@ -2764,7 +3011,7 @@ def _score_repeated(  # noqa: C901, PLR0912, PLR0913, PLR0915 - explicit charge/
             break
     repetitions, verdict = _repetition_summaries(corpus, attempts, now, binding, cases)
     summary: dict[str, Any] = {
-        **{k: str((binding or {})[k]) for k in BINDING_KEYS if k in (binding or {})},
+        **{k: str((binding or {})[k]) for k in _binding_keys(binding) if k in (binding or {})},
         "v": 2,
         "protocol": "closure-three-repeats",
         "scored_at": now,
@@ -3005,6 +3252,8 @@ def _load_corpus(rubric_path: str) -> Corpus:
 
 def results_path_for(producer: str) -> str:
     """The local half, one per producer, so a resume never picks up the other's run."""
+    if producer == "codex":
+        return os.path.join(HOME, "abstention-codex-results.json")
     if producer == "claude":
         return local_results_path(abstention_ledger.generation())
     return RESULTS_PATH
@@ -3023,40 +3272,53 @@ def summary_path_for(producer: str | None, out: str | None) -> str:
     """The failed result remains a fixed, read-only predecessor of a continuation."""
     if out is not None:
         return out
+    if producer == "codex":
+        return os.path.join(_ROOT, "docs", "abstention", "codex-results.json")
     if producer != "claude":
         return SUMMARY_PATH
     generation = abstention_ledger.generation()
     return abstention_ledger.result_path(generation) if generation else CLAUDE_SUMMARY_PATH
 
 
-def _argument_refusal(args: argparse.Namespace) -> str:  # noqa: C901, PLR0911 - cold admission precedes data reads; one refusal per guard
-    if (
-        abstention_ledger.LEDGER_PATH is None
-        or mark_abstention.CLAUDE_PROJECTS_ROOT is None
-        or mark_abstention.STORE_HOME is None
-        or not CLAUDE_VERSIONS_ROOTS
-        or abstention_ledger.canonical_home() is None
+def _argument_refusal(args: argparse.Namespace) -> str:  # noqa: C901, PLR0911, PLR0912 - cold admission precedes data reads; one refusal per guard
+    codex = args.producer == "codex"
+    if abstention_ledger.canonical_home() is None or (
+        not codex
+        and (
+            abstention_ledger.LEDGER_PATH is None
+            or mark_abstention.CLAUDE_PROJECTS_ROOT is None
+            or mark_abstention.STORE_HOME is None
+            or not CLAUDE_VERSIONS_ROOTS
+        )
     ):
         return "Refused: this account's canonical home is unavailable. Nothing ran."
     if (args.score or args.probe_argv) and abstention_ledger.home_moved():
-        # V1: every path this check trusts is the account's, so a HOME that
-        # names another directory is a second machine's worth of ledger.
         return "Refused: HOME names another directory than this account's home. Unset it."
+    if codex and args.probe_argv:
+        return "--probe-argv is Claude-only; Codex preparation uses --prepare-codex."
     if args.score and args.probe_argv:
         return "--probe-argv never scores; run it on its own."
     if args.score and not args.producer:
-        return "--score needs --producer claude: a result names what ran."
-    if args.score and args.producer == "codex":
-        # No Codex spend is authorized for this qualification (2026-09-24).
-        return "--producer codex may report but not score: no Codex spend is authorized."
-    ceiling = MAX_CALLS
-    if args.max_calls > MAX_CALLS:
+        return "--score needs --producer claude or codex: a result names what ran."
+    if getattr(args, "prepare_codex", False) and (args.score or args.probe_argv or not codex):
+        return "--prepare-codex requires --producer codex and runs without --score or --probe-argv."
+    if args.score and codex:
         try:
-            grant = abstention_ledger.continuation()
+            grant = abstention_ledger.codex_grant()
+            if grant["phase"] != "sealed":
+                return "Refused: Codex genesis has not been reviewed and sealed."
+        except abstention_ledger.LedgerError as error:
+            return f"Refused: no Codex spend is authorized by a sealed grant ({error})."
+    ceiling = MAX_CALLS
+    if codex:
+        ceiling = 31
+    elif args.max_calls > MAX_CALLS:
+        try:
+            claude_grant = abstention_ledger.continuation()
         except abstention_ledger.LedgerError:
-            grant = None
-        if grant:
-            ceiling = abstention_ledger.allowance_cap(grant)
+            claude_grant = None
+        if claude_grant:
+            ceiling = abstention_ledger.allowance_cap(claude_grant)
     if not 1 <= args.max_calls <= ceiling:
         return f"--max-calls must be between 1 and {ceiling}, the authorized spend."
     if args.resume and not args.score:
@@ -3369,6 +3631,640 @@ def probe_argv(
     return worst
 
 
+# -------------------------------------------------------- prospective Codex only
+
+
+def codex_bindings(corpus: Corpus) -> dict[str, str]:
+    """Recompute every authority input; packet labels cannot stand in for source evidence."""
+    from analyze_campaign import runtime_source_digest  # noqa: PLC0415
+
+    root = pathlib.Path(_ROOT)
+    return {
+        "packet": _inputs_digest(corpus),
+        "cases": mark_abstention.cases_digest(dict(corpus.cases)),
+        "marks": marks_digest(corpus),
+        "rubric": abstention_ledger.digest(corpus.rubric),
+        "source": abstention_ledger.digest(
+            [
+                [c["id"], c["sources"], c["production_reading"]]
+                for c in corpus.cases.get("cases", [])
+            ]
+        ),
+        "protocol": abstention_ledger.digest(
+            [
+                (name, hashlib.sha256((root / name).read_bytes()).hexdigest())
+                for name in (
+                    "docs/abstention/README.md",
+                    "SECURITY.md",
+                    "docs/design-reading-a-session.md",
+                )
+            ]
+        ),
+        "runtime": runtime_source_digest(root / "compass/skills/compass/compass_runtime"),
+        "scorer": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
+    }
+
+
+def _codex_argv(command: Sequence[str], output: str) -> list[str]:
+    """Bind the actual launch argv, with one prospectively named transient output file."""
+    argv = list(command)
+    if argv.count("--output-last-message") != 1:
+        raise BinaryError("the Codex output argument changed")
+    argv[argv.index("--output-last-message") + 1] = output
+    return argv
+
+
+def _codex_route(config: Any, verified: VerifiedCodex) -> Mapping[str, Any]:
+    _runtime()
+    from compass_runtime import observer, reading_route  # noqa: PLC0415
+
+    pin = PinnedCodex(verified)
+    route = reading_route.resolve(
+        "codex",
+        binary_resolver=lambda name: pin(name) if name == "codex" else None,
+        config=config,
+    )
+    if (
+        route["provider"] != "codex"
+        or route["fallback"]
+        or route["model"] != observer.OBSERVER_MODEL
+        or route["words_destination"] != "OpenAI"
+        or observer.OBSERVER_MODEL != "gpt-5.6-luna"
+        or observer.OBSERVER_MODEL_REASONING_EFFORT != "max"
+    ):
+        raise BinaryError("the actual reading route is not the pinned Codex producer")
+    return route
+
+
+def codex_transport(config: Any, verified: VerifiedCodex) -> dict[str, Any]:
+    """Capture the production exec locally. This runner never starts a process."""
+    from analyze_campaign import (  # noqa: PLC0415
+        runtime_source_digest,
+        verified_codex_transport_binding,
+    )
+    from compass_runtime import observer  # noqa: PLC0415
+
+    route = _codex_route(config, verified)
+    seen: list[list[str]] = []
+    output = str(pathlib.Path(config.state_dir).resolve() / "codex-qualification-output.txt")
+
+    def sink(command: Sequence[str], **_kwargs: Any) -> Any:
+        seen.append(_codex_argv(command, output))
+        raise _ArgvCapturedError
+
+    with contextlib.suppress(_ArgvCapturedError):
+        observer.codex_exec(
+            config, "", output_cap_bytes=1, runner=sink, binary_resolver=PinnedCodex(verified)
+        )
+    if len(seen) != 1:
+        raise BinaryError("the Codex production exec built no unique argv")
+    return verified_codex_transport_binding(
+        verified,
+        argv=seen[0],
+        model=str(route["model"]),
+        effort=observer.OBSERVER_MODEL_REASONING_EFFORT,
+        destination=str(route["words_destination"]),
+        runtime_digest=runtime_source_digest(pathlib.Path(observer.__file__).parent),
+    )
+
+
+def codex_result_binding(transport: Mapping[str, Any], verified: VerifiedCodex) -> dict[str, str]:
+    return {
+        **{
+            key: str(transport[key])
+            for key in (
+                "producer",
+                "model",
+                "effort",
+                "destination",
+                "binary",
+                "binary_sha256",
+                "cli_version",
+            )
+        },
+        "argv_digest": argv_digest("codex", None, codex_transport=transport),
+        "installation_digest": verified.installation_digest,
+        "transport_digest": abstention_ledger.digest(transport),
+    }
+
+
+def codex_model(
+    config: Any, verified: VerifiedCodex, transport: Mapping[str, Any], *, runner: Any = None
+) -> Any:
+    """The actual route/model/exec, with a pinned launch and transient output alias.
+
+    observer owns its random temporary output. The approved argv names a stable
+    private alias of that empty file. Both names address the same inode; no reply
+    is copied or retained here. All other arguments and stdin must match exactly.
+    """
+    from analyze_campaign import validate_codex_transport_binding  # noqa: PLC0415
+
+    validate_codex_transport_binding(dict(transport))
+    _codex_route(config, verified)
+    from compass_runtime import observer, reading, supervise  # noqa: PLC0415
+
+    pin = PinnedCodex(verified)
+    actual_runner = runner or supervise.run
+    approved = list(transport["argv"])
+    output = approved[approved.index("--output-last-message") + 1]
+
+    def launch(command: Sequence[str], **kwargs: Any) -> Any:
+        if _codex_argv(command, output) != approved:
+            raise BinaryError("the actual Codex argv differs from its approval")
+        original = command[list(command).index("--output-last-message") + 1]
+        # Exclusive link creation refuses an existing file, directory or symlink.
+        os.link(original, output)
+        try:
+            pin("codex")  # Recheck immediately before the real runner, after approval.
+            if actual_runner is supervise.run:
+                kwargs["output_limit"] = (output, observer.OUTPUT_FILE_LIMIT_BYTES)
+                kwargs["before_spawn"] = lambda: pin("codex")
+            result = actual_runner(approved, **kwargs)
+            # Native writers may replace the output atomically, breaking the alias.
+            # Preserve the production reader's bounded file even in that case.
+            with _open_cli(output) as stream:
+                reply = stream.read(observer.OUTPUT_FILE_LIMIT_BYTES + 1)
+            if len(reply) > observer.OUTPUT_FILE_LIMIT_BYTES:
+                raise supervise.OversizedError
+            descriptor = os.open(original, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(descriptor, "wb") as stream:
+                _metadata(os.fstat(stream.fileno()))
+                stream.write(reply)
+            return result
+        finally:
+            os.unlink(output)
+
+    model: Any = reading.CodexReadingModel(config, runner=launch, binary_resolver=pin)
+    model.qualification_transport = dict(transport)
+    model.qualification_verified = verified
+    return model
+
+
+def _codex_expectations(case: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
+    expectations = entry.get("expect")
+    names = case["production_reading"]["constraints"]
+    return (
+        isinstance(expectations, dict)
+        and set(expectations) == set(names)
+        and all(
+            isinstance(expectations[name], dict)
+            and expectations[name].get("result")
+            in (CLAIMS_RESULT_BY_TOKEN if name == "claims" else RESULT_BY_TOKEN)
+            and isinstance(expectations[name].get("cites"), list)
+            and all(isinstance(cite, str) for cite in expectations[name]["cites"])
+            for name in names
+        )
+    )
+
+
+def _codex_cases(corpus: Corpus, config: Any) -> dict[str, Any]:  # noqa: C901 - source, mark and independent review guards precede every send
+    """Native revalidation and independent, source-bound kind review, before any send."""
+    import codex_case_sources  # noqa: PLC0415
+
+    body = dict(corpus.cases)
+    if body.get("v") != mark_abstention.FORMAT_CODEX or mark_abstention.packet_mismatch(body):
+        raise mark_abstention.FreezeError("codex-packet-required")
+    if parser_mismatch(corpus, rechecked=True):
+        raise mark_abstention.FreezeError("codex-parser-changed")
+    if not _replay_marks_match(corpus) or _intent_marks_refusal(body, corpus.marks):
+        raise mark_abstention.FreezeError("codex-blind-marks-incomplete")
+    cases = {case["id"]: case for case in body["cases"]}
+    marks = mark_abstention._marks(dict(corpus.marks))  # noqa: SLF001
+    rubric = _rubric_entries(corpus.rubric)
+    reviews = body.get("codex_kind_reviews")
+    if (
+        len(cases) != 10
+        or set(cases) != set(marks)
+        or set(cases) != set(rubric)
+        or not isinstance(reviews, dict)
+        or set(reviews) != set(cases)
+    ):
+        raise mark_abstention.FreezeError("codex-ten-reviewed-cases-required")
+    roles = []
+    for cid, case in cases.items():
+        if case.get("origin") != ORIGIN_RECORDED or codex_case_sources.content_refusal(
+            config, case, str(case["sources"]["parent"]["path"])
+        ):
+            raise mark_abstention.FreezeError("codex-native-source-unconfirmed")
+        _production_source(case)
+        review = reviews[cid]
+        if not isinstance(review, dict):
+            raise mark_abstention.FreezeError("codex-kind-review-required")
+        kind = review.get("kind")
+        markers = review.get("markers")
+        if (
+            kind not in (*KINDS, *PASSING_CHECK_ADVERSARIES)
+            or review.get("case_digest") != abstention_ledger.digest(case)
+            or not isinstance(markers, list)
+            or len(markers) != 2
+            or not all(isinstance(m, str) and m for m in markers)
+            or markers[0] == markers[1]
+            or not isinstance(review.get("reviewed_by"), str)
+            or not review["reviewed_by"]
+            or review["reviewed_by"] in markers
+            or not abstention_ledger.codex_digest_valid(review.get("review_receipt"))
+            or (kind == KIND_SUPPORTED_DEPARTURE and review.get("spontaneous") is not True)
+            or (
+                kind in PASSING_CHECK_ADVERSARIES
+                and (
+                    not review.get("authored_by")
+                    or not review.get("verified_by")
+                    or review["authored_by"] == review["verified_by"]
+                )
+            )
+            or rubric_refusal(rubric[cid], "codex")
+        ):
+            raise mark_abstention.FreezeError("codex-independent-source-kind-unconfirmed")
+        if not _codex_expectations(case, rubric[cid]):
+            raise mark_abstention.FreezeError("codex-required-expectations-incomplete")
+        roles.append(kind)
+    if sorted(roles) != sorted((*KINDS, *PASSING_CHECK_ADVERSARIES)):
+        raise mark_abstention.FreezeError("codex-five-genuine-kinds-and-adversaries-required")
+    return cases
+
+
+def prepare_codex_requests(
+    corpus: Corpus, config: Any, transport: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """Only a local prompt sink sees evidence; preparation has no launch or approval seam."""
+    from analyze_campaign import request_digest, validate_codex_transport_binding  # noqa: PLC0415
+
+    validate_codex_transport_binding(dict(transport))
+    cases = _codex_cases(corpus, config)
+    requests = []
+    for cid, case in cases.items():
+        captured: list[tuple[str, int]] = []
+
+        def sink(prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+            captured.append((prompt, output_cap_bytes))  # noqa: B023 - invoked synchronously inside this iteration
+            return "{}", "ok"
+
+        score_case(
+            config,
+            case,
+            case["row_snapshot"],
+            case["producer_facts"],
+            {},
+            model=sink,
+            now=case["captured_at"],
+            revision=mark_abstention.case_revision(case),
+            tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
+        )
+        if len(captured) != 1:
+            raise mark_abstention.FreezeError("codex-production-prompt-unavailable")
+        prompt, cap = captured[0]
+        requests.append(
+            {
+                "case": cid,
+                "prompt": prompt,
+                "output_cap_bytes": cap,
+                "request_digest": request_digest(
+                    prompt,
+                    "codex",
+                    transport["runtime_digest"],
+                    cap,
+                    codex_transport=dict(transport),
+                ),
+                "evidence": [
+                    "frozen intent",
+                    "selected person and agent messages",
+                    "recorded checks",
+                    "permitted output",
+                    "agent source material",
+                ],
+            }
+        )
+    return [
+        {**request, "slot": f"{request['case']}:r{r}", "repetition": r}
+        for r in (1, 2, 3)
+        for request in requests
+    ]
+
+
+def _codex_owner_approval(
+    report: Mapping[str, Any], approve: Callable[[Mapping[str, Any]], bool] | None
+) -> bool:
+    # Deliberately no --yes flag or receipt imported from an earlier process.
+    if approve is not None:
+        return approve(report)
+    return input("Approve this one Codex exposure? Type approve: ").strip() == "approve"
+
+
+def _codex_checkpoint(
+    ledger: Any,
+    attempts: list[dict[str, Any]],
+    binding: Mapping[str, str],
+    corpus: Corpus,
+    results_path: str,
+    *,
+    pending: str = "",
+) -> dict[str, Any]:
+    calls = ledger._state()[2]  # noqa: SLF001 - validate immutable native receipts before checkpoint
+    records = {"attempts": attempts}
+    local = {
+        "v": 2,
+        "protocol": "codex-three-repeats",
+        "records": records,
+        "binding": dict(binding),
+        "inputs_digest": _inputs_digest(corpus),
+        "marks_digest": marks_digest(corpus),
+        "calls": calls,
+        "pending": pending,
+        "records_digest": _run_digest(records, binding),
+    }
+    mark_abstention._write(results_path, local)  # noqa: SLF001
+    return local
+
+
+def _codex_resume(
+    ledger: Any, resume: Mapping[str, Any] | None, corpus: Corpus, binding: Mapping[str, str]
+) -> list[dict[str, Any]]:
+    calls = ledger._state()[2]  # noqa: SLF001
+    if resume is None:
+        if calls:
+            raise abstention_ledger.LedgerError(
+                "Codex charges already exist; resume their immutable results"
+            )
+        return []
+    attempts = resume.get("records", {}).get("attempts")
+    if (
+        resume.get("v") != 2
+        or resume.get("protocol") != "codex-three-repeats"
+        or resume.get("binding") != dict(binding)
+        or resume.get("inputs_digest") != _inputs_digest(corpus)
+        or resume.get("marks_digest") != marks_digest(corpus)
+        or resume.get("pending")
+        or resume.get("calls") != calls
+        or not isinstance(attempts, list)
+        or len(attempts) != len(calls)
+        or resume.get("records_digest") != _run_digest({"attempts": attempts}, binding)
+    ):
+        raise abstention_ledger.LedgerError(
+            "Codex resume changed or an interrupted charge needs owner reconciliation"
+        )
+    for attempt, call in zip(attempts, calls, strict=True):
+        path = pathlib.Path(ledger.path + ".results") / (call["id"] + ".json")
+        if (
+            path.is_symlink()
+            or attempt != json.loads(path.read_bytes())
+            or attempt.get("charge_id") != call["id"]
+            or attempt.get("classification") != call["status"]
+        ):
+            raise abstention_ledger.LedgerError("an earlier Codex result was removed or rewritten")
+    return list(attempts)
+
+
+def _codex_summary(
+    corpus: Corpus,
+    cases: Mapping[str, Any],
+    attempts: list[dict[str, Any]],
+    ledger: Any,
+    binding: Mapping[str, str],
+    now: float,
+) -> dict[str, Any]:
+    repetitions, verdict = _repetition_summaries(corpus, attempts, now, binding, cases)
+    # Only digests of local CLI/argv bindings may leave the machine.
+    public_binding = {key: value for key, value in binding.items() if key != "binary"}
+    for repetition in repetitions:
+        repetition["summary"].pop("binary", None)
+    return {
+        **public_binding,
+        "v": 2,
+        "protocol": "codex-three-repeats",
+        "scored_at": now,
+        "marks_digest": marks_digest(corpus),
+        "inputs_digest": _inputs_digest(corpus),
+        "spend": {"charged": ledger.used(), "cap": 31},
+        "repetitions": repetitions,
+        "counts": {
+            "attempts": len(attempts),
+            "registered_exposures": len({(a["id"], a["repeat"]) for a in attempts}),
+            "unique_cases": len({a["id"] for a in attempts}),
+            "unusable_attempts": sum(a["classification"] == "unusable" for a in attempts),
+        },
+        "verdict": verdict,
+    }
+
+
+def _codex_output_guard(ledger: Any, results_path: str, summary_path: str) -> None:
+    root = pathlib.Path(_ROOT, "docs/abstention").resolve()
+    summary = pathlib.Path(summary_path).resolve()
+    if (
+        summary == pathlib.Path(CLAUDE_SUMMARY_PATH).resolve()
+        or (summary.parent == root and summary.name != "codex-results.json")
+        or any(
+            os.path.islink(path) for path in (results_path, summary_path, ledger.path + ".results")
+        )
+        or pathlib.Path(results_path).resolve() == summary
+        or (
+            os.path.exists(ledger.path + ".results")
+            and stat.S_IMODE(os.stat(ledger.path + ".results").st_mode) & 0o077
+        )
+    ):
+        raise abstention_ledger.LedgerError(
+            "Codex cannot replace historical results or follow result symlinks"
+        )
+
+
+def _score_codex(  # noqa: C901, PLR0913, PLR0915 - one guarded exposure and its durable checkpoint
+    corpus: Corpus,
+    *,
+    config: Any,
+    model: Any,
+    results_path: str,
+    summary_path: str,
+    now: float,
+    binding: Mapping[str, str],
+    transport: Mapping[str, Any] | None,
+    approve: Callable[[Mapping[str, Any]], bool] | None,
+    resume: Mapping[str, Any] | None,
+) -> int:
+    """Consume one exact approval, checkpoint one exposure, then return to the owner."""
+    try:
+        reading = _runtime()[1]
+        if (
+            transport is None
+            or type(model) is not reading.CodexReadingModel
+            or model.config != config
+            or getattr(model, "qualification_transport", None) != transport
+        ):
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "Codex needs its verified production model and transport"
+            )
+        verified = model.qualification_verified
+        if (
+            codex_transport(config, verified) != transport
+            or codex_result_binding(transport, verified) != binding
+        ):
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "the Codex production binding changed"
+            )
+        requests = prepare_codex_requests(corpus, config, transport)
+        cases = {case["id"]: case for case in corpus.cases["cases"]}
+        ledger = _scoring_ledger(None, corpus, binding, 31, codex_transport=transport)
+        _codex_output_guard(ledger, results_path, summary_path)
+        attempts = _codex_resume(ledger, resume, corpus, binding)
+        registered = [
+            {key: r[key] for key in ("slot", "case", "repetition", "request_digest")}
+            for r in requests
+        ]
+        if registered != ledger.grant["exposures"]:
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "the thirty Codex exposures differ from their registration"
+            )
+        if resume is None and (os.path.lexists(results_path) or os.path.lexists(summary_path)):
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "a fresh Codex run never overwrites earlier results"
+            )
+        calls = ledger._state()[2]  # noqa: SLF001
+        retry = bool(
+            calls and calls[-1]["status"] == "unusable" and not any(c["retry"] for c in calls)
+        )
+        requested = (
+            next((r for r in requests if r["slot"] == calls[-1]["slot"]), None)
+            if retry
+            else next((r for r in requests if r["slot"] not in {c["slot"] for c in calls}), None)
+        )
+        if requested is None:
+            summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
+            return (
+                0
+                if summary["verdict"] == VERDICT_PASSED
+                else 1
+                if summary["verdict"] == VERDICT_FAILED
+                else 2
+            )
+        ledger._eligible(  # noqa: SLF001 - validate before asking, without consuming
+            calls,
+            ledger._state()[3],  # noqa: SLF001 - validate immutable receipts
+            requested["slot"],
+            requested["request_digest"],
+            retry,
+        )
+        report = {
+            key: requested[key] for key in ("case", "repetition", "request_digest", "evidence")
+        }
+        report.update(
+            retry=retry,
+            model=binding["model"],
+            effort=binding["effort"],
+            CLI={
+                key: binding[key]
+                for key in (
+                    "binary",
+                    "binary_sha256",
+                    "cli_version",
+                    "installation_digest",
+                    "argv_digest",
+                )
+            },
+            remaining=31 - ledger.used(),
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        if not _codex_owner_approval(report, approve):
+            print("No approval consumed; nothing launched.")
+            return 2
+        # Evidence and installation may have moved while the owner read the request.
+        if (
+            codex_transport(config, verified) != transport
+            or codex_bindings(corpus) != ledger.inputs
+        ):
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "Codex inputs changed during approval"
+            )
+        if prepare_codex_requests(corpus, config, transport) != requests:
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "Codex prompts changed during approval"
+            )
+        approval = ledger.approve_slot(requested["slot"], requested["request_digest"], retry=retry)
+        charged = _Charged(
+            ledger,
+            requested["case"],
+            model,
+            repeat=requested["repetition"],
+            retry=retry,
+            binding=binding,
+            codex_transport=transport,
+            codex_approval=approval,
+            on_charge=lambda charge: _codex_checkpoint(
+                ledger, attempts, binding, corpus, results_path, pending=charge
+            ),
+        )
+        case = cases[requested["case"]]
+        record = score_case(
+            config,
+            case,
+            case["row_snapshot"],
+            case["producer_facts"],
+            mark_abstention._marks(dict(corpus.marks))[case["id"]],  # noqa: SLF001
+            model=charged,
+            now=case["captured_at"],
+            revision=mark_abstention.case_revision(case),
+            tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
+        )
+        judged = rubric_case(
+            _rubric_entries(corpus.rubric)[case["id"]],
+            record,
+            case["id"],
+            case_origin=case["origin"],
+        )
+        # Kind coverage is supplied exclusively by the independently reviewed native source.
+        judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
+        classification = _repeat_classification(record, judged, charged.charge_id)
+        if charged.transport_status in ("unstopped", "oversized"):
+            classification = "protection-failed"
+        if not charged.charge_id:
+            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                "Codex refused before launch; no result replaces earlier attempts"
+            )
+        record.update(
+            repeat=requested["repetition"],
+            retry=retry,
+            charge_id=charged.charge_id,
+            classification=classification,
+            rubric=judged,
+            request_digest=requested["request_digest"],
+        )
+        folder = pathlib.Path(ledger.path + ".results")
+        folder.mkdir(mode=0o700, exist_ok=True)
+        descriptor = os.open(
+            folder / (charged.charge_id + ".json"),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(record, stream, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        ledger.settle(charged.charge_id, classification)
+        attempts.append(record)
+        _codex_checkpoint(ledger, attempts, binding, corpus, results_path)
+        summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
+        mark_abstention._write(summary_path, summary)  # noqa: SLF001
+        print(
+            f"Codex qualification: {len(attempts)} charged attempts; {summary['verdict']}. "
+            "Returned after one exposure."
+        )
+        return (
+            0
+            if summary["verdict"] == VERDICT_PASSED
+            else 1
+            if summary["verdict"] == VERDICT_FAILED
+            else 2
+        )
+    except (
+        abstention_ledger.LedgerError,
+        mark_abstention.FreezeError,
+        BinaryError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ) as error:
+        print(f"Refused: {error}. No further Codex launch.")
+        return 2
+
+
 def _claude_model_arg(value: str) -> str:
     _runtime()
     from compass_runtime import cli  # noqa: PLC0415 - import after installing the runtime path
@@ -3376,16 +4272,28 @@ def _claude_model_arg(value: str) -> str:
     return cli.claude_reading_model_arg(value)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0915 - explicit CLI gates
+def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - explicit CLI gates
     parser = argparse.ArgumentParser(description="Score the reading producer against the marks.")
     parser.add_argument("--score", action="store_true", help="run the producer; spends")
     parser.add_argument("--report", action="store_true", help="where things stand; spends nothing")
+    parser.add_argument(
+        "--prepare-codex",
+        action="store_true",
+        help="prepare registered requests through a local sink; spends nothing",
+    )
     parser.add_argument("--producer", choices=PRODUCERS, help="required with --score")
     parser.add_argument("--claude-reading-model", type=_claude_model_arg, default=None)
     parser.add_argument(
-        "--max-calls", type=int, default=MAX_CALLS, help=f"spend ledger cap, at most {MAX_CALLS}"
+        "--max-calls",
+        type=int,
+        default=MAX_CALLS,
+        help=f"Claude cap (default {MAX_CALLS}); Codex uses its separate fixed 31-call authority",
     )
-    parser.add_argument("--resume", action="store_true", help="re-call only model failures")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue the bound run; Codex handles one newly approved exposure",
+    )
     parser.add_argument(
         "--probe-argv", action="store_true", help="one call to a local stub; writes nothing"
     )
@@ -3399,6 +4307,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0915 
         "--reviewed-exports-sha256", metavar="SHA256", help="independently pinned manifest digest"
     )
     args = parser.parse_args(argv)
+    if args.producer == "codex" and (args.reviewed_exports or args.reviewed_exports_sha256):
+        print("Refused: reviewed Claude exports do not authorize Codex sources.")
+        return 2
     try:
         reviewed_exports = mark_abstention.load_reviewed_exports(
             args.reviewed_exports, args.reviewed_exports_sha256
@@ -3437,6 +4348,52 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0915 
     if not corpus.cases.get("cases"):
         print(f"No cases at {CASES_PATH}. Run mark_abstention.py --build or --freeze first.")
         return 1
+    if args.producer == "codex":
+        try:
+            codex_verified = verify_codex_binary()
+            transport = codex_transport(config, codex_verified)
+            requests = prepare_codex_requests(corpus, config, transport)
+            if not args.score:
+                print(
+                    json.dumps(
+                        {
+                            "bindings": codex_bindings(corpus),
+                            "transport": transport,
+                            "exposures": [
+                                {
+                                    key: r[key]
+                                    for key in ("slot", "case", "repetition", "request_digest")
+                                }
+                                for r in requests
+                            ],
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                print("Prepared locally; no approval recorded and no producer launched.")
+                return 0
+            results_path = results_path_for("codex")
+            resume = mark_abstention._load(results_path) if args.resume else None  # noqa: SLF001
+            if args.resume and not resume:
+                print("Refused: no earlier Codex checkpoint to resume.")
+                return 2
+            return score(
+                args.port,
+                corpus,
+                config=config,
+                model=codex_model(config, codex_verified, transport),
+                results_path=results_path,
+                summary_path=out,
+                now=time.time(),
+                binding=codex_result_binding(transport, codex_verified),
+                tool_destination="OpenAI",
+                codex_transport=transport,
+                resume=resume,
+            )
+        except (BinaryError, mark_abstention.FreezeError, abstention_ledger.LedgerError) as error:
+            print(f"Refused: {error}.")
+            return 2
     if not args.score:
         summary = mark_abstention._load(out) if os.path.exists(out) else None  # noqa: SLF001
         vouch = (
@@ -3444,15 +4401,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0911, PLR0915 
                 mark_abstention.STORE_HOME,
                 **({"reviewed_exports": reviewed_exports} if reviewed_exports is not None else {}),
             )
-            if corpus.cases.get("v") == mark_abstention.FORMAT_INTENT
+            if mark_abstention.is_intent_packet(dict(corpus.cases))
             else None
         )
-        # Exactly score()'s rule: a Codex producer never scores, so it rechecks nothing.
         return report(
             corpus,
             summary or None,
             vouch=vouch,
-            rechecked=vouch is not None and args.producer != "codex",
+            rechecked=vouch is not None,
         )
     destination = reading_route.destination("claude")
     if destination != reading_route.VENDORS["claude"]:

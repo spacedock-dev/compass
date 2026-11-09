@@ -308,15 +308,21 @@ class CodexAuthority(unittest.TestCase):
             self.reserve(study, approval)
         self.launch.assert_not_called()
 
-    def test_a_person_with_sealed_authority_still_cannot_launch_the_unwired_scorer(self) -> None:
-        self.activate()
+    def test_a_person_with_sealed_authority_cannot_launch_an_unverified_cli(self) -> None:
+        study = self.activate()
         scorer = importlib.import_module("score_abstention")
+        corpus = scorer.Corpus({"v": 6, "cases": [{}]}, {}, b"", {})
         with (
-            mock.patch.object(scorer, "_runtime", side_effect=AssertionError("runtime reached")),
+            mock.patch.object(scorer, "_load_corpus", return_value=corpus),
+            mock.patch.object(
+                scorer, "verify_codex_binary", side_effect=scorer.BinaryError("unverified fake CLI")
+            ),
+            mock.patch.object(scorer, "codex_model", side_effect=AssertionError("producer built")),
             mock.patch("builtins.print") as printed,
         ):
             self.assertEqual(2, scorer.main(["--score", "--producer", "codex"]))
-        self.assertIn("no Codex spend is authorized", str(printed.call_args))
+        self.assertIn("unverified fake CLI", str(printed.call_args))
+        self.assertEqual(0, study.used())
         self.launch.assert_not_called()
 
     def test_a_person_cannot_inherit_an_approval_into_a_forked_process(self) -> None:
