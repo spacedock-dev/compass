@@ -84,6 +84,8 @@ has the details and the limits.
 
 See the [command manual](MANUAL.md) for every launcher option, defaults, environment variables
 and examples, including controls for model use, history and notifications.
+[Use Compass from a terminal](HOW_TO_USE_TERMINAL.md) covers the everyday commands, such as
+`--sessions` and `--drift`, and what they print.
 
 ### Claude Code installation
 

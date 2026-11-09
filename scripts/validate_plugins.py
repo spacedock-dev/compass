@@ -218,6 +218,7 @@ ROOT_DOCS = (
     "README.md",
     "MANUAL.md",
     "HOW_TO_USE.md",
+    "HOW_TO_USE_TERMINAL.md",
     "AGENTS.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",

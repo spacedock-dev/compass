@@ -388,6 +388,7 @@ python3 compass/skills/compass/server.py --port 4581 --forget
 
 - [README](README.md): installation and a product overview.
 - [How to use Compass](HOW_TO_USE.md): installed launcher discovery, hooks, MCP, relocation and troubleshooting.
+- [Use Compass from a terminal](HOW_TO_USE_TERMINAL.md): the everyday commands, what they print, and what only the board does.
 - [Installed skill](compass/skills/compass/SKILL.md): dashboard controls, supported stores and session interpretation.
 - [Security](SECURITY.md): data exposure, outbound activity and retention limits.
 - [Compatibility](COMPATIBILITY.md): harness and platform support.
