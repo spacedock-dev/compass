@@ -307,8 +307,8 @@ at `abstain` without asking.
 Scoring refuses before its first call unless every case in the packet is marked, each on exactly
 its own constraints, with `judge` or `abstain` and nothing else. The authorization says every case
 is marked before any reading runs. A Claude Code result is written only from a format 5 packet.
-`--producer codex` may report but not score, because no Codex spend is authorized for this
-qualification.
+No Codex spend is authorized for this qualification. `--producer codex` scores only the separate
+Codex qualification described below, under that study's own grant.
 
 ### Prospective production source inputs
 

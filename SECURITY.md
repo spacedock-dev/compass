@@ -3144,9 +3144,9 @@ The one exception is a set of synthetic cases written for this repository and ru
 model, in `scripts/premarked_cases.py` and its test. They hold invented repositories, commands and
 commits and no session text, so they are committed; recorded cases stay local as above.
 
-A scoring run names its producer with a required `--producer`, and only `claude` may score:
-no Codex spend is authorized for this qualification, so `--producer codex` reports and refuses to
-score. A Claude Code run spends the operator's Anthropic capacity through `reading.ClaudeReadingModel`, the
+A scoring run names its producer with a required `--producer`. No Codex spend is authorized for
+this qualification; `--producer codex` scores only the separate Codex qualification, under its own
+grant and batch approvals. A Claude Code run spends the operator's Anthropic capacity through `reading.ClaudeReadingModel`, the
 same subprocess and flags as `POST /api/reading` above, pinned to the CLI the run verified. It
 spends once per case whose ledger holds anything citable and sends exactly what that route sends
 for the same session: a format 5 case's own goal and outcome lines in place of the reader's typed
@@ -3794,7 +3794,7 @@ timeout, interruption or orphan reservation remains charged or unresolved until 
 it never silently becomes unused allowance. Missing activated accounting or receipts, a moved
 binding, missing approval or uncertain source provenance must refuse before launch, rather
 than recreate an empty ledger or fall back to another producer. An availability retry needs
-explicit batch permission or a separate exact retry approval, and a visible charge. A semantic
+the batch approval to state it, and a visible charge. A semantic
 failure cannot be retried away. Preserve prior
 charges, failed results and review records. Exhausted allowance stops the study whatever its
 result. Scorer PASS, producer acceptance, final analysis-level acceptance and approval to
