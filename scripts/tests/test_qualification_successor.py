@@ -284,9 +284,10 @@ class QualificationSuccessor(unittest.TestCase):
             resume=False,
             claude_reading_model=None,
         )
-        self.assertEqual("", scorer._argument_refusal(args))
-        args.max_calls = 62
-        self.assertNotEqual("", scorer._argument_refusal(args))
+        with mock.patch.object(ledger, "home_moved", return_value=False):
+            self.assertEqual("", scorer._argument_refusal(args))
+            args.max_calls = 62
+            self.assertNotEqual("", scorer._argument_refusal(args))
 
     def test_init_is_explicit_once_and_missing_review_refuses(self) -> None:
         with self.assertRaises(ledger.LedgerError):

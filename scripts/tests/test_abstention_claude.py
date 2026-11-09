@@ -278,6 +278,7 @@ class TheClaudeProducerIsChosenExplicitlyTest(unittest.TestCase):
     def test_scoring_without_a_producer_refuses_before_building_any_model(self) -> None:
         printed: list[str] = []
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(reading, "ClaudeReadingModel", side_effect=AssertionError),
             mock.patch.object(reading, "CodexReadingModel", side_effect=AssertionError),
             mock.patch("builtins.print", side_effect=lambda *a, **_k: printed.append(" ".join(a))),
@@ -294,6 +295,7 @@ class TheClaudeProducerIsChosenExplicitlyTest(unittest.TestCase):
 
         corpus = score_abstention.Corpus({"v": 5, "cases": [_claude_case()]}, {}, b"", {})
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(score_abstention, "_load_corpus", return_value=corpus),
             mock.patch.object(score_abstention, "score", side_effect=fake_score),
             mock.patch.object(score_abstention, "argv_digest", return_value="cd" * 32),
@@ -325,6 +327,7 @@ class TheClaudeProducerIsChosenExplicitlyTest(unittest.TestCase):
 
         corpus = score_abstention.Corpus({"v": 5, "cases": [_claude_case()]}, {}, b"", {})
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(score_abstention, "_load_corpus", return_value=corpus),
             mock.patch.object(score_abstention, "score", side_effect=fake_score),
             mock.patch.object(score_abstention, "argv_digest", return_value="cd" * 32),
@@ -857,11 +860,20 @@ class Q2OneLedgerThatFailsClosedTest(_Ledgered):
         self.assertEqual(3, len(self.calls()))
         self.assertEqual([], list(self.home.glob("*.tmp")) + list(self.home.glob(".spend-*")))
 
-    def test_codex_live_scoring_is_refused(self) -> None:
+    def test_a_person_cannot_use_a_historical_packet_to_authorize_codex(self) -> None:
         printed: list[str] = []
         corpus = score_abstention.Corpus({"v": 5, "cases": [_claude_case()]}, {}, b"", {})
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
+            mock.patch.object(
+                abstention_ledger, "CODEX_GRANT_PATH", str(self.home / "absent-codex-grant.json")
+            ),
             mock.patch.object(score_abstention, "_load_corpus", return_value=corpus),
+            mock.patch.object(
+                score_abstention,
+                "verify_codex_binary",
+                side_effect=AssertionError("native Codex inspected"),
+            ),
             mock.patch.object(score_abstention, "score", side_effect=AssertionError("scored")),
             mock.patch.object(reading, "CodexReadingModel", side_effect=AssertionError("built")),
             mock.patch("builtins.print", side_effect=lambda *a, **_k: printed.append(str(a))),
@@ -928,6 +940,7 @@ class Q3TheDestinationAndBinaryAreBoundTest(_Packet):
     def test_the_probe_writes_no_result_and_charges_nothing(self) -> None:
         results = self.home / "claude-results.json"
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(score_abstention, "CLAUDE_SUMMARY_PATH", str(results)),
             mock.patch.object(abstention_ledger, "LEDGER_PATH", str(self.ledger_path)),
             mock.patch.object(
@@ -1241,7 +1254,7 @@ class DRC4710TheProbeCannotReachARealModelTest(unittest.TestCase):
 
     @_NAMES_A_DESTINATION
     def test_a_request_naming_this_machine_fails_the_probe(self) -> None:
-        self.assertEqual(1, self.probe(self.cli(adds=f" cwd {Path.home()}")))
+        self.assertEqual(1, self.probe(self.cli(adds=f" cwd {abstention_ledger.canonical_home()}")))
         self.assertIn("request names the home directory: yes", "\n".join(self.printed))
 
 
@@ -3310,6 +3323,7 @@ class V2TheScorerReChecksProvenanceTest(_Packet):
         seen: dict[str, Any] = {}
         corpus = score_abstention.Corpus({"v": 5, "cases": [_claude_case()]}, {}, b"", {})
         with (
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(score_abstention, "_load_corpus", return_value=corpus),
             mock.patch.object(
                 score_abstention, "score", side_effect=lambda *_a, **k: seen.update(k) or 0

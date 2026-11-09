@@ -3947,7 +3947,9 @@ def _codex_owner_approval(
     # Deliberately no --yes flag or receipt imported from an earlier process.
     if approve is not None:
         return approve(report)
-    return input("Approve this one Codex exposure? Type approve: ").strip() == "approve"
+    return (
+        input("Approve this Codex batch and its stated retry? Type approve: ").strip() == "approve"
+    )
 
 
 def _codex_checkpoint(
@@ -4066,7 +4068,53 @@ def _codex_output_guard(ledger: Any, results_path: str, summary_path: str) -> No
         )
 
 
-def _score_codex(  # noqa: C901, PLR0913, PLR0915 - one guarded exposure and its durable checkpoint
+def _codex_batch_report(
+    requests: list[dict[str, Any]],
+    repetition: int,
+    binding: Mapping[str, str],
+    calls: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Public approval inventory; prompts, native paths and source identities stay local."""
+    return {
+        "repetition": repetition,
+        "requests": [
+            {k: r[k] for k in ("slot", "case", "repetition", "request_digest", "evidence")}
+            for r in requests
+            if r["repetition"] == repetition
+        ],
+        "retry": not any(c["retry"] for c in calls),
+        "model": binding["model"],
+        "effort": binding["effort"],
+        "CLI": {
+            k: binding[k]
+            for k in ("binary_sha256", "cli_version", "installation_digest", "argv_digest")
+        },
+        "remaining": 31 - len(calls),
+    }
+
+
+def _codex_batch_pause(
+    repetition: int,
+    requests: list[dict[str, Any]],
+    binding: Mapping[str, str],
+    calls: list[dict[str, Any]],
+) -> None:
+    print(
+        f"Review batch {repetition}: immutable attempts, grades, coverage and charges; "
+        "record review_batch with the review artifact digest before the next batch."
+    )
+    if repetition < 3:
+        print("The next batch approval would cover:")
+        print(
+            json.dumps(
+                _codex_batch_report(requests, repetition + 1, binding, calls),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+
+
+def _score_codex(  # noqa: C901, PLR0912, PLR0913, PLR0915 - batch admission and per-exposure checkpoints
     corpus: Corpus,
     *,
     config: Any,
@@ -4079,7 +4127,7 @@ def _score_codex(  # noqa: C901, PLR0913, PLR0915 - one guarded exposure and its
     approve: Callable[[Mapping[str, Any]], bool] | None,
     resume: Mapping[str, Any] | None,
 ) -> int:
-    """Consume one exact approval, checkpoint one exposure, then return to the owner."""
+    """Consume one batch approval, checkpoint each exposure, then stop for owner review."""
     try:
         reading = _runtime()[1]
         if (
@@ -4116,17 +4164,28 @@ def _score_codex(  # noqa: C901, PLR0913, PLR0915 - one guarded exposure and its
             raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
                 "a fresh Codex run never overwrites earlier results"
             )
-        calls = ledger._state()[2]  # noqa: SLF001
-        retry = bool(
-            calls and calls[-1]["status"] == "unusable" and not any(c["retry"] for c in calls)
+        _, approvals, calls, reviews = ledger._state()  # noqa: SLF001
+        requested = next((r for r in requests if r["slot"] not in {c["slot"] for c in calls}), None)
+        # A settled last-slot interruption still owes its already approved retry.
+        retry_receipt = next(
+            (
+                a
+                for a in approvals.values()
+                if a.get("retry")
+                and "requests" in a
+                and calls
+                and calls[-1]["slot"] in a["requests"]
+                and calls[-1]["status"] == "unusable"
+                and a["repetition"] not in reviews
+                and not any(c["retry"] for c in calls)
+            ),
+            None,
         )
-        requested = (
-            next((r for r in requests if r["slot"] == calls[-1]["slot"]), None)
-            if retry
-            else next((r for r in requests if r["slot"] not in {c["slot"] for c in calls}), None)
-        )
+        if retry_receipt:
+            requested = next(r for r in requests if r["slot"] == calls[-1]["slot"])
         if requested is None:
             summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
+            _codex_batch_pause(3, requests, binding, calls)
             return (
                 0
                 if summary["verdict"] == VERDICT_PASSED
@@ -4134,117 +4193,131 @@ def _score_codex(  # noqa: C901, PLR0913, PLR0915 - one guarded exposure and its
                 if summary["verdict"] == VERDICT_FAILED
                 else 2
             )
-        ledger._eligible(  # noqa: SLF001 - validate before asking, without consuming
-            calls,
-            ledger._state()[3],  # noqa: SLF001 - validate immutable receipts
-            requested["slot"],
-            requested["request_digest"],
-            retry,
-        )
-        report = {
-            key: requested[key] for key in ("case", "repetition", "request_digest", "evidence")
-        }
-        report.update(
-            retry=retry,
-            model=binding["model"],
-            effort=binding["effort"],
-            CLI={
-                key: binding[key]
-                for key in (
-                    "binary",
-                    "binary_sha256",
-                    "cli_version",
-                    "installation_digest",
-                    "argv_digest",
-                )
-            },
-            remaining=31 - ledger.used(),
-        )
-        print(json.dumps(report, indent=2, sort_keys=True))
-        if not _codex_owner_approval(report, approve):
-            print("No approval consumed; nothing launched.")
+        repetition = requested["repetition"]
+        if repetition > 1 and repetition - 1 not in reviews:
+            _codex_batch_pause(repetition - 1, requests, binding, calls)
             return 2
-        # Evidence and installation may have moved while the owner read the request.
-        if (
-            codex_transport(config, verified) != transport
-            or codex_bindings(corpus) != ledger.inputs
-        ):
-            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
-                "Codex inputs changed during approval"
+        group = [r for r in requests if r["repetition"] == repetition]
+        listed = {r["slot"]: r["request_digest"] for r in group}
+        receipt = next((a for a in approvals.values() if a.get("repetition") == repetition), None)
+        if receipt is None:
+            ledger._batch_eligible(approvals, calls, reviews, repetition, listed, False)  # noqa: SLF001
+            report = _codex_batch_report(requests, repetition, binding, calls)
+            print(json.dumps(report, indent=2, sort_keys=True))
+            if not _codex_owner_approval(report, approve):
+                print("No approval consumed; nothing launched.")
+                return 2
+            # Recompute every binding after the owner reads the inventory.
+            if (
+                codex_transport(config, verified) != transport
+                or codex_bindings(corpus) != ledger.inputs
+                or prepare_codex_requests(corpus, config, transport) != requests
+            ):
+                raise abstention_ledger.LedgerError(  # noqa: TRY301 - report closed admission
+                    "Codex inputs changed during approval"
+                )
+            approval = ledger.approve_batch(repetition, listed, retry=report["retry"])
+            receipt = ledger._state()[1][approval]  # noqa: SLF001
+        else:
+            approval = receipt["id"]
+            if receipt["requests"] != listed:
+                raise abstention_ledger.LedgerError(  # noqa: TRY301 - report closed admission
+                    "the approved Codex batch changed"
+                )
+        while True:
+            _, _, calls, reviews = ledger._state()  # noqa: SLF001
+            retry = bool(
+                receipt["retry"]
+                and calls
+                and calls[-1]["status"] == "unusable"
+                and calls[-1]["slot"] in listed
+                and not any(c["retry"] for c in calls)
             )
-        if prepare_codex_requests(corpus, config, transport) != requests:
-            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
-                "Codex prompts changed during approval"
+            requested = (
+                next(r for r in group if r["slot"] == calls[-1]["slot"])
+                if retry
+                else next((r for r in group if r["slot"] not in {c["slot"] for c in calls}), None)
             )
-        approval = ledger.approve_slot(requested["slot"], requested["request_digest"], retry=retry)
-        charged = _Charged(
-            ledger,
-            requested["case"],
-            model,
-            repeat=requested["repetition"],
-            retry=retry,
-            binding=binding,
-            codex_transport=transport,
-            codex_approval=approval,
-            on_charge=lambda charge: _codex_checkpoint(
-                ledger, attempts, binding, corpus, results_path, pending=charge
-            ),
-        )
-        case = cases[requested["case"]]
-        record = score_case(
-            config,
-            case,
-            case["row_snapshot"],
-            case["producer_facts"],
-            mark_abstention._marks(dict(corpus.marks))[case["id"]],  # noqa: SLF001
-            model=charged,
-            now=case["captured_at"],
-            revision=mark_abstention.case_revision(case),
-            tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
-        )
-        judged = rubric_case(
-            _rubric_entries(corpus.rubric)[case["id"]],
-            record,
-            case["id"],
-            case_origin=case["origin"],
-        )
-        # Kind coverage is supplied exclusively by the independently reviewed native source.
-        judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
-        classification = _repeat_classification(record, judged, charged.charge_id)
-        if charged.transport_status in ("unstopped", "oversized"):
-            classification = "protection-failed"
-        if not charged.charge_id:
-            raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
-                "Codex refused before launch; no result replaces earlier attempts"
+            if requested is None:
+                break
+            ledger._eligible(calls, reviews, requested["slot"], requested["request_digest"], retry)  # noqa: SLF001
+            if (
+                codex_transport(config, verified) != transport
+                or codex_bindings(corpus) != ledger.inputs
+                or prepare_codex_requests(corpus, config, transport) != requests
+            ):
+                raise abstention_ledger.LedgerError(  # noqa: TRY301 - report closed admission
+                    "Codex inputs changed before the next launch"
+                )
+            charged = _Charged(
+                ledger,
+                requested["case"],
+                model,
+                repeat=requested["repetition"],
+                retry=retry,
+                binding=binding,
+                codex_transport=transport,
+                codex_approval=approval,
+                on_charge=lambda charge: _codex_checkpoint(
+                    ledger, attempts, binding, corpus, results_path, pending=charge
+                ),
             )
-        record.update(
-            repeat=requested["repetition"],
-            retry=retry,
-            charge_id=charged.charge_id,
-            classification=classification,
-            rubric=judged,
-            request_digest=requested["request_digest"],
-        )
-        folder = pathlib.Path(ledger.path + ".results")
-        folder.mkdir(mode=0o700, exist_ok=True)
-        descriptor = os.open(
-            folder / (charged.charge_id + ".json"),
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-        )
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(record, stream, sort_keys=True)
-            stream.flush()
-            os.fsync(stream.fileno())
-        ledger.settle(charged.charge_id, classification)
-        attempts.append(record)
-        _codex_checkpoint(ledger, attempts, binding, corpus, results_path)
-        summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
-        mark_abstention._write(summary_path, summary)  # noqa: SLF001
+            case = cases[requested["case"]]
+            record = score_case(
+                config,
+                case,
+                case["row_snapshot"],
+                case["producer_facts"],
+                mark_abstention._marks(dict(corpus.marks))[case["id"]],  # noqa: SLF001
+                model=charged,
+                now=case["captured_at"],
+                revision=mark_abstention.case_revision(case),
+                tool_output=_tool_output(case, "OpenAI", reading_label("codex"), corpus.cases),
+            )
+            judged = rubric_case(
+                _rubric_entries(corpus.rubric)[case["id"]],
+                record,
+                case["id"],
+                case_origin=case["origin"],
+            )
+            # Kind coverage is supplied exclusively by the independently reviewed native source.
+            judged["kind"] = corpus.cases["codex_kind_reviews"][case["id"]]["kind"]
+            classification = _repeat_classification(record, judged, charged.charge_id)
+            if charged.transport_status in ("unstopped", "oversized"):
+                classification = "protection-failed"
+            if not charged.charge_id:
+                raise abstention_ledger.LedgerError(  # noqa: TRY301 - report one closed admission refusal
+                    "Codex refused before launch; no result replaces earlier attempts"
+                )
+            record.update(
+                repeat=requested["repetition"],
+                retry=retry,
+                charge_id=charged.charge_id,
+                classification=classification,
+                rubric=judged,
+                request_digest=requested["request_digest"],
+            )
+            folder = pathlib.Path(ledger.path + ".results")
+            folder.mkdir(mode=0o700, exist_ok=True)
+            descriptor = os.open(
+                folder / (charged.charge_id + ".json"),
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(record, stream, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            ledger.settle(charged.charge_id, classification)
+            attempts.append(record)
+            _codex_checkpoint(ledger, attempts, binding, corpus, results_path)
+            summary = _codex_summary(corpus, cases, attempts, ledger, binding, now)
+            mark_abstention._write(summary_path, summary)  # noqa: SLF001
         print(
             f"Codex qualification: {len(attempts)} charged attempts; {summary['verdict']}. "
-            "Returned after one exposure."
+            "Stopped at the batch review boundary."
         )
+        _codex_batch_pause(repetition, requests, binding, ledger._state()[2])  # noqa: SLF001
         return (
             0
             if summary["verdict"] == VERDICT_PASSED

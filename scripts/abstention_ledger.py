@@ -1407,8 +1407,8 @@ def _codex_receipt(path: str, body: Mapping[str, Any]) -> None:
 class CodexLedger:
     """Fixed account accounting, independent of every Claude allowance.
 
-    No arbitrary ledger path or empty-on-missing fallback is admitted. These are
-    offline authority primitives; score_abstention does not call them yet. They
+    No arbitrary ledger path or empty-on-missing fallback is admitted. These
+    authority primitives gate the scorer before every launch. They
     guard operator mistakes, not malicious rewriting by the same OS account.
     """
 
@@ -1506,9 +1506,7 @@ class CodexLedger:
                 or prior[-1]["status"] != "unusable"
                 or any(call["retry"] for call in calls)
             ):
-                raise LedgerError(
-                    "only one separately approved Codex availability retry is allowed"
-                )
+                raise LedgerError("only one approved Codex availability retry is allowed")
             if slot != calls[-1]["slot"] or entry["repetition"] in reviews:
                 raise LedgerError("an earlier Codex batch cannot reopen for retry")
         elif prior or slot != next(
@@ -1518,7 +1516,60 @@ class CodexLedger:
         if any(batch not in reviews for batch in range(1, entry["repetition"])):
             raise LedgerError("a prior Codex batch lacks owner-reviewed results")
 
-    def _replay_event(  # noqa: C901 - validate each immutable event before replay
+    def _batch_eligible(
+        self,
+        approvals: Mapping[str, Any],
+        calls: list[dict[str, Any]],
+        reviews: dict[int, str],
+        repetition: Any,
+        requests: Any,
+        retry: Any,
+    ) -> None:
+        expected = {
+            entry["slot"]: entry["request_digest"]
+            for entry in self.grant["exposures"]
+            if entry["repetition"] == repetition
+        }
+        if (
+            type(repetition) is not int
+            or repetition not in (1, 2, 3)
+            or not isinstance(requests, dict)
+            or len(expected) != 10
+            or requests != expected
+            or type(retry) is not bool
+            or any(a.get("repetition") == repetition for a in approvals.values())
+            or (retry and any(c["retry"] for c in calls))
+        ):
+            raise LedgerError("the exact Codex batch is changed, already approved or unavailable")
+        self._eligible(calls, reviews, next(iter(expected)), expected[next(iter(expected))], False)
+
+    def _approved_request(
+        self,
+        receipt: Mapping[str, Any] | None,
+        calls: list[dict[str, Any]],
+        slot: Any,
+        request: Any,
+        retry: Any,
+    ) -> None:
+        if not receipt:
+            raise LedgerError("the Codex approval is missing")
+        if "requests" in receipt:
+            if (
+                receipt["requests"].get(slot) != request
+                or (retry and not receipt["retry"])
+                or any(c["slot"] == slot and c["retry"] == retry for c in calls)
+            ):
+                raise LedgerError("the Codex batch slot is unlisted, changed or consumed")
+        elif (
+            receipt["slot"] != slot
+            or receipt["request_digest"] != request
+            or receipt["retry"] != retry
+            or receipt["checkpoint"] != digest(calls)
+            or any(c["approval"] == receipt["id"] for c in calls)
+        ):
+            raise LedgerError("the Codex approval is missing, stale or consumed")
+
+    def _replay_event(  # noqa: C901, PLR0912 - validate each immutable event before replay
         self,
         event: dict[str, Any],
         approvals: dict[str, dict[str, Any]],
@@ -1527,36 +1578,48 @@ class CodexLedger:
     ) -> None:
         common = {"id", "kind", "grant_digest"}
         if event["kind"] == "approval":
+            is_batch = "requests" in event
+            fields = {"repetition", "requests"} if is_batch else {"slot", "request_digest"}
             if (
-                set(event)
-                != common | {"invocation", "slot", "request_digest", "retry", "checkpoint"}
+                set(event) != common | {"invocation", "retry", "checkpoint"} | fields
                 or not isinstance(event["invocation"], str)
                 or not _CODEX_ID.fullmatch(event["invocation"])
                 or event["checkpoint"] != digest(calls)
             ):
                 raise LedgerError("the Codex approval binding changed")
-            self._eligible(calls, reviews, event["slot"], event["request_digest"], event["retry"])
+            if is_batch:
+                self._batch_eligible(
+                    approvals,
+                    calls,
+                    reviews,
+                    event["repetition"],
+                    event["requests"],
+                    event["retry"],
+                )
+            else:
+                self._eligible(
+                    calls, reviews, event["slot"], event["request_digest"], event["retry"]
+                )
             approvals[event["id"]] = event
         elif event["kind"] == "charge":
-            if set(event) != common | {"approval"} or not isinstance(event["approval"], str):
-                raise LedgerError("the Codex charge receipt changed")
+            if not isinstance(event.get("approval"), str):
+                raise LedgerError("the Codex charge approval identity changed")
             approved = approvals.get(event["approval"])
-            if (
-                not approved
-                or approved["checkpoint"] != digest(calls)
-                or any(call["approval"] == event["approval"] for call in calls)
-            ):
-                raise LedgerError("the Codex approval is missing, stale or consumed")
-            self._eligible(
-                calls, reviews, approved["slot"], approved["request_digest"], approved["retry"]
-            )
+            is_batch = bool(approved and "requests" in approved)
+            fields = {"slot", "request_digest", "retry"} if is_batch else set()
+            if set(event) != common | {"approval"} | fields or not approved:
+                raise LedgerError("the Codex charge receipt changed")
+            requested = event if is_batch else approved
+            slot, request, retry = (requested[k] for k in ("slot", "request_digest", "retry"))
+            self._approved_request(approved, calls, slot, request, retry)
+            self._eligible(calls, reviews, slot, request, retry)
             calls.append(
                 {
                     "id": event["id"],
                     "approval": approved["id"],
-                    "slot": approved["slot"],
-                    "request_digest": approved["request_digest"],
-                    "retry": approved["retry"],
+                    "slot": slot,
+                    "request_digest": request,
+                    "retry": retry,
                     "status": "charged",
                 }
             )

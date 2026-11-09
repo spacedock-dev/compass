@@ -108,6 +108,98 @@ _SKILL = os.path.join(
 )
 
 
+def prepare_google_send(
+    payloads: Sequence[bytes],
+    *,
+    purpose: str,
+    recipients: list[str],
+    model: str,
+    effort: str,
+    call_ceiling: int,
+) -> dict[str, Any]:
+    """Inventory one blind-marking set or review send locally; this grants no permission."""
+    if (
+        not payloads
+        or any(not isinstance(p, bytes) or not p for p in payloads)
+        or purpose not in ("blind-marking", "review-batch-1", "review-batch-2", "review-batch-3")
+        or not recipients
+        or any(not isinstance(r, str) or not r.strip() for r in recipients)
+        or (model, effort)
+        not in (("gemini-3.8-flash-medium", "medium"), ("gemini-3.8-flash-high", "high"))
+        or type(call_ceiling) is not int
+        or call_ceiling < 1
+    ):
+        raise abstention_ledger.LedgerError("the Google send inventory is incomplete")
+    return {
+        "v": 1,
+        "provider": "Google",
+        "purpose": purpose,
+        "recipients": list(recipients),
+        "model": model,
+        "effort": effort,
+        "call_ceiling": call_ceiling,
+        "payload_digests": [hashlib.sha256(p).hexdigest() for p in payloads],
+    }
+
+
+def _google_send_receipt(path: pathlib.Path, body: dict[str, Any]) -> None:
+    try:
+        abstention_ledger._codex_receipt(str(path.absolute()), body)  # noqa: SLF001 - shared exclusive durable receipt
+    except OSError as error:
+        raise abstention_ledger.LedgerError(
+            "the Google send receipt exists or cannot be written"
+        ) from error
+
+
+def approve_google_send(path: pathlib.Path, inventory: dict[str, Any]) -> None:
+    """After owner review, seal exactly one send's inventory. Never send data here."""
+    _google_send_receipt(
+        path,
+        {
+            "inventory": inventory,
+            "artifact_digest": abstention_ledger.digest(str(path.absolute())),
+        },
+    )
+
+
+def consume_google_send(
+    path: pathlib.Path,
+    payloads: Sequence[bytes],
+    *,
+    purpose: str,
+    recipients: list[str],
+    model: str,
+    effort: str,
+    call_ceiling: int,
+) -> None:
+    """A sender MUST consume this check immediately before sending these exact bytes.
+
+    No Google sender exists here. Any future sender must transmit these same
+    in-memory bytes, retain this receipt, and never retry a consumed send.
+    """
+    expected = prepare_google_send(
+        payloads,
+        purpose=purpose,
+        recipients=recipients,
+        model=model,
+        effort=effort,
+        call_ceiling=call_ceiling,
+    )
+    approved = abstention_ledger._review_json(str(path), "Google send approval", cap=128_000)  # noqa: SLF001 - shared bounded nonsymlink reader
+    expected_receipt = {
+        "inventory": expected,
+        "artifact_digest": abstention_ledger.digest(str(path.absolute())),
+    }
+    if abstention_ledger.digest(approved) != abstention_ledger.digest(expected_receipt):
+        raise abstention_ledger.LedgerError(
+            "the Google payload digests or send binding differ from approval"
+        )
+    _google_send_receipt(
+        path.with_name(path.name + ".consumed"),
+        {"approval_digest": abstention_ledger.digest(approved)},
+    )
+
+
 def _reading() -> Any:
     """The producer's CONTRACT, reached the way every sibling script reaches it.
 
