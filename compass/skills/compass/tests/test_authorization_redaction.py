@@ -23,7 +23,7 @@ class APersonSharingAuthorization(unittest.TestCase):
                     "Credential=MadeUp99/scope, SignedHeaders=host, Signature=MadeUpSig99",
                 ),
                 ("Negotiate", "MadeUpTicket99=="),
-                ("Future-Scheme", "madeup"),
+                ("Future-Scheme", "MadeUpValue99"),
             ):
                 for template in (
                     "{header}: {scheme} {value}",
@@ -60,27 +60,29 @@ class APersonSharingAuthorization(unittest.TestCase):
     def test_a_person_can_share_quoted_authorization_values_and_keep_nearby_words(self) -> None:
         for raw, expected in (
             (
-                'send Authorization: Basic "made up words" then retry',
+                'send Authorization: Basic "MadeUpValue99" then retry',
                 'send Authorization: Basic "…REDACTED" then retry',
             ),
             (
-                "send Proxy-Authorization: Custom madeup then retry",
+                "send Proxy-Authorization: Custom MadeUpValue99 then retry",
                 "send Proxy-Authorization: Custom …REDACTED then retry",
             ),
             (
-                "Authorization: Basic madeup\nnext line stays",
+                "Authorization: Basic MadeUpValue99\nnext line stays",
                 "Authorization: Basic …REDACTED\nnext line stays",
             ),
         ):
             with self.subTest(raw=raw):
                 self.assertEqual(expected, records.redact_secrets(raw))
-                self.assertNotIn("madeup", records.mask_prose(raw))
-                self.assertNotIn("made up words", records.mask_prose(raw))
+                self.assertNotIn("MadeUpValue99", records.mask_prose(raw))
                 self.assertIn("…REDACTED", records.mask_prose(raw))
 
     def test_a_person_can_share_either_langfuse_key_without_its_body(self) -> None:
         for prefix in ("sk-lf-", "pk-lf-"):
-            for body in ("00000000-1111-2222-3333-444444444444", "MadeUpKey99" * 40):
+            for body in (
+                "00000000-1111-2222-3333-444444444444",
+                "abcdef01-2345-6789-abcd-ef0123456789",
+            ):
                 raw = f"rotate {prefix}{body} then retry"
                 for mask in (records.redact_secrets, records.mask_prose):
                     with self.subTest(prefix=prefix, size=len(body), mask=mask.__name__):
@@ -96,7 +98,6 @@ class APersonSharingAuthorization(unittest.TestCase):
             "Authorization: Basic",
             "Proxy-Authorization: Negotiate",
             "the prefixes sk-lf- and pk-lf- identify Langfuse keys",
-            "Authorization: Basic\nnext line stays",
             'headers["Authorization"] = make_header()',
             "X-Authorization: Custom madeup",
             "Authorization: Custom",
@@ -107,6 +108,90 @@ class APersonSharingAuthorization(unittest.TestCase):
                     self.assertEqual(
                         " ".join(raw.split()) if mask is records.mask_prose else raw, mask(raw)
                     )
+
+    def test_a_person_can_wrap_a_header_without_publishing_its_credential(self) -> None:
+        value = "ZmFrZXVzZXI6ZmFrZXBhc3M+/w=="
+        for header in ("Authorization", "Proxy-Authorization"):
+            for scheme in ("Basic", "Token", "Negotiate", "NTLM", "Bearer"):
+                for raw in (
+                    f"{header}: {scheme}\n{value}",
+                    f"{header}:\n  {scheme} {value}",
+                ):
+                    for mask in (records.redact_secrets, records.mask_prose):
+                        with self.subTest(raw=raw, mask=mask.__name__):
+                            expected = raw.replace(value, records.SECRET_MARKER)
+                            if mask is records.mask_prose:
+                                expected = " ".join(expected.split())
+                            self.assertEqual(expected, mask(raw))
+            with self.subTest(header=header):
+                self.assertEqual(
+                    f"{header}: …REDACTED",
+                    records.mask_prose(f"{header}:\n{value}"),
+                )
+                for raw in (
+                    f"{header}: Basic\nnext line stays",
+                    f"{header}:\nordinary words",
+                    f"{header}: Basic\nshort99",
+                    f"{header}:\nauthenticationrequirements",
+                ):
+                    self.assertEqual(" ".join(raw.split()), records.mask_prose(raw))
+
+    def test_a_person_can_share_a_scheme_in_code_without_publishing_its_credential(self) -> None:
+        value = "ZmFrZXVzZXI6ZmFrZXBhc3M+/w=="
+        for scheme in ("Basic", "Token", "Negotiate", "NTLM", "bAsIc"):
+            for raw in (
+                f'f"{scheme} {value}"',
+                r"{\"Authorization\": \"" + f"{scheme} {value}" + r"\"}",
+                f"HTTP_AUTHORIZATION={scheme} {value}",
+                f'Header.Set("Authorization", "{scheme} {value}")',
+                f"headers.append('Authorization', '{scheme} {value}')",
+                f"('Authorization','{scheme} {value}')",
+                f"Authorization: {scheme}\n{value}",
+                f"{{Authorization: `{scheme} {value}`}}",
+            ):
+                for mask in (records.redact_secrets, records.mask_prose):
+                    with self.subTest(raw=raw, mask=mask.__name__):
+                        expected = raw.replace(value, records.SECRET_MARKER)
+                        if mask is records.mask_prose:
+                            expected = " ".join(expected.split())
+                            if raw.startswith("HTTP_AUTHORIZATION="):
+                                expected = "HTTP_AUTHORIZATION=…REDACTED …REDACTED"
+                        self.assertEqual(expected, mask(raw))
+
+    def test_a_person_can_publish_authentication_instructions_and_placeholders(self) -> None:
+        for raw in (
+            "authorization: required for all routes",
+            "check Authorization= in the config",
+            "set the Authorization: Basic header and retry",
+            "Authorization: Basic auth is weak, use OAuth",
+            "Proxy-Authorization: Basic and Authorization: Basic both fail",
+            "pk-lf-chart-component-renders-the-legend",
+            *(
+                f"Authorization: {scheme} {value}"
+                for scheme in ("Basic", "Token", "Negotiate")
+                for value in ("<base64>", "{token}", "...", "$CREDS", "os.environ['X']")
+            ),
+            *(
+                f"{scheme} {value}"
+                for scheme in ("Basic", "Token", "Negotiate", "NTLM")
+                for value in (
+                    "authentication",
+                    "abcdefghijklmnop",
+                    "short99",
+                    "<base64>",
+                    "{token}",
+                    "...",
+                )
+            ),
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    self.assertEqual(raw, mask(raw))
+
+    def test_a_person_still_keeps_an_api_key_header_value_private(self) -> None:
+        self.assertEqual(
+            "X-Api-Key: …REDACTED then retry", records.mask_prose("X-Api-Key: madeup then retry")
+        )
 
     def test_a_person_can_show_code_that_reads_an_authorization_value(self) -> None:
         for value in ("None", "null", "$MADE_UP_TOKEN", "${MADE_UP_TOKEN}", "make_header()"):

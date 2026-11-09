@@ -117,7 +117,7 @@ _SECRET_SHAPES: Final = (
     ("anthropic", 7, True, r"sk-ant-[A-Za-z0-9_-]{16,110}"),  # 89 in 35 files
     # Both Langfuse key kinds carry a UUID-shaped body. Keep the kind visible,
     # before the generic `sk-` shape can consume a secret key's more specific prefix.
-    ("langfuse", 6, True, r"(?:sk|pk)-lf-[A-Za-z0-9_-]{16,}"),
+    ("langfuse", 6, True, r"(?:sk|pk)-lf-[0-9a-f-]{36}"),
     # 32, not the 20 an OpenAI key's body needs. 20 was measured and rejected:
     # it alters 25 further genuine prompts, and every one is a hyphenated
     # identifier that merely opens a token with `sk-`.
@@ -305,13 +305,25 @@ _SECRET_SHAPES: Final = (
         False,
         (
             r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*[:=][ \t]*"
-            r"(?P<authquote>[\"'])?(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
-            r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*)[ \t]+"
+            r"(?P<authquote>[\"'])?(?P<authkind>(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
+            r"|[A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*))[ \t]+"
             r"(?P<authval>(?(authquote)"
             r"(?:(?!(?P=authquote))[^\\\r\n]|\\(?:[^\r\n]|(?=[\r\n]|$)))+"
             r"(?:(?=(?P=authquote))|(?=[\r\n])|$)"
             rf"|(?:(?:{_AUTH_PARAMETER})(?:[ \t]*,[ \t]*(?:{_AUTH_PARAMETER}))*"
             rf"|{_AUTH_QUOTED_VALUE}|[^\s\"'`,;&)]+)))"
+        ),
+    ),
+    # These schemes directly name a token, so code wrappers and escaped JSON
+    # need no header grammar. The alphabet, length and digit/symbol requirement
+    # keep ordinary authentication instructions readable.
+    (
+        "authscheme",
+        0,
+        False,
+        (
+            r"(?<![\w-])(?i:basic|token|negotiate|ntlm)\s+"
+            r"(?P<schemeval>(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,})"
         ),
     ),
     # A credential with no shape of its own, known only by the cue in front of
@@ -362,6 +374,7 @@ _SECRET_VALUE_GROUP: Final = {
     "netrc": "netrcval",
     "querysig": "sigval",
     "authorization": "authval",
+    "authscheme": "schemeval",
 }
 
 # The longest prefix any shape keeps in front of the marker, which is what the
@@ -509,6 +522,24 @@ _CREDENTIAL_LIKE_RE: Final = re.compile(r"^(?:\S{16,}|\S*[0-9._~+/!@#%^*&=-]\S*)
 _CUE_STRICT: Final = ("secret", "token")
 
 
+_AUTH_CREDENTIAL_WORD: Final = re.compile(r"(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,}")
+_AUTH_PLACEHOLDER: Final = re.compile(r"(?:<[^<>]*>|\{[^{}]*\}|\.{3,})$")
+
+
+def _auth_value_is_secret(value: str, *, cued: bool = False) -> bool:
+    value = value.strip("'\"")
+    return (
+        not _CODE_VALUE_RE.match(value)
+        and not _AUTH_PLACEHOLDER.fullmatch(value)
+        and (
+            cued
+            or (
+                not any(ch.isspace() for ch in value) and bool(_CREDENTIAL_LIKE_RE.fullmatch(value))
+            )
+        )
+    )
+
+
 def _cued_value_is_secret(match: re.Match[str]) -> bool:
     """Whether a `cued` candidate holds a credential, per the rules beside the shape."""
     quoted = match.group("cuedquoted")
@@ -560,7 +591,10 @@ def _mark_secret(match: re.Match[str]) -> str | None:
         first, last = match.span(value_group)
         if name == "authorization":
             value = match.group(value_group)
-            if _CODE_VALUE_RE.match(value.strip("'\"")):
+            if not _auth_value_is_secret(
+                value,
+                cued=bool(match.group("authparams")) or match.group("authkind").lower() == "bearer",
+            ):
                 return None
             if value.startswith(("'", '"')):
                 first += 1
@@ -649,9 +683,12 @@ def _needs_secret_scan(text: str) -> bool:
     scheme = text.find("://")
     if scheme != -1 and ("@" in text or ":" in text[scheme + 3 :]):
         return True
-    return len(text) >= _SECRET_MIN_CHARS and (
-        any(hint in text for hint in _SECRET_HINTS) or "authorization" in text.lower()
-    )
+    if len(text) < _SECRET_MIN_CHARS:
+        return False
+    if any(hint in text for hint in _SECRET_HINTS):
+        return True
+    lowered = text.lower()
+    return any(hint in lowered for hint in ("authorization", "basic", "token", "negotiate", "ntlm"))
 
 
 def redact_secrets(text: str) -> str:
@@ -1300,7 +1337,7 @@ def _mask_userinfo(word: str) -> str:
 # A header name standing as its own word in prose, with the value in the words
 # after it, and the schemes whose next word is the credential itself.
 _MASK_HEADER_WORD: Final = re.compile(
-    r"^['\"]?(?:authorization|x-api-key)\s*:(.*)$", re.IGNORECASE | re.DOTALL
+    r"^['\"]?(?:(?:proxy-)?authorization|x-api-key)\s*:(.*)$", re.IGNORECASE | re.DOTALL
 )
 _MASK_AUTH_SCHEMES: Final = frozenset({"bearer", "basic", "token", "digest", "negotiate"})
 # `'user:password with spaces@host'`, quoted in prose, where whitespace splits
@@ -1322,8 +1359,8 @@ def mask_prose(text: str) -> str:
     For a later direction's whole text (DRC-4682), which reaches further than
     any published summary: prose splits on whitespace where a check line is
     lexed, so three forms need a word more than `mask_words` reads. A header
-    name standing alone masks the word after it, and the one after that when
-    it is an auth scheme; a quoted `user:password@host` is masked across its
+    name standing alone masks a credential-shaped word after it, and the one
+    after that when it is an auth scheme; a quoted `user:password@host` is masked across its
     spaces; and a credential shape wrapped by a line break is masked on both
     sides of the break, because joining the lines is what would publish its
     tail. Over-masking is the accepted direction, as for `_MASK_FLAGS`.
@@ -1349,9 +1386,28 @@ def mask_prose(text: str) -> str:
         if above and below and redact_secrets(above[-1] + below[0]) != above[-1] + below[0]:
             above[-1] = below[0] = _SECRET_MARKER
     words: list[str] = []
+    header = scheme_next = unshaped_header = False
     for line in lines:
-        header = scheme_next = False
+        # Carry an owed header value across a line only for a token-shaped word,
+        # or a scheme followed by one. A new sentence keeps its first word.
         for index, word in enumerate(line):
+            if (
+                header
+                and index == 0
+                and not (
+                    _AUTH_CREDENTIAL_WORD.fullmatch(word.strip("'\""))
+                    or (
+                        word.lower() in _MASK_AUTH_SCHEMES
+                        and index + 1 < len(line)
+                        and (
+                            _AUTH_CREDENTIAL_WORD.fullmatch(line[index + 1].strip("'\""))
+                            or _SECRET_MARKER in line[index + 1]
+                        )
+                    )
+                    or _SECRET_MARKER in word
+                )
+            ):
+                header = scheme_next = False
             if (
                 header
                 and scheme_next
@@ -1364,11 +1420,17 @@ def mask_prose(text: str) -> str:
                 words.append(word)
                 scheme_next = False
                 continue
-            words.append(_SECRET_MARKER if header else word)
+            words.append(
+                _SECRET_MARKER
+                if header
+                and (unshaped_header or _auth_value_is_secret(word) or _SECRET_MARKER in word)
+                else word
+            )
             named = None if header else _MASK_HEADER_WORD.match(word)
             # `Authorization:` alone owes the next word, or two when the next is
             # a scheme; `authorization:Bearer` owes the one after it.
             header = named is not None
+            unshaped_header = named is not None and "x-api-key" in word.lower()
             scheme_next = named is not None and not named.group(1)
             if (
                 named is not None

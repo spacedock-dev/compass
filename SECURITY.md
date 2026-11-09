@@ -5033,8 +5033,8 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
-Langfuse secret and public keys (`sk-lf-` and `pk-lf-` followed by at least 16 letters, digits,
-underscores or hyphens) are masked too. Their kind stays visible as `sk-lf-…REDACTED` or
+Langfuse secret and public keys (`sk-lf-` and `pk-lf-` followed by a 36-character UUID body
+of lowercase hexadecimal digits and hyphens) are masked too. Their kind stays visible as `sk-lf-…REDACTED` or
 `pk-lf-…REDACTED`.
 
 The list of shapes is measured against the local corpus and lives in one place,
@@ -5065,12 +5065,18 @@ in `password`, `passwd`, `pwd`, `token`, `secret`, `api_key` or `apikey` in any 
 `PGPASSWORD`, `GITHUB_API_TOKEN`, `db_password`) or an upper-case `*_KEY` (`OPENAI_API_KEY`,
 `STRIPE_KEY`), before `=` or `:` with any spacing and an optional closing quote (`"password":`).
 Authorization schemes include Basic, Digest, Token, AWS4-HMAC-SHA256, Negotiate and Bearer;
-an unknown scheme word followed by a value is covered too. Header names are case-insensitive.
-Header lines, quoted JSON and YAML values, curl `-H` and `--header` values, and assignments use
-the same rule. The scheme stays visible and the value becomes the marker, including a complete
+an unknown scheme word followed by a credential-shaped value is covered too. Header names are
+case-insensitive. Header lines, quoted JSON and YAML values, curl `-H` and `--header` values,
+and assignments use the same rule. Basic, Token, Negotiate and NTLM also cue a standalone
+credential, including in f-strings, escaped JSON, header-setting calls and wrapped headers.
+These standalone values need at least 12 characters from the base64 or token alphabet and
+a digit, `+`, `/` or `=`. In prose, a header's value can continue on the next line when it meets that
+shape; a following ordinary word stays readable. The scheme stays visible and the value becomes the marker, including a complete
 comma-separated Digest or AWS parameter list. Quotes enclose a whole value; an unquoted token
 ends at whitespace or punctuation. A header name or scheme with no value is left alone, as are
 "use basic auth", "Bearer tokens expire" and `grep -n 'Authorization:' server.log`.
+Instructions such as "authorization: required for all routes" and "set the Authorization:
+Basic header and retry", and placeholders such as `<base64>`, `{token}` and `...`, stay readable.
 Other cues mask the value up to whitespace or punctuation, and a quoted value whole, spaces and
 all. The cue stays and the value becomes the marker. Cued masking was added when the agent's own messages
 began reaching a reading model, because an agent repeats what it read. Left alone, because each
