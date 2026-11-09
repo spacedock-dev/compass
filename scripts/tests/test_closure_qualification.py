@@ -170,12 +170,13 @@ class GrantFourAllowance(_TwoFailedResults):
             resume=False,
             claude_reading_model=None,
         )
-        with mock.patch.object(ledger, "continuation", return_value=None):
+        with mock.patch.object(ledger, "home_moved", return_value=False):
+            with mock.patch.object(ledger, "continuation", return_value=None):
+                self.assertNotEqual("", score_abstention._argument_refusal(args))
+            self.closure_grant()
+            self.assertEqual("", score_abstention._argument_refusal(args))
+            self.closure_grant(phase="marking")
             self.assertNotEqual("", score_abstention._argument_refusal(args))
-        self.closure_grant()
-        self.assertEqual("", score_abstention._argument_refusal(args))
-        self.closure_grant(phase="marking")
-        self.assertNotEqual("", score_abstention._argument_refusal(args))
 
 
 class RepeatedQualification(GrantFourAllowance):

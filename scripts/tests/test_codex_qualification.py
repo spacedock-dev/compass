@@ -337,6 +337,10 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(2, self.run_one(approve=False))
         self.assertEqual([], self.launches)
         self.assertEqual(0, self.study().used())
+        self.assertNotIn(str(self.home), self.output.getvalue())
+        self.assertNotIn("Please repair", self.output.getvalue())
+        for request in self.requests[:10]:
+            self.assertIn(request["request_digest"], self.output.getvalue())
         for word in (
             "case",
             "repetition",
@@ -348,22 +352,88 @@ class CodexQualificationTest(_CodexInstallationFixture):
         ):
             self.assertIn(word, self.output.getvalue())
 
-    def test_a_person_runs_one_exact_source_prompt_and_checkpoints_before_returning(self) -> None:
+    def test_a_person_runs_exactly_the_ten_listed_calls_and_checkpoints_each_before_returning(
+        self,
+    ) -> None:
         self.assertEqual(2, self.run_one())
-        self.assertEqual(1, len(self.launches))
-        self.assertEqual(self.requests[0]["prompt"], self.launches[0]["prompt"])
+        self.assertEqual(10, len(self.launches))
+        self.assertEqual(
+            [r["prompt"] for r in self.requests[:10]], [r["prompt"] for r in self.launches]
+        )
         result = json.loads(Path(self.results).read_text())
-        self.assertEqual(1, len(result["records"]["attempts"]))
-        self.assertEqual("usable", result["records"]["attempts"][0]["classification"])
-        self.assertEqual("blocked", json.loads(Path(self.summary).read_text())["verdict"])
+        self.assertEqual(10, len(result["records"]["attempts"]))
+        self.assertEqual(2, self.run_one(resume=True))
+        self.assertEqual(10, len(self.launches))
+        self.assertIn("Review batch 1", self.output.getvalue())
+        self.assertIn(self.requests[10]["request_digest"], self.output.getvalue())
+
+    def test_a_person_resumes_an_interrupted_batch_without_relaunching_a_charged_call(self) -> None:
+        checkpoint = scorer._codex_checkpoint
+
+        def stop_after_three(*args: Any, **kwargs: Any) -> Any:
+            result = checkpoint(*args, **kwargs)
+            if len(result["calls"]) == 3 and not result["pending"]:
+                raise KeyboardInterrupt
+            return result
+
+        with (
+            mock.patch.object(scorer, "_codex_checkpoint", side_effect=stop_after_three),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        self.assertEqual(3, len(self.launches))
+        self.assertEqual(2, self.run_one(approve=False, resume=True))
+        self.assertEqual(10, len(self.launches))
+        self.assertEqual(10, len({r["charge"] for r in self.launches}))
+
+    def test_a_person_stops_before_the_next_launch_if_a_request_in_the_batch_changes(self) -> None:
+        original = self.fake_runner
+
+        def change_after_first(argv: list[str], **kwargs: Any) -> Any:
+            result = original(argv, **kwargs)
+            self.corpus.cases["cases"][1]["production_reading"]["prompt_digest"] = "0" * 64
+            return result
+
+        with mock.patch.object(self, "fake_runner", side_effect=change_after_first):
+            self.assertEqual(2, self.run_one())
+        self.assertEqual(1, len(self.launches))
+        self.assertEqual(1, self.study().used())
+
+    def test_a_person_resumes_the_included_retry_at_the_last_slot_before_batch_review(self) -> None:
+        checkpoint = scorer._codex_checkpoint
+
+        def stop_at_last(*args: Any, **kwargs: Any) -> Any:
+            result = checkpoint(*args, **kwargs)
+            if len(result["calls"]) == 10 and not result["pending"]:
+                raise KeyboardInterrupt
+            return result
+
+        original = self.fake_runner
+
+        def last_unusable(argv: list[str], **kwargs: Any) -> Any:
+            self.status = "failed" if len(self.launches) == 9 else "ok"
+            return original(argv, **kwargs)
+
+        with (
+            mock.patch.object(self, "fake_runner", side_effect=last_unusable),
+            mock.patch.object(scorer, "_codex_checkpoint", side_effect=stop_at_last),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_one()
+        self.status = "ok"
+        self.assertEqual(2, self.run_one(approve=False, resume=True))
+        self.assertEqual(11, len(self.launches))
+        calls = self.study()._state()[2]
+        self.assertTrue(calls[-1]["retry"])
+        self.assertEqual(calls[-2]["slot"], calls[-1]["slot"])
 
     def test_a_person_needs_three_complete_passing_repetitions(self) -> None:
-        for n in range(30):
+        for n in range(3):
             code = self.run_one(resume=n > 0)
-            self.assertEqual(0 if n == 29 else 2, code, self.output.getvalue())
-            self.assertEqual(n + 1, len(self.launches))
-            if n in (9, 19):
-                self.study().review_batch(n // 10 + 1, authority.digest([n, "review"]))
+            self.assertEqual(0 if n == 2 else 2, code, self.output.getvalue())
+            self.assertEqual((n + 1) * 10, len(self.launches))
+            if n < 2:
+                self.study().review_batch(n + 1, authority.digest([n, "review"]))
         summary = json.loads(Path(self.summary).read_text())
         self.assertEqual("passed", summary["verdict"])
         self.assertEqual(["passed"] * 3, [r["summary"]["verdict"] for r in summary["repetitions"]])
@@ -371,30 +441,36 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(0, self.run_one(resume=True))
         self.assertEqual(30, len(self.launches))
 
-    def test_a_person_sees_one_charged_retry_and_never_an_automatic_retry(self) -> None:
-        self.status = "failed"
-        self.assertEqual(2, self.run_one())
-        self.assertEqual(1, len(self.launches))
-        self.assertEqual(2, self.run_one(approve=False, resume=True))
-        self.assertEqual(1, len(self.launches))
-        self.status = "ok"
-        self.run_one(resume=True)
+    def test_a_person_sees_only_the_availability_retry_included_in_the_batch_approval(self) -> None:
+        original = self.fake_runner
+
+        def first_unusable(argv: list[str], **kwargs: Any) -> Any:
+            self.status = "failed" if not self.launches else "ok"
+            return original(argv, **kwargs)
+
+        with mock.patch.object(self, "fake_runner", side_effect=first_unusable):
+            self.assertEqual(2, self.run_one())
+        self.assertEqual(11, len(self.launches))
         attempts = json.loads(Path(self.results).read_text())["records"]["attempts"]
-        self.assertEqual([False, True], [a["retry"] for a in attempts])
-        self.assertEqual(["unusable", "usable"], [a["classification"] for a in attempts])
-        self.assertEqual(2, self.study().used())
+        self.assertEqual([False, True] + [False] * 9, [a["retry"] for a in attempts])
+        self.assertEqual(["unusable"] + ["usable"] * 10, [a["classification"] for a in attempts])
+        self.assertEqual(11, self.study().used())
+        self.assertEqual(2, self.run_one(approve=False, resume=True))
+        self.assertEqual(11, len(self.launches))
 
     def test_a_person_cannot_retry_a_semantic_failure(self) -> None:
         self.semantic = True
         self.assertEqual(1, self.run_one())
-        self.assertEqual(1, len(self.launches))
-        self.assertEqual("semantic-failed", self.study()._state()[2][0]["status"])
+        self.assertEqual(10, len(self.launches))
+        calls = self.study()._state()[2]
+        self.assertTrue(all(c["status"] == "semantic-failed" and not c["retry"] for c in calls))
+        self.study().review_batch(1, authority.digest("failed batch review"))
         self.semantic = False
         self.run_one(resume=True)
-        self.assertEqual(2, len(self.launches))
+        self.assertEqual(20, len(self.launches))
         calls = self.study()._state()[2]
-        self.assertNotEqual(calls[0]["slot"], calls[1]["slot"])
-        self.assertFalse(calls[1]["retry"])
+        self.assertEqual(20, len({c["slot"] for c in calls}))
+        self.assertTrue(all(not c["retry"] for c in calls))
 
     def test_a_person_cannot_resume_an_interrupted_launch_as_an_unused_slot(self) -> None:
         self.interrupt = True
@@ -418,7 +494,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         body["records"]["attempts"][0]["classification"] = "semantic-failed"
         Path(self.results).write_text(json.dumps(body))
         self.assertEqual(2, self.run_one(resume=True))
-        self.assertEqual(1, len(self.launches))
+        self.assertEqual(10, len(self.launches))
 
     def test_a_person_cannot_launch_when_the_cli_changes_after_approval(self) -> None:
         def swap(_report: Any, _approve: Any) -> bool:
@@ -446,8 +522,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual(2, self.run_one())
         self.assertEqual([], self.launches)
         case["production_reading"]["prompt_digest"] = original
-        for n in range(10):
-            self.run_one(resume=n > 0)
+        self.run_one()
         self.assertEqual(2, self.run_one(resume=True))
         self.assertEqual(10, len(self.launches))
 
@@ -494,7 +569,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         receipt.unlink()
         receipt.symlink_to(copied)
         self.assertEqual(2, self.run_one(resume=True))
-        self.assertEqual(1, len(self.launches))
+        self.assertEqual(10, len(self.launches))
 
     def test_a_person_cannot_overwrite_a_historical_result_with_codex_output(self) -> None:
         protected = self.home / "prior-claude-results.json"
@@ -504,7 +579,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         with mock.patch.object(scorer, "CLAUDE_SUMMARY_PATH", str(protected)):
             self.assertEqual(2, self.run_one(resume=True))
         self.assertEqual("earlier result stays fixed", protected.read_text())
-        self.assertEqual(1, len(self.launches))
+        self.assertEqual(10, len(self.launches))
 
     def test_a_person_does_not_publish_native_paths_or_retain_prompt_files(self) -> None:
         self.run_one()
@@ -555,7 +630,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         self.assertEqual([], self.launches)
         self.assertEqual(0, self.study().used())
 
-    def test_a_person_can_approve_one_cli_exposure_without_any_claude_prerequisite(self) -> None:
+    def test_a_person_can_approve_one_cli_batch_without_any_claude_prerequisite(self) -> None:
         construct = scorer.codex_model
         with (
             mock.patch.object(scorer, "_load_corpus", return_value=self.corpus),
@@ -580,8 +655,8 @@ class CodexQualificationTest(_CodexInstallationFixture):
             self.assertEqual(
                 2, scorer.main(["--score", "--producer", "codex", "--out", self.summary])
             )
-        self.assertEqual(1, len(self.launches))
-        self.assertEqual(1, self.study().used())
+        self.assertEqual(10, len(self.launches))
+        self.assertEqual(10, self.study().used())
 
     def test_a_person_cannot_prepare_cases_with_an_unscored_required_expectation(self) -> None:
         case = self.corpus.cases["cases"][0]
@@ -618,7 +693,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
             ),
         ):
             self.assertEqual(2, self.run_one())
-        self.assertEqual(1, len(self.launches))
+        self.assertEqual(10, len(self.launches))
 
     def test_a_person_cannot_continue_a_changed_or_pending_checkpoint(self) -> None:
         self.run_one()
@@ -637,7 +712,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
                 changed[field] = value
                 path.write_text(json.dumps(changed))
                 self.assertEqual(2, self.run_one(resume=True))
-                self.assertEqual(1, len(self.launches))
+                self.assertEqual(10, len(self.launches))
         path.write_text(json.dumps(before))
 
     def test_a_person_cannot_resume_after_an_earlier_attempt_record_changes(self) -> None:
@@ -648,7 +723,7 @@ class CodexQualificationTest(_CodexInstallationFixture):
         before["cutoff"] = "rewritten synthetic explanation"
         receipt.write_text(json.dumps(before))
         self.assertEqual(2, self.run_one(resume=True))
-        self.assertEqual(1, len(self.launches))
+        self.assertEqual(10, len(self.launches))
 
     def test_a_person_cannot_admit_omitted_native_checks_or_a_historical_packet(self) -> None:
         case = self.corpus.cases["cases"][0]

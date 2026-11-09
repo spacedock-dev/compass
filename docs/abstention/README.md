@@ -1212,9 +1212,10 @@ executable, records their hashes and rechecks their identity immediately before 
 installation layouts refuse. This is a structural installation check with owner-reviewed hashes,
 not a publisher signature; a version string alone is insufficient.
 The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
-An approval belongs to one exact request, slot, retry bit and process invocation. Reservation
-consumes it under the account lock before returning a charge. Missing receipts or an interrupted
-write block further reservations. Each ten-case repetition needs a recorded batch review before
+A batch approval lists the exact ten registered slot/request digests of one repetition and
+whether it includes the single availability retry. Reservation consumes one listed slot at a
+time under the account lock before returning a charge. A changed or already consumed slot
+refuses. Missing receipts or an interrupted write block further reservations. Each ten-case repetition needs a recorded batch review before
 the next begins; recording that review does not claim the repetition passed.
 
 The proposed claim is limited to Codex analysis levels. Live estimate and Live monitor stay
@@ -1311,13 +1312,18 @@ an explicit spontaneous ruling. Each adversary also names different authors and 
 Rubric labels cannot supply recorded coverage. Every required expectation must exist before
 preparation succeeds.
 
-`--score --producer codex` requires the separately sealed grant and reviewed genesis. It shows
-the next case alias, repetition/retry, request digest, model/effort, CLI binding, evidence
-categories and remaining allowance before asking for that one approval. Type `approve` to record
-and consume its invocation-bound receipt. Resume with `--score --producer codex --resume`;
-every invocation asks again and handles at most one exposure. There is no unattended approval
-flag. The local results use `abstention-codex-results.json` in the packet home; the committable
-half uses `docs/abstention/codex-results.json`. Neither exists until execution. A pending charge,
+`--score --producer codex` requires the separately sealed grant and reviewed genesis. Before
+asking for approval it lists the ten slots (case alias and repetition), every request digest,
+model/effort, CLI binding digests, evidence categories, whether the retry is included and the
+remaining allowance. Type `approve` to record one batch receipt. The scorer then runs that
+batch sequentially, checkpointing each charge before launch and each result after settlement.
+It stops at the batch boundary, names the records to review and lists the next batch's proposed
+approval. Three approvals cover the thirty registered readings. There is no unattended approval
+flag. Resume with `--score --producer codex --resume`; a valid checkpoint resumes the unconsumed
+slots of the existing batch approval without asking again. An interrupted launch remains charged
+and blocks for reconciliation; it is never relaunched. The local results use
+`abstention-codex-results.json` in the packet home; the committable half uses
+`docs/abstention/codex-results.json`. Neither exists until execution. A pending charge,
 missing immutable attempt record or changed checkpoint blocks resume for owner reconciliation.
 The scorer returns status 2 while qualification is incomplete, 1 for a measured failure and 0
 only for three complete passing repetitions. PASS still requires the owner's separate acceptance.
@@ -1333,15 +1339,18 @@ PASS nor a question count establishes an accuracy threshold or an accuracy claim
 
 The proposed producer allowance is thirty readings plus at most one charged availability retry.
 The retry must replace an unusable attempt in a registered slot, remain visible with its original
-charge, and receive a fresh one-call approval. A semantic failure earns no retry. Measure every
+charge, and be explicitly included in the batch approval or receive a separate exact retry
+approval. The single retry is shared across all three batches. A semantic failure earns no retry. Measure every
 registered reading; semantic failures remain failures for the registered batch review, rather
 than reasons to replace a case or rewrite a mark. Review each registered batch before a later
 batch begins. Google reviews have their own approved ceiling, outside the producer allowance;
 the proposed combined study budgets are recorded in the security contract linked above.
 
-After each call, checkpoint charges and results and return to the owner. There is no automatic
-next call or retry. Missing evidence, changed bindings, missing approval or uncertain accounting
-stops execution before another launch. Failure or interruption preserves charges and earlier
+After each call, checkpoint charges and results; the next listed call follows automatically
+within that approved batch. An included availability retry also follows automatically, only
+for the immediately preceding unusable attempt in that batch. Return to the owner after each
+batch, and record the owner's review before the next begins. Missing evidence, changed bindings,
+missing approval or uncertain accounting stops execution before another launch. Failure or interruption preserves charges and earlier
 results; moving a packet or starting a new process cannot renew allowance. The study stops when
 the registered readings and permitted retry are exhausted, whatever the result. Any further
 study needs a new prospective decision, with the failed record retained.
@@ -1360,21 +1369,27 @@ study needs a new prospective decision, with the failed record retained.
    Git or leaves for a provider. Nothing leaves the machine at this gate. Admission must
    establish the five genuine kinds and five verified adversaries named above.
 3. (c) Google evidence-sharing approval. Present the exact redacted screens locally. Before
-   each sharing step, the owner approves the payload digest, recipients, model/effort, purpose
-   and call ceiling. Google receives only the approved intent, bounded evidence/screens and
-   marking questions; later reviews may include approved answers and grades. Two independent
+   each send, the owner gives one approval covering exactly the listed payload digests,
+   recipients, model/effort, purpose and call ceiling: the blind-marking set, then each review
+   batch. `mark_abstention.prepare_google_send` prepares that digest inventory locally;
+   `approve_google_send` seals the owner-approved inventory in a private one-use artifact. No
+   Google sender exists here. Any future sender must call `consume_google_send` immediately
+   before transmitting the same in-memory bytes. Changed payloads or send bindings, a copied
+   artifact, or a consumed send refuse. A consumed send is never retried automatically. Google
+   receives only the approved intent, bounded evidence/screens and marking questions; later reviews may include approved answers and grades. Two independent
    blind marks, separate kind review and any arbitration precede producer output. Session ids,
    account identifiers, raw rollouts and ledger files stay local. Commands and excerpts can
    retain project filenames. Commit the marks digest, kind-review bindings, rubric/input digest
    and sealed authority before producer output; the owner separately approves publication of
    these redacted artifacts to GitHub. Provider-sharing approval does not approve publication.
-4. (d) Each charged OpenAI producer run. Show the case alias, repetition or retry, request
-   digest, model/effort, CLI binding, evidence categories and remaining allowance. The owner
-   approves that one call; consume its receipt before launch. OpenAI receives the production
+4. (d) Each OpenAI producer batch of ten. Show all ten registered slots and exact request
+   digests, model/effort, CLI binding, evidence categories, whether the single availability
+   retry is included and remaining allowance. The owner approves that batch; consume one
+   listed slot under the account lock before each launch. OpenAI receives the production
    reader's redacted frozen intent and selected messages, checks, permitted output and agent
-   source material. No next call or retry follows automatically. The allowance is thirty
-   registered readings and at most one charged availability retry. Registered batch reviews
-   precede later batches, with separate approval for each Google sharing step. After producer
+   source material. The allowance is thirty registered readings and at most one charged
+   availability retry across the study. Review each batch before the next begins; Google sends
+   have one approval each covering exactly their listed payload digests. After producer
    qualification, admit and blind-mark the separate [analysis-level cohort](../drift-levels/README.md#prospective-codex-analysis-level-cohort-2026-11-09),
    commit its digest, and approve each needed replay call individually under a separate total
    allowance. Reuse a reading only when inputs, prompt and producer bindings match exactly and

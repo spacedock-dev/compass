@@ -59,6 +59,69 @@ def _collect(sink: list[str]) -> Callable[..., None]:
     return record
 
 
+class GoogleSendApprovalTest(unittest.TestCase):
+    def test_a_person_can_send_only_the_exact_approved_google_payloads_once(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = Path(folder) / "send.json"
+            payloads = [b"redacted screen", b"marking questions"]
+            options: dict[str, Any] = {
+                "purpose": "blind-marking",
+                "recipients": ["marker-a", "marker-b"],
+                "model": "gemini-3.8-flash-medium",
+                "effort": "medium",
+                "call_ceiling": 2,
+            }
+            manifest = mark_abstention.prepare_google_send(payloads, **options)
+            mark_abstention.approve_google_send(receipt, manifest)
+            self.assertNotIn("redacted screen", receipt.read_text())
+            for changed in ([b"changed", payloads[1]], payloads[:1], list(reversed(payloads))):
+                with self.assertRaises(abstention_ledger.LedgerError):
+                    mark_abstention.consume_google_send(receipt, changed, **options)
+            with self.assertRaises(abstention_ledger.LedgerError):
+                mark_abstention.consume_google_send(
+                    receipt, payloads, **dict(options, purpose="review-batch-1")
+                )
+            mark_abstention.consume_google_send(receipt, payloads, **options)
+            with self.assertRaises(abstention_ledger.LedgerError):
+                mark_abstention.consume_google_send(receipt, payloads, **options)
+            with self.assertRaises(abstention_ledger.LedgerError):
+                mark_abstention.approve_google_send(receipt, manifest)
+
+    def test_a_person_cannot_replay_a_copied_google_send_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = Path(folder) / "send.json"
+            payloads = [b"screen"]
+            options: dict[str, Any] = {
+                "purpose": "review-batch-1",
+                "recipients": ["reviewer"],
+                "model": "gemini-3.8-flash-high",
+                "effort": "high",
+                "call_ceiling": 1,
+            }
+            mark_abstention.approve_google_send(
+                receipt, mark_abstention.prepare_google_send(payloads, **options)
+            )
+            copied = Path(folder) / "copied.json"
+            copied.write_bytes(receipt.read_bytes())
+            with self.assertRaises(abstention_ledger.LedgerError):
+                mark_abstention.consume_google_send(copied, payloads, **options)
+
+    def test_a_person_cannot_send_to_google_without_an_approval_artifact(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            self.assertRaises(abstention_ledger.LedgerError),
+        ):
+            mark_abstention.consume_google_send(
+                Path(folder) / "absent.json",
+                [b"screen"],
+                purpose="review-batch-1",
+                recipients=["reviewer"],
+                model="gemini-3.8-flash-high",
+                effort="high",
+                call_ceiling=1,
+            )
+
+
 class CaseIdentityTest(unittest.TestCase):
     """v2 hashed the row's position in the board's session list.
 

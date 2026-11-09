@@ -121,6 +121,86 @@ class CodexAuthority(unittest.TestCase):
         self.launch()
         return str(charge)
 
+    def batch(self, study: Any, repetition: int = 1, *, retry: bool = False) -> str:
+        requests = dict.fromkeys(self.slots[(repetition - 1) * 10 : repetition * 10], self.request)
+        return str(study.approve_batch(repetition, requests, retry=retry))
+
+    def test_a_person_approves_exactly_ten_slots_and_cannot_replay_or_extend_the_batch(
+        self,
+    ) -> None:
+        study = self.activate()
+        approval = self.batch(study)
+        for slot in self.slots[:10]:
+            charge = self.reserve(study, approval, slot=slot)
+            study.settle(charge, "usable")
+        for slot in (self.slots[0], self.slots[10]):
+            with self.assertRaises(authority.LedgerError):
+                self.reserve(study, approval, slot=slot)
+        with self.assertRaises(authority.LedgerError):
+            self.batch(study)
+        with self.assertRaises(authority.LedgerError):
+            self.batch(study, 2)
+        study.review_batch(1, "e" * 64)
+        second = self.batch(study, 2)
+        with self.assertRaises(authority.LedgerError):
+            self.reserve(study, approval, slot=self.slots[10])
+        self.reserve(study, second, slot=self.slots[10])
+        self.assertEqual(11, self.launch.call_count)
+
+    def test_a_person_cannot_issue_the_same_batch_approval_twice_before_launch(self) -> None:
+        study = self.activate()
+        self.batch(study)
+        with self.assertRaises(authority.LedgerError):
+            self.batch(study)
+        self.launch.assert_not_called()
+
+    def test_a_person_cannot_launch_a_changed_request_inside_an_approved_batch(self) -> None:
+        study = self.activate()
+        approval = self.batch(study)
+        with self.assertRaises(authority.LedgerError):
+            study.reserve(self.slots[0], "f" * 64, approval=approval)
+        self.launch.assert_not_called()
+
+    def test_a_person_gets_only_the_retry_explicitly_included_in_the_batch(self) -> None:
+        study = self.activate()
+        approval = self.batch(study, retry=False)
+        charge = self.reserve(study, approval)
+        study.settle(charge, "unusable")
+        with self.assertRaises(authority.LedgerError):
+            self.reserve(study, approval, retry=True)
+        # A separate legacy retry approval is still exact and single-use.
+        charge = self.reserve(study, self.approve(study, retry=True), retry=True)
+        study.settle(charge, "usable")
+        with self.assertRaises(authority.LedgerError):
+            self.reserve(study, approval, retry=True)
+        self.assertEqual(2, self.launch.call_count)
+
+    def test_a_person_can_use_one_included_retry_only_after_an_unusable_attempt(self) -> None:
+        study = self.activate()
+        approval = self.batch(study, retry=True)
+        with self.assertRaises(authority.LedgerError):
+            self.reserve(study, approval, retry=True)
+        charge = self.reserve(study, approval)
+        study.settle(charge, "unusable")
+        charge = self.reserve(study, approval, retry=True)
+        study.settle(charge, "unusable")
+        with self.assertRaises(authority.LedgerError):
+            self.reserve(study, approval, retry=True)
+        with self.assertRaises(authority.LedgerError):
+            study.reserve(self.slots[10], self.request, approval=approval, retry=True)
+        self.assertEqual(2, self.launch.call_count)
+
+    def test_a_person_cannot_approve_an_incomplete_or_changed_batch(self) -> None:
+        study = self.activate()
+        requests = dict.fromkeys(self.slots[:10], self.request)
+        for changed in (
+            dict(list(requests.items())[:9]),
+            dict(requests, **{self.slots[0]: "f" * 64}),
+        ):
+            with self.assertRaises(authority.LedgerError):
+                study.approve_batch(1, changed)
+        self.launch.assert_not_called()
+
     def test_a_person_without_a_codex_grant_cannot_launch(self) -> None:
         self.grant_path.unlink()
         with self.assertRaises(authority.LedgerError):
@@ -281,7 +361,12 @@ class CodexAuthority(unittest.TestCase):
                 with self.assertRaises(authority.LedgerError):
                     self.approve(study, slot=slot)
                 study.review_batch(n // 10, "e" * 64)
-            charge = self.reserve(study, self.approve(study, slot=slot), slot=slot)
+            try:
+                charge = self.reserve(study, self.approve(study, slot=slot), slot=slot)
+            except authority.LedgerError as error:
+                self.fail(
+                    f"A person must receive all 30 registered readings plus the retry: {error}"
+                )
             study.settle(charge, "unusable" if n == 29 else "usable")
         with self.assertRaises(authority.LedgerError):
             self.approve(study, slot=self.slots[-1], retry=True)
@@ -427,7 +512,7 @@ with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.ob
             mock.patch.object(sys, "platform", "win32"),
             self.assertRaises(authority.LedgerError),
         ):
-            self.approve(study)
+            study._authority()
         self.launch.assert_not_called()
 
     def test_a_person_cannot_redirect_accounting_through_a_symlink(self) -> None:

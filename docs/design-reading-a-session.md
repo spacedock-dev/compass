@@ -1233,6 +1233,16 @@ expectations and all five recorded kinds reaching the producer. Report over-abst
 separately; there is no accuracy claim. Thirty readings and at most one charged availability
 retry are the proposed ceiling, not a current grant. Semantic failures earn no retry.
 
+Owner ruling, 2026-11-09: producer readings are approved per batch of 10 (three approvals), a batch approval may include that batch's single availability retry, Google sends are approved per send; the owner reviews each batch before the next.
+
+The retry remains one across the thirty readings. The batch receipt lists the ten exact
+registered slot/request digests; each slot is consumed once under the charge lock. The scorer
+checkpoints each attempt, resumes unconsumed approved slots, and stops for the owner's review
+before the next repetition. A changed request refuses. Google approval artifacts bind the exact
+listed payload digests for one blind-marking send or review-batch send; a future sender must
+consume the check before transmitting those bytes. This ruling authorizes the tooling change;
+it supplies no study grant, provider send or producer call.
+
 Owner acceptance of that producer and its charge/review chain comes before the separate
 [analysis-level cohort](drift-levels/README.md#prospective-codex-analysis-level-cohort-2026-11-09).
 Its blind level marks and committed digest must precede readings, every required analysis case

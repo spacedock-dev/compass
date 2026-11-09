@@ -17,6 +17,7 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import abstention_ledger
 import mark_abstention as marking
 import score_abstention as scoring
 
@@ -651,6 +652,7 @@ class ReviewedExportIntakeTest(unittest.TestCase):
             mock.patch.object(scoring, "_load_corpus", return_value=corpus),
             mock.patch.object(marking, "print_packet"),
             mock.patch.object(marking, "machine_vouch", return_value="explicit-vouch"),
+            mock.patch.object(abstention_ledger, "home_moved", return_value=False),
             mock.patch.object(scoring, "verify_claude_binary", return_value=verified),
             mock.patch.object(reading_route, "destination", return_value="Anthropic"),
             mock.patch.object(marking._reading(), "ClaudeReadingModel", return_value="stub-model"),

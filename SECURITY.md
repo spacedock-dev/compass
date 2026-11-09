@@ -3694,17 +3694,26 @@ temporary copy for the owner to remove. This promises neither secure erasure nor
 another process running under the same account. Redact before clipping or displaying screens;
 complete recovered replies must not enter a new cache, history or public artifact.
 
-Before each OpenAI exposure, show the exact request digest, case alias, repetition or retry,
-model/effort, verified CLI binding, evidence categories and remaining allowance. The owner
-approves that one request, and its bound receipt must be consumed before launch. OpenAI receives
-the production reader's redacted frozen intent, selected user and agent messages, recorded
+Before each OpenAI batch, show all ten registered slots (case alias and repetition), each exact
+request digest, model/effort, verified CLI binding digests, evidence categories, whether the
+single availability retry is included and remaining allowance. The owner approves that batch
+of ten; consume each listed slot once under the charge lock before launch. Three approvals
+cover the thirty registered readings. A batch approval may include the study's single
+availability retry for an unusable attempt in that batch. OpenAI receives the production
+reader's redacted frozen intent, selected user and agent messages, recorded
 checks, permitted output and agent source material through `reading.CodexReadingModel` and
 `observer.codex_exec`, selected by `reading_route.resolve`. The proposed pin is today's
 `gpt-5.6-luna`, effort `max`, to OpenAI; no fallback inherits it. Preparing a prompt locally
-authorizes no send. A changed request or another slot needs fresh approval.
+authorizes no send. A changed, unlisted or consumed slot refuses.
 
 Before each Google evidence-sharing step, present the exact redacted screens locally and obtain
-owner approval of their payload digest, recipients, model/effort, purpose and call ceiling.
+one owner approval per send covering exactly the listed payload digests, recipients,
+model/effort, purpose and call ceiling: the blind-marking set, then each review batch.
+`mark_abstention.py` prepares a digest-only inventory and seals an owner-approved one-use
+artifact. There is no Google sender in the tooling. Any future sender must consume
+`consume_google_send` immediately before sending the same in-memory bytes. Changed payloads,
+send bindings, copied artifacts and consumed sends refuse. Consumption is durable before send;
+an interrupted send needs reconciliation and cannot silently retry.
 Google receives only the approved intent, bounded evidence/screens and marking questions for
 two independent blind markers and separate kind review, with an arbiter for disagreements.
 These reviews precede producer output. Subsequent batch or handoff reviews may include approved
@@ -3732,8 +3741,10 @@ home resolver there depends on environment variables. Review zero-charge genesis
 activation. Authority and one-use approvals bind packet/cases/marks/rubric and source digests,
 protocol/runtime/scorer, verified transport and exact requests. The public grant holds the
 transport digest, never its absolute CLI paths or actual argv. Approval is specific to one
-process invocation and is consumed under the same lock that records the charge. Receipts are
-written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
+registered batch and lists its ten exact request digests and retry permission. Each slot is
+consumed under the same lock that records the charge. A valid checkpoint can resume unconsumed
+slots under that batch receipt across process invocations; charges are never renewed.
+Receipts are written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
 allowance. The scorer checkpoints a charge before launch and keeps an exclusive per-charge
 attempt record under `~/.cargento/codex-qualification-spend.json.results/`. Those records hold
 local outcomes and bounded model explanations, not prompts or recovered source replies. Resume
@@ -3776,12 +3787,15 @@ the ordinary rolling reading-permission ledger. Deterministic level scoring make
 call. Reuse needs exact input, prompt and producer bindings, with blind level marks predating
 the output. This replay allowance is separate from producer qualification and its retry.
 
-After each exposure, checkpoint and return to the owner before any next call. A failure,
+After each exposure, checkpoint; the next listed call and any explicitly included availability
+retry may run automatically within the approved batch. Stop after each batch for the owner's
+review before the next batch begins. A failure,
 timeout, interruption or orphan reservation remains charged or unresolved until reconciled;
 it never silently becomes unused allowance. Missing activated accounting or receipts, a moved
 binding, missing approval or uncertain source provenance must refuse before launch, rather
 than recreate an empty ledger or fall back to another producer. An availability retry needs
-its own approval and visible charge. A semantic failure cannot be retried away. Preserve prior
+explicit batch permission or a separate exact retry approval, and a visible charge. A semantic
+failure cannot be retried away. Preserve prior
 charges, failed results and review records. Exhausted allowance stops the study whatever its
 result. Scorer PASS, producer acceptance, final analysis-level acceptance and approval to
 publish redacted results are separate decisions.

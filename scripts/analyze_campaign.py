@@ -25,9 +25,12 @@ import time
 import uuid
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import abstention_ledger as authority
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 MANIFEST_PATH = str(Path(__file__).resolve().parents[1] / "docs/drift-replay/closure-campaign.json")
 SUCCESSOR_MANIFEST_PATH = str(Path(MANIFEST_PATH).with_name("closure-campaign-successor.json"))
@@ -2661,12 +2664,26 @@ def verified_codex_transport_binding(
 
 
 class CodexCampaign(authority.CodexLedger):
-    """Offline Codex-only approvals and reservations; no producer wiring exists in this PR.
+    """Codex-only approvals; every exact slot is charged once before launch."""
 
-    The operator calls approve_slot only after reviewing one exact request. A
-    future scorer must recompute all input and transport bindings before using
-    this class, consume one receipt, checkpoint one attempt, then return.
-    """
+    def approve_batch(
+        self, repetition: int, requests: Mapping[str, str], *, retry: bool = False
+    ) -> str:
+        """Approve ten exact registered requests, optionally including one availability retry."""
+        self._authority()
+        with authority.locked(self.path):
+            body, approvals, calls, reviews = self._state()
+            listed = dict(requests)
+            self._batch_eligible(approvals, calls, reviews, repetition, listed, retry)
+            return self._append(
+                body,
+                "approval",
+                invocation=self.invocation,
+                repetition=repetition,
+                requests=listed,
+                retry=retry,
+                checkpoint=authority.digest(calls),
+            )
 
     def approve_slot(self, slot: str, binding: str, *, retry: bool = False) -> str:
         """Record one owner's approval for this invocation, request, slot and retry bit."""
@@ -2691,19 +2708,17 @@ class CodexCampaign(authority.CodexLedger):
             body, approvals, calls, reviews = self._state()
             self._eligible(calls, reviews, slot, binding, retry)
             receipt = approvals.get(approval)
-            if (
-                not receipt
-                or receipt["invocation"] != self.invocation
-                or receipt["slot"] != slot
-                or receipt["request_digest"] != binding
-                or receipt["retry"] != retry
-                or receipt["checkpoint"] != authority.digest(calls)
-                or any(call["approval"] == approval for call in calls)
+            if not receipt or (
+                "requests" not in receipt and receipt["invocation"] != self.invocation
             ):
-                raise authority.LedgerError(
-                    "the Codex approval is missing, consumed or belongs to another invocation"
-                )
-            return self._append(body, "charge", approval=approval)
+                raise authority.LedgerError("the Codex approval belongs to another invocation")
+            self._approved_request(receipt, calls, slot, binding, retry)
+            fields = (
+                {"slot": slot, "request_digest": binding, "retry": retry}
+                if "requests" in receipt
+                else {}
+            )
+            return self._append(body, "charge", approval=approval, **fields)
 
     def review_batch(self, batch: int, proof_digest: str) -> None:
         """Record owner-reviewed batch results without claiming the batch passed or sending data."""
