@@ -1912,7 +1912,7 @@ including any private prose or path it repeated that redaction does not recogniz
 the uncued-prose residual described above. An agent message can repeat tool output,
 so a command's output can reach the provider in the agent's words even where tool output was not
 allowed. Redaction catches credential shapes and, since 2026-10-03, the value after a cue such as
-`Authorization: Bearer`, `--password`, `password=`, `token:` or a name such as `DB_PASSWORD`,
+`Authorization` or `Proxy-Authorization` with any scheme and a value, `--password`, `password=`, `token:` or a name such as `DB_PASSWORD`,
 `PGPASSWORD` or `OPENAI_API_KEY` (Published text, below); a password or token with neither a shape
 nor a cue can go verbatim. The field holding the whole message (`agent_words`) is treated as
 `reader_words` is: held in memory for the reading and the live project context, never in either
@@ -5033,6 +5033,10 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
+Langfuse secret and public keys (`sk-lf-` and `pk-lf-` followed by at least 16 letters, digits,
+underscores or hyphens) are masked too. Their kind stays visible as `sk-lf-…REDACTED` or
+`pk-lf-…REDACTED`.
+
 The list of shapes is measured against the local corpus and lives in one place,
 `records.redact_secrets`. It is applied at three. Inside `records.safe_text`, which nearly every
 published string already passes through, including the ask question and its options, Codex's title
@@ -5055,12 +5059,20 @@ A `"SecretString"` value is masked to its closing quote however long it is, and 
 quote is masked to the end of its line.
 
 Since 2026-10-03 one shape is cued rather than shaped, beside the AWS secret. The cue is
-`Authorization: Bearer`, a `--password`, `--token`, `--secret` or `--api-key` flag, or a name ending
+an `Authorization` or `Proxy-Authorization` value after any scheme, a `--password`, `--token`,
+`--secret` or `--api-key` flag, or a name ending
 in `password`, `passwd`, `pwd`, `token`, `secret`, `api_key` or `apikey` in any case (`DB_PASSWORD`,
 `PGPASSWORD`, `GITHUB_API_TOKEN`, `db_password`) or an upper-case `*_KEY` (`OPENAI_API_KEY`,
 `STRIPE_KEY`), before `=` or `:` with any spacing and an optional closing quote (`"password":`).
-The value after it is masked up to whitespace or punctuation, and a quoted value whole, spaces and
-all. The cue stays and the value becomes the marker. It was added when the agent's own messages
+Authorization schemes include Basic, Digest, Token, AWS4-HMAC-SHA256, Negotiate and Bearer;
+an unknown scheme word followed by a value is covered too. Header names are case-insensitive.
+Header lines, quoted JSON and YAML values, curl `-H` and `--header` values, and assignments use
+the same rule. The scheme stays visible and the value becomes the marker, including a complete
+comma-separated Digest or AWS parameter list. Quotes enclose a whole value; an unquoted token
+ends at whitespace or punctuation. A header name or scheme with no value is left alone, as are
+"use basic auth", "Bearer tokens expire" and `grep -n 'Authorization:' server.log`.
+Other cues mask the value up to whitespace or punctuation, and a quoted value whole, spaces and
+all. The cue stays and the value becomes the marker. Cued masking was added when the agent's own messages
 began reaching a reading model, because an agent repeats what it read. Left alone, because each
 names a value rather than holding one or is ordinary prose: `None`, `null`, `true`, a `$VAR` or
 `${VAR}`, `self.…`, `os.environ…`, a call such as `next_token()`, `PWD=/a/path`, `sort_key=name`;
