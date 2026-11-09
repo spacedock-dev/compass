@@ -2825,6 +2825,7 @@ class TheLiveMonitorIsSaidToCallAModelTest(unittest.TestCase):
         "README.md",
         "docs/how-it-works.md",
         "HOW_TO_USE.md",
+        "HOW_TO_USE_TERMINAL.md",
         "MANUAL.md",
         "SECURITY.md",
         "docs/promise-map.md",

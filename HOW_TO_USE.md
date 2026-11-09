@@ -18,6 +18,7 @@ This page owns none of the following, and links to it instead:
 | Reading the board: session states, display modes, the queue of things waiting on you, starting and stopping | [compass/skills/compass/SKILL.md](compass/skills/compass/SKILL.md) |
 | What works on which harness and which platform, and what was measured | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | What is read, what is sent, and what granting a permission means | [SECURITY.md](SECURITY.md) |
+| Using Compass from a terminal day to day, and how it differs from the board | [HOW_TO_USE_TERMINAL.md](HOW_TO_USE_TERMINAL.md) |
 | Working on Compass itself | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Find the copy your commands will run
