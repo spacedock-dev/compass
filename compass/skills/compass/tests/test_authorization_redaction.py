@@ -231,3 +231,23 @@ class APersonSharingAuthorization(unittest.TestCase):
                             self.assertEqual(expected.format(header=header), masked)
                         self.assertNotIn("MadeUp", masked)
                         self.assertIn("…REDACTED", masked)
+
+    def test_a_person_can_share_a_short_letters_only_basic_value_without_it(self) -> None:
+        # Base64 of a short user:pass can be letters only with no padding (made up here).
+        value = "dXNlcjpwYXNz"
+        for raw in (
+            f"Authorization: Basic {value}",
+            f"curl -H 'authorization: basic {value}' https://example.test",
+            f'{{"Authorization": "Basic {value}"}}',
+        ):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(raw=raw, mask=mask.__name__):
+                    masked = mask(raw)
+                    self.assertNotIn(value, masked)
+                    self.assertIn("…REDACTED", masked)
+
+    def test_a_person_can_name_basic_authentication_in_prose(self) -> None:
+        for raw in ("Authorization: Basic Authentication is deprecated here",):
+            for mask in (records.redact_secrets, records.mask_prose):
+                with self.subTest(mask=mask.__name__):
+                    self.assertIn("Authentication", mask(raw))

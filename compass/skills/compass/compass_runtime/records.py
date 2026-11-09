@@ -524,15 +524,20 @@ _CUE_STRICT: Final = ("secret", "token")
 
 _AUTH_CREDENTIAL_WORD: Final = re.compile(r"(?=[A-Za-z0-9._~+/=-]*[0-9+/=])[A-Za-z0-9._~+/=-]{12,}")
 _AUTH_PLACEHOLDER: Final = re.compile(r"(?:<[^<>]*>|\{[^{}]*\}|\.{3,})$")
+# After `Basic`, base64 of a short `user:pass` can be letters only with no padding
+# (`dXNlcjpwYXNz`), which `_CREDENTIAL_LIKE_RE` reads as a word. Mixed case past the
+# first letter is what a word lacks: `Authentication` stays readable.
+_BASIC_BASE64: Final = re.compile(r"(?=[^a-z]*[a-z])(?=.[^A-Z]*[A-Z])[A-Za-z0-9+/]{8,}={0,2}")
 
 
-def _auth_value_is_secret(value: str, *, cued: bool = False) -> bool:
+def _auth_value_is_secret(value: str, *, cued: bool = False, basic: bool = False) -> bool:
     value = value.strip("'\"")
     return (
         not _CODE_VALUE_RE.match(value)
         and not _AUTH_PLACEHOLDER.fullmatch(value)
         and (
             cued
+            or (basic and bool(_BASIC_BASE64.fullmatch(value)))
             or (
                 not any(ch.isspace() for ch in value) and bool(_CREDENTIAL_LIKE_RE.fullmatch(value))
             )
@@ -594,6 +599,7 @@ def _mark_secret(match: re.Match[str]) -> str | None:
             if not _auth_value_is_secret(
                 value,
                 cued=bool(match.group("authparams")) or match.group("authkind").lower() == "bearer",
+                basic=match.group("authkind").lower() == "basic",
             ):
                 return None
             if value.startswith(("'", '"')):
@@ -1423,7 +1429,13 @@ def mask_prose(text: str) -> str:
             words.append(
                 _SECRET_MARKER
                 if header
-                and (unshaped_header or _auth_value_is_secret(word) or _SECRET_MARKER in word)
+                and (
+                    unshaped_header
+                    or _auth_value_is_secret(
+                        word, basic=bool(words) and words[-1].strip("'\"").lower() == "basic"
+                    )
+                    or _SECRET_MARKER in word
+                )
                 else word
             )
             named = None if header else _MASK_HEADER_WORD.match(word)
