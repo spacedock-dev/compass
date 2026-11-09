@@ -1287,3 +1287,394 @@ def has_calls(path: str | None = "") -> bool:
         return bool(read(path or LEDGER_PATH)["calls"])
     except LedgerError:
         return True
+
+
+# A separate prospective study. Nothing below is connected to a producer or CLI.
+CODEX_GRANT_PATH = os.path.join(os.path.dirname(CLAUDE_SUMMARY_PATH), "codex-grant.json")
+CODEX_BINDINGS = frozenset(
+    {"packet", "cases", "marks", "rubric", "source", "protocol", "runtime", "scorer"}
+)
+_CODEX_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_CODEX_ID = re.compile(r"[0-9a-f]{32}\Z")
+CODEX_STATUSES = ("usable", "unusable", "semantic-failed", "coverage-failed", "protection-failed")
+
+
+def codex_digest_valid(value: Any) -> bool:
+    return isinstance(value, str) and _CODEX_DIGEST.fullmatch(value) is not None
+
+
+def codex_grant() -> dict[str, Any]:
+    """Read only the fixed Codex grant, never Claude continuations or private cases.
+
+    No grant is shipped. Digests supplied by future intake/scorer code must be
+    independently recomputed before reservation. This PR cannot launch a producer.
+    """
+    value = _review_json(CODEX_GRANT_PATH, "Codex grant", cap=128_000)
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "v",
+            "study",
+            "phase",
+            "producer",
+            "bindings",
+            "transport",
+            "allowance",
+            "retry_limit",
+            "exposures",
+            "activation_anchor",
+            "genesis_review",
+        }
+        or type(value.get("v")) is not int
+        or value["v"] != 1
+        or value.get("study") != "codex-qualification"
+        or value.get("producer") != "codex"
+        or value.get("phase") not in ("prepared", "sealed")
+        or type(value.get("allowance")) is not int
+        or value["allowance"] != 31
+        or type(value.get("retry_limit")) is not int
+        or value["retry_limit"] != 1
+        or not isinstance(value.get("bindings"), dict)
+        or set(value["bindings"]) != CODEX_BINDINGS
+        or not all(codex_digest_valid(item) for item in value["bindings"].values())
+    ):
+        raise LedgerError("the Codex grant is not separately bound authority")
+    if not codex_digest_valid(value["transport"]):
+        raise LedgerError("the public Codex grant must bind transport by digest only")
+    exposures = value["exposures"]
+    if not isinstance(exposures, list) or len(exposures) != 30:
+        raise LedgerError("the Codex grant must register thirty exposures")
+    for n, entry in enumerate(exposures):
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"slot", "case", "repetition", "request_digest"}
+            or not isinstance(entry["slot"], str)
+            or re.fullmatch(r"[a-z0-9][a-z0-9:_-]{0,95}", entry["slot"]) is None
+            or not isinstance(entry["case"], str)
+            or re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", entry["case"]) is None
+            or type(entry["repetition"]) is not int
+            or entry["repetition"] != n // 10 + 1
+            or not codex_digest_valid(entry["request_digest"])
+        ):
+            raise LedgerError("the Codex registered exposure changed")
+    cases = [entry["case"] for entry in exposures[:10]]
+    if (
+        len(set(cases)) != 10
+        or len({entry["slot"] for entry in exposures}) != 30
+        or any([entry["case"] for entry in exposures[n : n + 10]] != cases for n in (10, 20))
+    ):
+        raise LedgerError("the Codex repetitions must register the same ten distinct cases")
+    if value["phase"] == "prepared":
+        if value["activation_anchor"] != "" or value["genesis_review"] != "":
+            raise LedgerError("prepared Codex authority cannot carry activation")
+    elif not codex_digest_valid(value["activation_anchor"]) or not codex_digest_valid(
+        value["genesis_review"]
+    ):
+        raise LedgerError("the Codex zero-charge genesis lacks reviewed activation")
+    return value
+
+
+def _codex_key(grant: Mapping[str, Any]) -> str:
+    return digest(
+        {
+            key: item
+            for key, item in grant.items()
+            if key not in ("phase", "activation_anchor", "genesis_review")
+        }
+    )
+
+
+def _codex_sync_dir(folder: str) -> None:
+    if sys.platform != "win32":
+        descriptor = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def _codex_receipt(path: str, body: Mapping[str, Any]) -> None:
+    """Exclusive durable receipt first; an interrupted index write leaves a blocking orphan."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(body, handle, sort_keys=True)
+        handle.flush()
+        os.fsync(handle.fileno())
+    _codex_sync_dir(os.path.dirname(path))
+
+
+class CodexLedger:
+    """Fixed account accounting, independent of every Claude allowance.
+
+    No arbitrary ledger path or empty-on-missing fallback is admitted. These are
+    offline authority primitives; score_abstention does not call them yet. They
+    guard operator mistakes, not malicious rewriting by the same OS account.
+    """
+
+    def __init__(self, *, bindings: Mapping[str, str], transport: Mapping[str, Any]) -> None:
+        from pathlib import Path  # noqa: PLC0415 - Codex-only receipt handling
+
+        from analyze_campaign import (  # noqa: PLC0415 - structural validation; no execution
+            validate_codex_transport_binding,
+        )
+
+        validate_codex_transport_binding(transport)
+        self.inputs = bindings
+        self.transport = transport
+        self.grant = codex_grant()
+        self.binding = _codex_key(self.grant)
+        self.path = study_path("codex-qualification-spend.json") or ""
+        self.receipts = Path(self.path + ".receipts")
+        self.invocation = uuid.uuid4().hex
+        self.process_id = os.getpid()
+        self._authority()
+
+    def _authority(self) -> None:
+        # Recheck on every operation, including on an instance made before HOME moved.
+        if os.getpid() != self.process_id:
+            raise LedgerError("a Codex approval cannot cross a process boundary")
+        if sys.platform == "win32" or home_moved():
+            raise LedgerError("Codex authority requires an unchanged canonical account HOME")
+        if self.path != study_path("codex-qualification-spend.json"):
+            raise LedgerError("the Codex account path moved")
+        for path in (
+            os.path.dirname(self.path),
+            self.path,
+            str(self.receipts),
+            self.path + ".lock",
+        ):
+            if os.path.islink(path):
+                raise LedgerError("Codex accounting cannot follow symlinks")
+        if (
+            codex_grant() != self.grant
+            or self.inputs != self.grant["bindings"]
+            or digest(self.transport) != self.grant["transport"]
+            or self.transport.get("runtime_digest") != self.inputs.get("runtime")
+        ):
+            raise LedgerError("the Codex grant, inputs or transport changed")
+
+    def _persist(self, body: Mapping[str, Any]) -> None:
+        _write(self.path, body)
+        _codex_sync_dir(os.path.dirname(self.path))
+
+    def initialize(self) -> str:
+        """Prepare zero-charge genesis once for review; never activate or launch anything."""
+        self._authority()
+        with locked(self.path):
+            self._authority()
+            if (
+                self.grant["phase"] != "prepared"
+                or os.path.lexists(self.path)
+                or self.receipts.exists()
+            ):
+                raise LedgerError("the Codex genesis cannot be initialized again")
+            self.receipts.mkdir(mode=0o700)
+            genesis = {
+                "v": 1,
+                "grant_digest": self.binding,
+                "genesis_nonce": uuid.uuid4().hex,
+                "events": [],
+            }
+            _codex_receipt(str(self.receipts / "genesis.json"), genesis)
+            self._persist(genesis)
+            return digest(genesis)
+
+    def _eligible(
+        self,
+        calls: list[dict[str, Any]],
+        reviews: dict[int, str],
+        slot: Any,
+        request: Any,
+        retry: Any,
+    ) -> None:
+        entries = self.grant["exposures"]
+        entry = next((entry for entry in entries if entry["slot"] == slot), None)
+        if not entry or entry["request_digest"] != request or type(retry) is not bool:
+            raise LedgerError("this is not a registered Codex request")
+        if any(call["status"] in ("protection-failed", "coverage-failed") for call in calls):
+            raise LedgerError("a Codex protection or coverage failure needs owner reconciliation")
+        if len(calls) >= 31:
+            raise SpendCapError("the Codex allowance is full")
+        if any(call["status"] == "charged" for call in calls):
+            raise LedgerError("an unresolved Codex reservation remains charged")
+        attempted = {call["slot"] for call in calls}
+        prior = [call for call in calls if call["slot"] == slot]
+        if retry:
+            if (
+                not prior
+                or prior[-1]["status"] != "unusable"
+                or any(call["retry"] for call in calls)
+            ):
+                raise LedgerError(
+                    "only one separately approved Codex availability retry is allowed"
+                )
+            if slot != calls[-1]["slot"]:
+                raise LedgerError("an earlier Codex batch cannot reopen for retry")
+        elif prior or slot != next(
+            (entry["slot"] for entry in entries if entry["slot"] not in attempted), None
+        ):
+            raise LedgerError("the registered Codex slot is already charged or out of order")
+        if any(batch not in reviews for batch in range(1, entry["repetition"])):
+            raise LedgerError("a prior Codex batch lacks owner-reviewed results")
+
+    def _replay_event(  # noqa: C901 - validate each immutable event before replay
+        self,
+        event: dict[str, Any],
+        approvals: dict[str, dict[str, Any]],
+        calls: list[dict[str, Any]],
+        reviews: dict[int, str],
+    ) -> None:
+        common = {"id", "kind", "grant_digest"}
+        if event["kind"] == "approval":
+            if (
+                set(event)
+                != common | {"invocation", "slot", "request_digest", "retry", "checkpoint"}
+                or not isinstance(event["invocation"], str)
+                or not _CODEX_ID.fullmatch(event["invocation"])
+                or event["checkpoint"] != digest(calls)
+            ):
+                raise LedgerError("the Codex approval binding changed")
+            self._eligible(calls, reviews, event["slot"], event["request_digest"], event["retry"])
+            approvals[event["id"]] = event
+        elif event["kind"] == "charge":
+            if set(event) != common | {"approval"} or not isinstance(event["approval"], str):
+                raise LedgerError("the Codex charge receipt changed")
+            approved = approvals.get(event["approval"])
+            if (
+                not approved
+                or approved["checkpoint"] != digest(calls)
+                or any(call["approval"] == event["approval"] for call in calls)
+            ):
+                raise LedgerError("the Codex approval is missing, stale or consumed")
+            self._eligible(
+                calls, reviews, approved["slot"], approved["request_digest"], approved["retry"]
+            )
+            calls.append(
+                {
+                    "id": event["id"],
+                    "approval": approved["id"],
+                    "slot": approved["slot"],
+                    "request_digest": approved["request_digest"],
+                    "retry": approved["retry"],
+                    "status": "charged",
+                }
+            )
+        elif event["kind"] == "settlement":
+            call = next((call for call in calls if call["id"] == event.get("charge")), None)
+            if (
+                set(event) != common | {"charge", "status"}
+                or not call
+                or call["status"] != "charged"
+                or event.get("status") not in CODEX_STATUSES
+            ):
+                raise LedgerError("the Codex settlement is invalid or already recorded")
+            call["status"] = event["status"]
+        elif event["kind"] == "review":
+            batch = event.get("batch")
+            if (
+                set(event) != common | {"batch", "proof_digest", "checkpoint"}
+                or type(batch) is not int
+                or batch not in (1, 2, 3)
+                or batch in reviews
+                or not codex_digest_valid(event.get("proof_digest"))
+                or event["checkpoint"] != digest(calls)
+            ):
+                raise LedgerError("the Codex batch review changed")
+            group = {
+                entry["slot"] for entry in self.grant["exposures"] if entry["repetition"] == batch
+            }
+            if group != {call["slot"] for call in calls if call["slot"] in group} or any(
+                call["status"] == "charged" for call in calls
+            ):
+                raise LedgerError("the Codex batch has not completed all registered attempts")
+            reviews[batch] = event["proof_digest"]
+        else:
+            raise LedgerError("the Codex receipt kind is unknown")
+
+    def _state(
+        self,
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
+        self._authority()
+        if self.grant["phase"] != "sealed":
+            raise LedgerError("the Codex genesis has not been reviewed and sealed")
+        body = _review_json(self.path, "activated Codex ledger", cap=1_000_000)
+        if (
+            not isinstance(body, dict)
+            or set(body) != {"v", "grant_digest", "genesis_nonce", "events"}
+            or type(body["v"]) is not int
+            or body["v"] != 1
+            or body["grant_digest"] != self.binding
+            or not isinstance(body["genesis_nonce"], str)
+            or not _CODEX_ID.fullmatch(body["genesis_nonce"])
+            or not isinstance(body["events"], list)
+            or len(body["events"]) > 256
+        ):
+            raise LedgerError("the Codex ledger changed")
+        genesis = dict(body, events=[])
+        if (
+            digest(genesis) != self.grant["activation_anchor"]
+            or _review_json(
+                str(self.receipts / "genesis.json"), "Codex genesis receipt", cap=128_000
+            )
+            != genesis
+        ):
+            raise LedgerError("the Codex genesis does not match reviewed activation")
+        expected = {"genesis.json"}
+        approvals: dict[str, dict[str, Any]] = {}
+        calls: list[dict[str, Any]] = []
+        reviews: dict[int, str] = {}
+        ids: set[str] = set()
+        for event in body["events"]:
+            if (
+                not isinstance(event, dict)
+                or not isinstance(event.get("id"), str)
+                or not _CODEX_ID.fullmatch(event["id"])
+                or event["id"] in ids
+                or event.get("grant_digest") != self.binding
+                or event.get("kind") not in ("approval", "charge", "settlement", "review")
+            ):
+                raise LedgerError("the Codex receipt identity changed")
+            ids.add(event["id"])
+            name = f"{event['kind']}-{event['id']}.json"
+            expected.add(name)
+            if (
+                _review_json(str(self.receipts / name), "Codex immutable receipt", cap=128_000)
+                != event
+            ):
+                raise LedgerError("the Codex receipt was removed or rewritten")
+            self._replay_event(event, approvals, calls, reviews)
+        # Bound the scan so foreign contents cannot turn authority checks into an unbounded read.
+        import itertools  # noqa: PLC0415 - Codex-only bounded receipt inventory
+
+        try:
+            names = {item.name for item in itertools.islice(self.receipts.iterdir(), 258)}
+        except OSError as error:
+            raise LedgerError("the Codex receipts cannot be read") from error
+        if names != expected:
+            raise LedgerError("the Codex receipt chain has missing or orphan reservations")
+        return body, approvals, calls, reviews
+
+    def _append(self, body: dict[str, Any], kind: str, **fields: Any) -> str:
+        if len(body["events"]) >= 256:
+            raise LedgerError("the bounded Codex event allowance is full")
+        event = {"id": uuid.uuid4().hex, "kind": kind, "grant_digest": self.binding, **fields}
+        _codex_receipt(str(self.receipts / f"{kind}-{event['id']}.json"), event)
+        body["events"].append(event)
+        self._persist(body)
+        return str(event["id"])
+
+    def used(self) -> int:
+        self._authority()
+        with locked(self.path):
+            return len(self._state()[2])
+
+    def settle(self, charge_id: str, status: str) -> None:
+        """Classify once, retaining every charge. No invocation, retry or producer is launched."""
+        self._authority()
+        with locked(self.path):
+            body, _, calls, _ = self._state()
+            call = next((call for call in calls if call["id"] == charge_id), None)
+            if not call or call["status"] != "charged" or status not in CODEX_STATUSES:
+                raise LedgerError("the Codex charge is not pending or its status is invalid")
+            self._append(body, "settlement", charge=charge_id, status=status)

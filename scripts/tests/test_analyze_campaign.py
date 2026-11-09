@@ -945,3 +945,178 @@ class CampaignReservations(unittest.TestCase):
         )
         campaign.accept_batch("replay", 0, proof)
         self.assertTrue(self.charge("replay", self.slots["replay"][1]))
+
+
+class CodexRequestBindings(unittest.TestCase):
+    def test_a_person_binds_every_final_codex_request_field(self) -> None:
+        import copy  # noqa: PLC0415 - independent prospective Codex tests
+
+        module = importlib.import_module("analyze_campaign")
+        transport = {
+            "producer": "codex",
+            "model": "gpt-5.6-luna",
+            "effort": "max",
+            "binary": "/fake/codex",
+            "binary_sha256": "a" * 64,
+            "cli_version": "codex 1",
+            "argv": [
+                "/fake/codex",
+                "exec",
+                "--model",
+                "gpt-5.6-luna",
+                "--config",
+                "model_reasoning_effort=max",
+            ],
+            "destination": "OpenAI",
+            "runtime_digest": "b" * 64,
+        }
+        original = module.request_digest(
+            "final prompt", "codex", "c" * 64, 4096, codex_transport=transport
+        )
+        for field, change in {
+            "binary_sha256": "d" * 64,
+            "cli_version": "codex 2",
+            "runtime_digest": "d" * 64,
+            "argv": [*transport["argv"], "--ephemeral"],
+        }.items():
+            with self.subTest(field=field):
+                changed = copy.deepcopy(transport)
+                changed[field] = change
+                self.assertNotEqual(
+                    original,
+                    module.request_digest(
+                        "final prompt", "codex", "c" * 64, 4096, codex_transport=changed
+                    ),
+                )
+        for prompt, source, cap in (
+            ("other", "c" * 64, 4096),
+            ("final prompt", "d" * 64, 4096),
+            ("final prompt", "c" * 64, 4097),
+        ):
+            self.assertNotEqual(
+                original,
+                module.request_digest(prompt, "codex", source, cap, codex_transport=transport),
+            )
+        for field, change in {
+            "model": "other",
+            "effort": "low",
+            "destination": "Anthropic",
+            "argv": ["/fake/codex", "exec"],
+        }.items():
+            changed = copy.deepcopy(transport)
+            changed[field] = change
+            with self.subTest(field=field), self.assertRaises(ledger.LedgerError):
+                module.request_digest(
+                    "final prompt", "codex", "c" * 64, 4096, codex_transport=changed
+                )
+
+    def test_a_person_cannot_bind_codex_without_an_explicit_transport(self) -> None:
+        module = importlib.import_module("analyze_campaign")
+        with self.assertRaises(ledger.LedgerError):
+            module.request_digest("prompt", "codex", "a" * 64, 4096)
+
+    def test_a_person_keeps_the_historical_claude_request_digest(self) -> None:
+        import hashlib  # noqa: PLC0415 - assert the prior wire format independently
+
+        module = importlib.import_module("analyze_campaign")
+        producer = {"reading": "historical Claude binding"}
+        self.assertEqual(
+            ledger.digest(
+                {
+                    "prompt": hashlib.sha256(b"prompt").hexdigest(),
+                    "producer": producer,
+                    "source": "source",
+                    "output_cap_bytes": 100,
+                    "study_shim": "",
+                    "study_contract": "",
+                }
+            ),
+            module.request_digest("prompt", producer, "source", 100),
+        )
+
+    def test_a_person_rechecks_cli_bytes_without_executing_anything(self) -> None:
+        import hashlib  # noqa: PLC0415 - synthetic owned binary only
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        module = importlib.import_module("analyze_campaign")
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "codex"
+            binary.write_bytes(b"fake executable, never run")
+            verified = SimpleNamespace(
+                path=str(binary),
+                version="codex test",
+                identity=(hashlib.sha256(binary.read_bytes()).hexdigest(),),
+            )
+            argv = [
+                str(binary),
+                "exec",
+                "--model",
+                "gpt-5.6-luna",
+                "--config",
+                "model_reasoning_effort=max",
+            ]
+            binding = module.verified_codex_transport_binding(
+                verified,
+                argv=argv,
+                model="gpt-5.6-luna",
+                effort="max",
+                destination="OpenAI",
+                runtime_digest="a" * 64,
+            )
+            self.assertEqual(argv, binding["argv"])
+            self.assertEqual(verified.version, binding["cli_version"])
+            binary.write_bytes(b"substituted CLI")
+            with self.assertRaises(ledger.LedgerError):
+                module.verified_codex_transport_binding(
+                    verified,
+                    argv=argv,
+                    model="gpt-5.6-luna",
+                    effort="max",
+                    destination="OpenAI",
+                    runtime_digest="a" * 64,
+                )
+
+    def test_a_person_cannot_substitute_a_model_even_with_matching_argv(self) -> None:
+        module = importlib.import_module("analyze_campaign")
+        transport = {
+            "producer": "codex",
+            "model": "another-model",
+            "effort": "max",
+            "binary": "/fake/codex",
+            "binary_sha256": "a" * 64,
+            "cli_version": "codex 1",
+            "argv": [
+                "/fake/codex",
+                "exec",
+                "--model",
+                "another-model",
+                "--config",
+                "model_reasoning_effort=max",
+            ],
+            "destination": "OpenAI",
+            "runtime_digest": "b" * 64,
+        }
+        with self.assertRaises(ledger.LedgerError):
+            module.validate_codex_transport_binding(transport)
+
+    def test_a_person_cannot_claim_explicit_effort_without_the_actual_config_flag(self) -> None:
+        module = importlib.import_module("analyze_campaign")
+        transport = {
+            "producer": "codex",
+            "model": "gpt-5.6-luna",
+            "effort": "max",
+            "binary": "/fake/codex",
+            "binary_sha256": "a" * 64,
+            "cli_version": "codex 1",
+            "argv": [
+                "/fake/codex",
+                "exec",
+                "--model",
+                "gpt-5.6-luna",
+                "model_reasoning_effort=max",
+            ],
+            "destination": "OpenAI",
+            "runtime_digest": "b" * 64,
+        }
+        with self.assertRaises(ledger.LedgerError):
+            module.validate_codex_transport_binding(transport)

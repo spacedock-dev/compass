@@ -1194,16 +1194,28 @@ exactly that.
 
 ## Prospective Codex qualification, 2026-11-09
 
-This is a protocol for future work. No Codex qualification tooling, admitted packet, grant,
-marks or run exists for this protocol yet. The current scorer refuses Codex scoring. The owner
-has directed preparation of the recommended qualification; that direction authorizes neither
-private source inspection nor provider calls. Historical acceptance, Claude grants, charges and
-results above remain unchanged and confer no authority on this study.
+The offline authority helpers in `scripts/abstention_ledger.py` and
+`scripts/analyze_campaign.py` implement reviewed genesis, one-call approvals and reservations.
+They cannot launch a producer, and the current scorer still refuses Codex scoring. No admitted
+packet, grant, marks or run exists for this protocol yet. The owner has directed preparation of
+the recommended qualification; that direction authorizes neither private source inspection nor
+provider calls. Historical acceptance, Claude grants, charges and results above remain unchanged
+and confer no authority on this study.
+
+`codex_grant()` reads only `docs/abstention/codex-grant.json`, which is not supplied.
+`CodexLedger` and `CodexCampaign` require a separately prepared grant, its reviewed zero-charge
+genesis and freshly recomputed input and transport bindings. Future intake and scorer code must
+establish source provenance and authenticate the installed CLI; these helpers do neither.
+The grant holds only the transport digest; absolute CLI paths and actual argv stay local.
+An approval belongs to one exact request, slot, retry bit and process invocation. Reservation
+consumes it under the account lock before returning a charge. Missing receipts or an interrupted
+write block further reservations. Each ten-case repetition needs a recorded batch review before
+the next begins; recording that review does not claim the repetition passed.
 
 The proposed claim is limited to Codex analysis levels. Live estimate and Live monitor stay
 Claude-only. The [owner ruling](../design-reading-a-session.md#owner-ruling-2026-11-09-prospective-codex-analysis-qualification)
 pins the producer and its acceptance conditions. [SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09)
-owns local reads, provider payloads, retention and proposed accounting paths.
+owns local reads, provider payloads, retention and accounting paths.
 
 ### Cases and blind review
 
