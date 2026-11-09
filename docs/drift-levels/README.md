@@ -115,6 +115,18 @@ python3 scripts/levels_cases.py --read --reading-home ~/.compass/drift-levels-re
 python3 scripts/levels_cases.py --read --reading-home ~/.compass/drift-levels-readings   # spends
 python3 scripts/levels_cases.py --attach-readings ~/.compass/drift-levels/replayed-readings.json
 python3 scripts/levels_cases.py --score         # writes results.json
+
+The Codex cohort runs the same commands with `--cohort codex`, in this order (nothing has run):
+
+```bash
+python3 scripts/levels_cases.py --cohort codex --build ~/.compass/drift-levels-codex/spec.json
+python3 scripts/levels_cases.py --cohort codex                 # mark: analysis only, no default
+python3 scripts/levels_cases.py --cohort codex --approve-replay-allowance N   # once; 0 to 12
+python3 scripts/levels_cases.py --cohort codex --read --reading-home DIR --dry-run
+python3 scripts/levels_cases.py --cohort codex --read --reading-home DIR   # asks, call by call
+python3 scripts/levels_cases.py --cohort codex --attach-readings ~/.compass/drift-levels-codex/replayed-readings.json
+python3 scripts/levels_cases.py --cohort codex --score         # writes codex-results.json
+```
 ```
 
 ## Readings replayed from the frozen cases
@@ -234,8 +246,9 @@ otherwise, and that failure is a finding to report, not a figure to tune.
 
 ## Prospective Codex analysis-level cohort, 2026-11-09
 
-This is a proposed later check, not a built or executed capability. The current tooling freezes
-Claude cases; no Codex cohort or result is supplied here. It follows the separate
+The tooling for this check is built; nothing has run. `levels_cases.py --cohort codex` freezes,
+marks, replays and scores a Codex cohort without touching the Claude files above, and no Codex
+cohort or result is supplied here. It follows the separate
 [Codex producer qualification and owner gates](../abstention/README.md#prospective-codex-qualification-2026-11-09).
 Historical marks, results, readings and allowances above remain unchanged.
 
@@ -244,9 +257,22 @@ output, specify its final matrix: admissible support, unrelated or partial check
 failure timing, missing citations, legitimate changes, misleading claims, insufficient evidence
 and goal-only behavior. Mark expected analysis levels blindly against the frozen evidence.
 Commit the marks digest before readings or results, with the case/input bindings and required
-analysis cases fixed. Proposed committed filenames are `codex-marks-digest.json` and
+analysis cases fixed. The committed filenames are `codex-marks-digest.json` and
 `codex-results.json` in this directory; neither exists yet. Private cases, marks and detailed
-readings belong to a separate Codex packet, not the historical Claude packet.
+readings belong to a separate Codex packet (`drift-levels-codex/` under the packet home), not the
+historical Claude packet.
+
+The spec for `--build` declares the matrix: `{"v": 1, "cohort": "codex", "matrix": [...], "cases":
+[...]}`, with each case's kind drawn from `admissible-support`, `unrelated-or-partial-check`,
+`stale-pass`, `failure-timing`, `missing-citation`, `legitimate-change`, `misleading-claim`,
+`insufficient-evidence`, `goal-only` or `other`. A case is the approved frozen Codex source (its
+parent and every child rollout, rebuilt rather than trusted) plus the checks and counts the level
+functions read. Every declared kind needs a case, no case may have an undeclared kind, and a
+cohort is at most twelve cases. Marking asks for the analysis level only. The committed digest
+carries the matrix, every required case and the digest of each case's exact producer inputs, so
+what must be read and from what is fixed before any output. The approved Codex freeze refuses an
+intent with no outcome line, so `goal-only` names a kind of case, not an intent the freeze would
+accept without one.
 
 This cohort qualifies analysis only. An unsupported Codex live source is outside the claim;
 neither live estimate nor Live monitor gains eligibility. Score with DEC-26's existing level
@@ -258,17 +284,26 @@ alone becomes the outcome constraint.
 
 Every prospectively required analysis case must have an admissible reading at PASS. Unlike the
 historical result, missing readings cannot leave `counts.no_reading` alongside a Codex
-qualification PASS. Refusal or missing coverage is a finding, not a reason to drop a required
+qualification PASS. A Codex result with a missing reading or an uncovered matrix kind reads `incomplete`, never `passed`. Refusal or missing coverage is a finding, not a reason to drop a required
 case, change its mark or score only a live source. Attach readings by exact inputs, prompt,
 producer and request/charge receipts, not timestamps alone. A prior reading may be reused only
 if those bindings match and the blind level marks predate its output.
 
 Deterministic level scoring calls no model. Any needed readings have a separate, fixed total
 replay allowance of zero to twelve readings approved before replay, outside the thirty producer
-exposures and their one availability retry. Each replay needs the owner's one-call approval as well as the ordinary
-reading consent, tool-output consent and rolling reading budget. Failed or interrupted calls
-remain charged; rerunning cannot silently retry or renew the total allowance. The proposed
-accounting and refusal rules are in
+exposures and their one availability retry. `--approve-replay-allowance N` fixes it once; a second
+call raises or renews nothing. Each replay needs the owner's one-call approval, shown the case
+alias, the digest of the exact request and the allowance left, as well as the ordinary reading
+consent, tool-output consent and rolling reading budget. The call is prepared locally first, which
+sends nothing, and the request approved is the only one sent. Failed or interrupted calls remain
+charged, and no input is ever charged twice, so rerunning cannot silently retry or renew the total
+allowance. While its receipts folder survives, a moved or deleted allowance file is not created again;
+deleting both resets it undetected, as restoring a backup does. Windows or a moved `HOME`
+refuses it. The replay sends the prompt the production reader built when the case was frozen, and
+a reading attaches only with its producer, request digest, exact inputs, approved charge and a
+digest of its own contents, each checked again at scoring, so an edited or swapped reading is
+refused. The result records the allowance the readings were attached under. Restoring a backup
+of the account's study folder taken after some charges resets the allowance undetected. The accounting and refusal rules are in
 [SECURITY.md](../../SECURITY.md#prospective-codex-analysis-qualification-2026-11-09).
 Passing the scorer then requires a separate owner decision before Codex analysis levels may be
 enabled or results published.

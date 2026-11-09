@@ -47,8 +47,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 
+import abstention_ledger
 import store_paths
 
 if TYPE_CHECKING:
@@ -75,6 +77,30 @@ HOME = store_paths.store_home()
 SUBDIR = "drift-levels"
 DIGEST_PATH = os.path.join(_ROOT, "docs", "drift-levels", "marks-digest.json")
 RESULTS_PATH = os.path.join(_ROOT, "docs", "drift-levels", "results.json")
+
+# The Codex analysis cohort is a second, separate check: its own packet folder, its own committed
+# digest and result, and no Claude case, mark or reading in any of them.
+COHORT_CLAUDE = "claude"
+COHORT_CODEX = "codex"
+CODEX_SUBDIR = "drift-levels-codex"
+CODEX_DIGEST_PATH = os.path.join(_ROOT, "docs", "drift-levels", "codex-marks-digest.json")
+CODEX_RESULTS_PATH = os.path.join(_ROOT, "docs", "drift-levels", "codex-results.json")
+CODEX_MAX_CASES = 12
+# The kinds the cohort's matrix is drawn from (docs/drift-levels/README.md, the Codex cohort).
+# The spec declares which of them it covers before any output, and the digest binds that choice.
+CODEX_KINDS = (
+    "admissible-support",
+    "unrelated-or-partial-check",
+    "stale-pass",
+    "failure-timing",
+    "missing-citation",
+    "legitimate-change",
+    "misleading-claim",
+    "insufficient-evidence",
+    "goal-only",
+    "other",
+)
+REPLAY_ALLOWANCE_MAX = 12
 
 # The case kinds DRC-4692 and its case map name. Closed, because the kind is
 # copied into the committed summary and a hand-typed value must not be.
@@ -121,10 +147,12 @@ _SCALE = ("none_or_low", "medium", "high", "extreme")
 # An analysis has no "no live level": that answers only a draft, on the live side.
 ANALYSIS_LEVELS = frozenset(LABELS) - {"no_live_level"}
 VERDICT_REFUSED = "refused"
+# A Codex cohort that scored what it had, but not every case it fixed before any output.
+VERDICT_INCOMPLETE = "incomplete"
 
 
-def _paths(home: str) -> dict[str, str]:
-    base = os.path.join(home, SUBDIR)
+def _paths(home: str, cohort: str = COHORT_CLAUDE) -> dict[str, str]:
+    base = os.path.join(home, CODEX_SUBDIR if cohort == COHORT_CODEX else SUBDIR)
     return {
         "dir": base,
         "cases": os.path.join(base, "cases.json"),
@@ -144,14 +172,15 @@ def digest(body: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def case_id(sid: str, until: float | None, kind: str) -> str:
+def case_id(sid: str, until: float | None, kind: str, harness: str = "claude") -> str:
     """Stable over identity, cut and kind, and nothing readable.
 
     One session stands for more than one case (one of the frozen sessions is both
     a check with no recorded result and work left out), so the kind and the cut
-    are part of it.
+    are part of it. The harness leads the hash, so one session id can never name a Claude
+    case and a Codex case alike; the Claude default is the string every id was made from.
     """
-    return hashlib.sha256(f"claude|{sid}|{until}|{kind}".encode()).hexdigest()[:16]
+    return hashlib.sha256(f"{harness}|{sid}|{until}|{kind}".encode()).hexdigest()[:16]
 
 
 def _write(path: str, body: Any) -> None:
@@ -206,6 +235,10 @@ def _refusal(entry: Any) -> str:
     transcript = entry.get("transcript")
     until = entry.get("until", False)
     checks = (
+        (
+            entry.get("harness", "claude") == "claude",
+            "a Codex entry belongs in a Codex cohort (--cohort codex)",
+        ),
         (entry.get("kind") in KINDS, f"kind must be one of {', '.join(KINDS)}"),
         (
             isinstance(transcript, str) and os.path.isfile(transcript),
@@ -229,6 +262,65 @@ def _refusal(entry: Any) -> str:
         ),
     )
     return next((why for holds, why in checks if not holds), "")
+
+
+_CODEX_SOURCE_KEYS = (
+    "harness",
+    "sid",
+    "sessions_root",
+    "transcript",
+    "children",
+    "captured_at",
+    "intent",
+    "row",
+)
+
+
+def _codex_refusal(entry: Any) -> str:
+    """Why a Codex spec entry cannot be a case, or empty. Nothing is defaulted.
+
+    This only checks what the owner wrote by hand. Identity, descendants, the capture prefix and
+    the lifecycle are rebuilt from the recorded sources at freeze time and refused there.
+    """
+    if not isinstance(entry, dict):
+        return "not an object"
+    children = entry.get("children")
+    checks = (
+        (entry.get("harness") == "codex", "harness must be codex in a Codex cohort"),
+        (entry.get("kind") in CODEX_KINDS, f"kind must be one of {', '.join(CODEX_KINDS)}"),
+        (
+            isinstance(entry.get("transcript"), str) and os.path.isfile(entry["transcript"]),
+            "transcript must name a recorded Codex rollout file",
+        ),
+        (isinstance(entry.get("sessions_root"), str), "sessions_root must be written by hand"),
+        (
+            isinstance(children, list) and all(isinstance(c, str) for c in children),
+            "children must list every child rollout, or be empty",
+        ),
+        (_number(entry.get("captured_at")) is not None, "captured_at must be a Unix time"),
+        (
+            isinstance(entry.get("intent"), dict) and isinstance(entry.get("row"), dict),
+            "intent and row must be recorded objects",
+        ),
+        (
+            _count_ok(entry.get("unsettled_directions")),
+            "unsettled_directions must be a count, written by hand",
+        ),
+        ("until" not in entry, "a Codex case is cut at captured_at, never at until"),
+        (
+            "reading" not in entry,
+            "a reading is attached after the marks are committed, with --attach-readings",
+        ),
+    )
+    return next((why for holds, why in checks if not holds), "")
+
+
+def _codex_sources() -> Any:
+    """`codex_case_sources`, loaded after the runtime path is set, as `_runtime` is."""
+    _runtime()
+    import codex_case_sources  # noqa: PLC0415
+
+    return codex_case_sources
 
 
 def _cut(source: str, until: float, into: str) -> str:
@@ -291,6 +383,44 @@ def _freeze(config: Any, entry: Mapping[str, Any], scratch: str) -> dict[str, An
     }
 
 
+def _freeze_codex(config: Any, entry: Mapping[str, Any]) -> dict[str, Any]:
+    """The approved frozen Codex case, plus the facts and counts the level functions read.
+
+    The sealed source case is rebuilt, never trusted, by `codex_case_sources.freeze_case`. The
+    levels fields are then derived from the same bounded prefixes, children included.
+    """
+    sources = _codex_sources()
+    _config_mod, project_context, _levels = _runtime()
+    source = {key: entry[key] for key in _CODEX_SOURCE_KEYS if key in entry}
+    sealed = sources.freeze_case(config, source)
+    _root, path, children = sources._selection(config, source)  # noqa: SLF001 - its own rebuild
+    captured = float(sealed["captured_at"])
+    with project_context.frozen_codex_sources(
+        config, str(path), until=captured, child_paths=[str(p) for p in children]
+    ) as (cut, cuts):
+        rows, scan = project_context.codex_tool_reports(
+            config, cut, str(sealed["sid"]), child_paths=cuts
+        )
+        meta = next(
+            (r.get("payload") for r in _records(cut) if r.get("type") == "session_meta"), None
+        )
+    cwd = meta.get("cwd") if isinstance(meta, dict) else ""
+    facts = [
+        project_context._semantic_fact_from_event(row, row["kind"], "tool_report", "")  # noqa: SLF001
+        for row in rows
+    ]
+    return {
+        **sealed,
+        "id": case_id(str(sealed["sid"]), captured, str(entry["kind"]), "codex"),
+        "kind": entry["kind"],
+        "until": None,
+        "facts": facts,
+        "scan": dict(scan),
+        "unsettled_directions": entry["unsettled_directions"],
+        "cwd": cwd if isinstance(cwd, str) and os.path.isabs(cwd) else "",
+    }
+
+
 def _records(path: str) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     with open(path, encoding="utf-8", errors="replace") as handle:
@@ -314,9 +444,41 @@ def _config() -> Any:
     )
 
 
-def build(spec_path: str | os.PathLike[str], *, home: str, repo_root: str, say: Any) -> int:
-    """Freeze every spec entry into `<home>/drift-levels/cases.json`."""
-    paths = _paths(home)
+_FREEZE_ERRORS = (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError)
+
+
+def _matrix_refusal(spec: Mapping[str, Any], entries: list[Any]) -> str:
+    """Why a Codex spec's declared matrix cannot stand, or empty.
+
+    The matrix is the owner's statement, before any output, of which kinds the cohort covers.
+    Every declared kind needs a case, and every case needs a declared kind.
+    """
+    matrix = spec.get("matrix")
+    if not isinstance(matrix, list) or not matrix or not all(k in CODEX_KINDS for k in matrix):
+        return f"the spec must declare a matrix drawn from {', '.join(CODEX_KINDS)}"
+    if spec.get("cohort") != COHORT_CODEX:
+        return "the spec must name cohort codex"
+    if len(entries) > CODEX_MAX_CASES:
+        return f"a Codex cohort is at most {CODEX_MAX_CASES} cases"
+    kinds = {e.get("kind") for e in entries if isinstance(e, dict)}
+    if kinds - set(matrix):
+        return "a case has a kind the matrix did not declare"
+    if set(matrix) - kinds:
+        return "the matrix declares a kind no case covers"
+    return ""
+
+
+def build(  # noqa: C901, PLR0911 - one refusal per way a spec cannot be frozen
+    spec_path: str | os.PathLike[str],
+    *,
+    home: str,
+    repo_root: str,
+    say: Any,
+    cohort: str = COHORT_CLAUDE,
+) -> int:
+    """Freeze every spec entry into `<home>/drift-levels[-codex]/cases.json`."""
+    codex = cohort == COHORT_CODEX
+    paths = _paths(home, cohort)
     if _inside(paths["dir"], repo_root):
         say(f"{paths['dir']} is inside the repository. The cases name sessions and stay local.")
         say("Set COMPASS_HOME outside it, or leave it unset for ~/.compass.")
@@ -326,16 +488,29 @@ def build(spec_path: str | os.PathLike[str], *, home: str, repo_root: str, say: 
     if not isinstance(entries, list) or not entries:
         say(f"No cases in {spec_path}: it wants {{'v': 1, 'cases': [...]}}.")
         return 1
-    refused = [(n, _refusal(e)) for n, e in enumerate(entries, 1)]
+    refused = [(n, _codex_refusal(e) if codex else _refusal(e)) for n, e in enumerate(entries, 1)]
     refused = [(n, why) for n, why in refused if why]
     for number, why in refused:
         say(f"  case {number}: {why}")
-    if refused:
+    matrix = _matrix_refusal(spec, entries) if codex else ""
+    if matrix:
+        say(f"  {matrix}")
+    if refused or matrix:
         say("Nothing was written.")
         return 1
     config = _config()
-    with tempfile.TemporaryDirectory(dir=_ensure(paths["dir"])) as scratch:
-        cases = [_freeze(config, entry, scratch) for entry in entries]
+    if codex:
+        try:
+            cases = [_freeze_codex(config, entry) for entry in entries]
+        except (_codex_sources().marker.FreezeError, *_FREEZE_ERRORS) as error:
+            # Only a freeze token is a closed phrase; another error's text may carry a path.
+            marker_error = _codex_sources().marker.FreezeError
+            why = str(error) if isinstance(error, marker_error) else type(error).__name__
+            say(f"  a source, lifecycle or selection is unconfirmed ({why}). Nothing was written.")
+            return 1
+    else:
+        with tempfile.TemporaryDirectory(dir=_ensure(paths["dir"])) as scratch:
+            cases = [_freeze(config, entry, scratch) for entry in entries]
     ids = [case["id"] for case in cases]
     if len(set(ids)) != len(ids):
         say("Two entries are the same case (session, cut and kind). Nothing was written.")
@@ -346,7 +521,15 @@ def build(spec_path: str | os.PathLike[str], *, home: str, repo_root: str, say: 
         say(f"{len(orphans)} existing marks name cases this build does not include.")
         say("Move the marks aside first; a build never deletes them.")
         return 1
-    _write(paths["cases"], {"v": 1, "cases": cases})
+    body: dict[str, Any] = {"v": 1, "cases": cases}
+    if codex:
+        body = {
+            "v": 1,
+            "cohort": COHORT_CODEX,
+            "matrix": sorted(set(spec["matrix"])),
+            "cases": cases,
+        }
+    _write(paths["cases"], body)
     kinds = sorted({str(c["kind"]) for c in cases})
     say(f"Built {len(cases)} cases ({', '.join(kinds)}) at {paths['cases']}.")
     say("It stays on this machine and is never committed.")
@@ -363,13 +546,18 @@ def _clip(value: Any, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+def _saved(case: Mapping[str, Any]) -> bool:
+    """Whether the intent was saved. A Codex case freezes a saved revision only."""
+    return case.get("harness") == "codex" or (case.get("intent") or {}).get("saved") is True
+
+
 def _show(case: Mapping[str, Any], position: str, say: Any) -> None:
     """One self-contained screen: the intent, the frozen record, and nothing the rules concluded."""
     captured = _number(case.get("captured_at")) or 0.0
     intent = case.get("intent") or {}
     say("\n" + "=" * 72)
     say(f"  {position}   case {case['id']}   kind: {case['kind']}")
-    state = "SAVED" if intent.get("saved") else "DRAFTED, NEVER SAVED"
+    state = "SAVED" if _saved(case) else "DRAFTED, NEVER SAVED"
     say(f"\n  INTENT ({state})\n    Goal: {_clip(intent.get('goal'), 200)}")
     for number, line in enumerate(intent.get("lines") or [], 1):
         say(f"    {number}. {_clip(line, 200)}")
@@ -431,18 +619,30 @@ def _question(source: str) -> str:
 
 
 def _marks(body: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """The marks that are marks. A Codex cohort marks analysis only, and every case needs one."""
     raw = body.get("marks")
+    codex = body.get("cohort") == COHORT_CODEX
     return {
         k: v
         for k, v in (raw.items() if isinstance(raw, dict) else ())
         if isinstance(v, dict)
-        and v.get("live") in LABELS
-        and (v.get("analysis") is None or v.get("analysis") in ANALYSIS_LEVELS)
+        and (
+            (v.get("live") is None and v.get("analysis") in ANALYSIS_LEVELS)
+            if codex
+            else v.get("live") in LABELS
+            and (v.get("analysis") is None or v.get("analysis") in ANALYSIS_LEVELS)
+        )
     }
 
 
 def _publish_digest(
-    paths: Mapping[str, str], digest_path: str, cases: int, marked: int, *, cases_digest: str
+    paths: Mapping[str, str],
+    digest_path: str,
+    cases: int,
+    marked: int,
+    *,
+    cases_digest: str,
+    extra: Mapping[str, Any] | None = None,
 ) -> str:
     """Hash the marks as written, beside them and in the committable file."""
     with open(paths["marks"], "rb") as handle:
@@ -455,6 +655,7 @@ def _publish_digest(
         "cases_digest": cases_digest,
         "cases": cases,
         "marked": marked,
+        **(extra or {}),
     }
     os.makedirs(os.path.dirname(digest_path), exist_ok=True)
     with open(digest_path, "w", encoding="utf-8", newline="\n") as handle:
@@ -518,7 +719,7 @@ def _marking_closed(
     return ""
 
 
-def mark(
+def mark(  # noqa: PLR0911 - one return per way a marking is refused or finished
     *,
     home: str,
     digest_path: str,
@@ -526,16 +727,22 @@ def mark(
     repo_root: str,
     ask: Any = input,
     say: Any = print,
+    cohort: str = COHORT_CLAUDE,
 ) -> int:
     """Ask the owner for each unmarked case's level, per source, and write the key.
 
-    Refused once any result exists: a mark written after a result is agreement.
+    Refused once any result exists: a mark written after a result is agreement. A Codex cohort
+    asks for the analysis level only: an unsupported Codex live source is outside its claim.
     """
-    paths = _paths(home)
+    codex = cohort == COHORT_CODEX
+    paths = _paths(home, cohort)
     body = _load(paths["cases"])
     cases = body.get("cases") if isinstance(body.get("cases"), list) else None
     if not cases:
         say(f"No cases at {paths['cases']}. Run --build first.")
+        return 1
+    if codex and (body.get("cohort") != COHORT_CODEX or _foreign(cases, "codex")):
+        say("These are not Codex cases. Nothing was changed.")
         return 1
     saved = _load(paths["marks"])
     entries = _marks(saved)
@@ -552,24 +759,56 @@ def mark(
         say(f"All {len(cases)} cases are marked.")
         return 0
     say(f"{len(todo)} of {len(cases)} left. Say what each level SHOULD read, not what it does.")
-    _mark_cases(todo, entries, ask, say)
+    _mark_cases(todo, entries, ask, say, codex=codex)
     if not entries:
         say("Nothing marked.")
         return 0
-    _write(paths["marks"], {"v": 1, "cases_digest": bound, "marks": entries})
-    sha = _publish_digest(paths, digest_path, len(cases), len(entries), cases_digest=bound)
+    held: dict[str, Any] = {"v": 1, "cases_digest": bound, "marks": entries}
+    extra: dict[str, Any] | None = None
+    if codex:
+        held["cohort"] = COHORT_CODEX
+        # Fixed with the marks and before any output: which kinds the cohort covers, every case it
+        # requires an admissible reading for, and the exact producer inputs each one is read from.
+        extra = {
+            "cohort": COHORT_CODEX,
+            "matrix": body.get("matrix"),
+            "required_analysis": sorted(str(c["id"]) for c in cases),
+            "inputs": {str(c["id"]): _inputs(c) for c in cases},
+        }
+    _write(paths["marks"], held)
+    sha = _publish_digest(
+        paths, digest_path, len(cases), len(entries), cases_digest=bound, extra=extra
+    )
     left = len(cases) - len(entries)
     say(f"\nSaved {len(entries)} marks, {left} left. sha256 {sha}")
     say(f"Commit {digest_path} before any score is run.")
     return 0
 
 
-def _mark_cases(
-    todo: list[dict[str, Any]], entries: dict[str, dict[str, Any]], ask: Any, say: Any
+def _foreign(cases: list[Any], harness: str) -> bool:
+    """Whether any case belongs to another harness than the cohort's."""
+    return any(not isinstance(c, dict) or c.get("harness") != harness for c in cases)
+
+
+def _mark_cases(  # noqa: C901 - the Codex branch is one more way through the same loop
+    todo: list[dict[str, Any]],
+    entries: dict[str, dict[str, Any]],
+    ask: Any,
+    say: Any,
+    *,
+    codex: bool = False,
 ) -> None:
     """One screen per case; stops, keeping what was marked, at the first `q`."""
     for index, case in enumerate(todo, 1):
         _show(case, f"{index}/{len(todo)}", say)
+        if codex:
+            level = _ask(ask, _question("analysis"))
+            if level is None:
+                return
+            if level in {"skip", "no_live_level"}:
+                continue
+            entries[str(case["id"])] = {"live": None, "analysis": level}
+            continue
         live = _ask(ask, _question("live"))
         if live is None:
             return
@@ -675,7 +914,266 @@ def _admit(config: Any, value: Any) -> Any:
     return annotations._assessment(value, config.annotation_text_cap_chars)  # noqa: SLF001
 
 
-def attach_readings(
+# ------------------------------------------------------- the Codex replay allowance
+
+
+RECEIPTS_SUFFIX = ".receipts"
+
+
+class ReplayLedgerError(Exception):
+    """The replay allowance cannot be read, or refuses the call asked of it."""
+
+
+def default_allowance_path() -> str | None:
+    """The fixed account-level file, or None where the account home cannot be settled.
+
+    None on Windows, where the account home resolves from environment variables, and when `HOME`
+    names another directory than the account's own: either would hand a second, empty ledger to
+    the same inputs, exactly as the producer ledger's authority check refuses.
+    """
+    if sys.platform == "win32" or abstention_ledger.home_moved():
+        return None
+    return abstention_ledger.study_path("codex-levels-replay-spend.json")
+
+
+def approve_replay_allowance(
+    path: str | os.PathLike[str] | None, total: int, *, now: float, say: Any = print
+) -> int:
+    """Fix the total number of replay readings the Codex cohort may ever be charged, once.
+
+    A fixed total approved before any replay, outside the producer qualification's exposures and
+    its one retry. It is written exclusively: a second call cannot raise or renew it.
+    """
+    if path is None:
+        say("Refused: the account home is not settled, so no allowance can be fixed.")
+        return 1
+    if type(total) is not int or not 0 <= total <= REPLAY_ALLOWANCE_MAX:
+        say(f"Refused: the allowance is a whole number from 0 to {REPLAY_ALLOWANCE_MAX}.")
+        return 1
+    target = str(path)
+    receipts = target + RECEIPTS_SUFFIX
+    with abstention_ledger.locked(target):
+        # The receipts folder outlives a moved or deleted ledger file, so an activated allowance
+        # is never created a second time (the producer ledger refuses the same way).
+        if os.path.lexists(target) or os.path.lexists(receipts):
+            say("Refused: the replay allowance is already fixed; it is never raised or renewed.")
+            return 1
+        genesis = {"v": 1, "allowance": total, "approved_at": now, "nonce": uuid.uuid4().hex}
+        os.makedirs(receipts, mode=0o700)
+        with open(os.path.join(receipts, "genesis.json"), "x", encoding="utf-8") as handle:
+            json.dump(genesis, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _write(
+            target,
+            {
+                "v": 1,
+                "allowance": total,
+                "approved_at": now,
+                "genesis": digest(genesis),
+                "events": [],
+            },
+        )
+    say(f"Fixed the Codex replay allowance at {total}. Each call still needs its own approval.")
+    return 0
+
+
+class ReplayLedger:
+    """What the Codex replays were approved for and charged, in one file of events.
+
+    A charge is recorded before the call is launched and is never removed. A failed, timed-out or
+    interrupted call keeps its charge, and no input is ever charged twice, so a rerun cannot
+    renew what a failed case spent.
+    """
+
+    def __init__(self, path: str | None) -> None:
+        self.path = path or ""
+
+    def load(self) -> dict[str, Any]:
+        body = _load(self.path) if self.path and not os.path.islink(self.path) else {}
+        events = body.get("events")
+        allowance = body.get("allowance")
+        if (
+            body.get("v") != 1
+            or type(allowance) is not int
+            or not 0 <= allowance <= REPLAY_ALLOWANCE_MAX
+            or not isinstance(events, list)
+            or not all(isinstance(e, dict) for e in events)
+        ):
+            msg = "the replay allowance is not fixed, or its file cannot be read"
+            raise ReplayLedgerError(msg)
+        if self._genesis_problem(body):
+            msg = "the replay allowance does not match the genesis it was fixed under"
+            raise ReplayLedgerError(msg)
+        return body
+
+    def _genesis_problem(self, body: Mapping[str, Any]) -> bool:
+        """Whether the file's total and anchor differ from the receipt written when it was fixed."""
+        genesis = _load(os.path.join(self.path + RECEIPTS_SUFFIX, "genesis.json"))
+        return (
+            digest(genesis) != body.get("genesis")
+            or genesis.get("allowance") != body.get("allowance")
+            or os.path.islink(self.path + RECEIPTS_SUFFIX)
+        )
+
+    def genesis(self) -> str:
+        """The anchor this allowance was fixed under, which a recreated ledger cannot reproduce."""
+        return str(self.load()["genesis"])
+
+    def events(self, kind: str) -> list[dict[str, Any]]:
+        return [e for e in self.load()["events"] if e.get("kind") == kind]
+
+    def charges(self) -> list[dict[str, Any]]:
+        return self.events("charge")
+
+    def remaining(self) -> int:
+        return int(self.load()["allowance"]) - len(self.charges())
+
+    def charged_inputs(self) -> set[str]:
+        return {str(e.get("inputs")) for e in self.charges()}
+
+    def charge(self, *, case: str, inputs: str, request: str, approval: str, now: float) -> str:
+        """Record one approved call before it is launched; refuse past the total or a repeat."""
+        with abstention_ledger.locked(self.path):
+            body = self.load()
+            charges = [e for e in body["events"] if e.get("kind") == "charge"]
+            if len(charges) >= body["allowance"]:
+                msg = "the fixed replay allowance is spent"
+                raise ReplayLedgerError(msg)
+            if any(e.get("inputs") == inputs for e in charges):
+                msg = "these inputs were charged already; a call is never silently charged again"
+                raise ReplayLedgerError(msg)
+            if any(e.get("approval") == approval for e in charges):
+                msg = "this approval was used already"
+                raise ReplayLedgerError(msg)
+            event = {
+                "id": uuid.uuid4().hex,
+                "kind": "charge",
+                "case": case,
+                "inputs": inputs,
+                "request": request,
+                "approval": approval,
+                "at": now,
+            }
+            body["events"].append(event)
+            _write(self.path, body)
+        return str(event["id"])
+
+    def settle(self, charge: str, status: str, *, now: float, reading: str | None = None) -> None:
+        """Say how a charged call ended, and the digest of the reading it returned.
+
+        Nothing here ever gives a charge back. The digest is what binds a reading's contents to
+        its charge, so a verdict edited afterwards no longer matches the call that made it.
+        """
+        with abstention_ledger.locked(self.path):
+            body = self.load()
+            if any(
+                e.get("kind") == "settlement" and e.get("charge") == charge for e in body["events"]
+            ):
+                return
+            body["events"].append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "kind": "settlement",
+                    "charge": charge,
+                    "status": status,
+                    "reading": reading,
+                    "at": now,
+                }
+            )
+            _write(self.path, body)
+
+
+def _producer(case: Mapping[str, Any]) -> str:
+    """What read a case: provider and model, plus the parser and prompt it was frozen on."""
+    _reading, _policy, reading_route = _read_runtime()
+    frozen = case.get("production_reading")
+    return digest(
+        {
+            "provider": READ_PROVIDER,
+            "model": reading_route.MODELS[READ_PROVIDER],
+            "parser": case.get("parser"),
+            "prompt": frozen.get("prompt_digest") if isinstance(frozen, dict) else None,
+        }
+    )
+
+
+_BINDING_KEYS = frozenset({"producer", "request", "inputs", "charge", "reading"})
+
+
+def reading_digest(reading: Any) -> str:
+    """A hash of a reading as stored, so a file can be held to what the call returned."""
+    return digest(json.loads(json.dumps(reading)))
+
+
+def _binding_problem(
+    case: Mapping[str, Any] | None,
+    binding: Any,
+    charges: Mapping[str, Mapping[str, Any]],
+    committed_at: float,
+    reading: Any,
+) -> str:
+    """Why a Codex reading is not bound to its case's inputs, producer and approved charge."""
+    if case is None:
+        return "not a case in the committed marks"
+    if not isinstance(binding, dict) or set(binding) != _BINDING_KEYS:
+        return "no binding to its producer, request, inputs and charge"
+    charge = charges.get(str(binding["charge"]))
+    at = _number((charge or {}).get("at"))
+    problems = (
+        (binding["inputs"] == _inputs(case), "its inputs differ from the case's"),
+        (
+            binding["producer"] == _producer(case),
+            "its producer is not the one the case was frozen on",
+        ),
+        (charge is not None, "its charge was never approved"),
+        (
+            charge is not None
+            and charge.get("inputs") == binding["inputs"]
+            and charge.get("request") == binding["request"],
+            "its charge was approved for another request",
+        ),
+        (at is not None and at > committed_at, "its charge predates the committed marks digest"),
+        (
+            binding["reading"] == reading_digest(reading),
+            "its contents differ from the reading the call returned",
+        ),
+        (
+            charge is not None and charge.get("reading") == binding["reading"],
+            "its charge was settled for another reading",
+        ),
+    )
+    return next((why for holds, why in problems if not holds), "")
+
+
+def _charges_by_id(allowance_path: str | None) -> dict[str, dict[str, Any]]:
+    """Every approved charge by id, each with the digest its settlement recorded.
+
+    None, rather than a guess, when the file cannot be read.
+    """
+    try:
+        events = ReplayLedger(allowance_path or default_allowance_path()).load()["events"]
+        settled = {
+            str(e["charge"]): e.get("reading") for e in events if e.get("kind") == "settlement"
+        }
+        return {
+            str(e["id"]): {**e, "reading": settled.get(str(e["id"]))}
+            for e in events
+            if e.get("kind") == "charge"
+        }
+    except (ReplayLedgerError, KeyError):
+        return {}
+
+
+def _genesis(allowance_path: str | None) -> str:
+    """The anchor of the allowance in force, or empty when it cannot be read."""
+    try:
+        return ReplayLedger(allowance_path or default_allowance_path()).genesis()
+    except (ReplayLedgerError, KeyError):
+        return ""
+
+
+def attach_readings(  # noqa: C901 - one refusal per binding
     spec_path: str | os.PathLike[str],
     *,
     home: str,
@@ -683,9 +1181,16 @@ def attach_readings(
     digest_path: str,
     now: float,
     say: Any = print,
+    cohort: str = COHORT_CLAUDE,
+    allowance_path: str | None = None,
 ) -> int:
-    """Add readings after the marks, stamped with the committed digest they came after (T1)."""
-    paths = _paths(home)
+    """Add readings after the marks, stamped with the committed digest they came after (T1).
+
+    A Codex reading also carries a binding to the producer, the request, the exact inputs and the
+    approved charge it came from, each checked here. A late timestamp alone attaches nothing.
+    """
+    codex = cohort == COHORT_CODEX
+    paths = _paths(home, cohort)
     committed = committed_digest(repo_root, digest_path)
     if isinstance(committed, str):
         say(f"Refused: {committed}. Mark, commit the digest, then attach readings.")
@@ -698,6 +1203,10 @@ def attach_readings(
     cases = set(_marks(_load(paths["marks"])))
     raw = _load(str(spec_path))
     readings = raw.get("readings") if raw.get("v") == 1 else None
+    given = raw.get("bindings")
+    bindings: dict[str, Any] = given if isinstance(given, dict) else {}
+    by_id = {str(c.get("id")): c for c in _load(paths["cases"]).get("cases") or []}
+    charges = _charges_by_id(allowance_path) if codex else {}
     if not isinstance(readings, dict) or not readings:
         say(f"No readings in {spec_path}: it wants {{'v': 1, 'readings': {{case id: reading}}}}.")
         return 1
@@ -712,6 +1221,12 @@ def attach_readings(
             problems.append(f"{key}: the annotation store would refuse this reading")
         elif read_at is None or read_at <= committed.committed_at:
             problems.append(f"{key}: made before the marks digest was committed")
+        elif codex and (
+            why := _binding_problem(
+                by_id.get(key), bindings.get(key), charges, committed.committed_at, value
+            )
+        ):
+            problems.append(f"{key}: binding refused: {why}")
     for problem in problems:
         say(f"  {problem}")
     if problems:
@@ -725,6 +1240,15 @@ def attach_readings(
             "digest_commit": committed.commit,
             "attached_at": now,
             "readings": readings,
+            **(
+                {
+                    "cohort": COHORT_CODEX,
+                    "bindings": bindings,
+                    "allowance": _genesis(allowance_path),
+                }
+                if codex
+                else {}
+            ),
         },
     )
     say(f"Attached {len(readings)} readings under digest commit {committed.commit[:12]}.")
@@ -732,14 +1256,30 @@ def attach_readings(
 
 
 def _reading_for(
-    case: Mapping[str, Any], attached: Mapping[str, Any], committed: Committed, config: Any
+    case: Mapping[str, Any],
+    attached: Mapping[str, Any],
+    committed: Committed,
+    config: Any,
+    charges: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[Any, str]:
-    """The reading to score for a case, or a refusal token (T1 item 5), or neither."""
+    """The reading to score for a case, or a refusal token (T1 item 5), or neither.
+
+    A Codex case is read only through the binding it was attached under, checked again here
+    against the case as it now stands, so a changed case cannot borrow an old reading.
+    """
     if "reading" in case:
         return None, "reading-in-cases"
     value = (attached.get("readings") or {}).get(str(case["id"]))
     if value is None:
         return None, ""
+    if charges is not None and _binding_problem(
+        case,
+        (attached.get("bindings") or {}).get(str(case["id"])),
+        charges,
+        committed.committed_at,
+        value,
+    ):
+        return None, "unbound"
     if (
         attached.get("marks_digest") != committed.marks_digest
         or attached.get("digest_commit") != committed.commit
@@ -750,6 +1290,11 @@ def _reading_for(
         return None, "predates-marks"
     admitted = _admit(config, value)
     return (admitted, "") if admitted is not None else (None, "malformed")
+
+
+def _admitted(row: Mapping[str, Any] | None) -> bool:
+    """Whether an analysis row came from an admissible reading, scored to a level."""
+    return row is not None and row.get("level") is not None
 
 
 def _level_row(level: Any, marked: str) -> dict[str, Any]:
@@ -771,11 +1316,16 @@ def _score_case(
         unsettled_directions=int(case.get("unsettled_directions") or 0),
         cwd=str(case.get("cwd") or ""),
     )
-    live = levels.live_level(
-        evidence,
-        levels.Intent(
-            saved=intent.get("saved") is True, goal=str(intent.get("goal") or ""), lines=lines
-        ),
+    codex = case.get("harness") == "codex"
+    live = (
+        None
+        if codex
+        else levels.live_level(
+            evidence,
+            levels.Intent(
+                saved=intent.get("saved") is True, goal=str(intent.get("goal") or ""), lines=lines
+            ),
+        )
     )
     value, refusal = reading
     analysis: dict[str, Any] | None = None
@@ -785,9 +1335,9 @@ def _score_case(
         level = levels.analysis_level(value, evidence, outcome_lines=len(lines), lines=lines)
         analysis = _level_row(level, str(marked["analysis"]))
     return {
-        "kind": case["kind"] if case.get("kind") in KINDS else "other",
+        "kind": case["kind"] if case.get("kind") in (CODEX_KINDS if codex else KINDS) else "other",
         "marks": {"live": marked["live"], "analysis": marked.get("analysis")},
-        "live": _level_row(live, str(marked["live"])),
+        "live": None if live is None else _level_row(live, str(marked["live"])),
         "analysis": analysis,
     }
 
@@ -800,14 +1350,19 @@ def score(
     results_path: str,
     now: float,
     say: Any = print,
+    cohort: str = COHORT_CLAUDE,
+    allowance_path: str | None = None,
 ) -> int:
     """Both functions against the marks; the summary holds expectations and results only.
 
     Writes nothing when the marks do not hash to the committed digest, or when any
     case is unmarked (T3, T4): a level written for either can be read, then marked.
+    A Codex cohort scores the analysis function only, and passes only when every case it fixed
+    before any output holds an admissible reading and every kind of its matrix is covered by one.
     """
+    codex = cohort == COHORT_CODEX
     _config_mod, _project_context, levels = _runtime()
-    paths = _paths(home)
+    paths = _paths(home, cohort)
     body = _load(paths["cases"])
     cases = body.get("cases") if isinstance(body.get("cases"), list) else []
     if not cases:
@@ -826,14 +1381,25 @@ def score(
     if unmarked:
         say(f"Not scored: {len(unmarked)} cases are unmarked. Nothing was written.")
         return 1
+    if codex and (body.get("cohort") != COHORT_CODEX or _foreign(cases, "codex")):
+        say("Not scored: these are not Codex cases. Nothing was written.")
+        return 1
     attached = _load(paths["readings"])
     config = _config()
+    # A readings file attached under one allowance is not scored against another: a ledger moved
+    # aside and fixed again has a new anchor, so every Codex reading reads as unbound.
+    anchor = _genesis(allowance_path) if codex else ""
+    charges = (
+        (_charges_by_id(allowance_path) if anchor and attached.get("allowance") == anchor else {})
+        if codex
+        else None
+    )
     rows = {
         str(case["id"]): _score_case(
             levels,
             case,
             entries[str(case["id"])],
-            _reading_for(case, attached, committed, config),
+            _reading_for(case, attached, committed, config, charges),
         )
         for case in cases
     }
@@ -843,10 +1409,21 @@ def score(
         for source in ("live", "analysis")
         if row[source] is not None
     ]
+    by_key = {str(c["id"]): c for c in cases}
+    uncovered = (
+        sorted(
+            set(body.get("matrix") or ())
+            - {str(by_key[k]["kind"]) for k, r in rows.items() if _admitted(r["analysis"])}
+        )
+        if codex
+        else []
+    )
     if any(o.startswith("refused:") for o in outcomes):
         verdict = VERDICT_REFUSED
     elif FAILED in outcomes:
         verdict = VERDICT_FAILED
+    elif codex and (uncovered or any(r["analysis"] is None for r in rows.values())):
+        verdict = VERDICT_INCOMPLETE
     else:
         verdict = VERDICT_PASSED
     counts = {o: outcomes.count(o) for o in (MATCH, CAUTIOUS, FAILED)}
@@ -864,6 +1441,13 @@ def score(
         "counts": counts,
         "cases": rows,
     }
+    if codex:
+        summary["cohort"] = COHORT_CODEX
+        summary["allowance"] = {"genesis": anchor}
+        summary["coverage"] = {
+            "matrix": sorted(set(body.get("matrix") or ())),
+            "uncovered": uncovered,
+        }
     os.makedirs(os.path.dirname(results_path), exist_ok=True)
     with open(results_path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(summary, handle, indent=2, sort_keys=True)
@@ -928,7 +1512,11 @@ def _replay_row(case: Mapping[str, Any]) -> dict[str, Any]:
     live press withholds `idle-unknown`. The frozen case already fixes the
     moment it stands at, `captured_at`, and the owner marked against the
     record through exactly that moment; it is the stop this replay reads to.
+
+    A Codex case carries the row its own frozen lifecycle confirmed instead.
     """
+    if case.get("harness") == "codex":
+        return dict(case["row_snapshot"])
     return {
         "harness": "claude",
         "sid": str(case["sid"]),
@@ -938,6 +1526,8 @@ def _replay_row(case: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _replay_revision(case: Mapping[str, Any]) -> dict[str, Any]:
+    if case.get("harness") == "codex":
+        return dict(_marker().case_revision(dict(case)))
     intent = case.get("intent") or {}
     return {
         "n": 1,
@@ -958,8 +1548,40 @@ def _check_pairs(case: Mapping[str, Any], flag: str) -> frozenset[tuple[str, str
     return frozenset(pairs)
 
 
+def _marker() -> Any:
+    """`mark_abstention`, the owner of the frozen Codex case's shapes, loaded as `_runtime` is."""
+    _runtime()
+    import mark_abstention  # noqa: PLC0415
+
+    return mark_abstention
+
+
 def _inputs(case: Mapping[str, Any]) -> str:
-    """Everything `produce` reads of a case. Two cases with one digest are one call."""
+    """Everything `produce` reads of a case. Two cases with one digest are one call.
+
+    A Codex case binds more: its recovered messages and checks, the frozen lifecycle row and
+    tool output, the sealed source and parser identities and the prompt the production reader
+    built, so that no reading can stand for a case whose evidence or prompt has changed.
+    """
+    if case.get("harness") == "codex":
+        sources = case.get("sources") or {}
+        frozen = case.get("production_reading") or {}
+        return digest(
+            {
+                "harness": "codex",
+                "sid": case.get("sid"),
+                "captured_at": case.get("captured_at"),
+                "intent": case.get("intent"),
+                "producer_facts": case.get("producer_facts"),
+                "row": case.get("row_snapshot"),
+                "tool_output": case.get("tool_output"),
+                "parent": (sources.get("parent") or {}).get("sha256"),
+                "children": [c.get("sha256") for c in sources.get("children") or ()],
+                "selection": sources.get("selection_digest"),
+                "parser": case.get("parser"),
+                "prompt": frozen.get("prompt_digest"),
+            }
+        )
     return digest(
         {
             "sid": case.get("sid"),
@@ -971,15 +1593,23 @@ def _inputs(case: Mapping[str, Any]) -> str:
     )
 
 
-def _read_refusal(case: Mapping[str, Any] | None, marked: Mapping[str, Any] | None) -> str:
+def _read_refusal(
+    case: Mapping[str, Any] | None,
+    marked: Mapping[str, Any] | None,
+    cohort: str = COHORT_CLAUDE,
+) -> str:
     """Why a chosen case cannot be read at all, before any call; empty when it can."""
     intent = (case or {}).get("intent") or {}
+    codex = cohort == COHORT_CODEX
     checks = (
         (case is not None, "not a case in cases.json"),
         (marked is not None, "not marked"),
         ((marked or {}).get("analysis") in ANALYSIS_LEVELS, "has no analysis mark"),
-        ((case or {}).get("harness") == "claude", "is not a Claude Code case"),
-        (intent.get("saved") is True, "its intent was never saved, so no press reads it"),
+        (
+            (case or {}).get("harness") == ("codex" if codex else "claude"),
+            "is not a Codex case" if codex else "is not a Claude Code case",
+        ),
+        (_saved(case or {}), "its intent was never saved, so no press reads it"),
         (bool(intent.get("lines")), "its intent has no outcome line"),
         (_number((case or {}).get("captured_at")) is not None, "has no frozen clock"),
     )
@@ -987,10 +1617,18 @@ def _read_refusal(case: Mapping[str, Any] | None, marked: Mapping[str, Any] | No
 
 
 def _read_preflight(
-    home: str, repo_root: str, digest_path: str, chosen: list[str], say: Any
-) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]] | None:
-    """(every case, its marks) once the marks bind them; None, having said why, when they do not."""
-    paths = _paths(home)
+    home: str,
+    repo_root: str,
+    digest_path: str,
+    chosen: list[str] | None,
+    say: Any,
+    cohort: str = COHORT_CLAUDE,
+) -> tuple[list[str], dict[str, dict[str, Any]], dict[str, dict[str, Any]]] | None:
+    """(chosen, every case, its marks) once the marks bind them; None, having said why, if not.
+
+    No case chosen means the Claude cohort's named five, or every case of a Codex cohort.
+    """
+    paths = _paths(home, cohort)
     body = _load(paths["cases"])
     committed = committed_digest(repo_root, digest_path)
     saved = _load(paths["marks"])
@@ -1010,14 +1648,17 @@ def _read_preflight(
         return None
     cases = {str(c.get("id")): c for c in body["cases"] if isinstance(c, dict)}
     entries = _marks(saved)
-    problems = [(key, _read_refusal(cases.get(key), entries.get(key))) for key in chosen]
+    if chosen is None:
+        chosen = list(cases) if cohort == COHORT_CODEX else list(DEFAULT_READ)
+    chosen = list(dict.fromkeys(chosen))
+    problems = [(key, _read_refusal(cases.get(key), entries.get(key), cohort)) for key in chosen]
     problems = [(key, why) for key, why in problems if why]
     for key, why in problems:
         say(f"  {key}: {why}")
     if problems:
         say("Refused. Nothing was read and nothing was charged.")
         return None
-    return cases, entries
+    return chosen, cases, entries
 
 
 def _budget_refusal(answer: Mapping[str, Any], calls: int, *, granted: bool) -> str:
@@ -1108,6 +1749,9 @@ def _questions(case: Mapping[str, Any]) -> list[str]:
     """The keys a reply answers: the Goal when the producer asks it, and each outcome line."""
     reading, _policy, _route = _read_runtime()
     intent = case.get("intent") or {}
+    frozen = case.get("production_reading")
+    if case.get("harness") == "codex" and isinstance(frozen, dict):
+        return [str(name) for name in frozen.get("constraints") or ()]
     asked = [reading.CONSTRAINT_GOAL] if reading.asks_goal(str(intent.get("goal") or "")) else []
     return asked + [reading.outcome_line(k) for k in range(1, len(intent.get("lines") or ()) + 1)]
 
@@ -1117,12 +1761,31 @@ def _produce(
 ) -> tuple[Any, str, bool]:
     """One producer call on the frozen case, as the board's press composes it."""
     reading, reading_policy, reading_route = _read_runtime()
+    codex = case.get("harness") == "codex"
+    if codex:
+        # Exactly as the production capture asked at freeze time (`_production_capture`), and the
+        # recovered words are checked against it: the prompt is the one the producer qualification
+        # was held to, never a levels-only rewording of it.
+        marker = _marker()
+        facts = list(case.get("producer_facts") or ())
+        extra: dict[str, Any] = {
+            "read_agent_words": True,
+            "admit_idle": True,
+            "person_source_lookup": marker.native_case_person_lookup(dict(case), config=config),
+            "final_source_lookup": marker.native_case_final_lookup(dict(case), config=config),
+        }
+    else:
+        facts = list(case.get("facts") or ())
+        # Not the idle admission of 2026-10-20: the owner marked these cases under the earlier
+        # rule, which withheld an idle session with no recorded finish, and re-scoping the key
+        # is the owner's decision, not this replay's.
+        extra = {"admit_idle": False}
     try:
         produced: tuple[Any, str, bool] = reading.produce(
             config,
             _replay_row(case),
             [_replay_revision(case)],
-            list(case.get("facts") or ()),
+            facts,
             now=now,
             stamp_text=f"{reading_route.MODELS[READ_PROVIDER]} · replayed "
             f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(now))}",
@@ -1130,17 +1793,14 @@ def _produce(
             tool_output=tool_output,
             read_lines=True,
             admit_turn_stop=True,
-            # Not the idle admission of 2026-10-20: the owner marked these cases under the earlier
-            # rule, which withheld an idle session with no recorded finish, and re-scoping the key
-            # is the owner's decision, not this replay's.
-            admit_idle=False,
+            **extra,
         )
     except reading_policy.RefusedError as error:
         return None, f"ledger:{error.answer['reason']}", False
     return produced
 
 
-def read_cases(  # noqa: PLR0913 - one keyword per thing a replay is bound to
+def read_cases(  # noqa: C901, PLR0911, PLR0912, PLR0913 - one keyword per thing bound
     *,
     home: str,
     repo_root: str,
@@ -1152,8 +1812,16 @@ def read_cases(  # noqa: PLR0913 - one keyword per thing a replay is bound to
     dry_run: bool = False,
     clock: Any = time.time,
     say: Any = print,
+    cohort: str = COHORT_CLAUDE,
+    approve: Any = None,
+    allowance_path: str | None = None,
 ) -> int:
     """Replay each chosen case through `reading.produce`, charged on the reading home's ledger.
+
+    A Codex cohort needs more before the first call: a fixed total allowance on its own ledger,
+    room left in it for every call this run makes, and the owner's approval of each call,
+    shown with the digest of the exact request. Reading consent, the tool-output grant and the
+    rolling budget still apply.
 
     Everything that can refuse does so before the first call: the committed
     marks, the cases they bind, each case's mark and intent, the route, the
@@ -1162,20 +1830,40 @@ def read_cases(  # noqa: PLR0913 - one keyword per thing a replay is bound to
     stands in for it.
     """
     _reading, reading_policy, reading_route = _read_runtime()
-    chosen = list(dict.fromkeys(case_ids or DEFAULT_READ))
-    bound = _read_preflight(home, repo_root, digest_path, chosen, say)
+    codex = cohort == COHORT_CODEX
+    bound = _read_preflight(home, repo_root, digest_path, case_ids, say, cohort)
     if bound is None:
         return 1
-    every, marks = bound
+    chosen, every, marks = bound
     cases = {key: every[key] for key in chosen}
+    ledger = ReplayLedger(
+        allowance_path if allowance_path is not None or not codex else default_allowance_path()
+    )
+    if codex and not dry_run:
+        try:
+            ledger.load()
+        except ReplayLedgerError as error:
+            say(f"Refused: {error}. Nothing was read and nothing was charged.")
+            return 1
+        if approve is None:
+            say(
+                "Refused: a Codex replay needs the owner's approval of each call, "
+                "and none can be given here."
+            )
+            say("Nothing was read and nothing was charged.")
+            return 1
     where = reading_route.destination(READ_PROVIDER) if destination is None else destination
     if where != reading_route.VENDORS[READ_PROVIDER]:
         say(f"Refused: the reading call would reach {where or 'an unnamed host'}, not OpenAI.")
         return 1
-    paths = _paths(home)
+    paths = _paths(home, cohort)
     held = dict(_load(paths["replayed"]).get("readings") or {})
+    bindings: dict[str, Any] | None = (
+        dict(_load(paths["replayed"]).get("bindings") or {}) if codex else None
+    )
     record = dict(_load(paths["replay"]).get("cases") or {})
-    plan = _plan(chosen, every, held, record, reading_config, clock, say)
+    spent = ledger.charged_inputs() if codex and not dry_run else set()
+    plan = _plan(chosen, every, held, record, reading_config, clock, say, spent)
     # Covered only by an Allow given for where these calls go (owner, 2026-10-02).
     answer = reading_policy.status(
         reading_config, now=clock(), provider=READ_PROVIDER, destinations={READ_PROVIDER: where}
@@ -1190,14 +1878,22 @@ def read_cases(  # noqa: PLR0913 - one keyword per thing a replay is bound to
         f"tool output to {where} {'granted' if press.granted else 'not granted'}."
     )
     refusal = _budget_refusal(answer, len(plan.groups), granted=press.granted)
+    if not refusal and codex and not dry_run and len(plan.groups) > ledger.remaining():
+        refusal = (
+            f"the replay allowance holds {ledger.remaining()} calls, and this needs "
+            f"{len(plan.groups)}"
+        )
     if refusal:
         say(f"Refused: {refusal}. Nothing was read and nothing was charged.")
         return 1
     if dry_run:
         return _dry_run(press, cases, marks, plan.groups, clock, say)
-    files = _Files(paths, held, record)
+    files = _Files(paths, held, record, bindings)
+    gate = _Gate(ledger, approve) if codex else None
     for key, sibling in plan.reused.items():
         held[key] = held[sibling]
+        if bindings is not None and sibling in bindings:
+            bindings[key] = bindings[sibling]
         record[key] = {
             "status": STATUS_READ,
             "withheld": "",
@@ -1209,7 +1905,7 @@ def read_cases(  # noqa: PLR0913 - one keyword per thing a replay is bound to
     if plan.reused:
         files.save()
     for keys in plan.groups.values():
-        _read_group(press, cases, keys, model, clock, files, say)
+        _read_group(press, cases, keys, model, clock, files, say, gate)
     files.save()
     if held:
         say(f"Readings for --attach-readings: {paths['replayed']}")
@@ -1257,8 +1953,12 @@ def _plan(
     config: Any,
     clock: Any,
     say: Any,
+    spent: set[str] | None = None,
 ) -> _Plan:
     """The calls to make: one per distinct producer input that holds no reading yet.
+
+    `spent` is a Codex cohort's own ledger: inputs it has charged are never read again, whatever
+    the local record says, because a failed call there is not a call to retry.
 
     A case already read is kept. A case whose sibling, with identical inputs,
     holds a reading takes that reading, so splitting siblings across two runs
@@ -1280,6 +1980,8 @@ def _plan(
             say(f"  {key}: takes {by_inputs[inputs]}'s reading, which read the same inputs")
         elif inputs in charged:
             say(f"  {key}: charged by a run that stopped before its reading; not read again")
+        elif inputs in (spent or ()):
+            say(f"  {key}: its call was charged already, and a charged call is never charged again")
         else:
             plan.groups.setdefault(inputs, []).append(key)
     return plan
@@ -1288,15 +1990,25 @@ def _plan(
 class _Files:
     """Both output files, written together after every change so a stop loses nothing."""
 
-    def __init__(self, paths: Mapping[str, str], held: dict[str, Any], record: dict[str, Any]):
+    def __init__(
+        self,
+        paths: Mapping[str, str],
+        held: dict[str, Any],
+        record: dict[str, Any],
+        bindings: dict[str, Any] | None = None,
+    ):
         self.paths = paths
         self.held = held
         self.record = record
+        self.bindings = bindings
 
     def save(self) -> None:
         _write(self.paths["replay"], {"v": 1, "cases": self.record})
         if self.held:
-            _write(self.paths["replayed"], {"v": 1, "readings": self.held})
+            body: dict[str, Any] = {"v": 1, "readings": self.held}
+            if self.bindings is not None:
+                body["bindings"] = self.bindings
+            _write(self.paths["replayed"], body)
 
 
 class _Press:
@@ -1314,6 +2026,17 @@ class _Press:
         check's output is sent: its line, result and times are.
         """
         reading, _policy, reading_route = _read_runtime()
+        if case.get("harness") == "codex":
+            tails, changed, incomplete = _marker().case_checks(
+                {"v": _marker().FORMAT_CODEX}, dict(case)
+            )
+            return reading.ToolOutput(
+                destination=self.where,
+                label=reading_route.LABELS[READ_PROVIDER],
+                tails=tails or {},
+                changed_after=changed,
+                read_incomplete=incomplete,
+            )
         return reading.ToolOutput(
             destination=self.where,
             label=reading_route.LABELS[READ_PROVIDER],
@@ -1323,7 +2046,32 @@ class _Press:
         )
 
 
-def _read_group(
+class _Gate:
+    """What a Codex call needs besides the reading home: the owner's approval and the allowance."""
+
+    def __init__(self, ledger: ReplayLedger, approve: Any) -> None:
+        self.ledger = ledger
+        self.approve = approve
+
+
+class _Pinned:
+    """The model the owner approved a request for: it sends that request or nothing."""
+
+    def __init__(self, model: Any, request: str) -> None:
+        self.model = model
+        self.request = request
+        self.unavailable_reason = getattr(model, "unavailable_reason", "model-unavailable")
+
+    def available(self) -> bool:
+        return bool(self.model.available())
+
+    def __call__(self, prompt: str, **kwargs: Any) -> tuple[str, str]:
+        if hashlib.sha256(prompt.encode("utf-8")).hexdigest() != self.request:
+            return "", "cancelled"
+        return self.model(prompt, **kwargs)  # type: ignore[no-any-return]
+
+
+def _read_group(  # noqa: C901 - the gate adds one stage to each group
     press: _Press,
     cases: Mapping[str, Mapping[str, Any]],
     keys: list[str],
@@ -1331,11 +2079,38 @@ def _read_group(
     clock: Any,
     files: _Files,
     say: Any,
+    gate: _Gate | None = None,
 ) -> None:
-    """One producer call for cases that share every input, charged once at the model seam."""
+    """One producer call for cases that share every input, charged once at the model seam.
+
+    With a `gate`, the call is prepared locally first (which sends nothing), the owner approves
+    that one request by its digest, and the charge is recorded on the allowance before launch.
+    An interruption after the charge leaves it unsettled and charged.
+    """
     reading, reading_policy, _route = _read_runtime()
     charged: list[bool] = []
     job = f"levels-replay:{keys[0]}:{clock():.6f}"
+    case = cases[keys[0]]
+    inputs, request, approval = _inputs(case), "", ""
+    charge: list[str] = []
+    if gate is not None:
+        spy = _Spy()
+        _produce(press.config, case, spy, press.tool_output(case), clock())
+        if spy.prompts:
+            request = hashlib.sha256(spy.prompts[0].encode("utf-8")).hexdigest()
+            approval = uuid.uuid4().hex
+            asked = {
+                "case": keys[0],
+                "cases": list(keys),
+                "request_digest": request,
+                "inputs": inputs,
+                "remaining": gate.ledger.remaining(),
+                "provider": READ_PROVIDER,
+                "destination": press.where,
+            }
+            if not gate.approve(asked):
+                say(f"  {keys[0]}: not approved; nothing was sent and nothing was charged")
+                return
 
     def mark(status: str, **extra: Any) -> None:
         at = clock()
@@ -1344,6 +2119,12 @@ def _read_group(
         files.save()
 
     def before_reserve() -> str:
+        if gate is not None and request:
+            charge.append(
+                gate.ledger.charge(
+                    case=keys[0], inputs=inputs, request=request, approval=approval, now=clock()
+                )
+            )
         mark(STATUS_PENDING, job=job, started_at=clock())
         return job
 
@@ -1351,22 +2132,42 @@ def _read_group(
         charged.append(True)
         mark(STATUS_CHARGED, job=job, charged=True)
 
+    inner = model if model is not None else reading.CodexReadingModel(press.config)
     guarded = reading_policy.GuardedModel(
         press.config,
-        model if model is not None else reading.CodexReadingModel(press.config),
+        _Pinned(inner, request) if request else inner,
         clock,
         provider=READ_PROVIDER,
         destination=press.where,
         on_reserved=on_reserved,
         before_reserve=before_reserve,
     )
-    case = cases[keys[0]]
-    assessment, why, spent = _produce(press.config, case, guarded, press.tool_output(case), clock())
+    try:
+        assessment, why, spent = _produce(
+            press.config, case, guarded, press.tool_output(case), clock()
+        )
+    except ReplayLedgerError:
+        assessment, why, spent = None, "ledger:replay-allowance", False
     if assessment is not None and _admit(press.config, assessment) is None:
         assessment, why = None, "store-refused"
+    if charge and gate is not None:
+        gate.ledger.settle(
+            charge[0],
+            "usable" if assessment is not None else "unusable",
+            now=clock(),
+            reading=reading_digest(assessment) if assessment is not None else None,
+        )
     for key in keys:
         if assessment is not None:
             files.held[key] = assessment
+            if files.bindings is not None and charge:
+                files.bindings[key] = {
+                    "producer": _producer(case),
+                    "request": request,
+                    "inputs": inputs,
+                    "charge": charge[0],
+                    "reading": reading_digest(assessment),
+                }
         files.record[key] = {
             "status": STATUS_READ if assessment is not None else STATUS_REFUSED,
             "withheld": why,
@@ -1461,21 +2262,34 @@ def _dry_run(
     return 0
 
 
-def report(*, home: str, say: Any = print) -> int:
-    paths = _paths(home)
+def report(*, home: str, say: Any = print, cohort: str = COHORT_CLAUDE) -> int:
+    paths = _paths(home, cohort)
     cases = _load(paths["cases"]).get("cases") or []
     if not cases:
         say("No cases built yet.")
         return 1
     entries = _marks(_load(paths["marks"]))
     say(f"{sum(1 for c in cases if c.get('id') in entries)} of {len(cases)} marked.")
-    for source in ("live", "analysis"):
+    for source in ("analysis",) if cohort == COHORT_CODEX else ("live", "analysis"):
         spread: dict[str, int] = {}
         for value in entries.values():
             if value.get(source):
                 spread[value[source]] = spread.get(value[source], 0) + 1
         say(f"  {source:9} " + ", ".join(f"{LABELS[k]} {n}" for k, n in sorted(spread.items())))
     return 0
+
+
+def _ask_approval(call: Mapping[str, Any]) -> bool:
+    """The owner's yes or no to one call, shown the alias, request digest and allowance left."""
+    print(
+        f"\n  Replay call: case {call['case']} to {call['destination']}\n"
+        f"    request digest {call['request_digest']}\n"
+        f"    allowance left {call['remaining']}; this call is charged once and never given back."
+    )
+    try:
+        return input("    Approve this one call? [y/N] ").strip().lower() in {"y", "yes"}
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911 - one return per mode
@@ -1498,11 +2312,45 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911 - one return pe
     parser.add_argument(
         "--dry-run", action="store_true", help="with --read: show what would be sent; no call"
     )
+    parser.add_argument(
+        "--cohort",
+        choices=(COHORT_CLAUDE, COHORT_CODEX),
+        default=COHORT_CLAUDE,
+        help="codex: the separate analysis-only Codex cohort, with its own files",
+    )
+    parser.add_argument(
+        "--approve-replay-allowance",
+        type=int,
+        metavar="N",
+        help="with --cohort codex: fix the total replay readings to be charged (0-12), once",
+    )
     args = parser.parse_args(argv)
-    chosen = (args.build, args.report, args.attach_readings, args.score, args.read)
+    cohort = args.cohort
+    codex = cohort == COHORT_CODEX
+    digest_path, results_path = (
+        (CODEX_DIGEST_PATH, CODEX_RESULTS_PATH) if codex else (DIGEST_PATH, RESULTS_PATH)
+    )
+    chosen = (
+        args.build,
+        args.report,
+        args.attach_readings,
+        args.score,
+        args.read,
+        args.approve_replay_allowance is not None,
+    )
     if sum(map(bool, chosen)) > 1:
-        print("Run one of --build, --report, --attach-readings, --read and --score at a time.")
+        print(
+            "Run one of --build, --report, --attach-readings, --read, --score and "
+            "--approve-replay-allowance at a time."
+        )
         return 2
+    if args.approve_replay_allowance is not None:
+        if not codex:
+            print("--approve-replay-allowance belongs to --cohort codex.")
+            return 2
+        return approve_replay_allowance(
+            default_allowance_path(), args.approve_replay_allowance, now=time.time()
+        )
     if args.read:
         if not args.reading_home:
             print("--read needs --reading-home: the home the reading board ran on.")
@@ -1510,32 +2358,42 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911 - one return pe
         return read_cases(
             home=HOME,
             repo_root=_ROOT,
-            digest_path=DIGEST_PATH,
+            digest_path=digest_path,
             reading_config=reading_config(os.path.expanduser(args.reading_home)),
             case_ids=args.case,
             dry_run=args.dry_run,
+            cohort=cohort,
+            approve=_ask_approval if codex else None,
         )
     if args.build:
-        return build(args.build, home=HOME, repo_root=_ROOT, say=print)
+        return build(args.build, home=HOME, repo_root=_ROOT, say=print, cohort=cohort)
     if args.report:
-        return report(home=HOME)
+        return report(home=HOME, cohort=cohort)
     if args.attach_readings:
         return attach_readings(
             args.attach_readings,
             home=HOME,
             repo_root=_ROOT,
-            digest_path=DIGEST_PATH,
+            digest_path=digest_path,
             now=time.time(),
+            cohort=cohort,
         )
     if args.score:
         return score(
             home=HOME,
             repo_root=_ROOT,
-            digest_path=DIGEST_PATH,
-            results_path=RESULTS_PATH,
+            digest_path=digest_path,
+            results_path=results_path,
             now=time.time(),
+            cohort=cohort,
         )
-    return mark(home=HOME, digest_path=DIGEST_PATH, results_path=RESULTS_PATH, repo_root=_ROOT)
+    return mark(
+        home=HOME,
+        digest_path=digest_path,
+        results_path=results_path,
+        repo_root=_ROOT,
+        cohort=cohort,
+    )
 
 
 if __name__ == "__main__":

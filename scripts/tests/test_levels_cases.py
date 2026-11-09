@@ -11,14 +11,16 @@ import datetime as dt
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import types
 import unittest
+import unittest.mock
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -1127,6 +1129,794 @@ class AScoredCaseReadsEveryLineWholeTest(unittest.TestCase):
         )
         self.assertEqual(("first line", "it is reported"), tuple(seen["lines"]))
         self.assertEqual(2, seen["outcome_lines"])
+
+
+# ------------------------------------------------------------------ the Codex cohort
+
+
+class CodexCohortTestCase(unittest.TestCase):
+    """A Codex analysis cohort, built from rollouts the committed Codex capture shapes describe.
+
+    Nothing here reaches a model, a real session store or a ledger outside the temporary home.
+    """
+
+    def setUp(self) -> None:
+        if TYPE_CHECKING:
+            from tests import codex_source_support as support  # noqa: PLC0415
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import codex_source_support as support  # noqa: PLC0415
+
+        self.support = support
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.sessions = self.root / "codex" / "sessions"
+        self.path = support.rollout(self.sessions)
+        env = {
+            "HOME": str(self.root),
+            "COMPASS_HOME": str(self.root / "packet"),
+            "CODEX_HOME": str(self.root / "codex"),
+        }
+        patched = unittest.mock.patch.dict(os.environ, env)
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.home = self.root / "packet"
+        self.repo = self.root / "repo"
+        (self.repo / "docs" / "drift-levels").mkdir(parents=True)
+        _git(self.repo, "init", "-q")
+        (self.repo / "README.md").write_text("repo\n", encoding="utf-8")
+        _git(self.repo, "add", "README.md")
+        _git(self.repo, "commit", "-q", "-m", "init")
+        self.digest_path = self.repo / "docs" / "drift-levels" / "codex-marks-digest.json"
+        self.results_path = self.repo / "docs" / "drift-levels" / "codex-results.json"
+        self.allowance_path = self.root / "cargento" / "codex-levels-replay-spend.json"
+        self.out: list[str] = []
+
+    def say(self, *args: Any, **_kwargs: Any) -> None:
+        self.out.append(" ".join(map(str, args)))
+
+    def entry(
+        self, kind: str = "admissible-support", *, line: str = "", **over: Any
+    ) -> dict[str, Any]:
+        body = self.support.entry(self.sessions, self.path)
+        body["intent"] = {
+            **body["intent"],
+            "lines": [line or "The example passes its check."],
+        }
+        body.update(kind=kind, unsettled_directions=0)
+        body.update(over)
+        return body
+
+    def spec(self, *cases: dict[str, Any], matrix: list[str] | None = None) -> Path:
+        path = self.home / "drift-levels-codex" / "spec.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        kinds = matrix if matrix is not None else sorted({str(c["kind"]) for c in cases})
+        body = {"v": 1, "cohort": "codex", "matrix": kinds, "cases": list(cases)}
+        path.write_text(json.dumps(body), encoding="utf-8")
+        return path
+
+    def build(self, *cases: dict[str, Any], matrix: list[str] | None = None) -> int:
+        return levels_cases.build(
+            self.spec(*cases, matrix=matrix),
+            home=str(self.home),
+            repo_root=str(self.repo),
+            say=self.say,
+            cohort="codex",
+        )
+
+    def files(self) -> dict[str, str]:
+        return levels_cases._paths(str(self.home), "codex")
+
+    def cases(self) -> list[dict[str, Any]]:
+        return list(json.loads(Path(self.files()["cases"]).read_text(encoding="utf-8"))["cases"])
+
+    def mark(self, answers: Answers) -> int:
+        return levels_cases.mark(
+            home=str(self.home),
+            digest_path=str(self.digest_path),
+            results_path=str(self.results_path),
+            repo_root=str(self.repo),
+            ask=answers,
+            say=self.say,
+            cohort="codex",
+        )
+
+    def commit_digest(self) -> None:
+        _git(self.repo, "add", str(self.digest_path))
+        _git(self.repo, "commit", "-q", "-m", "codex marks digest")
+
+    def marked(self, *replies: str, **entry: Any) -> list[str]:
+        """Build and mark Codex cases (one per reply), commit the digest; their ids."""
+        kinds = list(entry.pop("kinds", ["admissible-support"]))
+        entries = [
+            self.entry(k, line=f"The example passes check {n}.") for n, k in enumerate(kinds)
+        ]
+        self.assertEqual(self.build(*entries), 0, self.out)
+        self.assertEqual(self.mark(Answers(*replies)), 0, self.out)
+        self.commit_digest()
+        return [str(c["id"]) for c in self.cases()]
+
+
+class CodexBuildTest(CodexCohortTestCase):
+    def test_a_person_never_confuses_a_claude_case_with_a_codex_case_of_one_session(self) -> None:
+        claude = levels_cases.case_id("sid", None, "other")
+        self.assertEqual(claude, hashlib.sha256(b"claude|sid|None|other").hexdigest()[:16])
+        self.assertNotEqual(claude, levels_cases.case_id("sid", None, "other", "codex"))
+
+    def test_a_person_freezes_a_codex_case_with_its_checks_and_sealed_sources(self) -> None:
+        self.assertEqual(self.build(self.entry()), 0, self.out)
+        (case,) = self.cases()
+        self.assertEqual(case["harness"], "codex")
+        self.assertEqual(
+            case["id"],
+            levels_cases.case_id(case["sid"], case["captured_at"], case["kind"], "codex"),
+        )
+        self.assertEqual([f["subject"] for f in case["facts"]], ["check"])
+        self.assertEqual(len(case["sources"]["parent"]["sha256"]), 64)
+        self.assertEqual(case["intent"]["lines"], ["The example passes its check."])
+        self.assertEqual(case["unsettled_directions"], 0)
+
+    def test_a_person_keeps_no_session_words_outside_the_private_packet(self) -> None:
+        self.assertEqual(self.build(self.entry()), 0, self.out)
+        self.assertIn("codex", self.files()["dir"])
+        self.assertNotEqual(self.files()["dir"], levels_cases._paths(str(self.home))["dir"])
+        self.assertTrue(self.files()["cases"].startswith(str(self.home)))
+
+    def test_a_person_must_account_for_every_child_rollout(self) -> None:
+        child = self.support.rollout(self.sessions, sid=self.support.CHILD, parent=self.support.SID)
+        self.assertEqual(self.build(self.entry()), 1)
+        self.assertFalse(Path(self.files()["cases"]).exists())
+        self.assertEqual(self.build(self.entry(children=[str(child)])), 0, self.out)
+        self.assertEqual(len(self.cases()[0]["sources"]["children"]), 1)
+
+    def test_a_person_cannot_build_a_codex_cohort_from_claude_shaped_entries(self) -> None:
+        claude = {
+            "kind": "failed-check",
+            "transcript": str(self.path),
+            "until": None,
+            "intent": {"saved": True, "goal": "g", "lines": ["l"]},
+            "unsettled_directions": 0,
+        }
+        self.assertEqual(self.build(claude), 1)
+        self.assertFalse(Path(self.files()["cases"]).exists())
+
+    def test_a_person_cannot_build_a_claude_cohort_from_a_codex_entry(self) -> None:
+        path = self.home / "drift-levels" / "spec.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"v": 1, "cases": [self.entry()]}), encoding="utf-8")
+        self.assertEqual(
+            levels_cases.build(path, home=str(self.home), repo_root=str(self.repo), say=self.say), 1
+        )
+
+    def test_a_codex_spec_missing_a_hand_written_count_is_refused_not_defaulted(self) -> None:
+        entry = self.entry()
+        del entry["unsettled_directions"]
+        self.assertEqual(self.build(entry), 1)
+        self.assertFalse(Path(self.files()["cases"]).exists())
+
+    def test_a_kind_outside_the_codex_matrix_is_refused(self) -> None:
+        self.assertEqual(self.build(self.entry("failed-check")), 1)
+
+    def test_a_matrix_with_an_uncovered_kind_is_refused_before_anything_is_written(self) -> None:
+        self.assertEqual(self.build(self.entry(), matrix=["admissible-support", "stale-pass"]), 1)
+        self.assertFalse(Path(self.files()["cases"]).exists())
+
+    def test_a_cohort_is_at_most_twelve_cases(self) -> None:
+        many = [
+            self.entry(line=f"The example passes check {n}.", captured_at=self.support.AT + 20 + n)
+            for n in range(13)
+        ]
+        self.assertEqual(self.build(*many, matrix=["admissible-support"]), 1)
+
+    def test_a_reading_in_the_spec_is_refused_because_marks_come_first(self) -> None:
+        self.assertEqual(self.build(self.entry(reading={"x": 1})), 1)
+
+
+class CodexMarkTest(CodexCohortTestCase):
+    def test_a_codex_case_is_marked_for_analysis_only_and_the_cohort_is_named(self) -> None:
+        answers = Answers("n")
+        self.build(self.entry())
+        self.assertEqual(self.mark(answers), 0, self.out)
+        self.assertEqual(len(answers.prompts), 1)
+        self.assertIn("ANALYSIS", answers.prompts[0])
+        self.assertNotIn("LIVE", answers.prompts[0])
+        marks = json.loads(Path(self.files()["marks"]).read_text(encoding="utf-8"))
+        self.assertEqual(marks["cohort"], "codex")
+        (value,) = marks["marks"].values()
+        self.assertEqual(value, {"live": None, "analysis": "none_or_low"})
+
+    def test_the_codex_digest_binds_the_matrix_and_the_required_cases_before_any_output(
+        self,
+    ) -> None:
+        (case_id,) = self.marked("n")
+        digest = json.loads(self.digest_path.read_text(encoding="utf-8"))
+        self.assertEqual(digest["cohort"], "codex")
+        self.assertEqual(digest["required_analysis"], [case_id])
+        self.assertEqual(digest["matrix"], ["admissible-support"])
+        self.assertNotIn(self.support.SID, self.digest_path.read_text(encoding="utf-8"))
+
+    def test_the_marking_screen_shows_no_model_words_and_no_live_estimate(self) -> None:
+        self.build(self.entry())
+        self.mark(Answers("n"))
+        shown = "\n".join(self.out)
+        self.assertNotIn("LIVE ESTIMATE", shown)
+        self.assertNotIn(self.support.SID, shown)
+
+    def test_a_codex_cohort_cannot_be_marked_after_its_result_exists(self) -> None:
+        self.marked("n")
+        self.results_path.write_text("{}\n", encoding="utf-8")
+        self.assertEqual(self.mark(Answers("n")), 1)
+        self.assertTrue(any("closed" in line for line in self.out))
+
+
+class CodexReplayTestCase(CodexCohortTestCase):
+    """`--read --cohort codex`: replays charged to the reading home AND a fixed allowance."""
+
+    ALLOWANCE = 2
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.reading_home = self.root / "reading-home"
+        self.config = levels_cases.reading_config(str(self.reading_home))
+        self.policy = _runtime_module("reading_policy")
+        self.policy.set_consent(
+            self.config,
+            True,
+            now=time.time(),
+            provider="codex",
+            tool_output="OpenAI",
+            destination="OpenAI",
+        )
+        self.model = FakeModel()
+        self.asked: list[dict[str, Any]] = []
+        self.answer = True
+
+    def approve(self, call: dict[str, Any]) -> bool:
+        self.asked.append(call)
+        return self.answer
+
+    def allow(self, total: int | None = None) -> int:
+        return levels_cases.approve_replay_allowance(
+            self.allowance_path, self.ALLOWANCE if total is None else total, now=1.0, say=self.say
+        )
+
+    def used(self) -> int:
+        return int(self.policy.status(self.config, now=time.time(), provider="codex")["used"])
+
+    def read(self, *ids: str, approve: Any = "default", dry_run: bool = False) -> int:
+        return levels_cases.read_cases(
+            home=str(self.home),
+            repo_root=str(self.repo),
+            digest_path=str(self.digest_path),
+            reading_config=self.config,
+            case_ids=list(ids) or None,
+            model=self.model,
+            destination="OpenAI",
+            dry_run=dry_run,
+            clock=lambda: time.time() + 60,
+            say=self.say,
+            cohort="codex",
+            approve=self.approve if approve == "default" else approve,
+            allowance_path=str(self.allowance_path),
+        )
+
+    def ledger(self) -> dict[str, Any]:
+        return dict(json.loads(self.allowance_path.read_text(encoding="utf-8")))
+
+    def charges(self) -> list[dict[str, Any]]:
+        return [e for e in self.ledger()["events"] if e["kind"] == "charge"]
+
+    def replayed(self) -> dict[str, Any]:
+        return dict(json.loads(Path(self.files()["replayed"]).read_text(encoding="utf-8")))
+
+    def two_cases(self) -> list[str]:
+        return self.marked("n", "n", kinds=["admissible-support", "stale-pass"])
+
+    def attach_replayed(self) -> int:
+        return levels_cases.attach_readings(
+            self.files()["replayed"],
+            home=str(self.home),
+            repo_root=str(self.repo),
+            digest_path=str(self.digest_path),
+            now=time.time() + 120,
+            say=self.say,
+            cohort="codex",
+            allowance_path=str(self.allowance_path),
+        )
+
+    def score(self) -> int:
+        return levels_cases.score(
+            home=str(self.home),
+            repo_root=str(self.repo),
+            digest_path=str(self.digest_path),
+            results_path=str(self.results_path),
+            now=time.time() + 300,
+            say=self.say,
+            cohort="codex",
+            allowance_path=str(self.allowance_path),
+        )
+
+    def results(self) -> dict[str, Any]:
+        return dict(json.loads(self.results_path.read_text(encoding="utf-8")))
+
+
+class CodexAllowanceTest(CodexReplayTestCase):
+    def test_a_person_fixes_the_total_replay_allowance_once(self) -> None:
+        self.assertEqual(self.allow(2), 0, self.out)
+        self.assertEqual(self.ledger()["allowance"], 2)
+        self.assertEqual(self.allow(3), 1)
+        self.assertEqual(self.ledger()["allowance"], 2)
+
+    def test_the_allowance_is_between_zero_and_twelve(self) -> None:
+        self.assertEqual(self.allow(13), 1)
+        self.assertEqual(self.allow(-1), 1)
+        self.assertFalse(self.allowance_path.exists())
+
+    def test_the_ledger_itself_refuses_a_charge_past_the_total(self) -> None:
+        self.allow(1)
+        ledger = levels_cases.ReplayLedger(str(self.allowance_path))
+        ledger.charge(case="a", inputs="i1", request="r", approval="p1", now=2.0)
+        with self.assertRaisesRegex(levels_cases.ReplayLedgerError, "spent"):
+            ledger.charge(case="b", inputs="i2", request="r", approval="p2", now=3.0)
+
+    def test_the_ledger_itself_never_charges_the_same_inputs_or_approval_twice(self) -> None:
+        self.allow(3)
+        ledger = levels_cases.ReplayLedger(str(self.allowance_path))
+        ledger.charge(case="a", inputs="i1", request="r", approval="p1", now=2.0)
+        with self.assertRaisesRegex(levels_cases.ReplayLedgerError, "charged already"):
+            ledger.charge(case="a", inputs="i1", request="r", approval="p2", now=3.0)
+        with self.assertRaisesRegex(levels_cases.ReplayLedgerError, "approval"):
+            ledger.charge(case="b", inputs="i2", request="r", approval="p1", now=3.0)
+        self.assertEqual(ledger.remaining(), 2)
+
+    def test_a_settlement_never_gives_a_charge_back(self) -> None:
+        self.allow(1)
+        ledger = levels_cases.ReplayLedger(str(self.allowance_path))
+        charge = ledger.charge(case="a", inputs="i1", request="r", approval="p1", now=2.0)
+        ledger.settle(charge, "unusable", now=3.0)
+        self.assertEqual(ledger.remaining(), 0)
+
+    def test_a_spent_allowance_cannot_be_renewed_by_moving_the_ledger(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.assertEqual(self.read(case_id), 0, self.out)
+        moved = self.allowance_path.with_name("moved-away.json")
+        os.replace(self.allowance_path, moved)
+        self.assertEqual(self.allow(1), 1)
+        self.assertTrue(any("already" in line for line in self.out), self.out)
+        self.assertFalse(self.allowance_path.exists())
+
+    def test_a_deleted_ledger_is_never_recreated_and_refuses_every_replay(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.allowance_path.unlink()
+        self.assertEqual(self.allow(1), 1)
+        self.assertFalse(self.allowance_path.exists())
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+    def test_a_ledger_rewritten_with_a_larger_allowance_refuses_every_replay(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        ledger = self.ledger()
+        ledger["allowance"] = 12
+        self.allowance_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+    def test_a_ledger_replaced_by_a_fresh_one_does_not_match_the_attached_readings(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.assertEqual(self.read(case_id), 0, self.out)
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        old_events = self.ledger()["events"]
+        shutil.rmtree(str(self.allowance_path) + ".receipts")
+        self.allowance_path.unlink()
+        self.assertEqual(self.allow(1), 0, self.out)
+        fresh = self.ledger()
+        fresh["events"] = old_events
+        self.allowance_path.write_text(json.dumps(fresh), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        self.assertEqual(self.results()["verdict"], levels_cases.VERDICT_REFUSED)
+        row = self.results()["cases"][case_id]["analysis"]
+        self.assertEqual(row["outcome"], "refused:unbound")
+
+    def test_a_replay_on_windows_reads_nothing_and_charges_nothing(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            code = levels_cases.read_cases(
+                home=str(self.home),
+                repo_root=str(self.repo),
+                digest_path=str(self.digest_path),
+                reading_config=self.config,
+                case_ids=[case_id],
+                model=self.model,
+                destination="OpenAI",
+                clock=lambda: time.time() + 60,
+                say=self.say,
+                cohort="codex",
+                approve=self.approve,
+            )
+        self.assertEqual(code, 1)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual(self.charges(), [])
+
+    def test_a_scored_codex_result_records_the_allowance_it_was_fixed_under(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow(1)
+        self.read(case_id)
+        self.attach_replayed()
+        self.score()
+        ledger = levels_cases.ReplayLedger(str(self.allowance_path))
+        self.assertEqual(self.results()["allowance"], {"genesis": ledger.genesis()})
+
+    def test_the_account_ledger_is_refused_on_windows_and_on_a_moved_home(self) -> None:
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            self.assertIsNone(levels_cases.default_allowance_path())
+        self.assertIsNone(levels_cases.default_allowance_path())  # HOME is the temporary root
+        with unittest.mock.patch.object(sys, "platform", "win32"):
+            self.assertEqual(
+                levels_cases.approve_replay_allowance(
+                    levels_cases.default_allowance_path(), 1, now=1.0, say=self.say
+                ),
+                1,
+            )
+
+    def test_the_allowance_file_is_private(self) -> None:
+        self.allow(1)
+        self.assertEqual(self.allowance_path.stat().st_mode & 0o777, 0o600)
+
+
+class CodexReplayTest(CodexReplayTestCase):
+    def test_a_person_approves_each_call_with_its_digest_and_the_allowance_left(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.assertEqual(self.read(case_id), 0, self.out)
+        (asked,) = self.asked
+        self.assertEqual(asked["case"], case_id)
+        self.assertEqual(len(asked["request_digest"]), 64)
+        self.assertEqual(asked["remaining"], 2)
+        self.assertEqual(len(self.model.prompts), 1)
+        self.assertEqual(
+            hashlib.sha256(self.model.prompts[0].encode()).hexdigest(), asked["request_digest"]
+        )
+
+    def test_the_replayed_prompt_is_the_one_the_frozen_production_reader_built(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.read(case_id)
+        (case,) = self.cases()
+        self.assertEqual(
+            hashlib.sha256(self.model.prompts[0].encode()).hexdigest(),
+            case["production_reading"]["prompt_digest"],
+        )
+
+    def test_a_replay_with_no_way_to_approve_a_call_refuses_before_any_call(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.assertEqual(self.read(case_id, approve=None), 1)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_a_call_the_person_does_not_approve_is_not_made_or_charged(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.answer = False
+        self.assertEqual(self.read(case_id), 0, self.out)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual((self.used(), self.charges()), (0, []))
+
+    def test_a_replay_before_the_allowance_is_fixed_refuses_before_any_call(self) -> None:
+        (case_id,) = self.marked("n")
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual(self.asked, [])
+
+    def test_a_replay_needing_more_calls_than_the_allowance_holds_refuses_whole(self) -> None:
+        ids = self.two_cases()
+        self.allow(1)
+        self.assertEqual(self.read(*ids), 1)
+        self.assertEqual((self.model.prompts, self.asked, self.used()), ([], [], 0))
+
+    def test_the_rolling_reading_budget_still_refuses_before_any_charge(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        for _ in range(self.policy.DAILY_CAP):
+            self.policy.reserve(
+                self.config, now=time.time(), provider="codex", destination="OpenAI"
+            )
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual((self.model.prompts, self.asked), ([], []))
+        self.assertEqual(self.ledger()["events"], [])
+
+    def test_reading_consent_is_still_required(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.policy.set_consent(self.config, False, now=time.time())
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+    def test_a_charged_interruption_stays_charged_and_is_never_read_again(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(interrupt_at=1)
+        with self.assertRaises(KeyboardInterrupt):
+            self.read(*ids)
+        (charge,) = self.charges()
+        self.assertFalse([e for e in self.ledger()["events"] if e["kind"] == "settlement"])
+        self.model = FakeModel()
+        self.assertEqual(self.read(*ids), 0, self.out)
+        self.assertEqual(len(self.model.prompts), 1)
+        self.assertEqual(len(self.charges()), 2)
+        self.assertEqual(self.charges()[0], charge)
+        self.assertEqual(len({c["case"] for c in self.charges()}), 2)
+
+    def test_a_failed_case_is_not_silently_recharged_on_a_rerun(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.model = FakeModel(status="failed")
+        self.assertEqual(self.read(case_id), 0, self.out)
+        self.assertEqual(len(self.charges()), 1)
+        self.model = FakeModel()
+        self.assertEqual(self.read(case_id), 0, self.out)
+        self.assertEqual(self.model.prompts, [])
+        self.assertEqual(len(self.charges()), 1)
+        self.assertEqual(len(self.asked), 1)
+
+    def test_the_allowance_is_spent_once_per_call_and_never_renewed(self) -> None:
+        ids = self.two_cases()
+        self.allow(1)
+        self.assertEqual(self.read(ids[0]), 0, self.out)
+        self.assertEqual(self.read(ids[1]), 1)
+        self.assertEqual(len(self.charges()), 1)
+        self.assertEqual(self.allow(5), 1)
+
+    def test_a_request_other_than_the_approved_one_is_never_sent(self) -> None:
+        model = FakeModel()
+        approved = levels_cases._Pinned(model, hashlib.sha256(b"approved").hexdigest())
+        self.assertEqual(approved("something else", output_cap_bytes=1), ("", "cancelled"))
+        self.assertEqual(model.prompts, [])
+        self.assertEqual(approved("approved", output_cap_bytes=1)[1], "ok")
+
+    def test_a_dry_run_asks_for_nothing_and_charges_nothing(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.assertEqual(self.read(case_id, dry_run=True), 0, self.out)
+        self.assertEqual((self.asked, self.charges(), self.used()), ([], [], 0))
+
+    def test_a_replay_for_a_claude_case_cannot_spend_the_codex_allowance(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        body = json.loads(Path(self.files()["cases"]).read_text(encoding="utf-8"))
+        body["cases"][0]["harness"] = "claude"
+        Path(self.files()["cases"]).write_text(json.dumps(body), encoding="utf-8")
+        self.assertEqual(self.read(case_id), 1)
+        self.assertEqual(self.model.prompts, [])
+
+
+class CodexAttachTest(CodexReplayTestCase):
+    def replay_one(self) -> str:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.assertEqual(self.read(case_id), 0, self.out)
+        return case_id
+
+    def test_a_replayed_reading_binds_its_producer_request_inputs_and_charge(self) -> None:
+        case_id = self.replay_one()
+        binding = self.replayed()["bindings"][case_id]
+        self.assertEqual(set(binding), {"producer", "request", "inputs", "charge", "reading"})
+        self.assertEqual(binding["charge"], self.charges()[0]["id"])
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+
+    def edit_replayed(self, case_id: str) -> None:
+        spec = self.replayed()
+        spec["readings"][case_id]["criteria"]["goal"]["detail"] = "edited after it was read"
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+
+    def test_a_person_who_edits_a_replayed_verdict_cannot_attach_it(self) -> None:
+        case_id = self.replay_one()
+        self.edit_replayed(case_id)
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line and "reading" in line for line in self.out), self.out)
+        self.assertFalse(Path(self.files()["readings"]).exists())
+
+    def test_a_reading_edited_after_it_attached_is_refused_when_the_cohort_is_scored(self) -> None:
+        case_id = self.replay_one()
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        readings = json.loads(Path(self.files()["readings"]).read_text(encoding="utf-8"))
+        readings["readings"][case_id]["criteria"]["goal"]["detail"] = "edited after attaching"
+        Path(self.files()["readings"]).write_text(json.dumps(readings), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        row = self.results()["cases"][case_id]["analysis"]
+        self.assertEqual(row["outcome"], "refused:unbound")
+
+    def test_a_person_who_swaps_two_cases_readings_and_bindings_cannot_attach_them(self) -> None:
+        ids = self.marked("n", "n", kinds=["admissible-support", "stale-pass"])
+        self.allow()
+        self.assertEqual(self.read(*ids), 0, self.out)
+        spec = self.replayed()
+        a, b = ids
+        for part in ("readings",):
+            spec[part][a], spec[part][b] = spec[part][b], spec[part][a]
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertFalse(Path(self.files()["readings"]).exists())
+
+    def test_a_ledger_whose_settlement_names_another_reading_refuses_the_attach(self) -> None:
+        case_id = self.replay_one()
+        ledger = self.ledger()
+        for event in ledger["events"]:
+            if event["kind"] == "settlement":
+                event["reading"] = "0" * 64
+        self.allowance_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line for line in self.out))
+
+    def test_a_reading_from_another_producer_is_refused(self) -> None:
+        case_id = self.replay_one()
+        spec = self.replayed()
+        spec["bindings"][case_id]["producer"] = "someone-else"
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any("producer" in line for line in self.out))
+        self.assertFalse(Path(self.files()["readings"]).exists())
+
+    def test_a_reading_with_no_binding_is_refused_however_late_it_is_stamped(self) -> None:
+        case_id = self.replay_one()
+        spec = self.replayed()
+        del spec["bindings"]
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line and "binding" in line for line in self.out))
+
+    def test_a_reading_for_inputs_that_changed_since_it_was_read_is_refused(self) -> None:
+        case_id = self.replay_one()
+        spec = self.replayed()
+        spec["bindings"][case_id]["inputs"] = "0" * 64
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any("inputs" in line for line in self.out))
+
+    def test_a_reading_that_names_a_charge_nobody_approved_is_refused(self) -> None:
+        case_id = self.replay_one()
+        spec = self.replayed()
+        spec["bindings"][case_id]["charge"] = "f" * 32
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any("charge" in line for line in self.out))
+
+    def test_a_reading_that_names_another_requests_charge_is_refused(self) -> None:
+        case_id = self.replay_one()
+        spec = self.replayed()
+        spec["bindings"][case_id]["request"] = "0" * 64
+        Path(self.files()["replayed"]).write_text(json.dumps(spec), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+
+    def test_a_reading_charged_before_the_digest_was_committed_is_refused(self) -> None:
+        case_id = self.replay_one()
+        ledger = self.ledger()
+        for event in ledger["events"]:
+            event["at"] = 1.0
+        self.allowance_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.assertEqual(self.attach_replayed(), 1)
+        self.assertTrue(any(case_id in line for line in self.out))
+
+    def test_a_binding_edited_after_it_attached_is_refused_when_the_cohort_is_scored(self) -> None:
+        case_id = self.replay_one()
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        readings = json.loads(Path(self.files()["readings"]).read_text(encoding="utf-8"))
+        readings["bindings"][case_id]["producer"] = "someone-else"
+        Path(self.files()["readings"]).write_text(json.dumps(readings), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        row = self.results()["cases"][case_id]["analysis"]
+        self.assertEqual(row["outcome"], "refused:unbound")
+        self.assertEqual(self.results()["verdict"], levels_cases.VERDICT_REFUSED)
+
+    def test_siblings_with_identical_inputs_share_one_call_and_its_binding(self) -> None:
+        entries = [
+            self.entry(k, line="The example passes its check.") for k in ("stale-pass", "goal-only")
+        ]
+        self.assertEqual(self.build(*entries), 0, self.out)
+        self.mark(Answers("n", "n"))
+        self.commit_digest()
+        ids = [str(c["id"]) for c in self.cases()]
+        self.allow()
+        self.assertEqual(self.read(*ids), 0, self.out)
+        self.assertEqual(len(self.model.prompts), 1)
+        bindings = self.replayed()["bindings"]
+        self.assertEqual(bindings[ids[0]], bindings[ids[1]])
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        self.assertEqual(len(self.charges()), 1)
+
+    def test_nothing_attaches_before_the_codex_digest_is_committed(self) -> None:
+        (case_id,) = self.marked("n")
+        self.allow()
+        self.read(case_id)
+        _git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        self.assertEqual(self.attach_replayed(), 1)
+
+
+class CodexScoreTest(CodexReplayTestCase):
+    def reply(self, result: str = "consistent") -> str:
+        case = self.cases()[0]
+        names = case["production_reading"]["constraints"]
+        return json.dumps({n: {"result": result, "cites": [], "detail": ""} for n in names})
+
+    def test_a_person_scores_a_whole_codex_cohort_with_no_model_call(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(reply=self.reply())
+        self.assertEqual(self.read(*ids), 0, self.out)
+        self.assertEqual(self.attach_replayed(), 0, self.out)
+        calls = len(self.model.prompts)
+        self.assertEqual(self.score(), 0, self.out)
+        self.assertEqual(len(self.model.prompts), calls)
+        result = self.results()
+        self.assertEqual(result["cohort"], "codex")
+        self.assertEqual(result["verdict"], levels_cases.VERDICT_PASSED)
+        self.assertEqual(result["counts"]["no_reading"], 0)
+        self.assertTrue(all(row["live"] is None for row in result["cases"].values()))
+        self.assertTrue(all(row["analysis"] is not None for row in result["cases"].values()))
+
+    def test_a_missing_reading_cannot_accompany_a_codex_pass(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(reply=self.reply())
+        self.read(ids[0])
+        self.attach_replayed()
+        self.assertEqual(self.score(), 1)
+        result = self.results()
+        self.assertEqual(result["verdict"], levels_cases.VERDICT_INCOMPLETE)
+        self.assertEqual(result["counts"]["no_reading"], 1)
+        self.assertNotEqual(result["verdict"], levels_cases.VERDICT_PASSED)
+
+    def test_a_cohort_whose_matrix_lost_a_case_cannot_pass(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(reply=self.reply())
+        self.read(*ids)
+        self.attach_replayed()
+        body = json.loads(Path(self.files()["cases"]).read_text(encoding="utf-8"))
+        body["matrix"].append("misleading-claim")
+        Path(self.files()["cases"]).write_text(json.dumps(body), encoding="utf-8")
+        self.assertEqual(self.score(), 1)
+        self.assertFalse(self.results_path.exists())
+
+    def test_a_codex_result_names_no_session_path_command_or_words(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(reply=self.reply())
+        self.read(*ids)
+        self.attach_replayed()
+        self.score()
+        text = self.results_path.read_text(encoding="utf-8")
+        for private in (
+            self.support.SID,
+            str(self.root),
+            "pytest",
+            "Please repair",
+            "passes check",
+        ):
+            self.assertNotIn(private, text)
+
+    def test_a_codex_score_never_needs_a_live_source(self) -> None:
+        ids = self.two_cases()
+        self.allow()
+        self.model = FakeModel(reply=self.reply())
+        self.read(*ids)
+        self.attach_replayed()
+        self.score()
+        for row in self.results()["cases"].values():
+            self.assertIsNone(row["live"])
+            self.assertIsNone(row["marks"]["live"])
+
+    def test_the_claude_cohort_keeps_its_own_files_and_still_scores_a_live_source(self) -> None:
+        self.assertNotEqual(levels_cases.DIGEST_PATH, levels_cases.CODEX_DIGEST_PATH)
+        self.assertNotEqual(levels_cases.RESULTS_PATH, levels_cases.CODEX_RESULTS_PATH)
+        self.assertTrue(levels_cases.CODEX_DIGEST_PATH.endswith("codex-marks-digest.json"))
+        self.assertTrue(levels_cases.CODEX_RESULTS_PATH.endswith("codex-results.json"))
 
 
 class CommittedTextTest(unittest.TestCase):
