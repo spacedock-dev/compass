@@ -392,12 +392,37 @@ with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.ob
         self.launch.assert_not_called()
 
     def test_a_person_cannot_continue_after_a_protection_failure(self) -> None:
+        self.assert_failure_stops("protection-failed")
+
+    def test_a_person_cannot_continue_after_a_coverage_failure(self) -> None:
+        self.assert_failure_stops("coverage-failed")
+
+    def assert_failure_stops(self, status: str) -> None:
         study = self.activate()
         charge = self.reserve(study, self.approve(study))
-        study.settle(charge, "protection-failed")
+        study.settle(charge, status)
         with self.assertRaises(authority.LedgerError):
             self.approve(study, slot=self.slots[1])
         self.assertEqual(1, study.used())
+
+    def test_a_person_cannot_retry_a_slot_after_a_later_slot_ran(self) -> None:
+        study = self.activate()
+        first = self.reserve(study, self.approve(study))
+        study.settle(first, "unusable")
+        second = self.reserve(study, self.approve(study, slot=self.slots[1]), slot=self.slots[1])
+        study.settle(second, "usable")
+        with self.assertRaises(authority.LedgerError):
+            self.approve(study, slot=self.slots[0], retry=True)
+        self.assertEqual(2, study.used())
+
+    def test_a_person_on_windows_gets_no_codex_authority(self) -> None:
+        study = self.activate()
+        with (
+            mock.patch.object(sys, "platform", "win32"),
+            self.assertRaises(authority.LedgerError),
+        ):
+            self.approve(study)
+        self.launch.assert_not_called()
 
     def test_a_person_cannot_redirect_accounting_through_a_symlink(self) -> None:
         study = self.activate()
@@ -490,6 +515,16 @@ with mock.patch.object(authority, 'real_home', return_value=home), mock.patch.ob
         with self.assertRaises(authority.LedgerError):
             self.approve(study, retry=True)
         self.assertEqual(2, study.used())
+
+    def test_a_person_cannot_retry_inside_a_batch_they_already_reviewed(self) -> None:
+        study = self.activate()
+        for n, slot in enumerate(self.slots[:10]):
+            charge = self.reserve(study, self.approve(study, slot=slot), slot=slot)
+            study.settle(charge, "unusable" if n == 9 else "usable")
+        study.review_batch(1, "e" * 64)
+        with self.assertRaises(authority.LedgerError):
+            self.approve(study, slot=self.slots[9], retry=True)
+        self.assertEqual(10, study.used())
 
     def test_a_person_cannot_approve_an_unregistered_prompt(self) -> None:
         study = self.activate()

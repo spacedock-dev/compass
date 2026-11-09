@@ -1509,7 +1509,7 @@ class CodexLedger:
                 raise LedgerError(
                     "only one separately approved Codex availability retry is allowed"
                 )
-            if slot != calls[-1]["slot"]:
+            if slot != calls[-1]["slot"] or entry["repetition"] in reviews:
                 raise LedgerError("an earlier Codex batch cannot reopen for retry")
         elif prior or slot != next(
             (entry["slot"] for entry in entries if entry["slot"] not in attempted), None

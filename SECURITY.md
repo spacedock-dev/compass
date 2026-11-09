@@ -3734,7 +3734,9 @@ transport digest, never its absolute CLI paths or actual argv. Approval is speci
 process invocation and is consumed under the same lock that records the charge. Receipts are
 written before the ledger index; an interrupted write leaves a blocking orphan, not renewed
 allowance. These are operator guards over reviewed artifacts, not authentication of the owner
-or isolation from another process under the same account. The proposed allowance registers
+or isolation from another process under the same account. The activation anchor binds only the
+empty genesis, so restoring a backup of `~/.cargento` taken after some charges resets the
+allowance undetected. Only the owner's own record of the approvals given can show it. The proposed allowance registers
 thirty producer exposures plus at most one charged availability retry, not an accuracy retry.
 Google marking and review need their own approved schedule and call ceilings. The proposed
 schedule allows 74 to 96 Google calls across both full cohorts, including two markers,
