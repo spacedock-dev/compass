@@ -1339,8 +1339,7 @@ PASS nor a question count establishes an accuracy threshold or an accuracy claim
 
 The proposed producer allowance is thirty readings plus at most one charged availability retry.
 The retry must replace an unusable attempt in a registered slot, remain visible with its original
-charge, and be explicitly included in the batch approval or receive a separate exact retry
-approval. The single retry is shared across all three batches. A semantic failure earns no retry. Measure every
+charge, and be explicitly included in the batch approval. The single retry is shared across all three batches. A semantic failure earns no retry. Measure every
 registered reading; semantic failures remain failures for the registered batch review, rather
 than reasons to replace a case or rewrite a mark. Review each registered batch before a later
 batch begins. Google reviews have their own approved ceiling, outside the producer allowance;
