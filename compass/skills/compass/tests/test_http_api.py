@@ -2945,7 +2945,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
 
         def serve(*argv: str) -> None:
             with (
-                mock.patch.object(sys, "argv", ["server.py", *argv]),
+                mock.patch.object(sys, "argv", ["server.py", "--no-update-check", *argv]),
                 mock.patch.object(http_api, "CompassHTTPServer", CapturingServer),
                 mock.patch.object(lifecycle, "write_state"),
                 mock.patch.object(lifecycle, "remove_state"),

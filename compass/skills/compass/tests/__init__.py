@@ -11,6 +11,7 @@ sys.path.insert(0, skill_path)
 # module because a module that forgot the import is exactly the case DRC-4431
 # was: the leak came from classes that imported `support` and derived from a
 # bare `unittest.TestCase` anyway. The path fix above has to land first.
-from .support import forbid_native_notifications  # noqa: E402
+from .support import forbid_live_update_checks, forbid_native_notifications  # noqa: E402
 
 forbid_native_notifications()
+forbid_live_update_checks()

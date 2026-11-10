@@ -6,7 +6,7 @@ Return to [start, status and stop](../SKILL.md#start).
 
 | Flag / URL | Effect |
 |---|---|
-| `--no-update-check` | Refuse daily release lookups for this run. The saved Turn off daily update checks checkbox in Settings also stops them across restarts. Checks are off by default in every build until a later release enables them. |
+| `--no-update-check` | Refuse daily release lookups for this run. The saved Turn off daily update checks checkbox in Settings also stops them across restarts. Checks are on by default; either switch turns them off. |
 | `--internal` [on/off] | With no value, show the effective internal-use marker and exit. `on` or `off` saves it in the Compass home; `SPACEDOCK_INTERNAL=1` overrides a saved off. A development build alone is not internal. |
 | `--frontend-dev-manifest PATH` | Contributor-only ticket for an owned Vite child, requiring a foreground server on `127.0.0.1`. Startup validates isolated fixture roots and a fresh child handshake; models, quota fetching and native actions are disabled. Diagnose/forget refuse this mode. Ordinary installed launches use the packaged page. |
 | `--claude-reading-model MODEL` | Select an explicit Claude Sonnet or Opus generation 5 or later ID for reader-requested Claude readings (default `claude-sonnet-5-5`). `claude-sonnet-5` is the baseline. Unavailable models fail without retrying another selection; aliases and lower or unknown families refuse before launch. This selection supplies no accuracy qualification. |
@@ -82,8 +82,8 @@ resumes analysis. Missing annotations disable both; missing serving-owner probes
 
 ## Daily release lookup
 
-This build sends no update check by default. A later release can enable the server's background
-lookup of `https://spacedock.md/latest-release/compass`, after startup and at most once per UTC day
+The server's background release lookup is on by default. It checks
+`https://spacedock.md/latest-release/compass` after startup and at most once per UTC day
 per Compass home. No hook sends it. It sends the installed version without a leading `v`,
 `kind=check`, normalized operating system and architecture, `channel=stable`, and `internal=0` or
 `internal=1`. Only an ASCII-trimmed, ASCII case-folded `CI` of `1`, `true`, `yes` or `on` adds `ci=1`.

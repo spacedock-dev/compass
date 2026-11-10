@@ -36,8 +36,9 @@ class ReactFrontendTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="compass-react-page-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.addCleanup(mock.patch.stopall)
-        mock.patch.object(page, "WEB_DIR", self.root).start()
+        web_dir = mock.patch.object(page, "WEB_DIR", self.root)
+        web_dir.start()
+        self.addCleanup(web_dir.stop)
         # `build_id` is cached for the life of a process, and React is the default now, so
         # any earlier test that built an application has already cached the real page's id.
         page.build_id.cache_clear()
@@ -470,7 +471,14 @@ class InstalledFrontendTest(unittest.TestCase):
             env = self.child_environment(root)
             launcher = plugin / "skills/compass/server.py"
             react_page = (plugin / "skills/compass/compass_runtime/web/react.html").read_bytes()
-            quiet = ("--no-usage", "--no-git", "--no-focus", "--no-reach", "--no-history")
+            quiet = (
+                "--no-update-check",
+                "--no-usage",
+                "--no-git",
+                "--no-focus",
+                "--no-reach",
+                "--no-history",
+            )
             for label, detach in (("foreground", False), ("detached", True)):
                 with self.subTest(label=label):
                     port = self.free_port()
@@ -523,7 +531,14 @@ class InstalledFrontendTest(unittest.TestCase):
             )
             env = self.child_environment(root)
             launcher = str(plugin / "skills/compass/server.py")
-            quiet = ("--no-usage", "--no-git", "--no-focus", "--no-reach", "--no-history")
+            quiet = (
+                "--no-update-check",
+                "--no-usage",
+                "--no-git",
+                "--no-focus",
+                "--no-reach",
+                "--no-history",
+            )
             # Let the real installed server bind port zero and retain its socket.
             # Selecting a free port and releasing it before --daemon races every
             # other process on the host. EOF owns this fixture's shutdown.

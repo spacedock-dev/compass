@@ -172,8 +172,7 @@ SECONDS_PER_DAY: Final = 24 * 60 * 60
 _PATH_TYPE = type(Path())
 
 
-# Flipped only by the release that enables the disclosed daily lookup.
-UPDATE_CHECK_DEFAULT_ENABLED: Final = False
+UPDATE_CHECK_DEFAULT_ENABLED: Final = True
 
 
 @dataclass(frozen=True)

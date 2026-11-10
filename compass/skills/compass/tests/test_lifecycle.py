@@ -160,7 +160,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             root = Path(tmp)
             env = self._clean_env(root / "state")
             proc = subprocess.run(
-                [sys.executable, str(SERVER_PATH), "--diagnose", "--json"],
+                support.server_command("--diagnose", "--json"),
                 cwd=root,
                 env=env,
                 capture_output=True,
@@ -179,7 +179,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             env = self._clean_env(root / "state")
             state_path = root / "state" / f"compass-{port}.json"
             server = subprocess.Popen(
-                [sys.executable, str(SERVER_PATH), "--port", str(port)],
+                support.server_command("--port", str(port)),
                 cwd=root,
                 env=env,
                 stdout=subprocess.PIPE,
@@ -197,7 +197,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 for label, args, expected, text in cases:
                     with self.subTest(path=label):
                         proc = subprocess.run(
-                            [sys.executable, str(SERVER_PATH), *args],
+                            support.server_command(*args),
                             cwd=root,
                             env=env,
                             capture_output=True,
@@ -211,7 +211,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
             finally:
                 if self._owns_instance(port, server, state_path):
                     subprocess.run(
-                        [sys.executable, str(SERVER_PATH), "--port", str(port), "--stop"],
+                        support.server_command("--port", str(port), "--stop"),
                         cwd=root,
                         env=env,
                         capture_output=True,
@@ -336,7 +336,7 @@ print(json.dumps({{
             self.assertEqual(len(frontend_page.load_frontend_page()), discovered["page_size"])
             state_path = compass_home / f"compass-{port}.json"
             proc = subprocess.Popen(
-                [sys.executable, str(launcher), "--port", str(port)],
+                support.server_command("--port", str(port), launcher=launcher),
                 cwd=cwd,
                 env=env,
                 stdout=subprocess.PIPE,
@@ -365,7 +365,7 @@ print(json.dumps({{
                 # so the copied --stop command cannot reach a foreign server.
                 if owned and self._owns_instance(port, proc, state_path):
                     stop = subprocess.run(
-                        [sys.executable, str(launcher), "--port", str(port), "--stop"],
+                        support.server_command("--port", str(port), "--stop", launcher=launcher),
                         cwd=cwd,
                         env=env,
                         capture_output=True,
@@ -1476,7 +1476,7 @@ class DaemonLifecycleTest(unittest.TestCase):
 
     def _run(self, *flags: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, self.SERVER, *flags],
+            support.server_command(*flags),
             env=env,
             capture_output=True,
             text=True,
@@ -1599,7 +1599,7 @@ class DaemonLifecycleTest(unittest.TestCase):
         port = self._free_port()
         with tempfile.TemporaryDirectory() as tmp:
             env = {**os.environ, "COMPASS_HOME": tmp}
-            flags = [sys.executable, self.SERVER, "--port", str(port)]
+            flags = support.server_command("--port", str(port))
             proc = subprocess.Popen(flags, env=env)
             try:
                 deadline = time.monotonic() + 60.0
@@ -1667,6 +1667,7 @@ raise SystemExit(main(sys.argv[2:]))
                     "-c",
                     self._TERM_DURING_THREAD_START,
                     str(Path(self.SERVER).parent),
+                    "--no-update-check",
                     "--port",
                     str(port),
                 ],
@@ -2141,9 +2142,9 @@ class AnIgnoredHangupStaysIgnoredTest(unittest.TestCase):
             port = int(listener.getsockname()[1])
         env = {**os.environ, "COMPASS_HOME": str(home), "PYTHONNOUSERSITE": "1"}
         env.pop("PYTHONPATH", None)
-        arguments = ["--port", str(port), "--no-events"]
+        command = support.server_command("--port", str(port), "--no-events")
+        arguments = command[2:]
         reached = home / f"compass-{port}.json"
-        command = [sys.executable, str(SERVER_PATH), *arguments]
         if stall_in is not None:
             reached = home / "stalled"
             command = [

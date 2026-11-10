@@ -466,7 +466,7 @@ describe('the daily update preference', () => {
       body: {
         values: DEFAULTS,
         limits: LIMITS,
-        update_check: { disabled, default_enabled: false, cli_disabled: false },
+        update_check: { disabled, default_enabled: true, cli_disabled: false },
       },
     });
     const server = backend([body(false), body(true)], [body(true)]);
@@ -474,7 +474,7 @@ describe('the daily update preference', () => {
     await flush();
     const checkbox = screen.getByRole('checkbox', { name: 'Turn off daily update checks' });
     expect((checkbox as HTMLInputElement).checked).toBe(false);
-    expect(screen.getByText('Update checks are off by default in this build.')).toBeVisible();
+    expect(screen.queryByText('Update checks are off by default in this build.')).toBeNull();
     fireEvent.click(checkbox);
     await flush();
     expect((checkbox as HTMLInputElement).checked).toBe(true);

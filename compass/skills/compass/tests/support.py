@@ -29,7 +29,15 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, cli, diagnostics, http_api, notifications
+from compass_runtime import (
+    aggregate,
+    cli,
+    diagnostics,
+    http_api,
+    notifications,
+    terminal_client,
+    update_check,
+)
 from compass_runtime.collectors import claude as claude_collector
 from compass_runtime.config import COMPASS_HOME_ENV, RuntimeConfig, build_runtime_config
 from compass_runtime.state import RuntimeState, build_runtime_state
@@ -111,6 +119,29 @@ STORE_OVERRIDES: dict[str, Any] = {}  # str, or a tuple/list of candidates
 # lowers a threshold or a cap.
 CONFIG_OVERRIDES: dict[str, Any] = {}
 
+
+def server_command(*arguments: str, launcher: Path = SERVER_PATH) -> list[str]:
+    """Launch a real server without a release request or update-check state files."""
+    return [sys.executable, str(launcher), "--no-update-check", *arguments]
+
+
+REAL_FETCH_RELEASE = update_check.fetch_release
+
+
+def forbid_live_update_checks() -> None:
+    """Refuse unmocked update requests, even from tests without RuntimeTestCase.
+
+    Transport tests call REAL_FETCH_RELEASE only inside their fake-transport
+    patches. Other tests must disable the worker or supply a fake fetch.
+    """
+
+    def refuse(config: RuntimeConfig) -> str:
+        del config
+        raise AssertionError("test attempted a live update check; disable it or fake the transport")
+
+    update_check.fetch_release = refuse
+
+
 # Constant name as the harness-contract fixtures spell it -> store key.
 STORE_KEYS: dict[str, str] = {
     "PROJECTS_DIR": "claude.projects",
@@ -168,6 +199,7 @@ def runtime() -> tuple[RuntimeConfig, RuntimeState]:
         os_name=os_name(),
         launcher_path=SERVER_PATH,
         store_root_overrides=single,
+        update_check_disabled=True,
     )
     if multi:
         # build_runtime_config takes one root per key; a test pinning several
@@ -206,6 +238,7 @@ def cfg() -> RuntimeConfig:
 
 
 def make_config(**changes: Any) -> RuntimeConfig:
+    changes.setdefault("update_check_disabled", True)
     # A root-level path that exists nowhere. It used to be `/home/compass-test`,
     # and on macOS `/home` is an autofs automount, so every store lookup under
     # it was a round trip to the automount daemon: 12.96ms against 0.00ms for a
@@ -426,6 +459,47 @@ def is_native_notification(args: Any) -> bool:
     return any("display notification" in part for part in parts)
 
 
+def _never_starts_dashboard(arguments: list[str]) -> bool:
+    read_only = {
+        "--version",
+        "--help",
+        "-h",
+        "--status",
+        "--stop",
+        "--diagnose",
+        "--internal",
+        "--forget",
+        "--footer",
+        "--sessions",
+        "--project",
+        "--pause-model-calls",
+        "--summaries",
+        "--monitor-sidecar",
+    }
+    monitor, off, _session = terminal_client.parse_monitor_args(arguments)
+    if monitor and off:
+        return True
+    # Goal reads may select a port but never launch. Goal writes must still
+    # carry the opt-out through their automatic dashboard startup.
+    rest = list(arguments)
+    for index, arg in enumerate(rest):
+        if arg == "--port":
+            del rest[index : index + 2]
+            break
+        if arg.startswith("--port="):
+            del rest[index]
+            break
+    goal = terminal_client.parse_goal_args(rest)
+    if goal is not None:
+        return not goal.writes
+    # A drift request is dispatched before recovery flags such as --status.
+    # Those flags must not let a request that can launch evade the opt-out.
+    startup = {"--drift", "--monitor", "--summary", "--goal"}
+    if any(arg.split("=", 1)[0] in startup for arg in arguments):
+        return False
+    return any(arg.split("=", 1)[0] in read_only for arg in arguments)
+
+
 def _refusing_popen_init(instance: Any, args: Any, *rest: Any, **kwargs: Any) -> None:
     if is_native_notification(args):
         argv = notification_argv(args)
@@ -435,6 +509,21 @@ def _refusing_popen_init(instance: Any, args: Any, *rest: Any, **kwargs: Any) ->
             "Derive the test class from support.RuntimeTestCase, or patch "
             "compass_runtime.notifications.notify_mac inside the test."
         )
+    # Fresh interpreters do not inherit the in-process fetch refusal. Cover new
+    # direct/launch.py starts here too, even if they omit server_command().
+    parts = notification_argv(args)
+    for index, token in enumerate(parts[1:3], start=1):
+        script = Path(token)
+        if not script.is_absolute():
+            script = Path(kwargs.get("cwd") or Path.cwd()) / script
+        if (
+            script.name == "server.py"
+            and (script.parent / "compass_runtime" / "entry.py").is_file()
+            and "--no-update-check" not in parts
+            and not _never_starts_dashboard(parts[index + 1 :])
+        ):
+            args = [*parts, "--no-update-check"]
+            break
     _REAL_POPEN_INIT(instance, args, *rest, **kwargs)
 
 

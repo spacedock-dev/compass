@@ -103,17 +103,16 @@ Compass, so opening it fetches nothing from the internet. The server listens onl
 `--host 0.0.0.0` exposes it on every network interface with no password; read
 [SECURITY.md](../SECURITY.md#scope) first, and prefer an SSH tunnel.
 
-Five kinds of traffic can leave your machine. The quota reading is on by default. Three others
-start from something you do: pressing a button, opening a finished Claude Code session, turning on the
-Live monitor, or setting an endpoint URL. The daily release lookup is off by default until a later
-release enables it.
+Five kinds of traffic can leave your machine. The quota reading and daily release lookup are on
+by default. Three others start from something you do: pressing a button, opening a finished Claude
+Code session, turning on the Live monitor, or setting an endpoint URL.
 
 | Traffic | When | What is sent, and to whom | How to stop it |
 |---|---|---|---|
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause model calls, or `--no-observer-model` |
 | CI checks | When you press Analyze drift on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | The switch beside the notice, `--no-ci-read`, or anything that stops model calls |
-| Release lookup | Off by default until a later release enables it; then after server start and at most once per UTC day | Version, operating system, architecture, stable channel, internal marker and an optional CI marker to spacedock.md. The site counts checks in PostHog without an IP and in Plausible with the caller's IP, used for approximate location and not stored. No identifier or session content. | Turn off daily update checks in Settings, or `--no-update-check` |
+| Release lookup | On by default; after server start and at most once per UTC day per Compass home | Version, operating system, architecture, stable channel, internal marker and an optional CI marker to spacedock.md, with a `compass/<version>` user agent. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Turn off daily update checks in Settings, or `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 
 [SECURITY.md](../SECURITY.md#scope) is the full account of all five, and its

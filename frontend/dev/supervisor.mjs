@@ -269,6 +269,7 @@ export async function startDevelopment(options = {}) {
       '--no-reach',
       '--no-ask',
       '--no-history',
+      '--no-update-check',
     ];
     backend = owned(spawn(python, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] }));
     handle.backend = backend;

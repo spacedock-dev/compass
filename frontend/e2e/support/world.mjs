@@ -126,6 +126,7 @@ async function startProduction(options) {
     '--no-reach',
     '--no-ask',
     '--no-history',
+    '--no-update-check',
   ];
   const env = { ...isolatedEnvironment(scratch, process.env), COMPASS_E2E_BUNDLE: 'production' };
   let backend;
