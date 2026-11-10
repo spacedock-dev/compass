@@ -34,10 +34,10 @@ design that route only answered with a redirect to GitHub and counted nothing.
 
 ## What is counted, and where
 
-What is counted is a release lookup, labelled with why it was made. A lookup is not a completed
-install. Spacedock's installer looks up a release before it knows whether anything needs to change,
-so an update that installs nothing is still counted, and a download that fails afterwards is still
-counted.
+What is counted is a release lookup, or for Spacedock's installer a counting request sent beside
+one, labelled with why it was made. Neither is a completed install. Spacedock's installer counts
+before it knows whether anything needs to change, so an update that installs nothing is still
+counted, and a download that fails afterwards is still counted.
 
 | Source | Kind | Counted when it reaches |
 | -- | -- | -- |
@@ -46,9 +46,28 @@ counted.
 | Compass's daily update check, however Compass was installed | `check` | `/latest-release/compass` |
 | Review's own standalone `install.sh` | none sent | `/latest-release/subspace` |
 
-The route names are `spacedock`, `subspace` (Review) and `compass`. One lookup is one request to the
-route: each installer resolves a product once, and `curl -L` follows the route's redirect to GitHub,
-not back to the route. A `HEAD` request is not counted.
+The route names are `spacedock`, `subspace` (Review) and `compass`. A `HEAD` request is not counted.
+
+### Spacedock's installer counts with a separate request
+
+Spacedock's `install.sh` keeps finding releases the way it does on its own, and sends one extra
+request per product to the route only to be counted (decided 2026-11-10). It does not look releases
+up through the route.
+
+The reason is GitHub's API limit. Unauthenticated, the release API allows 60 requests an hour per
+address, shared by everyone behind it. Spacedock's installer is moving its stable lookup off that API
+to the `github.com/<repo>/releases/latest` redirect, with `git ls-remote --tags` as the fallback. The
+route's answer for `spacedock` and `subspace` is a redirect to the API, so looking releases up
+through it would bring the limit back.
+
+The counting request is a `GET` to `https://spacedock.md/latest-release/<product>` with the fields
+below. The installer does not follow the redirect, so it makes no call to GitHub. It runs in the
+background with a timeout of a few seconds, discards the answer, and never changes whether the
+install succeeds or how long it takes. One counting request per product per run means one count.
+
+Review's standalone installer and Compass's update check do look releases up through the route,
+once per product per run. `curl -L` follows the route's redirect to GitHub, not back to the route,
+so that is still one count.
 
 The `subspace` route maps to `spacedock-dev/subspace-beta` today, while both installers download
 Review's files from `spacedock-dev/subspace`. That is a stale name, not a second release source:
@@ -176,7 +195,10 @@ download addresses, so the Compass route's answer has the same shape as GitHub's
 - Each release object carries at least `tag_name` (the real tag, such as `v2.8.0`), `name`,
   `html_url`, `published_at` and `prerelease`, copied from GitHub.
 - If GitHub cannot be reached, it answers `502` with a JSON error body. Compass treats that as a
-  failed check and Spacedock's installer falls back to GitHub.
+  failed check.
+- The function looks GitHub up with a token held in a Netlify environment variable, or reuses its
+  answer long enough, so every Compass check does not spend GitHub's 60-an-hour unauthenticated
+  allowance for the website's own addresses.
 - The function may reuse GitHub's answer for a few minutes, but Netlify's CDN never caches the
   route's own answer, because a lookup the CDN answers is a lookup the function never counts.
 
@@ -297,6 +319,8 @@ event from inside Compass, or feature counts, does need consent, and is deferred
 - Lookups are not people or machines. One person with three machines is three, and Plausible's daily
   visitors are hashes, not machines.
 - A machine that never updates, and has update checks off, is invisible.
+- Spacedock's counting request is separate from its lookup, so a counting request that times out or
+  is blocked loses that install or update from the count while the install goes ahead.
 - Short-lived machines inflate installs. CI runs are left out, but a CI system that does not set
   `CI`, and any client that sends no fields, are counted.
 - Homebrew and plugin-marketplace installs appear only in GitHub's numbers, which include CI clones.
@@ -379,6 +403,15 @@ chart.
 It is what `uname -m` prints on Linux and macOS. But all three products already name their release
 files `amd64`, and Spacedock's and Review's installers compute `amd64` before they download, so
 `amd64` needs the least mapping.
+
+### Spacedock's installer looking releases up through the route
+
+The installer would have read one address and been counted by the same request. But the route
+redirects to GitHub's release API, so this would undo the installer's move off the API's per-address
+limit. Making the route answer with release data itself, from a token held in Netlify, would remove
+the limit too, but it turns the route from a redirect into a proxy for all three products. A separate
+counting request leaves the installer's lookup alone, at the cost of a second request that can fail
+without the install noticing.
 
 ### Telling CI apart on the server
 
