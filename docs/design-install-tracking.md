@@ -5,8 +5,8 @@ or check for a new version, without asking anyone for consent and without storin
 an IP address. It records the contract the three products and the spacedock.md website share, and
 the alternatives that were tried and rejected.
 
-Status: implemented on 2026-11-10 behind `config.UPDATE_CHECK_DEFAULT_ENABLED = False`.
-No build sends a check until a later release flips that default.
+Status: implemented on 2026-11-10; the check ships on by default in the next release
+with `config.UPDATE_CHECK_DEFAULT_ENABLED = True`.
 [`SECURITY.md`](../SECURITY.md#daily-update-checks) owns what the implemented check sends; this
 file records why.
 
@@ -291,14 +291,14 @@ command a person types, so a flag on its own may never reach it. No environment 
 check off, and there is no shared variable across the three products for it or for installer
 counting.
 
-The check stays off in every build until the release that turns it on, so a merge to `main` sends
-nothing before [`SECURITY.md`](../SECURITY.md) says what is sent.
+The check is on by default. [`SECURITY.md`](../SECURITY.md#daily-update-checks) discloses
+what is sent and how to turn it off.
 
 ### What SECURITY.md says
 
 SECURITY.md's list of outbound requests includes the implemented check: the recipient (spacedock.md), the fields, both switches, the no-redirect rule, and that
 spacedock.md passes the caller's IP address on to Plausible, which stores none of it but derives an
-approximate location from it. The release that turns the default on must say the same in its notes.
+approximate location from it. The next release's notes must disclose the same.
 
 ## No consent, and why
 

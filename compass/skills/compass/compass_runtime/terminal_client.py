@@ -346,7 +346,11 @@ def parse_summary_args(argv: list[str]) -> SummaryRequest | None:
 
 @report_blocked_connection
 def run_summary(
-    request: SummaryRequest, *, port: int | None = None, environ: Mapping[str, str] | None = None
+    request: SummaryRequest,
+    *,
+    port: int | None = None,
+    environ: Mapping[str, str] | None = None,
+    no_update_check: bool = False,
 ) -> int:
     from compass_runtime import terminal_drift, terminal_summary  # noqa: PLC0415
 
@@ -365,6 +369,7 @@ def run_summary(
         spend=True,
         own_version=release_version(),
         in_session=not at_shell,
+        no_update_check=no_update_check,
     )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)
@@ -547,7 +552,11 @@ def run_pause_model_calls(
 
 @report_blocked_connection
 def run_monitor(
-    *, off: bool = False, session: str | None = None, environ: Mapping[str, str] | None = None
+    *,
+    off: bool = False,
+    session: str | None = None,
+    environ: Mapping[str, str] | None = None,
+    no_update_check: bool = False,
 ) -> int:
     from compass_runtime import terminal_monitor  # noqa: PLC0415
 
@@ -564,6 +573,7 @@ def run_monitor(
         off=off,
         home=state_home(env),
         in_session=named.source == "environment" and not sys.stdout.isatty(),
+        no_update_check=no_update_check,
     )
 
 
@@ -600,34 +610,37 @@ def parse_project_args(argv: list[str]) -> tuple[bool, str | None]:
 
 
 def handles(argv: list[str]) -> bool:
+    startup = [arg for arg in argv if arg != "--no-update-check"]
     return (
-        parse_summary_args(argv) is not None
-        or parse_goal_args(argv) is not None
-        or parse_monitor_args(argv)[0]
+        parse_summary_args(startup) is not None
+        or parse_goal_args(startup) is not None
+        or parse_monitor_args(startup)[0]
         or parse_footer_args(argv)[0]
-        or parse_drift_args(argv)[0]
+        or parse_drift_args(startup)[0]
         or parse_project_args(argv)[0]
         or claim(argv) is not None
     )
 
 
 def run(argv: list[str]) -> int:  # noqa: PLR0911 - one dispatch per short operation
+    no_update_check = "--no-update-check" in argv
+    argv = [arg for arg in argv if arg != "--no-update-check"]
     summary = parse_summary_args(argv)
     if summary is not None:
-        return run_summary(summary)
+        return run_summary(summary, no_update_check=no_update_check)
     if argv in (["--summaries", "off"], ["--summaries=off"]):
         return run_summaries_off()
     goal = parse_goal_args(argv)
     if goal is not None:
-        return run_goal(goal)
+        return run_goal(goal, no_update_check=no_update_check)
     monitor, off, named = parse_monitor_args(argv)
     if monitor:
-        return run_monitor(off=off, session=named)
+        return run_monitor(off=off, session=named, no_update_check=no_update_check)
     if parse_footer_args(argv)[0]:
         return run_footer(argv, os.environ, sys.stdin, sys.stdout)
     drift, again, session = parse_drift_args(argv)
     if drift:
-        return run_drift(again=again, session=session)
+        return run_drift(again=again, session=session, no_update_check=no_update_check)
     project, session = parse_project_args(argv)
     if project:
         return run_project(session=session)
@@ -885,6 +898,7 @@ def ensure_dashboard(
     start: Callable[[int], None] | None = None,
     say: Callable[[str], None] | None = None,
     in_session: bool = False,
+    no_update_check: bool = False,
 ) -> Dashboard | Refusal:
     """The one rule for a missing dashboard, and for a dashboard of another release.
 
@@ -897,7 +911,12 @@ def ensure_dashboard(
         if not spend:
             return Refusal(sentence("not_running"))
         (say or _say)(sentence("starting"))
-        (start or start_daemon)(DEFAULT_PORT if port is None else port)
+        launch = start or (
+            functools.partial(start_daemon, no_update_check=True)
+            if no_update_check
+            else start_daemon
+        )
+        launch(DEFAULT_PORT if port is None else port)
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
@@ -1565,6 +1584,7 @@ def run_goal(
     *,
     port: int | None = None,
     environ: Mapping[str, str] | None = None,
+    no_update_check: bool = False,
 ) -> int:
     """Reads never launch; writes require the person's explicit session and terminal stdout."""
     from compass_runtime import terminal_goal  # noqa: PLC0415
@@ -1578,7 +1598,11 @@ def run_goal(
         print("Saving a goal needs an explicit --session and terminal stdout.", file=sys.stderr)
         return 1
     found = ensure_dashboard(
-        state_home(env), port=port, spend=request.writes, own_version=release_version()
+        state_home(env),
+        port=port,
+        spend=request.writes,
+        own_version=release_version(),
+        no_update_check=no_update_check,
     )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)

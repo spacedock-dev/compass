@@ -220,7 +220,7 @@ jobs:
 
           # An unrelated working directory: nothing may resolve through ".".
           cd "$RUNNER_TEMP"
-          python3 "$LAUNCHER" --port "$PORT" &
+          python3 "$LAUNCHER" --port "$PORT" --no-update-check &
           SERVER_PID=$!
 
           for _ in $(seq 1 20); do

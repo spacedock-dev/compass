@@ -15,13 +15,13 @@ python3 compass/skills/compass/server.py --diagnose [--json] [OPTIONS]
 python3 compass/skills/compass/server.py --status [--port PORT]
 python3 compass/skills/compass/server.py --stop [--port PORT]
 python3 compass/skills/compass/server.py --forget [--port PORT]
-python3 compass/skills/compass/server.py --monitor [--off] [--session claude:SESSION_ID]
+python3 compass/skills/compass/server.py --monitor [--off] [--session claude:SESSION_ID] [--no-update-check]
 python3 compass/skills/compass/server.py --footer [--session HARNESS:SESSION_ID]
 python3 compass/skills/compass/server.py --sessions [waiting] [--port PORT]
 python3 compass/skills/compass/server.py --project [--session claude:SESSION_ID] [--port PORT]
-python3 compass/skills/compass/server.py --goal [TEXT | --clear | --adopt] [--session claude:SESSION_ID] [--port PORT]
+python3 compass/skills/compass/server.py --goal [TEXT | --clear | --adopt] [--session claude:SESSION_ID] [--port PORT] [--no-update-check]
 python3 compass/skills/compass/server.py --pause-model-calls [--port PORT]
-python3 compass/skills/compass/server.py --summary [--update | --again] [--session claude:SESSION_ID] [--port PORT]
+python3 compass/skills/compass/server.py --summary [--update | --again] [--session claude:SESSION_ID] [--port PORT] [--no-update-check]
 python3 compass/skills/compass/server.py --summaries off [--port PORT]
 python3 compass/skills/compass/server.py --drift [again] [--session HARNESS:SESSION_ID] [--port PORT]
 ```
@@ -71,9 +71,11 @@ modules load; beside any other option it goes through the full parser, which is 
 values. `--footer` is a client operation too: alone, or with its own `--session`, it is answered
 before the dashboard's modules load, and beside any other option it is a usage error. `--drift` is
 checked after `--sessions`: alone, or with `again` and its own `--session`, it is answered before
-the dashboard's modules load, and beside any other option it uses only `--session` and `--port`.
+the dashboard's modules load. It also accepts `--no-update-check` on that path; beside other options
+it uses only `--session`, `--port` and `--no-update-check`.
 
-`--summary` accepts `--update` or `--again`, plus `--session` and explicit `--port` only.
+`--summary` accepts `--update` or `--again`, plus `--session`, explicit `--port` and
+`--no-update-check` only.
 A plain stored read returns immediately even while a job runs. A new job waits up to 20 seconds
 inside a session or 630 seconds at a terminal with an explicit session; a timeout leaves it running
 and says how to read it later. Ctrl+C cancels only the job this command started, by its id.
@@ -82,7 +84,7 @@ admitted job running and says how to read it later. Summaries retain their exist
 and per-summary limits of 37 calls, 768 KiB and ten minutes. The first start prints the current
 summary notice when it is due; changed content or destination renews it.
 
-`--goal` accepts one mode and its own `--session` before the dashboard modules load.
+`--goal` accepts one mode, its own `--session` and `--no-update-check` before the dashboard modules load.
 With `--port` it uses the full parser, which refuses unrelated options.
 
 `--project` is checked after `--sessions` and before `--drift`. Alone or with its own
@@ -92,7 +94,7 @@ With `--port` it uses the full parser, which refuses unrelated options.
 each have a 5-second deadline. Session lookup is capped at 1 MiB; the lean list and context
 are capped at 16 MiB each. A refused or oversized reply produces no partial brief.
 
-`--monitor` accepts only `--off` and `--session` beside it. It answers before loading the
+`--monitor` accepts only `--off`, `--session` and `--no-update-check` beside it. It answers before loading the
 dashboard modules. Each dashboard probe and request has one wall-clock deadline across connection,
 headers and body, including a listener that keeps sending a little at a time.
 
@@ -168,7 +170,7 @@ still stop calls. See [the workflow](HOW_TO_USE.md#analyze-a-session) and
 | `--unasked-readings` | Enable bounded checks of sessions with a typed goal without a fresh press; only departures are raised. Off by default. Claude Code reads Claude Code sessions; Codex reads Codex sessions. On Pi and Antigravity an unasked check prefers Claude Code, where Analyze drift prefers Codex; if the preferred provider is unavailable or unqualified on this machine, the other serves. Codex needs the Drift card's "Allow Codex to run unasked checks" toggle for the current destination; Attention points to it when sessions with a typed goal are waiting. Claude Code needs no separate grant; the Drift card names it and lists what each check sends, which on a Claude Code session includes the checks and commands that failed, never one that passed. Analyze and Resume never grant it. Revoking it, Pause model calls and `--no-observer-model` stop checks; Pause followed by Resume clears the grant. Quiet hours hold the notification, not the check. The caps remain three per session, twelve per rolling day, with a fifteen-minute floor. A call that starts and fails counts toward both caps. Harnesses without a session record reader show an explanation instead of a grant offer and do not enter Attention's permission queue; every stored Codex grant, including one saved for an earlier destination, stays revocable from any session's Drift card while these controls are on. A saved grant that no longer applies shows a checked switch and explains why; Attention does not ask for permission while a grant is stored. No effect under `--no-annotations`. |
 | `--allow-tool-output` | Accepted and does nothing in this release; will be removed in a later release. Claude Code readings include tool output by default where the destination is named, and disclose it in the notice. |
 | `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Includes session summaries. Overrides the unasked opt-in. |
-| `--no-update-check` | Refuse the daily release lookup for this run, independently of the saved Settings checkbox. The check is off by default in every build until a later release enables it; neither switch enables it. See [Daily update checks](SECURITY.md#daily-update-checks). |
+| `--no-update-check` | Refuse the daily release lookup for this run, independently of the saved **Turn off daily update checks** checkbox in Settings. Also accepted with `--drift`, `--monitor`, `--summary` (including `--update` and `--again`) and `--goal` (including text, `--clear` and `--adopt`); any dashboard they start inherits the refusal. An already running dashboard keeps its own settings. `--footer` only reads local files and accepts no startup switches. The check is on by default; either switch turns it off. It sends version and platform fields, stable channel, internal marker and an optional CI marker to spacedock.md, with a `compass/<version>` user agent and no identifier or session content. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. See [Daily update checks](SECURITY.md#daily-update-checks) for the exact request and limits. |
 | `--internal` [on/off] | Show the effective internal-use marker with no value, or persist `on` or `off` in the Compass home, print the effective state, and exit. `SPACEDOCK_INTERNAL=1` overrides a saved `off`; a development build alone is not internal. Refused with `--daemon`. |
 | `--no-usage` | Refuse vendor quota network fetches and quota pushed into Compass for this run, regardless of the stored dashboard setting. Quota recorded in harness-owned stores, such as Codex or Copilot, still appears. Does not disable model calls or reach nudges. |
 

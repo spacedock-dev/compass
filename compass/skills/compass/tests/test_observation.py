@@ -2293,7 +2293,7 @@ class WiringTest(unittest.TestCase):
             mock.patch.object(runtime_io, "diag"),
             contextlib.suppress(KeyboardInterrupt),
         ):
-            cli.main(["--port", "4553", *extra])
+            cli.main(["--no-update-check", "--port", "4553", *extra])
 
     def test_serve_starts_the_coordinator_instead_of_the_producer(self) -> None:
         events_seen: list[str] = []

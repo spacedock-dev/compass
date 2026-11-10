@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -26,7 +27,7 @@ from unittest import mock
 from compass_runtime import cli, config, entry, reach, settings, terminal_client, update_check
 from compass_runtime import io as runtime_io
 
-from .support import make_config, serve_until_closed
+from .support import REAL_FETCH_RELEASE, make_config, serve_until_closed
 from .test_cli_version import run_main
 
 REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
@@ -36,11 +37,10 @@ class DailyCheckTest(unittest.TestCase):
     def setUp(self) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
-        self.config = make_config(state_home=home.name, release_version="2.8.0")
+        self.config = make_config(
+            state_home=home.name, release_version="2.8.0", update_check_disabled=False
+        )
         self.now = datetime(2026, 11, 10, 23, 59, 59, tzinfo=UTC).timestamp()
-        enabled = mock.patch.object(config, "UPDATE_CHECK_DEFAULT_ENABLED", True)
-        enabled.start()
-        self.addCleanup(enabled.stop)
 
     def checker(self) -> update_check.UpdateChecker:
         return update_check.UpdateChecker(self.config, clock=lambda: self.now)
@@ -122,10 +122,8 @@ class DailyCheckTest(unittest.TestCase):
         with mock.patch.object(update_check, "fetch_release", side_effect=fetch):
             self.checker().tick()
 
-    def test_the_default_and_either_off_switch_send_nothing(self) -> None:
+    def test_either_off_switch_sends_nothing(self) -> None:
         with mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch:
-            with mock.patch.object(config, "UPDATE_CHECK_DEFAULT_ENABLED", False):
-                self.checker().tick()
             update_check.UpdateChecker(replace(self.config, update_check_disabled=True)).tick()
             settings.save(self.config, {"no_update_check": True})
             self.checker().tick()
@@ -335,6 +333,41 @@ class InternalMarkerTest(unittest.TestCase):
         with mock.patch.object(update_check, "_read", return_value={}):
             self.assertFalse(update_check.internal(cfg))
 
+    def test_automatic_terminal_starts_forward_the_update_opt_out(self) -> None:
+        for operation in (
+            ["--monitor"],
+            ["--summary"],
+            ["--summary", "--update"],
+            ["--summary", "--again"],
+            ["--goal", "my goal"],
+            ["--goal", "--clear"],
+            ["--goal", "--adopt"],
+            ["--summary", "--port", "4554"],
+            ["--goal", "my goal", "--port=4554"],
+        ):
+            for before in (True, False):
+                arguments = [*operation, "--session", "claude:one"]
+                argv = (
+                    ["--no-update-check", *arguments]
+                    if before
+                    else [*arguments, "--no-update-check"]
+                )
+                with (
+                    self.subTest(argv=argv),
+                    tempfile.TemporaryDirectory() as home,
+                    mock.patch.dict(os.environ, {"COMPASS_HOME": home}, clear=True),
+                    mock.patch.object(sys.stdout, "isatty", return_value=True),
+                    mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+                    mock.patch(
+                        "subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+                    ) as run,
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(entry.main(argv), 1)
+                    command = run.call_args.args[0]
+                    self.assertIn("--no-update-check", command)
+                    self.assertIn("--daemon", command)
+
 
 class LocalTransportTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -366,6 +399,7 @@ class LocalTransportTest(unittest.TestCase):
         self.addCleanup(home.cleanup)
         self.config = make_config(
             state_home=home.name,
+            update_check_disabled=False,
             release_version="2.8.0+dev",
             platform_name="win32",
             update_check_arch="AMD64",
@@ -393,7 +427,7 @@ class LocalTransportTest(unittest.TestCase):
         self.addCleanup(url.stop)
 
     def test_the_request_carries_exactly_the_disclosed_fields_and_user_agent(self) -> None:
-        self.assertEqual(update_check.fetch_release(self.config), "2.9.0")
+        self.assertEqual(REAL_FETCH_RELEASE(self.config), "2.9.0")
         path, headers = self.calls[0]
         self.assertEqual(
             path,
@@ -409,13 +443,13 @@ class LocalTransportTest(unittest.TestCase):
             },
         )
         update_check.save_internal(self.config, True)
-        update_check.fetch_release(self.config)
+        REAL_FETCH_RELEASE(self.config)
         self.assertTrue(self.calls[-1][0].endswith("&internal=1"))
 
     def test_a_redirect_is_never_followed(self) -> None:
         self.status = 302
         with self.assertRaises(OSError):
-            update_check.fetch_release(self.config)
+            REAL_FETCH_RELEASE(self.config)
         self.assertEqual(len(self.calls), 1)
 
     def test_a_non_https_target_is_refused_before_any_connection(self) -> None:
@@ -423,7 +457,7 @@ class LocalTransportTest(unittest.TestCase):
             mock.patch.object(update_check, "RELEASE_URL", f"http://127.0.0.1:{self.port}/"),
             self.assertRaises(ValueError),
         ):
-            update_check.fetch_release(self.config)
+            REAL_FETCH_RELEASE(self.config)
         self.assertEqual(self.calls, [])
 
     def test_a_closed_port_is_silent_and_not_retried(self) -> None:
@@ -432,7 +466,7 @@ class LocalTransportTest(unittest.TestCase):
         stdout, stderr = io.StringIO(), io.StringIO()
         with (
             mock.patch.object(update_check, "RELEASE_URL", f"https://127.0.0.1:{port}/"),
-            mock.patch.object(config, "UPDATE_CHECK_DEFAULT_ENABLED", True),
+            mock.patch.object(update_check, "fetch_release", REAL_FETCH_RELEASE),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
@@ -448,10 +482,17 @@ class RequestValuesTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(update_check.normalise_os(value), "freebsd")
 
-    def test_the_shipped_release_gate_is_off_and_starts_no_worker(self) -> None:
-        self.assertFalse(config.UPDATE_CHECK_DEFAULT_ENABLED)
+    def test_the_shipped_default_starts_the_background_worker(self) -> None:
+        built = make_config(release_version="2.8.0+dev", update_check_disabled=False)
+        stop = threading.Event()
         with mock.patch.object(threading, "Thread") as thread:
-            update_check.start(make_config(release_version="2.8.0+dev"), threading.Event())
+            update_check.start(built, stop)
+        thread.assert_called_once_with(target=update_check.run, args=(built, stop), daemon=True)
+        thread.return_value.start.assert_called_once_with()
+
+    def test_the_cli_off_switch_starts_no_worker(self) -> None:
+        with mock.patch.object(threading, "Thread") as thread:
+            update_check.start(make_config(update_check_disabled=True), threading.Event())
         thread.assert_not_called()
 
     def test_ci_only_sends_a_field_for_the_four_ascii_truth_values(self) -> None:
@@ -531,7 +572,7 @@ class MemoryTransportTest(unittest.TestCase):
             release_version="2.8.0+dev", platform_name="win32", update_check_arch="AMD64"
         )
         with mock.patch("compass_runtime.update_check.build_reach_opener", return_value=opener):
-            self.assertEqual(update_check.fetch_release(cfg), "2.9.0")
+            self.assertEqual(REAL_FETCH_RELEASE(cfg), "2.9.0")
             self.assertEqual(
                 sent,
                 [
@@ -544,7 +585,7 @@ class MemoryTransportTest(unittest.TestCase):
             sent.clear()
             status = 302
             with self.assertRaises(OSError):
-                update_check.fetch_release(cfg)
+                REAL_FETCH_RELEASE(cfg)
             self.assertEqual(len(sent), 1)
 
 
@@ -568,7 +609,7 @@ class ExchangeDeadlineTest(unittest.TestCase):
                     mock.patch.object(update_check, "_TIMEOUT_SEC", 0.1),
                     self.assertRaises(OSError),
                 ):
-                    update_check.fetch_release(make_config(release_version="2.8.0"))
+                    REAL_FETCH_RELEASE(make_config(release_version="2.8.0"))
                 self.assertLess(time.monotonic() - began, 0.6)
             finally:
                 release.set()
@@ -616,7 +657,7 @@ class ExchangeDeadlineTest(unittest.TestCase):
                 mock.patch.object(update_check, "_TIMEOUT_SEC", 0.1),
                 self.assertRaises((OSError, http.client.HTTPException)),
             ):
-                update_check.fetch_release(make_config(release_version="2.8.0"))
+                REAL_FETCH_RELEASE(make_config(release_version="2.8.0"))
             self.assertLess(time.monotonic() - began, 0.6)
         finally:
             stop.set()

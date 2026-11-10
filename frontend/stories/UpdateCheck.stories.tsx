@@ -38,7 +38,7 @@ function SettingsExample() {
             limits: [],
             update_check: {
               disabled,
-              default_enabled: false,
+              default_enabled: true,
               cli_disabled: false,
             },
           }),
@@ -79,7 +79,7 @@ export const SavesTheOffSwitch: Story = {
     const canvas = within(canvasElement);
     const checkbox = await canvas.findByRole('checkbox', { name: 'Turn off daily update checks' });
     await expect(checkbox).not.toBeChecked();
-    await expect(canvas.getByText('Update checks are off by default in this build.')).toBeVisible();
+    await expect(canvas.queryByText('Update checks are off by default in this build.')).toBeNull();
     await userEvent.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());
     await userEvent.click(canvas.getByRole('button', { name: 'Reopen settings' }));

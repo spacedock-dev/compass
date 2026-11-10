@@ -243,7 +243,7 @@ def refuse_footer_with_other_options(
     It reaches no dashboard, so it cannot also serve, stop or report one.
     """
     if args.monitor or args.off:
-        parser.error("--monitor stands alone or with --off and --session")
+        parser.error("--monitor stands alone or with --off, --session and --no-update-check")
     if args.update or args.again or args.summaries or args.summary:
         parser.error("--update and --again need --summary; --summaries accepts off only")
     if args.clear or args.adopt:
@@ -960,7 +960,7 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     if (args.update or args.again) and not args.summary:
         build_parser().error("--update and --again need --summary")
     if args.summary or args.summaries:
-        remaining = list(argv)
+        remaining = [arg for arg in argv if arg != "--no-update-check"]
         for index, arg in enumerate(remaining):
             if arg == "--port":
                 del remaining[index : index + 2]
@@ -974,11 +974,14 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
         summary = terminal_client.parse_summary_args(remaining)
         if summary is None:
             build_parser().error(
-                "--summary accepts --update or --again, with --session and --port only"
+                "--summary accepts --update or --again, "
+                "with --session, --port and --no-update-check only"
             )
-        return terminal_client.run_summary(summary, port=args.port if typed else None)
+        return terminal_client.run_summary(
+            summary, port=args.port if typed else None, no_update_check=args.no_update_check
+        )
     if args.goal is not None:
-        remaining = list(argv)
+        remaining = [arg for arg in argv if arg != "--no-update-check"]
         for index, arg in enumerate(remaining):
             if arg == "--port":
                 del remaining[index : index + 2]
@@ -989,10 +992,13 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
         goal = terminal_client.parse_goal_args(remaining)
         if goal is None:
             build_parser().error(
-                "--goal accepts text, --clear or --adopt, with --session and --port only"
+                "--goal accepts text, --clear or --adopt, "
+                "with --session, --port and --no-update-check only"
             )
         typed = any(a == "--port" or a.startswith("--port=") for a in argv)
-        return terminal_client.run_goal(goal, port=args.port if typed else None)
+        return terminal_client.run_goal(
+            goal, port=args.port if typed else None, no_update_check=args.no_update_check
+        )
     if args.pause_model_calls:
         remaining = [arg for arg in argv if arg != "--pause-model-calls"]
         if not (

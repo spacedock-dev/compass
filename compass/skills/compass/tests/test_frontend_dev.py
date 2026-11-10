@@ -426,6 +426,7 @@ class FrontendDevelopmentTest(unittest.TestCase):
             [
                 sys.executable,
                 str(helper),
+                "--no-update-check",
                 "--frontend-dev-manifest",
                 str(self.path),
                 "--port",
