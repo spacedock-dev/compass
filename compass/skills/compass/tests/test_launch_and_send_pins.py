@@ -731,6 +731,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
     # Every switch or environment variable that closes a launch or a send.
     SWITCHES = (
         "--no-usage",
+        "--no-update-check",
         "--no-reach",
         "--no-observer-model",
         "--no-harness-usage",
@@ -750,6 +751,7 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
     # Runtime module -> text of the row that accounts for what it starts or requests.
     LAUNCHERS: ClassVar[dict[str, str]] = {
         "quota": "Vendor quota poll",
+        "update_check": "Daily release lookup",
         "reach": "Reach nudge",
         "supervise": "A press for a reading",
         "loopback_transport": "The bounded loopback transport",

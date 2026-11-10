@@ -808,11 +808,12 @@
         "sources": []
       },
       "unasked_off_reason": "run-disabled",
+      "update_check": null,
       "window_hours": 24.0
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "27668",
+      "Content-Length": "27690",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

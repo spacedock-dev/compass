@@ -728,11 +728,12 @@
           "words_destination": "OpenAI"
         }
       },
+      "update_check": null,
       "window_hours": 24.0
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "31519",
+      "Content-Length": "31541",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"
