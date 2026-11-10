@@ -260,6 +260,28 @@ class DailyCheckTest(unittest.TestCase):
             update_check.run(self.config, stop, clock=lambda: self.now)
         self.assertEqual(fetch.call_count, 2)
 
+    def test_invalid_clock_timestamps_keep_the_ticker_running_and_send_nothing(self) -> None:
+        for value, error in (
+            (float("inf"), None),
+            (-1.0, OSError),
+            (-1.0, ValueError),
+            (-1.0, OverflowError),
+        ):
+            with self.subTest(value=value, error=error):
+                self.now = value
+                stop = mock.Mock(spec=threading.Event)
+                stop.is_set.return_value = False
+                stop.wait.side_effect = [False, True]
+                with (
+                    mock.patch.object(update_check, "datetime", wraps=datetime) as dates,
+                    mock.patch.object(update_check, "fetch_release") as fetch,
+                ):
+                    dates.fromtimestamp.side_effect = error
+                    update_check.run(self.config, stop, clock=lambda: self.now)
+                self.assertEqual(stop.wait.call_count, 2)
+                fetch.assert_not_called()
+                self.assertFalse(Path(self.config.state_home, update_check.STORE_FILENAME).exists())
+
     def test_the_saved_off_switch_survives_other_settings_writes_and_restart(self) -> None:
         settings.save(self.config, {"no_update_check": True})
         settings.save(self.config, {"analyze_record_events": 4000})
@@ -421,6 +443,11 @@ class LocalTransportTest(unittest.TestCase):
 
 
 class RequestValuesTest(unittest.TestCase):
+    def test_freebsd_release_suffixes_and_case_map_to_freebsd(self) -> None:
+        for value in ("freebsd13", "freebsd14", "FreeBSD"):
+            with self.subTest(value=value):
+                self.assertEqual(update_check.normalise_os(value), "freebsd")
+
     def test_the_shipped_release_gate_is_off_and_starts_no_worker(self) -> None:
         self.assertFalse(config.UPDATE_CHECK_DEFAULT_ENABLED)
         with mock.patch.object(threading, "Thread") as thread:

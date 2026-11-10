@@ -47,7 +47,9 @@ _TICK_SEC: Final = 5.0
 
 def normalise_os(value: str) -> str:
     value = value.translate(_ASCII_LOWER)
-    if value in {"darwin", "linux", "freebsd", "windows"}:
+    if value.startswith("freebsd"):
+        return "freebsd"
+    if value in {"darwin", "linux", "windows"}:
         return value
     if value == "win32" or re.fullmatch(r"(?:mingw.*|msys)_nt-.*", value):
         return "windows"
@@ -282,13 +284,13 @@ class UpdateChecker:
     def tick(self) -> None:
         if not runtime_config.UPDATE_CHECK_DEFAULT_ENABLED or self.config.update_check_disabled:
             return
-        now = self.clock()
-        day = datetime.fromtimestamp(now, UTC).date().isoformat()
-        if (self.last_day is not None and day <= self.last_day) or settings.no_update_check(
-            self.config
-        ):
-            return
         try:
+            now = self.clock()
+            day = datetime.fromtimestamp(now, UTC).date().isoformat()
+            if (self.last_day is not None and day <= self.last_day) or settings.no_update_check(
+                self.config
+            ):
+                return
             os.makedirs(self.config.state_home, mode=0o700, exist_ok=True)
             with runtime_io.held_file_lock(self.path + ".lock", wait=0) as held:
                 # No unsupported-lock fallback: failing closed preserves the one-home daily cap.
@@ -316,7 +318,7 @@ class UpdateChecker:
                     if isinstance(previous, (int, float)) and previous <= at:
                         stored.update(version=version, checked_at=at)
                         runtime_io.atomic_write_owner_only(self.path, json.dumps(stored) + "\n")
-        except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        except (OSError, ValueError, OverflowError, RecursionError, http.client.HTTPException):
             # Offline is ordinary: no retry, diagnostic, or error state on the board.
             return
 
