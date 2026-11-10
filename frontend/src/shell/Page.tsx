@@ -6,6 +6,7 @@ import { Breadcrumb } from './Breadcrumb';
 import { useDisplayed, useRoute, useShell } from './context';
 import { Header } from './Header';
 import { shortcutTarget, SKIP_ROLE_SELECTOR } from './keyboard';
+import { UpdateNotice } from './UpdateNotice';
 import { Notices } from './Notices';
 import { findSession } from './derive';
 import { selectObserved } from '../observed/select';
@@ -45,7 +46,7 @@ function useShellKeyboard(): void {
 }
 
 export function Page() {
-  const { runtime, display, clock, host } = useShell();
+  const { runtime, display, clock, host, controls } = useShell();
   useBoardRuntime(runtime);
   useShellKeyboard();
   /* A Select popup closing is the reader's own moment: the newest deferred poll shows once. */
@@ -86,6 +87,11 @@ export function Page() {
     <main id="app">
       <Header route={route} />
       <Breadcrumb route={route} />
+      <UpdateNotice
+        update={snapshot.data?.update_check}
+        storage={runtime.storage}
+        focusLane={controls.focusLane}
+      />
       <Notices
         snapshot={snapshot}
         now={clock.now()}

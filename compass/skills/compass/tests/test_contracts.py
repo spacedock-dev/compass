@@ -1064,6 +1064,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # collectors and whichever one is added next. `records` is a leaf, so
         # this stays inward.
         "compass_runtime.aggregate": {
+            "compass_runtime.update_check",
             "compass_runtime.board_explanations",
             # Each row's small summary state; no blocks and no transcript read.
             "compass_runtime.summary_store",
@@ -1187,6 +1188,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The CLI is the assembly point, so it may import any runtime module.
         "compass_runtime.cli": {
+            "compass_runtime.update_check",
             # A starting run removes Claude reading output and stderr files that a
             # hard kill left in the state directory.
             "compass_runtime.observer",
@@ -2064,6 +2066,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.probe",
         },
         "compass_runtime.lifecycle": {
+            "compass_runtime.update_check",
             "compass_runtime.terminal_client",
             "compass_runtime.loopback_transport",
             "compass_runtime.config",
@@ -2174,6 +2177,12 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.compass_turns",
         },
         "compass_runtime.settings": {"compass_runtime.config", "compass_runtime.io"},
+        "compass_runtime.update_check": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.settings",
+            "compass_runtime.reach",
+        },
         # The summary store persists the producer's frozen result and compares it with a fresh
         # source read; it resolves the focused transcript itself and holds no model seam.
         "compass_runtime.summary_store": {

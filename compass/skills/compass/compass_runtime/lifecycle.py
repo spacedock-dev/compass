@@ -30,6 +30,7 @@ from compass_runtime import (
     summary_jobs,
     supervise,
     terminal_client,
+    update_check,
 )
 from compass_runtime import interaction_prototype as runtime_interaction
 from compass_runtime import io as runtime_io
@@ -1109,6 +1110,7 @@ def serve(  # noqa: PLR0915 - ordered signal, recovery, serving and shutdown lif
                 summary_jobs.recover(served, alive=functools.partial(dashboard_alive, config))
             with contextlib.suppress(Exception):
                 _recover_long_jobs(config, served.state, now=time.time())
+        update_check.start(config, producer_stop)
         if observation is not None:
             observation.start()
         else:

@@ -33,7 +33,7 @@ type Load =
 type Outcome = { readonly tone: 'saved' | 'refused'; readonly text: string } | null;
 
 /** Which press is in flight: Save, Restore all, or one field's Restore default. */
-type Pending = 'save' | 'restore-all' | `restore:${string}` | null;
+type Pending = 'update-check' | 'save' | 'restore-all' | `restore:${string}` | null;
 
 const INTRO =
   'These limits decide how much of a session an Analyze drift press reads. A change applies to the next press; nothing already read changes.';
@@ -229,7 +229,11 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
   const fields = load.state === 'ready' ? fieldsOf(load.body) : [];
 
   const send = useCallback(
-    async (press: Exclude<Pending, null>, values: Record<string, number | null>, done: string) => {
+    async (
+      press: Exclude<Pending, null>,
+      values: Record<string, number | boolean | null>,
+      done: string,
+    ) => {
       if (load.state !== 'ready' || write.current) return;
       const controller = new AbortController();
       write.current = controller;
@@ -317,6 +321,45 @@ export function SettingsScreen({ client }: { readonly client: SettingsClient }) 
   return (
     <section className="next-view" data-next-view-body="settings" data-next-settings-state="ready">
       <h1>Settings</h1>
+      {load.body.update_check ? (
+        <section
+          className="mt-4 flex max-w-[var(--measure)] flex-col gap-2"
+          aria-labelledby="update-check-heading"
+        >
+          <h2 id="update-check-heading" className="m-0 text-value font-bold">
+            Updates
+          </h2>
+          <Label className="flex items-center gap-2 text-body">
+            <input
+              type="checkbox"
+              checked={load.body.update_check.disabled}
+              aria-disabled={pending !== null ? true : undefined}
+              onChange={(event) =>
+                pending === null &&
+                void send(
+                  'update-check',
+                  { no_update_check: event.currentTarget.checked },
+                  'Update check preference saved.',
+                )
+              }
+            />
+            Turn off daily update checks
+          </Label>
+          <p className="m-0 text-body text-muted-foreground">
+            Checks spacedock.md at most once per UTC day for a newer release.
+          </p>
+          {!load.body.update_check.default_enabled ? (
+            <p className="m-0 text-body text-muted-foreground">
+              Update checks are off by default in this build.
+            </p>
+          ) : null}
+          {load.body.update_check.cli_disabled ? (
+            <p className="m-0 text-body text-muted-foreground">
+              Update checks are off for this run (--no-update-check).
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <form
         ref={form}
         noValidate

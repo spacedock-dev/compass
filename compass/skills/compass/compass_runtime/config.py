@@ -172,6 +172,10 @@ SECONDS_PER_DAY: Final = 24 * 60 * 60
 _PATH_TYPE = type(Path())
 
 
+# Flipped only by the release that enables the disclosed daily lookup.
+UPDATE_CHECK_DEFAULT_ENABLED: Final = False
+
+
 @dataclass(frozen=True)
 class RuntimeConfig:
     home: str
@@ -717,6 +721,10 @@ class RuntimeConfig:
     live_monitor_window_sec: float
     live_monitor_daily_cap: int
     live_monitor_in_flight_limit: int
+    update_check_disabled: bool = False
+    update_check_internal_env: bool = False
+    update_check_ci: bool = False
+    update_check_arch: str = "unknown"
     # The release this process runs, handed in as data so the health answer and the state file can
     # name it without `http_api` importing the terminal client. None when the install records none.
     release_version: str | None = None
@@ -858,6 +866,8 @@ def build_runtime_config(
     history_enabled: bool = True,
     history_retention_sec: float = HISTORY_RETENTION_DEFAULT_DAYS * SECONDS_PER_DAY,
     history_max_bytes: int = HISTORY_MAX_BYTES_DEFAULT,
+    update_check_disabled: bool = False,
+    update_check_arch: str = "unknown",
     release_version: str | None = None,
 ) -> RuntimeConfig:
     """Construct runtime configuration solely from explicit inputs."""
@@ -1071,6 +1081,13 @@ def build_runtime_config(
         dismissal_body_cap_bytes=1_024,
         history_retention_sec=history_retention_sec,
         history_max_bytes=history_max_bytes,
+        update_check_disabled=update_check_disabled,
+        update_check_arch=update_check_arch,
+        update_check_internal_env=environ.get("SPACEDOCK_INTERNAL") == "1",
+        update_check_ci=environ.get("CI", "")
+        .strip(" \t\n\r\v\f")
+        .translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"))
+        in {"1", "true", "yes", "on"},
         release_version=release_version,
         prompt_path_collapse_min_length=25,
         first_line_json_cap_bytes=200_000,

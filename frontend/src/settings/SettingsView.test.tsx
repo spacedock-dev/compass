@@ -458,3 +458,59 @@ describe('the Settings screen', () => {
     expect(document.querySelector('[data-next-view-body="settings"]')).toBeNull();
   });
 });
+
+describe('the daily update preference', () => {
+  it('lets the reader turn checks off, persists the answer and keeps it after reopening', async () => {
+    const body = (disabled: boolean) => ({
+      status: 200,
+      body: {
+        values: DEFAULTS,
+        limits: LIMITS,
+        update_check: { disabled, default_enabled: false, cli_disabled: false },
+      },
+    });
+    const server = backend([body(false), body(true)], [body(true)]);
+    const first = render(<SettingsScreen client={server.client} />);
+    await flush();
+    const checkbox = screen.getByRole('checkbox', { name: 'Turn off daily update checks' });
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText('Update checks are off by default in this build.')).toBeVisible();
+    fireEvent.click(checkbox);
+    await flush();
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+    expect(server.posts()[0]?.body).toEqual({ values: { no_update_check: true } });
+    first.unmount();
+    await mount(server);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Turn off daily update checks' }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+  });
+
+  it('keeps the saved answer when the write fails and names a command-line refusal', async () => {
+    const server = backend(
+      [
+        {
+          status: 200,
+          body: {
+            values: DEFAULTS,
+            limits: LIMITS,
+            update_check: { disabled: false, default_enabled: true, cli_disabled: true },
+          },
+        },
+      ],
+      ['offline'],
+    );
+    await mount(server);
+    expect(
+      screen.getByText('Update checks are off for this run (--no-update-check).'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Turn off daily update checks' }));
+    await flush();
+    expect(
+      (screen.getByRole('checkbox', { name: 'Turn off daily update checks' }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(outcome()).toContain('nothing was saved');
+  });
+});

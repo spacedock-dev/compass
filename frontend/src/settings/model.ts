@@ -130,7 +130,7 @@ function isLimit(value: unknown): value is SettingLimit {
 /** An answer the screen can draw from, or null: a body missing either half is not one. */
 export function settingsBody(body: unknown): SettingsBody | null {
   if (typeof body !== 'object' || body === null) return null;
-  const { values, limits, capacities } = body as Record<string, unknown>;
+  const { values, limits, capacities, update_check } = body as Record<string, unknown>;
   if (typeof values !== 'object' || values === null || Array.isArray(values)) return null;
   if (!Array.isArray(limits) || !limits.every(isLimit)) return null;
   const numbers = values as Record<string, unknown>;
@@ -140,6 +140,13 @@ export function settingsBody(body: unknown): SettingsBody | null {
       ? (capacities as Record<string, unknown>)
       : {};
   return {
+    ...(typeof update_check === 'object' &&
+    update_check !== null &&
+    typeof (update_check as Record<string, unknown>)['disabled'] === 'boolean' &&
+    typeof (update_check as Record<string, unknown>)['default_enabled'] === 'boolean' &&
+    typeof (update_check as Record<string, unknown>)['cli_disabled'] === 'boolean'
+      ? { update_check: update_check as NonNullable<SettingsBody['update_check']> }
+      : {}),
     values: numbers as Record<string, number>,
     limits,
     capacities: {

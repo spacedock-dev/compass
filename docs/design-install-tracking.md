@@ -5,9 +5,10 @@ or check for a new version, without asking anyone for consent and without storin
 an IP address. It records the contract the three products and the spacedock.md website share, and
 the alternatives that were tried and rejected.
 
-Status: decided on 2026-11-10, not built. Nothing in this repository sends any of it yet. When
-Compass's update check ships, [`SECURITY.md`](../SECURITY.md) becomes the authority on what that
-check sends, and this file stays the record of why.
+Status: implemented on 2026-11-10 behind `config.UPDATE_CHECK_DEFAULT_ENABLED = False`.
+No build sends a check until a later release flips that default.
+[`SECURITY.md`](../SECURITY.md#daily-update-checks) owns what the implemented check sends; this
+file records why.
 
 The work is spread over three repositories. Tracker issues name each piece:
 
@@ -65,9 +66,8 @@ below. The installer does not follow the redirect, so it makes no call to GitHub
 background with a timeout of a few seconds, discards the answer, and never changes whether the
 install succeeds or how long it takes. One counting request per product per run means one count.
 
-Review's standalone installer and Compass's update check do look releases up through the route,
-once per product per run. `curl -L` follows the route's redirect to GitHub, not back to the route,
-so that is still one count.
+Review's standalone installer looks releases up through its route. `curl -L` follows that route's redirect to GitHub, not back to the route, so that is still one count. Compass reads JSON from
+its route and follows no redirect, at most once per UTC day per Compass home.
 
 The `subspace` route maps to `spacedock-dev/subspace-beta` today, while both installers download
 Review's files from `spacedock-dev/subspace`. That is a stale name, not a second release source:
@@ -271,8 +271,7 @@ background after it starts, and again on the first tick after each UTC midnight 
 running. No hook makes the call. It drives the "new version available" notice in the dashboard, and
 each check is counted as `kind=check`, which is how running Compass installs are counted.
 
-- It reads `spacedock.md/latest-release/compass`, and the GitHub releases API until that route is
-  live.
+- It reads `https://spacedock.md/latest-release/compass`, which now answers with release JSON.
 - It follows no redirect and refuses a target that is not `https`, as every outbound request in
   [`SECURITY.md`](../SECURITY.md#scope) does.
 - It sends the fields above and nothing else.
@@ -295,13 +294,11 @@ counting.
 The check stays off in every build until the release that turns it on, so a merge to `main` sends
 nothing before [`SECURITY.md`](../SECURITY.md) says what is sent.
 
-### What SECURITY.md will say
+### What SECURITY.md says
 
-When the check ships, SECURITY.md's list of outbound requests gains it: the recipient (spacedock.md,
-or GitHub until the route is live), the fields, both switches, the no-redirect rule, and that
+SECURITY.md's list of outbound requests includes the implemented check: the recipient (spacedock.md), the fields, both switches, the no-redirect rule, and that
 spacedock.md passes the caller's IP address on to Plausible, which stores none of it but derives an
-approximate location from it. The release notes say the same in plain words. SECURITY.md is not
-changed now, because nothing sends yet.
+approximate location from it. The release that turns the default on must say the same in its notes.
 
 ## No consent, and why
 

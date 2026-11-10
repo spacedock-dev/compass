@@ -74,9 +74,15 @@ class Settings(NamedTuple):
     analyze_record_events: int
     analyze_listed_checks: int
     analyze_scan_megabytes: int
+    no_update_check: bool = False
 
 
-DEFAULTS: Final = Settings(**{limit.key: limit.default for limit in LIMITS})
+DEFAULTS: Final = Settings(
+    analyze_prompt_bytes=LIMITS[0].default,
+    analyze_record_events=LIMITS[1].default,
+    analyze_listed_checks=LIMITS[2].default,
+    analyze_scan_megabytes=LIMITS[3].default,
+)
 
 
 class InvalidSettingError(ValueError):
@@ -132,7 +138,8 @@ def load(config: RuntimeConfig) -> Settings:
         **{
             limit.key: stored[limit.key] if _valid(limit, stored.get(limit.key)) else limit.default
             for limit in LIMITS
-        }
+        },
+        no_update_check=stored.get("no_update_check") is True,
     )
 
 
@@ -144,6 +151,10 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
     """
     known = {limit.key: limit for limit in LIMITS}
     for key, value in changes.items():
+        if key == "no_update_check":
+            if value is not None and not isinstance(value, bool):
+                raise InvalidSettingError(key)
+            continue
         limit = known.get(key)
         if limit is None or (value is not None and not _valid(limit, value)):
             raise InvalidSettingError(str(key))
@@ -157,8 +168,13 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
             raise OSError(held)
         current = load(config)._asdict()
         for key, value in changes.items():
-            current[key] = known[key].default if value is None else value
-        kept = {key: value for key, value in current.items() if value != known[key].default}
+            fallback = False if key == "no_update_check" else known[key].default
+            current[key] = fallback if value is None else value
+        kept = {
+            key: value
+            for key, value in current.items()
+            if value != (False if key == "no_update_check" else known[key].default)
+        }
         runtime_io.atomic_write_owner_only(path, json.dumps(kept, sort_keys=True) + "\n")
     return load(config)
 
@@ -166,6 +182,7 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
 def published(settings: Settings) -> dict[str, Any]:
     """The values in force and each one's default and bounds, as the Settings screen reads them."""
     return {
-        "values": settings._asdict(),
+        "values": {limit.key: getattr(settings, limit.key) for limit in LIMITS},
+        "update_check": {"disabled": settings.no_update_check},
         "limits": [limit._asdict() for limit in LIMITS],
     }

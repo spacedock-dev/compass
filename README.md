@@ -178,10 +178,11 @@ explains which actions can spend and how they are guarded.
 Compass is a small Python server that runs on your machine. It reads the session records your agents
 already write, never changes them, and serves one dashboard at `http://127.0.0.1:4553/`.
 
-Four kinds of traffic can leave your machine, and you can switch off each one. Only the quota reading
+Five kinds of traffic can leave your machine, and you can switch off each one. Only the quota reading
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
-check reads and counts-only reach nudges start from something you do. See
-[SECURITY.md](SECURITY.md#scope) for all four. The server listens only on `127.0.0.1`. `--host`
+check reads and counts-only reach nudges start from something you do. The daily release lookup
+is off by default until a later release enables it; Settings and `--no-update-check` can stop it. See
+[SECURITY.md](SECURITY.md#scope) for all five. The server listens only on `127.0.0.1`. `--host`
 exposes it to your network with no password, so read that section before you use it.
 
 [How Compass works](docs/how-it-works.md) walks through a drift check on the sample session, lists

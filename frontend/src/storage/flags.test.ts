@@ -62,9 +62,10 @@ describe('workstream collapse family (compass.next.workstream.collapsed)', () =>
   });
 });
 
-describe('the eleven keys', () => {
+describe('the persisted keys', () => {
   it('are spelled exactly as released', () => {
     expect(STORAGE_KEYS).toEqual({
+      updateDismissed: 'compass.update-dismissed.v1',
       memoPrefix: 'compass.cockpit.memo.v2:',
       graphMode: 'compass.next.graph.mode',
       guardrailPrefix: 'compass.next.guardrails.',
