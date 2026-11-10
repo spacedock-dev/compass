@@ -1012,7 +1012,10 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
         return terminal_client.run_project(session=args.session, port=args.port if typed else None)
     if args.drift:
         return terminal_client.run_drift(
-            again=args.drift == "again", session=args.session, port=args.port if typed else None
+            again=args.drift == "again",
+            session=args.session,
+            port=args.port if typed else None,
+            no_update_check=args.no_update_check,
         )
     return None
 

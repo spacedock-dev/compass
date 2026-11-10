@@ -7,8 +7,11 @@ import http.client
 import io
 import json
 import os
+import socket
+import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import urllib.parse
 import urllib.request
@@ -17,17 +20,16 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from unittest import mock
 
-if TYPE_CHECKING:
-    import socket
-
-from compass_runtime import cli, config, reach, settings, update_check
+from compass_runtime import cli, config, entry, reach, settings, terminal_client, update_check
 from compass_runtime import io as runtime_io
 
 from .support import make_config, serve_until_closed
 from .test_cli_version import run_main
+
+REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
 
 
 class DailyCheckTest(unittest.TestCase):
@@ -121,7 +123,7 @@ class DailyCheckTest(unittest.TestCase):
             self.checker().tick()
 
     def test_the_default_and_either_off_switch_send_nothing(self) -> None:
-        with mock.patch.object(update_check, "fetch_release") as fetch:
+        with mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch:
             with mock.patch.object(config, "UPDATE_CHECK_DEFAULT_ENABLED", False):
                 self.checker().tick()
             update_check.UpdateChecker(replace(self.config, update_check_disabled=True)).tick()
@@ -130,10 +132,73 @@ class DailyCheckTest(unittest.TestCase):
         fetch.assert_not_called()
         self.assertFalse(Path(self.config.state_home, update_check.STORE_FILENAME).exists())
 
+    def test_unreadable_preferences_fail_closed_without_breaking_reading_defaults(self) -> None:
+        for raw in (
+            b'{"no_update_check":true',
+            b"[]",
+            b"\xff",
+            b" " * 4097,
+            b'{"no_update_check": "false"}',
+        ):
+            with self.subTest(raw=raw[:30]):
+                Path(settings.store_path(self.config)).write_bytes(raw)
+                with mock.patch.object(
+                    update_check, "fetch_release", return_value="2.9.0"
+                ) as fetch:
+                    self.checker().tick()
+                fetch.assert_not_called()
+                self.assertEqual(settings.load(self.config), settings.DEFAULTS)
+        with (
+            mock.patch.object(settings, "_read_store", side_effect=PermissionError),
+            mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch,
+        ):
+            self.checker().tick()
+        fetch.assert_not_called()
+
+    def test_saving_reading_limits_cannot_erase_an_unreadable_opt_out(self) -> None:
+        Path(settings.store_path(self.config)).write_text('{"no_update_check":true')
+        settings.save(self.config, {"analyze_record_events": 4000})
+        with mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch:
+            self.checker().tick()
+        fetch.assert_not_called()
+        self.assertEqual(settings.load(self.config).analyze_record_events, 4000)
+
+    def test_existing_invalid_attempt_state_is_never_reinitialized(self) -> None:
+        path = Path(self.config.state_home, update_check.STORE_FILENAME)
+        for raw in (
+            "{",
+            "[]",
+            "{}",
+            '{"attempt_day":"invalid"}',
+            '{"attempt_day":123}',
+            '{"version":"2.9.0"}',
+        ):
+            with self.subTest(raw=raw):
+                path.write_text(raw)
+                with mock.patch.object(
+                    update_check, "fetch_release", return_value="2.9.0"
+                ) as fetch:
+                    self.checker().tick()
+                fetch.assert_not_called()
+                self.assertEqual(path.read_text(), raw)
+        with (
+            mock.patch.object(os, "open", side_effect=PermissionError),
+            mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch,
+        ):
+            self.checker().tick()
+        fetch.assert_not_called()
+
+    def test_nonfinite_saved_timestamps_are_not_published(self) -> None:
+        path = Path(self.config.state_home, update_check.STORE_FILENAME)
+        for value in ("1e999", "NaN", "-Infinity", "1" + "0" * 400):
+            with self.subTest(value=value):
+                path.write_text('{"version":"999.0.0","checked_at":' + value + "}")
+                self.assertIsNone(update_check.published(self.config))
+
     def test_an_unwritable_attempt_store_sends_nothing(self) -> None:
         with (
             mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=OSError),
-            mock.patch.object(update_check, "fetch_release") as fetch,
+            mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch,
         ):
             self.checker().tick()
         fetch.assert_not_called()
@@ -198,12 +263,12 @@ class DailyCheckTest(unittest.TestCase):
     def test_the_saved_off_switch_survives_other_settings_writes_and_restart(self) -> None:
         settings.save(self.config, {"no_update_check": True})
         settings.save(self.config, {"analyze_record_events": 4000})
-        self.assertTrue(settings.load(self.config).no_update_check)
-        with mock.patch.object(update_check, "fetch_release") as fetch:
+        self.assertTrue(settings.no_update_check(self.config))
+        with mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch:
             self.checker().tick()
         fetch.assert_not_called()
         settings.save(self.config, {"no_update_check": None})
-        self.assertFalse(settings.load(self.config).no_update_check)
+        self.assertFalse(settings.no_update_check(self.config))
         self.assertEqual(settings.load(self.config).analyze_record_events, 4000)
         for value in (0, 1, "true", ["wrong"]):
             with self.subTest(value=value), self.assertRaises(settings.InvalidSettingError):
@@ -228,6 +293,20 @@ class InternalMarkerTest(unittest.TestCase):
         args = cli.build_parser().parse_args(["--no-update-check"])
         built, _ = cli.build_runtime(args, started=1)
         self.assertTrue(built.update_check_disabled)
+
+    def test_the_entry_point_forwards_the_off_switch_to_automatic_drift_startup(self) -> None:
+        for argv in (["--no-update-check", "--drift"], ["--drift", "--no-update-check"]):
+            with (
+                self.subTest(argv=argv),
+                mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "test"}, clear=True),
+                mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+                mock.patch(
+                    "subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+                ) as run,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(entry.main(argv), 1)
+                self.assertIn("--no-update-check", run.call_args.args[0])
 
     def test_a_development_version_is_not_an_internal_marker(self) -> None:
         cfg = make_config(release_version="2.8.0+dev", update_check_internal_env=False)
@@ -440,3 +519,78 @@ class MemoryTransportTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 update_check.fetch_release(cfg)
             self.assertEqual(len(sent), 1)
+
+
+class ExchangeDeadlineTest(unittest.TestCase):
+    def test_a_stalled_dns_lookup_expires_before_any_connection(self) -> None:
+        release = threading.Event()
+        finished = threading.Event()
+
+        def resolve(*_args: object, **_kwargs: object) -> list[object]:
+            try:
+                release.wait(2)
+                return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 443))]
+            finally:
+                finished.set()
+
+        began = time.monotonic()
+        with mock.patch.object(socket.socket, "connect") as connect:
+            try:
+                with (
+                    mock.patch.object(socket, "getaddrinfo", side_effect=resolve),
+                    mock.patch.object(update_check, "_TIMEOUT_SEC", 0.1),
+                    self.assertRaises(OSError),
+                ):
+                    update_check.fetch_release(make_config(release_version="2.8.0"))
+                self.assertLess(time.monotonic() - began, 0.6)
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(1))
+            connect.assert_not_called()
+
+    def test_continuously_dripping_headers_and_body_cannot_extend_the_exchange(self) -> None:
+        for phase in ("headers", "body"):
+            with self.subTest(phase=phase):
+                self.dripping_exchange(phase)
+
+    def dripping_exchange(self, phase: str) -> None:
+        client, server = socket.socketpair()
+        stop = threading.Event()
+
+        def drip() -> None:
+            try:
+                server.recv(4096)
+                if phase == "body":
+                    server.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")
+                else:
+                    server.sendall(b"HTTP/1.1 200 OK\r\nX-Drip: ")
+                for _ in range(40):
+                    if stop.wait(0.02):
+                        return
+                    server.sendall(b" ")
+                server.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+
+        worker = threading.Thread(target=drip, daemon=True)
+        worker.start()
+        self.addCleanup(server.close)
+        self.addCleanup(client.close)
+        began = time.monotonic()
+        try:
+            # Exercise the real opener and deadline transport; only TCP/TLS setup is
+            # replaced by a local socket so no network or certificate is needed.
+            with (
+                mock.patch.object(
+                    http.client.HTTPSConnection,
+                    "connect",
+                    lambda connection: setattr(connection, "sock", client),
+                ),
+                mock.patch.object(update_check, "_TIMEOUT_SEC", 0.1),
+                self.assertRaises((OSError, http.client.HTTPException)),
+            ):
+                update_check.fetch_release(make_config(release_version="2.8.0"))
+            self.assertLess(time.monotonic() - began, 0.6)
+        finally:
+            stop.set()
+            worker.join(1)

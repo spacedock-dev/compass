@@ -1408,7 +1408,9 @@ class DriftOperationTest(unittest.TestCase):
             code = cli.main(["--drift", "again", "--session", "claude:abc", "--port", "4581"])
 
         self.assertEqual(0, code)
-        run.assert_called_once_with(again=True, session="claude:abc", port=4581)
+        run.assert_called_once_with(
+            again=True, session="claude:abc", port=4581, no_update_check=False
+        )
 
 
 class DriftCommandTest(HomeCase):

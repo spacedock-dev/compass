@@ -403,7 +403,7 @@ def published_settings(config: RuntimeConfig, value: settings.Settings) -> dict[
     return {
         **settings.published(value),
         "update_check": {
-            "disabled": value.no_update_check,
+            "disabled": settings.no_update_check(config),
             "default_enabled": runtime_config.UPDATE_CHECK_DEFAULT_ENABLED,
             "cli_disabled": config.update_check_disabled,
         },

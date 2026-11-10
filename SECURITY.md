@@ -390,7 +390,8 @@ implementation sends nothing. Once enabled, it runs after server startup and on 
 after each UTC midnight. No hook sends the request, and startup does not wait for it. An unreachable
 source shows no error. The UTC attempt day is saved atomically before sending, under an OS lock
 shared by servers using the same Compass home. A failed check is not retried that day. If the
-attempt cannot be saved or locked, nothing is sent. The last successful answer and its time are
+attempt cannot be saved or locked, or an existing attempt history is unreadable or invalid, nothing
+is sent. The last successful answer and its time are
 kept separately from the attempt day in `compass-update-check.json` for the version notice.
 
 The request is exactly:
@@ -411,10 +412,14 @@ Only when `CI`, trimmed of ASCII whitespace and ASCII case-folded, is `1`, `true
 the query also carries `ci=1`. There is no identifier, session content or other field, and no other
 header beyond those urllib adds. The client uses Python's standard-library urllib, ignores proxy
 settings, refuses non-HTTPS targets and follows no redirect, including a redirect to HTTPS.
+A five-second whole-exchange deadline covers DNS, connection, headers and body. A timed-out DNS
+lookup cannot start a connection later.
 
 Either `--no-update-check` or the saved **Turn off daily update checks** checkbox in Settings
 stops this request. The checkbox persists across restarts in `compass-settings.json`, for a server
-started by any harness. No environment variable turns the check off. Neither switch can enable a
+started by any harness. Unreadable or damaged saved preferences also stop checks; absent preferences
+use the build default. The CLI flag also reaches a daemon started automatically by `--drift`.
+No environment variable turns the check off. Neither switch can enable a
 build whose default is off. Dismissing the dashboard's version notice is remembered for that
 version in browser storage; it does not turn checks off.
 

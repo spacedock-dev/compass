@@ -13,11 +13,18 @@ export function createUpdateDismissals(access: StorageAccess): UpdateDismissals 
     try {
       const saved: unknown =
         result.ok && result.value && result.value.length <= 2048 ? JSON.parse(result.value) : [];
+      const local = [...held];
+      held.clear();
       if (Array.isArray(saved))
         for (const version of saved.slice(-32)) {
           if (typeof version === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(version))
             held.add(version);
         }
+      // Previously held versions, including failed writes, take precedence over imports.
+      for (const version of local) {
+        held.delete(version);
+        held.add(version);
+      }
       const newest = [...held].slice(-32);
       held.clear();
       for (const version of newest) held.add(version);

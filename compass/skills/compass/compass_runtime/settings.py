@@ -25,6 +25,8 @@ loss. Raised, the same press kept all 187 messages.
 A value missing, unreadable or out of range reads as its default, so a damaged file costs the
 reader their settings and never their reading. Writes are refused, not clamped, when out of range:
 the screen shows the bounds, and a number silently changed would not be the one they typed.
+The update-check refusal shares this store but stays outside the reading-limit tuple. Unreadable
+preferences refuse outbound update checks while readings keep their defaults.
 """
 
 from __future__ import annotations
@@ -74,7 +76,6 @@ class Settings(NamedTuple):
     analyze_record_events: int
     analyze_listed_checks: int
     analyze_scan_megabytes: int
-    no_update_check: bool = False
 
 
 DEFAULTS: Final = Settings(
@@ -117,30 +118,37 @@ def _read_store(path: str) -> bytes:
         return handle.read(_MAX_STORE_BYTES + 1)
 
 
-def _stored(config: RuntimeConfig) -> dict[str, Any]:
+def _stored(config: RuntimeConfig) -> dict[str, Any] | None:
     try:
         raw = _read_store(store_path(config))
+    except FileNotFoundError:
+        return {}
     except OSError:
-        return {}
+        return None
     if len(raw) > _MAX_STORE_BYTES:
-        return {}
+        return None
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def load(config: RuntimeConfig) -> Settings:
     """The settings in force: each stored value that is valid, else its default."""
-    stored = _stored(config)
+    stored = _stored(config) or {}
     return Settings(
         **{
             limit.key: stored[limit.key] if _valid(limit, stored.get(limit.key)) else limit.default
             for limit in LIMITS
         },
-        no_update_check=stored.get("no_update_check") is True,
     )
+
+
+def no_update_check(config: RuntimeConfig) -> bool:
+    """Keep the outbound preference separate from reading limits, and fail closed on damage."""
+    stored = _stored(config)
+    return stored is None or stored.get("no_update_check", False) is not False
 
 
 def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
@@ -167,6 +175,7 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
         if held not in (runtime_io.LOCK_HELD, runtime_io.LOCK_UNSUPPORTED):
             raise OSError(held)
         current = load(config)._asdict()
+        current["no_update_check"] = no_update_check(config)
         for key, value in changes.items():
             fallback = False if key == "no_update_check" else known[key].default
             current[key] = fallback if value is None else value
@@ -183,6 +192,5 @@ def published(settings: Settings) -> dict[str, Any]:
     """The values in force and each one's default and bounds, as the Settings screen reads them."""
     return {
         "values": {limit.key: getattr(settings, limit.key) for limit in LIMITS},
-        "update_check": {"disabled": settings.no_update_check},
         "limits": [limit._asdict() for limit in LIMITS],
     }

@@ -137,7 +137,6 @@ class StoreTest(unittest.TestCase):
             {limit.key: getattr(settings.DEFAULTS, limit.key) for limit in settings.LIMITS},
             published["values"],
         )
-        self.assertEqual({"disabled": False}, published["update_check"])
         self.assertEqual(
             [limit.key for limit in settings.LIMITS],
             [limit["key"] for limit in published["limits"]],
