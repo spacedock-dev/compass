@@ -861,11 +861,13 @@ def version_guard(
     )
 
 
-def start_daemon(port: int, *, timeout: float = 30.0) -> None:
+def start_daemon(port: int, *, timeout: float = 30.0, no_update_check: bool = False) -> None:
     """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
     argv = [*launch_argv(), "--daemon", "--port", str(port)]
+    if no_update_check:
+        argv.append("--no-update-check")
     try:
         subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
@@ -1590,6 +1592,7 @@ def run_goal(
 def run_drift(
     *,
     again: bool = False,
+    no_update_check: bool = False,
     session: str | None = None,
     port: int | None = None,
     environ: Mapping[str, str] | None = None,
@@ -1626,7 +1629,11 @@ def run_drift(
         port=port,
         spend=named.harness in ("claude", "codex"),
         own_version=release_version(),
-        start=lambda chosen: start_daemon(chosen, timeout=_budget(deadline, 30.0)),
+        start=lambda chosen: start_daemon(
+            chosen,
+            timeout=_budget(deadline, 30.0),
+            **({"no_update_check": True} if no_update_check else {}),
+        ),
         # Inside a session the skill shows standard output on success and standard error on a
         # refusal, so the line is handed to the drift rules to say on whichever answers.
         say=said.append if in_session else None,

@@ -30,6 +30,7 @@ from . import (
     summary_store,
     tripwires,
     unasked,
+    update_check,
 )
 from . import ends as runtime_ends
 from . import events as runtime_events
@@ -1006,6 +1007,7 @@ class Application:
         collection: Collection = {
             "tripwires": stage_conditions,
             "generated": now,
+            "update_check": update_check.published(config),
             "window_hours": window_hours,
             # The trailing window every `rate_per_min` below is averaged over.
             # Published so a consumer can name the window it is ranking on

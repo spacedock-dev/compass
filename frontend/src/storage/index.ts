@@ -10,6 +10,7 @@ import type { CockpitProjectStore, WorkstreamStore } from './flags';
 import { createGoalStore, type GoalStore } from './goal';
 import { createGraphModeStore, type GraphModeStore } from './graphMode';
 import { createGuardrailStore, type GuardrailStore } from './guardrails';
+import { createUpdateDismissals, type UpdateDismissals } from './update';
 import { STORAGE_KEYS } from './keys';
 import { createLeaseStore, type LeaseStore } from './lease';
 import { createMemoStore, type MemoStore } from './memo';
@@ -51,6 +52,7 @@ export type { UsageCounts, UsageStore } from './usage';
 export { decodeUsage, USAGE_COUNT_MAX, USAGE_LOAD_LIMIT } from './usage';
 
 export interface LegacyStorage {
+  readonly updateDismissals: UpdateDismissals;
   readonly memo: MemoStore;
   readonly graphMode: GraphModeStore;
   readonly guardrails: GuardrailStore;
@@ -71,6 +73,7 @@ export interface LegacyStorage {
 export function createLegacyStorage(provider: BackendProvider = browserBackend): LegacyStorage {
   const access = storageAccess(provider);
   return {
+    updateDismissals: createUpdateDismissals(access),
     memo: createMemoStore(access),
     graphMode: createGraphModeStore(access),
     guardrails: createGuardrailStore(access),

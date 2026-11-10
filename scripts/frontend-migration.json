@@ -1475,6 +1475,26 @@
       ],
       "contract": "Held for the life of the tab, one per session, bounded at 16, never stored. A later reading with no departure, after one this tab drew with some, is named once as clearing them, except a departure the card still lists, and the reading after it takes the line down; a reload says nothing.",
       "disposition": "store-held"
+    },
+    {
+      "name": "A dismissed update notice",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/shell/UpdateNotice.test.tsx",
+        "frontend/stories/UpdateCheck.stories.tsx"
+      ],
+      "contract": "A version dismissal survives board refreshes, remounts and reloads, with in-tab fallback when browser storage is blocked. A newer version shows.",
+      "disposition": "store-held"
+    },
+    {
+      "name": "The daily update check off switch",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/settings/SettingsView.test.tsx",
+        "frontend/stories/UpdateCheck.stories.tsx"
+      ],
+      "contract": "The saved server setting survives restarts and reopening Settings; failed writes keep the previous answer.",
+      "disposition": "store-held"
     }
   ],
   "storage": [
@@ -1603,6 +1623,16 @@
       ],
       "contract": "Dormant legacy project-use ordering remains compatibility data, not observed activity or React sort authority.",
       "format": "Fixed key JSON object label=>count; loader takes first200 entries,Math.floor(Number(value)),positive only,each<=999999; writes increment/clamp but do not bound total key count; no TTL; malformed/blocked storage yields in-memory fallback."
+    },
+    {
+      "name": "compass.update-dismissed.v1",
+      "owner": "DRC-4823",
+      "oracles": [
+        "frontend/src/shell/UpdateNotice.test.tsx",
+        "frontend/stories/UpdateCheck.stories.tsx"
+      ],
+      "contract": "Remember dismissed release versions without suppressing later releases or stopping requests.",
+      "format": "JSON array of the newest 32 validated version strings, at most 32 characters each; missing, malformed or blocked storage falls back to this tab's memory. No TTL."
     }
   ],
   "native_fields": {

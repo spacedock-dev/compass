@@ -58,6 +58,7 @@ from compass_runtime import (
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import asks as runtime_asks
+from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
 from compass_runtime import io as runtime_io
 from compass_runtime import observer as runtime_observer
@@ -401,6 +402,11 @@ def published_settings(config: RuntimeConfig, value: settings.Settings) -> dict[
     """Stored preferences and separate route estimates, identical on GET and POST."""
     return {
         **settings.published(value),
+        "update_check": {
+            "disabled": settings.no_update_check(config),
+            "default_enabled": runtime_config.UPDATE_CHECK_DEFAULT_ENABLED,
+            "cli_disabled": config.update_check_disabled,
+        },
         "capacities": {
             "claude": analyze_capacity.preview(
                 "claude", config.claude_reading_model, runtime_observer.CLAUDE_READING_SYSTEM_PROMPT
@@ -2535,7 +2541,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
     )
 
     def _settings_post(self) -> None:
-        """Change some of the reader's settings: `{"values": {key: int or null}}`.
+        """Change some of the reader's settings: `{"values": {key: int, bool or null}}`.
 
         A same-origin page only, as `/api/summary` is: a setting decides how much of a session the
         next press sends to a model, so a cross-site form must not move it. Every value is checked

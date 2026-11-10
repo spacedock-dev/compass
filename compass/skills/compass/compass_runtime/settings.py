@@ -25,6 +25,8 @@ loss. Raised, the same press kept all 187 messages.
 A value missing, unreadable or out of range reads as its default, so a damaged file costs the
 reader their settings and never their reading. Writes are refused, not clamped, when out of range:
 the screen shows the bounds, and a number silently changed would not be the one they typed.
+The update-check refusal shares this store but stays outside the reading-limit tuple. Unreadable
+preferences refuse outbound update checks while readings keep their defaults.
 """
 
 from __future__ import annotations
@@ -76,7 +78,12 @@ class Settings(NamedTuple):
     analyze_scan_megabytes: int
 
 
-DEFAULTS: Final = Settings(**{limit.key: limit.default for limit in LIMITS})
+DEFAULTS: Final = Settings(
+    analyze_prompt_bytes=LIMITS[0].default,
+    analyze_record_events=LIMITS[1].default,
+    analyze_listed_checks=LIMITS[2].default,
+    analyze_scan_megabytes=LIMITS[3].default,
+)
 
 
 class InvalidSettingError(ValueError):
@@ -111,29 +118,37 @@ def _read_store(path: str) -> bytes:
         return handle.read(_MAX_STORE_BYTES + 1)
 
 
-def _stored(config: RuntimeConfig) -> dict[str, Any]:
+def _stored(config: RuntimeConfig) -> dict[str, Any] | None:
     try:
         raw = _read_store(store_path(config))
+    except FileNotFoundError:
+        return {}
     except OSError:
-        return {}
+        return None
     if len(raw) > _MAX_STORE_BYTES:
-        return {}
+        return None
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def load(config: RuntimeConfig) -> Settings:
     """The settings in force: each stored value that is valid, else its default."""
-    stored = _stored(config)
+    stored = _stored(config) or {}
     return Settings(
         **{
             limit.key: stored[limit.key] if _valid(limit, stored.get(limit.key)) else limit.default
             for limit in LIMITS
-        }
+        },
     )
+
+
+def no_update_check(config: RuntimeConfig) -> bool:
+    """Keep the outbound preference separate from reading limits, and fail closed on damage."""
+    stored = _stored(config)
+    return stored is None or stored.get("no_update_check", False) is not False
 
 
 def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
@@ -144,6 +159,10 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
     """
     known = {limit.key: limit for limit in LIMITS}
     for key, value in changes.items():
+        if key == "no_update_check":
+            if value is not None and not isinstance(value, bool):
+                raise InvalidSettingError(key)
+            continue
         limit = known.get(key)
         if limit is None or (value is not None and not _valid(limit, value)):
             raise InvalidSettingError(str(key))
@@ -156,9 +175,15 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
         if held not in (runtime_io.LOCK_HELD, runtime_io.LOCK_UNSUPPORTED):
             raise OSError(held)
         current = load(config)._asdict()
+        current["no_update_check"] = no_update_check(config)
         for key, value in changes.items():
-            current[key] = known[key].default if value is None else value
-        kept = {key: value for key, value in current.items() if value != known[key].default}
+            fallback = False if key == "no_update_check" else known[key].default
+            current[key] = fallback if value is None else value
+        kept = {
+            key: value
+            for key, value in current.items()
+            if value != (False if key == "no_update_check" else known[key].default)
+        }
         runtime_io.atomic_write_owner_only(path, json.dumps(kept, sort_keys=True) + "\n")
     return load(config)
 
@@ -166,6 +191,6 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
 def published(settings: Settings) -> dict[str, Any]:
     """The values in force and each one's default and bounds, as the Settings screen reads them."""
     return {
-        "values": settings._asdict(),
+        "values": {limit.key: getattr(settings, limit.key) for limit in LIMITS},
         "limits": [limit._asdict() for limit in LIMITS],
     }

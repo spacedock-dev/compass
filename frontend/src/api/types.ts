@@ -56,6 +56,7 @@ export interface PayloadHarness {
 }
 
 export interface PayloadData {
+  readonly update_check?: { readonly version: string; readonly checked_at: number } | null;
   readonly generated?: number;
   readonly build?: string;
   readonly show_all?: boolean;
@@ -365,6 +366,11 @@ export interface PromptCapacityPreview {
 
 /** `GET /api/settings`, and the answer to every accepted `POST`: the values in force and their limits. */
 export interface SettingsBody {
+  readonly update_check?: {
+    readonly disabled: boolean;
+    readonly default_enabled: boolean;
+    readonly cli_disabled: boolean;
+  };
   readonly values: Readonly<Record<string, number>>;
   readonly limits: readonly SettingLimit[];
   readonly capacities?: Readonly<Record<'claude' | 'codex', PromptCapacityPreview | null>>;
@@ -372,5 +378,5 @@ export interface SettingsBody {
 
 /** A subset of the keys; `null` restores that key's default. */
 export interface SettingsRequest {
-  readonly values: Readonly<Record<string, number | null>>;
+  readonly values: Readonly<Record<string, number | boolean | null>>;
 }

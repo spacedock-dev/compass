@@ -133,7 +133,10 @@ class StoreTest(unittest.TestCase):
 
     def test_published_names_every_limit_with_its_bounds(self) -> None:
         published = settings.published(self.load())
-        self.assertEqual(settings.DEFAULTS._asdict(), published["values"])
+        self.assertEqual(
+            {limit.key: getattr(settings.DEFAULTS, limit.key) for limit in settings.LIMITS},
+            published["values"],
+        )
         self.assertEqual(
             [limit.key for limit in settings.LIMITS],
             [limit["key"] for limit in published["limits"]],

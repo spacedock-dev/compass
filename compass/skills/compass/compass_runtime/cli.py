@@ -9,6 +9,7 @@ import ipaddress
 import json
 import math
 import os
+import platform
 import sys
 import time
 from pathlib import Path
@@ -32,6 +33,7 @@ from compass_runtime import (
     summary_store,
     terminal_client,
     unasked,
+    update_check,
 )
 from compass_runtime import annotations as annotation_store
 from compass_runtime import config as runtime_config
@@ -277,6 +279,18 @@ def build_parser() -> argparse.ArgumentParser:
             parser.add_argument(operation.flag, action="store_true", help=operation.help)
     for option in terminal_client.OPTIONS:
         parser.add_argument(option.flag, metavar=option.metavar, default=None, help=option.help)
+    parser.add_argument(
+        "--internal",
+        nargs="?",
+        const=True,
+        choices=("on", "off"),
+        help="show or save the internal-use marker in the Compass home, and exit",
+    )
+    parser.add_argument(
+        "--no-update-check",
+        action="store_true",
+        help="refuse the daily release lookup for this run",
+    )
     parser.add_argument("--port", type=lifecycle.tcp_port, default=4553)
     parser.add_argument(
         "--frontend-dev-manifest",
@@ -594,6 +608,8 @@ def build_runtime(
         history_enabled=not args.no_history,
         history_retention_sec=args.history_days * runtime_config.SECONDS_PER_DAY,
         history_max_bytes=args.history_max_bytes,
+        update_check_disabled=args.no_update_check,
+        update_check_arch=platform.machine(),
         release_version=terminal_client.release_version(),
     )
     return config, runtime_state.build_runtime_state(config, started=started)
@@ -782,12 +798,21 @@ def run_one_shot(
 ) -> int | None:
     """The commands that report and exit, or None when this run is to serve.
 
-    Gathered out of `main` rather than left as four consecutive branches there,
+    Gathered out of `main` rather than left as consecutive branches there,
     because `main` sits on ruff's branch cap and `--forget` was the flag that
     put it over. They are one family: each answers a question or performs one
     irreversible act, none of them binds a socket, and `--daemon` is refused
-    with all four.
+    with each.
     """
+    if args.internal is not None:
+        try:
+            if args.internal is not True:
+                update_check.save_internal(config, args.internal == "on")
+            print("on" if update_check.internal(config) else "off")
+        except OSError:
+            runtime_io.diag("Compass: the internal marker could not be saved.", print)
+            return 1
+        return 0
     if args.diagnose:
         # No recording lane: diagnostics read the stores and report, and
         # `SKILL.md` sends the reader here first whenever a harness is missing.
@@ -987,7 +1012,10 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
         return terminal_client.run_project(session=args.session, port=args.port if typed else None)
     if args.drift:
         return terminal_client.run_drift(
-            again=args.drift == "again", session=args.session, port=args.port if typed else None
+            again=args.drift == "again",
+            session=args.session,
+            port=args.port if typed else None,
+            no_update_check=args.no_update_check,
         )
     return None
 
@@ -1009,10 +1037,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Sampled before the combination check: the start stamp names this process,
     # and must not shift depending on which validation ran first.
     started = time.time()
-    if args.daemon and (args.diagnose or args.stop or args.status or args.forget):
-        # Each of those four exits without serving, so --daemon cannot apply.
+    if args.daemon and (
+        args.diagnose or args.stop or args.status or args.forget or args.internal is not None
+    ):
+        # These commands exit without serving, so --daemon cannot apply.
         # Accepting it silently would teach that it had been honored.
-        parser.error("--daemon cannot be combined with --diagnose, --stop, --status or --forget")
+        parser.error(
+            "--daemon cannot be combined with --diagnose, --stop, --status, --forget or --internal"
+        )
     validate_interaction_args(parser, args)
     validate_frontend_args(parser, args)
     config, state = build_runtime(args, started=started)

@@ -1,8 +1,8 @@
 import { compatSessKey } from '../api/identity';
 
-/* Exact spellings of the eleven persisted families. The twelfth, the Live monitor's per-session switch, is retired:
-   the switch drives a lease the server holds and is not remembered across reloads. */
+/* Exact spellings of the persisted browser preferences and transport state. */
 export const STORAGE_KEYS = {
+  updateDismissed: 'compass.update-dismissed.v1',
   memoPrefix: 'compass.cockpit.memo.v2:',
   graphMode: 'compass.next.graph.mode',
   guardrailPrefix: 'compass.next.guardrails.',

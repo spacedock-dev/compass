@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2312915,
+    "bytes": 2316403,
     "file": "react.html",
-    "sha256": "da0f92482e2a3fe449474faeb2d25fc506951ee39d70981768cb2a193fd135b5"
+    "sha256": "e339f77435635ed8dad7677405ed6c21d871f8190f9079da9b2c62c214d5de08"
   },
   "format": 1,
   "frontend": "react",
@@ -331,7 +331,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "5ce72a694379a22d4e94cf379fc672b553db78a82ae5d3c0ba70ca44bc2da4e1"
+        "sha256": "e353a4cffbf1e432e4abc0f2e28708976e2ba74f6f2dcb92b0d41e6c5eb50d28"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -1343,7 +1343,7 @@
       },
       {
         "file": "frontend/src/settings/SettingsView.tsx",
-        "sha256": "dc5b72436d5d4caa86d8924af9a38a13a2c10e3f7606e2675dbf5aa770d16e0e"
+        "sha256": "fe2fcf6ac7790fe90ea1933997d069c0c3558f57fc515fa0db235158ea4a8e14"
       },
       {
         "file": "frontend/src/settings/index.ts",
@@ -1351,7 +1351,7 @@
       },
       {
         "file": "frontend/src/settings/model.ts",
-        "sha256": "a9d3246da256aa2fa38bc4b872b631139ae2ff28c18e221b4166cac929384faa"
+        "sha256": "b214171e5490efbe1f953cdcf6be4eb2a4c9ecc04c77de4012cc0ba3dcc1b452"
       },
       {
         "file": "frontend/src/shell/Breadcrumb.tsx",
@@ -1371,7 +1371,7 @@
       },
       {
         "file": "frontend/src/shell/Page.tsx",
-        "sha256": "247a17829e5aede6a512b6768d3f0b4e2e07d5babe59c9a0c08b0c660785db4f"
+        "sha256": "951f5dd57f2df2f5d8e1529410b3bad0c6107708059e0361677d64c4fad03ee9"
       },
       {
         "file": "frontend/src/shell/ProjectTabs.tsx",
@@ -1380,6 +1380,10 @@
       {
         "file": "frontend/src/shell/RouteLink.tsx",
         "sha256": "d12944091c7c07211b2d26cfd01b0ce28ac3bec25ef9acc8e56400af037d7aeb"
+      },
+      {
+        "file": "frontend/src/shell/UpdateNotice.tsx",
+        "sha256": "684f13351d03f3d4f9199f421db52f37ba3666c196653943b3d3c623465bb631"
       },
       {
         "file": "frontend/src/shell/announcer.ts",
@@ -1499,11 +1503,11 @@
       },
       {
         "file": "frontend/src/storage/index.ts",
-        "sha256": "c5e521ae4a59ad0173b8dad02f5165bf45203ee8bc6f6f1b980ec742e7631db3"
+        "sha256": "dd3fea9d65d8240406ec20ef260c84617fc54d615ca570266e1c88f4d879cdc7"
       },
       {
         "file": "frontend/src/storage/keys.ts",
-        "sha256": "e06f8296c3d18c3c0061eb068647b0b30c5c4598e9726e3bafb117ea76340ac8"
+        "sha256": "7b8091d7873a7cddc6065c1cd2e8d6355d71be21d6b219ab4d342f20f2dce443"
       },
       {
         "file": "frontend/src/storage/lease.ts",
@@ -1516,6 +1520,10 @@
       {
         "file": "frontend/src/storage/revision.ts",
         "sha256": "608348b73bc25c15f07ae8a40abb30812e9b386f24c749f8ed3fbce609e8a23b"
+      },
+      {
+        "file": "frontend/src/storage/update.ts",
+        "sha256": "723f4d7eb5d59f37d5493d9e6b7451420b7e0efe8734b4e8adb91c56475fc046"
       },
       {
         "file": "frontend/src/storage/usage.ts",

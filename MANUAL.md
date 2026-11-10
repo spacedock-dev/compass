@@ -168,6 +168,8 @@ still stop calls. See [the workflow](HOW_TO_USE.md#analyze-a-session) and
 | `--unasked-readings` | Enable bounded checks of sessions with a typed goal without a fresh press; only departures are raised. Off by default. Claude Code reads Claude Code sessions; Codex reads Codex sessions. On Pi and Antigravity an unasked check prefers Claude Code, where Analyze drift prefers Codex; if the preferred provider is unavailable or unqualified on this machine, the other serves. Codex needs the Drift card's "Allow Codex to run unasked checks" toggle for the current destination; Attention points to it when sessions with a typed goal are waiting. Claude Code needs no separate grant; the Drift card names it and lists what each check sends, which on a Claude Code session includes the checks and commands that failed, never one that passed. Analyze and Resume never grant it. Revoking it, Pause model calls and `--no-observer-model` stop checks; Pause followed by Resume clears the grant. Quiet hours hold the notification, not the check. The caps remain three per session, twelve per rolling day, with a fifteen-minute floor. A call that starts and fails counts toward both caps. Harnesses without a session record reader show an explanation instead of a grant offer and do not enter Attention's permission queue; every stored Codex grant, including one saved for an earlier destination, stays revocable from any session's Drift card while these controls are on. A saved grant that no longer applies shows a checked switch and explains why; Attention does not ask for permission while a grant is stored. No effect under `--no-annotations`. |
 | `--allow-tool-output` | Accepted and does nothing in this release; will be removed in a later release. Claude Code readings include tool output by default where the destination is named, and disclose it in the notice. |
 | `--no-observer-model`, `--no-harness-usage` | Equivalent names for refusing every model call for this run, including goal summaries, reader-requested analyses and unasked checks. Includes session summaries. Overrides the unasked opt-in. |
+| `--no-update-check` | Refuse the daily release lookup for this run, independently of the saved Settings checkbox. The check is off by default in every build until a later release enables it; neither switch enables it. See [Daily update checks](SECURITY.md#daily-update-checks). |
+| `--internal` [on/off] | Show the effective internal-use marker with no value, or persist `on` or `off` in the Compass home, print the effective state, and exit. `SPACEDOCK_INTERNAL=1` overrides a saved `off`; a development build alone is not internal. Refused with `--daemon`. |
 | `--no-usage` | Refuse vendor quota network fetches and quota pushed into Compass for this run, regardless of the stored dashboard setting. Quota recorded in harness-owned stores, such as Codex or Copilot, still appears. Does not disable model calls or reach nudges. |
 
 ### History and annotations
@@ -244,6 +246,8 @@ owned by the installed harness, as explained in [Security](SECURITY.md#observer-
 |---|---|
 | `COMPASS_HOME` | Move Compass's own state, logs and persistent stores. Default: `.compass` under your home directory. Does not relocate harness transcripts. Use the same value for start, stop, status and forget. |
 | `COMPASS_ALLOW_TOOL_OUTPUT` | `1` is accepted and does nothing in this release; will be removed in a later release. |
+| `SPACEDOCK_INTERNAL` | Exactly `1` marks release lookups as internal, overriding the saved internal flag. No other value does. |
+| `CI` | After ASCII whitespace trimming and ASCII case-folding, `1`, `true`, `yes` or `on` adds `ci=1` to a release lookup; any other value adds nothing. It does not turn the check off. |
 | `COMPASS_REACH_URL` | Reach endpoint when `--reach-url` is absent; takes precedence over the `reach_url` file in the Compass home. `--no-reach` overrides all sources. |
 | `COMPASS_QUIET_HOURS` | Quiet-hours window when `--quiet-hours` is absent; takes precedence over the `quiet_hours` file in the Compass home. `--no-quiet-hours` overrides all sources. |
 | `CLAUDE_CONFIG_DIR` | Claude configuration root; Compass searches `projects`, `tasks` and `teams` below it. |
@@ -269,6 +273,9 @@ covers instance control and the stores addressed above; it is not a complete inv
 | `compass-PORT.json` | Per-port instance state, including process identity and capabilities. |
 | `compass-PORT.log` | Detached instance output and diagnostics. |
 | `footer/HARNESS-HASH.json` | One small file per Claude Code session for `--footer`: a count, harness names, monitor state, the page's drift level while on, the last end reason and time, and a freshness time. Written by a running dashboard, removed when it stops. [What it holds](SECURITY.md#the-status-line-files). |
+| `compass-settings.json` | Analyze drift reading limits and the saved daily update-check off switch. Changed on the Settings page; shared by all dashboards using this Compass home. |
+| `compass-internal.json` | Saved internal-use flag; changed by `--internal on` or `--internal off`. |
+| `compass-update-check.json` | Last attempted UTC day, plus the last successful release answer and its time. Its persistent `.lock` file serializes servers sharing one Compass home; no request is made if the lock or atomic save fails. |
 | `compass-history.json` | Bounded observation history. |
 | `compass-ends.json` | Recorded session ends from the event coordinator. |
 | `compass-annotations.json` | Saved reader goals, outcome lines, readings and discard records. |
