@@ -51,10 +51,11 @@ route: each installer resolves a product once, and `curl -L` follows the route's
 not back to the route. A `HEAD` request is not counted.
 
 The `subspace` route maps to `spacedock-dev/subspace-beta` today, while both installers download
-Review's files from `spacedock-dev/subspace`, so a lookup can name a tag from one repository and the
-download come from the other. The owner decided on 2026-11-10 to point the route at
-`spacedock-dev/subspace`, and the Review owner was asked the same day to confirm it. The mapping is
-settled and verified before counting is turned on.
+Review's files from `spacedock-dev/subspace`. That is a stale name, not a second release source:
+`subspace-beta` was renamed to `subspace`, and GitHub redirects the old name to the same repository
+and releases (Review owner, 2026-11-10). The route's mapping and the website's verification script
+change to `spacedock-dev/subspace` together, before counting is turned on, keeping the stable default
+and the `?prerelease=1` behaviour.
 
 Review's standalone installer already calls its route, as a plain `curl` request with no fields, so
 its lookups are counted by route and day only, with every field `unknown`. Changing that installer
