@@ -84,11 +84,14 @@ resumes analysis. Missing annotations disable both; missing serving-owner probes
 
 The server's background release lookup is on by default. It checks
 `https://spacedock.md/latest-release/compass` after startup and at most once per UTC day
-per Compass home. No hook sends it. It sends the installed version without a leading `v`,
-`kind=check`, normalized operating system and architecture, `channel=stable`, and `internal=0` or
-`internal=1`. Only an ASCII-trimmed, ASCII case-folded `CI` of `1`, `true`, `yes` or `on` adds `ci=1`.
-Its user agent is `compass/<version>`; there is no identifier or session content, no other query
-field and no header beyond what urllib adds. It refuses non-HTTPS targets and every redirect.
+per Compass home. No hook sends it. The URL has no query string. It sends only a
+`compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers:
+the installed version without a leading `v` (or `unknown` when unavailable or invalid), normalized
+operating system and architecture, then the optional markers in that order. Only an ASCII-trimmed,
+ASCII case-folded `CI` of `1`, `true`, `yes` or `on` adds `; ci`. Only the saved internal flag or
+`SPACEDOCK_INTERNAL=1` adds `; internal`. There is no identifier or session content, and no separate
+counting request. The route counts the lookup itself from its headers.
+It refuses non-HTTPS targets and every redirect.
 A failed attempt is not retried that UTC day and shows no error.
 
 Either off switch above stops it; no environment variable turns it off. The site counts checks

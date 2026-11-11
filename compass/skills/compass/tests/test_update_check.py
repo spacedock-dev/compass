@@ -14,7 +14,6 @@ import tempfile
 import threading
 import time
 import unittest
-import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -431,9 +430,9 @@ class LocalTransportTest(unittest.TestCase):
         path, headers = self.calls[0]
         self.assertEqual(
             path,
-            "/latest-release/compass?v=2.8.0%2Bdev&kind=check&os=windows&arch=amd64&channel=stable&internal=0",
+            "/latest-release/compass",
         )
-        self.assertEqual(headers.pop("User-Agent"), "compass/2.8.0+dev")
+        self.assertEqual(headers.pop("User-Agent"), "compass/2.8.0+dev (windows; amd64)")
         self.assertEqual(
             headers,
             {
@@ -442,9 +441,6 @@ class LocalTransportTest(unittest.TestCase):
                 "Connection": "close",
             },
         )
-        update_check.save_internal(self.config, True)
-        REAL_FETCH_RELEASE(self.config)
-        self.assertTrue(self.calls[-1][0].endswith("&internal=1"))
 
     def test_a_redirect_is_never_followed(self) -> None:
         self.status = 302
@@ -477,10 +473,20 @@ class LocalTransportTest(unittest.TestCase):
 
 
 class RequestValuesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.home = home.name
+
     def test_freebsd_release_suffixes_and_case_map_to_freebsd(self) -> None:
         for value in ("freebsd13", "freebsd14", "FreeBSD"):
             with self.subTest(value=value):
-                self.assertEqual(update_check.normalise_os(value), "freebsd")
+                req = update_check.request(
+                    make_config(
+                        release_version="2.9.1", platform_name=value, update_check_arch="arm64"
+                    )
+                )
+                self.assertEqual(req.get_header("User-agent"), "compass/2.9.1 (freebsd; arm64)")
 
     def test_the_shipped_default_starts_the_background_worker(self) -> None:
         built = make_config(release_version="2.8.0+dev", update_check_disabled=False)
@@ -495,60 +501,186 @@ class RequestValuesTest(unittest.TestCase):
             update_check.start(make_config(update_check_disabled=True), threading.Event())
         thread.assert_not_called()
 
-    def test_ci_only_sends_a_field_for_the_four_ascii_truth_values(self) -> None:
-        for value in ("true", " TRUE ", "1", "yes", "ON", "false", "0", "", "\u00a0true\u00a0"):
-            with self.subTest(value=value), mock.patch.dict(os.environ, {"CI": value}, clear=True):
+    def test_the_lookup_is_a_plain_get_without_query_fields(self) -> None:
+        req = update_check.request(make_config(release_version="2.9.1"))
+        self.assertEqual(req.full_url, "https://spacedock.md/latest-release/compass")
+        self.assertEqual(req.get_method(), "GET")
+
+    def test_the_user_agent_contains_only_the_client_version_and_platform(self) -> None:
+        req = update_check.request(
+            make_config(release_version="2.9.1", platform_name="darwin", update_check_arch="arm64")
+        )
+        self.assertEqual(req.header_items(), [("User-agent", "compass/2.9.1 (darwin; arm64)")])
+
+    def test_a_leading_v_is_removed_from_the_installed_version(self) -> None:
+        req = update_check.request(
+            make_config(release_version="v2.9.1", platform_name="darwin", update_check_arch="arm64")
+        )
+        self.assertEqual(req.get_header("User-agent"), "compass/2.9.1 (darwin; arm64)")
+
+    def test_an_unavailable_or_invalid_version_is_unknown(self) -> None:
+        for version in (None, "", "unknown", "vv2.9.1", "2.9.1 (extra)", "2.9.1\r\nX: injected"):
+            with self.subTest(version=version):
+                req = update_check.request(
+                    make_config(
+                        release_version=version, platform_name="linux", update_check_arch="x64"
+                    )
+                )
+                self.assertEqual(req.get_header("User-agent"), "compass/unknown (linux; amd64)")
+
+    def test_ci_only_adds_a_token_for_the_four_ascii_truth_values(self) -> None:
+        for value, expected in (
+            ("true", "compass/2.9.1 (linux; amd64; ci)"),
+            (" TRUE ", "compass/2.9.1 (linux; amd64; ci)"),
+            ("1", "compass/2.9.1 (linux; amd64; ci)"),
+            ("yes", "compass/2.9.1 (linux; amd64; ci)"),
+            ("ON", "compass/2.9.1 (linux; amd64; ci)"),
+            ("false", "compass/2.9.1 (linux; amd64)"),
+            ("0", "compass/2.9.1 (linux; amd64)"),
+            ("", "compass/2.9.1 (linux; amd64)"),
+            ("\u00a0true\u00a0", "compass/2.9.1 (linux; amd64)"),
+        ):
+            with (
+                self.subTest(value=value),
+                mock.patch.dict(os.environ, {"CI": value, "COMPASS_HOME": self.home}, clear=True),
+            ):
                 args = cli.build_parser().parse_args([])
                 built, _ = cli.build_runtime(args, started=1)
-                fields = urllib.parse.parse_qs(
-                    urllib.parse.urlsplit(update_check.request(built).full_url).query
+                req = update_check.request(
+                    replace(
+                        built,
+                        release_version="2.9.1",
+                        platform_name="linux",
+                        update_check_arch="x64",
+                    )
                 )
-                self.assertEqual(
-                    fields.get("ci"),
-                    ["1"] if value in ("true", " TRUE ", "1", "yes", "ON") else None,
-                )
+                self.assertEqual(req.get_header("User-agent"), expected)
 
-    def test_os_and_arch_values_match_the_shared_mapping(self) -> None:
-        for source, expected in (
-            ("darwin", "darwin"),
-            ("Darwin", "darwin"),
-            ("LINUX", "linux"),
-            ("win32", "windows"),
-            ("WINDOWS", "windows"),
-            ("MINGW64_NT-10.0", "windows"),
-            ("MSYS_NT-10.0", "windows"),
-            ("freebsd", "freebsd"),
-            ("plan9", "unknown"),
+    def test_the_saved_internal_flag_adds_only_the_internal_token(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            cfg = make_config(
+                state_home=home,
+                release_version="2.9.1",
+                platform_name="darwin",
+                update_check_arch="arm64",
+            )
+            update_check.save_internal(cfg, True)
+            self.assertEqual(
+                update_check.request(cfg).get_header("User-agent"),
+                "compass/2.9.1 (darwin; arm64; internal)",
+            )
+
+    def test_the_internal_environment_override_requires_exactly_one(self) -> None:
+        for value, expected in (
+            ("1", "compass/2.9.1 (darwin; arm64; internal)"),
+            ("true", "compass/2.9.1 (darwin; arm64)"),
+            (" 1 ", "compass/2.9.1 (darwin; arm64)"),
+            ("0", "compass/2.9.1 (darwin; arm64)"),
         ):
-            self.assertEqual(update_check.normalise_os(source), expected)
-        for source, expected in (
-            ("AMD64", "amd64"),
-            ("x86_64", "amd64"),
-            ("x64", "amd64"),
-            ("aarch64", "arm64"),
-            ("ARM64", "arm64"),
-            ("i686", "unknown"),
+            with (
+                self.subTest(value=value),
+                mock.patch.dict(
+                    os.environ, {"SPACEDOCK_INTERNAL": value, "COMPASS_HOME": self.home}, clear=True
+                ),
+            ):
+                args = cli.build_parser().parse_args([])
+                built, _ = cli.build_runtime(args, started=1)
+                req = update_check.request(
+                    replace(
+                        built,
+                        release_version="2.9.1",
+                        platform_name="darwin",
+                        update_check_arch="arm64",
+                    )
+                )
+                self.assertEqual(req.get_header("User-agent"), expected)
+
+    def test_ci_precedes_internal_when_both_markers_are_set(self) -> None:
+        req = update_check.request(
+            make_config(
+                release_version="2.9.1",
+                platform_name="darwin",
+                update_check_arch="arm64",
+                update_check_ci=True,
+                update_check_internal_env=True,
+            )
+        )
+        self.assertEqual(
+            req.get_header("User-agent"), "compass/2.9.1 (darwin; arm64; ci; internal)"
+        )
+
+    def test_prerelease_and_build_suffixes_are_preserved_without_marking_internal(self) -> None:
+        req = update_check.request(
+            make_config(
+                release_version="v2.9.1-rc.1+dev", platform_name="linux", update_check_arch="x64"
+            )
+        )
+        self.assertEqual(req.get_header("User-agent"), "compass/2.9.1-rc.1+dev (linux; amd64)")
+
+    def test_a_non_https_lookup_is_refused(self) -> None:
+        with (
+            mock.patch.object(
+                update_check, "RELEASE_URL", "http://spacedock.md/latest-release/compass"
+            ),
+            self.assertRaisesRegex(ValueError, "release lookup requires HTTPS"),
         ):
-            self.assertEqual(update_check.normalise_arch(source), expected)
+            update_check.request(make_config(release_version="2.9.1"))
+
+    def test_os_values_match_the_shared_mapping_in_the_user_agent(self) -> None:
+        for source, expected in (
+            ("darwin", "compass/2.9.1 (darwin; arm64)"),
+            ("Darwin", "compass/2.9.1 (darwin; arm64)"),
+            ("LINUX", "compass/2.9.1 (linux; arm64)"),
+            ("win32", "compass/2.9.1 (windows; arm64)"),
+            ("WINDOWS", "compass/2.9.1 (windows; arm64)"),
+            ("MINGW64_NT-10.0", "compass/2.9.1 (windows; arm64)"),
+            ("MINGW32_NT-10.0", "compass/2.9.1 (windows; arm64)"),
+            ("MSYS_NT-10.0", "compass/2.9.1 (windows; arm64)"),
+            ("freebsd", "compass/2.9.1 (freebsd; arm64)"),
+            ("plan9", "compass/2.9.1 (unknown; arm64)"),
+        ):
+            with self.subTest(source=source):
+                req = update_check.request(
+                    make_config(
+                        release_version="2.9.1", platform_name=source, update_check_arch="arm64"
+                    )
+                )
+                self.assertEqual(req.get_header("User-agent"), expected)
+
+    def test_arch_values_match_the_shared_mapping_in_the_user_agent(self) -> None:
+        for source, expected in (
+            ("AMD64", "compass/2.9.1 (linux; amd64)"),
+            ("x86_64", "compass/2.9.1 (linux; amd64)"),
+            ("x64", "compass/2.9.1 (linux; amd64)"),
+            ("aarch64", "compass/2.9.1 (linux; arm64)"),
+            ("ARM64", "compass/2.9.1 (linux; arm64)"),
+            ("i686", "compass/2.9.1 (linux; unknown)"),
+        ):
+            with self.subTest(source=source):
+                req = update_check.request(
+                    make_config(
+                        release_version="2.9.1", platform_name="linux", update_check_arch=source
+                    )
+                )
+                self.assertEqual(req.get_header("User-agent"), expected)
 
 
 class MemoryTransportTest(unittest.TestCase):
     """A byte-level HTTP endpoint for runners that cannot bind a loopback socket."""
 
-    def test_the_urllib_wire_has_only_the_disclosed_fields_and_headers_and_never_redirects(
-        self,
-    ) -> None:
-        sent: list[bytes] = []
-        status = 200
+    def setUp(self) -> None:
+        self.sent: list[bytes] = []
+        self.status = 200
+        owner = self
 
         class Endpoint:
             def sendall(self, data: bytes) -> None:
-                sent.append(data)
+                owner.sent.append(data)
 
             def makefile(self, _mode: str) -> io.BytesIO:
                 body = b'{"tag_name":"v2.9.0"}'
                 return io.BytesIO(
-                    f"HTTP/1.1 {status} Answer\r\nContent-Length: {len(body)}\r\n"
+                    f"HTTP/1.1 {owner.status} Answer\r\nContent-Length: {len(body)}\r\n"
                     "Location: https://must-not-be-reached.invalid/\r\n\r\n".encode()
                     + body
                 )
@@ -568,25 +700,30 @@ class MemoryTransportTest(unittest.TestCase):
 
         opener = reach.build_reach_opener()
         opener.add_handler(Handler())
-        cfg = make_config(
+        self.config = make_config(
             release_version="2.8.0+dev", platform_name="win32", update_check_arch="AMD64"
         )
-        with mock.patch("compass_runtime.update_check.build_reach_opener", return_value=opener):
-            self.assertEqual(REAL_FETCH_RELEASE(cfg), "2.9.0")
-            self.assertEqual(
-                sent,
-                [
-                    (
-                        b"GET /latest-release/compass?v=2.8.0%2Bdev&kind=check&os=windows&arch=amd64&channel=stable&internal=0 HTTP/1.1\r\n"
-                        b"Accept-Encoding: identity\r\nHost: spacedock.md\r\nUser-Agent: compass/2.8.0+dev\r\nConnection: close\r\n\r\n"
-                    )
-                ],
-            )
-            sent.clear()
-            status = 302
-            with self.assertRaises(OSError):
-                REAL_FETCH_RELEASE(cfg)
-            self.assertEqual(len(sent), 1)
+        patch = mock.patch("compass_runtime.update_check.build_reach_opener", return_value=opener)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_urllib_wire_has_only_the_disclosed_fields_and_headers(self) -> None:
+        self.assertEqual(REAL_FETCH_RELEASE(self.config), "2.9.0")
+        self.assertEqual(
+            self.sent,
+            [
+                (
+                    b"GET /latest-release/compass HTTP/1.1\r\n"
+                    b"Accept-Encoding: identity\r\nHost: spacedock.md\r\nUser-Agent: compass/2.8.0+dev (windows; amd64)\r\nConnection: close\r\n\r\n"
+                )
+            ],
+        )
+
+    def test_a_redirect_never_sends_a_second_request(self) -> None:
+        self.status = 302
+        with self.assertRaises(OSError):
+            REAL_FETCH_RELEASE(self.config)
+        self.assertEqual(len(self.sent), 1)
 
 
 class ExchangeDeadlineTest(unittest.TestCase):

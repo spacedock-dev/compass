@@ -182,9 +182,10 @@ Five kinds of traffic can leave your machine, and you can switch off each one. T
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
 check reads and counts-only reach nudges start from something you do. The daily release lookup
 is also on by default; the **Turn off daily update checks** checkbox in Settings or `--no-update-check`
-turns it off. It sends the installed version, `kind=check`, operating system, architecture, stable
-channel, internal marker and an optional CI marker to spacedock.md, with a `compass/<version>` user agent and no
-identifier or session content. spacedock.md counts checks in PostHog without an IP and in Plausible
+turns it off. It requests the plain release URL with no query string and sends only a
+`compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers,
+with no identifier or session content. The route counts the lookup itself from its headers.
+spacedock.md counts checks in PostHog without an IP and in Plausible
 with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and
 derives approximate location from the address. See
 [SECURITY.md](SECURITY.md#scope) for all five. The server listens only on `127.0.0.1`. `--host`

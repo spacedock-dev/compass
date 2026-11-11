@@ -395,21 +395,22 @@ kept separately from the attempt day in `compass-update-check.json` for the vers
 The request is exactly:
 
 ```text
-GET https://spacedock.md/latest-release/compass?v=<version>&kind=check&os=<os>&arch=<arch>&channel=stable&internal=<0|1>
-User-Agent: compass/<version>
+GET https://spacedock.md/latest-release/compass
+User-Agent: compass/<version> (<os>; <arch>[; ci][; internal])
 ```
 
-`version` is the installed Compass version without a leading `v`, URL-encoded. `os` is `darwin`,
-`linux`, `windows`, `freebsd` or `unknown`; `arch` is `arm64`, `amd64` or `unknown`.
-`internal` is `1` only when the saved internal flag is on or `SPACEDOCK_INTERNAL=1`; a development
-build alone is not internal. `--internal` shows the effective marker and `--internal on` or
+`version` is the installed Compass version without a leading `v`, or `unknown` when unavailable
+or invalid. There is no query string. `os` is `darwin`, `linux`, `windows`, `freebsd` or `unknown`; `arch` is `arm64`, `amd64` or `unknown`.
+The `; internal` token appears only when the saved internal flag is on or `SPACEDOCK_INTERNAL=1`;
+a development build alone is not internal. `--internal` shows the effective marker and `--internal on` or
 `--internal off` saves it in `compass-internal.json` in the Compass home. The environment override
 still applies when the saved flag is off.
 
 Only when `CI`, trimmed of ASCII whitespace and ASCII case-folded, is `1`, `true`, `yes` or `on`,
-the query also carries `ci=1`. There is no identifier, session content or other field, and no other
-header beyond those urllib adds. The client uses Python's standard-library urllib, ignores proxy
-settings, refuses non-HTTPS targets and follows no redirect, including a redirect to HTTPS.
+the User-Agent also carries `; ci`, before `; internal` if both apply. This is the only header
+Compass sets, beyond the standard headers urllib adds. There is no identifier, session content or
+other counting field, and no separate counting request. The client uses Python's standard-library
+urllib, ignores proxy settings, refuses non-HTTPS targets and follows no redirect, including a redirect to HTTPS.
 A five-second whole-exchange deadline covers DNS, connection, headers and body. A timed-out DNS
 lookup cannot start a connection later.
 
@@ -420,10 +421,12 @@ use the build default. The CLI flag also reaches a daemon started automatically 
 No environment variable turns the check off. Dismissing the dashboard's version notice is
 remembered for that version in browser storage; it does not turn checks off.
 
-spacedock.md counts each check in PostHog without sending it an IP address. It also counts it in
+The route counts the lookup itself, deriving counting fields from the User-Agent; it ignores
+all query parameters except its existing `prerelease=1` selector. Compass uses the stable plain URL.
+spacedock.md counts each lookup in PostHog without sending it an IP address. It also counts it in
 Plausible with the caller's IP address and user agent. Plausible does not store the address or user
 agent, but uses them for a daily visitor hash and derives approximate location from the address.
-Checks carrying `ci=1` are not counted. The
+Checks carrying the `; ci` User-Agent token are not counted. The
 [install-tracking record](docs/design-install-tracking.md#what-the-route-does-with-a-lookup)
 explains the counting and its limits.
 
@@ -450,7 +453,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | Path | What it can carry | Stopped by | Fails if it leaks |
 |---|---|---|---|
 | Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. On until the reader turns it off in the page. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
-| Daily release lookup | Version and platform fields to spacedock.md; on by default. No session content. [Daily update checks](#daily-update-checks) names the fields and onward counting. | `--no-update-check` or Turn off daily update checks in Settings; either stops it | `test_update_check.DailyCheckTest.test_either_off_switch_sends_nothing`, `test_update_check.LocalTransportTest.test_a_redirect_is_never_followed` |
+| Daily release lookup | Only a descriptive User-Agent to spacedock.md beyond urllib's standard headers; the route counts the lookup itself. On by default. No session content. [Daily update checks](#daily-update-checks) names the fields and onward counting. | `--no-update-check` or Turn off daily update checks in Settings; either stops it | `test_update_check.DailyCheckTest.test_either_off_switch_sends_nothing`, `test_update_check.LocalTransportTest.test_a_redirect_is_never_followed` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |
 | A press for a reading, an unasked check | Session content, through the Claude Code or Codex CLI that Compass starts as a supervised child. With a session summary, one of the two paths that can send what you wrote off the machine. | `--no-observer-model` or its alias `--no-harness-usage`, which overrides `--unasked-readings`, and Pause model calls | `test_launch_and_send_pins.APressUnderTheModelRefusalLaunchesNothingTest` (a press starts no process and opens no connection); `test_http_api.ReadingRouteTest.test_every_closed_gate_refuses_before_the_model_is_reached`; `test_unasked.TheSwitchIsTheWholeGateTest.test_the_off_switch_refuses_the_lane`; every caller goes through the one runner: `test_observer.SupervisedModelCallTest.test_every_model_caller_defaults_to_the_supervised_runner` |
 | A press on Find goal | The prompts you typed in one session, masked and bounded, through the Claude Code or Codex CLI that Compass starts as a supervised child. Nothing from the agent, no tool output and no correction Compass wrote. The answer is stored nowhere. | `--no-observer-model`, the stored pause (Pause model calls) and the rolling cap, all checked before the prompts are read | `test_goal_find.FindGoalRouteTest.test_nothing_runs_without_a_press`, `test_goal_find.FindGoalRouteTest.test_nothing_runs_while_model_calls_are_paused`, `test_goal_find.FindGoalRouteTest.test_a_spent_day_refuses_before_the_model_and_a_press_counts_against_it` |

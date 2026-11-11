@@ -1,12 +1,14 @@
 # Design: install tracking
 
 How the team counts release lookups made by Spacedock, Review and Compass when they install, update
-or check for a new version, without asking anyone for consent and without storing an identifier or
-an IP address. It records the contract the three products and the spacedock.md website share, and
-the alternatives that were tried and rejected.
+or check for a new version, without asking anyone for consent or storing an identifier. PostHog
+receives no IP address; Plausible receives it as disclosed below and does not store it. This record
+sets out the contract the three products and spacedock.md share, and the alternatives tried and rejected.
 
-Status: implemented on 2026-11-10; the check ships on by default in the next release
-with `config.UPDATE_CHECK_DEFAULT_ENABLED = True`.
+Status: v2 ruling by CL on 2026-11-11 in Slack #agentchat, with answers from Jared the same day.
+A separate count event is telemetry and needs consent, so there is none. Clients only look up
+releases; the edge function counts the lookup itself, deriving the counting fields from headers.
+The Compass check remains on by default with `config.UPDATE_CHECK_DEFAULT_ENABLED = True`.
 [`SECURITY.md`](../SECURITY.md#daily-update-checks) owns what the implemented check sends; this
 file records why.
 
@@ -35,50 +37,44 @@ design that route only answered with a redirect to GitHub and counted nothing.
 
 ## What is counted, and where
 
-What is counted is a release lookup, or for Spacedock's installer a counting request sent beside
-one, labelled with why it was made. Neither is a completed install. Spacedock's installer counts
-before it knows whether anything needs to change, so an update that installs nothing is still
-counted, and a download that fails afterwards is still counted.
+What is counted is a release lookup, never a completed install. An update that installs nothing
+still looks a release up, and a download that fails afterwards is still counted. Installs and
+updates do not need to be told apart, so there is no `kind` property.
 
-| Source | Kind | Counted when it reaches |
+| Source | Client | Counted when it reaches |
 | -- | -- | -- |
-| Spacedock's `install.sh`, for Spacedock and each product it installs | `install` | `/latest-release/<product>` |
-| `spacedock update`, which runs `install.sh` again | `update` | `/latest-release/<product>` |
-| Compass's daily update check, however Compass was installed | `check` | `/latest-release/compass` |
-| Review's own standalone `install.sh` | none sent | `/latest-release/subspace` |
+| Spacedock's `install.sh`, for Spacedock and each product it installs | `spacedock-install` | `/latest-release/<product>` |
+| `spacedock update`, which runs `install.sh` again | `spacedock-install` | `/latest-release/<product>` |
+| Compass's daily update check, however Compass was installed | `compass` | `/latest-release/compass` |
+| Review's own standalone `install.sh` | `curl` when sent as plain curl | `/latest-release/subspace` |
 
 The route names are `spacedock`, `subspace` (Review) and `compass`. A `HEAD` request is not counted.
 
-### Spacedock's installer counts with a separate request
+### Spacedock's installer looks releases up through the route
 
-Spacedock's `install.sh` keeps finding releases the way it does on its own, and sends one extra
-request per product to the route only to be counted (decided 2026-11-10). It does not look releases
-up through the route.
+Spacedock's `install.sh` looks releases up at `https://spacedock.md/latest-release/<product>` for
+stable, or the same URL with `?prerelease=1` for edge, using the User-Agent below. It adds no other
+request. If spacedock.md cannot be reached, it falls back to its current direct GitHub lookup, so
+an install never fails because of the route.
 
-The reason is GitHub's API limit. Unauthenticated, the release API allows 60 requests an hour per
-address, shared by everyone behind it. Spacedock's installer is moving its stable lookup off that API
-to the `github.com/<repo>/releases/latest` redirect, with `git ls-remote --tags` as the fallback. The
-route's answer for `spacedock` and `subspace` is a redirect to the API, so looking releases up
-through it would bring the limit back.
+The stable route treats `spacedock-install` specially to preserve #851's protection from GitHub's
+60-an-hour unauthenticated API limit: it redirects to `https://github.com/<repo>/releases/latest`,
+the web redirect the installer reads, without an API call. Every other stable client keeps the
+existing API redirect where the route redirects; Review's own installer relies on its JSON.
+Edge lookups keep the API redirect, which #851 already uses for edge. For Compass's daily check,
+the route continues to answer release JSON. Nothing else about release selection changes.
 
-The counting request is a `GET` to `https://spacedock.md/latest-release/<product>` with the fields
-below. The installer does not follow the redirect, so it makes no call to GitHub. It runs in the
-background with a timeout of a few seconds, discards the answer, and never changes whether the
-install succeeds or how long it takes. One counting request per product per run means one count.
-
-Review's standalone installer looks releases up through its route. `curl -L` follows that route's redirect to GitHub, not back to the route, so that is still one count. Compass reads JSON from
-its route and follows no redirect, at most once per UTC day per Compass home.
-
-The `subspace` route maps to `spacedock-dev/subspace-beta` today, while both installers download
-Review's files from `spacedock-dev/subspace`. That is a stale name, not a second release source:
-`subspace-beta` was renamed to `subspace`, and GitHub redirects the old name to the same repository
-and releases (Review owner, 2026-11-10). The route's mapping and the website's verification script
-change to `spacedock-dev/subspace` together, before counting is turned on, keeping the stable default
-and the `?prerelease=1` behaviour.
-
-Review's standalone installer already calls its route, as a plain `curl` request with no fields, so
-its lookups are counted by route and day only, with every field `unknown`. Changing that installer
+Review's standalone installer already looks releases up through its route. `curl -L` follows the
+redirect to GitHub, not back to the route, so that is still one count. Its plain curl User-Agent
+identifies only `client=curl`; other header-derived fields are `unknown`. Changing that installer
 is the Review owner's call.
+
+The `subspace` route maps to `spacedock-dev/subspace-beta` in the original implementation, while
+both installers download Review's files from `spacedock-dev/subspace`. That is a stale name, not a
+second release source: `subspace-beta` was renamed to `subspace`, and GitHub redirects the old name
+to the same repository and releases (Review owner, 2026-11-10). The route's mapping and the
+website's verification script change to `spacedock-dev/subspace` together, keeping the stable
+default and the `?prerelease=1` behaviour.
 
 Homebrew and plugin-marketplace installs download from GitHub directly, so the install itself never
 reaches spacedock.md. GitHub's release download and clone counts stand in for those installs, and
@@ -88,65 +84,68 @@ install like any other.
 
 ## The request
 
-Every counting client sends its fields in the query string and a plain user agent:
+Every counting client sends only a descriptive User-Agent, with no counting fields in the query:
 
 ```text
-GET https://spacedock.md/latest-release/compass?v=2.8.0&kind=check&os=darwin&arch=arm64&channel=stable&internal=0
-User-Agent: compass/2.8.0
+<client>/<version> (<os>; <arch>[; ci][; internal])
 ```
 
-| Field | Values the route accepts | Meaning |
-| -- | -- | -- |
-| `v` | a version matching the grammar below, at most 32 characters | the currently installed version of the product the route names; left out when there is none, as on a fresh install |
-| `kind` | `install`, `update`, `check` | why the lookup was made |
-| `os` | `darwin`, `linux`, `windows`, `freebsd` | the operating system the client runs on; WSL is `linux`. Accepting a value does not mean every product ships for it |
-| `arch` | `arm64`, `amd64` | the processor architecture, spelled as the three products name their release files |
-| `channel` | `stable`, `edge` | the release stream the lookup selects: the newest stable release, or the newest release including prereleases |
-| `internal` | `0`, `1` | `1` only when the client is explicitly marked as our team's |
-| `ci` | `1` | present only when the request comes from CI |
+Compass's request, for example, is:
 
-There is no identifier of any kind, and no field a person typed.
+```text
+GET https://spacedock.md/latest-release/compass
+User-Agent: compass/2.9.1 (darwin; arm64; internal)
+```
+
+| User-Agent part | Values | Meaning |
+| -- | -- | -- |
+| `client` | `compass`, `spacedock-install` | lowercase name of the client making the lookup |
+| `version` | the client's own version without a leading `v`, else `unknown` | Compass's installed version; for install.sh, the installed Spacedock version if known, even when looking up another product |
+| `os` | `darwin`, `linux`, `windows`, `freebsd`, `unknown` | the client's operating system; WSL is `linux` |
+| `arch` | `arm64`, `amd64`, `unknown` | the client's processor architecture |
+| `; ci` | present only for a true `CI` variable | excludes the lookup from counting |
+| `; internal` | present only for an explicit internal marker | identifies our team's use |
+
+There is no identifier, `kind`, channel token, session content or other counting field.
 
 ### Normalising the values
 
-Clients normalise before they send, and the route applies the same mapping again after decoding the
-query, so a client that gets it wrong still lands in the right bucket or in `unknown`:
+Clients normalise exactly as before:
 
 - `os` and `arch` are compared after ASCII case-folding.
-- `darwin` is `darwin`, `linux` is `linux`, `freebsd` is `freebsd`, and `windows`, `win32`,
-  `mingw*_nt-*` and `msys_nt-*` are `windows`.
+- `darwin` is `darwin`, `linux` is `linux`, `freebsd` (including Python's release suffix) is
+  `freebsd`, and `windows`, `win32`, `mingw*_nt-*` and `msys_nt-*` are `windows`.
 - `arm64` and `aarch64` are `arm64`. `amd64`, `x86_64` and `x64` are `amd64`.
-- `channel`, `kind`, `internal` and `ci` must match exactly, in lowercase.
-- `v` loses one leading lowercase `v`, then must match
-  `^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`. Prerelease and build parts are
-  kept, so `0.28.0-pre5` and `0.28.0+dev` stay distinct. Clients URL-encode it.
-- Anything missing, longer than its limit or not on the list is counted as `unknown`.
+- Unknown operating systems or architectures become `unknown`.
+- The version loses one leading lowercase `v`; prerelease and build parts are kept, so
+  `0.28.0-pre5` and `0.28.0+dev` stay distinct. Compass accepts the existing version grammar
+  `^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`, at most 32 characters,
+  and sends `unknown` when its installed version is unavailable or invalid.
 
 Python reports Windows as `win32` and Intel processors there as `AMD64`, `uname` reports `Darwin` and
-`aarch64`, Git Bash reports `MINGW64_NT-…`, and Go names targets `amd64`. The mapping is written out
-so that a shell script, a Go program, a Python runtime and the edge function all agree. Both shell
-installers reject Git Bash today, and normalising `windows` does not mean they support it.
+`aarch64`, Git Bash reports `MINGW64_NT-…`, and Go names targets `amd64`. Normalising `windows` does
+not mean the shell installers support it.
 
-The route reads these fields for counting and for nothing else. Only values that pass the rules
-above reach PostHog or Plausible. A valid version is still whatever the caller chose to send, so a
-hostile caller can add a count under a made-up version, but never free text. The fields never change
-which release the route selects or the tag it answers with.
+The edge function parses the User-Agent with one anchored pattern for the grammar above, capped at
+200 characters. If it does not match, `client` is the leading token before `/` when that token
+matches `^[a-z0-9._-]{1,32}$`; every other header-derived field is `unknown`. Thus plain curl becomes
+`curl` and Python's default becomes `python-urllib`. Old Compass 2.9.0 clients still send query
+fields, but those are ignored; their `compass/2.9.0` User-Agent still yields client and version.
 
-### Kind
-
-Compass always sends `check`. Spacedock's `install.sh` sends `install`, and sends `update` when
-`spacedock update` runs it and says so, for example through an environment variable it sets for
-the script. How `spacedock update` passes that is the Spacedock owner's choice, made in DRC-5291.
+Only validated values reach PostHog or Plausible. A hostile caller can add a count under a made-up
+version, but never free text. No counting query field changes the release selected.
 
 ### Channel and prerelease
 
 `channel` is the release stream the lookup selects, not how the build was made. Spacedock's installer
 accepts `SPACEDOCK_CHANNEL` of `stable` or `edge`, and `spacedock update` passes on the channel of
-the binary running it. Each lookup reports the selection it makes for its own product. Compass has
-one stream and sends `stable`.
+the binary running it. Each lookup uses the selector for its chosen stream. Compass has
+one stream and uses the plain URL, selecting `stable`.
 
 The route's existing `?prerelease=1` selector, which picks the newest release including
-prereleases, keeps working exactly as it does. Counting adds fields beside it and never replaces it.
+prereleases, keeps working exactly as it does. Every other query parameter is ignored, including
+every old counting field. Channel is derived from this selector: `edge` for `prerelease=1`,
+otherwise `stable`.
 
 Whether a version is a prerelease is read from the version itself (`-pre5`, `-beta.1`, `-rc.1`), not
 sent as a field. The route adds it to the PostHog event as `prerelease`. A development build has no
@@ -156,12 +155,12 @@ field of its own: Spacedock reports an unstamped build as `X.Y.Z+dev`, which sho
 
 A client trims ASCII whitespace from its `CI` variable and case-folds it. CI is on only when the
 result is `1`, `true`, `yes` or `on`; any other value, `CI=false` included, is off. When it is on,
-the client sends `ci=1`, and the route drops the request before counting it. GitHub Actions, GitLab,
-CircleCI and Buildkite all set `CI=true`.
+the client adds `; ci` to its User-Agent, and the route skips counting the lookup entirely.
+GitHub Actions, GitLab, CircleCI and Buildkite all set `CI=true`.
 
 The client has to say so, because the route cannot tell by itself. Recognising CI from the caller's
 address would mean keeping or sending that address, and PostHog never receives it. A CI system that
-does not set `CI` is counted, and so is any client that sends no fields, such as Review's standalone
+does not set `CI` is counted, and so is any client that sends no CI token, such as Review's standalone
 installer, whatever its environment. Both are listed below as limits.
 
 ### Internal
@@ -170,15 +169,15 @@ A request is internal only when the client is explicitly marked as our team's: `
 is set, or Compass's saved internal flag is on (DRC-5160). A development build is not internal on its
 own, because outside contributors run development builds too, and our team runs stable releases.
 
-Reports split every count three ways: internal, external, and unknown for requests that carry no
-marker either way.
+The event's `internal` property is `1` when the User-Agent has `; internal`, otherwise `0`.
+A malformed User-Agent leaves header-derived fields `unknown`.
 
 ## What the route does with a lookup
 
-1. It answers exactly as it would without counting: a redirect to GitHub for `spacedock` and
-   `subspace`, and release data as JSON for `compass`.
-2. It skips counting for a `HEAD` request, an unknown product, or `ci=1`. This filter runs once,
-   before either call below.
+1. It keeps the existing release answers, except for the stable `spacedock-install` web redirect
+   described above: API redirects for the other installer lookups, and release JSON for Compass.
+2. It skips counting for a `HEAD` request, an unknown product, or a User-Agent with the `ci` token.
+   This filter runs once, before either call below.
 3. For every other `GET`, it registers both analytics calls with Netlify's `context.waitUntil()`,
    wrapped in `Promise.allSettled` so one failing does not stop the other, and returns the answer
    without waiting for them. Each call has its own timeout. Delivery is best effort: a successful
@@ -186,8 +185,9 @@ marker either way.
 
 ### The Compass route's answer
 
-Spacedock's installer reads `tag_name` from the route's answer and uses it, unchanged, in GitHub
-download addresses, so the Compass route's answer has the same shape as GitHub's release API:
+Except for stable `spacedock-install` lookups, which take the web redirect above, the Compass
+route answers with the same shape as GitHub's release API. Release tags are kept unchanged for
+GitHub download addresses:
 
 - `GET /latest-release/compass` answers `200` with `Content-Type: application/json` and one release
   object, the newest stable release. `GET /latest-release/compass?prerelease=1` answers with an array
@@ -202,7 +202,8 @@ download addresses, so the Compass route's answer has the same shape as GitHub's
 - The function may reuse GitHub's answer for a few minutes, but Netlify's CDN never caches the
   route's own answer, because a lookup the CDN answers is a lookup the function never counts.
 
-Normalising the counting fields never changes the tag, the download addresses or the release chosen.
+Parsing the headers never changes the tag, the download addresses or the release chosen, apart
+from the stable installer redirect described above.
 
 ### PostHog: the official number
 
@@ -211,7 +212,7 @@ One event per counted lookup, sent to the PostHog project shared by Spacedock, R
 | Part of the event | Value |
 | -- | -- |
 | event name | `release_lookup` |
-| properties | `product` (from the route), `kind`, `version`, `prerelease`, `os`, `arch`, `channel`, `internal` |
+| properties | `product` (from the path), `client`, `version`, `prerelease`, `os`, `arch`, `channel`, `internal` |
 | `$process_person_profile` | `false`, so no person is created or attached |
 | `distinct_id` | a fresh random value for each event, so no two lookups can be linked |
 
@@ -220,7 +221,7 @@ website's server, not the caller, and the project also has "Discard client IP da
 transformation off. The project key lives in a Netlify environment variable, never in a repository.
 
 One event name with a `product` property is the naming convention that tells the three products
-apart: every chart is the same event broken down by `product` or `kind`.
+apart: every chart is the same event broken down by `product` or `client`.
 
 The team's daily and weekly counts, the install dashboard and the daily Slack post all come from
 PostHog.
@@ -236,9 +237,9 @@ The page path carries the fields, because Plausible reports custom properties on
 plan and cannot read an operating system out of a command-line user agent:
 
 ```text
-/<product>/<channel>/<kind>/<version>/<os>-<arch>
-/compass/stable/check/2.8.0/darwin-arm64
-/internal/spacedock/edge/update/0.28.0-pre5/linux-amd64
+/<product>/<channel>/<client>/<version>/<os>-<arch>
+/compass/stable/compass/2.9.1/darwin-arm64
+/internal/spacedock/edge/spacedock-install/0.28.0-pre5/linux-amd64
 ```
 
 Internal lookups are prefixed with `/internal` so they can be filtered out. A missing field is the
@@ -269,12 +270,13 @@ own traffic in a dashboard the team already uses.
 Compass's dashboard server checks for the latest Compass release at most once per UTC day: in the
 background after it starts, and again on the first tick after each UTC midnight while it keeps
 running. No hook makes the call. It drives the "new version available" notice in the dashboard, and
-each check is counted as `kind=check`, which is how running Compass installs are counted.
+the route counts each lookup itself, which is how running Compass installs are counted.
 
 - It reads `https://spacedock.md/latest-release/compass`, which now answers with release JSON.
 - It follows no redirect and refuses a target that is not `https`, as every outbound request in
   [`SECURITY.md`](../SECURITY.md#scope) does.
-- It sends the fields above and nothing else.
+- It uses the plain URL with no query string, sending only the User-Agent above beyond urllib's
+  standard headers. There is no separate counting request.
 - It saves the UTC day of the attempt before it sends the request, and makes no second attempt that
   day, even if the first fails. Saving is atomic, so two servers sharing one Compass home cannot
   both check. The route counts a lookup before it knows whether the answer arrives, so saving only
@@ -296,15 +298,18 @@ what is sent and how to turn it off.
 
 ### What SECURITY.md says
 
-SECURITY.md's list of outbound requests includes the implemented check: the recipient (spacedock.md), the fields, both switches, the no-redirect rule, and that
-spacedock.md passes the caller's IP address on to Plausible, which stores none of it but derives an
-approximate location from it. The next release's notes must disclose the same.
+SECURITY.md's list of outbound requests includes the implemented check: the recipient
+(spacedock.md), the User-Agent, both switches, the no-redirect rule, and that spacedock.md passes
+the caller's IP address on to Plausible, which stores none of it but derives an approximate location
+from it. The next release's notes must disclose the same.
 
 ## No consent, and why
 
 This counts release lookups on the server, from a request each product makes anyway, and stores no
-identifier and no IP address. Counting them that way needs no consent question, and the update check
-needs no privacy notice beyond SECURITY.md and the release notes.
+identifier and no IP address in PostHog. Plausible receives the address as disclosed above.
+CL's 2026-11-11 ruling excludes any separate count event as telemetry requiring consent. Counting
+the lookup itself that way needs no consent question, and the update check needs no privacy
+notice beyond SECURITY.md and the release notes.
 
 Anything that tells one installation from another over time, such as an install ID, a daily usage
 event from inside Compass, or feature counts, does need consent, and is deferred with it.
@@ -316,17 +321,30 @@ event from inside Compass, or feature counts, does need consent, and is deferred
 - Lookups are not people or machines. One person with three machines is three, and Plausible's daily
   visitors are hashes, not machines.
 - A machine that never updates, and has update checks off, is invisible.
-- Spacedock's counting request is separate from its lookup, so a counting request that times out or
-  is blocked loses that install or update from the count while the install goes ahead.
+- A direct GitHub fallback when spacedock.md is unreachable is not counted. Analytics delivery is
+  also best effort, so a successful lookup can be missing from the count.
 - Short-lived machines inflate installs. CI runs are left out, but a CI system that does not set
-  `CI`, and any client that sends no fields, are counted.
+  `CI`, and any client that sends no CI token, are counted.
 - Homebrew and plugin-marketplace installs appear only in GitHub's numbers, which include CI clones.
   The Compass installs among them do show up later through their daily checks.
-- Review's standalone installs are counted by route and day only, with every field `unknown`.
+- Review's standalone installs identify only the route and `client=curl`; other header-derived
+  fields are `unknown`.
 - Internal use is counted as internal only when it is marked. Unmarked team use is external or
   unknown.
 
 ## Decisions replaced
+
+### Query fields and a separate counting request (2026-11-10)
+
+The v1 design sent `v`, `kind`, `os`, `arch`, `channel`, `internal` and optional `ci=1` in the query,
+with a short `compass/<version>` User-Agent. It also kept Spacedock's direct GitHub lookup and added
+a separate background GET just to be counted, to avoid bringing back GitHub's API limit.
+
+CL ruled in Slack #agentchat on 2026-11-11, with answers from Jared the same day, that a separate
+count event is telemetry and needs consent. V2 therefore counts only the release lookup itself,
+derives its fields from a descriptive User-Agent, and ignores every query parameter except the
+existing `prerelease=1` selector. Installs and updates are no longer distinguished. The stable
+`spacedock-install` web redirect preserves #851's API-limit protection without an extra request.
 
 ### The 2026-11-09 privacy gate
 
@@ -386,6 +404,8 @@ Exporting them needs a plan the team does not have, and keeping addresses is wha
 
 ### The fields in the user agent
 
+Rejected in v1; replaced by CL's 2026-11-11 ruling above. The old objection was:
+
 For example `compass/2.8.0 (darwin; arm64; check)`. It looks tidier, but it is harder to parse and
 to validate, and a user agent that changes with every field would split Plausible's visitor hashes
 further.
@@ -403,12 +423,19 @@ files `amd64`, and Spacedock's and Review's installers compute `amd64` before th
 
 ### Spacedock's installer looking releases up through the route
 
+Rejected in v1; replaced by the stable installer web redirect in v2. The old objection was:
+
 The installer would have read one address and been counted by the same request. But the route
 redirects to GitHub's release API, so this would undo the installer's move off the API's per-address
 limit. Making the route answer with release data itself, from a token held in Netlify, would remove
 the limit too, but it turns the route from a redirect into a proxy for all three products. A separate
 counting request leaves the installer's lookup alone, at the cost of a second request that can fail
 without the install noticing.
+
+### A separate counting request
+
+CL rejected it on 2026-11-11: a request made only to count an install or update is telemetry and
+needs consent. The release lookup is the only request; the edge function counts that lookup.
 
 ### Telling CI apart on the server
 
