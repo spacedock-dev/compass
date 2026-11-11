@@ -1516,18 +1516,26 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _request_target_ok(self, authority: str) -> bool:
         try:
-            target = urlparse(getattr(self, "path", "")).netloc
+            source = urlparse(getattr(self, "path", ""))
+            target = source.netloc
             if not target:
                 return True
             if self._name_allowed(normalize_host(authority)):
                 identity = self._allowed_authority(authority)
                 return identity is not None and self._allowed_authority(target) == identity
-            source = urlparse("//" + target)
-            host = urlparse("//" + authority)
+            host = urlparse("//" + authority.strip(" \t"))
+            default_port = {"http": 80, "https": 443}.get(source.scheme)
+            source_port = source.port if source.port is not None else default_port
+            host_port = host.port if host.port is not None else default_port
             matches = (
                 source.username is None
                 and source.password is None
-                and (source.hostname, source.port) == (host.hostname, host.port)
+                and source_port == host_port
+                and (
+                    source.hostname == host.hostname
+                    or ipaddress.ip_address(source.hostname or "")
+                    == ipaddress.ip_address(host.hostname or "")
+                )
             )
         except ValueError:
             return False

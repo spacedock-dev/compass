@@ -2619,6 +2619,33 @@ class AllowedHostTest(RuntimeTestCase):
                 handler.server.server_port = 0
                 self.assertFalse(handler._local_ok())
 
+    def test_absolute_form_compares_ip_values_and_effective_ports(self) -> None:
+        # Textual IP/port comparison breaks the equivalent-authority acceptance rows.
+        for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            for host, target, expected in (
+                ("127.0.0.1:80", "http://127.0.0.1/", True),
+                ("127.0.0.1", "http://127.0.0.1:80/", True),
+                ("127.0.0.1:443", "https://127.0.0.1/", True),
+                ("127.0.0.1", "https://127.0.0.1:443/", True),
+                ("[::1]:80", "http://[0:0:0:0:0:0:0:1]/", True),
+                ("[0:0:0:0:0:0:0:1]", "http://[::1]:80/", True),
+                ("127.0.0.1:8000 \t", "http://127.0.0.1:8000/", True),
+                ("[::1]:8000\t ", "http://[::1]:8000/", True),
+                ("127.0.0.1:80", "http://127.0.0.2/", False),
+                ("127.0.0.1:80", "http://localhost/", False),
+                ("127.0.0.1:80", "http://evil.com/", False),
+                ("127.0.0.1:8000", "http://127.0.0.1/", False),
+                ("127.0.0.1:80", "https://127.0.0.1/", False),
+                ("127.0.0.1:80", "http://127.0.0.1:abc/", False),
+                ("127.0.0.1:80", "http://127.0.0.1:65536/", False),
+                ("127.0.0.1:65536", "http://127.0.0.1:65536/", False),
+                ("127.0.0.1:80", "http://user@127.0.0.1/", False),
+            ):
+                with self.subTest(method=method, host=host, target=target):
+                    handler = self._handler(host, method=method, path=target)
+                    handler.server.server_port = 80
+                    self.assertEqual(expected, handler._local_ok())
+
     def test_ip_literal_rules_are_unchanged(self) -> None:
         for host, origin, expected in (
             ("127.0.0.1:9999", "http://127.0.0.1:8000", True),
@@ -2685,6 +2712,20 @@ class AllowedHostTest(RuntimeTestCase):
                 ),
                 403,
             ),
+        ):
+            with self.subTest(request=request):
+                self.assertEqual(expected, self._raw_response(request)[0])
+
+    def test_raw_absolute_form_accepts_equivalent_ip_authorities(self) -> None:
+        # The IPv4 listener can receive IPv6 authorities in the HTTP bytes.
+        for request, expected in (
+            (b"GET http://127.0.0.1/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 200),
+            (b"GET http://[0:0:0:0:0:0:0:1]/ HTTP/1.1\r\nHost: [::1]:80\r\n\r\n", 200),
+            (b"GET http://[::1]:80/ HTTP/1.1\r\nHost: [0:0:0:0:0:0:0:1]\r\n\r\n", 200),
+            (b"GET http://127.0.0.1:8000/ HTTP/1.1\r\nHost: 127.0.0.1:8000 \t\r\n\r\n", 200),
+            (b"GET http://127.0.0.2/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
+            (b"GET http://127.0.0.1:abc/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
+            (b"GET http://127.0.0.1:65536/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
         ):
             with self.subTest(request=request):
                 self.assertEqual(expected, self._raw_response(request)[0])
