@@ -805,6 +805,7 @@ def spawn_detached(
             stdin=subprocess.DEVNULL,
             stdout=handle,
             stderr=handle,
+            env={**os.environ, "_COMPASS_DAEMON_CHILD": "1"},
             creationflags=creationflags,
             close_fds=True,
         )

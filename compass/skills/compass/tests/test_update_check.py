@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import http.client
 import io
 import json
@@ -20,14 +21,24 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest import mock
 
-from compass_runtime import cli, config, entry, reach, settings, terminal_client, update_check
+from compass_runtime import (
+    cli,
+    config,
+    entry,
+    frontend_dev,
+    lifecycle,
+    reach,
+    settings,
+    terminal_client,
+    update_check,
+)
 from compass_runtime import io as runtime_io
 
 from . import support
-from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, serve_until_closed
+from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, make_runtime, serve_until_closed
 from .test_cli_version import run_main
 
 REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
@@ -295,8 +306,197 @@ class DailyCheckTest(unittest.TestCase):
                 settings.save(self.config, {"no_update_check": value})
 
 
+class StartupHintTest(unittest.TestCase):
+    def test_hint_requires_all_switches_and_a_published_notice(self) -> None:
+        cfg = make_config(update_check_disabled=False)
+        hint = "Compass 9.9.9 is available. Update Compass through your installer.\n"
+        for enabled, disabled, saved, notice, expected in (
+            (True, False, False, {"version": "9.9.9", "checked_at": 1}, hint),
+            (False, False, False, {"version": "9.9.9", "checked_at": 1}, ""),
+            (True, True, False, {"version": "9.9.9", "checked_at": 1}, ""),
+            (True, False, True, {"version": "9.9.9", "checked_at": 1}, ""),
+            (True, False, False, None, ""),
+        ):
+            out, err = io.StringIO(), io.StringIO()
+            with (
+                self.subTest(enabled=enabled, disabled=disabled, saved=saved, notice=notice),
+                mock.patch.object(config, "UPDATE_CHECK_DEFAULT_ENABLED", enabled),
+                mock.patch.object(settings, "no_update_check", return_value=saved),
+                mock.patch.object(update_check, "published", return_value=notice),
+                contextlib.redirect_stdout(out),
+                contextlib.redirect_stderr(err),
+            ):
+                update_check.print_startup_hint(replace(cfg, update_check_disabled=disabled))
+                self.assertEqual((out.getvalue(), err.getvalue()), (expected, ""))
+
+    def test_hint_reads_only_a_valid_newer_stable_cached_version(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            cfg = make_config(state_home=home, release_version="2.8.0", update_check_disabled=False)
+            cache = Path(home, update_check.STORE_FILENAME)
+            for raw, expected in (
+                (None, ""),
+                ("{", ""),
+                ("[]", ""),
+                ('{"version":"2.8.0","checked_at":1}', ""),
+                ('{"version":"2.7.99","checked_at":1}', ""),
+                ('{"version":"2.9.0-rc.1","checked_at":1}', ""),
+                ('{"version":"2.9.0","checked_at":false}', ""),
+                ('{"version":"2.9.0\\u001b[31m","checked_at":1}', ""),
+                (
+                    '{"version":"v2.9.0","checked_at":1}',
+                    "Compass 2.9.0 is available. Update Compass through your installer.\n",
+                ),
+            ):
+                with self.subTest(raw=raw):
+                    if raw is not None:
+                        cache.write_text(raw, encoding="utf-8")
+                    out, err = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        update_check.print_startup_hint(cfg)
+                    self.assertEqual((out.getvalue(), err.getvalue()), (expected, ""))
+
+
+class StartupEntryPointTest(unittest.TestCase):
+    def setUp(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.config, self.state = make_runtime(
+            state_home=home.name, release_version="2.8.0", update_check_disabled=False
+        )
+        Path(home.name, update_check.STORE_FILENAME).write_text(
+            '{"version":"9.9.9","checked_at":1}', encoding="utf-8"
+        )
+        self.hint = "Compass 9.9.9 is available. Update Compass through your installer.\n"
+        self.enterContext(
+            mock.patch.object(cli, "build_runtime", return_value=(self.config, self.state))
+        )
+        self.enterContext(mock.patch.object(lifecycle, "serve"))
+
+    def test_failed_assets_or_bind_print_no_hint(self) -> None:
+        for stage in ("page", "development", "bind"):
+            with self.subTest(stage=stage), contextlib.ExitStack() as stack:
+                argv = ["--no-events", "--no-focus"]
+                if stage == "page":
+                    stack.enter_context(
+                        mock.patch.object(cli, "load_frontend_page", return_value=None)
+                    )
+                elif stage == "development":
+                    argv.extend(["--frontend-dev-manifest", "missing.json"])
+                    stack.enter_context(
+                        mock.patch.object(
+                            frontend_dev, "admit", side_effect=RuntimeError("invalid")
+                        )
+                    )
+                else:
+                    stack.enter_context(
+                        mock.patch.object(
+                            cli, "build_server", side_effect=OSError(errno.EADDRINUSE, "busy")
+                        )
+                    )
+                code, out, _ = run_main(*argv)
+                self.assertEqual(code, 1)
+                self.assertNotIn(self.hint.strip(), out)
+
+    def test_foreground_start_prints_once_after_binding(self) -> None:
+        with mock.patch.object(cli, "build_server") as bind:
+            bind.side_effect = lambda *_args, **_kwargs: self.assertNotIn(
+                self.hint.strip(), cast("io.StringIO", sys.stdout).getvalue()
+            )
+            code, out, err = run_main("--no-events", "--no-focus")
+        self.assertEqual((code, out, err), (0, self.hint, ""))
+
+    def test_short_operations_stay_quiet_with_an_enabled_cached_notice(self) -> None:
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"COMPASS_HOME": self.config.state_home, "CLAUDE_CODE_SESSION_ID": "test"},
+                clear=True,
+            ),
+            mock.patch.object(lifecycle, "probe_port", return_value=("none", None)),
+            mock.patch.object(
+                terminal_client,
+                "ensure_dashboard",
+                return_value=terminal_client.Refusal("No dashboard is running.", 1),
+            ),
+        ):
+            for operation, expected in (
+                ("--status", 1),
+                ("--version", 0),
+                ("--sessions", 1),
+                ("--drift", 1),
+                ("--goal", 1),
+                ("--summary", 1),
+            ):
+                with self.subTest(operation=operation):
+                    code, out, err = run_main(operation)
+                    self.assertEqual(code, expected)
+                    self.assertNotIn(self.hint.strip(), out + err)
+
+    def test_posix_daemon_hint_belongs_only_to_a_successful_parent(self) -> None:
+        for role, code, expected in (
+            ("parent", 0, self.hint),
+            ("parent", 1, ""),
+            ("daemon", 0, ""),
+        ):
+            with (
+                self.subTest(role=role, code=code),
+                mock.patch.object(cli, "build_server"),
+                mock.patch.object(lifecycle, "fork_daemon", return_value=(role, 123)),
+                mock.patch.object(
+                    lifecycle, "await_daemon", return_value=("ready or failed", code)
+                ),
+                mock.patch.object(lifecycle, "daemon_redirect_stdio"),
+            ):
+                result, out, _ = run_main("--daemon", "--no-events", "--no-focus")
+                self.assertEqual(result, code)
+                self.assertEqual(out.count(self.hint), int(bool(expected)))
+
+    def test_windows_respawn_never_logs_a_hint_and_only_success_announces_one(self) -> None:
+        windows = replace(self.config, os_name="nt")
+
+        def spawn(_argv: list[str], **kwargs: Any) -> mock.Mock:
+            # Run the child entry point with the exact environment and log handle
+            # supplied to Popen; only the OS process creation and bind are faked.
+            log = io.TextIOWrapper(kwargs["stdout"], encoding="utf-8", write_through=True)
+            try:
+                with (
+                    mock.patch.dict(os.environ, kwargs.get("env", os.environ), clear=True),
+                    contextlib.redirect_stdout(log),
+                    contextlib.redirect_stderr(log),
+                ):
+                    child_code = cli.main(_argv[2:])
+            finally:
+                log.detach()
+            proc = mock.Mock(pid=99, returncode=child_code)
+            proc.poll.return_value = child_code or None
+            return proc
+
+        for failed in (False, True):
+            log_path = Path(self.config.state_home, "compass-4553.log")
+            log_path.write_text("", encoding="utf-8")
+            with (
+                self.subTest(failed=failed),
+                mock.patch.object(cli, "build_runtime", return_value=(windows, self.state)),
+                mock.patch.object(
+                    cli,
+                    "build_server",
+                    side_effect=OSError(errno.EADDRINUSE, "busy") if failed else None,
+                ),
+                mock.patch.object(subprocess, "Popen", side_effect=spawn),
+                mock.patch.object(
+                    lifecycle,
+                    "probe_port",
+                    return_value=("none", None) if failed else ("compass", {"pid": 99}),
+                ),
+            ):
+                code, out, err = run_main("--daemon", "--no-events", "--no-focus")
+                self.assertEqual(code, int(failed))
+                self.assertEqual(out.count(self.hint), int(not failed))
+                self.assertNotIn(self.hint.strip(), err + log_path.read_text())
+
+
 class StartupNoticeTest(unittest.TestCase):
-    def test_dashboard_start_prints_a_cached_hint_before_detaching_and_honours_opt_outs(
+    def test_dashboard_start_prints_a_cached_hint_once_and_honours_opt_outs(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -362,17 +562,21 @@ class StartupNoticeTest(unittest.TestCase):
                             repr(start.stdout) + repr(start.stderr),
                         )
                         self.assertNotIn(hint.strip(), start.stderr)
-                        status = run("--status")
-                        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-                        self.assertNotIn(hint.strip(), status.stdout)
-                        version = run("--version")
-                        self.assertEqual(
-                            version.stdout,
-                            json.loads(
-                                (SERVER_PATH.parents[2] / ".claude-plugin/plugin.json").read_text()
-                            )["version"]
-                            + "\n",
-                        )
+                        self.assertNotIn(hint.strip(), (home / f"compass-{port}.log").read_text())
+                        if mode == "enabled":
+                            status = run("--status")
+                            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+                            self.assertNotIn(hint.strip(), status.stdout + status.stderr)
+                            version = run("--version")
+                            self.assertEqual(
+                                version.stdout,
+                                json.loads(
+                                    (
+                                        SERVER_PATH.parents[2] / ".claude-plugin/plugin.json"
+                                    ).read_text()
+                                )["version"]
+                                + "\n",
+                            )
                         self.assertEqual(cache.read_bytes(), before)
                     finally:
                         run("--stop")
