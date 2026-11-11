@@ -1429,12 +1429,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         A remote bind admits reachable IP literals and only the DNS names the
         operator explicitly trusted. Never resolve a name to decide admission:
         that would admit an attacker's name as soon as its DNS rebinds here.
-        SECURITY.md's Known and accepted section owns the proxy trust boundary.
         """
-        if host in self.LOCAL_HOSTS:
+        # Measured rebinding exposure: SECURITY.md's Known and accepted section.
+        if self._loopback_host(host):
             return True
         bound = getattr(self.server, "bound_host", "127.0.0.1")
-        if bound == "127.0.0.1":
+        if self._loopback_host(bound):
             return False
         try:
             literal = ipaddress.ip_address(host)
@@ -1450,12 +1450,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # address it was actually given rather than assuming the launcher.
         return host == bound
 
+    def _loopback_host(self, host: str) -> bool:
+        host = normalize_host(host)
+        if host in self.LOCAL_HOSTS:
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
     def _name_allowed(self, host: str) -> bool:
         config = getattr(getattr(self.server, "application", None), "config", None)
         names = getattr(config, "allowed_hosts", ())
         return (
-            getattr(self.server, "bound_host", "127.0.0.1") != "127.0.0.1"
-            and isinstance(names, tuple)
+            isinstance(names, tuple)
+            and not self._loopback_host(getattr(self.server, "bound_host", "127.0.0.1"))
             and host.isascii()
             and host.lower().removesuffix(".") not in self.LOCAL_HOSTS
             and host.lower().removesuffix(".") in names
@@ -1474,7 +1483,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if not (port_text.isascii() and port_text.isdigit() and len(port_text) <= 5):
                 return None
             port = int(port_text)
-            if port not in {80, 443, self.server.server_port}:
+            if (
+                port == 0
+                or str(port) != port_text
+                or port not in {80, 443, self.server.server_port}
+            ):
                 return None
         return name, port
 
@@ -1486,19 +1499,39 @@ class _RequestHandler(BaseHTTPRequestHandler):
         target = self._allowed_authority(host)
         if source is None or target is None:
             return False
-        default_port = 443 if scheme.lower() == "https" else 80
         source_name, source_port = source
         target_name, target_port = target
-        source_port = default_port if source_port is None else source_port
-        target_port = default_port if target_port is None else target_port
         # A proxy may terminate TLS on 443 while Compass listens on 8000.
-        # Trust only its scheme's default or our listening port, and still
-        # reject another origin on the same allowed name (including another port).
+        # Plain HTTP is direct access only; port 80 is never a trusted named origin.
+        if scheme.lower() == "https":
+            source_port = 443 if source_port is None else source_port
+            admitted = source_port == 443
+        else:
+            admitted = source_port == self.server.server_port and source_port != 80
         return (
             source_name == target_name
-            and source_port == target_port
-            and source_port in {default_port, self.server.server_port}
+            and (target_port is None or source_port == target_port)
+            and admitted
         )
+
+    def _request_target_ok(self, authority: str) -> bool:
+        try:
+            target = urlparse(getattr(self, "path", "")).netloc
+            if not target:
+                return True
+            if self._name_allowed(normalize_host(authority)):
+                identity = self._allowed_authority(authority)
+                return identity is not None and self._allowed_authority(target) == identity
+            source = urlparse("//" + target)
+            host = urlparse("//" + authority)
+            matches = (
+                source.username is None
+                and source.password is None
+                and (source.hostname, source.port) == (host.hostname, host.port)
+            )
+        except ValueError:
+            return False
+        return matches
 
     def _development_authority_ok(self) -> bool:
         config = getattr(getattr(self.server, "application", None), "config", None)
@@ -1515,7 +1548,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _local_ok(self, *, allow_cross_site_navigation: bool = False) -> bool:
         authority = self.headers.get("Host") or ""
         host = normalize_host(authority)
-        if not self._development_authority_ok() or not self._host_admitted(host):
+        if (
+            not self._development_authority_ok()
+            or not self._host_admitted(host)
+            or not self._request_target_ok(authority)
+        ):
             return False
         named = self._name_allowed(host)
         if named and (
@@ -1529,11 +1566,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
         ):
             return False
         origin = self.headers.get("Origin")
-        if origin is None or (not named and not origin):
-            return True  # same-origin GETs send none
         if named:
-            return self._allowed_origin_ok(authority, origin)
-        return self._address_origin_ok(origin)
+            return (
+                getattr(self, "command", "GET") in {"GET", "HEAD"}
+                if origin is None
+                else self._allowed_origin_ok(authority, origin)
+            )
+        return not origin or self._address_origin_ok(origin)
 
     def _address_origin_ok(self, origin: str) -> bool:
         # Compare the whole origin, not just the host. Every port on this
@@ -1724,6 +1763,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         site = (self.headers.get("Sec-Fetch-Site") or "").lower()
         return (
             ipaddress.ip_address(self.client_address[0]).is_loopback
+            and self._loopback_host(self.headers.get("Host") or "")
             and site not in {"same-site", "cross-site"}
             and self._local_ok()
         )
