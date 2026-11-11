@@ -114,20 +114,15 @@ def request(config: RuntimeConfig) -> urllib.request.Request:
         raise ValueError("release lookup requires HTTPS")
     version = (config.release_version or "").removeprefix("v")
     if len(version) > 32 or not _VERSION.fullmatch(version):
-        raise ValueError("invalid installed version")
-    fields = {
-        "v": version,
-        "kind": "check",
-        "os": normalise_os(config.platform_name),
-        "arch": normalise_arch(config.update_check_arch),
-        "channel": "stable",
-        "internal": "1" if internal(config) else "0",
-    }
+        version = "unknown"
+    tokens = [normalise_os(config.platform_name), normalise_arch(config.update_check_arch)]
     if config.update_check_ci:
-        fields["ci"] = "1"
-    return urllib.request.Request(  # noqa: S310 - HTTPS admitted above; opener refuses redirects
-        RELEASE_URL + "?" + urllib.parse.urlencode(fields),
-        headers={"User-Agent": "compass/" + version},
+        tokens.append("ci")
+    if internal(config):
+        tokens.append("internal")
+    return urllib.request.Request(
+        RELEASE_URL,
+        headers={"User-Agent": "compass/" + version + " (" + "; ".join(tokens) + ")"},
         method="GET",
     )
 
