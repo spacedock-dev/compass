@@ -2360,6 +2360,498 @@ class ReviewFixTest(RuntimeTestCase):
             thread.join(timeout=2)
 
 
+class AllowedHostTest(RuntimeTestCase):
+    # Expectations come from the requested exact-name contract, not a URL builder.
+    # Removing admission, broadening membership, or skipping authority validation
+    # must respectively break the acceptance, rebinding, and malformed-input rows.
+    def _handler(
+        self,
+        host: str,
+        origin: str | None = None,
+        *,
+        bound: str = "0.0.0.0",
+        method: str = "GET",
+        path: str = "/api/data",
+    ) -> Any:
+        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+        handler.headers = email.message.Message()
+        handler.headers["Host"] = host
+        if origin is not None:
+            handler.headers["Origin"] = origin
+        handler.command = method
+        handler.path = path
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.server = SimpleNamespace(
+            bound_host=bound,
+            server_port=8000,
+            application=SimpleNamespace(
+                config=SimpleNamespace(allowed_hosts=("vm.exe.xyz", "other.exe.xyz"))
+            ),
+        )
+        return handler
+
+    def _raw_response(self, request: bytes, *, observation: Any = None) -> tuple[int, bytes]:
+        """Parse and dispatch real HTTP bytes without needing a listening socket."""
+        handler = self._handler("vm.exe.xyz")
+        with config_patch(allowed_hosts=("vm.exe.xyz", "other.exe.xyz")):
+            handler.server.application = build_app()
+        handler.server.page_bytes = PAGE_BYTES
+        handler.server.observation = observation
+        handler.rfile = io.BytesIO(request)
+        handler.wfile = io.BytesIO()
+        handler.connection = SimpleNamespace()
+        handler.handle_one_request()
+        response = handler.wfile.getvalue()
+        return int(response.split(b" ", 2)[1]), response.partition(b"\r\n\r\n")[2]
+
+    def test_allowed_host_and_origin(self) -> None:
+        for host, origin in (
+            ("vm.exe.xyz", None),
+            ("other.exe.xyz", "https://other.exe.xyz"),
+            ("vm.exe.xyz:8000", "http://vm.exe.xyz:8000"),
+            ("vm.exe.xyz", "https://vm.exe.xyz"),
+            ("vm.exe.xyz", "http://vm.exe.xyz:8000"),
+        ):
+            with self.subTest(host=host, origin=origin):
+                self.assertTrue(self._handler(host, origin)._local_ok())
+
+    def test_case_and_one_trailing_dot(self) -> None:
+        for host, origin in (
+            ("VM.Exe.XYZ.", "https://vm.exe.xyz"),
+            ("vm.exe.xyz:8000", "http://VM.EXE.XYZ.:8000"),
+            ("VM.EXE.XYZ.:443", "https://VM.EXE.XYZ."),
+        ):
+            with self.subTest(host=host, origin=origin):
+                self.assertTrue(self._handler(host, origin)._local_ok())
+
+    def test_ports(self) -> None:
+        for host, origin, expected in (
+            ("vm.exe.xyz:8000", None, True),
+            ("vm.exe.xyz:80", "http://vm.exe.xyz", False),
+            ("vm.exe.xyz:443", "https://vm.exe.xyz", True),
+            ("vm.exe.xyz", "https://vm.exe.xyz:443", True),
+            ("vm.exe.xyz:8000", "https://vm.exe.xyz:8000", False),
+            ("vm.exe.xyz:9000", None, False),
+            ("vm.exe.xyz:9000", "https://vm.exe.xyz:9000", False),
+            ("vm.exe.xyz:8000", "https://vm.exe.xyz", False),
+            ("vm.exe.xyz", "https://vm.exe.xyz:8000", False),
+            ("vm.exe.xyz:80", "https://vm.exe.xyz:80", False),
+            ("vm.exe.xyz:443", "http://vm.exe.xyz:443", False),
+            ("vm.exe.xyz:0", None, False),
+            ("vm.exe.xyz:65536", None, False),
+            ("vm.exe.xyz:", None, False),
+            ("vm.exe.xyz:abc", None, False),
+            ("vm.exe.xyz:080", None, False),
+            ("vm.exe.xyz:08000", None, False),
+            ("vm.exe.xyz:00443", None, False),
+            ("vm.exe.xyz", "http://vm.exe.xyz:080", False),
+            ("vm.exe.xyz", "http://vm.exe.xyz:08000", False),
+            ("vm.exe.xyz", "https://vm.exe.xyz:00443", False),
+            ("vm.exe.xyz", "https://vm.exe.xyz:0", False),
+        ):
+            with self.subTest(host=host, origin=origin):
+                self.assertEqual(expected, self._handler(host, origin)._local_ok())
+
+    def test_other_names_and_suffix_tricks(self) -> None:
+        for name in (
+            "evil.com",
+            "sub.vm.exe.xyz",
+            "evil-vm.exe.xyz",
+            "vm.exe.xyz.evil.com",
+            "vm.exe.xyz..",
+            "vm.exe.xyz%2e",
+            "vm.exe.xyz,evil.com",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(self._handler(name)._local_ok())
+                self.assertFalse(self._handler("vm.exe.xyz", "https://" + name)._local_ok())
+
+    def test_userinfo_and_malformed_authorities(self) -> None:
+        for authority in (
+            "evil.com@vm.exe.xyz",
+            "vm.exe.xyz@evil.com",
+            "user:pass@vm.exe.xyz",
+            "[vm.exe.xyz]",
+            "vm.exe.xyz/path",
+            "vm.exe.xyz?x",
+            "vm.exe.xyz#x",
+            "vm.exe.xyz\\evil.com",
+            "vm.exe.xyz\t",
+            "vm.exe.xyz\n",
+            "vm.exe.xyz:\uff14\uff14\uff13",
+        ):
+            with self.subTest(authority=authority):
+                self.assertFalse(self._handler(authority)._local_ok())
+                self.assertFalse(self._handler("vm.exe.xyz", "https://" + authority)._local_ok())
+
+    def test_origin_scheme_and_same_authority(self) -> None:
+        for origin in (
+            "",
+            "null",
+            "ftp://vm.exe.xyz",
+            "ws://vm.exe.xyz",
+            "//vm.exe.xyz",
+            "https://vm.exe.xyz/",
+            "https://vm.exe.xyz?",
+            "https://vm.exe.xyz#",
+            "https://other.exe.xyz",
+            "http://127.0.0.1:8000",
+            "https://vm.exe.xyz:bad",
+        ):
+            with self.subTest(origin=origin):
+                self.assertFalse(self._handler("vm.exe.xyz", origin)._local_ok())
+        self.assertFalse(self._handler("127.0.0.1:8000", "http://vm.exe.xyz:8000")._local_ok())
+
+    def test_duplicate_headers_are_refused(self) -> None:
+        for field, extra in (("Host", "evil.com"), ("Origin", "https://evil.com")):
+            with self.subTest(field=field):
+                handler = self._handler("vm.exe.xyz", "https://vm.exe.xyz")
+                handler.headers[field] = extra
+                self.assertFalse(handler._local_ok())
+
+    def test_allowing_localhost_keeps_loopback_origin_rules(self) -> None:
+        handler = self._handler("localhost:8000", "https://localhost:8000")
+        handler.server.application.config.allowed_hosts = ("localhost", "vm.exe.xyz")
+        self.assertFalse(handler._local_ok())
+        handler.headers.replace_header("Origin", "http://localhost:8000")
+        self.assertTrue(handler._local_ok())
+
+    def test_loopback_bind_keeps_allowlist_inactive(self) -> None:
+        # Restoring the single-address bind check must admit the named rows.
+        for bound in ("127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "localhost"):
+            with self.subTest(bound=bound):
+                self.assertFalse(self._handler("vm.exe.xyz", bound=bound)._local_ok())
+                self.assertTrue(self._handler("localhost:8000", bound=bound)._local_ok())
+
+    def test_loopback_proxy_does_not_grant_local_only_access(self) -> None:
+        # Removing the authority check would authenticate the proxy's socket.
+        for host, origin, expected in (
+            ("vm.exe.xyz", "https://vm.exe.xyz", False),
+            ("127.0.0.1:8000", "http://127.0.0.1:8000", True),
+            ("127.0.0.2:8000", "http://127.0.0.2:8000", True),
+            ("localhost:8000", "http://localhost:8000", True),
+            ("[::1]:8000", "http://[::1]:8000", True),
+        ):
+            with self.subTest(host=host):
+                handler = self._handler(host, origin, method="POST")
+                handler.headers["Sec-Fetch-Site"] = "same-origin"
+                self.assertTrue(handler._local_ok())
+                self.assertEqual(expected, handler._loopback_resource_ok())
+
+    def test_named_mutations_require_origin_even_with_referer(self) -> None:
+        # Restoring the absent-Origin early return must fail every mutation row.
+        for method, expected in (
+            ("GET", True),
+            ("HEAD", True),
+            ("POST", False),
+            ("PUT", False),
+            ("PATCH", False),
+            ("DELETE", False),
+            ("OPTIONS", False),
+        ):
+            for referer in (None, "https://vm.exe.xyz/", "https://evil.example/"):
+                with self.subTest(method=method, referer=referer):
+                    handler = self._handler("vm.exe.xyz", method=method)
+                    if referer is not None:
+                        handler.headers["Referer"] = referer
+                    self.assertEqual(expected, handler._local_ok())
+
+    def test_named_origin_scheme_and_port_are_pinned(self) -> None:
+        # Allowing HTTP's default or HTTPS on the backend port breaks these rows.
+        for origin, expected in (
+            ("http://vm.exe.xyz", False),
+            ("http://vm.exe.xyz:80", False),
+            ("http://vm.exe.xyz:8000", True),
+            ("http://vm.exe.xyz:443", False),
+            ("https://vm.exe.xyz", True),
+            ("https://vm.exe.xyz:443", True),
+            ("https://vm.exe.xyz:8000", False),
+            ("https://vm.exe.xyz:80", False),
+        ):
+            with self.subTest(origin=origin):
+                self.assertEqual(
+                    expected, self._handler("vm.exe.xyz", origin, method="POST")._local_ok()
+                )
+
+    def test_named_http_default_is_refused_even_when_listening_on_80(self) -> None:
+        for origin in ("http://vm.exe.xyz", "http://vm.exe.xyz:80"):
+            with self.subTest(origin=origin):
+                handler = self._handler("vm.exe.xyz", origin, method="POST")
+                handler.server.server_port = 80
+                self.assertFalse(handler._local_ok())
+
+    def test_named_https_default_is_independent_of_listening_port(self) -> None:
+        for port in (80, 443, 8000):
+            for origin in ("https://vm.exe.xyz", "https://vm.exe.xyz:443"):
+                with self.subTest(port=port, origin=origin):
+                    handler = self._handler("vm.exe.xyz", origin, method="POST")
+                    handler.server.server_port = port
+                    self.assertTrue(handler._local_ok())
+
+    def test_absolute_form_requires_matching_authority_for_every_method(self) -> None:
+        # Removing the request-target check must admit the mismatched targets.
+        for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            for host, target, expected in (
+                ("vm.exe.xyz", "http://evil.com/api/data", False),
+                ("vm.exe.xyz", "https://other.exe.xyz/api/data", False),
+                ("vm.exe.xyz:8000", "http://vm.exe.xyz:443/api/data", False),
+                ("vm.exe.xyz", "http://VM.EXE.XYZ./api/data", True),
+                ("vm.exe.xyz:8000", "http://vm.exe.xyz:8000/api/data", True),
+                ("127.0.0.1:8000", "http://evil.com/api/data", False),
+                ("localhost:8000", "http://LOCALHOST:8000/api/data", True),
+            ):
+                with self.subTest(method=method, host=host, target=target):
+                    origin = "http://vm.exe.xyz:8000" if host == "vm.exe.xyz:8000" else None
+                    if host == "vm.exe.xyz":
+                        origin = "https://vm.exe.xyz"
+                    self.assertEqual(
+                        expected,
+                        self._handler(host, origin, method=method, path=target)._local_ok(),
+                    )
+
+    def test_named_zero_port_is_refused_even_with_zero_listening_port(self) -> None:
+        for host, origin in (
+            ("vm.exe.xyz:0", None),
+            ("vm.exe.xyz", "http://vm.exe.xyz:0"),
+        ):
+            with self.subTest(host=host, origin=origin):
+                handler = self._handler(host, origin)
+                handler.server.server_port = 0
+                self.assertFalse(handler._local_ok())
+
+    def test_absolute_form_compares_ip_values_and_effective_ports(self) -> None:
+        # Textual IP/port comparison breaks the equivalent-authority acceptance rows.
+        for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            for host, target, expected in (
+                ("127.0.0.1:80", "http://127.0.0.1/", True),
+                ("127.0.0.1", "http://127.0.0.1:80/", True),
+                ("127.0.0.1:443", "https://127.0.0.1/", True),
+                ("127.0.0.1", "https://127.0.0.1:443/", True),
+                ("[::1]:80", "http://[0:0:0:0:0:0:0:1]/", True),
+                ("[0:0:0:0:0:0:0:1]", "http://[::1]:80/", True),
+                ("127.0.0.1:8000 \t", "http://127.0.0.1:8000/", True),
+                ("[::1]:8000\t ", "http://[::1]:8000/", True),
+                ("127.0.0.1:80", "http://127.0.0.2/", False),
+                ("127.0.0.1:80", "http://localhost/", False),
+                ("127.0.0.1:80", "http://evil.com/", False),
+                ("127.0.0.1:8000", "http://127.0.0.1/", False),
+                ("127.0.0.1:80", "https://127.0.0.1/", False),
+                ("127.0.0.1:80", "http://127.0.0.1:abc/", False),
+                ("127.0.0.1:80", "http://127.0.0.1:65536/", False),
+                ("127.0.0.1:65536", "http://127.0.0.1:65536/", False),
+                ("127.0.0.1:80", "http://user@127.0.0.1/", False),
+            ):
+                with self.subTest(method=method, host=host, target=target):
+                    handler = self._handler(host, method=method, path=target)
+                    handler.server.server_port = 80
+                    self.assertEqual(expected, handler._local_ok())
+
+    def test_ip_literal_rules_are_unchanged(self) -> None:
+        for host, origin, expected in (
+            ("127.0.0.1:9999", "http://127.0.0.1:8000", True),
+            ("192.168.0.2:9999", "http://192.168.0.2:8000", True),
+            ("[::1]:8000", "http://[::1]:8000", True),
+            ("192.168.0.2:8000", "https://192.168.0.2:8000", False),
+            ("192.168.0.2:8000", "http://192.168.0.2", False),
+            ("0.0.0.0:8000", None, False),
+            ("224.0.0.1:8000", None, False),
+        ):
+            with self.subTest(host=host, origin=origin):
+                self.assertEqual(expected, self._handler(host, origin)._local_ok())
+
+    def test_cross_site_post_stays_blocked(self) -> None:
+        handler = self._handler("vm.exe.xyz", "https://vm.exe.xyz")
+        handler.headers["Sec-Fetch-Site"] = "cross-site"
+        handler.headers["Sec-Fetch-Mode"] = "navigate"
+        handler.headers["Sec-Fetch-Dest"] = "document"
+        self.assertFalse(handler._local_ok())
+        self.assertTrue(handler._local_ok(allow_cross_site_navigation=True))
+
+    def test_raw_named_requests_enforce_origin_and_target_authority(self) -> None:
+        for request, expected in (
+            (b"GET / HTTP/1.1\r\nHost: vm.exe.xyz\r\n\r\n", 200),
+            (b"GET / HTTP/1.1\r\n\r\n", 403),
+            (b"GET http://evil.com/ HTTP/1.1\r\nHost: vm.exe.xyz\r\n\r\n", 403),
+            (b"GET http://VM.EXE.XYZ./ HTTP/1.1\r\nHost: vm.exe.xyz\r\n\r\n", 200),
+            (
+                b"POST /api/notify HTTP/1.1\r\nHost: vm.exe.xyz\r\nContent-Length: 2\r\n\r\n{}",
+                403,
+            ),
+            (
+                (
+                    b"POST /api/notify HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Referer: https://vm.exe.xyz/\r\nContent-Length: 2\r\n\r\n{}"
+                ),
+                403,
+            ),
+            (
+                (
+                    b"POST /api/notify HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Origin: http://vm.exe.xyz\r\nContent-Length: 2\r\n\r\n{}"
+                ),
+                403,
+            ),
+            (
+                (
+                    b"POST /api/notify HTTP/1.1\r\nHost: vm.exe.xyz:8000\r\n"
+                    b"Origin: http://vm.exe.xyz:8000\r\nContent-Length: 2\r\n\r\n{}"
+                ),
+                200,
+            ),
+            (
+                (
+                    b"POST /api/notify HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Origin: https://vm.exe.xyz\r\nContent-Length: 2\r\n\r\n{}"
+                ),
+                200,
+            ),
+            (
+                (
+                    b"POST http://evil.com/api/notify HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Origin: https://vm.exe.xyz\r\nContent-Length: 2\r\n\r\n{}"
+                ),
+                403,
+            ),
+        ):
+            with self.subTest(request=request):
+                self.assertEqual(expected, self._raw_response(request)[0])
+
+    def test_raw_absolute_form_accepts_equivalent_ip_authorities(self) -> None:
+        # The IPv4 listener can receive IPv6 authorities in the HTTP bytes.
+        for request, expected in (
+            (b"GET http://127.0.0.1/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 200),
+            (b"GET http://[0:0:0:0:0:0:0:1]/ HTTP/1.1\r\nHost: [::1]:80\r\n\r\n", 200),
+            (b"GET http://[::1]:80/ HTTP/1.1\r\nHost: [0:0:0:0:0:0:0:1]\r\n\r\n", 200),
+            (b"GET http://127.0.0.1:8000/ HTTP/1.1\r\nHost: 127.0.0.1:8000 \t\r\n\r\n", 200),
+            (b"GET http://127.0.0.2/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
+            (b"GET http://127.0.0.1:abc/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
+            (b"GET http://127.0.0.1:65536/ HTTP/1.1\r\nHost: 127.0.0.1:80\r\n\r\n", 403),
+        ):
+            with self.subTest(request=request):
+                self.assertEqual(expected, self._raw_response(request)[0])
+
+    def test_raw_proxy_requests_cannot_change_local_settings_or_consent(self) -> None:
+        for path, body in (
+            (b"/api/settings", b'{"values":{"analyze_prompt_bytes":1000}}'),
+            (b"/api/summary", b'{"harness":"claude","sid":"abcdef12"}'),
+            (b"/api/reading", b'{"consent":"off","press":true,"observer_model":1}'),
+        ):
+            with self.subTest(path=path):
+                request = (
+                    b"POST " + path + b" HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Origin: https://vm.exe.xyz\r\nSec-Fetch-Site: same-origin\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+                )
+                self.assertEqual(403, self._raw_response(request)[0])
+
+    def test_raw_named_event_requests_reach_the_real_capability_check(self) -> None:
+        coordinator = observation_module.Observation(build_app())
+        body = b'{"v":1,"event":"turn_started","session_id":"abcdef12-3456-7890-abcd-ef1234567890"}'
+        for token, expected in (
+            (None, 403),
+            ("invalid", 403),
+            (coordinator.capability("claude"), 200),
+        ):
+            with self.subTest(expected=expected, missing=token is None):
+                capability = b"X-Compass-Capability: " + token.encode() + b"\r\n" if token else b""
+                request = (
+                    b"POST /api/events/claude HTTP/1.1\r\nHost: vm.exe.xyz\r\n"
+                    b"Origin: https://vm.exe.xyz\r\n"
+                    + capability
+                    + b"Content-Length: "
+                    + str(len(body)).encode()
+                    + b"\r\n\r\n"
+                    + body
+                )
+                status, reply = self._raw_response(request, observation=coordinator)
+                self.assertEqual(expected, status)
+                if expected == 200:
+                    self.assertEqual({"ok": True, "outcome": "accepted"}, json.loads(reply))
+                else:
+                    self.assertEqual([], coordinator.overlays_for("claude", "abcdef12"))
+
+    def test_allowed_host_over_loopback_socket(self) -> None:
+        with config_patch(allowed_hosts=("vm.exe.xyz",)):
+            application = build_app()
+            coordinator = observation_module.Observation(application)
+            httpd = make_server(host="127.0.0.1", application=application, observation=coordinator)
+        # Exercise remote admission without opening a non-loopback listener.
+        httpd.bound_host = "0.0.0.0"
+        thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+        thread.start()
+        try:
+            for method, path, headers, expected in (
+                ("GET", "/", {"Host": "vm.exe.xyz"}, 200),
+                (
+                    "POST",
+                    "/api/notify",
+                    {"Host": "vm.exe.xyz", "Origin": "https://vm.exe.xyz"},
+                    200,
+                ),
+                ("POST", "/api/notify", {"Host": "vm.exe.xyz", "Origin": "https://evil.com"}, 403),
+                (
+                    "POST",
+                    "/api/notify",
+                    {
+                        "Host": "vm.exe.xyz",
+                        "Origin": "https://vm.exe.xyz",
+                        "Sec-Fetch-Site": "cross-site",
+                    },
+                    403,
+                ),
+                (
+                    "POST",
+                    "/api/events/claude",
+                    {"Host": "vm.exe.xyz", "Origin": "https://vm.exe.xyz"},
+                    403,
+                ),
+                (
+                    "POST",
+                    "/api/events/claude",
+                    {
+                        "Host": "vm.exe.xyz",
+                        "Origin": "https://vm.exe.xyz",
+                        "X-Compass-Capability": "invalid",
+                    },
+                    403,
+                ),
+                (
+                    "POST",
+                    "/api/events/claude",
+                    {
+                        "Host": "vm.exe.xyz",
+                        "Origin": "https://vm.exe.xyz",
+                        "X-Compass-Capability": coordinator.capability("claude"),
+                    },
+                    200,
+                ),
+            ):
+                with self.subTest(method=method, path=path, headers=headers):
+                    conn = http.client.HTTPConnection(
+                        "127.0.0.1", httpd.server_port, timeout=WAIT_SEC
+                    )
+                    try:
+                        body = (
+                            b'{"v":1,"event":"turn_started","session_id":"abcdef12-3456-7890-abcd-ef1234567890"}'
+                            if path == "/api/events/claude"
+                            else b"{}"
+                            if method == "POST"
+                            else None
+                        )
+                        conn.request(method, path, body=body, headers=headers)
+                        response = conn.getresponse()
+                        self.assertEqual(expected, response.status)
+                        reply = response.read()
+                        if path == "/api/events/claude" and expected == 200:
+                            self.assertEqual({"ok": True, "outcome": "accepted"}, json.loads(reply))
+                    finally:
+                        conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+
 class VerificationFixTest(unittest.TestCase):
     """Regressions found by the adversarial pass that tried to refute the fixes."""
 

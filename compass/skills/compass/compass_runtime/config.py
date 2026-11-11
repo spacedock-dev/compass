@@ -190,6 +190,7 @@ class RuntimeConfig:
     state_home: str
     launcher_path: Path
     host: str
+    allowed_hosts: tuple[str, ...]
     port: int
     frontend_dev: DevelopmentFrontend | None
     window_hours: float
@@ -832,6 +833,29 @@ def load_pi_settings(config_dir: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def normalize_allowed_host(value: str) -> str:
+    """Validate an exact ASCII DNS hostname without resolving it."""
+    name = value.removesuffix(".").lower()
+    labels = name.split(".")
+    # Numeric final labels (including browser-style hex/octal addresses) are
+    # excluded so an IP URL cannot acquire the DNS-only proxy origin policy.
+    if (
+        not value.isascii()
+        or not 1 <= len(name) <= 253
+        or any(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label, flags=re.ASCII) is None
+            for label in labels
+        )
+        or re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]*)", labels[-1]) is not None
+    ):
+        raise ValueError(
+            "must be a DNS hostname with labels of 1-63 ASCII letters, digits or hyphens "
+            "(no leading/trailing hyphen), at most 253 characters, and a non-numeric final "
+            "label; no scheme, path, port, wildcard or IP literal"
+        )
+    return name
+
+
 def build_runtime_config(
     *,
     environ: Mapping[str, str],
@@ -840,6 +864,7 @@ def build_runtime_config(
     launcher_path: Path,
     store_root_overrides: Mapping[str, str] | None = None,
     host: str = "127.0.0.1",
+    allowed_hosts: tuple[str, ...] = (),
     port: int = 4553,
     window_hours: float = 24.0,
     spacedock_enabled: bool = True,
@@ -906,6 +931,7 @@ def build_runtime_config(
         state_home=state_home,
         launcher_path=launcher_path,
         host=host,
+        allowed_hosts=tuple(normalize_allowed_host(name) for name in allowed_hosts),
         port=port,
         frontend_dev=None,
         window_hours=window_hours,

@@ -169,6 +169,13 @@ def bind_host(value: str) -> str:
     return value
 
 
+def allowed_host(value: str) -> str:
+    try:
+        return runtime_config.normalize_allowed_host(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def positive_float(value: str) -> float:
     """A float above zero, or an argparse error naming what was wrong.
 
@@ -302,6 +309,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=bind_host,
         default="127.0.0.1",
         help="bind address: 127.0.0.1 (default) or 0.0.0.0 for remote access",
+    )
+    parser.add_argument(
+        "--allow-host",
+        action="append",
+        type=allowed_host,
+        default=[],
+        metavar="NAME",
+        help=(
+            "trust an exact DNS hostname behind a login proxy (repeatable; requires --host 0.0.0.0)"
+        ),
     )
     parser.add_argument(
         "--diagnose",
@@ -579,6 +596,7 @@ def build_runtime(
         os_name=os.name,
         launcher_path=launcher_path,
         host=args.host,
+        allowed_hosts=tuple(args.allow_host),
         port=args.port,
         window_hours=args.window_hours,
         spacedock_enabled=not args.no_spacedock,
@@ -949,6 +967,21 @@ def run_one_shot(
     return None
 
 
+def _client_server_argv(args: argparse.Namespace, argv: Sequence[str]) -> list[str]:
+    if not args.allow_host:
+        return list(argv)
+    # argparse already validated these startup values. Remove them only from
+    # the terminal operation's grammar; ServerOptions carries them to its start.
+    rest: list[str] = []
+    tokens = iter(argv)
+    for token in tokens:
+        if token in {"--allow-host", "--host"}:
+            next(tokens)
+        elif not token.startswith(("--allow-host=", "--host=")):
+            rest.append(token)
+    return rest
+
+
 def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int | None:  # noqa: PLR0912 - one dispatch per operation
     """The operations the terminal client owns, when `args` named one; None to carry on.
 
@@ -959,6 +992,21 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     """
     if (args.update or args.again) and not args.summary:
         build_parser().error("--update and --again need --summary")
+    startup = terminal_client.server_start_kwargs(
+        terminal_client.ServerOptions(args.host, tuple(args.allow_host))
+        if args.allow_host
+        else None
+    )
+    argv = _client_server_argv(args, argv)
+    if args.monitor:
+        claimed, off, session = terminal_client.parse_monitor_args(
+            [arg for arg in argv if arg != "--no-update-check"]
+        )
+        if not claimed:
+            build_parser().error("--monitor accepts --off, --session and server startup options")
+        return terminal_client.run_monitor(
+            off=off, session=session, no_update_check=args.no_update_check, **startup
+        )
     if args.summary or args.summaries:
         remaining = [arg for arg in argv if arg != "--no-update-check"]
         for index, arg in enumerate(remaining):
@@ -978,7 +1026,10 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
                 "with --session, --port and --no-update-check only"
             )
         return terminal_client.run_summary(
-            summary, port=args.port if typed else None, no_update_check=args.no_update_check
+            summary,
+            port=args.port if typed else None,
+            no_update_check=args.no_update_check,
+            **startup,
         )
     if args.goal is not None:
         remaining = [arg for arg in argv if arg != "--no-update-check"]
@@ -997,7 +1048,10 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
             )
         typed = any(a == "--port" or a.startswith("--port=") for a in argv)
         return terminal_client.run_goal(
-            goal, port=args.port if typed else None, no_update_check=args.no_update_check
+            goal,
+            port=args.port if typed else None,
+            no_update_check=args.no_update_check,
+            **startup,
         )
     if args.pause_model_calls:
         remaining = [arg for arg in argv if arg != "--pause-model-calls"]
@@ -1022,6 +1076,7 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
             session=args.session,
             port=args.port if typed else None,
             no_update_check=args.no_update_check,
+            **startup,
         )
     return None
 
@@ -1036,6 +1091,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     lifecycle.unignore_sigterm()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.allow_host and args.host == "127.0.0.1":
+        print(
+            "Compass: --allow-host has no effect on a loopback bind; "
+            "remote access requires an explicit --host 0.0.0.0.",
+            file=sys.stderr,
+        )
     answered = run_client_operation(args, sys.argv[1:] if argv is None else argv)
     if answered is not None:
         return answered

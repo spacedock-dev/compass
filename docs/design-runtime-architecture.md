@@ -67,7 +67,10 @@ a lone `--project`, `--drift` or `--drift again`, which may too, and `--monitor`
 `--clear` or `--adopt` and its own `--session`. It also owns `--summary` with `--update` or
 `--again` and its own `--session`, and `--summaries off`. The full parser honors an explicit
 `--port` for pause, sessions, project, drift, goal and summary operations. Goal, summary and pause
-reject unrelated options; sessions, project and drift ignore them after parsing.
+reject unrelated options; goal, summary, drift and monitor accept validated `--allow-host` startup
+options (and an explicit `--host` beside them) through the full parser, carrying immutable
+`terminal_client.ServerOptions` to any automatic start without changing whether the operation may
+start or spend; sessions, project and drift ignore them after parsing.
 `--version` beside another option, `--footer` beside any other option (a usage error in `cli`),
 `--help` and everything else go to `cli` untouched, so argparse still judges combinations and usage
 errors as before. `cli.main` dispatches the port-taking operations above to the client too,

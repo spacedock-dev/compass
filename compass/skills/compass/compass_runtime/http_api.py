@@ -1426,30 +1426,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _host_admitted(self, host: str) -> bool:
         """Whether a host string is local enough for this server's bind.
 
-        The default loopback bind keeps the exact LOCAL_HOSTS gate. A
-        non-loopback bind (--host 0.0.0.0 or an explicit address) is the
-        operator's opt-in to remote access, so the gate widens to the address
-        they asked for: exactly that address, or under 0.0.0.0 any address a
-        client could reach the machine on.
-
-        It widens to *addresses*, never to names, and that is the whole
-        rebinding defense rather than a tidiness rule. `Host` and `Origin` are
-        attacker-chosen strings, so admitting any non-empty one hands a page on
-        `http://evil.example:4553` both `/api/data` and every POST route the
-        moment its DNS points at this machine — measured before this narrowing,
-        against a 0.0.0.0 bind. Rebinding needs a name to rebind; an operator
-        typing a remote dashboard's URL has a literal address to type, so
-        refusing every name costs them nothing and closes it.
+        A remote bind admits reachable IP literals and only the DNS names the
+        operator explicitly trusted. Never resolve a name to decide admission:
+        that would admit an attacker's name as soon as its DNS rebinds here.
         """
-        if host in self.LOCAL_HOSTS:
+        # Measured rebinding exposure: SECURITY.md's Known and accepted section.
+        if self._loopback_host(host):
             return True
         bound = getattr(self.server, "bound_host", "127.0.0.1")
-        if bound == "127.0.0.1":
+        if self._loopback_host(bound):
             return False
         try:
             literal = ipaddress.ip_address(host)
         except ValueError:
-            return False  # a DNS name, or garbage
+            return self._name_allowed(host)
         if bound == "0.0.0.0":  # noqa: S104
             # The operator asked for every interface, so any address a client
             # could have arrived on is theirs. The wildcard itself is not a
@@ -1459,6 +1449,97 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # server is constructible directly, so the gate answers for whatever
         # address it was actually given rather than assuming the launcher.
         return host == bound
+
+    def _loopback_host(self, host: str) -> bool:
+        host = normalize_host(host)
+        if host in self.LOCAL_HOSTS:
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+    def _name_allowed(self, host: str) -> bool:
+        config = getattr(getattr(self.server, "application", None), "config", None)
+        names = getattr(config, "allowed_hosts", ())
+        return (
+            isinstance(names, tuple)
+            and not self._loopback_host(getattr(self.server, "bound_host", "127.0.0.1"))
+            and host.isascii()
+            and host.lower().removesuffix(".") not in self.LOCAL_HOSTS
+            and host.lower().removesuffix(".") in names
+        )
+
+    def _allowed_authority(self, value: str) -> tuple[str, int | None] | None:
+        name, separator, port_text = value.partition(":")
+        try:
+            name = runtime_config.normalize_allowed_host(name)
+        except ValueError:
+            return None
+        if not self._name_allowed(name):
+            return None
+        port = None
+        if separator:
+            if not (port_text.isascii() and port_text.isdigit() and len(port_text) <= 5):
+                return None
+            port = int(port_text)
+            if (
+                port == 0
+                or str(port) != port_text
+                or port not in {80, 443, self.server.server_port}
+            ):
+                return None
+        return name, port
+
+    def _allowed_origin_ok(self, host: str, origin: str) -> bool:
+        scheme, separator, authority = origin.partition("://")
+        if not separator or scheme.lower() not in {"http", "https"}:
+            return False
+        source = self._allowed_authority(authority)
+        target = self._allowed_authority(host)
+        if source is None or target is None:
+            return False
+        source_name, source_port = source
+        target_name, target_port = target
+        # A proxy may terminate TLS on 443 while Compass listens on 8000.
+        # Plain HTTP is direct access only; port 80 is never a trusted named origin.
+        if scheme.lower() == "https":
+            source_port = 443 if source_port is None else source_port
+            admitted = source_port == 443
+        else:
+            admitted = source_port == self.server.server_port and source_port != 80
+        return (
+            source_name == target_name
+            and (target_port is None or source_port == target_port)
+            and admitted
+        )
+
+    def _request_target_ok(self, authority: str) -> bool:
+        try:
+            source = urlparse(getattr(self, "path", ""))
+            target = source.netloc
+            if not target:
+                return True
+            if self._name_allowed(normalize_host(authority)):
+                identity = self._allowed_authority(authority)
+                return identity is not None and self._allowed_authority(target) == identity
+            host = urlparse("//" + authority.strip(" \t"))
+            default_port = {"http": 80, "https": 443}.get(source.scheme)
+            source_port = source.port if source.port is not None else default_port
+            host_port = host.port if host.port is not None else default_port
+            matches = (
+                source.username is None
+                and source.password is None
+                and source_port == host_port
+                and (
+                    source.hostname == host.hostname
+                    or ipaddress.ip_address(source.hostname or "")
+                    == ipaddress.ip_address(host.hostname or "")
+                )
+            )
+        except ValueError:
+            return False
+        return matches
 
     def _development_authority_ok(self) -> bool:
         config = getattr(getattr(self.server, "application", None), "config", None)
@@ -1473,8 +1554,19 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _local_ok(self, *, allow_cross_site_navigation: bool = False) -> bool:
-        if not self._development_authority_ok() or not self._host_admitted(
-            normalize_host(self.headers.get("Host") or "")
+        authority = self.headers.get("Host") or ""
+        host = normalize_host(authority)
+        if (
+            not self._development_authority_ok()
+            or not self._host_admitted(host)
+            or not self._request_target_ok(authority)
+        ):
+            return False
+        named = self._name_allowed(host)
+        if named and (
+            self._allowed_authority(authority) is None
+            or len(self.headers.get_all("Host", [])) != 1
+            or len(self.headers.get_all("Origin", [])) > 1
         ):
             return False
         if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site" and not (
@@ -1482,15 +1574,26 @@ class _RequestHandler(BaseHTTPRequestHandler):
         ):
             return False
         origin = self.headers.get("Origin")
-        if not origin:
-            return True  # same-origin GETs send none
+        if named:
+            return (
+                getattr(self, "command", "GET") in {"GET", "HEAD"}
+                if origin is None
+                else self._allowed_origin_ok(authority, origin)
+            )
+        return not origin or self._address_origin_ok(origin)
+
+    def _address_origin_ok(self, origin: str) -> bool:
         # Compare the whole origin, not just the host. Every port on this
         # machine is the *same site*, so Sec-Fetch-Site reports "same-site" for
         # a page served from another local port — and a hostname-only check
         # then trusted it. Any unrelated local dev server could POST here
         # (text/plain is CORS-safelisted, so no preflight would stop it).
         parsed = urlparse(origin)
-        if parsed.scheme != "http" or not self._host_admitted(parsed.hostname or ""):
+        if (
+            parsed.scheme != "http"
+            or self._name_allowed(parsed.hostname or "")
+            or not self._host_admitted(parsed.hostname or "")
+        ):
             return False
         listening_port = getattr(self.server, "server_port", None)
         try:
@@ -1668,6 +1771,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         site = (self.headers.get("Sec-Fetch-Site") or "").lower()
         return (
             ipaddress.ip_address(self.client_address[0]).is_loopback
+            and self._loopback_host(self.headers.get("Host") or "")
             and site not in {"same-site", "cross-site"}
             and self._local_ok()
         )

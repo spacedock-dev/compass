@@ -789,6 +789,8 @@ def spawn_argv(config: RuntimeConfig, args: argparse.Namespace) -> list[str]:
     host = getattr(args, "host", "127.0.0.1")
     if host != "127.0.0.1":
         argv.extend(["--host", host])
+    for name in config.allowed_hosts:
+        argv.extend(["--allow-host", name])
     return argv
 
 
