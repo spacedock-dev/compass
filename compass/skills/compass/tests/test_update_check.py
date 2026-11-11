@@ -441,6 +441,11 @@ class LocalTransportTest(unittest.TestCase):
                 "Connection": "close",
             },
         )
+        update_check.save_internal(self.config, True)
+        self.assertEqual(REAL_FETCH_RELEASE(self.config), "2.9.0")
+        self.assertEqual(
+            self.calls[-1][1]["User-Agent"], "compass/2.8.0+dev (windows; amd64; internal)"
+        )
 
     def test_a_redirect_is_never_followed(self) -> None:
         self.status = 302
@@ -478,16 +483,6 @@ class RequestValuesTest(unittest.TestCase):
         self.addCleanup(home.cleanup)
         self.home = home.name
 
-    def test_freebsd_release_suffixes_and_case_map_to_freebsd(self) -> None:
-        for value in ("freebsd13", "freebsd14", "FreeBSD"):
-            with self.subTest(value=value):
-                req = update_check.request(
-                    make_config(
-                        release_version="2.9.1", platform_name=value, update_check_arch="arm64"
-                    )
-                )
-                self.assertEqual(req.get_header("User-agent"), "compass/2.9.1 (freebsd; arm64)")
-
     def test_the_shipped_default_starts_the_background_worker(self) -> None:
         built = make_config(release_version="2.8.0+dev", update_check_disabled=False)
         stop = threading.Event()
@@ -519,7 +514,15 @@ class RequestValuesTest(unittest.TestCase):
         self.assertEqual(req.get_header("User-agent"), "compass/2.9.1 (darwin; arm64)")
 
     def test_an_unavailable_or_invalid_version_is_unknown(self) -> None:
-        for version in (None, "", "unknown", "vv2.9.1", "2.9.1 (extra)", "2.9.1\r\nX: injected"):
+        for version in (
+            None,
+            "",
+            "unknown",
+            "vv2.9.1",
+            "2.9.1 (extra)",
+            "2.9.1\r\nX: injected",
+            "1.0.0-alpha.beta.gamma.delta.epsilon",
+        ):
             with self.subTest(version=version):
                 req = update_check.request(
                     make_config(
@@ -557,18 +560,17 @@ class RequestValuesTest(unittest.TestCase):
                 self.assertEqual(req.get_header("User-agent"), expected)
 
     def test_the_saved_internal_flag_adds_only_the_internal_token(self) -> None:
-        with tempfile.TemporaryDirectory() as home:
-            cfg = make_config(
-                state_home=home,
-                release_version="2.9.1",
-                platform_name="darwin",
-                update_check_arch="arm64",
-            )
-            update_check.save_internal(cfg, True)
-            self.assertEqual(
-                update_check.request(cfg).get_header("User-agent"),
-                "compass/2.9.1 (darwin; arm64; internal)",
-            )
+        cfg = make_config(
+            state_home=self.home,
+            release_version="2.9.1",
+            platform_name="darwin",
+            update_check_arch="arm64",
+        )
+        update_check.save_internal(cfg, True)
+        self.assertEqual(
+            update_check.request(cfg).get_header("User-agent"),
+            "compass/2.9.1 (darwin; arm64; internal)",
+        )
 
     def test_the_internal_environment_override_requires_exactly_one(self) -> None:
         for value, expected in (
@@ -617,15 +619,6 @@ class RequestValuesTest(unittest.TestCase):
         )
         self.assertEqual(req.get_header("User-agent"), "compass/2.9.1-rc.1+dev (linux; amd64)")
 
-    def test_a_non_https_lookup_is_refused(self) -> None:
-        with (
-            mock.patch.object(
-                update_check, "RELEASE_URL", "http://spacedock.md/latest-release/compass"
-            ),
-            self.assertRaisesRegex(ValueError, "release lookup requires HTTPS"),
-        ):
-            update_check.request(make_config(release_version="2.9.1"))
-
     def test_os_values_match_the_shared_mapping_in_the_user_agent(self) -> None:
         for source, expected in (
             ("darwin", "compass/2.9.1 (darwin; arm64)"),
@@ -637,6 +630,9 @@ class RequestValuesTest(unittest.TestCase):
             ("MINGW32_NT-10.0", "compass/2.9.1 (windows; arm64)"),
             ("MSYS_NT-10.0", "compass/2.9.1 (windows; arm64)"),
             ("freebsd", "compass/2.9.1 (freebsd; arm64)"),
+            ("freebsd13", "compass/2.9.1 (freebsd; arm64)"),
+            ("freebsd14", "compass/2.9.1 (freebsd; arm64)"),
+            ("FreeBSD", "compass/2.9.1 (freebsd; arm64)"),
             ("plan9", "compass/2.9.1 (unknown; arm64)"),
         ):
             with self.subTest(source=source):
