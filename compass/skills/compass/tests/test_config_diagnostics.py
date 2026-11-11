@@ -17,7 +17,16 @@ from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
-from compass_runtime import aggregate, cli, diagnostics, http_api, lifecycle, notifications
+from compass_runtime import (
+    aggregate,
+    cli,
+    diagnostics,
+    entry,
+    http_api,
+    lifecycle,
+    notifications,
+    terminal_client,
+)
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
 from compass_runtime import sessions as runtime_sessions
@@ -225,6 +234,205 @@ class CompassServerTest(RuntimeTestCase):
         self.assertEqual({}, dict(state.store_errors))
         self.assertEqual({}, dict(state.metadata_cache))
         self.assertTrue(config.store_roots)
+
+
+class AllowedHostFlagTest(unittest.TestCase):
+    # Dropping validation, normalization, runtime wiring, or the loopback warning
+    # must break these literal expectations from the flag's public contract.
+    def test_repeatable_names_are_normalized_in_runtime_config(self) -> None:
+        args = cli.build_parser().parse_args(
+            ["--host", "0.0.0.0", "--allow-host", "VM.Exe.XYZ.", "--allow-host", "other.exe.xyz"]
+        )
+        config, _ = cli.build_runtime(args, started=1.0)
+        self.assertEqual(("vm.exe.xyz", "other.exe.xyz"), config.allowed_hosts)
+        self.assertEqual("0.0.0.0", config.host)
+
+    def test_dns_label_and_total_length_boundaries(self) -> None:
+        for name in (
+            "a",
+            "a-b.example",
+            "123.example",
+            "xn--bcher-kva.example",
+            "a" * 63 + ".com",
+            ".".join(["a" * 63] * 3 + ["b" * 61]),
+        ):
+            with self.subTest(name=name):
+                args = cli.build_parser().parse_args(["--allow-host", name])
+                config, _ = cli.build_runtime(args, started=1.0)
+                self.assertEqual((name,), config.allowed_hosts)
+
+    def test_invalid_names_are_refused_at_startup(self) -> None:
+        for name in (
+            "",
+            ".",
+            "vm.exe.xyz..",
+            "https://vm.exe.xyz",
+            "vm.exe.xyz/path",
+            "vm.exe.xyz:443",
+            "*.exe.xyz",
+            "bad_name.exe.xyz",
+            "-vm.exe.xyz",
+            "vm-.exe.xyz",
+            "vm..exe.xyz",
+            " vm.exe.xyz",
+            "vm.exe.xyz ",
+            "vm.exe.xyz\n",
+            "vm.exe.xyz\t",
+            "vm.exe.xyz?x",
+            "vm.exe.xyz#x",
+            "user@vm.exe.xyz",
+            "vm.exe.xyz\\x",
+            "bücher.example",
+            "\u212a.example",
+            "127.0.0.1",
+            "::1",
+            "[::1]",
+            "127.1",
+            "2130706433",
+            "0x7f000001",
+            "0177.0.0.1",
+            "1.2.3.999",
+            "a" * 64 + ".com",
+            ".".join(["a" * 63] * 3 + ["b" * 62]),
+            ".".join(["a" * 63] * 4),
+        ):
+            with self.subTest(name=name):
+                captured = io.StringIO()
+                with self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(captured):
+                    cli.main(["--allow-host=" + name, "--daemon"])
+                self.assertEqual(2, caught.exception.code)
+                self.assertIn("--allow-host", captured.getvalue())
+                self.assertIn("DNS hostname", captured.getvalue())
+
+    def test_loopback_launch_warns_without_widening_bind(self) -> None:
+        captured = io.StringIO()
+        with (
+            contextlib.redirect_stderr(captured),
+            mock.patch.object(cli, "run_one_shot", return_value=0),
+        ):
+            self.assertEqual(0, cli.main(["--allow-host", "vm.exe.xyz"]))
+        self.assertIn("--allow-host has no effect", captured.getvalue())
+        self.assertIn("--host 0.0.0.0", captured.getvalue())
+        args = cli.build_parser().parse_args(["--allow-host", "vm.exe.xyz"])
+        config, _ = cli.build_runtime(args, started=1.0)
+        self.assertEqual("127.0.0.1", config.host)
+
+    def test_automatic_starts_preserve_names_and_explicit_bind(self) -> None:
+        # Dropping options in any of the four dispatch chains must change the
+        # actual child command, not merely a mock's forwarded keyword arguments.
+        for operation in (
+            ["--drift"],
+            ["--summary"],
+            ["--summary", "--update"],
+            ["--summary", "--again"],
+            ["--goal", "my goal"],
+            ["--goal", "--clear"],
+            ["--goal", "--adopt"],
+            ["--monitor"],
+        ):
+            with (
+                self.subTest(operation=operation),
+                tempfile.TemporaryDirectory() as home,
+                mock.patch.dict(os.environ, {"COMPASS_HOME": home}, clear=True),
+                mock.patch.object(sys.stdout, "isatty", return_value=True),
+                mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+                mock.patch(
+                    "subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+                ) as run,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(
+                    1,
+                    entry.main(
+                        [
+                            "--host",
+                            "0.0.0.0",
+                            "--allow-host",
+                            "VM.EXE.XYZ.",
+                            *operation,
+                            "--session",
+                            "claude:one",
+                            "--allow-host=other.exe.xyz",
+                            "--no-update-check",
+                        ]
+                    ),
+                )
+                self.assertEqual(
+                    [
+                        sys.executable,
+                        str(SERVER_PATH.with_name("launch.py")),
+                        str(SERVER_PATH),
+                        "--daemon",
+                        "--port",
+                        "4553",
+                        "--no-update-check",
+                        "--host",
+                        "0.0.0.0",
+                        "--allow-host",
+                        "vm.exe.xyz",
+                        "--allow-host",
+                        "other.exe.xyz",
+                    ],
+                    run.call_args.args[0],
+                )
+
+    def test_automatic_start_with_names_alone_keeps_loopback(self) -> None:
+        captured = io.StringIO()
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}, clear=True),
+            mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+            mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run,
+            contextlib.redirect_stderr(captured),
+        ):
+            self.assertEqual(
+                1,
+                entry.main(
+                    [
+                        "--drift",
+                        "--session",
+                        "claude:one",
+                        "--allow-host",
+                        "vm.exe.xyz",
+                    ]
+                ),
+            )
+        self.assertEqual(
+            [
+                sys.executable,
+                str(SERVER_PATH.with_name("launch.py")),
+                str(SERVER_PATH),
+                "--daemon",
+                "--port",
+                "4553",
+                "--allow-host",
+                "vm.exe.xyz",
+            ],
+            run.call_args.args[0],
+        )
+        self.assertIn("--allow-host has no effect", captured.getvalue())
+
+    def test_goal_read_with_allow_host_starts_nothing(self) -> None:
+        with (
+            mock.patch.object(terminal_client, "find_dashboard", return_value=None),
+            mock.patch("subprocess.run") as run,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(
+                1,
+                entry.main(
+                    [
+                        "--goal",
+                        "--session",
+                        "claude:one",
+                        "--allow-host",
+                        "vm.exe.xyz",
+                        "--host",
+                        "0.0.0.0",
+                    ]
+                ),
+            )
+        run.assert_not_called()
 
 
 class RuntimeConfigTest(unittest.TestCase):

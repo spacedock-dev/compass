@@ -156,7 +156,13 @@ def _start_receipt(reply: client.Reply) -> dict[str, Any]:
 
 
 def command(
-    named: client.Session, *, off: bool, home: str, in_session: bool, no_update_check: bool = False
+    named: client.Session,
+    *,
+    off: bool,
+    home: str,
+    in_session: bool,
+    no_update_check: bool = False,
+    server_options: client.ServerOptions | None = None,
 ) -> int:
     try:
         store = monitor_store.Store(home, named.sid)
@@ -175,10 +181,16 @@ def command(
                                 off=off,
                                 in_session=in_session,
                                 no_update_check=no_update_check,
+                                server_options=server_options,
                             )
                 return _say("busy", failed=True)
             return _command(
-                store, named, off=off, in_session=in_session, no_update_check=no_update_check
+                store,
+                named,
+                off=off,
+                in_session=in_session,
+                no_update_check=no_update_check,
+                server_options=server_options,
             )
     except (OSError, ValueError):
         return _say("failed", failed=True)
@@ -191,6 +203,7 @@ def _command(
     off: bool,
     in_session: bool,
     no_update_check: bool = False,
+    server_options: client.ServerOptions | None = None,
 ) -> int:
     if store.running():
         record = store.read("run")
@@ -218,7 +231,13 @@ def _command(
         if terminal_sessions.names(record, named.sid):
             store.write("stop", {"generation": record.get("generation")})
         return _say("not_running")
-    return _start(store, named, in_session=in_session, no_update_check=no_update_check)
+    return _start(
+        store,
+        named,
+        in_session=in_session,
+        no_update_check=no_update_check,
+        server_options=server_options,
+    )
 
 
 def _start(
@@ -227,6 +246,7 @@ def _start(
     *,
     in_session: bool,
     no_update_check: bool = False,
+    server_options: client.ServerOptions | None = None,
 ) -> int:
     found = client.ensure_dashboard(
         str(store.root.parent),
@@ -236,6 +256,7 @@ def _start(
         in_session=in_session,
         say=lambda _message: None,
         no_update_check=no_update_check,
+        **client.server_start_kwargs(server_options),
     )
     if isinstance(found, client.Refusal):
         print(found.message, file=sys.stderr)

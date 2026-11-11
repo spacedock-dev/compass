@@ -5273,11 +5273,41 @@ actually separates is a page from a document navigation and from a local process
 the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice after admission succeeds and its terminal receipt exists; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
-to addresses and never to names. Under `0.0.0.0`, that means any address a client could arrive on.
-A page on `http://evil.example:4553` whose DNS points at the machine is refused in both modes, and
-the `Sec-Fetch-Site` cross-site check runs unchanged. The gate tells a name from an address; it
-cannot tell one remote client from another. So the honest scope is: use `--host` on a network you
-would hand the transcripts to, and reach a dashboard over `ssh -L` otherwise.
+to addresses and, only with `--allow-host NAME`, the exact DNS names the operator explicitly
+trusts. Under `0.0.0.0`, any address a client could arrive on is admitted as before. Every other
+name, including subdomains and suffix matches of an allowed name, stays refused even when its DNS
+points at this machine. The `Sec-Fetch-Site` cross-site check runs unchanged. Admission never
+resolves a hostname or trusts forwarded headers. The gate cannot tell one remote client from
+another. Use `--host` on a network you would hand the transcripts to, reach the dashboard over
+`ssh -L`, or put a login proxy in front and block direct access to the Compass port.
+
+`--allow-host` is intended for that last setting: an authenticated HTTPS proxy whose public
+hostname is the only way to reach a VM. For example, start with
+`--daemon --host 0.0.0.0 --port 8000 --allow-host content-pipeline-dev.exe.xyz`.
+Repeat the flag for another exact name. Names are case-insensitive and one trailing dot is
+stripped; only ASCII DNS labels are accepted (punycode for internationalized names). Invalid
+names, IP literals, wildcards and values containing a scheme, path or port are startup errors.
+The flag alone changes no listening address. On the default loopback bind it warns and admits
+no additional hosts. Daemon detach, Windows respawn and automatic starts from terminal operations retain every name
+and any explicit bind. Names alone still start on loopback; only an explicit `--host 0.0.0.0`
+opens remote access. A read starts nothing, and an existing dashboard keeps its own configuration.
+
+For an allowed name, Host may omit the port or explicitly use the listening port, 80 or 443.
+Origin, when present, must be HTTP or HTTPS, contain only an authority (no userinfo, path, query or fragment),
+and name the same allowed host and effective port as Host. Only the listening port or that
+scheme's default is admitted: HTTP 80 or HTTPS 443. An omitted Host port uses Origin's scheme
+default. This admits `Host: content-pipeline-dev.exe.xyz` with
+`Origin: https://content-pipeline-dev.exe.xyz` when Compass listens on 8000, without trusting
+another service on a different port of the same name. The existing IP-literal and loopback
+port and Origin rules remain unchanged, as do capability tokens, model consent, loopback-only
+routes and the hook forwarders' loopback-only destinations. The proxy must preserve Host;
+Compass does not infer identity or authentication from `X-Forwarded-*` headers.
+
+An allowed name is a trust grant, not authentication. Whoever controls its DNS and web content
+could serve a hostile page on that name and then rebind it to Compass; that exact name has been
+exempted from the name-based rebinding defense. Trust only names you control or a proxy operator
+you trust, and keep the login proxy and the restriction on direct port access in place. Other
+names remain blocked, so this exception does not grant an attacker an arbitrary name to rebind.
 
 Loopback is not a per-user boundary. Any other account on the same machine can `GET /api/data` and
 read every session's titles and prompts, or forge a `POST /api/notify`. The Host, `Sec-Fetch` and

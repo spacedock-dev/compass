@@ -1893,6 +1893,84 @@ class SpawnArgvOptOutTest(unittest.TestCase):
         argv = lifecycle.spawn_argv(config, self._args())
         self.assertNotIn("--host", argv)
 
+    def test_allow_hosts_survive_windows_daemon_respawn(self) -> None:
+        # A respawn dropping a name makes the proxy return 403 after a successful
+        # launch. The complete child argv is hand-written, including both names.
+        args = cli.build_parser().parse_args(
+            [
+                "--daemon",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+                "--allow-host",
+                "VM.EXE.XYZ.",
+                "--allow-host",
+                "other.exe.xyz",
+                "--no-update-check",
+            ]
+        )
+        config, _ = cli.build_runtime(args, started=1.0)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(subprocess, "Popen") as popen:
+            lifecycle.spawn_detached(config, args, str(Path(tmp) / "compass.log"))
+        self.assertEqual(
+            [
+                sys.executable,
+                str(SERVER_PATH),
+                "--port",
+                "8000",
+                "--window-hours",
+                "24",
+                "--no-update-check",
+                "--host",
+                "0.0.0.0",
+                "--allow-host",
+                "vm.exe.xyz",
+                "--allow-host",
+                "other.exe.xyz",
+            ],
+            popen.call_args.args[0],
+        )
+        child = cli.build_parser().parse_args(popen.call_args.args[0][2:])
+        child_config, _ = cli.build_runtime(child, started=2.0)
+        self.assertEqual(("vm.exe.xyz", "other.exe.xyz"), child_config.allowed_hosts)
+        self.assertEqual("0.0.0.0", child_config.host)
+
+    @unittest.skipUnless(hasattr(os, "fork"), "POSIX daemon path")
+    def test_allow_hosts_reach_posix_daemon_server(self) -> None:
+        # POSIX forks the already-built server: a parser-only option would pass
+        # respawn tests but leave this server refusing the proxy's Host.
+        server = mock.Mock()
+        captured: list[Any] = []
+
+        def build(address: tuple[str, int], app: Any, *_args: Any, **_kwargs: Any) -> Any:
+            captured.append((address, app.config.allowed_hosts))
+            return server
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": tmp}),
+            mock.patch.object(cli, "build_server", side_effect=build),
+            mock.patch.object(lifecycle, "fork_daemon", return_value=("daemon", 123)),
+            mock.patch.object(lifecycle, "daemon_redirect_stdio"),
+            mock.patch.object(lifecycle, "serve"),
+        ):
+            self.assertEqual(
+                0,
+                cli.main(
+                    [
+                        "--daemon",
+                        "--host",
+                        "0.0.0.0",
+                        "--port",
+                        "8000",
+                        "--allow-host",
+                        "VM.EXE.XYZ.",
+                    ]
+                ),
+            )
+        self.assertEqual([(("0.0.0.0", 8000), ("vm.exe.xyz",))], captured)
+
 
 class ProducerTest(support.RuntimeTestCase):
     """The producer keeps the snapshot warm, but only for a connected stream."""

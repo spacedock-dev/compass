@@ -279,6 +279,23 @@ SWITCHES = (
 )
 
 
+class ServerOptions(NamedTuple):
+    host: str = "127.0.0.1"
+    allowed_hosts: tuple[str, ...] = ()
+
+
+def server_start_kwargs(
+    options: ServerOptions | None, *, no_update_check: bool = False
+) -> dict[str, Any]:
+    # Default calls keep their existing signature for injected starters.
+    kwargs: dict[str, Any] = {}
+    if options is not None:
+        kwargs["server_options"] = options
+    if no_update_check:
+        kwargs["no_update_check"] = True
+    return kwargs
+
+
 class GoalRequest(NamedTuple):
     text: str | None = None
     clear: bool = False
@@ -351,6 +368,7 @@ def run_summary(
     port: int | None = None,
     environ: Mapping[str, str] | None = None,
     no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
 ) -> int:
     from compass_runtime import terminal_drift, terminal_summary  # noqa: PLC0415
 
@@ -370,6 +388,7 @@ def run_summary(
         own_version=release_version(),
         in_session=not at_shell,
         no_update_check=no_update_check,
+        **server_start_kwargs(server_options),
     )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)
@@ -557,6 +576,7 @@ def run_monitor(
     session: str | None = None,
     environ: Mapping[str, str] | None = None,
     no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
 ) -> int:
     from compass_runtime import terminal_monitor  # noqa: PLC0415
 
@@ -574,6 +594,7 @@ def run_monitor(
         home=state_home(env),
         in_session=named.source == "environment" and not sys.stdout.isatty(),
         no_update_check=no_update_check,
+        **server_start_kwargs(server_options),
     )
 
 
@@ -874,13 +895,24 @@ def version_guard(
     )
 
 
-def start_daemon(port: int, *, timeout: float = 30.0, no_update_check: bool = False) -> None:
+def start_daemon(
+    port: int,
+    *,
+    timeout: float = 30.0,
+    no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
+) -> None:
     """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
     argv = [*launch_argv(), "--daemon", "--port", str(port)]
     if no_update_check:
         argv.append("--no-update-check")
+    if server_options is not None:
+        if server_options.host != "127.0.0.1":
+            argv.extend(["--host", server_options.host])
+        for name in server_options.allowed_hosts:
+            argv.extend(["--allow-host", name])
     try:
         subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
@@ -889,7 +921,7 @@ def start_daemon(port: int, *, timeout: float = 30.0, no_update_check: bool = Fa
         return
 
 
-def ensure_dashboard(
+def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambient process state
     home: str,
     *,
     port: int | None,
@@ -899,6 +931,7 @@ def ensure_dashboard(
     say: Callable[[str], None] | None = None,
     in_session: bool = False,
     no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
 ) -> Dashboard | Refusal:
     """The one rule for a missing dashboard, and for a dashboard of another release.
 
@@ -911,10 +944,10 @@ def ensure_dashboard(
         if not spend:
             return Refusal(sentence("not_running"))
         (say or _say)(sentence("starting"))
-        launch = start or (
-            functools.partial(start_daemon, no_update_check=True)
-            if no_update_check
-            else start_daemon
+        launch: Callable[[int], None] = start or (
+            lambda chosen: start_daemon(
+                chosen, **server_start_kwargs(server_options, no_update_check=no_update_check)
+            )
         )
         launch(DEFAULT_PORT if port is None else port)
         found = find_dashboard(home, port=port, timeout=2.0)
@@ -1585,6 +1618,7 @@ def run_goal(
     port: int | None = None,
     environ: Mapping[str, str] | None = None,
     no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
 ) -> int:
     """Reads never launch; writes require the person's explicit session and terminal stdout."""
     from compass_runtime import terminal_goal  # noqa: PLC0415
@@ -1603,6 +1637,7 @@ def run_goal(
         spend=request.writes,
         own_version=release_version(),
         no_update_check=no_update_check,
+        **server_start_kwargs(server_options),
     )
     if isinstance(found, Refusal):
         print(found.message, file=sys.stderr)
@@ -1617,6 +1652,7 @@ def run_drift(
     *,
     again: bool = False,
     no_update_check: bool = False,
+    server_options: ServerOptions | None = None,
     session: str | None = None,
     port: int | None = None,
     environ: Mapping[str, str] | None = None,
@@ -1656,7 +1692,7 @@ def run_drift(
         start=lambda chosen: start_daemon(
             chosen,
             timeout=_budget(deadline, 30.0),
-            **({"no_update_check": True} if no_update_check else {}),
+            **server_start_kwargs(server_options, no_update_check=no_update_check),
         ),
         # Inside a session the skill shows standard output on success and standard error on a
         # refusal, so the line is handed to the drift rules to say on whichever answers.

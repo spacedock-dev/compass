@@ -72,10 +72,10 @@ values. `--footer` is a client operation too: alone, or with its own `--session`
 before the dashboard's modules load, and beside any other option it is a usage error. `--drift` is
 checked after `--sessions`: alone, or with `again` and its own `--session`, it is answered before
 the dashboard's modules load. It also accepts `--no-update-check` on that path; beside other options
-it uses only `--session`, `--port` and `--no-update-check`.
+it uses `--session`, `--port`, `--no-update-check` and the proxy startup options below.
 
 `--summary` accepts `--update` or `--again`, plus `--session`, explicit `--port` and
-`--no-update-check` only.
+`--no-update-check`, plus the proxy startup options below.
 A plain stored read returns immediately even while a job runs. A new job waits up to 20 seconds
 inside a session or 630 seconds at a terminal with an explicit session; a timeout leaves it running
 and says how to read it later. Ctrl+C cancels only the job this command started, by its id.
@@ -94,9 +94,15 @@ With `--port` it uses the full parser, which refuses unrelated options.
 each have a 5-second deadline. Session lookup is capped at 1 MiB; the lean list and context
 are capped at 16 MiB each. A refused or oversized reply produces no partial brief.
 
-`--monitor` accepts only `--off`, `--session` and `--no-update-check` beside it. It answers before loading the
+`--monitor` accepts `--off`, `--session` and `--no-update-check` beside it. Without proxy startup options, it answers before loading the
 dashboard modules. Each dashboard probe and request has one wall-clock deadline across connection,
 headers and body, including a listener that keeps sending a little at a time.
+
+`--allow-host` can accompany `--drift`, `--summary`, `--goal` and `--monitor`, with an optional
+explicit `--host`. These validated proxy startup options pass through the full parser and are
+retained if the operation starts a dashboard. Names alone keep the loopback bind and warn;
+only an explicit `--host 0.0.0.0` opens remote access. An already running dashboard keeps its own
+configuration, and a read still starts nothing.
 
 When no dashboard answers, a read exits `1` and prints the start command for this copy: its
 Python launcher and server paths, or its packaged executable. Paths with spaces are quoted.
@@ -133,6 +139,7 @@ dashboard that supplies no drift-view field gets a separate compatibility refusa
 | `--port PORT` | TCP port, an integer from 1 through 65535. Default: `4553`. Also selects the instance addressed by status, stop and forget. |
 | `--frontend-dev-manifest PATH` | Contributor-only startup ticket for an owned Vite child. Requires foreground operation and `127.0.0.1`; refuses diagnose/forget and disables model calls, quota fetching and native actions. Validates fixture locations and a fresh child handshake before serving. Status/stop do not read the ticket or probe Vite. Use the [frontend development command](CONTRIBUTING.md#frontend-development) to create and own it. |
 | `--host ADDRESS` | Accepts only `127.0.0.1` (default) or `0.0.0.0`. The latter exposes the dashboard on every IPv4 interface without authentication. Other addresses and IPv6 are rejected. Read [remote-access risks](SECURITY.md#known-and-accepted) before changing it; prefer an SSH tunnel. |
+| `--allow-host NAME` | Trust one exact DNS hostname for Host and Origin behind a login proxy; repeat for additional names. Requires an explicit `--host 0.0.0.0` to take effect; on loopback it warns and admits no additional hosts. Names are case-insensitive with one optional trailing dot, at most 253 ASCII characters, with labels of 1–63 letters, digits or hyphens (no leading/trailing hyphen and no numeric final label). Supply an ASCII punycode name for an internationalized domain. Schemes, paths, ports, wildcards and IP literals are refused at startup. Subdomains and suffix matches remain blocked. For allowed names only, Host may omit its port or use the listening port, 80 or 443; Origin, when present, must use HTTP or HTTPS, match Host's exact name and effective port, and use the listening port or its scheme's default (80 for HTTP, 443 for HTTPS). An omitted Host port is interpreted using Origin's scheme. IP and loopback rules are unchanged. This does not authenticate anyone; use a login proxy and block direct access to the port. See [the trust boundary](SECURITY.md#known-and-accepted). Daemon and terminal automatic starts retain every name and any explicit bind; an existing dashboard keeps its own configuration. |
 | `--daemon` | Detach and keep serving after the starting shell exits. Reports the URL, process ID and log path. Without it, serving stays in the foreground. On Windows the launcher starts a detached child; see [platform notes](#platform-notes). |
 | `--status` | Report whether Compass answers on the selected port, then exit. Distinguishes a running dashboard, no dashboard, stale state and a port held by another process. If the connection is blocked, print "Compass's connection to the dashboard was blocked by a sandbox or permissions." and exit `1`, without changing anything or claiming whether a dashboard runs. |
 | `--sessions [waiting]` | List the sessions the board holds, in the board's own groups and words: **Active now** (working, waiting on you, holding an exact request, or carrying a recorded departure) first, then **Recent history**. Above any rows, a line says they are what other sessions said about themselves, shown as data; an empty answer carries none. Each row names its harness, project, state, the first line of its goal, how long ago it was last active or ended where the board states one, the stop or end it observed (`Stop observed`, never a claim that you read it) with uncommitted work and the count of changed entries, a departure mark with its age, and the re-entry command where a Claude Code or Codex session published an id its CLI takes. No row names a drift level. With `waiting`, list only what waits on you: each wait in the words its harness published, how long, the re-entry command, and for a question a session asked, the board URL that answers it. Run inside a Claude Code session, that session is left out. When the session cannot be identified (`CLAUDE_CODE_SESSION_ID` unset or not an id), nothing can be left out, and when anyone is waiting a line above the rows, before that one, says the list may include it. With nothing waiting it says so and states which harnesses report no waits, never "all clear". Reads `/api/sessions`, the default board window with only list fields and no observation history. The read has a 30-second timeout, including collection and the whole reply. Only a `404` falls back to `/api/data` on an older running dashboard, within that deadline and the 16 MiB reply cap. An unreadable, over-cap or refused answer prints "Compass answered, but its session list could not be read." on stderr and exits `1`; it never prints an empty list for a failed read. Reads a running dashboard and never starts one: with none running it prints the shared sentence on stderr and exits `1`. Beside other options only `--port` is read. Alone, it answers without loading the dashboard. The `compass` skill runs this as its `sessions` and `sessions waiting` actions; [what that sends](SECURITY.md#what-can-reach-into-a-session). |
@@ -317,7 +324,7 @@ On Windows, `--daemon` respawns the server and deliberately omits the unattended
 `--unasked-readings`. The compatibility flags `--observer-model` and `--allow-tool-output`
 do nothing and need no forwarding. The experimental interaction-origin pair is also not
 forwarded. Use foreground mode on Windows when you need those options. Feature-off switches,
-port, host, display/history bounds, Claude model choice, reach URL and quiet
+port, host, every allowed hostname, display/history bounds, Claude model choice, reach URL and quiet
 hours are forwarded.
 
 ## Exit status
