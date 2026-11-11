@@ -392,6 +392,13 @@ attempt cannot be saved or locked, or an existing attempt history is unreadable 
 is sent. The last successful answer and its time are
 kept separately from the attempt day in `compass-update-check.json` for the version notice.
 
+When the dashboard starts, its launcher prints a newer stable version from that saved answer to
+stdout, once startup succeeds. The hint never goes into the daemon log. It reads only the local
+cache; it adds no request and does not wait for the background check. The terminal reads the saved
+answer once per successful start; the dashboard shows later answers on its next refresh. Both off
+switches below also suppress the terminal hint. Short operations such as `--version`, `--status`
+and `--footer` print no update hint.
+
 The request is exactly:
 
 ```text

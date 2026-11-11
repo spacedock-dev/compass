@@ -1026,7 +1026,7 @@ def run_client_operation(args: argparse.Namespace, argv: Sequence[str]) -> int |
     return None
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 — each serve path owns its readiness report
     """Parse, assemble, and run. Returns an exit code.
 
     argparse keeps its own SystemExit for --help and usage errors; every other
@@ -1093,6 +1093,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.port,
             log_file,
         )
+        if code == 0:
+            update_check.print_startup_hint(config)
         runtime_io.diag(message, print)
         return code
 
@@ -1139,10 +1141,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             with contextlib.suppress(OSError):
                 server.server_close()
             message, code = lifecycle.await_daemon(config, fd, args.port, log_file)
+            if code == 0:
+                update_check.print_startup_hint(config)
             runtime_io.diag(message, print)
             return code
         announce_fd = fd
         lifecycle.daemon_redirect_stdio(log_file)
+    elif runtime_environ().get("_COMPASS_DAEMON_CHILD") != "1":
+        # Windows respawns with stdout already pointed at the daemon log.
+        # Its waiting launcher owns the hint after readiness, as on POSIX.
+        update_check.print_startup_hint(config)
 
     lifecycle.serve(config, server, args.port, started=started, announce_fd=announce_fd)
     return 0

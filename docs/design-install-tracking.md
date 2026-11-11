@@ -272,6 +272,12 @@ background after it starts, and again on the first tick after each UTC midnight 
 running. No hook makes the call. It drives the "new version available" notice in the dashboard, and
 the route counts each lookup itself, which is how running Compass installs are counted.
 
+After successful dashboard startup, the launcher prints a cached newer stable version to stdout,
+never to the daemon log. It makes no request and does not wait for the check. Each start can print
+one hint, using the answer cached when startup is reported. The dashboard shows later answers on
+its next refresh. Both off switches suppress the terminal hint. Short operations, including
+`--version`, `--status` and `--footer`, stay quiet.
+
 - It reads `https://spacedock.md/latest-release/compass`, which now answers with release JSON.
 - It follows no redirect and refuses a target that is not `https`, as every outbound request in
   [`SECURITY.md`](../SECURITY.md#scope) does.
