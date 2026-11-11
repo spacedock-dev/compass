@@ -348,3 +348,16 @@ def published(config: RuntimeConfig) -> dict[str, Any] | None:
     ):
         return None
     return {"version": stored["version"].removeprefix("v"), "checked_at": at}
+
+
+def print_startup_hint(config: RuntimeConfig) -> None:
+    if (
+        runtime_config.UPDATE_CHECK_DEFAULT_ENABLED
+        and not config.update_check_disabled
+        and not settings.no_update_check(config)
+        and (notice := published(config)) is not None
+    ):
+        print(
+            f"Compass {notice['version']} is available. Update Compass through your installer.",
+            flush=True,
+        )

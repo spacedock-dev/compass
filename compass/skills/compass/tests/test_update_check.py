@@ -26,7 +26,8 @@ from unittest import mock
 from compass_runtime import cli, config, entry, reach, settings, terminal_client, update_check
 from compass_runtime import io as runtime_io
 
-from .support import REAL_FETCH_RELEASE, make_config, serve_until_closed
+from . import support
+from .support import REAL_FETCH_RELEASE, SERVER_PATH, make_config, serve_until_closed
 from .test_cli_version import run_main
 
 REAL_TIME_TESTS = True  # Measures the DNS and whole-exchange timeout against wall time.
@@ -292,6 +293,89 @@ class DailyCheckTest(unittest.TestCase):
         for value in (0, 1, "true", ["wrong"]):
             with self.subTest(value=value), self.assertRaises(settings.InvalidSettingError):
                 settings.save(self.config, {"no_update_check": value})
+
+
+class StartupNoticeTest(unittest.TestCase):
+    def test_dashboard_start_prints_a_cached_hint_before_detaching_and_honours_opt_outs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            env = {**os.environ, "CI": "1", "COMPASS_HOME": tmp}
+            cache = home / "compass-update-check.json"
+            cache.write_text(
+                json.dumps(
+                    {
+                        "attempt_day": datetime.now(UTC).date().isoformat(),
+                        "version": "9.9.9",
+                        "checked_at": 1794355200,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def run(*args: str) -> subprocess.CompletedProcess[str]:
+                # Today's saved attempt prevents a request. Restore real Popen so the
+                # suite's guard cannot append --no-update-check to this opt-in proof.
+                with mock.patch.object(subprocess.Popen, "__init__", support._REAL_POPEN_INIT):
+                    return subprocess.run(
+                        [sys.executable, str(SERVER_PATH), "--port", str(port), *args],
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=60,
+                    )
+
+            hint = "Compass 9.9.9 is available. Update Compass through your installer.\n"
+            for mode in ("enabled", "flag", "saved"):
+                with self.subTest(mode=mode):
+                    (home / "compass-settings.json").write_text(
+                        json.dumps({"no_update_check": mode == "saved"}), encoding="utf-8"
+                    )
+                    before = cache.read_bytes()
+                    flags = [
+                        "--daemon",
+                        "--no-observer-model",
+                        "--no-usage",
+                        "--no-git",
+                        "--no-ci-read",
+                        "--no-focus",
+                        "--no-events",
+                        "--no-spacedock",
+                        "--no-tripwires",
+                        "--no-reach",
+                        "--no-ask",
+                        "--no-history",
+                    ]
+                    if mode == "flag":
+                        flags.append("--no-update-check")
+                    try:
+                        start = run(*flags)
+                        self.assertEqual(start.returncode, 0, start.stdout + start.stderr)
+                        self.assertEqual(
+                            start.stdout.count(hint),
+                            int(mode == "enabled"),
+                            repr(start.stdout) + repr(start.stderr),
+                        )
+                        self.assertNotIn(hint.strip(), start.stderr)
+                        status = run("--status")
+                        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+                        self.assertNotIn(hint.strip(), status.stdout)
+                        version = run("--version")
+                        self.assertEqual(
+                            version.stdout,
+                            json.loads(
+                                (SERVER_PATH.parents[2] / ".claude-plugin/plugin.json").read_text()
+                            )["version"]
+                            + "\n",
+                        )
+                        self.assertEqual(cache.read_bytes(), before)
+                    finally:
+                        run("--stop")
 
 
 class InternalMarkerTest(unittest.TestCase):

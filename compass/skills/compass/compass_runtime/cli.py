@@ -751,6 +751,7 @@ def validate_frontend_args(parser: argparse.ArgumentParser, args: argparse.Names
 def prepare_frontend(
     config: RuntimeConfig, args: argparse.Namespace
 ) -> tuple[RuntimeConfig, bytes | None]:
+    update_check.print_startup_hint(config)
     if args.frontend_dev_manifest is None:
         return config, load_frontend_page()
     try:
