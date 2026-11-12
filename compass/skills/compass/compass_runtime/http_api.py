@@ -2802,8 +2802,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         arm. Line diagnostics come from the store. An identity that cannot
         match a published row uses HTTP 200 with `outcome: refused`, rather
         than the malformed-body 400, so clients receive this structured
-        explanation. The matchability rule is shared with dismissals; native
-        Claude UUIDs must first resolve to the row's published sid.
+        explanation. Word saves share dismissals' matchability rule, applied
+        to the store's normalized key; native Claude UUIDs must first resolve
+        to the row's published sid. Discards and metadata updates can still
+        reach entries stored under native UUIDs by earlier builds.
         """
         application = self.server.application
         config = application.config
@@ -2897,7 +2899,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
         settle_through = payload.get("settle_through")
         withdrew = True
         summary = "untouched"
-        if not dismissals.is_matchable(harness, sid):
+        changes_words = "add_direction" in payload or (
+            "not_accurate" not in payload and ("adopt" in payload or settle_through is None)
+        )
+        if (
+            payload.get("clear") is not True
+            and changes_words
+            and not dismissals.is_matchable(*annotation_store._key(harness, sid))  # noqa: SLF001 - store identity
+        ):
             if reason is not None:
                 reason["code"] = "unmatchable_session"
             return annotation_store.OUTCOME_REFUSED, withdrew, summary

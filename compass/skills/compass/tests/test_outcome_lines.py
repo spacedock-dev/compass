@@ -2060,6 +2060,56 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
 
+    def test_an_overlong_redacted_line_reports_its_original_submitted_length(self) -> None:
+        line = "sk-" + "C" * 48 + " " + "x" * 250
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": "abcd1234", "lines": [line]}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertEqual(
+            {"code": "line_too_long", "line": 1, "length": 302, "cap": 240}, answer["reason"]
+        )
+        self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_seventh_line_with_a_goal_preserves_stored_and_cached_words(self) -> None:
+        self.post(
+            json.dumps(
+                {"harness": "claude", "sid": "abcd1234", "goal": "Original goal", "lines": SIX}
+            ).encode()
+        )
+        path = Path(annotation_store.store_path(self.config))
+        stored_before = path.read_bytes()
+        cached_before = json.dumps(annotation_store.active(self.config, self.state), sort_keys=True)
+
+        status, body = self.post(
+            json.dumps(
+                {
+                    "harness": "claude",
+                    "sid": "abcd1234",
+                    "goal": "Replacement goal",
+                    "lines": [*SIX, "seventh"],
+                    "expected_revision": 1,
+                }
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertEqual({"code": "too_many_lines", "count": 7, "max": 6}, answer["reason"])
+        self.assertEqual(1, answer["revision"])
+        self.assertIsNone(answer["saved_revision"])
+        self.assertEqual(stored_before, path.read_bytes())
+        self.assertEqual(
+            cached_before,
+            json.dumps(annotation_store.active(self.config, self.state), sort_keys=True),
+        )
+
     def test_a_240_character_line_with_a_claude_board_sid_is_stored(self) -> None:
         line = "x" * 240
         status, body = self.post(
@@ -2094,6 +2144,97 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
         self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_full_claude_uuid_with_a_padded_harness_is_still_refused(self) -> None:
+        for harness in ("claude ", "\tclaude\t"):
+            with self.subTest(harness=harness):
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": harness,
+                            "sid": "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                            "goal": "A goal that must reach a row",
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_padded_valid_claude_identity_stores_under_the_normalized_key(self) -> None:
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": " \tabcd1234\t ", "goal": "Ship it"}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIs(True, answer["persisted"])
+        self.assertIsNone(answer["reason"])
+        self.assertEqual(1, answer["revision"])
+        entry = annotation_store.find(annotation_store.load(self.config), "claude", "abcd1234")
+        assert entry is not None
+        self.assertEqual("claude", entry["harness"])
+        self.assertEqual("abcd1234", entry["sid"])
+        self.assertEqual("Ship it", entry["revisions"][-1]["goal"])
+
+    def test_clear_discards_words_stored_under_a_legacy_full_claude_uuid(self) -> None:
+        sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.annotate(
+                self.config, self.state, "claude", sid, goal="Legacy goal", lines=SIX, now=NOW
+            ),
+        )
+
+        status, body = self.post(
+            json.dumps(
+                {"harness": "claude", "sid": sid, "clear": True, "expected_revision": 1}
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIsNone(answer["reason"])
+        self.assertIsNotNone(answer["discarded"])
+        self.assertEqual(1, answer["removed"])
+        for entries in (
+            annotation_store.load(self.config),
+            annotation_store.active(self.config, self.state),
+        ):
+            entry = annotation_store.find(entries, "claude", sid)
+            assert entry is not None
+            self.assertEqual((), entry["revisions"])
+            self.assertTrue(annotation_store.is_discarded(entry))
+
+    def test_settling_a_legacy_full_claude_uuid_keeps_its_words(self) -> None:
+        sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        annotation_store.annotate(
+            self.config, self.state, "claude", sid, goal="Legacy goal", lines=SIX, now=NOW
+        )
+        before = annotation_store.find(annotation_store.load(self.config), "claude", sid)
+        assert before is not None
+
+        status, body = self.post(
+            json.dumps(
+                {"harness": "claude", "sid": sid, "settle_through": NOW, "expected_revision": 1}
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIsNone(answer["reason"])
+        after = annotation_store.find(annotation_store.load(self.config), "claude", sid)
+        assert after is not None
+        self.assertEqual(before["revisions"], after["revisions"])
+        self.assertEqual(NOW, after["settled"]["through"])
 
     def test_a_non_claude_uuid_is_stored(self) -> None:
         sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
