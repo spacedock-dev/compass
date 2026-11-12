@@ -2814,9 +2814,13 @@ def annotate(  # noqa: PLR0913
     window_start: Any = None,
     read_from_now: bool = False,
     receipt: MutableMapping[str, int] | None = None,
+    reason: MutableMapping[str, str | int] | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> str:
     """Save what the reader typed. Returns an `OUTCOMES` token.
+
+    An optional `reason` mapping receives only posted-line refusals from
+    `_typed_lines`; it is cleared on every call, including other refusals.
 
     `lines` replaces the whole outcome list, `[]` clears it, and None leaves it
     alone. Replacing a stored list needs `expected_revision`, the revision the
@@ -2837,6 +2841,8 @@ def annotate(  # noqa: PLR0913
     save keeps the start the reading already had (docs/design-reading-a-session.md,
     "Amended 2026-10-21 (owner): editing the goal keeps the reading's start").
     """
+    if reason is not None:
+        reason.clear()
     legacy = lines is None and isinstance(output, str)
     if legacy:
         lines = [output]
@@ -2863,6 +2869,7 @@ def annotate(  # noqa: PLR0913
         now=now,
         adoption=options,
         receipt=receipt,
+        reason=reason,
         window_start=window_start,
         diagnostic_sink=diagnostic_sink,
     )
@@ -2889,7 +2896,9 @@ def _aligned_origins(origins: Any, lines: Any, cap: int) -> list[int | None] | b
     ]
 
 
-def _typed_lines(value: Any, cap: int) -> list[str] | None:
+def _typed_lines(
+    value: Any, cap: int, *, reason: MutableMapping[str, str | int] | None = None
+) -> list[str] | None:
     """A posted list as the lines to save, or None when it must be refused.
 
     Each line goes through `records.safe_text`, so a pasted line break becomes
@@ -2897,17 +2906,27 @@ def _typed_lines(value: Any, cap: int) -> list[str] | None:
     refused rather than saved clipped: a reader must never find a line saved
     that is not the line they wrote. The goal still clips, as it always has.
     Blank lines are dropped, and more than six refuses the save whole.
+    `reason` receives `line_too_long` (the first offending posted position,
+    1-based, its submitted character length and the cap) or `too_many_lines`
+    (the non-blank count and maximum). Length counts the original string;
+    the clipping decision still compares its sanitized forms.
     """
     if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
         return None
     texts: list[str] = []
-    for item in value:
+    for position, item in enumerate(value, start=1):
         text = records.safe_text(item, cap)
         if text != records.safe_text(item, cap * 16):
+            if reason is not None:
+                reason.update(code="line_too_long", line=position, length=len(item), cap=cap)
             return None
         if text.strip():
             texts.append(text)
-    return texts if len(texts) <= reading.MAX_OUTCOME_LINES else None
+    if len(texts) > reading.MAX_OUTCOME_LINES:
+        if reason is not None:
+            reason.update(code="too_many_lines", count=len(texts), max=reading.MAX_OUTCOME_LINES)
+        return None
+    return texts
 
 
 def _sourced(
@@ -3164,6 +3183,7 @@ def _annotate(  # noqa: PLR0913
     now: float | None = None,
     adoption: dict[str, Any] | None = None,
     receipt: MutableMapping[str, int] | None = None,
+    reason: MutableMapping[str, str | int] | None = None,
     window_start: Any = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> str:
@@ -3195,7 +3215,7 @@ def _annotate(  # noqa: PLR0913
     new_goal = (
         records.safe_text(goal, config.annotation_goal_cap_chars) if isinstance(goal, str) else None
     )
-    new_texts = None if lines is None else _typed_lines(lines, cap)
+    new_texts = None if lines is None else _typed_lines(lines, cap, reason=reason)
     stamp = time.time() if now is None else now
     options = adoption or {}
     source_fields = _provenance({**options, "at": stamp})

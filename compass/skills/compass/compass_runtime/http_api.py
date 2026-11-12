@@ -2796,6 +2796,14 @@ class _RequestHandler(BaseHTTPRequestHandler):
         both `true`. `persisted` keeps its meaning -- true whenever the words
         are on disk, which an unchanged save's are -- so nothing that reads it
         changes truth value (decisions.md, DRC-4543).
+
+        Each HTTP 200 reply carries `reason`: a closed object for `line_too_long`,
+        `too_many_lines` or `unmatchable_session`, and null on every other
+        arm. Line diagnostics come from the store. An identity that cannot
+        match a published row uses HTTP 200 with `outcome: refused`, rather
+        than the malformed-body 400, so clients receive this structured
+        explanation. The matchability rule is shared with dismissals; native
+        Claude UUIDs must first resolve to the row's published sid.
         """
         application = self.server.application
         config = application.config
@@ -2831,8 +2839,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         state = application.state
         receipt: dict[str, int] = {}
+        reason: dict[str, str | int] = {}
         outcome, withdrew, summary = self._annotation_outcome(
-            harness, sid, payload, receipt=receipt
+            harness, sid, payload, receipt=receipt, reason=reason
         )
         # Dropped rather than waited out, for `_dismiss`'s reason: the next GET
         # would otherwise serve the pre-save payload for up to `collect_memo_sec`.
@@ -2845,6 +2854,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "persisted": outcome
             in (annotation_store.OUTCOME_STORED, annotation_store.OUTCOME_UNCHANGED),
             "outcome": outcome,
+            "reason": reason or None,
             "revision": current["revision"],
             # The save's own result under the write lock, not a later writer's revision.
             "saved_revision": receipt.get("saved_revision"),
@@ -2878,6 +2888,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         payload: dict[str, Any],
         *,
         receipt: dict[str, int] | None = None,
+        reason: dict[str, str | int] | None = None,
     ) -> tuple[str, bool, str]:
         application = self.server.application
         config = application.config
@@ -2886,6 +2897,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         settle_through = payload.get("settle_through")
         withdrew = True
         summary = "untouched"
+        if not dismissals.is_matchable(harness, sid):
+            if reason is not None:
+                reason["code"] = "unmatchable_session"
+            return annotation_store.OUTCOME_REFUSED, withdrew, summary
         if payload.get("clear") is True:
             # What went is what the store counted under its lock. The cached copy this route
             # used to read first can trail a save from another tab, and a discard decided on it
@@ -2981,6 +2996,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 window_start=self._typed_window_start(harness, sid, now),
                 read_from_now=payload.get("read_from_now") is True,
                 receipt=receipt,
+                reason=reason,
                 diagnostic_sink=application.diagnostic_sink,
             )
         return outcome, withdrew, summary
