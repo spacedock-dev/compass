@@ -1502,6 +1502,71 @@ collector evidence. Working overlays get a measured deadline so a missed stop ca
 Needs-input overlays do not get an arbitrary time-only expiry; event-source liveness can become stale
 without silently clearing a real hours-long permission wait.
 
+Claude has a second, bounded source-specific rule, measured on 2026-11-12 with Claude Code
+2.1.322 on macOS against Compass 2.11.0. The three headless arms in
+[the headless-wait capture](captures/claude/headless-wait-2.1.322-macos.jsonl) show a foreground
+Bash call and a shell loop becoming Idle after 90 seconds without a result, and a parent becoming
+Idle at Stop while `claude -p` remains alive waiting for its background Agent. A child file going
+quiet does not establish completion. The capture also shows the stale Working tail after exit.
+
+`claude_data.analyze_transcript` matches foreground non-input calls only within the newest assistant
+message id, for every Claude session regardless of entrypoint. Parallel calls sharing that id remain
+pending independently. A new assistant message id, a human boundary accepted by
+`is_human_prompt_record`, a validated turn stop or compaction clears the pending set. Tool results
+retire their own calls. Injected task notifications, system reminders and `isMeta` hook feedback
+do not clear pending calls. Stop validation uses the actual preceding conversation record type,
+so a summary following Stop-continuation feedback cannot retire a running call.
+Sidechain records and records whose session id differs from the transcript filename never enter or
+answer that set. Missing message or session identity earns no extension. The Claude collector keeps
+the newest remaining call Working as `running <tool>` until its own tool timestamp plus
+`claude_tool_in_flight_max_sec` (900 seconds). A validated Stop or interruption ends this foreground wait.
+
+For a measured headless session (`headless is True`) only, the collector also reuses
+`project_context.delegated_work_status`'s cached completion pairing. It reads the entrypoint from
+`claude_data.session_entrypoint` after the existing `session_goal` read populates the shared cache,
+before deriving the lease, without another file read. Interactive (`False`) and unknown (`None`)
+entrypoints retain the usual background activity and Stop rules. Only outstanding parent
+Agent/Task launches with `run_in_background`, a successful launch tool result, and a launch at or
+after the current turn's floor qualify. A later interruption or new user
+prompt retires a launch even if it was acknowledged. Calls, acknowledgements, completion pairing
+and turn boundaries use only records with the parent's native session id (the transcript filename
+stem), excluding sidechain records. Missing identity earns no exception. Background Bash launches,
+shell `&` jobs, Monitor calls and earlier-turn launches do not qualify. The row reads
+`waiting on 1 background task` or `waiting on N background tasks`, counting only qualifying launches,
+even after the parent's Stop and with an old child file. TaskOutput and task-notification completion
+pairing includes the queued attachment's `attachment.prompt`, measured in
+[the mid-turn shape capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl).
+This background lease expires at the newest qualifying unpaired launch plus the same cap,
+independently of any foreground call. Neither child
+activity nor a newer completed launch renews it. The ceiling matches Pi because neither transcript
+can prove a process killed mid-call survived. The accepted cost is that a session killed mid-tool
+without an observed end reads Working until the 900-second cap rather than the former 90-second
+activity window. SIGKILL was the only measured ending without SessionEnd in
+[the ending capture](captures/claude/session-end-2.1.261-macos.jsonl); every other measured ending
+sent it. After either expiry the existing freshness and stop rules apply. No process-liveness probe
+is added.
+
+The collector publishes nullable `work_in_flight_until` solely as headless current-turn
+background-subagent evidence; `state_detail` carries the wording. It does not advance `own_activity`,
+`work_activity` or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
+that background cap only; foreground evidence never suppresses either stop. It does not weaken an
+explicit input overlay or change its activity guard. Transcript
+input tools and standing notification waits retain precedence over this extension. An observed
+`ended_at` disables the exception; after reduction, `Application._apply_overlays` settles an ended
+Claude row to Idle and clears the lease, also ending the existing fresh-child Working tail. A
+remembered Stop that survives reduction also settles a Working Claude row to Idle when its live
+overlay is gone; preserving `finished_at` alone would leave the foreground extension running. A new
+Working or input overlay can still retire an old end under the existing reopening contract.
+
+Notification delivery reads the final reduced row. The browser's Working-to-Idle quiet edge is
+therefore delayed for this outstanding work; a real completed turn still settles immediately under
+the existing stop rules. Native quiet nudges still read the harness's `idle_prompt` notification.
+Permission waits still set their original `blocked_since`, enter Attention's input queue and notify
+once. Task and turn ETA calculations keep their existing inputs; the extension invents no activity
+or progress measurements. `ClaudeHeadlessActivityTest` covers the capture shapes, cap, completion,
+end and prompt precedence; `ApplicationPopupTest.test_extended_claude_work_yields_to_a_gate_and_notifies_once`
+covers the final row, shared Attention queue and notification transition without a server.
+
 `session_ended` is non-destructive. It retires overlays and hook state but never removes a row; only
 the collector may do that. Claude is documented as firing it on `/clear` as well as on exit, so a
 user who clears and immediately prompts again can produce `session_ended` and `turn_started` for the

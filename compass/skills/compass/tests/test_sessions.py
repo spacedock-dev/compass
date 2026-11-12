@@ -73,6 +73,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "last_activity",
         "own_activity",
         "work_activity",
+        "work_in_flight_until",
         "started_at",
         "finished_at",
         "turn_end_at",

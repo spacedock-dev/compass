@@ -436,6 +436,30 @@ def session_spacedock(
     }
 
 
+def in_flight_work(
+    config: RuntimeConfig,
+    now: float,
+    info: dict[str, Any] | None,
+    waiting_count: int,
+    newest_unpaired: float | None,
+) -> tuple[float | None, str | None]:
+    """Background Stop exception's expiry and independently capped working detail."""
+    pending = (info or {}).get("pending_tool")
+    cap = config.claude_tool_in_flight_max_sec
+    tool_at = pending["ts"] if pending else 0
+    tool_live = runtime_sessions.is_fresh(config, now, tool_at or 0, cap)
+    background_live = runtime_sessions.is_fresh(config, now, newest_unpaired or 0, cap)
+    until = newest_unpaired + cap if background_live and newest_unpaired else None
+    if tool_live and pending:
+        return until, runtime_sessions.working_detail({"last_tool": pending["name"]}, [])
+    if background_live:
+        return (
+            until,
+            f"waiting on {waiting_count} background task{'s' if waiting_count != 1 else ''}",
+        )
+    return None, None
+
+
 def transcript_turn_end(
     config: RuntimeConfig,
     info: dict[str, Any] | None,
@@ -810,6 +834,30 @@ def collect(
             if (transcript and active)
             else None
         )
+        session_goal = (
+            claude_data.session_goal(config, state, transcript) if info and transcript else None
+        )
+        entrypoint = (
+            claude_data.session_entrypoint(state, transcript).published()
+            if info and transcript
+            else {}
+        )
+        delegated, newest_unpaired, waiting_count = project_context.delegated_work_status(
+            config,
+            transcript if active else None,
+            own_activity=(info or {}).get("last_conversation_ts") or 0,
+            now=now,
+            state=state,
+            child_paths=[path for path, _mtime in agent_files],
+        )
+        work_in_flight_until, in_flight_detail = in_flight_work(
+            config,
+            now,
+            info,
+            waiting_count,
+            # Only headless parents were measured staying alive after Stop for a subagent.
+            newest_unpaired if entrypoint.get("headless") is True else None,
+        )
 
         # What retires an observed stop: `activity_sources` with the parent
         # transcript read by its newest conversation record instead of its
@@ -895,6 +943,8 @@ def collect(
                 if len(pending_members) == 1
                 else f"{len(pending_members)} subagents have not started, waiting {waited}"
             )
+        elif in_flight_detail and not hook:
+            session_state, state_detail = "working", in_flight_detail
         # Fresh activity in the session's *own* transcript still beats a hook:
         # Claude Code emits "waiting for your input" notifications for sessions
         # that keep running via background tasks and will resume on their own.
@@ -941,7 +991,8 @@ def collect(
             info,
             transcript or "",
             work_activity=work_activity,
-            blocked=session_state == "needs_input" or bool(pending_members or subagents),
+            blocked=session_state == "needs_input"
+            or bool(pending_members or subagents or work_in_flight_until),
         )
         if turn_end_at is not None:
             # Settled as a hook Stop settles through the idle overlay: the turn
@@ -1016,16 +1067,8 @@ def collect(
                 ),
                 # The session's own `/goal`, from its record. Behind the same guard as the
                 # prompt above, so a row the transcript was not read for publishes none.
-                "session_goal": (
-                    claude_data.session_goal(config, state, transcript)
-                    if info and transcript
-                    else None
-                ),
-                **(
-                    claude_data.session_entrypoint(state, transcript).published()
-                    if info and transcript
-                    else {}
-                ),
+                "session_goal": session_goal,
+                **entrypoint,
                 # How that goal ended, from the same read of the same cache entry, so after it.
                 # Keys of their own, never the goal's: the goal stays None after either, and
                 # None here is "not seen", which is not "did not happen".
@@ -1060,14 +1103,8 @@ def collect(
                 "state_detail": state_detail,
                 "blocked_since": blocked_since,
                 "turn_end_at": turn_end_at,
-                **project_context.delegated_work_published(
-                    config,
-                    transcript if active else None,
-                    own_activity=(info or {}).get("last_conversation_ts") or 0,
-                    now=now,
-                    state=state,
-                    child_paths=[path for path, _mtime in agent_files],
-                ),
+                "work_in_flight_until": work_in_flight_until,
+                **delegated,
                 "active": active,
                 "last_activity": last_activity,
                 "work_activity": work_activity,

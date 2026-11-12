@@ -178,6 +178,29 @@ at the top always cover the whole board. If a filter hides a session that is wai
 links to it, or to Attention when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
+A quiet transcript can still be working. For Claude Code, an unanswered tool call in the current
+step reads `running <tool>` for up to 15 minutes from that call. Only calls in the newest assistant
+message qualify; a later assistant message, a human prompt, compaction, a validated Stop or an
+interruption ends that foreground wait. Parallel calls in one assistant message may remain pending
+independently.
+Injected task notifications, system reminders and hook feedback do not end it.
+In headless sessions only, background Agent or Task subagents acknowledged by a tool result in the
+current turn with no recorded completion read `waiting on 1 background task` or
+`waiting on N background tasks`.
+Only these background subagents
+can keep Working after the parent's Stop, for up to 15 minutes from the newest qualifying outstanding
+launch; a later interruption or new user prompt retires that wait. Background Bash and shell jobs
+do not qualify. Interactive sessions and sessions whose entrypoint is unknown keep the usual
+activity and Stop rules for background subagents. The two caps are independent. An observed
+session end ends both waits, and an input request still takes precedence. After either cap, Compass
+falls back to its usual activity and stop rules. This covers long foreground calls and headless
+sessions waiting on a background subagent, measured with Claude Code 2.1.322 on macOS. A session
+killed mid-tool without an observed end can read Working until the 900-second cap, instead of the
+usual 90-second activity window. This is an accepted limit: SIGKILL sent no SessionEnd in
+[the ending capture](captures/claude/session-end-2.1.261-macos.jsonl), while every other measured
+ending did. The [state reference](../compass/skills/compass/reference/dashboard.md#session-states)
+explains the other harnesses.
+
 A project's Console view collects delegated work, requests waiting on you and capacity. It also has an
 early terminal bridge and session history view; the
 [cockpit design contract](design-next-ui.md#cockpit-reconciliation) records their limits.

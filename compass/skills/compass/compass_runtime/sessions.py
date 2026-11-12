@@ -655,6 +655,9 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # reads `last_activity` as before; never 0, which would read as a
         # measured "nothing wrote" and keep every stop forever.
         "work_activity": None,
+        # Claude's current-turn background-subagent expiry, never a foreground
+        # call's. Lets Stop yield without letting background work clear a prompt.
+        "work_in_flight_until": None,
         # The first timestamp in the session transcript, but only when this
         # process scanned from byte zero. None means the source is unmeasured;
         # a bounded tail or rebuilt oversized cache entry may not substitute

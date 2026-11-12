@@ -9353,20 +9353,17 @@ def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> fl
 
 
 def _delegated_last_turn_floor(parent: list[dict[str, Any]]) -> float:
-    stops = sorted(
-        _record_timestamp(record) or 0
-        for record in parent
-        if record.get("type") == "system" and record.get("subtype") == "stop_hook_summary"
-    )
+    stops = []
+    conversation: str | None = None
     directions = []
     for record in parent:
-        if observer.message_record_role(record) != "user":
-            continue
-        message = observer.parse_message_record(record)
-        if message is not None and message.get("role") == "user":
-            text = str(message.get("text") or "")
-            if not records.injected_prompt(text, "claude"):
-                directions.append(_record_timestamp(record) or 0)
+        if claude_data.is_turn_stop_record(record, conversation):
+            stops.append(_record_timestamp(record) or 0)
+        if record.get("type") in ("user", "assistant"):
+            conversation = record["type"]
+        if claude_data.is_human_prompt_record(record):
+            directions.append(_record_timestamp(record) or 0)
+    stops.sort()
     return max([*directions, stops[-2] if len(stops) > 1 else 0])
 
 
@@ -9441,11 +9438,25 @@ def _notification_completions(
 ) -> dict[str, float]:
     found: dict[str, float] = {}
     for record in parent:
-        if record.get("type") != "user" or (record.get("isSidechain") is True) is not sidechain:
+        if (record.get("isSidechain") is True) is not sidechain:
             continue
         at = _record_timestamp(record)
-        text = _tool_result_text(records.message_dict(record))
-        if at is None or not text.lstrip().startswith("<task-notification>"):
+        attachment = record.get("attachment")
+        if (
+            record.get("type") == "attachment"
+            and isinstance(attachment, dict)
+            and attachment.get("commandMode") == "task-notification"
+        ):
+            text = attachment.get("prompt")
+        elif record.get("type") == "user":
+            text = _tool_result_text(records.message_dict(record))
+        else:
+            continue
+        if (
+            at is None
+            or not isinstance(text, str)
+            or not text.lstrip().startswith("<task-notification>")
+        ):
             continue
         call_id = _notification_field(text, "tool-use-id") or task_calls.get(
             _notification_field(text, "task-id"),
@@ -9519,7 +9530,22 @@ def _pair_background_launches(
             launch["last_activity_at"] = max(launch["last_activity_at"], launch["completed_at"])
 
 
-def delegated_work_published(
+def _delegated_tally(
+    config: RuntimeConfig, transcript_path: str, paths: Sequence[str]
+) -> _ToolReportTally:
+    scan = _live_check_scan(config, transcript_path, child_paths=paths)
+    session_id = os.path.basename(transcript_path).removesuffix(".jsonl")
+    # Calls, acknowledgements, completion pairing and turn boundaries must all
+    # share the parent's native identity before they can earn a Stop exception.
+    parent = [
+        row
+        for row in scan.parent
+        if row.get("sessionId") == session_id and row.get("isSidechain") is not True
+    ]
+    return _tally_from_scan(scan._replace(parent=parent))
+
+
+def delegated_work_status(
     config: RuntimeConfig,
     transcript_path: str | None,
     *,
@@ -9527,8 +9553,12 @@ def delegated_work_published(
     now: float,
     state: RuntimeState | None = None,
     child_paths: Sequence[str] | None = None,
-) -> dict[str, Any]:
-    """Counts and times only; a command-line launch cannot identify another session.
+) -> tuple[dict[str, Any], float | None, int]:
+    """Published counts and times, plus current-turn background subagent evidence.
+
+    The collector's activity cap must start at that launch, not at a newer
+    completed launch or a child's most recent write. Reuse this cached pairing
+    so state and delegated counts cannot disagree about a completion.
 
     [DEC-23](docs/design-reading-a-session.md#amended-2026-10-04-owner-delegated-launches)
     """
@@ -9552,8 +9582,17 @@ def delegated_work_published(
         if hit is not None and hit[0] == stamp:
             launches, partial, last_turn_floor = hit[1:]
         else:
-            tally = _claude_tally(config, transcript_path, child_paths=paths)
-            launches = list(tally.launches.values())
+            tally = _delegated_tally(config, transcript_path, paths)
+            launches = []
+            for call_id, launch in tally.launches.items():
+                result = tally.results.get(_launch_record_id(call_id, "parent"))
+                launches.append(
+                    {
+                        **launch,
+                        "acknowledged": result is not None
+                        and result.block.get("is_error") is not True,
+                    }
+                )
             partial = tally.reads_from is not None or tally.parent_failed
             last_turn_floor = tally.last_turn_floor
             if state is not None:
@@ -9571,7 +9610,7 @@ def delegated_work_published(
     activity = max((row["last_activity_at"] for row in unpaired), default=None)
     last_turn_launch = any(row["at"] >= last_turn_floor for row in unpaired)
     quiet = max(activity, own_activity) if activity is not None and last_turn_launch else None
-    return {
+    published = {
         "delegated_launches": sum(row["count"] for row in launches)
         if transcript_path and (launches or not partial)
         else None,
@@ -9593,6 +9632,42 @@ def delegated_work_published(
             else "recorded"
         ),
     }
+
+    # The activity exception was measured only for Agent/Task launches. Shell
+    # servers and `&` jobs have no completion this pairing can observe.
+    waiting = [
+        row
+        for row in unpaired
+        if row["at"] >= last_turn_floor
+        and row["acknowledged"]
+        and row["source"] in {"Claude Agent call", "Claude Task call"}
+        and runtime_sessions.is_fresh(config, now, row["at"], config.claude_tool_in_flight_max_sec)
+    ]
+    return (
+        published,
+        max((row["at"] for row in waiting), default=None),
+        sum(row["count"] for row in waiting),
+    )
+
+
+def delegated_work_published(
+    config: RuntimeConfig,
+    transcript_path: str | None,
+    *,
+    own_activity: float,
+    now: float,
+    state: RuntimeState | None = None,
+    child_paths: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    published, _newest_unpaired, _waiting_count = delegated_work_status(
+        config,
+        transcript_path,
+        own_activity=own_activity,
+        now=now,
+        state=state,
+        child_paths=child_paths,
+    )
+    return published
 
 
 def claude_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names
