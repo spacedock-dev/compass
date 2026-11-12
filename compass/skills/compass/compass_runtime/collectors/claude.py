@@ -440,24 +440,23 @@ def in_flight_work(
     config: RuntimeConfig,
     now: float,
     info: dict[str, Any] | None,
-    delegated: dict[str, Any],
+    waiting_count: int,
     newest_unpaired: float | None,
 ) -> tuple[float | None, str | None]:
-    """A bounded outstanding call's expiry and display detail, without inventing activity."""
+    """Background Stop exception's expiry and independently capped working detail."""
     pending = (info or {}).get("pending_tool")
     cap = config.claude_tool_in_flight_max_sec
     tool_at = pending["ts"] if pending else 0
     tool_live = runtime_sessions.is_fresh(config, now, tool_at or 0, cap)
     background_live = runtime_sessions.is_fresh(config, now, newest_unpaired or 0, cap)
-    until = max(
-        tool_at + cap if tool_live else 0,
-        newest_unpaired + cap if background_live and newest_unpaired else 0,
-    )
+    until = newest_unpaired + cap if background_live and newest_unpaired else None
     if tool_live and pending:
         return until, runtime_sessions.working_detail({"last_tool": pending["name"]}, [])
     if background_live:
-        count = delegated["delegated_unpaired"]
-        return until, f"waiting on {count} background task{'s' if count != 1 else ''}"
+        return (
+            until,
+            f"waiting on {waiting_count} background task{'s' if waiting_count != 1 else ''}",
+        )
     return None, None
 
 
@@ -835,7 +834,7 @@ def collect(
             if (transcript and active)
             else None
         )
-        delegated, newest_unpaired = project_context.delegated_work_status(
+        delegated, newest_unpaired, waiting_count = project_context.delegated_work_status(
             config,
             transcript if active else None,
             own_activity=(info or {}).get("last_conversation_ts") or 0,
@@ -844,7 +843,7 @@ def collect(
             child_paths=[path for path, _mtime in agent_files],
         )
         work_in_flight_until, in_flight_detail = in_flight_work(
-            config, now, info, delegated, newest_unpaired
+            config, now, info, waiting_count, newest_unpaired
         )
 
         # What retires an observed stop: `activity_sources` with the parent

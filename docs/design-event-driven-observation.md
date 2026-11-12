@@ -1509,20 +1509,30 @@ Bash call and a shell loop becoming Idle after 90 seconds without a result, and 
 Idle at Stop while `claude -p` remains alive waiting for its background Agent. A child file going
 quiet does not establish completion. The capture also shows the stale Working tail after exit.
 
-`claude_data.analyze_transcript` now matches all main-transcript tool uses against results, keeping
-the newest unanswered non-input tool separately from the existing input tools. The Claude collector
-keeps that call Working as `running <tool>`. It also reuses `project_context.delegated_work_status`'s
-cached completion pairing: an outstanding parent launch keeps the row Working as
-`waiting on N background tasks`, even after a transcript stop and with an old child file. Both
-rules expire at `claude_tool_in_flight_max_sec` (900 seconds), measured from the tool record or
-newest unpaired launch, never from child activity or a newer completed launch. The ceiling matches
-Pi because neither transcript can prove a process killed mid-call survived. After expiry the
-existing freshness and stop rules apply. No process-liveness probe is added.
+`claude_data.analyze_transcript` matches foreground non-input calls only within the newest assistant
+message id. Parallel calls sharing that id remain pending independently. A new assistant message id,
+a user record other than tool results, a turn stop or a compaction boundary clears the pending set.
+Sidechain records and records whose session id differs from the transcript filename never enter or
+answer that set. Missing message or session identity earns no extension. The Claude collector keeps
+the newest remaining call Working as `running <tool>` until its own tool timestamp plus
+`claude_tool_in_flight_max_sec` (900 seconds). A Stop or interruption always ends this foreground wait.
 
-The collector publishes nullable `work_in_flight_until` solely as bounded outstanding-work
+The collector also reuses `project_context.delegated_work_status`'s cached completion pairing, but
+only outstanding parent Agent/Task launches with `run_in_background` at or after the current turn's
+floor qualify. Background Bash launches, shell `&` jobs, Monitor calls and earlier-turn launches do
+not. The row reads `waiting on 1 background task` or `waiting on N background tasks`, counting only
+qualifying launches, even after the parent's Stop and with an old child file. Existing TaskOutput
+and task-notification completion pairing is unchanged. This background lease expires at the newest
+qualifying unpaired launch plus the same cap, independently of any foreground call. Neither child
+activity nor a newer completed launch renews it. The ceiling matches Pi because neither transcript
+can prove a process killed mid-call survived. After either expiry the existing freshness and stop
+rules apply. No process-liveness probe is added.
+
+The collector publishes nullable `work_in_flight_until` solely as current-turn background-subagent
 evidence; `state_detail` carries the wording. It does not advance `own_activity`, `work_activity`
 or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
-that cap, without weakening an explicit input overlay or changing its activity guard. Transcript
+that background cap only; foreground evidence never suppresses either stop. It does not weaken an
+explicit input overlay or change its activity guard. Transcript
 input tools and standing notification waits retain precedence over this extension. An observed
 `ended_at` disables the exception; after reduction, `Application._apply_overlays` settles an ended
 Claude row to Idle and clears the lease, also ending the existing fresh-child Working tail. A new

@@ -9527,8 +9527,8 @@ def delegated_work_status(
     now: float,
     state: RuntimeState | None = None,
     child_paths: Sequence[str] | None = None,
-) -> tuple[dict[str, Any], float | None]:
-    """Published counts and times, plus the newest unpaired parent launch's stamp.
+) -> tuple[dict[str, Any], float | None, int]:
+    """Published counts and times, plus current-turn background subagent evidence.
 
     The collector's activity cap must start at that launch, not at a newer
     completed launch or a child's most recent write. Reuse this cached pairing
@@ -9598,7 +9598,19 @@ def delegated_work_status(
         ),
     }
 
-    return published, max((row["at"] for row in unpaired), default=None)
+    # The activity exception was measured only for Agent/Task launches. Shell
+    # servers and `&` jobs have no completion this pairing can observe.
+    waiting = [
+        row
+        for row in unpaired
+        if row["at"] >= last_turn_floor
+        and row["source"] in {"Claude Agent call", "Claude Task call"}
+    ]
+    return (
+        published,
+        max((row["at"] for row in waiting), default=None),
+        sum(row["count"] for row in waiting),
+    )
 
 
 def delegated_work_published(
@@ -9610,7 +9622,7 @@ def delegated_work_published(
     state: RuntimeState | None = None,
     child_paths: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    published, _newest_unpaired = delegated_work_status(
+    published, _newest_unpaired, _waiting_count = delegated_work_status(
         config,
         transcript_path,
         own_activity=own_activity,

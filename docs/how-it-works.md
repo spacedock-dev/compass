@@ -178,14 +178,18 @@ at the top always cover the whole board. If a filter hides a session that is wai
 links to it, or to Attention when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
-A quiet transcript can still be working. For Claude Code, an unanswered tool call reads
-`running <tool>`, and a background launch with no recorded completion reads
-`waiting on N background tasks`, for up to 15 minutes from the newest outstanding call or launch.
-A turn stopping does not end that wait; an observed session end does. An input request still takes
-precedence. After the cap, Compass falls back to its usual 90-second activity rule. This covers
-long foreground calls and headless sessions waiting on a background subagent, measured with Claude
-Code 2.1.322 on macOS. The [state reference](../compass/skills/compass/reference/dashboard.md#session-states)
-explains the other harnesses.
+A quiet transcript can still be working. For Claude Code, an unanswered tool call in the current
+step reads `running <tool>` for up to 15 minutes from that call. Only calls in the newest assistant
+message qualify; a later assistant message, a new user message, compaction, a Stop or an interruption
+ends that foreground wait. Parallel calls in one assistant message may remain pending independently.
+Background Agent or Task subagents launched in the current turn with no recorded completion read
+`waiting on 1 background task` or `waiting on N background tasks`. Only these background subagents
+can keep Working after the parent's Stop, for up to 15 minutes from the newest qualifying outstanding
+launch; background Bash and shell jobs do not qualify. The two caps are independent. An observed
+session end ends both waits, and an input request still takes precedence. After either cap, Compass
+falls back to its usual activity and stop rules. This covers long foreground calls and headless
+sessions waiting on a background subagent, measured with Claude Code 2.1.322 on macOS. The
+[state reference](../compass/skills/compass/reference/dashboard.md#session-states) explains the other harnesses.
 
 A project's Console view collects delegated work, requests waiting on you and capacity. It also has an
 early terminal bridge and session history view; the

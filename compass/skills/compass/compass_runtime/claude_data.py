@@ -1031,6 +1031,57 @@ def is_turn_stop_record(record: Any, after: str | None) -> bool:
     )
 
 
+class _PendingForeground:
+    def __init__(self, path: str) -> None:
+        self.session_id = os.path.basename(path).removesuffix(".jsonl")
+        self.message_id: str | None = None
+        self.calls: dict[str, dict[str, Any]] = {}
+
+    def visit(self, record: dict[str, Any], at: float | None) -> None:
+        if record.get("isSidechain") is True or record.get("sessionId") != self.session_id:
+            return
+        kind = record.get("type")
+        message = records.message_dict(record)
+        content = records.as_list(message.get("content"))
+        # A partial parallel result is a user record. A native Stop still ends
+        # every pending call even when that result, rather than an assistant,
+        # immediately precedes it.
+        if (
+            is_turn_stop_record(record, "assistant")
+            or record.get("isCompactSummary") is True
+            or (kind == "system" and record.get("subtype") == "compact_boundary")
+            or (
+                kind == "user"
+                and not (
+                    content
+                    and all(isinstance(c, dict) and c.get("type") == "tool_result" for c in content)
+                )
+            )
+        ):
+            self.calls.clear()
+            self.message_id = None
+        elif kind == "assistant":
+            message_id = message.get("id")
+            # A new model step abandons all earlier calls. Missing identity
+            # cannot earn an extension to the existing freshness rule.
+            if message_id != self.message_id or not isinstance(message_id, str):
+                self.calls.clear()
+            self.message_id = message_id if isinstance(message_id, str) else None
+            if not self.message_id:
+                return
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                call_id, name = block.get("id"), block.get("name")
+                if isinstance(call_id, str) and isinstance(name, str) and name not in INPUT_TOOLS:
+                    self.calls[call_id] = {"name": name, "ts": at}
+        elif kind == "user":
+            for block in content:
+                call_id = block.get("tool_use_id") if isinstance(block, dict) else None
+                if isinstance(call_id, str):
+                    self.calls.pop(call_id, None)
+
+
 def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
     """Claude Code transcript tail.
 
@@ -1079,6 +1130,7 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
         "last_user_event": last_user_event(config, state, path),
     }
     pending: dict[str, dict[str, Any]] = {}
+    foreground = _PendingForeground(path)
     # The type of the newest conversation record so far, in file order: the
     # context `is_turn_stop_record` reads a summary in.
     conversation: str | None = None
@@ -1096,7 +1148,9 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
             info["last_event_ts"] = max(info["last_event_ts"], ep)
             if t in {"user", "assistant"}:
                 info["last_conversation_ts"] = max(info["last_conversation_ts"], ep)
-        if ep and ep >= info["turn_stop_ts"] and is_turn_stop_record(d, conversation):
+        turn_stop = is_turn_stop_record(d, conversation)
+        foreground.visit(d, ep)
+        if ep and ep >= info["turn_stop_ts"] and turn_stop:
             info["turn_stop_ts"] = ep
             info["turn_stop_sid"] = d["sessionId"]
         if t in ("user", "assistant"):  # a tuple: `t` may be any JSON value
@@ -1119,13 +1173,11 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
                 if isinstance(c, dict) and c.get("type") == "tool_use":
                     info["last_tool"] = c.get("name")
                     call_id, name = c.get("id"), c.get("name")
-                    if isinstance(call_id, str) and isinstance(name, str):
+                    if isinstance(call_id, str) and isinstance(name, str) and name in INPUT_TOOLS:
                         pending[call_id] = {
                             "name": name,
                             "ts": ep,
-                            "asks": input_summary(c, limit=config.input_summary_cap_chars)
-                            if name in INPUT_TOOLS
-                            else "",
+                            "asks": input_summary(c, limit=config.input_summary_cap_chars),
                         }
         elif t == "user":
             for c in records.as_list(records.message_dict(d).get("content")):
@@ -1133,10 +1185,9 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
                     call_id = c.get("tool_use_id")
                     if isinstance(call_id, str):
                         pending.pop(call_id, None)
-    for key, input_tool in (("pending_input_tool", True), ("pending_tool", False)):
-        candidates = [p for p in pending.values() if (p["name"] in INPUT_TOOLS) == input_tool]
-        if candidates:
-            info[key] = max(candidates, key=lambda p: p["ts"] or 0)
+    if pending:
+        info["pending_input_tool"] = max(pending.values(), key=lambda p: p["ts"] or 0)
+    info["pending_tool"] = max(foreground.calls.values(), key=lambda p: p["ts"] or 0, default=None)
     info["last_prompt"] = last_prompt.value(path)
     return info
 

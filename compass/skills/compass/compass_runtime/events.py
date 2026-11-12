@@ -900,8 +900,9 @@ def reduce_overlays(  # noqa: PLR0913 - each argument is independently sourced c
     it exists to distinguish. It also skips the activity guard the stop takes —
     `_side_channel_patch` says why.
 
-    `work_in_flight_until` is the Claude collector's capped outstanding-work
-    evidence. While it stands, Idle and remembered turn stops yield, but a
+    `work_in_flight_until` is the Claude collector's capped current-turn
+    background-subagent evidence. Foreground calls never supply it. While it
+    stands, Idle and remembered turn stops yield, but a
     needs-input overlay keeps its normal precedence and actual activity guard.
     An observed session end disables this exception.
     """

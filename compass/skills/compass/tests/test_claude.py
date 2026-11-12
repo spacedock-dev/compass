@@ -3953,16 +3953,27 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.project.mkdir(parents=True)
         self.enterContext(store_patch(PROJECTS_DIR=str(self.project.parent)))
         self.enterContext(store_patch(TASKS_DIR=str(Path(self.tmp.name) / "no-tasks")))
-        self.enterContext(config_patch(state_dir=Path(self.tmp.name), state_home=self.tmp.name))
+        self.enterContext(
+            config_patch(
+                state_dir=Path(self.tmp.name), state_home=self.tmp.name, overlay_idle_dwell_sec=0
+            )
+        )
 
     def call(
-        self, at: float = 0, *, name: str = "Bash", call_id: str = "call", **inputs: Any
+        self,
+        at: float = 0,
+        *,
+        name: str = "Bash",
+        call_id: str = "call",
+        message_id: str | None = None,
+        **inputs: Any,
     ) -> dict[str, Any]:
         return {
             "type": "assistant",
             "sessionId": TURN_SID,
             "timestamp": self.START + at,
             "message": {
+                "id": message_id or f"msg-{call_id}",
                 "role": "assistant",
                 "content": [
                     {"type": "tool_use", "id": call_id, "name": name, "input": inputs},
@@ -4025,7 +4036,14 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         return collect_claude(self.START + age, 24, False)[0]
 
     def overlay_row(
-        self, row: dict[str, Any], *, age: float = 120, end: bool = False, prompt: bool = False
+        self,
+        row: dict[str, Any],
+        *,
+        age: float = 120,
+        end: bool = False,
+        prompt: bool = False,
+        remembered: bool = False,
+        stop_at: float = 3,
     ) -> dict[str, Any]:
         config, state = runtime()
         ledger = [
@@ -4035,15 +4053,15 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                     sid=TURN_SID[:8],
                     session_id=TURN_SID,
                     event="input_requested" if prompt else "turn_stopped",
-                    timestamp=self.START + (100 if prompt else 3),
+                    timestamp=self.START + (100 if prompt else stop_at),
                     arrival_seq=1,
                 ),
                 config=config,
             )
         ]
         source = mock.Mock()
-        source.overlays_for.return_value = [] if end else ledger
-        source.finished_at.return_value = self.START + 3
+        source.overlays_for.return_value = [] if end or remembered else ledger
+        source.finished_at.return_value = self.START + stop_at
         source.ended_at.return_value = self.START + 110 if end else 0.0
         source.git_for.return_value = None
         source.focusable.return_value = False
@@ -4085,7 +4103,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertEqual("needs_input", row["state"])
         self.assertEqual(self.START, row["blocked_since"])
 
-    def test_result_matching_and_newest_unanswered_tool_determine_the_detail(self) -> None:
+    def test_a_later_assistant_message_abandons_earlier_pending_calls(self) -> None:
         rows = [
             self.call(),
             self.call(5, name="Read", call_id="read"),
@@ -4094,8 +4112,158 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         newest = self.row(rows[:2])
         self.assertEqual("running Read", newest["state_detail"])
         row = self.row(rows)
-        self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+        self.assertEqual("idle", row["state"])
         self.assertEqual("idle", self.row([*rows, self.result(7)])["state"])
+
+    def test_parallel_tools_in_one_message_keep_the_unanswered_call_working(self) -> None:
+        rows = [
+            self.call(message_id="parallel"),
+            self.call(5, name="Read", call_id="read", message_id="parallel"),
+            self.result(6, call_id="read"),
+        ]
+        self.assertEqual("running Bash", self.row(rows)["state_detail"])
+        self.assertEqual("idle", self.row([*rows, self.result(7)])["state"])
+
+    def test_user_messages_stop_records_and_compaction_abandon_a_call(self) -> None:
+        boundaries: list[dict[str, Any]] = [
+            {"type": "user", "message": {"content": "nevermind"}},
+            {"type": "user", "message": {"content": "[Request interrupted by user]"}},
+            {"type": "system", "subtype": "compact_boundary"},
+            {"type": "user", "isCompactSummary": True, "message": {"content": "summary"}},
+            _turn_records(self.START + 3)[-1],
+        ]
+        for boundary in boundaries:
+            with self.subTest(boundary=boundary):
+                row = self.row(
+                    [self.call(), {"sessionId": TURN_SID, "timestamp": self.START + 3, **boundary}]
+                )
+                self.assertEqual("idle", row["state"])
+
+    def test_abandoned_call_followed_by_a_completed_turn_settles_idle(self) -> None:
+        rows = [
+            self.call(),
+            {
+                "type": "user",
+                "sessionId": TURN_SID,
+                "timestamp": self.START + 4,
+                "message": {"content": "nevermind"},
+            },
+            *_turn_records(self.START + 7)[1:],
+        ]
+        row = self.row(rows, age=8)
+        self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
+
+    def test_interrupted_tool_settles_immediately_at_transcript_and_hook_stops(self) -> None:
+        stopped = self.row([self.call(), _turn_records(self.START + 3)[-1]], age=4)
+        self.assertEqual(
+            ("idle", "awaiting your message"), (stopped["state"], stopped["state_detail"])
+        )
+        for age in (4, 120):
+            with self.subTest(age=age):
+                row = self.overlay_row(self.row([self.call()], age=age), age=age)
+                self.assertEqual("idle", row["state"])
+                self.assertEqual(self.START + 3, row["finished_at"])
+        # The remembered stop must also stand after its live overlay is gone.
+        row = self.row([self.call()])
+        self.assertIsNone(row["work_in_flight_until"])
+        row = self.overlay_row(row, remembered=True)
+        self.assertEqual(self.START + 3, row["finished_at"])
+
+    def test_stop_after_a_partial_parallel_result_or_foreign_record_ends_the_extension(
+        self,
+    ) -> None:
+        for result in (self.result(1), {**self.result(1), "isSidechain": True}):
+            with self.subTest(result=result):
+                rows = [
+                    self.call(message_id="parallel"),
+                    self.call(0.1, name="Read", call_id="read", message_id="parallel"),
+                    result,
+                    _turn_records(self.START + 3)[-1],
+                ]
+                self.assertEqual("idle", self.row(rows)["state"])
+
+    def test_sidechain_and_foreign_calls_and_results_are_not_parent_evidence(self) -> None:
+        for other in ({"isSidechain": True}, {"sessionId": "other-session"}):
+            with self.subTest(other=other):
+                self.assertEqual("idle", self.row([{**self.call(), **other}])["state"])
+                row = self.row([self.call(), {**self.result(), **other}])
+                self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+
+    def test_missing_message_or_session_identity_earns_no_foreground_extension(self) -> None:
+        for container, key in (("message", "id"), (None, "sessionId")):
+            with self.subTest(key=key):
+                call = self.call()
+                del (call[container] if container else call)[key]
+                self.assertEqual("idle", self.row([call])["state"])
+
+    def test_background_shell_work_does_not_hold_a_completed_turn_open(self) -> None:
+        for inputs in (
+            {"command": "python3 -m http.server", "run_in_background": True},
+            {"command": "sleep 1 & wait"},
+        ):
+            with self.subTest(inputs=inputs):
+                rows = [self.call(**inputs), self.result(), *_turn_records(self.START + 3)[1:]]
+                row = self.row(rows, age=4)
+                self.assertEqual("idle", row["state"])
+                self.assertIsNone(row["work_in_flight_until"])
+                self.assertEqual("idle", self.overlay_row(row, age=4)["state"])
+
+    def test_previous_turn_background_agent_does_not_hold_later_completed_turn_open(self) -> None:
+        rows = [*self.background(), *_turn_records(self.START + 60)]
+        row = self.row(rows, age=61)
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
+        self.assertIsNone(row["work_in_flight_until"])
+
+    def test_waiting_detail_counts_only_current_turn_agent_and_task_launches(self) -> None:
+        rows = [
+            *self.background(),
+            _turn_records(self.START + 60)[0],
+        ]
+        for at, name in ((30, "Agent"), (32, "Task"), (34, "Bash"), (36, "Monitor")):
+            rows.extend(
+                [
+                    self.call(at, name=name, call_id=name, run_in_background=True),
+                    self.result(at + 1, call_id=name, agentId=f"child-{name}"),
+                ]
+            )
+        rows.extend(_turn_records(self.START + 60)[1:])
+        row = self.row(rows)
+        self.assertEqual(5, row["delegated_unpaired"])
+        self.assertEqual("waiting on 2 background tasks", row["state_detail"])
+        self.assertEqual(self.START + 932, row["work_in_flight_until"])
+
+    def test_task_output_completion_keeps_its_existing_pairing(self) -> None:
+        rows = [
+            *self.background(),
+            self.call(5, name="TaskOutput", call_id="output", task_id="child"),
+            self.result(6, call_id="output", task={"status": "completed"}),
+            *_turn_records(self.START + 7)[1:],
+        ]
+        row = self.row(rows, age=8)
+        self.assertEqual(0, row["delegated_unpaired"])
+        self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
+
+    def test_foreground_work_does_not_extend_the_background_stop_exception(self) -> None:
+        rows = [*self.background(), self.call(850, name="Read", call_id="read")]
+        row = self.row(rows, age=890)
+        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+        row = self.row(rows, age=1000)
+        self.assertEqual("running Read", row["state_detail"])
+        self.assertIsNone(row["work_in_flight_until"])
+        self.assertEqual("idle", self.overlay_row(row, age=1000, stop_at=860)["state"])
+
+    def test_background_work_does_not_extend_the_foreground_detail(self) -> None:
+        rows = [
+            self.call(message_id="parallel"),
+            self.call(
+                850, name="Agent", call_id="agent", message_id="parallel", run_in_background=True
+            ),
+            self.result(851, call_id="agent", agentId="child"),
+        ]
+        row = self.row(rows, age=1000)
+        self.assertEqual("waiting on 1 background task", row["state_detail"])
+        self.assertEqual(self.START + 1750, row["work_in_flight_until"])
 
     def test_background_work_outlives_the_parent_stop_and_a_quiet_child(self) -> None:
         row = self.row(self.background(), child_age=120)
