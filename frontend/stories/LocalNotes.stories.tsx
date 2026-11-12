@@ -317,7 +317,13 @@ export const MemoEscapeKeepsAnotherTabSave: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole('button', { name: 'Edit OUTCOME' }));
-    await replace(canvas.getByRole('textbox'), 'My autosaved words');
+    const box = canvas.getByRole('textbox');
+    await replace(box, 'My autosaved words');
+    // Commit the edit before Escape removes the box: otherwise user-event fires its own
+    // change-on-blur on the detached node inside a nested act, which React reports as a
+    // suspension. A harness artifact, not page behaviour.
+    box.blur();
+    box.focus();
     const backend = backendOf(canvasElement);
     createLegacyStorage(() => backend).memo.write(MEMO_KEY, 'Saved in another tab');
     const writes = backend.writes.length;
