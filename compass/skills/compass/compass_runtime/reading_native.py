@@ -253,7 +253,7 @@ def _ordered(
     return tuple(originals)
 
 
-def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals before any calls
+def prepare(  # noqa: C901, PLR0911, PLR0912, PLR0913 - ordered preparation refusals before any calls
     config: RuntimeConfig,
     row: Mapping[str, Any],
     revisions: Sequence[Mapping[str, Any]],
@@ -267,12 +267,15 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
     open_call_at: float | None = None,
     recovered_sources: Sequence[Mapping[str, Any]] | None = None,
     ci_result: CiResult | None = None,
+    set_aside: bool = False,
 ) -> Preparation:
     """Prepare retained source data only; the caller owns grants and source revalidation.
 
     `prompt_bytes` is one packet's cap from the job's plan. Saved lines a packet has no room
     to pose are set aside whole before anything is frozen, so every packet, the final call and
-    the publication guard read the same intent, and the reading says so per line.
+    the publication guard read the same intent, and the reading says so per line. The lines are
+    measured first without the frozen context and again with it, as a packet carries it; when
+    only the second fails, preparation runs once more with `set_aside`.
 
     No route resolution, source acquisition, CI read, reservation or transport occurs.
     Physical order comes only from the collection's exact indexed origins. Unknown
@@ -328,10 +331,16 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         return finish("final-unfit")
     frozen_row, revision = deepcopy((dict(row), dict(revisions[-1])))
     unposed: tuple[str, ...] = ()
+    unposed_rows: tuple[Any, ...] = ()
     saved_lines = reading.outcome_lines(revision)
-    if saved_lines and not reading_map_call.lines_fit(
-        str(revision.get("goal") or ""), saved_lines, prompt_bytes
+    if saved_lines and (
+        set_aside
+        or not reading_map_call.lines_fit(
+            str(revision.get("goal") or ""), saved_lines, prompt_bytes
+        )
     ):
+        raw = revision.get("lines")
+        unposed_rows = tuple(raw) if isinstance(raw, (list, tuple)) else ()
         unposed, revision = saved_lines, {**revision, "lines": []}
     facts = deepcopy(list(collection.evidence.facts))
     facts = copied_corrections.mark({"semantic": {"facts": facts}}, [frozen_row])["semantic"][
@@ -375,6 +384,7 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         open_call_at=open_call_at,
         message_words=deepcopy(collection.words),
         unposed_lines=unposed,
+        unposed_rows=unposed_rows,
     )
     uncut, superseded = reading._ledger_and_superseded(  # noqa: SLF001
         facts,
@@ -435,6 +445,24 @@ def prepare(  # noqa: C901, PLR0911, PLR0913 - ordered preparation refusals befo
         )
     if goal != str(revision.get("goal") or ""):
         return finish("invalid-context")
+    posed = reading.outcome_lines(revision)
+    if posed and not reading_map_call.lines_fit(goal, posed, prompt_bytes, context):
+        again = prepare(
+            config,
+            row,
+            revisions,
+            collection,
+            route,
+            now=now,
+            prompt_bytes=prompt_bytes,
+            discarded=discarded,
+            settled_through=settled_through,
+            open_call_at=open_call_at,
+            recovered_sources=recovered_sources,
+            ci_result=ci_result,
+            set_aside=True,
+        )
+        return finish(again.reason, again.prepared)
     return finish(
         "",
         Prepared(

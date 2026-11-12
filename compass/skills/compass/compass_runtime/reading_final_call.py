@@ -44,12 +44,19 @@ class Inputs:
     # The saved lines a packet had no room to pose (`reading_map_call.lines_fit`), set aside
     # whole: `revision` then carries none, and each is published as `WHY_LINES_NO_ROOM`.
     unposed_lines: tuple[str, ...] = ()
+    # Those lines as stored, so a requested one keeps its request time as its floor: set aside,
+    # it is still not judged by work done before the reader asked for it, as the single prompt's
+    # `lines-no-room` lines are not.
+    unposed_rows: tuple[Any, ...] = ()
 
 
 def _request_data(inputs: Inputs) -> tuple[dict[str, float], frozenset[str], float | None]:
     harness, sid = str(inputs.row["harness"]), str(inputs.row["sid"])
     sources = reading.listed_request_sources(inputs.facts, inputs.recovered_sources)
-    floors = reading.line_request_floors(inputs.revision, sources, harness, sid)
+    revision = inputs.revision
+    if inputs.unposed_rows:
+        revision = {**revision, "lines": list(inputs.unposed_rows)}
+    floors = reading.line_request_floors(revision, sources, harness, sid)
     through = (
         max(
             reading.valid_prompt_time(inputs.settled_through) or 0.0,

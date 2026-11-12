@@ -259,6 +259,102 @@ class NativeProducerTest(unittest.TestCase):
                 entry: Any = {"revisions": [deepcopy(self.revision)]}
                 self.assertTrue(reading_long_finalize._locked_intent(entry, prepared.context))
 
+    def test_a_requested_line_set_aside_keeps_its_request_time(self) -> None:
+        # A line the reader asked for, set aside at the smallest prompt, is still not judged by a
+        # write made before the request, as the single prompt's `lines-no-room` lines are not.
+        f = self.fixture
+        rule = "No file under docs/ is edited."
+        f.source.parent.write(f"{f.source.parent.cwd}/docs/guide.md")
+        f.source.parent.prompt(rule)
+        self.prepare()
+        assert self.collection.evidence is not None
+        requested = next(
+            fact
+            for fact in self.collection.evidence.facts
+            if fact["type"] == "user_message" and fact["summary"] == rule
+        )
+        # The window opens before the write, so only the request time keeps it from the line.
+        self.revision["goal_saved_at"] = self.revision["window_start"] = self.revision["at"]
+        self.revision["at"] = requested["at"] + 1
+        recovered = project_context._transcript_user_scan(
+            f.source.config, f.source.path.read_bytes(), "claude", self.row["sid"]
+        )
+        request = reading.line_request_binding(
+            recovered,
+            source_id=requested["fact_id"],
+            text=rule,
+            harness="claude",
+            sid=self.row["sid"],
+            now=self.revision["at"],
+        )
+        assert request is not None
+        goal = "界" * 1000
+        self.revision["goal"] = goal
+        self.revision["lines"] = [
+            {
+                "text": rule,
+                "source": "entry",
+                "source_id": requested["fact_id"],
+                "request": request,
+            },
+            *[{"text": "界" * 800, "source": "typed"}] * 5,
+        ]
+        smallest = settings.ANALYZE_PROMPT_MIN_BYTES
+        prepared = self.call_prepare(prompt_bytes=smallest, recovered_sources=recovered).prepared
+        assert prepared is not None
+        self.assertEqual(rule, prepared.inputs.unposed_lines[0])
+        floor = reading_reconcile_packet.preflight(
+            prepared.originals,
+            goal=goal,
+            lines=(),
+            scope=prepared.scope,
+            scope_floor=prepared.floor,
+            final=prepared.final,
+            slot=reading_map_series.FinalSlot(17, smallest, reading.REPLY_CAP_BYTES),
+            frozen_context=prepared.context,
+        )
+        packet = floor.packet
+        assert packet is not None, floor.reason
+        reply = json.dumps({"goal": {"result": "consistent", "cites": [], "detail": ""}})
+
+        def line_1(inputs: reading_final_call.Inputs) -> reading.Criterion:
+            criteria, reason = reading_final_call._resolve(
+                reply, packet, inputs, prepared.context.value(), 240, 1_000, 800
+            )
+            self.assertEqual("ok", reason)
+            assert criteria is not None
+            return criteria["line_1"]
+
+        kept = line_1(prepared.inputs)
+        self.assertEqual(reading.WHY_LINES_NO_ROOM, kept["why"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, kept["result"])
+        self.assertEqual((), tuple(kept["cites"]))
+        # Without the request time the earlier write would decide the line.
+        lost = line_1(replace(prepared.inputs, unposed_rows=()))
+        self.assertEqual(reading.RESULT_DEPARTURE, lost["result"])
+
+    def test_lines_are_measured_with_the_context_a_packet_carries(self) -> None:
+        # Lines that pass the measure before anything is frozen, and not once the frozen context
+        # is added, are set aside on a second preparation rather than leaving no packet.
+        self.prepare()
+        calls: list[bool] = []
+        fit = reading_map_call.lines_fit
+
+        def measured(goal: str, lines: Any, prompt_bytes: int, context: Any = None) -> bool:
+            calls.append(context is not None)
+            return context is None and fit(goal, lines, prompt_bytes)
+
+        with mock.patch.object(reading_map_call, "lines_fit", measured):
+            prepared = self.call_prepare().prepared
+        assert prepared is not None
+        # Before freezing, with the context, then the second preparation sets the lines aside.
+        self.assertEqual([False, True], calls)
+        self.assertEqual(reading.outcome_lines(self.revision), prepared.inputs.unposed_lines)
+        self.assertEqual((), reading.outcome_lines(prepared.inputs.revision))
+        self.assertEqual([], prepared.context.value()["provenance"]["lines"])
+        goal = prepared.inputs.revision["goal"]
+        self.assertTrue(fit(goal, (), 512 * 1024, prepared.context))
+
     def test_missing_ambiguous_or_detached_origins_never_fall_back_to_clock(self) -> None:
         self.prepare()
         origins = self.collection.origins
