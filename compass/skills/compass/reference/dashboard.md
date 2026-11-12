@@ -53,8 +53,8 @@ titles, goals and prompts (`/` jumps to it, and a pasted session id finds its se
 count beside each choice, and three presets: Waiting on you, Started today and Drift recorded. A
 session that publishes no start time, project or state gets a choice of its own instead of being
 counted as zero or older, and Drift never offers a "no drift" choice, because an unchecked session
-looks the same as a clean one. Headless offers Headless and Hide known headless. Choose the latter
-to hide known headless Claude Code runs while keeping unknown entrypoints and other harnesses. Neither
+looks the same as a clean one. Headless offers Headless and Interactive or unknown. The latter includes
+interactive Claude Code runs, unknown entrypoints and other harnesses. Neither
 option is selected by default, so all sessions show. The counters keep counting the whole board.
 When the filters hide a
 session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,

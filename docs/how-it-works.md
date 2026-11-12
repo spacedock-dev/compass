@@ -171,9 +171,9 @@ reload or a pasted link comes back to the same place.
 The Find sessions bar at the top of Sessions searches titles, goals and prompts; press `/` to jump to
 it. Filters narrow the list by when a session started or was last active, and by project, harness,
 headless status, state, drift and goal, and presets cover Waiting on you, Started today and Drift recorded.
-Headless offers Headless and Hide known headless. Choose the latter to hide Claude Code sessions
-whose transcripts identify a headless run; sessions with an unknown entrypoint and other harnesses stay
-visible. Both options start unselected, so every session is shown by default. The counts
+Headless offers Headless and Interactive or unknown. The latter includes interactive Claude Code
+runs, sessions with an unknown entrypoint and other harnesses. Both options start unselected, so
+every session is shown by default. The counts
 at the top always cover the whole board. If a filter hides a session that is waiting on you, a warning
 links to it, or to Attention when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.

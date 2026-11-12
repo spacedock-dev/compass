@@ -120,13 +120,13 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 | Date | Filter by Started (the default) or Last active. Then Any time, Last hour, Today, Yesterday, Last 7 days, or the not-published option. A checkbox, "Also show sessions with no start time" | Started: `started_at`, otherwise `first_prompt_at`, the order the session's age uses. Last active: `last_activity` |
 | Project | Exact published labels in `Intl.Collator('en')` order, the blank label after them and the empty label last. A "Find a project" field narrows a list of more than 8 | `project`, the label Sessions and Projects group on. `project_key` only for the shared-location note |
 | Harness | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
-| Headless | Headless; Hide known headless | `headless === true` for Headless; every other value, including missing and null, for Hide known headless |
+| Headless | Headless; Interactive or unknown | `headless === true` for Headless; every other value, including missing and null, for Interactive or unknown |
 | State | Waiting on you, Working, Idle, Ended, State not published | `rowState()` |
 | Drift | Drift recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded drift, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
 | Goal | Goal saved; Drafted from a prompt, not saved; No goal yet | `goalCell()`: typed words are saved, a known goal without them is drafted |
 
-Headless starts with neither value selected, so all sessions show. Its second option hides only
-measured headless runs; it does not claim that unknown sessions are interactive. The popover says
+Headless starts with neither value selected, so all sessions show. Interactive or unknown includes
+measured interactive runs and sessions whose entrypoint is unknown. The popover says
 the value is read from Claude Code transcripts. The choice shares the other facets' counts, chips and
 [tab-lifetime persistence](#persistence).
 
@@ -173,8 +173,8 @@ counts sessions and never establishes a location, so no copy here states a numbe
 ## Absent values
 
 A value a session does not publish has its own named option. It is never counted as zero, as idle or
-as older. Headless groups unknown values with the measured non-headless values under Hide known
-headless, so hiding known headless runs keeps both.
+as older. Headless groups unknown values with the measured non-headless values under Interactive
+or unknown, so choosing that subset keeps both.
 
 - Date: a row with no stamp in the chosen field matches no dated choice. It is counted in its own
   option, "Start not published (n)" or "Activity time not published (n)", and in a line under the

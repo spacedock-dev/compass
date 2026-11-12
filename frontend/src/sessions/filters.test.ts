@@ -55,7 +55,7 @@ const run = (change: Partial<FilterState>, options: Parameters<typeof board>[0] 
 };
 
 describe('the words', () => {
-  it('lets a reader hide known headless sessions while keeping interactive and unknown rows', () => {
+  it('lets a reader choose headless sessions or interactive and unknown rows', () => {
     const payload = sessionsSearchPayload() as Row;
     const sessions = payload['sessions'] as Row[];
     sessions[0] = { ...sessions[0], headless: true };
@@ -72,6 +72,8 @@ describe('the words', () => {
     expect(kept.some((one) => one.row.source?.['headless'] === true)).toBe(false);
     expect(kept.some((one) => one.row.source?.['headless'] === false)).toBe(true);
     expect(kept.some((one) => one.row.source?.['headless'] === null)).toBe(true);
+    const headlessOnly = indexed.filter((one) => filtered(['headless']).keys.has(one.row.key));
+    expect(headlessOnly.map((one) => one.row.source?.['headless'])).toEqual([true]);
     expect(facetCounts(indexed, prepare(EMPTY_FILTERS, GENERATED, true), 'headless')).toEqual(
       new Map([
         ['headless', 1],
