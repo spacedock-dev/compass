@@ -8,6 +8,7 @@ file the port wrote would agree with the port by construction and prove nothing.
 
 from __future__ import annotations
 
+import copy
 import gzip
 import json
 import re
@@ -42,6 +43,13 @@ def lines(name: str) -> dict[str, dict[str, Any]]:
 
 
 class NamedCasesTest(unittest.TestCase):
+    def test_unposed_lines_name_the_prompt_limit(self) -> None:
+        case = copy.deepcopy(BY_NAME["a-stored-not-asked-becomes-the-limit"])
+        case["session"]["annotation_assessment"]["criteria"]["line_1"]["why"] = "lines-no-room"
+        line = next(line for line in view(case)["lines"] if line["key"] == "line_1")
+        self.assertEqual("lines-no-room", line["limit"])
+        self.assertEqual("", line["why"])
+
     def test_every_rule_the_corpus_names_has_a_case_that_lists_it(self) -> None:
         listed = {rule for case in NAMED["cases"] for rule in case["rules"]}
 

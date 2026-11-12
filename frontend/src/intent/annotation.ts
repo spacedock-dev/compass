@@ -190,8 +190,8 @@ export function trimToRule(text: string): string {
   return line;
 }
 
-/* The server's own cap on a typed box, published as `annotate_cap`, and 240 where it did not publish one. */
-export const HELD_CAP_DEFAULT = 240;
+/* The server's own cap on a typed box, published as `annotate_cap`, and 800 where it did not publish one. */
+export const HELD_CAP_DEFAULT = 800;
 
 export function heldCap(payload: Row | null | undefined): number {
   const cap = nextNumber(payload?.['annotate_cap']);
@@ -214,4 +214,9 @@ export function storeUnreadable(payload: Row | null | undefined): string {
 
 export function annotateOn(payload: Row | null | undefined): boolean {
   return isRecord(payload) && payload['annotate'] === true;
+}
+
+/* Python counts code points, so emoji consume one character of the store's bound too. */
+export function characterCount(text: string): number {
+  return [...text].length;
 }

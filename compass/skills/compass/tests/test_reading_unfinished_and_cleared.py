@@ -98,6 +98,7 @@ class ANotReachedLineNeedsWorkOnItUnderway(unittest.TestCase):
             detail_cap_chars=200,
             scope=scope,
             open_call_at=open_call_at,
+            line_cap_chars=800,
         )[name]
 
     def test_a_not_reached_resting_on_words_with_nothing_underway_is_not_verifiable(self) -> None:

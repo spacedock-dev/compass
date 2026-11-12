@@ -34,7 +34,7 @@ export function board(overrides: Record<string, unknown> = {}, store: Partial<St
   return {
     generated: 1000,
     annotate: true,
-    annotate_cap: 240,
+    annotate_cap: 800,
     annotate_goal_cap: 1000,
     intent_revision: 'r1',
     sessions: [

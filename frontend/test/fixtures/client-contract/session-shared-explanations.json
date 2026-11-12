@@ -12,7 +12,7 @@
   "response": {
     "body": {
       "annotate": true,
-      "annotate_cap": 240,
+      "annotate_cap": 800,
       "annotate_goal_cap": 1000,
       "annotate_unreadable": "",
       "generated": 1900000000.0,

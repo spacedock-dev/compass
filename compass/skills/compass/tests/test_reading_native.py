@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import re
 import unittest
+from copy import deepcopy
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -14,10 +15,16 @@ from compass_runtime import (
     project_context,
     reading,
     reading_final_call,
+    reading_long_finalize,
+    reading_map_call,
     reading_map_series,
     reading_native,
+    reading_pass_context,
+    reading_passes,
     reading_policy,
+    reading_reconcile_packet,
     reading_source_collect,
+    settings,
 )
 
 from . import test_reading_useful_long as long_tests
@@ -89,6 +96,7 @@ class NativeProducerTest(unittest.TestCase):
             "collection": self.collection,
             "route": self.route,
             "now": self.row["ended_at"] + 60,
+            "prompt_bytes": self.fixture.marker.declared["limits"]["prompt_bytes"],
         }
         args.update(changes)
         return reading_native.prepare(**args)
@@ -120,6 +128,7 @@ class NativeProducerTest(unittest.TestCase):
             stop_reason=lambda: None,
             detail_cap_chars=240,
             on_observation=f.marker.observe,
+            line_cap_chars=800,
         )
         return series, result
 
@@ -166,6 +175,185 @@ class NativeProducerTest(unittest.TestCase):
             max(f["at"] for f in self.collection.evidence.facts), assessment["evidence_through"]
         )
         self.assertEqual(len(series.passes) + 1, self.fixture.marker.fixture.spends())
+
+    def test_the_smallest_prompt_sets_aside_lines_it_has_no_room_for(self) -> None:
+        # Analyze's smallest prompt with the widest saved intent: before lines were set aside, a
+        # 1,000-character goal and six 800-character lines left no packet at all ("prompt-unfit").
+        smallest = settings.ANALYZE_PROMPT_MIN_BYTES
+        for char in ("界", "😀"):
+            with self.subTest(char=char):
+                self.prepare()
+                goal = char * 1000
+                self.revision["goal"] = goal
+                self.revision["lines"] = [{"text": char * 800, "source": "typed"}] * 6
+                lines = reading.outcome_lines(self.revision)
+                whole = self.call_prepare().prepared
+                assert whole is not None
+                self.assertEqual((), whole.inputs.unposed_lines)
+                posed = reading_passes.plan_packets(
+                    whole.originals,
+                    goal=goal,
+                    lines=lines,
+                    protocol_prefix=reading_map_call.protocol_prefix(
+                        goal, lines, ("goal", *(f"line_{n}" for n in range(1, 7)))
+                    )
+                    + reading_pass_context.goal_rule(whole.context),
+                    max_bytes=smallest,
+                    max_passes=16,
+                    frozen_context=whole.context,
+                    final=whole.final,
+                )
+                self.assertEqual(((), "prompt-unfit"), (posed.packets, posed.reason))
+                self.assertFalse(reading_map_call.lines_fit(goal, lines, smallest))
+                self.assertTrue(reading_map_call.lines_fit(goal, lines, 512 * 1024))
+
+                prepared = self.call_prepare(prompt_bytes=smallest).prepared
+                assert prepared is not None
+                self.assertEqual(lines, prepared.inputs.unposed_lines)
+                self.assertEqual((), reading.outcome_lines(prepared.inputs.revision))
+                self.assertEqual([], prepared.context.value()["provenance"]["lines"])
+                maps = reading_passes.plan_packets(
+                    prepared.originals,
+                    goal=goal,
+                    lines=(),
+                    protocol_prefix=reading_map_call.protocol_prefix(goal, (), ("goal",))
+                    + reading_pass_context.goal_rule(prepared.context),
+                    max_bytes=smallest,
+                    max_passes=16,
+                    frozen_context=prepared.context,
+                    final=prepared.final,
+                )
+                self.assertTrue(maps.packets)
+                self.assertEqual("complete", maps.reason)
+                # The final packet fits the same prompt, and its answer says so per line.
+                floor = reading_reconcile_packet.preflight(
+                    prepared.originals,
+                    goal=goal,
+                    lines=(),
+                    scope=prepared.scope,
+                    scope_floor=prepared.floor,
+                    final=prepared.final,
+                    slot=reading_map_series.FinalSlot(17, smallest, reading.REPLY_CAP_BYTES),
+                    frozen_context=prepared.context,
+                )
+                assert floor.packet is not None, floor.reason
+                self.assertLessEqual(len(floor.packet.prompt.encode()), smallest)
+                self.assertIn('"lines": []', floor.packet.prompt)
+                criteria, reason = reading_final_call._resolve(
+                    json.dumps({"goal": {"result": "consistent", "cites": [], "detail": ""}}),
+                    floor.packet,
+                    prepared.inputs,
+                    prepared.context.value(),
+                    240,
+                    1_000,
+                    800,
+                )
+                self.assertEqual("ok", reason)
+                assert criteria is not None
+                for n in range(1, 7):
+                    row = criteria[f"line_{n}"]
+                    self.assertEqual(reading.WHY_LINES_NO_ROOM, row["why"])
+                    self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                    self.assertEqual(char * 800, row["clause"])
+                # The store still holds the lines, and publication binds them to this job.
+                entry: Any = {"revisions": [deepcopy(self.revision)]}
+                self.assertTrue(reading_long_finalize._locked_intent(entry, prepared.context))
+
+    def test_a_requested_line_set_aside_keeps_its_request_time(self) -> None:
+        # A line the reader asked for, set aside at the smallest prompt, is still not judged by a
+        # write made before the request, as the single prompt's `lines-no-room` lines are not.
+        f = self.fixture
+        rule = "No file under docs/ is edited."
+        f.source.parent.write(f"{f.source.parent.cwd}/docs/guide.md")
+        f.source.parent.prompt(rule)
+        self.prepare()
+        assert self.collection.evidence is not None
+        requested = next(
+            fact
+            for fact in self.collection.evidence.facts
+            if fact["type"] == "user_message" and fact["summary"] == rule
+        )
+        # The window opens before the write, so only the request time keeps it from the line.
+        self.revision["goal_saved_at"] = self.revision["window_start"] = self.revision["at"]
+        self.revision["at"] = requested["at"] + 1
+        recovered = project_context._transcript_user_scan(
+            f.source.config, f.source.path.read_bytes(), "claude", self.row["sid"]
+        )
+        request = reading.line_request_binding(
+            recovered,
+            source_id=requested["fact_id"],
+            text=rule,
+            harness="claude",
+            sid=self.row["sid"],
+            now=self.revision["at"],
+        )
+        assert request is not None
+        goal = "界" * 1000
+        self.revision["goal"] = goal
+        self.revision["lines"] = [
+            {
+                "text": rule,
+                "source": "entry",
+                "source_id": requested["fact_id"],
+                "request": request,
+            },
+            *[{"text": "界" * 800, "source": "typed"}] * 5,
+        ]
+        smallest = settings.ANALYZE_PROMPT_MIN_BYTES
+        prepared = self.call_prepare(prompt_bytes=smallest, recovered_sources=recovered).prepared
+        assert prepared is not None
+        self.assertEqual(rule, prepared.inputs.unposed_lines[0])
+        floor = reading_reconcile_packet.preflight(
+            prepared.originals,
+            goal=goal,
+            lines=(),
+            scope=prepared.scope,
+            scope_floor=prepared.floor,
+            final=prepared.final,
+            slot=reading_map_series.FinalSlot(17, smallest, reading.REPLY_CAP_BYTES),
+            frozen_context=prepared.context,
+        )
+        packet = floor.packet
+        assert packet is not None, floor.reason
+        reply = json.dumps({"goal": {"result": "consistent", "cites": [], "detail": ""}})
+
+        def line_1(inputs: reading_final_call.Inputs) -> reading.Criterion:
+            criteria, reason = reading_final_call._resolve(
+                reply, packet, inputs, prepared.context.value(), 240, 1_000, 800
+            )
+            self.assertEqual("ok", reason)
+            assert criteria is not None
+            return criteria["line_1"]
+
+        kept = line_1(prepared.inputs)
+        self.assertEqual(reading.WHY_LINES_NO_ROOM, kept["why"])
+        self.assertEqual(reading.RESULT_UNVERIFIABLE, kept["result"])
+        self.assertEqual((), tuple(kept["cites"]))
+        # Without the request time the earlier write would decide the line.
+        lost = line_1(replace(prepared.inputs, unposed_rows=()))
+        self.assertEqual(reading.RESULT_DEPARTURE, lost["result"])
+
+    def test_lines_are_measured_with_the_context_a_packet_carries(self) -> None:
+        # Lines that pass the measure before anything is frozen, and not once the frozen context
+        # is added, are set aside on a second preparation rather than leaving no packet.
+        self.prepare()
+        calls: list[bool] = []
+        fit = reading_map_call.lines_fit
+
+        def measured(goal: str, lines: Any, prompt_bytes: int, context: Any = None) -> bool:
+            calls.append(context is not None)
+            return context is None and fit(goal, lines, prompt_bytes)
+
+        with mock.patch.object(reading_map_call, "lines_fit", measured):
+            prepared = self.call_prepare().prepared
+        assert prepared is not None
+        # Before freezing, with the context, then the second preparation sets the lines aside.
+        self.assertEqual([False, True], calls)
+        self.assertEqual(reading.outcome_lines(self.revision), prepared.inputs.unposed_lines)
+        self.assertEqual((), reading.outcome_lines(prepared.inputs.revision))
+        self.assertEqual([], prepared.context.value()["provenance"]["lines"])
+        goal = prepared.inputs.revision["goal"]
+        self.assertTrue(fit(goal, (), 512 * 1024, prepared.context))
 
     def test_missing_ambiguous_or_detached_origins_never_fall_back_to_clock(self) -> None:
         self.prepare()

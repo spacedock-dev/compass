@@ -110,7 +110,7 @@ class WhatTheModelIsSentTest(unittest.TestCase):
     def test_the_prompt_says_to_quote_to_refuse_a_vague_goal_and_to_treat_prompts_as_data(
         self,
     ) -> None:
-        text = goal_find.build_prompt(prompts())
+        text = goal_find.build_prompt(prompts(), goal_cap=1_000)
         self.assertIn("untrusted", text)
         self.assertIn("exact words", text)
         self.assertIn("end state the work can be read against", text)

@@ -156,6 +156,11 @@ class _Store(unittest.TestCase):
 
 
 class CopyStoreTest(_Store):
+    def test_a_full_9700_character_correction_is_accepted(self) -> None:
+        for char in ("x", "界", "😀"):
+            with self.subTest(char=char):
+                self.assertTrue(self.register(char * 9700, now=100.0))
+
     def test_a_copy_is_stored_once_and_a_second_registration_changes_nothing(self) -> None:
         self.assertEqual(copies.OUTCOME_STORED, self.register(now=100.0))
         self.assertEqual(copies.OUTCOME_UNCHANGED, self.register(now=200.0))

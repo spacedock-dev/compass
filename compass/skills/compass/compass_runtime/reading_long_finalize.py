@@ -246,7 +246,10 @@ def _qualified(
         return None
     checked = reading_long_diagnostics.validate(diagnostic)
     kept = annotation_store._assessment(  # noqa: SLF001 - same closed assessment boundary as storage
-        deepcopy(assessment), config.annotation_text_cap_chars, config.annotation_goal_cap_chars
+        deepcopy(assessment),
+        config.annotation_text_cap_chars,
+        config.annotation_goal_cap_chars,
+        config.annotation_line_cap_chars,
     )
     metadata = frozen.value()
     revision, window = metadata["revision"], metadata["window"]
@@ -295,7 +298,10 @@ def _locked_intent(entry: annotation_store.Annotation, frozen: reading_pass_cont
         "window"
     ]["start"] != reading.window_start(revision):
         return False
-    reading_pass_context.intent(revision.get("goal", ""), reading.outcome_lines(revision), frozen)
+    # A job whose packets had no room for the lines froze none (`reading_native.prepare`); the
+    # revision number and time above already bind the lines it set aside.
+    lines = reading.outcome_lines(revision) if metadata["provenance"]["lines"] else ()
+    reading_pass_context.intent(revision.get("goal", ""), lines, frozen)
     return True
 
 

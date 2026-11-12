@@ -210,7 +210,7 @@ describe('Add as a line', () => {
   });
 
   it('holds the whole text, counts it past the bound, and refuses to save it rather than cutting it', async () => {
-    const long = 'w'.repeat(300);
+    const long = 'w'.repeat(900);
     const page = mountSession({
       store: SAVED,
       session: SAVED_AT,
@@ -224,11 +224,11 @@ describe('Add as a line', () => {
     await press(control('direction-add'));
     await settle(page);
     const line = document.querySelector('[data-next-cockpit-direction-key]') as HTMLTextAreaElement;
-    expect(line.value).toHaveLength(300);
+    expect(line.value).toHaveLength(900);
     expect(line.hasAttribute('maxlength')).toBe(false);
-    expect(text('[data-next-cockpit-direction-count]')).toBe('300 / 240');
+    expect(text('[data-next-cockpit-direction-count]')).toBe('900 / 800');
     expect(text('#next-cockpit-direction-why')).toBe(
-      'A line holds 240 characters. Shorten this one to add it.',
+      'A line holds 800 characters. Shorten this one to add it.',
     );
     expect(inert(control('held-save'))).toBe(true);
     await press(control('held-save'));

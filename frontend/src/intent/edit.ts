@@ -1,6 +1,6 @@
 import { compatSessKey } from '../api/identity';
 import { type Row } from '../observed';
-import { annotationDiscarded, goalCap, heldCap, scrub } from './annotation';
+import { annotationDiscarded, characterCount, goalCap, heldCap, scrub } from './annotation';
 import { pendingHas, type Ctx, announce } from './context';
 import {
   goalBaseline,
@@ -13,29 +13,49 @@ import {
   type DraftInput,
 } from './derive';
 import { sessionGoalCandidate } from '../sessions/intent';
-import { INTENT_CHOSEN_SAID, INTENT_DETECTED_SAID, LINES_FULL } from './sentences';
+import {
+  goalOverLimit,
+  INTENT_CHOSEN_SAID,
+  INTENT_DETECTED_SAID,
+  LINES_FULL,
+  lineOverLimit,
+} from './sentences';
 import { OUTCOME_LINES_MAX } from './annotation';
 
 /* The reader's own edits, one function each. Every one changes only what is held, saves nothing and sends
    nothing: a keystroke, a pick, a removed line and an Escape are all drafts until Save intent is pressed.
-   Each returns what the box should now say, so the editor can put a scrubbed or capped value back into the
-   native node, which is the only time the node is written. */
+   Each returns the scrubbed text for the native node. Over-limit text stays held until the reader
+   edits it down; the save, rather than the keystroke, enforces the bound. */
 
-/* The store's own scrub and bound, applied to what was typed: a pasted line break is the one space the
-   store would keep, and a box over the server's bound is cut, as the native `maxlength` cuts it. The goal
-   and a line have different bounds. */
-function bounded(raw: string, input: DraftInput, cap: number = heldCap(input.payload)): string {
-  return scrub(raw).slice(0, cap);
+/* Said once, as a box goes over its limit. The sentence under the box holds each new length and is wired to
+   the box by aria-describedby, so saying it on every keystroke past the limit would only repeat it; coming
+   back under forgets it, so the next crossing is said again. */
+function sayWhenOver(
+  ctx: Ctx,
+  key: string,
+  before: string,
+  after: string,
+  cap: number,
+  sentence: (length: number) => string,
+): void {
+  const guard = `${key}:over`;
+  const length = characterCount(after);
+  if (length <= cap) ctx.shell.announcer.forget(guard);
+  else if (characterCount(before) <= cap) announce(ctx, guard, sentence(length));
 }
 
 /* A keystroke in the goal box. The goal's own cue goes (the next press is a fresh attempt on different
    words), and so does the footer's save mark. */
 export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
   const key = goalKey(input.session);
-  const value = bounded(raw, input, goalCap(input.payload));
+  const value = scrub(raw);
+  const baseline = goalBaseline(input);
+  const before = ctx.held.goals.has(key) ? (ctx.held.goals.get(key) ?? baseline) : baseline;
+  const cap = goalCap(input.payload);
+  sayWhenOver(ctx, key, before, value, cap, (length) => goalOverLimit(length, cap));
   ctx.held.clearActionFeedback(compatSessKey(input.session));
   if (value === '') ctx.held.cleared.add(key);
-  else if (value === goalBaseline(input)) ctx.held.cleared.delete(key);
+  else if (value === baseline) ctx.held.cleared.delete(key);
   /* The stored goal typed back over a choice is no change at all; a kept choice would leave Undo hidden and
      Save inert beside a box that still read as edited. */
   const stored = annotationDiscarded(input.annotation)
@@ -51,12 +71,16 @@ export function typeGoal(ctx: Ctx, input: DraftInput, raw: string): string {
 
 /* A keystroke in one outcome line. A line past the list is created, so a box typed into before the list
    knew it exists still lands in its place. */
-export function typeLine(input: DraftInput, index: number, raw: string): string {
+export function typeLine(ctx: Ctx, input: DraftInput, index: number, raw: string): string {
   const { held, session, annotation } = input;
   held.clearActionFeedback(compatSessKey(session));
   const key = linesKey(session);
-  const value = bounded(raw, input);
+  const value = scrub(raw);
   const draft = linesDraft(held, session, annotation);
+  const cap = heldCap(input.payload);
+  sayWhenOver(ctx, `${key}:${String(index)}`, draft[index] ?? '', value, cap, (length) =>
+    lineOverLimit(index + 1, length, cap),
+  );
   const origins = linesOrigins(held, key, draft);
   while (draft.length <= index) {
     draft.push('');

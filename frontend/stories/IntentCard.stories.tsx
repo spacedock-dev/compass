@@ -33,7 +33,7 @@ function buildPayload(
   return {
     generated,
     annotate: true,
-    annotate_cap: 240,
+    annotate_cap: 800,
     annotate_goal_cap: 1000,
     intent_revision: 'r1',
     /* The server's own sentences, as `annotations.DISCARD_SENTENCES` words them: this page draws them and
@@ -785,9 +785,9 @@ export const MovedControlsInQuietRow: Story = {
     await expect(
       await quiet.findByRole('button', { name: /^Later directions: settled/ }),
     ).toBeVisible();
-    // Every count reads "n / cap" against its own box's cap: the goal holds 1,000, an outcome line 240.
+    // Every count reads "n / cap" against its own box's cap: the goal holds 1,000, an outcome line 800.
     await expect(within(card).getByText('30 / 1000')).toBeVisible();
-    await expect(within(card).getByText('26 / 240')).toBeVisible();
+    await expect(within(card).getByText('26 / 800')).toBeVisible();
     // The stamp opens its definition from the quiet row.
     await userEvent.click(within(kept).getByRole('button', { name: /^Saved · reads from/ }));
     await waitFor(() => expect(quiet.getByText('Each save is kept on its own.')).toBeVisible());
@@ -2016,5 +2016,122 @@ export const OutcomeAccordionKeyboard: Story = {
     await userEvent.keyboard(' ');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(trigger).toHaveFocus();
+  },
+};
+
+export const OverCapLineBlocksSave: Story = {
+  name: 'Over Cap Line Blocks Save',
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Saved goal',
+        annotation_revision: 1,
+        annotation_line_1: 'Saved line',
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await openOutcomes(view);
+    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    await userEvent.click(box);
+    await userEvent.clear(box);
+    await userEvent.paste('l'.repeat(900));
+    await expect(box).toHaveValue('l'.repeat(900));
+    await expect(box).not.toHaveAttribute('maxlength');
+    await expect(view.getByText('900 / 800')).toHaveAttribute('data-over', 'true');
+    await expect(view.getByText('Line 1 is 900 characters; the limit is 800.')).toBeVisible();
+    // Said once as the box went over, through the page's polite live region.
+    await expect(
+      canvasElement.ownerDocument.getElementById('next-cockpit-cue-status'),
+    ).toHaveTextContent('Line 1 is 900 characters; the limit is 800.');
+    await expect(view.getByRole('button', { name: 'Save intent' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await userEvent.clear(box);
+    await userEvent.paste('😀'.repeat(800));
+    await expect(view.getByText('800 / 800')).toHaveAttribute('data-over', 'false');
+    await expect(view.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    /* Escape puts the saved words back by replacing the uncontrolled box (`HeldTextarea`), which removes the
+       focused node mid-commit. user-event dispatches a `change` when a box it edited loses focus, inside a
+       nested `act` that cannot flush during that commit, and React reports it as an unawaited suspension. A
+       browser has no `act`, so the edit is committed with a blur and refocus first, as a reader's own would be. */
+    box.blur();
+    box.focus();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveValue(
+        'Saved line',
+      ),
+    );
+    await expect(view.getByRole('textbox', { name: 'Expected outcome line 1' })).toHaveFocus();
+    await expect(view.getByText('10 / 800')).toHaveAttribute('data-over', 'false');
+    await expect(view.queryByText(/^Line 1 is /)).toBeNull();
+  },
+};
+
+export const RefusedSaveShowsReason: Story = {
+  name: 'Refused Save Shows Reason',
+  args: {
+    setup: {
+      session: {
+        annotation_goal: 'Saved goal',
+        annotation_revision: 1,
+        annotation_line_1: 'Saved line',
+      },
+      onAnnotate: () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            outcome: 'refused',
+            persisted: false,
+            reason: { code: 'line_too_long', line: 1, length: 900, cap: 800 },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    await openOutcomes(view);
+    const box = view.getByRole('textbox', { name: 'Expected outcome line 1' });
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Changed line');
+    await userEvent.click(view.getByRole('button', { name: 'Save intent' }));
+    await expect(
+      await view.findByText('Not saved: line 1 is 900 characters; the limit is 800.'),
+    ).toBeVisible();
+    await expect(box).toHaveValue('Changed line');
+  },
+};
+
+export const OverCapGoalBlocksSave: Story = {
+  name: 'Over Cap Goal Blocks Save',
+  play: async ({ canvasElement }) => {
+    const card = await within(canvasElement).findByRole('region', { name: 'Intent' });
+    const view = within(card);
+    const box = view.getByRole('textbox', { name: 'Goal' });
+    await userEvent.click(box);
+    await userEvent.clear(box);
+    await userEvent.paste('g'.repeat(1100));
+    await expect(box).toHaveValue('g'.repeat(1100));
+    await expect(view.getByText('1100 / 1000')).toHaveAttribute('data-over', 'true');
+    await expect(view.getByText('The goal is 1,100 characters; the limit is 1,000.')).toBeVisible();
+    await expect(view.getByRole('button', { name: 'Save intent' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await userEvent.clear(box);
+    await userEvent.paste('g'.repeat(1000));
+    await expect(view.getByRole('button', { name: 'Save intent' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   },
 };

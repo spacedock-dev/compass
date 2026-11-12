@@ -4,7 +4,7 @@ import { Disclosure, disclosureKey } from '../controls';
 import { DriftContext } from '../drift/context';
 import { isOutcomeLine } from '../drift/shape';
 import { compatSessKey } from '../api/identity';
-import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX } from './annotation';
+import { annotationLines, storeUnreadable, OUTCOME_LINES_MAX, characterCount } from './annotation';
 import { heldSentence } from './cues';
 import { directionWhy, linesDraft, linesKey, linesToSend, lineSource } from './derive';
 import { ActionButton } from './ActionButton';
@@ -23,6 +23,7 @@ import {
   INTENT_EDITED_ADD,
   LINES_FULL,
   RULE_HINT,
+  lineOverLimit,
 } from './sentences';
 import { datedClock } from '../observed/values';
 import { usePanel } from './useIntent';
@@ -105,7 +106,7 @@ function DirectionLineView() {
           and Remove on the right. */}
       <div className="next-cockpit-held-under">
         <span className="next-cockpit-held-count" data-next-cockpit-direction-count>
-          {`${String(text.length)} / ${String(cap)}`}
+          {`${String(characterCount(text))} / ${String(cap)}`}
         </span>
         <Label className="next-cockpit-held-source" htmlFor={boxId}>
           {from}
@@ -167,6 +168,10 @@ function LineRow({
 }) {
   const { ctx, input, session, cap, source } = usePanel();
   const key = linesKey(session);
+  const ownId = useId();
+  const id = boxId ?? ownId;
+  const count = characterCount(text);
+  const over = count > cap;
   const saved = annotationLines(input.annotation);
   /* Remove shares the box row so a saved outcome does not push Keep below the phone viewport.
      An entry source keeps its space during an edit, so the editor does not move under the caret. */
@@ -185,11 +190,12 @@ function LineRow({
         {String(index + 1)}
       </span>
       <HeldTextarea
-        id={boxId}
+        id={id}
         className="col-start-2 col-end-3 max-[760px]:h-[44px]"
         aria-label={`Expected outcome line ${String(index + 1)}`}
         rows={3}
-        maxLength={cap}
+        aria-invalid={over || undefined}
+        aria-describedby={over ? `${id}-over` : undefined}
         memoryKey={`${key}:${String(index)}`}
         focusKey={`${key}:${String(index)}`}
         text={text}
@@ -198,7 +204,7 @@ function LineRow({
         data-next-cockpit-held-lines-key={key}
         data-next-cockpit-held-saved={place ? place.text : ''}
         data-next-focus={`${key}:${String(index)}`}
-        onEdit={(raw) => typeLine(input, index, raw)}
+        onEdit={(raw) => typeLine(ctx, input, index, raw)}
         onKeyDown={(event) => {
           if (event.key !== 'Escape') return;
           event.preventDefault();
@@ -207,8 +213,12 @@ function LineRow({
         }}
       />
       <div className="next-cockpit-held-under col-start-2 col-end-3">
-        <span className="next-cockpit-held-count" data-next-cockpit-held-line-count={index}>
-          {`${String(text.length)} / ${String(cap)}`}
+        <span
+          className={`next-cockpit-held-count ${over ? 'text-[var(--clay)]' : ''}`}
+          data-over={over}
+          data-next-cockpit-held-line-count={index}
+        >
+          {`${String(characterCount(text))} / ${String(cap)}`}
         </span>
         {place && place.source === 'entry' ? (
           <span
@@ -220,6 +230,11 @@ function LineRow({
           </span>
         ) : null}
       </div>
+      {over ? (
+        <p id={`${id}-over`} className="col-start-2 col-end-3 text-[var(--clay)]">
+          {lineOverLimit(index + 1, count, cap)}
+        </p>
+      ) : null}
       <ActionButton
         weight="secondary"
         className="next-cockpit-held-remove col-start-3 row-start-1 row-span-2 self-start border-[var(--rule)] text-muted-foreground hover:text-foreground hover:border-[var(--line)]"

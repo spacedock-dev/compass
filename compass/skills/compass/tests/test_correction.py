@@ -151,6 +151,77 @@ def compose(row: dict[str, Any] | None = None, facts: Any = FACTS, **kw: Any) ->
 
 
 class TemplateTest(unittest.TestCase):
+    def test_six_departed_800_character_lines_compose_a_correction(self) -> None:
+        for char in ("x", "界", "😀"):
+            with self.subTest(char=char):
+                goal, line = char * 1000, char * 800
+                criteria = {"goal": row_of(DEPARTED, ("c-fail",), clause=goal)}
+                criteria.update(
+                    {f"line_{k}": row_of(DEPARTED, ("c-fail",), clause=line) for k in range(1, 7)}
+                )
+                row = session_row(
+                    annotation_goal=goal,
+                    annotation_settled_through=None,
+                    annotation_assessment=reading(**criteria),
+                )
+                row.update({f"annotation_line_{k}": line for k in range(1, 7)})
+                answer = compose(row, facts=[check("c-fail", 110, "failed")])
+                self.assertTrue(answer["ok"])
+                text = words(answer["parts"])
+                self.assertIn(goal, text)
+                self.assertEqual(6, text.count(line + ":"))
+                self.assertLessEqual(len(text), correction.CAP_CHARS)
+
+    def test_the_widest_dated_correction_composes(self) -> None:
+        # The widest correction a reader can be owed: a departed 1,000-character goal adopted from
+        # a prompt (so it closes "…"), six 800-character lines the session says are done (the
+        # widest line state, and one that is never dropped), a contradicted claim at its widest
+        # title, a failed check, and every time drawn with its date. It measures 6,485 characters
+        # before explanations and quotes; one fewer refuses it.
+        def compose_with(char: str) -> dict[str, Any]:
+            goal, line = char * 1000, char * 800
+            criteria: dict[str, Any] = {
+                "goal": row_of(DEPARTED, ("c-fail",), clause=goal),
+                "claims": row_of(DEPARTED, ("a9", "c-fail")),
+            }
+            criteria.update(
+                {f"line_{k}": row_of(CONSISTENT, ("a8",), clause=line) for k in range(1, 7)}
+            )
+            row = session_row(
+                annotation_goal=goal,
+                annotation_goal_source="latest-prompt",
+                annotation_goal_source_at=99.0,
+                annotation_settled_through=None,
+                annotation_assessment=reading(**criteria),
+            )
+            row.update({f"annotation_line_{k}": line for k in range(1, 7)})
+            facts = (
+                check("c-fail", 110, "failed"),
+                _agent("a8", 112, "The work is done now."),
+                _agent("a9", 105, "w " * 200),
+            )
+            return correction.compose(
+                row,
+                facts,
+                floor=100.0,
+                lines_judged=True,
+                clock=lambda _at: "2026-11-12 14:03",
+            )
+
+        for char in ("x", "界", "😀"):
+            with self.subTest(char=char):
+                answer = compose_with(char)
+                self.assertIs(True, answer["ok"], answer)
+                text = words(answer["parts"])
+                self.assertEqual(6, text.count("the session says this is done"))
+                self.assertIn("; the record shows otherwise at 2026-11-12 14:03", text)
+                self.assertLessEqual(len(text), correction.CAP_CHARS)
+                with mock.patch.object(correction, "LINES_CAP_CHARS", 6_485):
+                    self.assertIs(True, compose_with(char)["ok"])
+                with mock.patch.object(correction, "LINES_CAP_CHARS", 6_484):
+                    self.assertEqual("too-long", compose_with(char)["reason"])
+        self.assertGreaterEqual(correction.LINES_CAP_CHARS - 6_485, 64, "a margin over it")
+
     def test_every_state_fills_the_approved_template(self) -> None:
         answer = compose()
         self.assertIs(True, answer["ok"])
@@ -440,7 +511,9 @@ class InjectionTest(unittest.TestCase):
 
 
 class LengthTest(unittest.TestCase):
-    LONG = "x" * 240
+    # Past the 800 a saved line may hold: the budget holds every correction saved words can be
+    # owed (`test_the_widest_dated_correction_composes`), so only wider lines reach its rules.
+    LONG = "x" * 900
     # The goal's own cap (owner, 2026-10-27), which the lines' budget grew by.
     GOAL = "x" * 1_000
 
@@ -465,9 +538,9 @@ class LengthTest(unittest.TestCase):
         kept = [k for k in range(2, 7) if f"- {k}{self.LONG[1:]}" in text]
         self.assertLess(len(kept), 5)
         self.assertEqual(list(range(2, 2 + len(kept))), kept, "dropped from the end")
-        # The lines keep their 2,760; the departure's explanation is outside that budget.
+        # The lines keep their 6,560; the departure's explanation is outside that budget.
         self.assertIn(f"{WHY}{DETAIL}", text)
-        self.assertLessEqual(self.widest(answer["parts"]) - len(f"{WHY}{DETAIL}"), 2760)
+        self.assertLessEqual(self.widest(answer["parts"]) - len(f"{WHY}{DETAIL}"), 6560)
 
     def test_still_too_long_without_them_it_is_refused_with_a_sentence(self) -> None:
         row = session_row(annotation_goal=self.GOAL, annotation_assessment=None)
@@ -478,7 +551,7 @@ class LengthTest(unittest.TestCase):
             {
                 "ok": False,
                 "reason": "too-long",
-                "why": "Your goal and lines would be longer than 2,760 characters. "
+                "why": "Your goal and lines would be longer than 6,560 characters. "
                 "Shorten a line of your intent.",
             },
             answer,
@@ -486,7 +559,7 @@ class LengthTest(unittest.TestCase):
 
     def test_a_placeholder_adds_no_width(self) -> None:
         # The page draws nothing for a placeholder since the owner's ruling of 2026-10-20, so the
-        # lines' 2,760 is the text itself, to the character.
+        # lines' 6,560 is the text itself, to the character.
         facts = (check("c-fail", 118, "failed"), fact("d1", 114, "user_message"))
 
         def with_goal(size: int) -> dict[str, Any]:
@@ -500,10 +573,10 @@ class LengthTest(unittest.TestCase):
             return compose(row, facts)
 
         base = len(words(with_goal(1)["parts"])) - 1
-        fits = with_goal(2760 - base)
+        fits = with_goal(6560 - base)
         self.assertIs(True, fits["ok"])
-        self.assertEqual(2760, self.widest(fits["parts"]))
-        self.assertEqual("too-long", with_goal(2760 - base + 1)["reason"])
+        self.assertEqual(6560, self.widest(fits["parts"]))
+        self.assertEqual("too-long", with_goal(6560 - base + 1)["reason"])
 
 
 class ExplanationTest(unittest.TestCase):
@@ -679,7 +752,7 @@ class ExplanationCapTest(unittest.TestCase):
             + correction.QUOTES_MAX * correction.QUOTE_MAX_CHARS,
             correction.CAP_CHARS,
         )
-        self.assertEqual(5900, correction.CAP_CHARS)
+        self.assertEqual(9700, correction.CAP_CHARS)
         # The producer stores a detail at this bound, so the room is never narrower than it.
         self.assertEqual(make_config().annotation_text_cap_chars, correction.EXPLANATION_TEXT_CHARS)
 

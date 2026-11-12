@@ -54,6 +54,7 @@ def read(
         detail_cap_chars=200,
         window_start=50.0,
         recorded=reading.recorded_from(facts, "claude", "s1"),
+        line_cap_chars=800,
     )
 
 
@@ -278,6 +279,7 @@ def read_codex(
         detail_cap_chars=200,
         window_start=50.0,
         recorded=reading.recorded_from(facts, "codex", "s1"),
+        line_cap_chars=800,
     )["line_1"]
 
 

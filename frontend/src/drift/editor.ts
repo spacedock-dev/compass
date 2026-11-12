@@ -9,8 +9,8 @@ import type { DriftCtx } from './state';
 
 /* The correction's native editor, as the browser edits it. A textarea keeps its own caret, selection, undo
    history and input-method composition for as long as the same node stays in the document, so everything
-   here exists to keep that true while the page enforces a cap the browser does not know about: the 5,900
-   code points the copy route accepts.
+   here exists to keep that true while the page enforces a cap the browser does not know about: the
+   `CORRECTION_CAP` code points the copy route accepts.
 
    The cap is enforced before the browser inserts, through its own edit command, so the insertion stays in
    the browser's undo transaction; assigning `.value` afterwards erased the preceding edit as well (measured
@@ -147,8 +147,8 @@ export function attachEditor(
     }
   };
 
-  /* The correction box, edited in place with no redraw of the box itself. Capped at the copy route's 5,900
-     characters, counted as the server counts them, cut from what the edit inserted and never from the text
+  /* The correction box, edited in place with no redraw of the box itself. Capped at the copy route's
+     `CORRECTION_CAP` characters, counted as the server counts them, cut from what the edit inserted and never from the text
      already there; an edit makes the text the reader's own and clears the Copy cue, which described the text
      before it. */
   const onInput = (event: Event): void => {

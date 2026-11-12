@@ -287,6 +287,7 @@ class CompleteReadingSourceTest(CompleteReadingSourceFixture):
             lines=selection.lines,
             detail_cap_chars=200,
             recorded=reading.recorded_from(facts, "claude", SHORT),
+            line_cap_chars=800,
         )["line_1"]
 
     def test_native_push_evidence_preserves_resolver_outcomes_and_vendor_tail_filter(self) -> None:

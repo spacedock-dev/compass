@@ -18,6 +18,7 @@ import {
   directionLinesQuestion,
   directionWhy,
   intentChanges,
+  intentOverLimit,
   linesDraft,
   linesToSend,
   intentDrafted,
@@ -65,7 +66,7 @@ function Footer() {
   const saving = useDisplayed((snapshot) => snapshot.pending.includes(`${key}:save`));
   const kind = saving ? '' : ctx.held.kind(key);
   const cue = [
-    heldSentence(kind, null),
+    heldSentence(kind, null, ctx.held.refusals.get(key)),
     (kind === 'saved' || isReadsFrom(kind)) && endedAt(session) !== null ? ENDED_CAVEAT : '',
   ]
     .filter(Boolean)
@@ -81,7 +82,8 @@ function Footer() {
     !line.pending &&
     !question &&
     [INTENT_EDITED_ADD, ''].includes(directionWhy(line, input, heldCap(input.payload)));
-  const saveLive = ((changes.any || changes.adoptable) && !question) || lineLive;
+  const saveLive =
+    !intentOverLimit(input) && (((changes.any || changes.adoptable) && !question) || lineLive);
   /* Offered only over words that are saved: the first save opens the window by itself, so beside it the
      choice would be a second button for one act. `revision_count` is the store's own count and is 0 for none. */
   const reopenable =

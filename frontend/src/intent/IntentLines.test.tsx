@@ -144,3 +144,104 @@ describe('the outcome checklist', () => {
     expect(goalBox().value).toBe('');
   });
 });
+
+describe('an over-limit paste stays visible', () => {
+  it('keeps 900 characters, blocks save, and unblocks at 800 without a reload', async () => {
+    const page = mountSession({ store: { goal: 'Saved', lines: ['Original'], revision: 2 } });
+    await settle(page);
+    type(lineBoxes()[0] as HTMLTextAreaElement, 'l'.repeat(900));
+    expect(lineBoxes()[0]?.value).toHaveLength(900);
+    expect(lineBoxes()[0]?.hasAttribute('maxlength')).toBe(false);
+    expect(text('[data-next-cockpit-held-line-count="0"]')).toBe('900 / 800');
+    expect(
+      document.querySelector('[data-next-cockpit-held-line-count="0"]')?.getAttribute('data-over'),
+    ).toBe('true');
+    expect(text('.next-cockpit-held')).toContain('Line 1 is 900 characters; the limit is 800.');
+    expect(inert(control('held-save'))).toBe(true);
+    await press(control('held-save'));
+    expect(page.posts()).toBe(0);
+    type(lineBoxes()[0] as HTMLTextAreaElement, 'l'.repeat(800));
+    expect(inert(control('held-save'))).toBe(false);
+    expect(text('.next-cockpit-held')).not.toContain('Line 1 is 900');
+    fireEvent.keyDown(lineBoxes()[0] as HTMLTextAreaElement, { key: 'Escape' });
+    await settle(page);
+    expect(lineBoxes()[0]?.value).toBe('Original');
+  });
+
+  it('says the over-limit sentence once as a box goes over, not on every keystroke past it', async () => {
+    const page = mountSession({ store: { goal: 'Saved', lines: ['Original'], revision: 2 } });
+    await settle(page);
+    const region = document.querySelector('#next-cockpit-cue-status') as HTMLElement;
+    const line = () => lineBoxes()[0] as HTMLTextAreaElement;
+    type(line(), 'l'.repeat(800));
+    expect(region.textContent).toBe('');
+    type(line(), 'l'.repeat(900));
+    expect(region.textContent).toBe('Line 1 is 900 characters; the limit is 800.');
+    region.textContent = '';
+    type(line(), 'l'.repeat(1286));
+    expect(region.textContent).toBe('');
+    type(line(), 'l'.repeat(10));
+    type(line(), 'l'.repeat(900));
+    expect(region.textContent).toBe('Line 1 is 900 characters; the limit is 800.');
+    region.textContent = '';
+    type(goalBox(), 'g'.repeat(1100));
+    expect(region.textContent).toBe('The goal is 1,100 characters; the limit is 1,000.');
+    region.textContent = '';
+    type(goalBox(), 'g'.repeat(1101));
+    expect(region.textContent).toBe('');
+  });
+
+  it('counts 800 emoji as 800 characters, as the store does', async () => {
+    const page = mountSession({ store: { goal: 'Saved', lines: ['Original'], revision: 2 } });
+    await settle(page);
+    type(lineBoxes()[0] as HTMLTextAreaElement, '😀'.repeat(800));
+    expect(lineBoxes()[0]?.value).toBe('😀'.repeat(800));
+    expect(text('[data-next-cockpit-held-line-count="0"]')).toBe('800 / 800');
+    expect(inert(control('held-save'))).toBe(false);
+  });
+
+  it.each([
+    [
+      { code: 'line_too_long', line: 1, length: 900, cap: 800 },
+      'Not saved: line 1 is 900 characters; the limit is 800.',
+    ],
+    [{ code: 'too_many_lines', count: 7, max: 6 }, 'Not saved: at most 6 lines.'],
+    [{ code: 'unmatchable_session' }, 'Not saved: that session id is not one the board shows.'],
+  ])('shows the reason a server refused a save', async (reason, sentence) => {
+    const page = mountSession({
+      store: { goal: 'Saved', lines: ['Original'], revision: 2 },
+      routes: {
+        '/api/annotate': () => json({ ok: true, outcome: 'refused', persisted: false, reason }),
+      },
+    });
+    await settle(page);
+    type(lineBoxes()[0] as HTMLTextAreaElement, 'Changed');
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('.next-cockpit-held-footer .next-cockpit-held-cue')).toBe(sentence);
+    expect(lineBoxes()[0]?.value).toBe('Changed');
+  });
+});
+
+describe('a refused adoption also names its reason', () => {
+  it('keeps the drafted goal and shows the refused identity', async () => {
+    const page = mountSession({
+      routes: {
+        '/api/annotate': () =>
+          json({
+            ok: true,
+            outcome: 'refused',
+            persisted: false,
+            reason: { code: 'unmatchable_session' },
+          }),
+      },
+    });
+    await settle(page);
+    await press(control('held-save'));
+    await settle(page);
+    expect(text('.next-cockpit-held-footer .next-cockpit-held-cue')).toBe(
+      'Not saved: that session id is not one the board shows.',
+    );
+    expect(goalBox().value).toBe('Ship the queue worker');
+  });
+});

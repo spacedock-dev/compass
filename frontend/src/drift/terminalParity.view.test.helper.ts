@@ -61,6 +61,7 @@ function whyToken(sentence: string): string {
 
 function limitToken(sentence: string): string {
   if (!sentence) return '';
+  if (sentence === STORED_WHY['lines-no-room']) return 'lines-no-room';
   return sentence === STORED_WHY['not-asked'] ? 'not-asked' : 'route';
 }
 

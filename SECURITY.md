@@ -2676,7 +2676,7 @@ flag says one is expected, so "the Set-Cookie: header" and "Fix the password: ha
 of the break, with a zero-width space, soft hyphen and the other invisible characters that can
 hide a flag removed first, while the joiners that spell words and emoji are kept), then redacted by
 shape like every published string, with line breaks and control characters as spaces, bounded at 2,000 characters with a flag saying whether
-it was clipped (a message the record reader already cut at that bound counts as clipped), and a flag saying whether the store would take it as a line (at most 240
+it was clipped (a message the record reader already cut at that bound counts as clipped), and a flag saying whether the store would take it as a line (at most 800
 characters). It returns nothing for a message that is not a person's message in that session's
 own record, one not later than the words it would join, or one beyond the bounded source search.
 Every refusal is an HTTP 200 body. `not_found` covers an unverified source or a
@@ -2710,7 +2710,7 @@ DEC-24 item 4 forbids saving.
 The second is the `add_direction` field of a `POST /api/annotate` body, with the reader's edited
 text. The server checks the fact again exactly as the first request did, so the only claim it
 mints is that the line was added from that entry. The text is saved under the typed-line rules: at
-most 240 characters and one line, refused rather than clipped. A full list of six is refused
+most 800 characters and one line, refused rather than clipped. A full list of six is refused
 unless the body names the line to replace, so a reader's own line is written away only when they
 chose it, and every request names the revision it was drafted against. The line, the settlement
 through that direction's time and, over an unsaved draft, the adopted goal go in one store write.
@@ -2766,7 +2766,7 @@ unknown session answer one `409 not-running` body, so the route says nothing abo
 exist. It writes no consent and reserves nothing.
 
 The copied-correction route. `POST /api/correction/copied` names a session
-and the exact text the reader copied, at most 5,900 characters, and the server records its digest:
+and the exact text the reader copied, at most 9,700 characters, and the server records its digest:
 a SHA-256 of the text after one normalisation, applied to both sides, which is what Claude Code
 2.1.283 was measured doing to a paste: CRLF and CR become LF, a tab becomes four spaces, and
 whitespace is trimmed at both ends. It also records a second digest of the same text with every run of
@@ -2851,13 +2851,13 @@ A fourth exception since 2026-10-28: a departure that cites a CI check the press
 `, where CI check "<name>" failed on the pull request` (or `passed`), after the line's time. The name
 comes from the stored reading's `ci` record, not from the session, and is the closed-character-set name
 that record keeps (`ci_read.check_name`), at most 80 characters, passed through the same neutralising as
-a quoted title, and set inside the room a quote already has, so the 5,900-character cap does not move. It
+a quoted title, and set inside the room a quote already has, so the 9,700-character cap does not move. It
 is repository-controlled text, so read the correction before pasting it, as "Pull request CI reads" says. A command, a path and tool output are still never quoted. Each entry travels as its
 time, drawn in the zone the page sends (`utc_offset_minutes`, refused unless a whole offset within
 16 hours of UTC, and the server's own clock when absent), and a placeholder holding its fact id,
-which the page draws as nothing. A reply's lines are at most 2,760 characters, each of at most
+which the page draws as nothing. A reply's lines are at most 6,560 characters, each of at most
 eight explanations has 277 more and each of at most seven quotes 132 more, so a reply is at most
-5,900 characters and is never truncated: lines over their 2,760 drop the consistent ones and then answer a refusal sentence. It stores nothing of
+9,700 characters and is never truncated: lines over their 6,560 drop the consistent ones and then answer a refusal sentence. It stores nothing of
 its own: it reads, and the collection it runs to read the session may rewrite the semantic history
 store, as `POST /api/direction`'s does. It is guarded as `POST /api/direction` is, reads Claude Code sessions only, and answers one body for an
 unknown session, another harness, and a session with nothing to steer from alike. The reader edits
@@ -4436,7 +4436,7 @@ The allowlist, one line per field:
   `annotations.annotate` before either bound is applied, and kept so the words a reading was read
   against reopen after a restart and after the live row leaves the board.
 - `annotation_line_1`, the first line of the expected outcome: one thing the reader typed the
-  session should produce, at most 240 characters on one line as the annotation store bounds it and
+  session should produce, at most 800 characters on one line as the annotation store bounds it and
   at most 256 as this store does. Same redaction and same reason as the goal.
 - `annotation_line_2`, the second outcome line. Same bound, same redaction, same reason.
 - `annotation_line_3`, the third outcome line. Same bound, same redaction, same reason.

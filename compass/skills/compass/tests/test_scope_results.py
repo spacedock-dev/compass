@@ -141,6 +141,7 @@ class NotReachedIsNeitherUnverifiableNorADeparture(unittest.TestCase):
             lines=["Merged"],
             detail_cap_chars=200,
             scope=scope,
+            line_cap_chars=800,
         )
 
     def test_a_cited_neutral_result_keeps_its_explanation(self) -> None:
@@ -265,6 +266,7 @@ class NotReachedIsNeitherUnverifiableNorADeparture(unittest.TestCase):
                 goal="Ship",
                 detail_cap_chars=200,
                 window_start=floor,
+                line_cap_chars=800,
             )
             self.assertEqual(got["goal"].get("result"), reading.RESULT_UNVERIFIABLE)
             self.assertEqual(got["goal"]["detail"], "")
@@ -282,6 +284,7 @@ class NotReachedIsNeitherUnverifiableNorADeparture(unittest.TestCase):
             reading.Selection((agent,)),
             goal="Ship",
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(got["goal"].get("result"), reading.RESULT_UNVERIFIABLE)
         self.assertEqual(got["goal"]["detail"], "")

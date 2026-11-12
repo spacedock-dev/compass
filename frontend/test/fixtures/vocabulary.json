@@ -160,7 +160,7 @@
     "failed flag": "exited non-zero; Compass does not know what it checks",
     "passed flag": "exited 0; Compass does not know what it checks"
   },
-  "correctionCapChars": 5900,
+  "correctionCapChars": 9700,
   "criterionKeys": [
     "result",
     "cites",
@@ -315,6 +315,7 @@
   "whyStands": "",
   "whyTokens": [
     "not-asked",
+    "lines-no-room",
     "unreadable",
     "uncited",
     "no-work-shown",

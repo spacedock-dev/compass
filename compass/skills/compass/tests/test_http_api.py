@@ -6542,6 +6542,23 @@ class ReadingRouteTest(unittest.TestCase):
         self.assertEqual(0, answer["used"])
 
 
+class AnnotationBodyBudgetTest(unittest.TestCase):
+    def test_widest_annotate_body_fits_the_cap(self) -> None:
+        body = json.dumps(
+            {
+                "harness": "claude",
+                "sid": "s" * 64,
+                "goal": "\x00" * 1000,
+                "lines": ["\x00" * 800] * 6,
+                "origins": [None] * 6,
+                "expected_revision": 9_007_199_254_740_991,
+                "read_from_now": True,
+            },
+            separators=(",", ":"),
+        ).encode()
+        self.assertLessEqual(len(body), make_runtime()[0].annotation_body_cap_bytes)
+
+
 class AnnotateRouteTest(unittest.TestCase):
     """POST /api/annotate over a real socket.
 

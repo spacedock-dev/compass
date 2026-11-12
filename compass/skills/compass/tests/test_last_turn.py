@@ -97,6 +97,7 @@ ADMITTED = reading.ToolOutput(destination="Anthropic", label="Claude Code", tail
 
 class _Config:
     reading_settle_sec = SETTLE
+    annotation_line_cap_chars = 800
     annotation_text_cap_chars = 240
     annotation_goal_cap_chars = 1_000
 
@@ -894,6 +895,7 @@ class AReadingCitesNothingFromBeforeItsWindowTest(_PressCase):
             lines=["tests pass"],
             detail_cap_chars=240,
             window_start=150.0,
+            line_cap_chars=800,
         )
 
     def ledger_row(self, fact_id: str, at: float, **over: Any) -> reading.LedgerEntry:

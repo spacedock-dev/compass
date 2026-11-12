@@ -245,6 +245,7 @@ class FinalCallTest(unittest.TestCase):
             stop_reason=lambda: self.stop,
             on_observation=self.fixture.observe,
             detail_cap_chars=240,
+            line_cap_chars=800,
         )
 
     def test_reserved_seventeenth_slot_cites_original_middle_and_preserves_map_accounting(

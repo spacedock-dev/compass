@@ -220,6 +220,7 @@ class UsefulLongReconciliationTest(unittest.TestCase):
             stop_reason=lambda: None,
             detail_cap_chars=240,
             on_observation=self.marker.observe,
+            line_cap_chars=800,
         )
 
     def test_three_megabyte_actual_plan_retains_middle_check_departure_without_global_reassurance(

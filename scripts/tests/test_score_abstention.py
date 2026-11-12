@@ -67,9 +67,10 @@ def _collect(sink: list[str]) -> Callable[..., None]:
 
 
 class _Config:
-    """The two fields `reading.produce` reads, and nothing else it could reach."""
+    """Only the reading configuration the scorer's producer can reach."""
 
     reading_settle_sec = 8.0
+    annotation_line_cap_chars = 800
     annotation_text_cap_chars = 240
     annotation_goal_cap_chars = 1_000
 

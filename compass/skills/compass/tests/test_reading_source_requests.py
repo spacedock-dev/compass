@@ -411,6 +411,7 @@ class RecoveredRequestSourcesTest(unittest.TestCase):
                 "ci_read": "off",
             },
             now=saved + 120,
+            prompt_bytes=512 * 1024,
             recovered_sources=collection.recovered_sources,
         )
         self.assertEqual("", preparation.reason)

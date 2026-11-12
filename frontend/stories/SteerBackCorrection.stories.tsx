@@ -134,9 +134,9 @@ export const TwoDeparturesEachExplained: Story = {
       (node) => node.lastElementChild?.textContent ?? '',
     );
     await expect(whys).toEqual([GOAL_WHY, LINE_WHY]);
-    await expect(within(canvasElement).getByText(/^\d+\/5900$/)).toHaveTextContent(
-      `${String([...box.value].length)}/${String(CORRECTION_CAP)}`,
-    );
+    await expect(
+      within(canvasElement).getByText(new RegExp(`^\\d+/${String(CORRECTION_CAP)}$`)),
+    ).toHaveTextContent(`${String([...box.value].length)}/${String(CORRECTION_CAP)}`);
     await noOpeningLine(box);
   },
 };
@@ -265,7 +265,7 @@ export const AnInjectionInTheExplanationIsInert: Story = {
 
 /* The cap: every explanation a correction can carry (the goal, six lines and a contradicted claim) and every
    quote of the agent's own words (the goal and six lines), each at its widest, over lines at their own 2,000.
-   A placeholder is drawn as nothing (owner, 2026-10-20). The page holds it whole, counts it against 5,900, and
+   A placeholder is drawn as nothing (owner, 2026-10-20). The page holds it whole, counts it against `CORRECTION_CAP`, and
    a paste past the cap keeps the composed text and stops at the cap. */
 const PLACEHOLDER_MAX = 0;
 const EXPLAINED =
@@ -338,7 +338,7 @@ export const TheCapHoldsEveryExplanation: Story = {
     await expect(box.rows).toBe(16);
     const length = [...box.value].length;
     await expect(length).toBeLessThanOrEqual(CORRECTION_CAP);
-    const count = within(canvasElement).getByText(/^\d+\/5900$/);
+    const count = within(canvasElement).getByText(new RegExp(`^\\d+/${String(CORRECTION_CAP)}$`));
     await expect(count).toHaveTextContent(`${String(length)}/${String(CORRECTION_CAP)}`);
     const composedText = box.value;
     box.focus();

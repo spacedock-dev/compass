@@ -83,6 +83,7 @@ def read(
         detail_cap_chars=200,
         window_start=50.0,
         recorded=reading.recorded_from([*facts, *unsent], "claude", "s1"),
+        line_cap_chars=800,
     )
 
 
@@ -307,7 +308,9 @@ class TheGoalIsConsistentOnlyBesideConsistentLines(unittest.TestCase):
             json.dumps({"goal": {"result": "consistent", "cites": [2]}}),
             reading.constraints_for(selection.lines, claims=selection.asked_claims),
         )
-        out = reading.resolve(parsed, selection, goal=GOAL, lines=self.LINES, detail_cap_chars=200)
+        out = reading.resolve(
+            parsed, selection, goal=GOAL, lines=self.LINES, detail_cap_chars=200, line_cap_chars=800
+        )
         self.assertEqual(reading.WHY_CHECKS_NOT_READ, out["line_1"]["why"])
         self.assertEqual(reading.RESULT_CONSISTENT, out["goal"]["result"])
 

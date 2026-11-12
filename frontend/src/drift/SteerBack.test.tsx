@@ -1,6 +1,7 @@
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { RecordedRequest } from '../intent/testing';
+import { CORRECTION_CAP } from './sentences';
 import { byAction, check, driftBoard, fact, json, mountDrift, press, textOf } from './testing';
 
 const ASSESSMENT = {
@@ -108,9 +109,9 @@ describe('Steer back', () => {
     await act(async () => {
       fireEvent.input(field);
     });
-    expect(textOf('[data-next-correction-count]')).toBe('1000/5900');
+    expect(textOf('[data-next-correction-count]')).toBe(`1000/${String(CORRECTION_CAP)}`);
     const before = field.value;
-    field.value = `${before}${'x'.repeat(5000)}`;
+    field.value = `${before}${'x'.repeat(CORRECTION_CAP)}`;
     await act(async () => {
       fireEvent.input(field);
     });
@@ -341,7 +342,9 @@ describe('a correction the reader opened follows the record, honestly', () => {
     /* Untouched, the box follows the record and is rebuilt in place: it stays mounted and only its text is
        re-keyed, so the count has to follow the new text and not the one it was first given. */
     const first = [...(box()?.value ?? '')].length;
-    expect(textOf('[data-next-correction-count]')).toBe(`${String(first)}/5900`);
+    expect(textOf('[data-next-correction-count]')).toBe(
+      `${String(first)}/${String(CORRECTION_CAP)}`,
+    );
     const moved = { ...ASSESSMENT, read_at: 1100 };
     await page.poll({
       ...driftBoard({ session: { ...session, annotation_assessment: moved } }),
@@ -350,7 +353,7 @@ describe('a correction the reader opened follows the record, honestly', () => {
     await page.settle();
     const now = [...(box()?.value ?? '')].length;
     expect(now).toBeGreaterThan(first);
-    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/5900`);
+    expect(textOf('[data-next-correction-count]')).toBe(`${String(now)}/${String(CORRECTION_CAP)}`);
   });
 
   it('asks once while the recomposition is out, however many boards arrive meanwhile', async () => {

@@ -370,6 +370,7 @@ class AnOutcomeLineRestsOnWhatTheAgentSaidTest(unittest.TestCase):
             goal="ship the retry",
             lines=("the retry backs off",),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
 
     def test_a_line_departure_citing_only_an_agent_message_gives_way(self) -> None:
@@ -600,6 +601,7 @@ class OnlyTheAgentsMessagesJoinWorkTest(unittest.TestCase):
                     goal="g",
                     lines=("the retry backs off",),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )["line_1"]
                 self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
                 self.assertEqual(reading.WHY_NO_WORK_SHOWN, row["why"])
@@ -686,6 +688,7 @@ class ATellingLineNeedsAMessageAfterTheRunTest(unittest.TestCase):
             goal="g",
             lines=(self.LINE,),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
 
     def test_a_message_before_the_cited_check_is_withdrawn(self) -> None:

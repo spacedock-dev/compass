@@ -122,7 +122,7 @@ describe('the annotation reader agrees with the legacy page over generated rows'
     for (const [name, count] of Object.entries(seen)) expect(count, name).toBeGreaterThan(0);
   });
 
-  it('collapses the same characters the legacy box does and caps at the same number', () => {
+  it('collapses the same characters the legacy box does and uses the published cap with the new 800-character fallback', () => {
     const rnd = mulberry32(7);
     expect(HELD_UNSAFE.source).toBe(
       legacy
@@ -134,7 +134,10 @@ describe('the annotation reader agrees with the legacy page over generated rows'
       legacy.setData({ annotate_cap: pick(rnd, [undefined, 0, -3, 12.4, 'x', 240, 500]) });
       const cap = legacy.run<number>('nextCockpitHeldCap()');
       const payload = legacy.run<{ annotate_cap?: unknown }>('nextData');
-      expect(heldCap(payload as Record<string, unknown>)).toBe(cap);
+      const published = Number(payload.annotate_cap);
+      expect(heldCap(payload as Record<string, unknown>)).toBe(
+        Number.isFinite(published) && published > 0 ? cap : 800,
+      );
     }
     expect(genAnnotationFields(rnd)).toBeTypeOf('object');
   });

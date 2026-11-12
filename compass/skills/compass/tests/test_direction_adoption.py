@@ -54,11 +54,11 @@ HOLD_SEC = 2 * WAIT_SEC
 FIRST = "Add retry with backoff to the webhook handler."
 FIRST_AT = START.timestamp() + 5
 NOW = START.timestamp() + 3600
-# A 300-character, two-line direction: over the 240 a line may hold, so it
+# A 900-character, two-line direction: over the 800 a line may hold, so it
 # opens for review and can never be saved as it is.
 LONG = (
     "Use the placeholder lexer for every token in the fixture. "
-    + "x" * 180
+    + "x" * 780
     + ("\nThen keep the parser tests exactly as they are today, please.")
 )
 

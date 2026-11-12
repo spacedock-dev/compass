@@ -275,8 +275,9 @@ class OneControlRuleForTheGoalAndTheInstructionLineTest(_SlashSession):
 # Over the record reader's 2,000 characters, so the cut lands inside `<command-args>` and its
 # closing tag never arrives: 2 of the 1,477 measured prompt commands.
 HUGE_ARGS = " ".join(f"word{n}" for n in range(400)) + " FINAL"
-# About 300 characters: whole, but more than a summary or an outcome line holds.
-WIDE_ARGS = " ".join(f"step{n:03d}" for n in range(37))
+# About 900 characters: whole (under the record reader's 2,000), but more than a summary or an
+# outcome line (800) holds.
+WIDE_ARGS = " ".join(f"step{n:03d}" for n in range(110))
 
 
 class ACommandIsNeverShownWholeWhenItWasCutTest(_SlashSession):
@@ -333,7 +334,7 @@ class ACommandIsNeverShownWholeWhenItWasCutTest(_SlashSession):
 
     def test_a_whole_wide_command_reaches_add_and_the_ledger_whole(self) -> None:
         typed = f"/pr-review-response {WIDE_ARGS}"
-        self.assertGreater(len(typed), 290)
+        self.assertGreater(len(typed), 800)
         fact, body = self.opened(WIDE_ARGS)
         got = {key: body[key] for key in ("text", "clipped", "fits")}
         self.assertEqual({"text": typed, "clipped": False, "fits": False}, got)

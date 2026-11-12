@@ -132,10 +132,10 @@ LINE_ENTRY = "entry"
 LINE_SOURCES = (LINE_TYPED, LINE_ENTRY)
 
 # How much of a later direction's text `POST /api/direction` hands back for
-# review. Not the 240 a line holds: the reader edits a long direction down to
+# review. Not the 800 a line holds: the reader edits a long direction down to
 # one line, so the page must see more than fits, and a direction that is a
 # pasted log need not cross the wire whole. A clipped answer says so and can
-# never be saved as it is, because the store refuses a line over 240.
+# never be saved as it is, because the store refuses a line over 800.
 DIRECTION_TEXT_CAP_CHARS = 2000
 # One sentence for every direction the route will not open: an unknown session
 # or fact, another session's entry, one that is not a person's message, one
@@ -1051,7 +1051,9 @@ def _goal_verdict(value: Any) -> reading.GoalVerdictCheck | None:
     return checked
 
 
-def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.Assessment | None:
+def _assessment(
+    value: Any, cap: int, goal_cap: int | None = None, line_cap: int | None = None
+) -> reading.Assessment | None:
     """One untrusted reading, or nothing at all.
 
     Dropped WHOLE on any failure, except that a malformed `goal_verdict` is
@@ -1076,7 +1078,7 @@ def _assessment(value: Any, cap: int, goal_cap: int | None = None) -> reading.As
         or scope not in reading.SCOPE_TEXT
     ):
         return None
-    criteria = _criteria(value.get("criteria"), cap, goal_cap)
+    criteria = _criteria(value.get("criteria"), cap, goal_cap, line_cap)
     coverage = reading.validate_coverage(value["coverage"]) if "coverage" in value else None
     verdict = _goal_verdict(value["goal_verdict"]) if "goal_verdict" in value else None
     ci = ci_read.validate(value["ci"]) if "ci" in value else None
@@ -1147,7 +1149,7 @@ def _goal_unclear_elsewhere(
 
 
 def _criteria(
-    value: Any, cap: int, goal_cap: int | None = None
+    value: Any, cap: int, goal_cap: int | None = None, line_cap: int | None = None
 ) -> dict[str, reading.Criterion] | None:
     """A reading's criteria, keyed goal, each line in order, then any claims, or nothing.
 
@@ -1163,7 +1165,15 @@ def _criteria(
         return None
     parsed: dict[str, reading.Criterion] = {}
     for name, raw in value.items():
-        criterion = _criterion(raw, cap, goal_cap if name == reading.CONSTRAINT_GOAL else None)
+        criterion = _criterion(
+            raw,
+            cap,
+            goal_cap
+            if name == reading.CONSTRAINT_GOAL
+            else line_cap
+            if reading.is_outcome_line(str(name)) or name == reading.CONSTRAINT_OUTPUT
+            else None,
+        )
         if criterion is None:
             return None
         parsed[str(name)] = criterion
@@ -1251,7 +1261,9 @@ def _prior_departures(
     return tuple(placed[key] for key in _PRIOR_ORDER if key in placed)
 
 
-def _prior_departure(value: Any, cap: int, goal_cap: int | None) -> PriorDeparture | None:
+def _prior_departure(
+    value: Any, cap: int, goal_cap: int | None, line_cap: int | None = None
+) -> PriorDeparture | None:
     """One untrusted stored earlier departure, or nothing.
 
     Through the reading's own `_criterion`, so the redaction, the caps and the closed `why` set
@@ -1274,7 +1286,7 @@ def _prior_departure(value: Any, cap: int, goal_cap: int | None) -> PriorDepartu
     ):
         return None
     criterion = _criterion(
-        value["criterion"], cap, goal_cap if key == reading.CONSTRAINT_GOAL else None
+        value["criterion"], cap, goal_cap if key == reading.CONSTRAINT_GOAL else line_cap
     )
     if criterion is None or criterion.get("result") != reading.RESULT_DEPARTURE:
         return None
@@ -1366,7 +1378,12 @@ def _discard_record(value: dict[str, Any], harness: str, sid: str) -> Annotation
 
 
 def _entry(
-    value: Any, *, text_cap: int, revision_cap: int, goal_cap: int | None = None
+    value: Any,
+    *,
+    text_cap: int,
+    revision_cap: int,
+    goal_cap: int | None = None,
+    detail_cap: int,
 ) -> Annotation | None:
     """One untrusted record as an annotation, or nothing.
 
@@ -1407,7 +1424,7 @@ def _entry(
     settled = _settlement(value.get("settled"))
     if settled is not None:
         entry["settled"] = settled
-    assessment = _assessment(value.get("assessment"), text_cap, goal_cap)
+    assessment = _assessment(value.get("assessment"), detail_cap, goal_cap, text_cap)
     if assessment is not None:
         entry["assessment"] = assessment
     elif value.get("assessment") is not None:
@@ -1429,16 +1446,18 @@ def _entry(
     if value.get("not_accurate") is True and ("assessment" in entry or entry.get("refused")):
         entry["not_accurate"] = True
     if "assessment" in entry or entry.get("refused"):
-        _read_priors(entry, value.get("prior_departures"), text_cap, goal_cap)
+        _read_priors(entry, value.get("prior_departures"), detail_cap, goal_cap, text_cap)
     return _counters(entry, value)
 
 
-def _read_priors(entry: Annotation, stored: Any, cap: int, goal_cap: int | None) -> None:
+def _read_priors(
+    entry: Annotation, stored: Any, cap: int, goal_cap: int | None, line_cap: int | None = None
+) -> None:
     """Stored earlier departures onto the entry: beside a reading only, as the Not accurate mark
     is, and only where the words each was about still stand."""
     if not isinstance(stored, list):
         return
-    parsed = (_prior_departure(item, cap, goal_cap) for item in stored)
+    parsed = (_prior_departure(item, cap, goal_cap, line_cap) for item in stored)
     priors = _prior_departures((p for p in parsed if p is not None), entry["revisions"][-1])
     if priors:
         entry["prior_departures"] = priors
@@ -1716,7 +1735,8 @@ def _read_store(config: RuntimeConfig) -> _Store:
     for value in entries:
         entry = _entry(
             value,
-            text_cap=config.annotation_text_cap_chars,
+            text_cap=config.annotation_line_cap_chars,
+            detail_cap=config.annotation_text_cap_chars,
             revision_cap=config.annotation_max_revisions,
             goal_cap=config.annotation_goal_cap_chars,
         )
@@ -2850,7 +2870,7 @@ def annotate(  # noqa: PLR0913
         isinstance(expected_revision, bool) or not isinstance(expected_revision, int)
     ):
         return OUTCOME_REFUSED
-    aligned = _aligned_origins(origins, lines, config.annotation_text_cap_chars)
+    aligned = _aligned_origins(origins, lines, config.annotation_line_cap_chars)
     if aligned is False:
         return OUTCOME_REFUSED
     options: dict[str, Any] = {
@@ -3204,7 +3224,7 @@ def _annotate(  # noqa: PLR0913
     key = _key(*identity)
     if not config.annotations_enabled or not key[0] or not key[1]:
         return OUTCOME_REFUSED
-    cap = config.annotation_text_cap_chars
+    cap = config.annotation_line_cap_chars
     # Type-checked before redaction, not after. `records.safe_text` does
     # `str(value or "")`, so a dict arriving here would publish its Python repr
     # — with whatever is inside it — rather than being refused. `/api/ask`
@@ -4002,7 +4022,7 @@ def add_direction(  # noqa: PLR0913
     found `source_id` among this session's person-authored facts and re-read
     it from the record, so the claim minted is "added from that entry", on a
     fact the server verified. `text` is the reader's own review of it and goes
-    through `_typed_lines`, so a line over 240 characters is refused, never
+    through `_typed_lines`, so a line over 800 characters is refused, never
     clipped. The goal is kept; over an unsaved draft, `adopt` adopts the draft
     in the same write. The settlement through the entry's own time rides in
     that write too, so the direction the reader just answered does not ask
@@ -4013,7 +4033,7 @@ def add_direction(  # noqa: PLR0913
     """
     fact = records.safe_text(source_id, KEY_CAP_CHARS).strip() if isinstance(source_id, str) else ""
     texts = (
-        _typed_lines([text], config.annotation_text_cap_chars) if isinstance(text, str) else None
+        _typed_lines([text], config.annotation_line_cap_chars) if isinstance(text, str) else None
     )
     if (
         not fact
