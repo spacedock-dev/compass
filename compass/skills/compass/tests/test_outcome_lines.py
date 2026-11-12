@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import http.client
+import io
 import json
 import os
 import pathlib
@@ -20,6 +21,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
@@ -28,6 +30,7 @@ from compass_runtime import (
     cli,
     departures,
     history,
+    http_api,
     observer,
     reading,
     reading_route,
@@ -103,9 +106,14 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
 
     def test_a_240_character_line_is_kept_whole(self) -> None:
         line = "x" * 240
+        reason: dict[str, str | int] = {}
 
-        annotation_store.annotate(self.config, self.state, "claude", "s-1", lines=[line], now=NOW)
+        outcome = annotation_store.annotate(
+            self.config, self.state, "claude", "s-1", lines=[line], now=NOW, reason=reason
+        )
 
+        self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+        self.assertEqual({}, reason)
         self.assertEqual(line, self.entry()["revisions"][-1]["lines"][0]["text"])
 
     def test_a_session_with_no_lines_says_why_rather_than_rendering_blanks(self) -> None:
@@ -123,23 +131,53 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
         annotation_store.annotate(self.config, self.state, "claude", "s-1", lines=SIX, now=NOW)
         with open(annotation_store.store_path(self.config), "rb") as handle:
             before = handle.read()
+        reason: dict[str, str | int] = {}
 
         outcome = annotation_store.annotate(
-            self.config, self.state, "claude", "s-1", lines=[*SIX, "a seventh"], now=NOW + 1
+            self.config,
+            self.state,
+            "claude",
+            "s-1",
+            lines=[*SIX, "", "a seventh"],
+            now=NOW + 1,
+            reason=reason,
         )
 
         self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({"code": "too_many_lines", "count": 7, "max": 6}, reason)
         with open(annotation_store.store_path(self.config), "rb") as handle:
             self.assertEqual(before, handle.read())
         self.assertEqual(1, self.entry()["revisions"][-1]["n"])
 
     def test_a_line_over_240_characters_is_refused_rather_than_saved_clipped(self) -> None:
+        reason: dict[str, str | int] = {}
         outcome = annotation_store.annotate(
-            self.config, self.state, "claude", "s-1", lines=["y" * 241], now=NOW
+            self.config,
+            self.state,
+            "claude",
+            "s-1",
+            goal="Save the whole request",
+            lines=["", "short", "y" * 241],
+            now=NOW,
+            reason=reason,
         )
 
         self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({"code": "line_too_long", "line": 3, "length": 241, "cap": 240}, reason)
         self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_the_refusal_names_the_configured_line_cap(self) -> None:
+        config = dataclasses.replace(self.config, annotation_text_cap_chars=3)
+        reason: dict[str, str | int] = {}
+
+        outcome = annotation_store.annotate(
+            config, self.state, "claude", "s-1", lines=["four"], now=NOW, reason=reason
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({"code": "line_too_long", "line": 1, "length": 4, "cap": 3}, reason)
+        self.assertEqual((), annotation_store.load(config))
 
     def test_a_pasted_line_break_collapses_so_each_line_stays_one_line(self) -> None:
         annotation_store.annotate(
@@ -161,6 +199,48 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
 
         texts = [line["text"] for line in self.entry()["revisions"][-1]["lines"]]
         self.assertEqual(["one", "two"], texts)
+
+    def test_blank_lines_are_dropped_regardless_of_length(self) -> None:
+        blanks = {
+            "empty": "",
+            "at-cap": " " * 240,
+            "over-cap": " " * 241,
+            "long": " " * 5000,
+            "sanitized": "\u202e\x00\t\n" * 1000,
+        }
+        for name, blank in blanks.items():
+            with self.subTest(blank=name):
+                reason: dict[str, str | int] = {}
+                outcome = annotation_store.annotate(
+                    self.config,
+                    self.state,
+                    "claude",
+                    name,
+                    lines=[blank, *SIX],
+                    now=NOW,
+                    reason=reason,
+                )
+
+                self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+                self.assertEqual({}, reason)
+                texts = [line["text"] for line in self.entry(name)["revisions"][-1]["lines"]]
+                self.assertEqual(SIX, texts)
+
+    def test_a_nonblank_line_after_long_whitespace_is_still_refused(self) -> None:
+        reason: dict[str, str | int] = {}
+        outcome = annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            "s-1",
+            lines=[" " * 4000 + "x"],
+            now=NOW,
+            reason=reason,
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({"code": "line_too_long", "line": 1, "length": 4001, "cap": 240}, reason)
+        self.assertEqual((), annotation_store.load(self.config))
 
     def test_saving_the_same_list_again_mints_no_revision(self) -> None:
         annotation_store.annotate(self.config, self.state, "claude", "s-1", lines=SIX, now=NOW)
@@ -1867,6 +1947,7 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
 
         self.assertEqual(200, status)
         self.assertEqual("stored", json.loads(body)["outcome"])
+        self.assertIsNone(json.loads(body)["reason"])
         entry = annotation_store.find(annotation_store.load(self.config), "claude", "s-1")
         assert entry is not None
         self.assertEqual(SIX[:2], [line["text"] for line in entry["revisions"][-1]["lines"]])
@@ -1902,6 +1983,10 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
 
         self.assertEqual(200, status)
         self.assertEqual("refused", json.loads(body)["outcome"])
+        self.assertIs(False, json.loads(body)["persisted"])
+        self.assertEqual(
+            {"code": "too_many_lines", "count": 7, "max": 6}, json.loads(body)["reason"]
+        )
         self.assertEqual((), annotation_store.load(self.config))
 
     def test_a_non_integer_expected_revision_is_refused_with_400(self) -> None:
@@ -1958,6 +2043,357 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
         ).encode()
 
         self.assertLessEqual(len(body), self.config.annotation_body_cap_bytes)
+
+
+class AnnotateRefusalReasonsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        self.config, self.state = make_runtime(state_home=home, state_dir=Path(home))
+        self.application = cli.build_application(self.config, self.state, clock=lambda: NOW)
+
+    def post(self, body: bytes) -> tuple[int, bytes]:
+        handler: Any = object.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(application=self.application)
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler._send = mock.Mock()
+        handler._annotate()
+        handler._send.assert_called_once()
+        call = handler._send.call_args
+        return call.kwargs.get("code", 200), call.args[0]
+
+    def test_seven_nonblank_lines_name_the_count_and_store_nothing(self) -> None:
+        status, body = self.post(
+            json.dumps(
+                {"harness": "claude", "sid": "abcd1234", "lines": ["", *SIX, "seventh"]}
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertEqual({"code": "too_many_lines", "count": 7, "max": 6}, answer["reason"])
+        self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_an_overlong_line_names_its_posted_position_and_stores_nothing(self) -> None:
+        status, body = self.post(
+            json.dumps(
+                {
+                    "harness": "claude",
+                    "sid": "abcd1234",
+                    "goal": "Save the whole request",
+                    "lines": ["", "short", "x" * 286, "y" * 249, "z" * 140],
+                }
+            ).encode(),
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertIs(True, answer["ok"])
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertEqual(
+            {"code": "line_too_long", "line": 3, "length": 286, "cap": 240}, answer["reason"]
+        )
+        self.assertIsNone(answer["saved_revision"])
+        self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_an_overlong_redacted_line_reports_its_original_submitted_length(self) -> None:
+        line = "sk-" + "C" * 48 + " " + "x" * 250
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": "abcd1234", "lines": [line]}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertEqual(
+            {"code": "line_too_long", "line": 1, "length": 302, "cap": 240}, answer["reason"]
+        )
+        self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_redaction_that_exceeds_the_cap_reports_the_sanitized_length(self) -> None:
+        for suffix_length, sanitized_length in ((213, 242), (214, 243)):
+            with self.subTest(suffix_length=suffix_length):
+                line = "http://user:a@example.com/" + "x" * suffix_length
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": "claude",
+                            "sid": "abcd1234",
+                            "goal": "Save the whole request",
+                            "lines": [line],
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual(
+                    {
+                        "code": "line_too_long",
+                        "line": 1,
+                        "length": sanitized_length,
+                        "cap": 240,
+                    },
+                    answer["reason"],
+                )
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_seventh_line_with_a_goal_preserves_stored_and_cached_words(self) -> None:
+        self.post(
+            json.dumps(
+                {"harness": "claude", "sid": "abcd1234", "goal": "Original goal", "lines": SIX}
+            ).encode()
+        )
+        path = Path(annotation_store.store_path(self.config))
+        stored_before = path.read_bytes()
+        cached_before = json.dumps(annotation_store.active(self.config, self.state), sort_keys=True)
+
+        status, body = self.post(
+            json.dumps(
+                {
+                    "harness": "claude",
+                    "sid": "abcd1234",
+                    "goal": "Replacement goal",
+                    "lines": [*SIX, "seventh"],
+                    "expected_revision": 1,
+                }
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertEqual({"code": "too_many_lines", "count": 7, "max": 6}, answer["reason"])
+        self.assertEqual(1, answer["revision"])
+        self.assertIsNone(answer["saved_revision"])
+        self.assertEqual(stored_before, path.read_bytes())
+        self.assertEqual(
+            cached_before,
+            json.dumps(annotation_store.active(self.config, self.state), sort_keys=True),
+        )
+
+    def test_a_240_character_line_with_a_claude_board_sid_is_stored(self) -> None:
+        line = "x" * 240
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": "abcd1234", "lines": [line]}).encode(),
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIs(True, answer["persisted"])
+        self.assertIsNone(answer["reason"])
+        entry = annotation_store.find(annotation_store.load(self.config), "claude", "abcd1234")
+        assert entry is not None
+        self.assertEqual(line, entry["revisions"][-1]["lines"][0]["text"])
+
+    def test_a_full_claude_uuid_is_refused_with_a_reason_and_stores_nothing(self) -> None:
+        status, body = self.post(
+            json.dumps(
+                {
+                    "harness": "claude",
+                    "sid": "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "goal": "A goal that must reach a row",
+                }
+            ).encode(),
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertIs(True, answer["ok"])
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+        self.assertEqual((), annotation_store.load(self.config))
+        self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_full_claude_uuid_with_a_padded_harness_is_still_refused(self) -> None:
+        for harness in ("claude ", "\tclaude\t"):
+            with self.subTest(harness=harness):
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": harness,
+                            "sid": "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                            "goal": "A goal that must reach a row",
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_each_word_save_under_a_full_claude_uuid_is_unmatchable(self) -> None:
+        saves: dict[str, dict[str, Any]] = {
+            "lines": {"lines": ["Keep the public API"]},
+            "adopt": {
+                "adopt": "first-prompt",
+                "expected_prompt": "Keep the public API",
+                "expected_prompt_at": NOW - 10,
+                "expected_revision": 0,
+            },
+            "add_direction": {
+                "add_direction": "fact:later-direction",
+                "text": "Keep the public API",
+                "expected_revision": 0,
+            },
+        }
+        for name, save in saves.items():
+            with self.subTest(save=name):
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": "claude",
+                            "sid": "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                            **save,
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+                self.assertIsNone(answer["saved_revision"])
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_a_padded_valid_claude_identity_stores_under_the_normalized_key(self) -> None:
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": " \tabcd1234\t ", "goal": "Ship it"}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIs(True, answer["persisted"])
+        self.assertIsNone(answer["reason"])
+        self.assertEqual(1, answer["revision"])
+        entry = annotation_store.find(annotation_store.load(self.config), "claude", "abcd1234")
+        assert entry is not None
+        self.assertEqual("claude", entry["harness"])
+        self.assertEqual("abcd1234", entry["sid"])
+        self.assertEqual("Ship it", entry["revisions"][-1]["goal"])
+
+    def test_clear_discards_words_stored_under_a_legacy_full_claude_uuid(self) -> None:
+        sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        self.assertEqual(
+            annotation_store.OUTCOME_STORED,
+            annotation_store.annotate(
+                self.config, self.state, "claude", sid, goal="Legacy goal", lines=SIX, now=NOW
+            ),
+        )
+
+        status, body = self.post(
+            json.dumps(
+                {"harness": "claude", "sid": sid, "clear": True, "expected_revision": 1}
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIsNone(answer["reason"])
+        self.assertIsNotNone(answer["discarded"])
+        self.assertEqual(1, answer["removed"])
+        for entries in (
+            annotation_store.load(self.config),
+            annotation_store.active(self.config, self.state),
+        ):
+            entry = annotation_store.find(entries, "claude", sid)
+            assert entry is not None
+            self.assertEqual((), entry["revisions"])
+            self.assertTrue(annotation_store.is_discarded(entry))
+
+    def test_settling_a_legacy_full_claude_uuid_keeps_its_words(self) -> None:
+        sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        annotation_store.annotate(
+            self.config, self.state, "claude", sid, goal="Legacy goal", lines=SIX, now=NOW
+        )
+        before = annotation_store.find(annotation_store.load(self.config), "claude", sid)
+        assert before is not None
+
+        status, body = self.post(
+            json.dumps(
+                {"harness": "claude", "sid": sid, "settle_through": NOW, "expected_revision": 1}
+            ).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIsNone(answer["reason"])
+        after = annotation_store.find(annotation_store.load(self.config), "claude", sid)
+        assert after is not None
+        self.assertEqual(before["revisions"], after["revisions"])
+        self.assertEqual(NOW, after["settled"]["through"])
+
+    def test_a_non_claude_uuid_is_stored(self) -> None:
+        sid = "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        status, body = self.post(
+            json.dumps({"harness": "codex", "sid": sid, "goal": "Ship it"}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("stored", answer["outcome"])
+        self.assertIs(True, answer["persisted"])
+        self.assertIsNone(answer["reason"])
+        self.assertIsNotNone(
+            annotation_store.find(annotation_store.load(self.config), "codex", sid)
+        )
+
+    def test_legacy_output_uses_the_same_line_refusal(self) -> None:
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": "abcd1234", "output": "x" * 241}).encode()
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertEqual(
+            {"code": "line_too_long", "line": 1, "length": 241, "cap": 240}, answer["reason"]
+        )
+        self.assertEqual((), annotation_store.load(self.config))
+
+    def test_an_unchanged_save_answers_reason_null(self) -> None:
+        posted = json.dumps({"harness": "claude", "sid": "abcd1234", "goal": "Ship it"}).encode()
+        self.post(posted)
+        status, body = self.post(posted)
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("unchanged", answer["outcome"])
+        self.assertIs(True, answer["persisted"])
+        self.assertIsNone(answer["reason"])
+
+    def test_a_refusal_without_a_diagnostic_answers_reason_null(self) -> None:
+        status, body = self.post(
+            json.dumps({"harness": "claude", "sid": "abcd1234", "settle_through": NOW}).encode(),
+        )
+
+        self.assertEqual(200, status)
+        answer = json.loads(body)
+        self.assertEqual("refused", answer["outcome"])
+        self.assertIs(False, answer["persisted"])
+        self.assertIsNone(answer["reason"])
 
 
 class TheUnaskedSentenceSaysWhatTheLaneReadTest(unittest.TestCase):
