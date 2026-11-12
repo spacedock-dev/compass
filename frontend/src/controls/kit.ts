@@ -82,12 +82,11 @@ export type ValueStore<T> = ReturnType<typeof createValueStore<T>>;
    rendered tree for the reason every lane in docs/design-reader-state.md is. */
 export function createControls(deps: ControlsDeps) {
   let presses = 0;
-  /* One field edits at a time, as in the legacy page, and the editor outlives its node:
-     the key, the words the field held when editing began and whether it has taken
-     focus yet. Held here because the More menu opens it from outside the field. */
+  /* One field edits at a time; switching fields parks dirty drafts and originals until Done or Escape.
+     Keystrokes update this memory without notifying the strip and every other memo reader. */
+  const memoDrafts = new Map<string, { readonly original: string; draft: string }>();
   const memoEditing = createValueStore<{
     readonly key: string;
-    readonly original: string;
     readonly fresh: boolean;
   } | null>(null);
   const cues: KeyedState<CueState> = createKeyedState<CueState>({
@@ -114,13 +113,31 @@ export function createControls(deps: ControlsDeps) {
     memoEditing,
     /** Opens one human-context field for editing, remembering the words it held so Escape can put them back. */
     startMemoEdit(key: string): void {
-      memoEditing.set({ key, original: deps.memo.read(key), fresh: true });
+      const previous = memoEditing.get();
+      if (previous) {
+        const parked = memoDrafts.get(previous.key);
+        if (parked && parked.draft === parked.original) memoDrafts.delete(previous.key);
+      }
+      if (!memoDrafts.has(key)) {
+        const original = deps.memo.read(key, true);
+        memoDrafts.set(key, { original, draft: original });
+      }
+      memoEditing.set({ key, fresh: true });
     },
-    /** Closes the editor. Escape restores the original through the same memory-first write an edit uses; Done keeps what was typed. */
+    memoDraft: (key: string): string | undefined => memoDrafts.get(key)?.draft,
+    // An over-limit paste cannot autosave, but its words must still survive the editor unmounting.
+    setMemoDraft(key: string, draft: string): void {
+      const editing = memoDrafts.get(key);
+      if (editing) editing.draft = draft;
+    },
+    /** Closes the editor. Escape undoes this tab's edits unless another tab saved; Done keeps what was typed. */
     finishMemoEdit(options: { readonly restore: boolean }): MemoState | undefined {
       const editing = memoEditing.get();
       if (!editing) return undefined;
-      const state = options.restore ? deps.memo.write(editing.key, editing.original) : undefined;
+      const draft = memoDrafts.get(editing.key);
+      const state =
+        options.restore && draft ? deps.memo.restore(editing.key, draft.original) : undefined;
+      memoDrafts.delete(editing.key);
       memoEditing.set(null);
       return state;
     },

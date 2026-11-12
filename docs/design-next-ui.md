@@ -898,8 +898,10 @@ strengthens the demonstration rather than weakening it, because the control now 
 before it is pressed as well as after.
 
 Tripwire rules are viewer preferences. They are stored under a project-label key in the next
-bundle's localStorage namespace, capped at 50 rules of 500 characters, and kept in memory if storage
-throws. The project label is enough for a local browser preference. It is not stable enough for a
+bundle's localStorage namespace, capped at 50 rules of 2,000 UTF-16 units, and kept in memory if storage
+throws. An add at fifty refuses with a sentence and keeps the draft; it never evicts a saved rule.
+A paste over the text limit stays whole and blocks add, with a counter from 1,600 and a sentence naming
+the length and limit. The project label is enough for a local browser preference. It is not stable enough for a
 server store that changes what agents do. Stored values are untrusted input, so both loaded and new
 rules pass through the shared escaping function every time they render. The panel header and standing note
 say that no observer is enforcing them.

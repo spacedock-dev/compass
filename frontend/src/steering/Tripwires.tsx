@@ -1,11 +1,13 @@
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import type { FormEvent, KeyboardEvent } from 'react';
+import { useId, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { CharacterCount } from '../ui/CharacterCount';
 import { DraftInput } from '../controls/DraftField';
 import { useShell } from '../shell/context';
 import { useFocusKey } from '../controls/useFocusKey';
 import { useControls } from '../controls/kit';
 import { RailHeader } from './RailHeader';
+import { GUARDRAIL_LIMIT, type GuardrailChange, type GuardrailRule } from '../storage';
 import { TEXT_LIMIT, useHeldVersion, useSteeringHeld } from './held';
 import './steering.css';
 
@@ -21,6 +23,11 @@ export function Tripwires({ project }: { readonly project: string }) {
   const held = useSteeringHeld();
   useHeldVersion(held);
   const rules = runtime.storage.guardrails.rules(project);
+  const [staleProject, setStaleProject] = useState<string | null>(null);
+  const changed = (change: GuardrailChange) => {
+    setStaleProject(change.refused === 'stale' ? project : null);
+    held.notify();
+  };
   return (
     <Card
       as="section"
@@ -40,34 +47,16 @@ export function Tripwires({ project }: { readonly project: string }) {
           <p className="next-guardrail-empty">No tripwires saved in this browser.</p>
         ) : (
           rules.map((rule, index) => (
-            <Button
-              variant="native"
-              // The rules carry no identity of their own and only ever append or drop from the front, so
-              // a toggle is addressed by the position it was drawn at, as the stored list is.
-              key={index}
-              type="button"
-              className="next-guardrail-row"
-              role="switch"
-              aria-checked={rule.enabled}
-              data-next-guardrail-toggle={index}
-              data-next-controls-project={project}
-              onClick={() => {
-                runtime.storage.guardrails.toggle(project, index);
-                held.notify();
-              }}
-            >
-              <span className="next-guardrail-glyph" aria-hidden="true">
-                ◇
-              </span>
-              <span className="next-guardrail-copy">
-                <strong>{rule.text}</strong>
-                {rule.enabled ? null : <small>Disabled in this browser.</small>}
-              </span>
-            </Button>
+            <RuleRow key={index} project={project} index={index} rule={rule} onChange={changed} />
           ))
         )}
       </div>
-      <AddRule project={project} />
+      {staleProject === project ? (
+        <p role="status">
+          Tripwires changed in another tab. Review the refreshed list and try again.
+        </p>
+      ) : null}
+      <AddRule key={project} project={project} />
       <p className="next-rail-reason">
         C1 would let an observer act on these. Until it ships they are a note to yourself, held in
         this browser.
@@ -75,6 +64,73 @@ export function Tripwires({ project }: { readonly project: string }) {
     </Card>
   );
 }
+
+function RuleRow({
+  project,
+  index,
+  rule,
+  onChange,
+}: {
+  readonly project: string;
+  readonly index: number;
+  readonly rule: GuardrailRule;
+  readonly onChange: (change: GuardrailChange) => void;
+}) {
+  const { runtime } = useShell();
+  const controls = useControls();
+  const held = useSteeringHeld();
+  const fallback = held.adding(project) ? `guardrail-draft:${project}` : `guardrail-add:${project}`;
+  const toggle = useFocusKey<HTMLButtonElement>(
+    controls.focusLane,
+    `guardrail:${project}:${index}:toggle`,
+    { fallback },
+  );
+  const remove = useFocusKey<HTMLButtonElement>(
+    controls.focusLane,
+    `guardrail:${project}:${index}:remove`,
+    { fallback },
+  );
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="native"
+        ref={toggle}
+        type="button"
+        className="next-guardrail-row"
+        role="switch"
+        aria-checked={rule.enabled}
+        data-next-guardrail-toggle={index}
+        data-next-controls-project={project}
+        onClick={() => {
+          onChange(runtime.storage.guardrails.toggle(project, rule));
+        }}
+      >
+        <span className="next-guardrail-glyph" aria-hidden="true">
+          ◇
+        </span>
+        <span className="next-guardrail-copy">
+          <strong>{rule.text}</strong>
+          {rule.enabled ? null : <small>Disabled in this browser.</small>}
+        </span>
+      </Button>
+      <Button
+        ref={remove}
+        type="button"
+        aria-label={`Remove tripwire: ${rule.text}`}
+        onClick={(event) => {
+          const focused = document.activeElement === event.currentTarget;
+          onChange(runtime.storage.guardrails.remove(project, rule));
+          // A positional row may be reused for its successor; move off that removed rule explicitly.
+          if (focused) queueMicrotask(() => controls.focusLane.focus(fallback));
+        }}
+      >
+        Remove
+      </Button>
+    </div>
+  );
+}
+
+const LIMIT_SENTENCE = 'You have 50 tripwires on this project. Remove one to add another.';
 
 function AddRule({ project }: { readonly project: string }) {
   const { runtime } = useShell();
@@ -84,15 +140,27 @@ function AddRule({ project }: { readonly project: string }) {
   const addKey = `guardrail-add:${project}`;
   const addRef = useFocusKey<HTMLButtonElement>(controls.focusLane, addKey);
   const draftKey = `guardrail-draft:${project}`;
+  const atLimit = runtime.storage.guardrails.rules(project).length >= GUARDRAIL_LIMIT;
+  const countId = useId();
+  const limitId = useId();
+  const [length, setLength] = useState(() => [...held.draft(project, 'guardrail')].length);
+  const [refused, setRefused] = useState(false);
+  const over = length > TEXT_LIMIT;
 
-  /* Added or abandoned, the box is finished with, on BOTH branches. Without clearing it, reopening the add
-     control prefills it with the rule the reader just committed, and one Enter then writes that rule a second
-     time. */
+  /* A refused add keeps the words for another attempt. Added or abandoned, the box must clear too, or
+     reopening it would offer the committed rule and one Enter would write it again. */
   const finish = (input: HTMLInputElement | null, add: boolean) => {
-    if (add && input) runtime.storage.guardrails.add(project, input.value);
+    if (add && input && [...input.value].length > TEXT_LIMIT) return;
+    if (add && input && runtime.storage.guardrails.add(project, input.value).refused) {
+      setRefused(true);
+      held.notify();
+      return;
+    }
     held.setAdding(project, false);
     held.clearDraft(project, 'guardrail');
     if (input) input.value = '';
+    setLength(0);
+    setRefused(false);
     held.notify();
   };
 
@@ -128,17 +196,28 @@ function AddRule({ project }: { readonly project: string }) {
             focusKey={draftKey}
             focusFallback={addKey}
             name="guardrail"
-            maxLength={TEXT_LIMIT}
+            aria-label="New local tripwire"
+            aria-describedby={`${countId} ${limitId}`}
+            aria-invalid={over || undefined}
             placeholder="alert me when…"
             data-next-guardrail-input
             data-next-draft="guardrail"
             data-next-controls-project={project}
             defaultValue={held.draft(project, 'guardrail')}
             onKeyDown={onKeyDown}
-            onInput={(event) => held.setDraft(project, 'guardrail', event.currentTarget.value)}
+            onInput={(event) => {
+              const text = event.currentTarget.value;
+              held.setDraft(project, 'guardrail', text);
+              setLength([...text].length);
+            }}
           />
+          <CharacterCount id={countId} length={length} limit={TEXT_LIMIT} />
+          <span id={limitId}>{atLimit && !refused ? LIMIT_SENTENCE : ''}</span>
+          <span role="status">{atLimit && refused ? LIMIT_SENTENCE : ''}</span>
         </label>
-        <Button type="submit">add ↵</Button>
+        <Button type="submit" disabled={over}>
+          add ↵
+        </Button>
       </form>
     );
   }

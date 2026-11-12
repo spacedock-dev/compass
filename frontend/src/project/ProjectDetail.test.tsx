@@ -245,7 +245,7 @@ describe('the human context notes', () => {
     expect(screen.getByText('kept anyway')).toBeTruthy();
   });
 
-  it('bounds a note at 500 UTF-16 units, as the released key does', async () => {
+  it('keeps a long memo and refuses an over-limit paste without replacing its saved words', async () => {
     const page = await opened();
     fireEvent.click(screen.getByText('+ Add human context · this browser'));
     await page.settle();
@@ -253,8 +253,13 @@ describe('the human context notes', () => {
       'What result should this scope achieve?',
     ) as HTMLTextAreaElement;
     fireEvent.input(box, { target: { value: 'x'.repeat(700) } });
-    expect(box.value).toHaveLength(500);
-    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(500);
+    expect(box.value).toHaveLength(700);
+    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
+    fireEvent.input(box, { target: { value: 'x'.repeat(2100) } });
+    expect(box.value).toHaveLength(2100);
+    expect(page.backend.data.get(memoKey('calm/app', null, 'outcome'))).toHaveLength(700);
+    expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
+    expect((screen.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('is not offered at a focused session, where the strip draws no note', async () => {

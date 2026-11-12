@@ -1,7 +1,8 @@
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
 import { useId, useLayoutEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { boundMemo, MEMO_LIMIT, type MemoKind, type MemoState } from '../storage';
+import { MEMO_LIMIT, type MemoKind, type MemoState } from '../storage';
+import { CharacterCount } from '../ui/CharacterCount';
 import { DraftTextarea } from './DraftField';
 import { useControls, useValueStore } from './kit';
 import { useFocusKey } from './useFocusKey';
@@ -30,7 +31,7 @@ export function HumanContextField(props: HumanContextFieldProps) {
   const controls = useControls();
   const editing = useValueStore(controls.memoEditing);
   return editing?.key === props.memoKey ? (
-    <Editor {...props} fresh={editing.fresh} />
+    <Editor key={props.memoKey} {...props} fresh={editing.fresh} />
   ) : (
     <Reading {...props} />
   );
@@ -71,9 +72,12 @@ function Editor({
 }: HumanContextFieldProps & { readonly fresh: boolean }) {
   const controls = useControls();
   const [state, setState] = useState<MemoState | undefined>(() => controls.memo.state(memoKey));
-  const [initial] = useState(() => controls.memo.read(memoKey));
+  const [initial] = useState(() => controls.memoDraft(memoKey) ?? controls.memo.read(memoKey));
+  const [length, setLength] = useState(() => [...initial].length);
+  const over = length > MEMO_LIMIT;
   const boxId = useId();
   const cueId = useId();
+  const countId = useId();
   const focusKey = `memo:${memoKey}`;
 
   /* Focus on the press that opened the editor, never on a remount of one that was
@@ -85,6 +89,7 @@ function Editor({
   }, [controls, fresh, focusKey]);
 
   const close = (restore: boolean) => {
+    if (!restore && over) return;
     controls.finishMemoEdit({ restore });
     // The editor's own controls are about to leave; Edit is where the reader was.
     queueMicrotask(() => controls.focusLane.focus(editKey(memoKey)));
@@ -92,13 +97,16 @@ function Editor({
 
   const onInput = (event: FormEvent<HTMLTextAreaElement>) => {
     const box = event.currentTarget;
-    const bounded = boundMemo(box.value);
-    if (bounded !== box.value) box.value = bounded;
-    setState(controls.memo.write(memoKey, bounded));
+    const text = box.value;
+    const length = [...text].length;
+    setLength(length);
+    controls.setMemoDraft(memoKey, text);
+    if (length > MEMO_LIMIT) return;
+    setState(controls.memo.write(memoKey, text));
   };
 
-  /* Escape in the box or on Done restores the words held when editing began and
-     closes, with no announcement. Stopped here so the page's own Escape, which
+  /* Escape in the box or on Done restores the original unless another tab saved,
+     then closes with no announcement. Stopped here so the page's own Escape, which
      reads as "leave this view", never sees it. */
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape') return;
@@ -115,16 +123,17 @@ function Editor({
         id={boxId}
         memoryKey={`memo:${memoKey}`}
         focusKey={focusKey}
-        maxLength={MEMO_LIMIT}
         placeholder={placeholder}
         defaultValue={initial}
-        aria-describedby={cueId}
+        aria-describedby={`${cueId} ${countId}`}
+        aria-invalid={over || undefined}
         onInput={onInput}
       />
+      <CharacterCount id={countId} length={length} limit={MEMO_LIMIT} />
       <small id={cueId} data-memo-cue={kind}>
-        {cueText(state)}
+        {over ? '' : cueText(state)}
       </small>
-      <Button variant="default" type="button" onClick={() => close(false)}>
+      <Button variant="default" type="button" disabled={over} onClick={() => close(false)}>
         Done
       </Button>
     </div>

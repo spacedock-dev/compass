@@ -1,8 +1,9 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { StrictMode, useState, type ReactElement } from 'react';
+import { useValueStore } from './kit';
 import { describe, expect, it, vi } from 'vitest';
 import { blockedBackend, fakeBackend } from '../../test/storage_backends';
-import { memoKey, MEMO_LIMIT } from '../storage';
+import { createLegacyStorage, memoKey, MEMO_LIMIT } from '../storage';
 import { ControlsProvider } from './ControlsProvider';
 import { HumanContextField } from './HumanContextField';
 import { testControls, type TestControlsOptions } from './testControls';
@@ -62,17 +63,17 @@ describe('human context: a note kept in this browser, saved on every input', () 
     expect(kit.announced).toEqual([]);
   });
 
-  it('shows what storage already holds, bounded to 500 UTF-16 units', () => {
-    const backend = fakeBackend({ [KEY]: 'y'.repeat(700) });
+  it('shows what storage already holds, bounded to 2000 code points', () => {
+    const backend = fakeBackend({ [KEY]: 'y'.repeat(2100) });
     const { view } = mount(field(), { backend });
     expect(view.getByText('y'.repeat(MEMO_LIMIT))).toBeVisible();
   });
 
-  it('opens an editor that takes focus, carries a 500-unit limit and says it autosaves', () => {
+  it('opens an editor that takes focus, accepts a whole paste and says it autosaves', () => {
     const { view } = mount(field());
     const textarea = edit(view);
     expect(document.activeElement).toBe(textarea);
-    expect(textarea.maxLength).toBe(500);
+    expect(textarea.hasAttribute('maxlength')).toBe(false);
     expect(textarea.getAttribute('placeholder')).toBe('What result should this scope achieve?');
     expect(view.getByText('Autosaves in this browser')).toBeVisible();
     expect(view.getByRole('button', { name: 'Done' })).toBeVisible();
@@ -88,12 +89,172 @@ describe('human context: a note kept in this browser, saved on every input', () 
     expect(view.getByText('Saved in this browser')).toBeVisible();
   });
 
-  it('cuts text past 500 units at the edit, in the box and in storage', () => {
+  it('accepts 1050 emoji and counts 1600 emoji as 1600 characters', () => {
     const { view, kit } = mount(field());
     const textarea = edit(view);
-    type(textarea, 'z'.repeat(650));
-    expect(textarea.value).toHaveLength(500);
-    expect(kit.backend.data.get(KEY)).toHaveLength(500);
+    type(textarea, '😀'.repeat(1600));
+    expect(view.getByText('1600/2000')).toBeVisible();
+    type(textarea, '😀'.repeat(1050));
+    expect(textarea.hasAttribute('aria-invalid')).toBe(false);
+    expect(view.queryByText(/characters; the limit/)).toBeNull();
+    expect(kit.backend.data.get(KEY)).toBe('😀'.repeat(1050));
+  });
+
+  it('keeps each unfinished draft and its original across switching editors, until Done or Escape', () => {
+    const backend = fakeBackend({ [KEY]: 'original outcome', [FOCUS_KEY]: 'original focus' });
+    const fields = (
+      <>
+        {field('outcome')}
+        {field('focus')}
+      </>
+    );
+    const { view, kit, rerender } = mount(fields, { backend });
+    type(edit(view), 'autosaved outcome');
+    const text = '😀'.repeat(2100);
+    type(view.getByRole('textbox'), text);
+    const writes = backend.writes.length;
+    type(edit(view, 'Edit FOCUS'), 'autosaved focus');
+    // This is the same entry point RecoveryStrip and MoreMenu call.
+    act(() => kit.controls.startMemoEdit(KEY));
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe(text);
+    expect((view.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(backend.data.get(KEY)).toBe('autosaved outcome');
+    expect(backend.writes).toHaveLength(writes + 1);
+    rerender(<p>elsewhere</p>);
+    rerender(fields);
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe(text);
+    fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(backend.data.get(KEY)).toBe('original outcome');
+    type(edit(view), 'completed outcome');
+    fireEvent.click(view.getByRole('button', { name: 'Done' }));
+    edit(view);
+    fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(backend.data.get(KEY)).toBe('completed outcome');
+    edit(view, 'Edit FOCUS');
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('autosaved focus');
+    fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(backend.data.get(FOCUS_KEY)).toBe('original focus');
+  });
+
+  it('reopens an untouched parked memo with another tab’s saved words', () => {
+    const backend = fakeBackend({ [KEY]: 'original outcome' });
+    const { view } = mount(
+      <>
+        {field('outcome')}
+        {field('focus')}
+      </>,
+      { backend },
+    );
+    edit(view);
+    edit(view, 'Edit FOCUS');
+    createLegacyStorage(() => backend).memo.write(KEY, 'saved in another tab');
+    const writes = backend.writes.length;
+    expect(edit(view).value).toBe('saved in another tab');
+    fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(view.getByText('saved in another tab')).toBeVisible();
+    expect(backend.data.get(KEY)).toBe('saved in another tab');
+    expect(backend.writes).toHaveLength(writes);
+  });
+
+  it.each(['untouched', 'autosaved', 'over limit'] as const)(
+    'takes another tab’s save on Escape from an %s memo without writing',
+    (draft) => {
+      const backend = fakeBackend({ [KEY]: 'original outcome' });
+      const { view } = mount(field(), { backend });
+      const textarea = edit(view);
+      if (draft !== 'untouched') type(textarea, 'my autosaved words');
+      if (draft === 'over limit') type(textarea, '😀'.repeat(2100));
+      createLegacyStorage(() => backend).memo.write(KEY, 'saved in another tab');
+      const writes = backend.writes.length;
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      expect(view.getByText('saved in another tab')).toBeVisible();
+      expect(backend.data.get(KEY)).toBe('saved in another tab');
+      expect(backend.writes).toHaveLength(writes);
+      expect(edit(view).value).toBe('saved in another tab');
+    },
+  );
+
+  it('refreshes a completed memo when reopened after another tab saves', () => {
+    const backend = fakeBackend({ [KEY]: 'original outcome' });
+    const { view } = mount(field(), { backend });
+    type(edit(view), 'completed here');
+    fireEvent.click(view.getByRole('button', { name: 'Done' }));
+    createLegacyStorage(() => backend).memo.write(KEY, 'saved in another tab');
+    expect(edit(view).value).toBe('saved in another tab');
+  });
+
+  it('updates the counter without notifying editor subscribers or rendering their readers', () => {
+    const kit = testControls();
+    let renders = 0;
+    function Reader() {
+      useValueStore(kit.controls.memoEditing);
+      renders += 1;
+      return null;
+    }
+    const view = render(
+      <ControlsProvider controls={kit.controls}>
+        <Reader />
+        {field()}
+      </ControlsProvider>,
+    );
+    const textarea = edit(view);
+    const before = renders;
+    let notifications = 0;
+    const stop = kit.controls.memoEditing.subscribe(() => {
+      notifications += 1;
+    });
+    type(textarea, 'x'.repeat(1600));
+    expect(view.getByText('1600/2000')).toBeVisible();
+    expect(notifications).toBe(0);
+    expect(renders).toBe(before);
+    stop();
+  });
+
+  it.each(['界'.repeat(2100), '😀'.repeat(2100)])(
+    'keeps an over-limit paste without autosaving, and saves after editing back',
+    (text) => {
+      const backend = fakeBackend({ [KEY]: 'original' });
+      const { view, kit, rerender } = mount(field(), { backend });
+      const textarea = edit(view);
+      type(textarea, text);
+      expect((textarea as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      expect(textarea.getAttribute('aria-invalid')).toBe('true');
+      expect(view.getByText('2100/2000').getAttribute('data-over')).toBe('true');
+      expect(view.getByText('2100 characters; the limit is 2000.')).toBeVisible();
+      expect((view.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
+      expect(kit.backend.data.get(KEY)).toBe('original');
+      expect(kit.backend.writes).toEqual([]);
+      expect(view.queryByText('Saved in this browser')).toBeNull();
+      rerender(<p>elsewhere</p>);
+      rerender(field());
+      expect((view.getByRole('textbox') as HTMLInputElement | HTMLTextAreaElement).value).toBe(
+        text,
+      );
+      expect((view.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true);
+      type(view.getByRole('textbox'), Array.from(text).slice(0, 2000).join(''));
+      expect((view.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+      expect(kit.backend.data.get(KEY)).toBe(Array.from(text).slice(0, 2000).join(''));
+      fireEvent.click(view.getByRole('button', { name: 'Done' }));
+      expect(view.getByText(Array.from(text).slice(0, 2000).join(''))).toBeVisible();
+    },
+  );
+
+  it('shows a counter from eighty percent and Escape restores the original after an over-limit paste', () => {
+    const backend = fakeBackend({ [KEY]: 'x'.repeat(500) });
+    const { view, kit } = mount(field(), { backend });
+    const textarea = edit(view);
+    expect((textarea as HTMLInputElement | HTMLTextAreaElement).value).toBe('x'.repeat(500));
+    type(textarea, 'x'.repeat(1500));
+    expect(view.queryByText('1500/2000')).toBeNull();
+    type(textarea, 'x'.repeat(1600));
+    expect(view.getByText('1600/2000')).toBeVisible();
+    type(textarea, 'x'.repeat(2100));
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+    expect(view.queryByRole('textbox')).toBeNull();
+    expect(view.getByText('x'.repeat(500))).toBeVisible();
+    expect(kit.backend.data.get(KEY)).toBe('x'.repeat(500));
   });
 
   it('keeps the words in memory and says storage is unavailable when the browser refuses the write', () => {

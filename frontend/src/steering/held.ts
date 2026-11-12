@@ -20,6 +20,7 @@ interface ProjectHeld {
   adding: boolean;
   /** The draft notes recorded in this tab, oldest first. */
   steers: { readonly text: string }[];
+  steersDropped: boolean;
   drafts: Record<DraftKind, string>;
 }
 
@@ -54,7 +55,12 @@ export function createSteeringHeld() {
   function stateOf(project: string): ProjectHeld {
     let state = projects.get(project);
     if (!state) {
-      state = { adding: false, steers: [], drafts: { steer: '', guardrail: '' } };
+      state = {
+        adding: false,
+        steers: [],
+        steersDropped: false,
+        drafts: { steer: '', guardrail: '' },
+      };
       projects.set(project, state);
     }
     return state;
@@ -69,10 +75,9 @@ export function createSteeringHeld() {
     },
     getVersion: (): number => version,
     draft: (project: string, kind: DraftKind): string => stateOf(project).drafts[kind],
-    /* A keystroke. No notification: the box already shows what was typed, and a re-render per key would
-       buy nothing. The next render of the project reads it as the box's initial words. */
     setDraft(project: string, kind: DraftKind, text: string): void {
       stateOf(project).drafts[kind] = text;
+      // The mounted editor updates its own counter; other panels need no render for a keystroke.
     },
     /* The words are gone from the draft AND, by the caller, from the node: a box that still held them would
        be read back over this write by the next capture, and a second send would record them twice. */
@@ -87,8 +92,10 @@ export function createSteeringHeld() {
       notify();
     },
     steers: (project: string): readonly { readonly text: string }[] => stateOf(project).steers,
+    steersDropped: (project: string): boolean => stateOf(project).steersDropped,
     recordSteer(project: string, text: string): void {
       const state = stateOf(project);
+      if (state.steers.length >= STEER_RECORD_LIMIT) state.steersDropped = true;
       state.steers = [...state.steers, { text }].slice(-STEER_RECORD_LIMIT);
       notify();
     },
@@ -173,6 +180,4 @@ export function useHeldVersion(store: SteeringHeld): number {
   return useSyncExternalStore(store.subscribe, store.getVersion);
 }
 
-/* The bound a box carries as its `maxlength`, and the bound a recorded sentence is cut to, are the same
-   number: what the box refuses is what the store would have cut. */
 export const TEXT_LIMIT = GUARDRAIL_TEXT_LIMIT;
