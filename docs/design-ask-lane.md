@@ -94,8 +94,14 @@ question with content of its own, and that content becomes a tool result the mod
 user's own decision.
 
 So the options are recorded when the question is registered, the answer body carries the question id
-and an integer, an out-of-range index is a no-op, and the MCP server returns `options[index]` from the
-list its own process was called with rather than anything the dashboard sent back. What that buys is
+and an integer, an out-of-range index is a no-op, and the MCP server returns `options[index]` from its
+own copy of the list it was called with rather than anything the dashboard sent back. That copy is
+redacted and cut in the MCP server's own process, by `records.cut_text`, the function the dashboard
+draws the card with, so the string returned is the label that was clicked. It can therefore read
+`…REDACTED` or end in `…` where the agent's option did not, but every character in it comes from the
+agent's own text or from that function, never from the dashboard. The dashboard's register reply
+echoes the card's text so the MCP server can withdraw a card that differs from its copy; the echo is
+compared, never returned. What that buys is
 a hard ceiling on a forgery: the worst it can do is select the wrong one of the options the asking
 agent itself wrote. It cannot introduce a single character. That ceiling is what makes the loopback
 exposure in [SECURITY.md](../SECURITY.md) an accepted one rather than a blocker, and it is the reason

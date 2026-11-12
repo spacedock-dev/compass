@@ -3224,5 +3224,36 @@ class OutputSecretShapesTest(unittest.TestCase):
                 self.assertEqual(line, records.redact_secrets(line))
 
 
+class CutTextTest(unittest.TestCase):
+    """`cut_text` steps back over a redaction's kept prefix and no further."""
+
+    # Synthetic: a run of one letter in the Anthropic shape, never a real key.
+    KEY = "sk-ant-api03-" + "B" * 90
+
+    def test_a_question_glued_to_a_key_keeps_its_text(self) -> None:
+        # Stepping back over every token character cut this to the mark alone.
+        shown, cut = records.cut_text("y" * 1995 + "_" + self.KEY, 2000, 32_768)
+        self.assertTrue(cut)
+        self.assertLessEqual(len(shown), 2000)
+        self.assertGreaterEqual(len(shown), 1980)
+        self.assertTrue(shown.startswith("y" * 1980))
+        self.assertNotIn("sk-", shown)
+
+    def test_options_that_differ_early_stay_distinct(self) -> None:
+        first, _ = records.cut_text("Use cfg_" + "q" * 225 + "_" + self.KEY, 240, 32_768)
+        second, _ = records.cut_text("Use cfg_" + "r" * 225 + "_" + self.KEY, 240, 32_768)
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("Use cfg_" + "q" * 200))
+        self.assertLessEqual(len(first), 240)
+
+    def test_the_kept_prefix_is_never_left_at_the_cut(self) -> None:
+        for lead in range(220, 245):
+            with self.subTest(lead=lead):
+                shown, _ = records.cut_text("x" * lead + " " + self.KEY + " tail" * 20, 240, 32_768)
+                self.assertLessEqual(len(shown), 240)
+                self.assertFalse(shown.rstrip("\u2026").endswith(("sk", "sk-", "sk-an")))
+                self.assertTrue(records.SECRET_MARKER in shown or "sk-" not in shown, shown[-30:])
+
+
 if __name__ == "__main__":
     unittest.main()

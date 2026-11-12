@@ -689,7 +689,10 @@ class CardMatchesAnswerTest(_CallCase):
             poll=[(200, {"state": "answered", "index": 0})],
         )
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
-        self.assertEqual(mcp_server.DECLINE_INTERNAL, _text(frame))
+        # What a dashboard from before the echo answers: it is told apart from a
+        # card that differs, because the fix is a restart.
+        self.assertEqual(mcp_server.DECLINE_OUTDATED, _text(frame))
+        self.assertIn("restart", _text(frame))
         self.assertEqual([{"id": "ask-1"}], dashboard.withdrawals)
         self.assertEqual(0, dashboard.poll_count())
 
@@ -753,9 +756,29 @@ class PayloadSizeTest(_CallCase):
         dashboard = _FakeDashboard()
         frame = self._run(dashboard, _call(1, "q" * mcp_server.BODY_CAP_BYTES, ["ship", "hold"]))
         self.assertEqual([], dashboard.requests)
-        self.assertEqual(mcp_server.DECLINE_TOO_LARGE, _text(frame))
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_QUESTION, _text(frame))
         self.assertIn("32,768-byte limit", _text(frame))
         self.assertIn("2,000 characters of a question", _text(frame))
+
+    def test_long_options_beside_a_short_question_are_named_as_the_part_over(self) -> None:
+        # It used to say a shorter question could be asked, of an 11-character one.
+        options = [f"opt {n} " + "z" * 4100 for n in range(mcp_server.MAX_OPTIONS)]
+        dashboard = _FakeDashboard()
+        with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/tmp/x"}, clear=False):
+            frame = self._run(dashboard, _call(1, "Which plan?", options))
+        self.assertEqual([], dashboard.requests)
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_OPTIONS, _text(frame))
+        self.assertIn("shorter options", _text(frame))
+        self.assertNotIn("shorter question", _text(frame))
+
+    def test_a_question_and_options_over_only_together_name_both(self) -> None:
+        question = "q" * 17_000
+        options = ["a" * 8_000, "b" * 8_000]
+        dashboard = _FakeDashboard()
+        frame = self._run(dashboard, _call(1, question, options))
+        self.assertEqual([], dashboard.requests)
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE, _text(frame))
+        self.assertIn("shorter question or shorter options", _text(frame))
 
     def test_a_payload_over_the_byte_cap_says_so_instead_of_blaming_the_dashboard(self) -> None:
         # Reachable through the one field this process does not bound: the
@@ -766,7 +789,7 @@ class PayloadSizeTest(_CallCase):
         ):
             frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
         self.assertEqual([], dashboard.requests)
-        self.assertEqual(mcp_server.DECLINE_TOO_LARGE, _text(frame))
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_ATTRIBUTION, _text(frame))
         self.assertNotIn("no Compass dashboard is running", _text(frame))
 
 

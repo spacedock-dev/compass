@@ -1669,7 +1669,6 @@ def safe_text(value: Any, limit: int) -> str:
 
 # Ends text `cut_text` shortened, inside the cap, so a reader sees text is missing.
 CUT_MARK: Final = "…"
-_TOKEN_TEXT: Final = "".join(sorted(_TOKEN_CHARS))
 
 
 def cut_text(value: str, cap: int, whole: int) -> tuple[str, bool]:
@@ -1693,9 +1692,16 @@ def cut_text(value: str, cap: int, whole: int) -> tuple[str, bool]:
     first = max(limit - len(_SECRET_MARKER) + 1, 0)
     start = text.find(_SECRET_MARKER, first, limit + _SECRET_MAX_KEEP + len(_SECRET_MARKER) - 1)
     if start != -1:
-        # The kept prefix is token characters (`sk-ant-`, `AKIA`); stepping back
-        # over a word that was not one only cuts a little earlier.
-        head = text[: min(start, limit)].rstrip(_TOKEN_TEXT)
+        # Back over the kept prefix (`sk-ant-`, `AKIA`) and no further. No shape
+        # keeps more than `_SECRET_MAX_KEEP` characters in front of its marker,
+        # so a word glued to the key loses at most the difference. Stepping back
+        # over every token character instead cut `'y' * 1995 + '_' + key` to
+        # `…`, and made two options that differed early read the same.
+        floor = max(start - _SECRET_MAX_KEEP, 0)
+        end = min(start, limit)
+        while end > floor and text[end - 1] in _TOKEN_CHARS:
+            end -= 1
+        head = text[:end]
     return head.rstrip() + CUT_MARK, True
 
 

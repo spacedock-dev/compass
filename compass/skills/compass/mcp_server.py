@@ -230,12 +230,42 @@ DECLINE_REFUSED: Final = (
     "it was never shown and nothing was chosen. Proceed on your own judgement and say which "
     "option you took and why."
 )
+# Which part of the register body put it over the cap, so the agent is told
+# what to shorten. A modest question beside eight long options once heard that a
+# shorter question could be asked, which would have been refused again.
+_TOO_LARGE_HEAD: Final = (
+    "No operator was reached: {part} over the {cap:,}-byte limit on one question, "
+)
+_TOO_LARGE_SHOWN: Final = "so nothing was shown and nothing was chosen. "
+_TOO_LARGE_TAIL: Final = (
+    "Otherwise proceed on your own judgement and say which option you took and why."
+)
+DECLINE_TOO_LARGE_QUESTION: Final = (
+    _TOO_LARGE_HEAD.format(part="the question alone is", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {QUESTION_CAP_CHARS:,} characters of a question, so a shorter question "
+    "can be asked again. " + _TOO_LARGE_TAIL
+)
+DECLINE_TOO_LARGE_OPTIONS: Final = (
+    _TOO_LARGE_HEAD.format(part="the options alone are", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {OPTION_CAP_CHARS} characters of an option, so the question can be asked "
+    "again with shorter options. " + _TOO_LARGE_TAIL
+)
 DECLINE_TOO_LARGE: Final = (
-    "No operator was reached: the question, the options and this session's own attribution "
-    f"are together over the {BODY_CAP_BYTES:,}-byte limit on one question, so nothing was "
-    f"shown and nothing was chosen. A card shows {QUESTION_CAP_CHARS:,} characters of a "
-    f"question and {OPTION_CAP_CHARS} of an option, so a shorter question can be asked "
-    "again. Otherwise proceed on your own judgement and say which option you took and why."
+    _TOO_LARGE_HEAD.format(part="the question and the options together are", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {QUESTION_CAP_CHARS:,} characters of a question and {OPTION_CAP_CHARS} of "
+    "an option, so a shorter question or shorter options can be asked again. " + _TOO_LARGE_TAIL
+)
+DECLINE_TOO_LARGE_ATTRIBUTION: Final = (
+    _TOO_LARGE_HEAD.format(
+        part="this session's own attribution, its project path and session id, is",
+        cap=BODY_CAP_BYTES,
+    )
+    + _TOO_LARGE_SHOWN
+    + "No shorter question would fit. Proceed on your own judgement and say which option "
+    "you took and why."
 )
 # The reasons the register route publishes. An unknown one falls back to the
 # generic refusal rather than to unreachable, so a newer dashboard inventing a
@@ -251,6 +281,17 @@ DECLINE_UNANSWERED: Final = (
 DECLINE_INTERNAL: Final = (
     "No option was chosen: the question could not be delivered. Proceed on your own "
     "judgement and say which option you took and why."
+)
+# A dashboard that registered the question but sent back no card text predates
+# the echo `_register` checks, and is still running after the plugin was updated.
+# Worded as `terminal_drift.CLIENT_OUTDATED_IN_SESSION` is, without its harness's
+# command: this process cannot tell Codex from an unmeasured harness.
+DECLINE_OUTDATED: Final = (
+    "No operator was reached: the Compass dashboard running here is older than this "
+    "plugin, so the question was taken back before anyone could answer it and nothing was "
+    "chosen. Tell the person to restart it: ask Compass to stop the dashboard, then start "
+    "Compass again to run this version. Proceed on your own judgement and say which option "
+    "you took and why."
 )
 
 
@@ -459,6 +500,28 @@ def _arguments(raw: Any) -> _Ask | str:
         question=shown,
         options=options,
     )
+
+
+def _encoded_size(payload: dict[str, Any]) -> int:
+    """`payload`'s size as `_register` sends it."""
+    return len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode())
+
+
+def _too_large(payload: dict[str, Any]) -> str:
+    """The refusal for a register body past the cap, naming the part to shorten.
+
+    Each part is measured beside the rest of the body with the other emptied, so
+    "alone" means that part cannot fit however short the other is.
+    """
+    if _encoded_size({**payload, "question": "", "options": []}) > BODY_CAP_BYTES:
+        return DECLINE_TOO_LARGE_ATTRIBUTION
+    question_over = _encoded_size({**payload, "options": []}) > BODY_CAP_BYTES
+    options_over = _encoded_size({**payload, "question": ""}) > BODY_CAP_BYTES
+    if question_over and not options_over:
+        return DECLINE_TOO_LARGE_QUESTION
+    if options_over and not question_over:
+        return DECLINE_TOO_LARGE_OPTIONS
+    return DECLINE_TOO_LARGE
 
 
 def _call_key(request_id: Any) -> str:
@@ -732,7 +795,8 @@ class AskServer:
         A 200 whose echoed question and options are not this process's own copy
         is withdrawn: the card would show one thing and the answer return
         another, which is the consent failure `_arguments` exists to prevent. A
-        reply that echoes nothing is treated the same way.
+        reply that echoes neither came from a dashboard older than the echo, and
+        is withdrawn too, with a sentence asking for that dashboard's restart.
         """
         payload: dict[str, Any] = {
             "question": ask.sent_question,
@@ -746,7 +810,7 @@ class AskServer:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
         if len(body) > BODY_CAP_BYTES:
             log(f"payload of {len(body)} bytes is over the {BODY_CAP_BYTES} byte cap")
-            return DECLINE_TOO_LARGE
+            return _too_large(payload)
         for port in self._ports:
             base = f"http://127.0.0.1:{port}"
             answer = _request(f"{base}/api/ask", data=body, timeout=REGISTER_TIMEOUT_SEC)
@@ -767,12 +831,17 @@ class AskServer:
                     return DECLINE_BY_REASON.get(reason, DECLINE_REFUSED)
                 return DECLINE_REFUSED
             ask_id = data.get("id")
+            decline = DECLINE_INTERNAL
             if (
                 not isinstance(ask_id, str)
                 or data.get("ok") is not True
                 or not ASK_ID_RE.match(ask_id)
             ):
                 log(f"register on {port} returned an unusable id")
+            elif "question" not in data and "options" not in data:
+                # An older dashboard: it shows text this process cannot confirm.
+                log(f"register on {port} echoed no card text; that dashboard is older")
+                decline = DECLINE_OUTDATED
             elif data.get("question") != ask.question or data.get("options") != list(ask.options):
                 log(f"register on {port} shows a question unlike the one asked")
             else:
@@ -784,7 +853,7 @@ class AskServer:
             # withdrawn.
             if isinstance(ask_id, str):
                 self._withdraw(base, ask_id)
-            return DECLINE_INTERNAL
+            return decline
         return DECLINE_UNREACHABLE
 
     def _withdraw(self, base: str, ask_id: str) -> None:
