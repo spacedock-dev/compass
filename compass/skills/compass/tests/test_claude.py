@@ -4003,8 +4003,23 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         ]
 
     def row(
-        self, rows: list[dict[str, Any]], *, age: float = 120, child_age: float | None = None
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        age: float = 120,
+        child_age: float | None = None,
+        entrypoint: str | None = "sdk-cli",
     ) -> dict[str, Any]:
+        rows = [
+            {
+                "type": "user",
+                "sessionId": TURN_SID,
+                "timestamp": self.START - 1,
+                "message": {"role": "user", "content": "Check the task."},
+                **({"entrypoint": entrypoint} if entrypoint is not None else {}),
+            },
+            *rows,
+        ]
         transcript = self.project / f"{TURN_SID}.jsonl"
         transcript.write_text(
             "".join(
@@ -4098,6 +4113,38 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                 self.assertEqual("working", self.row(rows, age=900)["state"])
                 self.assertEqual("idle", self.row(rows, age=900.01)["state"])
 
+    def test_only_measured_headless_background_work_extends_activity_and_suppresses_stop(
+        self,
+    ) -> None:
+        for entrypoint, headless, expected in (
+            ("sdk-cli", True, "working"),
+            ("cli", False, "idle"),
+            (None, None, "idle"),
+        ):
+            for stopped in (False, True):
+                with self.subTest(entrypoint=entrypoint, stopped=stopped):
+                    rows = self.background() if stopped else self.background()[:2]
+                    row = self.row(rows, entrypoint=entrypoint)
+                    self.assertIs(row["headless"], headless)
+                    self.assertEqual(1, row["delegated_unpaired"])
+                    self.assertEqual(expected, row["state"])
+                    self.assertEqual(
+                        self.START + 900 if headless else None, row["work_in_flight_until"]
+                    )
+                    for remembered in (False, True):
+                        row = self.row(rows, entrypoint=entrypoint)
+                        self.assertEqual(
+                            expected, self.overlay_row(row, remembered=remembered)["state"]
+                        )
+
+    def test_foreground_extension_applies_to_every_entrypoint(self) -> None:
+        for entrypoint in ("sdk-cli", "cli", None):
+            with self.subTest(entrypoint=entrypoint):
+                row = self.row([self.call()], entrypoint=entrypoint)
+                self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+                self.assertIsNone(row["work_in_flight_until"])
+                self.assertEqual("idle", self.overlay_row(row)["state"])
+
     def test_an_input_tool_is_not_expired_by_the_working_cap(self) -> None:
         row = self.row([self.call(name="AskUserQuestion")], age=1000)
         self.assertEqual("needs_input", row["state"])
@@ -4139,6 +4186,44 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                 )
                 self.assertEqual("idle", row["state"])
 
+    def test_injected_user_records_do_not_retire_foreground_calls(self) -> None:
+        for injected in (
+            {"content": "<task-notification><status>completed</status></task-notification>"},
+            {"content": "<system-reminder>Keep working.</system-reminder>"},
+            {"content": "Stop hook feedback: tests still fail", "isMeta": True},
+        ):
+            with self.subTest(injected=injected):
+                record = {
+                    "type": "user",
+                    "sessionId": TURN_SID,
+                    "timestamp": self.START + 3,
+                    "isMeta": injected.get("isMeta", False),
+                    "message": {"role": "user", "content": injected["content"]},
+                }
+                row = self.row([self.call(), record])
+                self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+                human = {
+                    **record,
+                    "timestamp": self.START + 4,
+                    "isMeta": False,
+                    "message": {"role": "user", "content": "Change direction."},
+                }
+                self.assertEqual("idle", self.row([self.call(), record, human])["state"])
+
+    def test_stop_continuation_feedback_does_not_retire_foreground_calls(self) -> None:
+        feedback = {
+            "type": "user",
+            "sessionId": TURN_SID,
+            "timestamp": self.START + 2,
+            "isMeta": True,
+            "message": {"role": "user", "content": "Stop hook feedback: tests still fail"},
+        }
+        rows = [self.call(), feedback, _turn_records(self.START + 3)[-1]]
+        row = self.row(rows)
+        self.assertIsNone(row["turn_end_at"])
+        self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+        self.assertEqual("idle", self.row([*rows, *_turn_records(self.START + 5)[1:]])["state"])
+
     def test_abandoned_call_followed_by_a_completed_turn_settles_idle(self) -> None:
         rows = [
             self.call(),
@@ -4170,7 +4255,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertEqual(self.START + 3, row["finished_at"])
         self.assertEqual("idle", row["state"])
 
-    def test_stop_after_a_partial_parallel_result_or_foreign_record_ends_the_extension(
+    def test_stop_after_a_partial_parallel_result_or_foreign_record_needs_valid_context(
         self,
     ) -> None:
         for result in (self.result(1), {**self.result(1), "isSidechain": True}):
@@ -4181,7 +4266,12 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                     result,
                     _turn_records(self.START + 3)[-1],
                 ]
-                self.assertEqual("idle", self.row(rows)["state"])
+                row = self.row(rows)
+                self.assertIsNone(row["turn_end_at"])
+                self.assertEqual("working", row["state"])
+                self.assertEqual(
+                    "idle", self.row([*rows, *_turn_records(self.START + 5)[1:]])["state"]
+                )
 
     def test_sidechain_and_foreign_calls_and_results_are_not_parent_evidence(self) -> None:
         for other in ({"isSidechain": True}, {"sessionId": "other-session"}):

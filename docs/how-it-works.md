@@ -180,15 +180,19 @@ links to it, or to Attention when there are several. Filters reset when you relo
 
 A quiet transcript can still be working. For Claude Code, an unanswered tool call in the current
 step reads `running <tool>` for up to 15 minutes from that call. Only calls in the newest assistant
-message qualify; a later assistant message, a new user message, compaction, a Stop or an interruption
-ends that foreground wait. Parallel calls in one assistant message may remain pending independently.
-Background Agent or Task subagents acknowledged by a tool result in the current turn with no
-recorded completion read `waiting on 1 background task` or `waiting on N background tasks`.
+message qualify; a later assistant message, a human prompt, compaction, a validated Stop or an
+interruption ends that foreground wait. Parallel calls in one assistant message may remain pending
+independently.
+Injected task notifications, system reminders and hook feedback do not end it.
+In headless sessions only, background Agent or Task subagents acknowledged by a tool result in the
+current turn with no recorded completion read `waiting on 1 background task` or
+`waiting on N background tasks`.
 Only these background subagents
 can keep Working after the parent's Stop, for up to 15 minutes from the newest qualifying outstanding
 launch; a later interruption or new user prompt retires that wait. Background Bash and shell jobs
-do not qualify. The two caps are independent. An observed session end ends both waits, and an input
-request still takes precedence. After either cap, Compass
+do not qualify. Interactive sessions and sessions whose entrypoint is unknown keep the usual
+activity and Stop rules for background subagents. The two caps are independent. An observed
+session end ends both waits, and an input request still takes precedence. After either cap, Compass
 falls back to its usual activity and stop rules. This covers long foreground calls and headless
 sessions waiting on a background subagent, measured with Claude Code 2.1.322 on macOS. A session
 killed mid-tool without an observed end can read Working until the 900-second cap, instead of the

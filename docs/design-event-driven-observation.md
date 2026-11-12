@@ -1510,16 +1510,24 @@ Idle at Stop while `claude -p` remains alive waiting for its background Agent. A
 quiet does not establish completion. The capture also shows the stale Working tail after exit.
 
 `claude_data.analyze_transcript` matches foreground non-input calls only within the newest assistant
-message id. Parallel calls sharing that id remain pending independently. A new assistant message id,
-a user record other than tool results, a turn stop or a compaction boundary clears the pending set.
+message id, for every Claude session regardless of entrypoint. Parallel calls sharing that id remain
+pending independently. A new assistant message id, a human boundary accepted by
+`is_human_prompt_record`, a validated turn stop or compaction clears the pending set. Tool results
+retire their own calls. Injected task notifications, system reminders and `isMeta` hook feedback
+do not clear pending calls. Stop validation uses the actual preceding conversation record type,
+so a summary following Stop-continuation feedback cannot retire a running call.
 Sidechain records and records whose session id differs from the transcript filename never enter or
 answer that set. Missing message or session identity earns no extension. The Claude collector keeps
 the newest remaining call Working as `running <tool>` until its own tool timestamp plus
-`claude_tool_in_flight_max_sec` (900 seconds). A Stop or interruption always ends this foreground wait.
+`claude_tool_in_flight_max_sec` (900 seconds). A validated Stop or interruption ends this foreground wait.
 
-The collector also reuses `project_context.delegated_work_status`'s cached completion pairing, but
-only outstanding parent Agent/Task launches with `run_in_background`, a successful launch tool
-result, and a launch at or after the current turn's floor qualify. A later interruption or new user
+For a measured headless session (`headless is True`) only, the collector also reuses
+`project_context.delegated_work_status`'s cached completion pairing. It reads the entrypoint from
+`claude_data.session_entrypoint` after the existing `session_goal` read populates the shared cache,
+before deriving the lease, without another file read. Interactive (`False`) and unknown (`None`)
+entrypoints retain the usual background activity and Stop rules. Only outstanding parent
+Agent/Task launches with `run_in_background`, a successful launch tool result, and a launch at or
+after the current turn's floor qualify. A later interruption or new user
 prompt retires a launch even if it was acknowledged. Calls, acknowledgements, completion pairing
 and turn boundaries use only records with the parent's native session id (the transcript filename
 stem), excluding sidechain records. Missing identity earns no exception. Background Bash launches,
@@ -1538,9 +1546,9 @@ activity window. SIGKILL was the only measured ending without SessionEnd in
 sent it. After either expiry the existing freshness and stop rules apply. No process-liveness probe
 is added.
 
-The collector publishes nullable `work_in_flight_until` solely as current-turn background-subagent
-evidence; `state_detail` carries the wording. It does not advance `own_activity`, `work_activity`
-or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
+The collector publishes nullable `work_in_flight_until` solely as headless current-turn
+background-subagent evidence; `state_detail` carries the wording. It does not advance `own_activity`,
+`work_activity` or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
 that background cap only; foreground evidence never suppresses either stop. It does not weaken an
 explicit input overlay or change its activity guard. Transcript
 input tools and standing notification waits retain precedence over this extension. An observed

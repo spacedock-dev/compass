@@ -834,6 +834,14 @@ def collect(
             if (transcript and active)
             else None
         )
+        session_goal = (
+            claude_data.session_goal(config, state, transcript) if info and transcript else None
+        )
+        entrypoint = (
+            claude_data.session_entrypoint(state, transcript).published()
+            if info and transcript
+            else {}
+        )
         delegated, newest_unpaired, waiting_count = project_context.delegated_work_status(
             config,
             transcript if active else None,
@@ -843,7 +851,12 @@ def collect(
             child_paths=[path for path, _mtime in agent_files],
         )
         work_in_flight_until, in_flight_detail = in_flight_work(
-            config, now, info, waiting_count, newest_unpaired
+            config,
+            now,
+            info,
+            waiting_count,
+            # Only headless parents were measured staying alive after Stop for a subagent.
+            newest_unpaired if entrypoint.get("headless") is True else None,
         )
 
         # What retires an observed stop: `activity_sources` with the parent
@@ -1054,16 +1067,8 @@ def collect(
                 ),
                 # The session's own `/goal`, from its record. Behind the same guard as the
                 # prompt above, so a row the transcript was not read for publishes none.
-                "session_goal": (
-                    claude_data.session_goal(config, state, transcript)
-                    if info and transcript
-                    else None
-                ),
-                **(
-                    claude_data.session_entrypoint(state, transcript).published()
-                    if info and transcript
-                    else {}
-                ),
+                "session_goal": session_goal,
+                **entrypoint,
                 # How that goal ended, from the same read of the same cache entry, so after it.
                 # Keys of their own, never the goal's: the goal stays None after either, and
                 # None here is "not seen", which is not "did not happen".

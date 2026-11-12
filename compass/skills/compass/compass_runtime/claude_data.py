@@ -1064,27 +1064,17 @@ class _PendingForeground:
         self.message_id: str | None = None
         self.calls: dict[str, dict[str, Any]] = {}
 
-    def visit(self, record: dict[str, Any], at: float | None) -> None:
+    def visit(self, record: dict[str, Any], at: float | None, after: str | None) -> None:
         if record.get("isSidechain") is True or record.get("sessionId") != self.session_id:
             return
         kind = record.get("type")
         message = records.message_dict(record)
         content = records.as_list(message.get("content"))
-        # A partial parallel result is a user record. A native Stop still ends
-        # every pending call even when that result, rather than an assistant,
-        # immediately precedes it.
         if (
-            is_turn_stop_record(record, "assistant")
+            is_turn_stop_record(record, after)
             or is_human_prompt_record(record)
             or record.get("isCompactSummary") is True
             or (kind == "system" and record.get("subtype") == "compact_boundary")
-            or (
-                kind == "user"
-                and not (
-                    content
-                    and all(isinstance(c, dict) and c.get("type") == "tool_result" for c in content)
-                )
-            )
         ):
             self.calls.clear()
             self.message_id = None
@@ -1177,7 +1167,7 @@ def analyze_transcript(config: RuntimeConfig, state: RuntimeState, path: str) ->
             if t in {"user", "assistant"}:
                 info["last_conversation_ts"] = max(info["last_conversation_ts"], ep)
         turn_stop = is_turn_stop_record(d, conversation)
-        foreground.visit(d, ep)
+        foreground.visit(d, ep, conversation)
         if ep and ep >= info["turn_stop_ts"] and turn_stop:
             info["turn_stop_ts"] = ep
             info["turn_stop_sid"] = d["sessionId"]
