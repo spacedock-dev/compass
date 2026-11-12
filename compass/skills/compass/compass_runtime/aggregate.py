@@ -1363,6 +1363,8 @@ class Application:
                     "project": ask.project,
                     "question": ask.question,
                     "options": list(ask.options),
+                    "question_sent_chars": ask.question_sent_chars,
+                    "dropped_options": ask.dropped_options,
                     "age_sec": round(now - ask.created),
                 }
                 for ask in state.asks.pending(

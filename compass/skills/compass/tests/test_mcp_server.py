@@ -446,12 +446,33 @@ class CallFlowTest(_CallCase):
             return 200, json.dumps({"state": "answered", "index": 0}).encode()
 
         with mock.patch.object(mcp_server, "_open", record), _Harness() as harness:
-            harness.push(_call(1, "Q" * 900, ["A" * 400, "hold"]))
+            harness.push(_call(1, "Q" * 2_500, ["A" * 400, "hold"]))
             harness.wait_for_frames(1)
         body = json.loads(captured[0])
         self.assertEqual(mcp_server.QUESTION_CAP_CHARS, len(body["question"]))
         self.assertEqual(mcp_server.OPTION_CAP_CHARS, len(body["options"][0]))
         self.assertIn("harness", body)
+
+    def test_a_question_over_the_cap_ends_in_an_ellipsis_and_says_how_long_it_was(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Q" * 2_500, ["ship", "hold"]))
+        body = dashboard.registrations[0]
+        self.assertEqual(2_000, len(body["question"]))
+        self.assertEqual("Q" * 1_999 + "\u2026", body["question"])
+        self.assertEqual(2_500, body["question_sent_chars"])
+
+    def test_a_question_at_the_cap_is_sent_whole_and_unflagged(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Q" * 2_000, ["ship", "hold"]))
+        body = dashboard.registrations[0]
+        self.assertEqual("Q" * 2_000, body["question"])
+        self.assertNotIn("question_sent_chars", body)
+
+    def test_an_option_over_the_cap_ends_in_an_ellipsis_inside_it(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Which?", ["o" * 241, "p" * 240]))
+        options = dashboard.registrations[0]["options"]
+        self.assertEqual(["o" * 239 + "\u2026", "p" * 240], options)
 
 
 class RegisterRefusalTest(_CallCase):
@@ -561,7 +582,7 @@ class OperatorConsentTest(_CallCase):
     """The agent gets the string the operator saw, not a longer one."""
 
     def test_the_returned_option_is_the_one_that_was_registered(self) -> None:
-        long_option = "y" * 40 + "z" * 200
+        long_option = "y" * 40 + "z" * 300
         dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 1})])
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", long_option]))
         registered = dashboard.registrations[0]["options"]
@@ -570,11 +591,30 @@ class OperatorConsentTest(_CallCase):
         self.assertEqual(mcp_server.OPTION_CAP_CHARS, len(registered[1]))
         self.assertEqual(registered[1], _text(frame))
 
-    def test_two_options_differing_past_the_cap_answer_to_what_was_shown(self) -> None:
+    def test_two_options_differing_only_past_the_cap_are_refused_not_registered(self) -> None:
         head = "a" * mcp_server.OPTION_CAP_CHARS
-        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        dashboard = _FakeDashboard()
         frame = self._run(dashboard, _call(1, "Which?", [head + "-one", head + "-two"]))
-        self.assertEqual(head, _text(frame))
+        self.assertIs(True, frame["result"]["isError"])
+        self.assertEqual(
+            "ask_operator needs options that differ within their first 240 characters.",
+            _text(frame),
+        )
+        self.assertEqual([], dashboard.registrations)
+
+    def test_cut_options_keep_every_index_on_the_option_shown(self) -> None:
+        # The reader pressed a button showing a cut label, and the registered
+        # string at that position is what comes back, with the uncut option after
+        # them still answering as itself.
+        options = ["b" * 300, "c" * 300, "hold"]
+        for index in range(3):
+            with self.subTest(index=index):
+                dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": index})])
+                frame = self._run(dashboard, _call(1, "Which?", options))
+                registered = dashboard.registrations[0]["options"]
+                self.assertEqual(3, len(registered))
+                self.assertEqual("hold", registered[2])
+                self.assertEqual(registered[index], _text(frame))
 
 
 class PayloadSizeTest(_CallCase):
@@ -586,7 +626,7 @@ class PayloadSizeTest(_CallCase):
         # gate, so it was refused locally and reported as no dashboard running.
         question = "測" * mcp_server.QUESTION_CAP_CHARS
         options = [
-            "選" * mcp_server.OPTION_CAP_CHARS + str(n) for n in range(mcp_server.MAX_OPTIONS)
+            str(n) + "選" * mcp_server.OPTION_CAP_CHARS for n in range(mcp_server.MAX_OPTIONS)
         ]
         dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
         with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/tmp/x"}, clear=False):
@@ -595,6 +635,25 @@ class PayloadSizeTest(_CallCase):
         body = dashboard.registrations[0]
         self.assertEqual(mcp_server.QUESTION_CAP_CHARS, len(body["question"]))
         self.assertEqual(body["options"][0], _text(frame))
+
+    def test_the_widest_legal_text_is_registered_rather_than_refused(self) -> None:
+        # A control character is the widest a character gets on the wire: JSON
+        # escapes it to six bytes even with ensure_ascii off. Every field at its
+        # cap, cut and flagged, still has to fit the gate.
+        question = "\x01" * (mcp_server.QUESTION_CAP_CHARS + 1)
+        options = [
+            str(n) + "\x01" * mcp_server.OPTION_CAP_CHARS for n in range(mcp_server.MAX_OPTIONS)
+        ]
+        project = "/" + "\x01" * 511
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        with mock.patch.dict(
+            os.environ,
+            {"CLAUDE_PROJECT_DIR": project, "CLAUDE_CODE_SESSION_ID": "s" * 64},
+            clear=False,
+        ):
+            frame = self._run(dashboard, _call(1, question, options))
+        self.assertEqual(1, len(dashboard.registrations))
+        self.assertEqual(dashboard.registrations[0]["options"][0], _text(frame))
 
     def test_a_payload_over_the_byte_cap_says_so_instead_of_blaming_the_dashboard(self) -> None:
         # Reachable through the one field this process does not bound: the

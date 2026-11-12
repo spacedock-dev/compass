@@ -4879,7 +4879,11 @@ answer can do is select the wrong one of the options the asking agent itself wro
 new content into that agent's context.
 
 What is bounded. The question text and the option list are bounded when they arrive, and rendered as
-text and never as markup. The number of questions outstanding at once is capped, and the honest
+text and never as markup: 2,000 characters for the question, 240 for an option, and at most eight
+options. A cut is never silent. Cut text ends in `…` inside its cap, and the card says how many
+characters the session sent and how many options past the eighth it did not show. Options the cut
+would make identical are refused, so no two buttons read the same. The answer still resolves to the
+shortened label the reader saw, by index. The number of questions outstanding at once is capped, and the honest
 answer past the cap is a refusal the server turns into a decline rather than an error. A question
 that is never answered expires and declines. The question is also delivered as a notification: on macOS by the server,
 through the same truncation and AppleScript escaping the needs-input popup uses, and elsewhere by the page, which

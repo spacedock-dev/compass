@@ -2501,6 +2501,8 @@ class AskPayloadTest(unittest.TestCase):
                     "project": "compass",
                     "question": "Ship it?",
                     "options": ["yes", "no"],
+                    "question_sent_chars": None,
+                    "dropped_options": 0,
                     "age_sec": 42,
                 }
             ],

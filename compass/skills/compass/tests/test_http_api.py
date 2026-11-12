@@ -1438,6 +1438,11 @@ class AskEndpointTest(RuntimeTestCase):
             "no options": {"question": "q", "options": []},
             "options not a list": {"question": "q", "options": "ab"},
             "an option that bounds to empty": {"question": "q", "options": ["a", " "]},
+            "options the cut makes identical": {
+                "question": "q",
+                "options": ["x" * 2_000 + "-one", "x" * 2_000 + "-two"],
+            },
+            "identical options": {"question": "q", "options": ["same", "same"]},
         }
         with self._serving(cli.build_application(config, state, clock=time.time)) as port:
             for label, fields in bodies.items():
@@ -1467,9 +1472,69 @@ class AskEndpointTest(RuntimeTestCase):
         ask = state.asks.get(ask_id)
         self.assertIsNotNone(ask)
         assert ask is not None
-        self.assertEqual("a" * 10, ask.question)
+        self.assertEqual("a" * 9 + "\u2026", ask.question)
         self.assertEqual(config.ask_max_options, len(ask.options))
-        self.assertEqual(("bbbb", "c d"), ask.options[:2])
+        self.assertEqual(("bbb\u2026", "c d"), ask.options[:2])
+
+    def _published_ask(self, port: int, ask_id: str) -> dict[str, Any]:
+        status, body = self._get(port, "/api/data")
+        self.assertEqual(200, status)
+        cards = [card for card in json.loads(body)["asks"] if card["id"] == ask_id]
+        self.assertEqual(1, len(cards))
+        return dict(cards[0])
+
+    def test_a_question_over_the_cap_is_cut_with_a_mark_and_its_length_published(self) -> None:
+        config, state = self._runtime()
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, question="q" * 2_500)
+            card = self._published_ask(port, ask_id)
+        self.assertEqual(2_000, config.ask_question_cap_chars)
+        self.assertEqual("q" * 1_999 + "\u2026", card["question"])
+        self.assertEqual(2_500, card["question_sent_chars"])
+        self.assertEqual(0, card["dropped_options"])
+
+    def test_a_question_at_the_cap_is_published_whole_and_unflagged(self) -> None:
+        config, state = self._runtime()
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, question="q" * 2_000)
+            card = self._published_ask(port, ask_id)
+        self.assertEqual("q" * 2_000, card["question"])
+        self.assertIsNone(card["question_sent_chars"])
+
+    def test_the_stdio_servers_count_for_a_question_it_cut_is_published(self) -> None:
+        # The stdio server cuts before it sends, so what arrives is inside the
+        # cap and only the count it sends says how long the question was.
+        config, state = self._runtime()
+        cut = "q" * 1_999 + "\u2026"
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, question=cut, question_sent_chars=2_500)
+            card = self._published_ask(port, ask_id)
+        self.assertEqual(cut, card["question"])
+        self.assertEqual(2_500, card["question_sent_chars"])
+
+    def test_a_count_the_shown_question_contradicts_is_not_published(self) -> None:
+        config, state = self._runtime()
+        claims: dict[str, tuple[str, Any]] = {
+            "no cut mark": ("Ship it?", 5_000),
+            "not longer than shown": ("Ship\u2026", 5),
+            "a boolean": ("Ship\u2026", True),
+            "a string": ("Ship\u2026", "5000"),
+            "past anything the stdio server reads": ("Ship\u2026", (1 << 20) + 1),
+        }
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            for label, (question, claim) in claims.items():
+                with self.subTest(label=label):
+                    ask_id = self._register(port, question=question, question_sent_chars=claim)
+                    self.assertIsNone(self._published_ask(port, ask_id)["question_sent_chars"])
+
+    def test_options_past_the_most_offered_publish_how_many_were_dropped(self) -> None:
+        config, state = self._runtime()
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, options=[f"opt{n}" for n in range(10)])
+            card = self._published_ask(port, ask_id)
+        self.assertEqual([f"opt{n}" for n in range(8)], card["options"])
+        self.assertEqual(2, card["dropped_options"])
+        self.assertIsNone(card["question_sent_chars"])
 
     def test_an_over_long_project_keeps_its_tail_and_marks_the_cut(self) -> None:
         """A path's identity is its end, so bounding it from the front is a lie.

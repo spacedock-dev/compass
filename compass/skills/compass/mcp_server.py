@@ -114,11 +114,14 @@ MAX_FRAME_BYTES: Final = 1 << 20
 # Mirror the dashboard's `ask_*` caps in config.py. The server bounds this text
 # authoritatively at its ingress; bounding it here too is what keeps a long
 # question from being refused as an oversized body instead of asked.
-QUESTION_CAP_CHARS: Final = 500
-OPTION_CAP_CHARS: Final = 120
+QUESTION_CAP_CHARS: Final = 2_000
+OPTION_CAP_CHARS: Final = 240
 MAX_OPTIONS: Final = 8
 MIN_OPTIONS: Final = 2
-BODY_CAP_BYTES: Final = 8_192
+# Mirrors `ask_body_cap_bytes`; config.py carries the arithmetic.
+BODY_CAP_BYTES: Final = 32_768
+# Ends every cut, inside the cap, so the card shows that text is missing.
+CUT_MARK: Final = "\u2026"
 
 REGISTER_TIMEOUT_SEC: Final = 3.0
 # A withdrawal runs before the caller's reply is written, and one of its two
@@ -378,8 +381,24 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _arguments(raw: Any) -> tuple[str, tuple[str, ...]] | str:
+def _clip(text: str, cap: int) -> str:
+    """`text` stripped and, past `cap`, cut to end in `CUT_MARK` inside it.
+
+    Stripped after the cut as well: the dashboard strips what it stores, so a cut
+    landing on a space would otherwise leave the card one character short of the
+    string returned here.
+    """
+    text = text.strip()
+    if len(text) <= cap:
+        return text
+    return text[: cap - 1].rstrip() + CUT_MARK
+
+
+def _arguments(raw: Any) -> tuple[str, tuple[str, ...], int | None] | str:
     """The validated question and options, or a sentence saying what is wrong.
+
+    The third member is how many characters the question had when it was cut,
+    and None when it was not.
 
     The text is bounded to the advertised caps **here and nowhere else**. Doing it
     at registration instead is what let the card show 120 characters while the
@@ -397,10 +416,7 @@ def _arguments(raw: Any) -> tuple[str, tuple[str, ...]] | str:
     if not isinstance(raw_options, list):
         return f"ask_operator needs an `options` array of {MIN_OPTIONS} to {MAX_OPTIONS} strings."
     options = tuple(
-        # Stripped after the cut as well: the dashboard strips what it stores, so
-        # a cut landing on a space would otherwise leave the card one character
-        # short of the string returned here.
-        item.strip()[:OPTION_CAP_CHARS].strip()
+        _clip(item, OPTION_CAP_CHARS)
         for item in raw_options
         if isinstance(item, str) and item.strip()
     )
@@ -409,7 +425,15 @@ def _arguments(raw: Any) -> tuple[str, tuple[str, ...]] | str:
         # options and offering twelve would otherwise be answered from a set it
         # never saw chosen from.
         return f"ask_operator needs {MIN_OPTIONS} to {MAX_OPTIONS} non-empty option strings."
-    return question.strip()[:QUESTION_CAP_CHARS].strip(), options
+    if len(set(options)) != len(options):
+        # Two options the cut made identical would be two buttons a reader cannot
+        # tell apart, and an answer the agent cannot tell apart either.
+        return (
+            "ask_operator needs options that differ within their first "
+            f"{OPTION_CAP_CHARS} characters."
+        )
+    sent = len(question.strip())
+    return _clip(question, QUESTION_CAP_CHARS), options, sent if sent > QUESTION_CAP_CHARS else None
 
 
 def _call_key(request_id: Any) -> str:
@@ -650,8 +674,8 @@ class AskServer:
         validated = _arguments(arguments)
         if isinstance(validated, str):
             return validated, True
-        question, options = validated
-        registration = self._register(question, options)
+        question, options, sent_chars = validated
+        registration = self._register(question, options, sent_chars)
         if isinstance(registration, str):
             return registration, False
         base, ask_id = registration
@@ -671,7 +695,9 @@ class AskServer:
             return DECLINE_UNANSWERED, False
         return options[index], False
 
-    def _register(self, question: str, options: tuple[str, ...]) -> tuple[str, str] | str:
+    def _register(
+        self, question: str, options: tuple[str, ...], sent_chars: int | None
+    ) -> tuple[str, str] | str:
         """(base url, ask id), or the sentence to hand the agent instead.
 
         The candidate list is walked only past a **connection-level** failure. Any
@@ -686,6 +712,10 @@ class AskServer:
             "options": list(options),
             **attribution(),
         }
+        # Only on a cut, so the card's note is about a cut that happened. The
+        # dashboard cannot measure it: what arrives is already inside its cap.
+        if sent_chars is not None:
+            payload["question_sent_chars"] = sent_chars
         # ensure_ascii=False so the gate here measures the axis the dashboard
         # measures: it checks Content-Length against its own byte cap, and
         # escaping to \uXXXX turns one character of a non-Latin script into six

@@ -235,6 +235,36 @@ describe('answering a held request', () => {
     ).toEqual(['Approve the plan?', 'Second?']);
   });
 
+  it('says when Compass shortened the question or dropped options, and only then', async () => {
+    await open(
+      board([ONE], {
+        ask: true,
+        asks: [
+          {
+            ...ASK,
+            question: `${'q'.repeat(1_999)}…`,
+            question_sent_chars: 2_500,
+            dropped_options: 2,
+          },
+          { ...ASK, id: 'ask-2', question: 'Second?', question_sent_chars: null },
+          { ...ASK, id: 'ask-3', question: 'Third?', dropped_options: 1 },
+        ],
+      }),
+    );
+    const notes = (id: string) =>
+      [
+        ...(document
+          .querySelector(`[data-next-session-ask="${id}"]`)
+          ?.querySelectorAll('[data-next-session-ask-cut]') ?? []),
+      ].map((note) => note.textContent);
+    expect(notes('ask-1')).toEqual([
+      'Shortened by Compass: the session sent 2,500 characters.',
+      '2 more options were not shown.',
+    ]);
+    expect(notes('ask-2')).toEqual([]);
+    expect(notes('ask-3')).toEqual(['1 more option was not shown.']);
+  });
+
   it('posts one numeric option index, never the option, and exactly once per press', async () => {
     const page = await open(asked());
     fireEvent.click(screen.getByRole('button', { name: 'No' }));

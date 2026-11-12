@@ -17,6 +17,26 @@ import { askResponsibility } from './rows';
 
 const key = (id: string, index: number): string => `answer:${id}:${String(index)}`;
 
+const count = (value: unknown): number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+
+/* What Compass cut from one request before the reader saw it. The question's own text already ends in "…",
+   but that cannot say how much is missing, and options past the most a card offers leave no mark at all. */
+function askCutNotes(ask: Row): string[] {
+  const sent = count(ask['question_sent_chars']);
+  const dropped = count(ask['dropped_options']);
+  return [
+    ...(sent
+      ? [`Shortened by Compass: the session sent ${sent.toLocaleString('en-US')} characters.`]
+      : []),
+    ...(dropped === 1
+      ? ['1 more option was not shown.']
+      : dropped
+        ? [`${String(dropped)} more options were not shown.`]
+        : []),
+  ];
+}
+
 function AnswerButton({
   id,
   index,
@@ -135,6 +155,15 @@ export function AnswerBlock({
               ) : (
                 <p className="next-session-answer-empty">No answer options were supplied.</p>
               )}
+              {askCutNotes(ask).map((note) => (
+                <p
+                  key={note}
+                  className="mt-2.5 mb-0 text-label text-muted-foreground"
+                  data-next-session-ask-cut=""
+                >
+                  {note}
+                </p>
+              ))}
               {failure ? (
                 <Alert as="p" variant="answer-failure" className="next-session-answer-failure">
                   {failure}

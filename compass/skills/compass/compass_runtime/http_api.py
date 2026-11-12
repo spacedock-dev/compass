@@ -464,6 +464,11 @@ def _with_message_ordinals(
     return {**result, "semantic": {**semantic, "facts": facts}}
 
 
+# The longest question a cut count may claim. The stdio server reads one frame of
+# at most 1 MiB (`mcp_server.MAX_FRAME_BYTES`), so no question it forwards had
+# more characters than that.
+_ASK_SENT_CHARS_MAX = 1 << 20
+
 _LEASE_ACTIONS = frozenset({"start", "beat", "confirm", "stop"})
 _TAB_ID_CAP = 128
 
@@ -5693,7 +5698,44 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     @staticmethod
-    def _ask_options(value: Any, *, cap_chars: int, max_options: int) -> tuple[str, ...] | None:
+    def _ask_text(value: str, *, cap_chars: int, whole_chars: int) -> tuple[str, bool]:
+        """Agent-written text made safe and, past `cap_chars`, cut to end in "…";
+        and whether it was cut.
+
+        Made safe at `whole_chars`, the body cap, so nothing is cut before the
+        length is known. The cut goes through `records.redact_clip` again rather
+        than a slice, because a slice can land inside a redaction marker and
+        publish half of one; that is also the one case the cut may end past the
+        cap, by the length of the marker it finishes.
+        """
+        text = records.safe_text(value, whole_chars).strip()
+        if len(text) <= cap_chars:
+            return text, False
+        return records.redact_clip(text, cap_chars - 1).rstrip() + "\u2026", True
+
+    @staticmethod
+    def _ask_sent_chars(claim: Any, question: str, arrived: int) -> int | None:
+        """How long the stdio server's question was before it cut it, or None.
+
+        That server cuts before it sends, so what arrives is inside the cap and
+        only its `question_sent_chars` says a cut happened. It is believed only
+        where the card agrees: the question ends in the cut mark and the claim is
+        longer than what arrived. A bool is refused although it is an int, for
+        the reason `/api/answer` gives.
+        """
+        if (
+            question.endswith("\u2026")
+            and isinstance(claim, int)
+            and not isinstance(claim, bool)
+            and arrived < claim <= _ASK_SENT_CHARS_MAX
+        ):
+            return claim
+        return None
+
+    @staticmethod
+    def _ask_options(
+        value: Any, *, cap_chars: int, max_options: int, whole_chars: int
+    ) -> tuple[str, ...] | None:
         """The offered options, bounded in count and length, or None if unusable.
 
         Past `max_options` the leading options are kept rather than a sample,
@@ -5715,10 +5757,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
         offered = value[:max_options]
         if not all(isinstance(item, str) for item in offered):
             return None
-        options = tuple(records.safe_text(item, cap_chars).strip() for item in offered)
+        options = tuple(
+            _RequestHandler._ask_text(item, cap_chars=cap_chars, whole_chars=whole_chars)[0]
+            for item in offered
+        )
         # Two is the floor for a question worth putting on the board: one option
-        # is not a choice, and nothing can be rendered from an empty list.
-        return None if len(options) < 2 or not all(options) else options
+        # is not a choice, and nothing can be rendered from an empty list. Two
+        # options the cut made identical are refused too: a reader cannot tell
+        # the buttons apart, and the asking session cannot tell the answers apart.
+        if len(options) < 2 or not all(options) or len(set(options)) != len(options):
+            return None
+        return options
 
     def _ask(self) -> None:
         """Register a question a session is holding its tool call open for.
@@ -5764,19 +5813,26 @@ class _RequestHandler(BaseHTTPRequestHandler):
         # `safe_text` would turn a non-string into its Python repr and publish
         # that as the question. Falling through to the empty string keeps one 400
         # path for every unusable body.
-        question = (
-            records.safe_text(raw_question, config.ask_question_cap_chars).strip()
+        question, cut = (
+            self._ask_text(
+                raw_question,
+                cap_chars=config.ask_question_cap_chars,
+                whole_chars=config.ask_body_cap_bytes,
+            )
             if isinstance(raw_question, str)
-            else ""
+            else ("", False)
         )
+        raw_options = payload.get("options")
         options = self._ask_options(
-            payload.get("options"),
+            raw_options,
             cap_chars=config.ask_option_cap_chars,
             max_options=config.ask_max_options,
+            whole_chars=config.ask_body_cap_bytes,
         )
         if not question or options is None:
             self._reject(400)
             return
+        arrived = len(raw_question.strip()) if isinstance(raw_question, str) else 0
         label_cap = config.ask_option_cap_chars
         # harness and session_id share the option cap: they really are short
         # labels of the same order. `project` does not, and gets its own knob
@@ -5796,6 +5852,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
             question=question,
             options=options,
             created=application.clock(),
+            question_sent_chars=arrived
+            if cut
+            else self._ask_sent_chars(payload.get("question_sent_chars"), question, arrived),
+            # Leading options are kept, so the dropped ones are the tail: the
+            # card says how many rather than leaving a reader to think the
+            # session offered only these.
+            dropped_options=len(raw_options) - len(options) if isinstance(raw_options, list) else 0,
         )
         if not application.state.asks.register(
             ask,

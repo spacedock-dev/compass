@@ -374,6 +374,10 @@ One tool call, blocked, returning one string: the label on the card you clicked,
 character, never text from anywhere else. [SECURITY.md](SECURITY.md#the-ask-lane-ask_operator) owns
 why the answer travels as an index rather than a string.
 
+A card shows up to 2,000 characters of the question and 240 of each option. Anything longer ends in
+`…`, the card says how many characters the session sent, and the label the session gets back is the
+shortened one you clicked.
+
 Everything else resolves to a decline the session can act on rather than an error it has to
 interpret. Observed: nothing listening, the lane switched off, and the dashboard stopped while a
 question was outstanding, which released the waiting session in 12 seconds. Each one ends by telling
