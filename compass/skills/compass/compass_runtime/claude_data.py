@@ -764,7 +764,8 @@ def session_goal(
     session with none would otherwise be reread end to end on every collection. A cold read
     starts at most `config.turn_scan_max_bytes` from the end; a goal set before that and not
     touched since is not seen, and publishes nothing rather than a guess. Only complete lines
-    count, so a half-written record is read once it finishes.
+    count, so a half-written record is read once it finishes. On Claude Code this same pass keeps
+    the session's latest native entrypoint for `session_entrypoint`; it adds no separate file read.
 
     The published mapping is `{"text", "at"}`, with `offered` and `cut` added when the condition
     is longer than the Goal field holds (`_with_excerpt`), and `verdict` (`{met, at, reason}`, the
@@ -772,18 +773,23 @@ def session_goal(
     empty, before then. `earlier` (`{how, at}`, how being "replaced", "met" or "gave-up") is added
     when this goal followed one the read saw end, and carries never the earlier goal's words.
     """
+    key = f"session-goal:{path}"
     try:
         stat = os.stat(path)
     except OSError:
+        with state.cache_lock:
+            state.metadata_cache.pop(key, None)
         return None
-    key = f"session-goal:{path}"
     read_event = _GOAL_READERS.get(harness, _goal_event)
     cap = ANTIGRAVITY_GOAL_CAP_CHARS if harness == "antigravity" else GOAL_CAP_CHARS
     with state.cache_lock:
         cached = state.metadata_cache.get(key)
+    # A partial last record leaves pos behind size; only growth of the observed size is an append.
     if (
         cached is not None
         and cached.get("ino") == stat.st_ino
+        and cached["size"] <= stat.st_size
+        and (cached["size"] < stat.st_size or cached["mtime_ns"] == stat.st_mtime_ns)
         and cached["pos"] <= stat.st_size
         and stat.st_size - cached["pos"] <= config.turn_scan_max_bytes
     ):
@@ -797,12 +803,15 @@ def session_goal(
         )
         # A read from byte 0 has seen everything, so no goal event means none was ever recorded.
         seen = pos == 0
+    headless = cached.get("headless") if not cold and cached is not None else None
     if pos < stat.st_size:
         try:
             with open(path, "rb") as source:
                 source.seek(pos)
                 data = source.read(stat.st_size - pos)
         except OSError:
+            with state.cache_lock:
+                state.metadata_cache.pop(key, None)
             return None
         if cold and pos > 0:
             # A cold read that starts mid-file starts mid-line.
@@ -810,7 +819,10 @@ def session_goal(
             data, pos = (b"", pos) if skip < 0 else (data[skip + 1 :], pos + skip + 1)
         end = data.rfind(b"\n")
         if end >= 0:
-            for raw in data[:end].split(b"\n"):
+            lines = data[:end].split(b"\n")
+            if harness == "claude":
+                headless = _latest_entrypoint(lines, path, headless)
+            for raw in lines:
                 if b"goal" not in raw or not raw.startswith(b"{"):
                     continue
                 try:
@@ -825,7 +837,15 @@ def session_goal(
         runtime_state.bounded_put(
             state.metadata_cache,
             key,
-            {"ino": stat.st_ino, "pos": pos, **goal_state, "seen": seen},
+            {
+                "ino": stat.st_ino,
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "pos": pos,
+                **goal_state,
+                "seen": seen,
+                "headless": headless,
+            },
             limit=config.max_cache_entries,
         )
     goal = goal_state["goal"]
@@ -838,6 +858,47 @@ def session_goal(
 
 
 _GOAL_READERS = {"codex": _codex_goal_event, "antigravity": _antigravity_goal_event}
+
+
+def _latest_entrypoint(lines: list[bytes], path: str, previous: bool | None) -> bool | None:
+    native_id = os.path.splitext(os.path.basename(path))[0]
+    native_bytes = json.dumps(native_id).encode()
+    # Entrypoints repeat on ordinary turns. Decode from the end so their cost does not grow
+    # with every turn in the window, while still accepting a changed mode on an appended resume.
+    for raw in reversed(lines):
+        if b'"entrypoint"' not in raw or native_bytes not in raw or not raw.startswith(b"{"):
+            continue
+        try:
+            record = json.loads(raw)
+        except (ValueError, RecursionError):
+            continue
+        if (
+            isinstance(record, dict)
+            and record.get("sessionId") == native_id
+            and record.get("isSidechain") is not True
+            and "entrypoint" in record
+        ):
+            # Measured in the headless-command and scheduled-command 2.1.319 captures:
+            # only sdk-cli and cli establish a mode; other values establish none.
+            entrypoint = record["entrypoint"]
+            return True if entrypoint == "sdk-cli" else False if entrypoint == "cli" else None
+    return previous
+
+
+@dataclass(frozen=True)
+class SessionEntrypoint:
+    headless: bool | None = None
+
+    def published(self) -> dict[str, bool | None]:
+        return {"headless": self.headless}
+
+
+def session_entrypoint(state: RuntimeState, path: str) -> SessionEntrypoint:
+    """The mode seen by the last `session_goal` read, without opening the transcript again."""
+    with state.cache_lock:
+        cached = state.metadata_cache.get(f"session-goal:{path}")
+    value = cached.get("headless") if cached else None
+    return SessionEntrypoint(value if isinstance(value, bool) else None)
 
 
 def _cached_goal_state(cached: dict[str, Any]) -> GoalState:

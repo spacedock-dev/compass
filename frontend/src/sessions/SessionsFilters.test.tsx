@@ -55,6 +55,35 @@ const trigger = (name: string) => screen.getByRole('button', { name: new RegExp(
 const nothing = () => document.querySelector('[data-sessions-nothing]');
 
 describe('the presets and chips', () => {
+  it('keeps a reader’s headless choice across a poll and clears it with the other filters', async () => {
+    const page = await open();
+    const popup = await openFilter(page, 'headless', 'Headless');
+    expect(
+      within(popup).getByText(
+        'Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints and other harnesses.',
+      ),
+    ).toBeVisible();
+    await pick(page, popup, 'Interactive or unknown');
+    await closeFilters(page);
+    expect(rows()).toBe(11);
+    expect(document.querySelector(`[data-next-session="${SIDS.B}"]`)).toBeNull();
+    expect(document.querySelector(`[data-next-session="${SIDS.A}"]`)).not.toBeNull();
+    expect(document.querySelector(`[data-next-session="${SIDS.C}"]`)).not.toBeNull();
+    expect(chips()).toEqual(['Headless: Interactive or unknown']);
+    await page.poll(sessionsSearchPayload({ generated: GENERATED + 1 }));
+    expect(rows()).toBe(11);
+    await press(page, preset('Clear all'));
+    expect(rows()).toBe(12);
+    const headlessPopup = await openFilter(page, 'headless', 'Headless');
+    await pick(page, headlessPopup, 'Headless');
+    await closeFilters(page);
+    expect(rows()).toBe(1);
+    expect(document.querySelector(`[data-next-session="${SIDS.B}"]`)).not.toBeNull();
+    expect(document.querySelector(`[data-next-session="${SIDS.A}"]`)).toBeNull();
+    expect(document.querySelector(`[data-next-session="${SIDS.C}"]`)).toBeNull();
+    expect(chips()).toEqual(['Headless: Headless']);
+  });
+
   it('sets one value per preset, names it in a chip, and clears it from the chip', async () => {
     const page = await open();
     expect(result()).toBe('12 sessions active in the last 24 hours.');

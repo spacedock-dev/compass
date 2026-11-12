@@ -179,6 +179,44 @@ async function dispatchKey(target: EventTarget, key: string): Promise<KeyboardEv
   return event;
 }
 
+export const HeadlessSubsets: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const popup = await openFilter(canvasElement, 'headless', 'Headless');
+    await expect(options(popup, 'headless').map(({ label, count }) => ({ label, count }))).toEqual([
+      { label: 'Headless', count: '1' },
+      { label: 'Interactive or unknown', count: '11' },
+    ]);
+    await waitFor(() =>
+      expect(
+        within(popup).getByText(
+          'Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints and other harnesses.',
+        ),
+      ).toBeVisible(),
+    );
+    await pick(popup, 'Interactive or unknown');
+    await closeFilters();
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
+    await expect(rowOf(canvasElement, 'A')).not.toBeNull();
+    await expect(rowOf(canvasElement, 'B')).toBeNull();
+    await expect(rowOf(canvasElement, 'C')).not.toBeNull();
+    await expect(chips(canvasElement)).toEqual(['Headless: Interactive or unknown']);
+    await poll();
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ABCDEFGHIJKL'));
+    const headlessPopup = await openFilter(canvasElement, 'headless', 'Headless');
+    await pick(headlessPopup, 'Headless');
+    await closeFilters();
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('B'));
+    await expect(rowOf(canvasElement, 'B')).not.toBeNull();
+    await expect(rowOf(canvasElement, 'A')).toBeNull();
+    await expect(rowOf(canvasElement, 'C')).toBeNull();
+    await expect(chips(canvasElement)).toEqual(['Headless: Headless']);
+  },
+};
+
 /* 1 */
 export const DefaultBoard: Story = {
   play: async ({ canvasElement }) => {

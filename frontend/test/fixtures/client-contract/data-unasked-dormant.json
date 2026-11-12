@@ -293,6 +293,7 @@
           "first_prompt_control": false,
           "focusable": false,
           "harness": "claude",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999970.0,
           "last_output": null,
@@ -443,6 +444,7 @@
           "first_prompt_control": false,
           "focusable": false,
           "harness": "codex",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999910.0,
           "last_output": null,
@@ -593,6 +595,7 @@
           "first_prompt_control": false,
           "focusable": false,
           "harness": "claude",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999760.0,
           "last_output": null,
@@ -733,7 +736,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "31541",
+      "Content-Length": "31595",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

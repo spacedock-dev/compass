@@ -262,6 +262,7 @@
           "first_prompt_control": false,
           "focusable": false,
           "harness": "claude",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999995.0,
           "last_output": null,
@@ -357,7 +358,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "14858",
+      "Content-Length": "14876",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

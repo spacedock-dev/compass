@@ -55,6 +55,33 @@ const run = (change: Partial<FilterState>, options: Parameters<typeof board>[0] 
 };
 
 describe('the words', () => {
+  it('lets a reader choose headless sessions or interactive and unknown rows', () => {
+    const payload = sessionsSearchPayload() as Row;
+    const sessions = payload['sessions'] as Row[];
+    sessions[0] = { ...sessions[0], headless: true };
+    sessions[1] = { ...sessions[1], headless: false };
+    sessions[2] = { ...sessions[2], headless: null };
+    const indexed = indexScreen(buildSessionsScreen(payload, observe(payload)));
+    const filtered = (headless: readonly string[]) =>
+      applyFilters(indexed, prepare({ ...EMPTY_FILTERS, headless }, GENERATED, true), () => '');
+    expect(filtered([]).shown).toBe(12);
+    expect(filtered(['other']).shown).toBe(11);
+    expect(filtered(['headless']).shown).toBe(1);
+    expect(filtered(['headless', 'other']).shown).toBe(12);
+    const kept = indexed.filter((one) => filtered(['other']).keys.has(one.row.key));
+    expect(kept.some((one) => one.row.source?.['headless'] === true)).toBe(false);
+    expect(kept.some((one) => one.row.source?.['headless'] === false)).toBe(true);
+    expect(kept.some((one) => one.row.source?.['headless'] === null)).toBe(true);
+    const headlessOnly = indexed.filter((one) => filtered(['headless']).keys.has(one.row.key));
+    expect(headlessOnly.map((one) => one.row.source?.['headless'])).toEqual([true]);
+    expect(facetCounts(indexed, prepare(EMPTY_FILTERS, GENERATED, true), 'headless')).toEqual(
+      new Map([
+        ['headless', 1],
+        ['other', 11],
+      ]),
+    );
+  });
+
   it('fold case, accents and runs of space, and keep a quoted phrase as one term', () => {
     expect(normalize('  Café\tNOTES ')).toBe('cafe notes');
     expect(queryTerms('release "Combat  Completion" "unclosed')).toEqual([

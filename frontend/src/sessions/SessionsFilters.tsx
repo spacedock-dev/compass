@@ -60,7 +60,7 @@ import {
 } from './filters';
 import { RouteAnchor } from './RouteAnchor';
 
-/* The Find sessions toolbar: one search field, six filter popovers, three presets, the chips that say what is
+/* The Find sessions toolbar: one search field, seven filter popovers, three presets, the chips that say what is
    on, and the lines that say what the filters hide. It owns no state of its own beyond the "Find a project"
    narrowing: every choice is in the filter store, so a poll, a view change and a round trip through a session
    leave it as the reader left it. docs/design-sessions-search.md#the-toolbar owns the copy and the rules. */
@@ -508,6 +508,7 @@ export function SessionsFilters({
       state: fixedOptions(indexed, prepared, 'state'),
       drift: fixedOptions(indexed, prepared, 'drift'),
       goal: fixedOptions(indexed, prepared, 'goal'),
+      headless: fixedOptions(indexed, prepared, 'headless'),
     }),
     [indexed, prepared, filtered, board.harnesses],
   );
@@ -537,6 +538,7 @@ export function SessionsFilters({
   const facetNames: Readonly<Record<Facet, string>> = {
     project: 'Project',
     harness: 'Harness',
+    headless: 'Headless',
     state: 'State',
     drift: 'Drift',
     goal: 'Goal',
@@ -554,7 +556,7 @@ export function SessionsFilters({
         (order.indexOf(b) === -1 ? order.length : order.indexOf(b)),
     );
   };
-  for (const facet of ['project', 'harness', 'state', 'drift', 'goal'] as const) {
+  for (const facet of ['project', 'harness', 'headless', 'state', 'drift', 'goal'] as const) {
     if (!filters[facet].length) continue;
     const text = chipText(
       facetNames[facet],
@@ -811,6 +813,20 @@ export function SessionsFilters({
               chosen={filters.harness}
               onToggle={(value) => toggle('harness', value)}
             />
+          </FilterButton>
+          <FilterButton facet="headless" name="Headless" selected={filters.headless.length}>
+            <OptionList
+              facet="headless"
+              name="Headless"
+              options={derived.headless}
+              chosen={filters.headless}
+              onToggle={(value) => toggle('headless', value)}
+            />
+            <Separator />
+            <p className={NOTE}>
+              Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints
+              and other harnesses.
+            </p>
           </FilterButton>
           <FilterButton facet="state" name="State" selected={filters.state.length}>
             <OptionList

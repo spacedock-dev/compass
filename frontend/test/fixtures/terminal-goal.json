@@ -22,6 +22,7 @@
         "first_prompt_at": 1899999370.0,
         "first_prompt_control": false,
         "session_goal": null,
+        "headless": null,
         "session_goal_cleared": null,
         "session_goal_gave_up": null,
         "last_output": null,
@@ -189,6 +190,7 @@
         "first_prompt_at": 1899999370.0,
         "first_prompt_control": false,
         "session_goal": null,
+        "headless": null,
         "session_goal_cleared": null,
         "session_goal_gave_up": null,
         "last_output": null,
@@ -359,6 +361,7 @@
           "text": "The placeholder parser handles every token type and its tests pass",
           "at": 1899999900.0
         },
+        "headless": null,
         "session_goal_cleared": null,
         "session_goal_gave_up": null,
         "last_output": null,
@@ -529,6 +532,7 @@
           "text": "The placeholder parser handles every token type and its tests pass",
           "at": 1899999900.0
         },
+        "headless": null,
         "session_goal_cleared": null,
         "session_goal_gave_up": null,
         "last_output": null,

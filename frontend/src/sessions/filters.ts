@@ -17,7 +17,7 @@ import { worktreeOf } from './worktree';
 
 export type DateField = 'started' | 'active';
 export type When = 'any' | 'hour' | 'today' | 'yesterday' | 'week' | 'unstamped';
-export type Facet = 'project' | 'harness' | 'state' | 'drift' | 'goal';
+export type Facet = 'project' | 'harness' | 'headless' | 'state' | 'drift' | 'goal';
 export type DriftValue = 'recorded' | 'checked' | 'unchecked';
 export type GoalValue = 'saved' | 'drafted' | 'none';
 
@@ -28,6 +28,7 @@ export interface FilterState {
   readonly includeUnstamped: boolean;
   readonly project: readonly string[];
   readonly harness: readonly string[];
+  readonly headless: readonly string[];
   readonly state: readonly string[];
   readonly drift: readonly string[];
   readonly goal: readonly string[];
@@ -40,12 +41,20 @@ export const EMPTY_FILTERS: FilterState = {
   includeUnstamped: false,
   project: [],
   harness: [],
+  headless: [],
   state: [],
   drift: [],
   goal: [],
 };
 
-export const FACETS: readonly Facet[] = ['project', 'harness', 'state', 'drift', 'goal'];
+export const FACETS: readonly Facet[] = [
+  'project',
+  'harness',
+  'headless',
+  'state',
+  'drift',
+  'goal',
+];
 export const QUERY_LIMIT = 200;
 
 /* Fixed orders, so a poll never moves an option under the pointer. */
@@ -66,6 +75,10 @@ export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label:
   { value: 'drafted', label: 'Drafted from a prompt, not saved' },
   { value: 'none', label: 'No goal yet' },
 ];
+export const HEADLESS_OPTIONS = [
+  { value: 'headless', label: 'Headless' },
+  { value: 'other', label: 'Interactive or unknown' },
+] as const;
 export const WHENS: readonly When[] = ['any', 'hour', 'today', 'yesterday', 'week', 'unstamped'];
 const WHEN_LABELS: Readonly<Record<Exclude<When, 'unstamped'>, string>> = {
   any: 'Any time',
@@ -330,6 +343,7 @@ function datePasses(indexed: IndexedRow, filters: FilterState, edges: DayEdges |
 export function facetValue(indexed: IndexedRow, facet: Facet): string | null {
   if (facet === 'project') return indexed.row.session.project;
   if (facet === 'harness') return indexed.row.session.harness;
+  if (facet === 'headless') return indexed.row.source?.['headless'] === true ? 'headless' : 'other';
   if (facet === 'state') return indexed.state;
   if (facet === 'drift') return indexed.drift;
   return indexed.goal;
@@ -582,7 +596,7 @@ export function harnessOptions(
 export function fixedOptions(
   indexed: readonly IndexedRow[],
   prepared: Prepared,
-  facet: 'state' | 'drift' | 'goal',
+  facet: 'state' | 'drift' | 'goal' | 'headless',
 ): Option[] {
   const counts = facetCounts(indexed, prepared, facet);
   const list =
@@ -590,7 +604,9 @@ export function fixedOptions(
       ? STATE_VALUES.map((value) => ({ value, label: value }))
       : facet === 'drift'
         ? DRIFT_OPTIONS
-        : GOAL_OPTIONS;
+        : facet === 'headless'
+          ? HEADLESS_OPTIONS
+          : GOAL_OPTIONS;
   return list.map((one) => ({
     value: one.value,
     label: one.label,
@@ -609,6 +625,8 @@ export function optionLabel(
   if (facet === 'harness') return harnesses.find((one) => one.key === value)?.label ?? value;
   if (facet === 'drift') return DRIFT_OPTIONS.find((one) => one.value === value)?.label ?? value;
   if (facet === 'goal') return GOAL_OPTIONS.find((one) => one.value === value)?.label ?? value;
+  if (facet === 'headless')
+    return HEADLESS_OPTIONS.find((one) => one.value === value)?.label ?? value;
   return value;
 }
 
