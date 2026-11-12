@@ -329,6 +329,7 @@
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
           "work_activity": null,
+          "work_in_flight_until": null,
           "worktree": null
         },
         {
@@ -480,6 +481,7 @@
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
           "work_activity": null,
+          "work_in_flight_until": null,
           "worktree": null
         },
         {
@@ -631,6 +633,7 @@
           "turn_output_tokens": null,
           "wait_unconfirmed": false,
           "work_activity": null,
+          "work_in_flight_until": null,
           "worktree": null
         }
       ],
@@ -671,7 +674,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "23020",
+      "Content-Length": "23110",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.2"

@@ -165,12 +165,13 @@
         "turn_output_tokens": null,
         "wait_unconfirmed": false,
         "work_activity": null,
+        "work_in_flight_until": null,
         "worktree": null
       }
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "5164",
+      "Content-Length": "5192",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
