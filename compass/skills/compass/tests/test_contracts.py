@@ -1655,6 +1655,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.project_context",
             "compass_runtime.reading",
             "compass_runtime.reading_final_call",
+            "compass_runtime.reading_map_call",
             "compass_runtime.reading_map_series",
             "compass_runtime.reading_pass_context",
             "compass_runtime.reading_passes",
