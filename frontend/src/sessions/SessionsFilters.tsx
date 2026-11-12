@@ -508,6 +508,7 @@ export function SessionsFilters({
       state: fixedOptions(indexed, prepared, 'state'),
       drift: fixedOptions(indexed, prepared, 'drift'),
       goal: fixedOptions(indexed, prepared, 'goal'),
+      headless: fixedOptions(indexed, prepared, 'headless'),
     }),
     [indexed, prepared, filtered, board.harnesses],
   );
@@ -537,6 +538,7 @@ export function SessionsFilters({
   const facetNames: Readonly<Record<Facet, string>> = {
     project: 'Project',
     harness: 'Harness',
+    headless: 'Headless',
     state: 'State',
     drift: 'Drift',
     goal: 'Goal',
@@ -554,7 +556,7 @@ export function SessionsFilters({
         (order.indexOf(b) === -1 ? order.length : order.indexOf(b)),
     );
   };
-  for (const facet of ['project', 'harness', 'state', 'drift', 'goal'] as const) {
+  for (const facet of ['project', 'harness', 'headless', 'state', 'drift', 'goal'] as const) {
     if (!filters[facet].length) continue;
     const text = chipText(
       facetNames[facet],
@@ -811,6 +813,19 @@ export function SessionsFilters({
               chosen={filters.harness}
               onToggle={(value) => toggle('harness', value)}
             />
+          </FilterButton>
+          <FilterButton facet="headless" name="Headless" selected={filters.headless.length}>
+            <OptionList
+              facet="headless"
+              name="Headless"
+              options={derived.headless}
+              chosen={filters.headless}
+              onToggle={(value) => toggle('headless', value)}
+            />
+            <p className={NOTE}>
+              Read from Claude Code transcripts. Unknown entrypoints and other harnesses stay under
+              Not known to be headless.
+            </p>
           </FilterButton>
           <FilterButton facet="state" name="State" selected={filters.state.length}>
             <OptionList

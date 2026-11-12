@@ -1,6 +1,6 @@
 # Design: finding sessions on Sessions
 
-This record owns the Find sessions toolbar on Sessions: one search field, six filters, three presets,
+This record owns the Find sessions toolbar on Sessions: one search field, seven filters, three presets,
 and the lines that say what the filters hide. The module map belongs to
 [design-runtime-architecture.md](design-runtime-architecture.md), and what survives a board refresh
 belongs to [the reader-state record](design-reader-state.md). The code is three files under
@@ -18,7 +18,7 @@ facts (ACTIVE NOW and WORKING) and before Active now. It holds:
 
 - a search field, an uncontrolled `DraftInput` with a leading search icon, a `/` hint and a Clear
   search button;
-- six filter buttons, Date, Project, Harness, State, Drift and Goal, each opening a popover of
+- seven filter buttons, Date, Project, Harness, Headless, State, Drift and Goal, each opening a popover of
   checkboxes or radios with a count beside each option;
 - three presets in a group named "Quick filters": Waiting on you, Started today and Drift recorded;
 - a chip for each filter that is on, each removed by one press, and Clear all;
@@ -120,9 +120,24 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 | Date | Filter by Started (the default) or Last active. Then Any time, Last hour, Today, Yesterday, Last 7 days, or the not-published option. A checkbox, "Also show sessions with no start time" | Started: `started_at`, otherwise `first_prompt_at`, the order the session's age uses. Last active: `last_activity` |
 | Project | Exact published labels in `Intl.Collator('en')` order, the blank label after them and the empty label last. A "Find a project" field narrows a list of more than 8 | `project`, the label Sessions and Projects group on. `project_key` only for the shared-location note |
 | Harness | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
+| Headless | Headless; Not known to be headless | `headless === true` for Headless; every other value, including missing and null, for Not known to be headless |
 | State | Waiting on you, Working, Idle, Ended, State not published | `rowState()` |
 | Drift | Drift recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded drift, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
 | Goal | Goal saved; Drafted from a prompt, not saved; No goal yet | `goalCell()`: typed words are saved, a known goal without them is drafted |
+
+Headless starts with neither value selected, so all sessions show. Its second option hides only
+measured headless runs; it does not claim that unknown sessions are interactive. The popover says
+the value is read from Claude Code transcripts. The choice shares the other facets' counts, chips and
+[tab-lifetime persistence](#persistence).
+
+The Claude collector publishes `headless` from the session's own transcript, never a child's.
+`entrypoint: sdk-cli` means true and `entrypoint: cli` means false, measured in
+[the headless command capture](captures/claude/headless-command-shapes-2.1.319-macos.jsonl) and
+[the interactive command capture](captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl).
+The existing bounded incremental goal read also reads entrypoints, retaining the latest observed
+declaration across appends. A cold read that finds none, an unmeasured entrypoint, an unread row and
+other harnesses publish null. No parent-child relationship is inferred. This is a current board
+field; no lifecycle envelope writes it and no session-history field is added.
 
 Started is the Date default because it is what readers asked for, and because it is the only choice
 that discriminates on a 24-hour board, where every session was active inside the window by
@@ -149,7 +164,8 @@ counts sessions and never establishes a location, so no copy here states a numbe
 ## Absent values
 
 A value a session does not publish has its own named option. It is never counted as zero, as idle or
-as older.
+as older. Headless groups unknown values with the measured non-headless values under Not known to be
+headless, so hiding known headless runs keeps both.
 
 - Date: a row with no stamp in the chosen field matches no dated choice. It is counted in its own
   option, "Start not published (n)" or "Activity time not published (n)", and in a line under the

@@ -126,6 +126,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
     {
       harness: 'claude',
       sid: SIDS.A,
+      headless: false,
       title: 'Combat Completion',
       project: 'projects/pendulum-of-despair',
       project_key: 'k-pod',
@@ -138,6 +139,7 @@ export function sessionRows(options: FixtureOptions = {}): Record<string, unknow
     {
       harness: 'claude',
       sid: SIDS.B,
+      headless: true,
       title: 'Changelog for 2.4',
       project: 'recce/compass',
       project_key: 'k-rc',

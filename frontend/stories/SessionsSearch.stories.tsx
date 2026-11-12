@@ -179,6 +179,34 @@ async function dispatchKey(target: EventTarget, key: string): Promise<KeyboardEv
   return event;
 }
 
+export const HideKnownHeadless: Story = {
+  play: async ({ canvasElement }) => {
+    await ready(canvasElement);
+    const popup = await openFilter(canvasElement, 'headless', 'Headless');
+    await expect(options(popup, 'headless').map(({ label, count }) => ({ label, count }))).toEqual([
+      { label: 'Headless', count: '1' },
+      { label: 'Not known to be headless', count: '11' },
+    ]);
+    await expect(
+      within(popup).getByText(
+        'Read from Claude Code transcripts. Unknown entrypoints and other harnesses stay under Not known to be headless.',
+      ),
+    ).toBeVisible();
+    await pick(popup, 'Not known to be headless');
+    await closeFilters();
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
+    await expect(rowOf(canvasElement, 'A')).not.toBeNull();
+    await expect(rowOf(canvasElement, 'B')).toBeNull();
+    await expect(rowOf(canvasElement, 'C')).not.toBeNull();
+    await expect(chips(canvasElement)).toEqual(['Headless: Not known to be headless']);
+    await poll();
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Clear all' }));
+    await waitFor(() => expect(shownRows(canvasElement)).toBe('ABCDEFGHIJKL'));
+  },
+};
+
 /* 1 */
 export const DefaultBoard: Story = {
   play: async ({ canvasElement }) => {

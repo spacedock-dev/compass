@@ -1021,6 +1021,11 @@ def collect(
                     if info and transcript
                     else None
                 ),
+                **(
+                    claude_data.session_entrypoint(state, transcript).published()
+                    if info and transcript
+                    else {}
+                ),
                 # How that goal ended, from the same read of the same cache entry, so after it.
                 # Keys of their own, never the goal's: the goal stays None after either, and
                 # None here is "not seen", which is not "did not happen".

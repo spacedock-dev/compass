@@ -611,6 +611,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         # The `/goal` a Claude Code session holds, `{"text", "at"}`, or None. None is also what a
         # session from before `/goal` publishes, so absence reads the same as "never set one".
         "session_goal": None,
+        "headless": None,
         # How the goal above ended, when the transcript showed it: `{"at"}` for a clear and
         # `{"at", "reason"}` for the harness giving up. None is "not seen", never "did not
         # happen", and the goal stays None either way.

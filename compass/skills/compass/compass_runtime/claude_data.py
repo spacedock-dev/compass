@@ -764,7 +764,8 @@ def session_goal(
     session with none would otherwise be reread end to end on every collection. A cold read
     starts at most `config.turn_scan_max_bytes` from the end; a goal set before that and not
     touched since is not seen, and publishes nothing rather than a guess. Only complete lines
-    count, so a half-written record is read once it finishes.
+    count, so a half-written record is read once it finishes. On Claude Code this same pass keeps
+    the session's latest entrypoint for `session_entrypoint`; it adds no separate file read.
 
     The published mapping is `{"text", "at"}`, with `offered` and `cut` added when the condition
     is longer than the Goal field holds (`_with_excerpt`), and `verdict` (`{met, at, reason}`, the
@@ -797,6 +798,7 @@ def session_goal(
         )
         # A read from byte 0 has seen everything, so no goal event means none was ever recorded.
         seen = pos == 0
+    headless = cached.get("headless") if not cold and cached is not None else None
     if pos < stat.st_size:
         try:
             with open(path, "rb") as source:
@@ -811,12 +813,27 @@ def session_goal(
         end = data.rfind(b"\n")
         if end >= 0:
             for raw in data[:end].split(b"\n"):
-                if b"goal" not in raw or not raw.startswith(b"{"):
+                if not raw.startswith(b"{") or (
+                    b"goal" not in raw and (harness != "claude" or b'"entrypoint"' not in raw)
+                ):
                     continue
                 try:
-                    event = read_event(json.loads(raw))
+                    record = json.loads(raw)
+                    event = read_event(record) if b"goal" in raw else None
                 except (ValueError, RecursionError):
                     continue
+                if (
+                    harness == "claude"
+                    and isinstance(record, dict)
+                    and record.get("isSidechain") is not True
+                    and "entrypoint" in record
+                ):
+                    # Measured in the headless-command and scheduled-command 2.1.319 captures:
+                    # only sdk-cli and cli establish a mode; a missing value establishes none.
+                    entrypoint = record["entrypoint"]
+                    headless = (
+                        True if entrypoint == "sdk-cli" else False if entrypoint == "cli" else None
+                    )
                 if event is not None:
                     seen = True
                     goal_state = _advance_goal(goal_state, event, cap)
@@ -825,7 +842,7 @@ def session_goal(
         runtime_state.bounded_put(
             state.metadata_cache,
             key,
-            {"ino": stat.st_ino, "pos": pos, **goal_state, "seen": seen},
+            {"ino": stat.st_ino, "pos": pos, **goal_state, "seen": seen, "headless": headless},
             limit=config.max_cache_entries,
         )
     goal = goal_state["goal"]
@@ -838,6 +855,22 @@ def session_goal(
 
 
 _GOAL_READERS = {"codex": _codex_goal_event, "antigravity": _antigravity_goal_event}
+
+
+@dataclass(frozen=True)
+class SessionEntrypoint:
+    headless: bool | None = None
+
+    def published(self) -> dict[str, bool | None]:
+        return {"headless": self.headless}
+
+
+def session_entrypoint(state: RuntimeState, path: str) -> SessionEntrypoint:
+    """The mode seen by the last `session_goal` read, without opening the transcript again."""
+    with state.cache_lock:
+        cached = state.metadata_cache.get(f"session-goal:{path}")
+    value = cached.get("headless") if cached else None
+    return SessionEntrypoint(value if isinstance(value, bool) else None)
 
 
 def _cached_goal_state(cached: dict[str, Any]) -> GoalState:
