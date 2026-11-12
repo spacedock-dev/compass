@@ -67,7 +67,7 @@ describe('reading storage', () => {
     const storage = createLegacyStorage(() => backend);
     expect(Object.keys(storage.usage.counts())).toHaveLength(200);
     expect(storage.guardrails.rules('p')).toHaveLength(50);
-    expect(storage.memo.read(memoKey('p', null, 'outcome'))).toHaveLength(500);
+    expect(storage.memo.read(memoKey('p', null, 'outcome'))).toHaveLength(700);
     expect(
       Object.keys(JSON.parse(backend.data.get('compass.projectUsage.v1') ?? '{}') as object),
     ).toHaveLength(201);

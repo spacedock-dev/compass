@@ -24,6 +24,21 @@ stays in the DOM. The retired page drew the question whole in each place. No gol
 every other class, attribute and word is still held to the recording. The `Sessions/Long question clamp` stories
 hold the clamp in the Sessions row and the waiting rail at 1280 and 400 pixels.
 
+2026-11-12, the owner raised browser-local note, tripwire and memo text limits to 2,000 code points.
+Their boxes keep an over-limit paste whole, show a counter from 1,600, and block save or add with a
+sentence naming the length and limit. Memo autosave pauses while over the limit; each memo key keeps
+its draft and original across switching editors and remounts until Done or Escape. Escape restores
+the value held when editing began unless another tab saved since, and then writes nothing. A reload drops an unsaved draft because draft memory lives only
+in the tab. A fifty-first tripwire is refused with
+"You have 50 tripwires on this project. Remove one to add another." and keeps the draft and every saved
+rule. Each tripwire has a Remove control; removing one frees space for the refused draft.
+Mutations read storage again so a cached list cannot overwrite another tab's saved rule.
+The twenty-first note says "Older notes are not kept." while retaining the newest twenty receipts.
+The `Steering/Local notes and limits` stories and the storage, steering and human-context Vitest files
+hold these departures. No golden file is changed. The on-demand `storage-conformance.mjs`,
+`console-parity.mjs` and `controls-continuity.mjs` still encode the retired 500-unit cuts, `maxlength`,
+and last-fifty-on-add behavior; they were not run for this change and do not certify these new limits.
+
 2026-11-05, the reading-scope sentence leaves out what Compass answered. The two sentences that say what a
 reading reads (the offer before a first reading and the scope after one) now say the observed record in the
 session's activity "except entries marked as Compass's answer", because the server marks what the agent ran and
@@ -714,7 +729,7 @@ pending-action registry and the one per-document storage instance for as long as
 
 The legacy source won wherever a prose description disagreed with it, because the port had to stay
 compatible with the page a reader could roll back to; the recorded answers keep that outcome. Measured
-differences from the first written port map, all resolved toward the legacy code: the guardrail cap keeps the first fifty valid rules on read and the last fifty on add;
+differences from the first written port map, all resolved toward the legacy code: the guardrail cap kept the first fifty valid rules on read and the last fifty on add (the owner's 2026-11-12 departure above replaces eviction on add with refusal);
 the twelve-hold select deferral resets only when a deferred commit is waiting, never past the cap;
 the usage load counts an empty-key entry against its 200 before dropping it; and a real navigation
 does not release the leader lease, because the stream reports closed before `pagehide` fires.

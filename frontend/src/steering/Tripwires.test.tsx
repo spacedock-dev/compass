@@ -33,6 +33,53 @@ describe('the panel says nothing enforces these', () => {
 });
 
 describe('the rules', () => {
+  it.each(['remove', 'toggle'] as const)(
+    'lets a reader %s B after another tab removes A, without changing C',
+    async (action) => {
+      const page = mountPanels(<Tripwires project="p" />, {
+        storage: { [KEY('p')]: '["A","B","C"]' },
+      });
+      await page.settle();
+      page.backend.setItem(KEY('p'), '["B","C"]');
+      await press(
+        action === 'remove'
+          ? screen.getByRole('button', { name: 'Remove tripwire: B' })
+          : screen.getByRole('switch', { name: 'B' }),
+      );
+      expect(rows().map((row) => row.querySelector('strong')?.textContent)).toEqual(
+        action === 'remove' ? ['C'] : ['B', 'C'],
+      );
+      expect(JSON.parse(page.backend.data.get(KEY('p')) ?? '[]')).toEqual(
+        action === 'remove'
+          ? [{ enabled: true, text: 'C' }]
+          : [
+              { enabled: false, text: 'B' },
+              { enabled: true, text: 'C' },
+            ],
+      );
+    },
+  );
+
+  it.each(['remove', 'toggle'] as const)(
+    'refreshes a missing rule after a stale %s without writing',
+    async (action) => {
+      const page = mountPanels(<Tripwires project="p" />, {
+        storage: { [KEY('p')]: '["A","B","C"]' },
+      });
+      await page.settle();
+      page.backend.setItem(KEY('p'), '["A","C"]');
+      const writes = page.backend.writes.length;
+      await press(
+        action === 'remove'
+          ? screen.getByRole('button', { name: 'Remove tripwire: B' })
+          : screen.getByRole('switch', { name: 'B' }),
+      );
+      expect(rows().map((row) => row.querySelector('strong')?.textContent)).toEqual(['A', 'C']);
+      expect(page.backend.writes).toHaveLength(writes);
+      expect(screen.getByText(/Tripwires changed in another tab/)).toBeVisible();
+    },
+  );
+
   it('read what an older build stored, and write the released shape', async () => {
     const page = mountPanels(<Tripwires project="alpha/app" />, {
       storage: {
@@ -71,21 +118,117 @@ describe('the rules', () => {
     expect(page.backend.data.has(KEY('beta/api'))).toBe(false);
   });
 
-  it('keep the newest fifty and cut each to five hundred characters', async () => {
-    const page = mountPanels(<Tripwires project="p" />);
+  it('keep all fifty tripwires and the draft when another add is refused', async () => {
+    const rules = Array.from({ length: 50 }, (_, index) => `rule ${String(index + 1)}`);
+    const stored = JSON.stringify(rules);
+    const page = mountPanels(<Tripwires project="p" />, { storage: { [KEY('p')]: stored } });
     await page.settle();
-    for (let n = 1; n <= 52; n += 1) {
-      await press(add());
-      type(input(), n === 52 ? 'x'.repeat(600) : `rule ${String(n)}`);
-      fireEvent.keyDown(input(), { key: 'Enter' });
-    }
+    await press(add());
+    type(input(), 'keep this draft');
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(
+      screen
+        .getAllByRole('status')
+        .some(
+          (node) =>
+            node.textContent ===
+            'You have 50 tripwires on this project. Remove one to add another.',
+        ),
+    ).toBe(true);
+    expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe('keep this draft');
     expect(rows()).toHaveLength(50);
-    expect((rows()[0] as HTMLElement).textContent).toContain('rule 3');
-    expect((rows()[49] as HTMLElement).querySelector('strong')?.textContent).toHaveLength(500);
+    expect(rows().map((row) => row.querySelector('strong')?.textContent)).toEqual(rules);
+    expect(page.backend.data.get(KEY('p'))).toBe(stored);
+    expect(page.backend.writes.filter((key) => key === KEY('p'))).toEqual([]);
+    page.show(<p>elsewhere</p>);
+    page.show(<Tripwires project="p" />);
+    await page.settle();
+    expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe('keep this draft');
+    const remove = screen.getByRole('button', { name: 'Remove tripwire: rule 1' });
+    remove.focus();
+    await press(remove);
+    await page.settle();
+    expect(document.activeElement).toBe(input());
+    expect(rows()).toHaveLength(49);
+    expect(input().value).toBe('keep this draft');
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(rows()).toHaveLength(50);
+    expect(rows().at(-1)?.querySelector('strong')?.textContent).toBe('keep this draft');
+  });
+
+  it('returns focus to the add control when the last rule is removed with no editor open', async () => {
+    const page = mountPanels(<Tripwires project="p" />, { storage: { [KEY('p')]: '["only"]' } });
+    await page.settle();
+    const remove = screen.getByRole('button', { name: 'Remove tripwire: only' });
+    remove.focus();
+    await press(remove);
+    await page.settle();
+    expect(document.activeElement).toBe(add());
+    expect(rows()).toHaveLength(0);
   });
 });
 
 describe('the add box', () => {
+  it('accepts 1050 emoji as 1050 characters', async () => {
+    const page = mountPanels(<Tripwires project="p" />);
+    await page.settle();
+    await press(add());
+    const text = '😀'.repeat(1050);
+    type(input(), text);
+    expect(input().hasAttribute('aria-invalid')).toBe(false);
+    expect(document.querySelector('[data-character-count]')).toBeNull();
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(rows()[0]?.querySelector('strong')?.textContent).toBe(text);
+  });
+  it.each(['界'.repeat(2100), '😀'.repeat(2100)])(
+    'keeps an over-limit paste, refuses Enter and submit, and adds after editing back',
+    async (text) => {
+      const page = mountPanels(<Tripwires project="alpha/app" />);
+      await page.settle();
+      await press(add());
+      type(input(), text);
+      expect(input().hasAttribute('maxlength')).toBe(false);
+      expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      expect(screen.getByText('2100/2000').getAttribute('data-over')).toBe('true');
+      expect(input().getAttribute('aria-invalid')).toBe('true');
+      expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
+      expect((screen.getByRole('button', { name: 'add ↵' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      fireEvent.keyDown(input(), { key: 'Enter' });
+      fireEvent.submit(input().closest('form') as HTMLFormElement);
+      expect(rows()).toHaveLength(0);
+      expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      page.show(<p>elsewhere</p>);
+      page.show(<Tripwires project="alpha/app" />);
+      await page.settle();
+      expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      type(input(), Array.from(text).slice(0, 2000).join(''));
+      expect((screen.getByRole('button', { name: 'add ↵' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+      fireEvent.keyDown(input(), { key: 'Enter' });
+      expect(rows()[0]?.querySelector('strong')?.textContent).toBe(
+        Array.from(text).slice(0, 2000).join(''),
+      );
+    },
+  );
+
+  it('shows a counter from eighty percent and lets Escape abandon over-limit words', async () => {
+    const page = mountPanels(<Tripwires project="alpha/app" />);
+    await page.settle();
+    await press(add());
+    type(input(), 'x'.repeat(1500));
+    expect(document.querySelector('[data-character-count]')).toBeNull();
+    type(input(), 'x'.repeat(1600));
+    expect(screen.getByText('1600/2000')).toBeVisible();
+    type(input(), 'x'.repeat(2100));
+    fireEvent.keyDown(input(), { key: 'Escape' });
+    await press(add());
+    expect((input() as HTMLInputElement | HTMLTextAreaElement).value).toBe('');
+    expect(document.querySelector('[data-character-count]')).toBeNull();
+  });
+
   it('stays open for the tab, with its words, when the panel leaves and returns', async () => {
     const page = mountPanels(<Tripwires project="alpha/app" />);
     await page.settle();

@@ -1,6 +1,7 @@
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import type { FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
+import { CharacterCount } from '../ui/CharacterCount';
 import { DraftInput } from '../controls/DraftField';
 import { useHeldVersion, useSteeringHeld, TEXT_LIMIT } from './held';
 import './steering.css';
@@ -24,19 +25,6 @@ export function ProjectSteer({
 }) {
   const held = useSteeringHeld();
   useHeldVersion(held);
-  const key = `steer-draft:${project}`;
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const input = event.currentTarget.elements.namedItem('steer');
-    if (!(input instanceof HTMLInputElement)) return;
-    const text = input.value.trim().slice(0, TEXT_LIMIT);
-    if (!text) return;
-    held.recordSteer(project, text);
-    // The receipt below carries the sentence now. Leaving it in the box too would show it twice and record
-    // it again on the next press.
-    held.clearDraft(project, 'steer');
-    input.value = '';
-  };
   return (
     <section className={`next-control next-steer${layout ? ` ${layout}` : ''}`} data-next-steer>
       <header>
@@ -46,25 +34,10 @@ export function ProjectSteer({
           kept in this browser tab.
         </p>
       </header>
-      <form data-next-steer-form data-next-controls-project={project} onSubmit={onSubmit}>
-        <label>
-          <span className="next-visually-hidden">Steer draft</span>
-          <DraftInput
-            memoryKey={key}
-            focusKey={key}
-            name="steer"
-            maxLength={TEXT_LIMIT}
-            placeholder="Draft a next step — kept in this tab only"
-            data-next-draft="steer"
-            data-next-controls-project={project}
-            defaultValue={held.draft(project, 'steer')}
-            onInput={(event) => held.setDraft(project, 'steer', event.currentTarget.value)}
-          />
-        </label>
-        <Button type="submit" tone="muted">
-          save draft ⏎
-        </Button>
-      </form>
+      <SteerEditor key={project} project={project} />
+      {held.steersDropped(project) ? (
+        <p className="next-steer-caveat">Older notes are not kept.</p>
+      ) : null}
       {held.steers(project).length ? (
         <div className="next-steer-receipts">
           {held.steers(project).map((record, index) => (
@@ -85,5 +58,56 @@ export function ProjectSteer({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function SteerEditor({ project }: { readonly project: string }) {
+  const held = useSteeringHeld();
+  const key = `steer-draft:${project}`;
+  const countId = useId();
+  const [length, setLength] = useState(() => [...held.draft(project, 'steer')].length);
+  const over = length > TEXT_LIMIT;
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const input = event.currentTarget.elements.namedItem('steer');
+    if (!(input instanceof HTMLInputElement)) return;
+    if ([...input.value].length > TEXT_LIMIT) return;
+    const text = input.value.trim();
+    if (!text) return;
+    held.recordSteer(project, text);
+    // The receipt below carries the sentence now. Leaving it in the box too would show it twice and record
+    // it again on the next press.
+    held.clearDraft(project, 'steer');
+    input.value = '';
+    setLength(0);
+    held.notify();
+  };
+  return (
+    <form data-next-steer-form data-next-controls-project={project} onSubmit={onSubmit}>
+      <label>
+        <span className="next-visually-hidden">Steer draft</span>
+        <DraftInput
+          memoryKey={key}
+          focusKey={key}
+          name="steer"
+          aria-label="Steer draft"
+          aria-describedby={countId}
+          aria-invalid={over || undefined}
+          placeholder="Draft a next step — kept in this tab only"
+          data-next-draft="steer"
+          data-next-controls-project={project}
+          defaultValue={held.draft(project, 'steer')}
+          onInput={(event) => {
+            const text = event.currentTarget.value;
+            held.setDraft(project, 'steer', text);
+            setLength([...text].length);
+          }}
+        />
+        <CharacterCount id={countId} length={length} limit={TEXT_LIMIT} />
+      </label>
+      <Button type="submit" tone="muted" disabled={over}>
+        save draft ⏎
+      </Button>
+    </form>
   );
 }

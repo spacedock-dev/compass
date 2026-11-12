@@ -1,4 +1,8 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
+import { Profiler } from 'react';
+import { steeringHeldFor } from './held';
+import { Tripwires } from './Tripwires';
+import { StageConditions } from './StageConditions';
 import { describe, expect, it } from 'vitest';
 import { ProjectSteer } from './ProjectSteer';
 import { mountPanels } from './testing';
@@ -23,11 +27,104 @@ describe('the steering bar says what it is before the first keystroke', () => {
         /Compass has no write path into a session\. Anything you type here is a note to yourself/,
       ),
     ).toBeInTheDocument();
-    expect(box().getAttribute('maxlength')).toBe('500');
+    expect(box().hasAttribute('maxlength')).toBe(false);
   });
 });
 
 describe('a draft', () => {
+  it('accepts 1050 emoji and counts 1600 emoji as 1600 characters', async () => {
+    const page = mountPanels(<ProjectSteer project="p" />);
+    await page.settle();
+    type(box(), '😀'.repeat(1600));
+    expect(screen.getByText('1600/2000')).toBeVisible();
+    type(box(), '😀'.repeat(1050));
+    expect(box().hasAttribute('aria-invalid')).toBe(false);
+    expect(document.querySelector('[data-character-count]')).toBeNull();
+    fireEvent.submit(box().closest('form') as HTMLFormElement);
+    expect(document.querySelector('[data-next-steer-receipt] strong')?.textContent).toBe(
+      '😀'.repeat(1050),
+    );
+  });
+
+  it('updates each local counter without notifying shared subscribers or rendering sibling panels', async () => {
+    let siblingRenders = 0;
+    const page = mountPanels(
+      <>
+        <ProjectSteer project="p" />
+        <Profiler
+          id="siblings"
+          onRender={() => {
+            siblingRenders += 1;
+          }}
+        >
+          <Tripwires project="p" />
+          <StageConditions sessions={null} />
+        </Profiler>
+      </>,
+    );
+    await page.settle();
+    const held = steeringHeldFor(page.shell);
+    let notifications = 0;
+    const stop = held.subscribe(() => {
+      notifications += 1;
+    });
+    const before = siblingRenders;
+    type(box(), 'x'.repeat(1600));
+    expect(screen.getByText('1600/2000')).toBeVisible();
+    expect(notifications).toBe(0);
+    expect(siblingRenders).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: '+ set a tripwire' }));
+    const opened = notifications;
+    const tripwire = screen.getByRole('textbox', { name: 'New local tripwire' });
+    fireEvent.input(tripwire, { target: { value: 'x'.repeat(2100) } });
+    expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
+    expect(notifications).toBe(opened);
+    stop();
+  });
+  it.each(['界'.repeat(2100), '😀'.repeat(2100)])(
+    'keeps an over-limit paste, blocks saving and enables it after editing back',
+    async (text) => {
+      const page = mountPanels(<ProjectSteer project="alpha/app" />);
+      await page.settle();
+      type(box(), text);
+      expect((box() as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      expect(box().getAttribute('aria-invalid')).toBe('true');
+      expect(screen.getByText('2100/2000').getAttribute('data-over')).toBe('true');
+      expect(screen.getByText('2100 characters; the limit is 2000.')).toBeVisible();
+      expect(
+        (screen.getByRole('button', { name: 'save draft ⏎' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      fireEvent.submit(box().closest('form') as HTMLFormElement);
+      expect(document.querySelectorAll('[data-next-steer-receipt]')).toHaveLength(0);
+      page.show(<p>elsewhere</p>);
+      page.show(<ProjectSteer project="alpha/app" />);
+      await page.settle();
+      expect((box() as HTMLInputElement | HTMLTextAreaElement).value).toBe(text);
+      expect(
+        (screen.getByRole('button', { name: 'save draft ⏎' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      type(box(), Array.from(text).slice(0, 2000).join(''));
+      expect(
+        (screen.getByRole('button', { name: 'save draft ⏎' }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+      fireEvent.submit(box().closest('form') as HTMLFormElement);
+      expect(document.querySelector('[data-next-steer-receipt] strong')?.textContent).toBe(
+        Array.from(text).slice(0, 2000).join(''),
+      );
+    },
+  );
+
+  it('shows the counter from eighty percent and hides it below that point', async () => {
+    const page = mountPanels(<ProjectSteer project="alpha/app" />);
+    await page.settle();
+    type(box(), 'x'.repeat(1500));
+    expect(screen.queryByText('1500/2000')).toBeNull();
+    type(box(), 'x'.repeat(1600));
+    expect(screen.getByText('1600/2000')).toBeVisible();
+    type(box(), 'x'.repeat(1500));
+    expect(document.querySelector('[data-character-count]')).toBeNull();
+  });
+
   it('survives the bar leaving and coming back, with its caret', async () => {
     const page = mountPanels(<ProjectSteer project="alpha/app" />);
     await page.settle();
@@ -112,20 +209,26 @@ describe('sending a draft', () => {
     expect(page.allPosts()).toEqual([]);
   });
 
-  it('keeps only the newest twenty receipts, oldest first', async () => {
+  it('says when older notes are gone after the twenty-first receipt, and keeps the notice on return', async () => {
     const page = mountPanels(<ProjectSteer project="alpha/app" />);
     await page.settle();
-    for (let n = 1; n <= 23; n += 1) {
+    for (let n = 1; n <= 21; n += 1) {
       type(box(), `note ${String(n)}`);
       await act(async () => {
         fireEvent.submit(box().closest('form') as HTMLFormElement);
       });
+      if (n === 20) expect(screen.queryByText('Older notes are not kept.')).toBeNull();
     }
     const notes = [...document.querySelectorAll('[data-next-steer-receipt] strong')].map(
       (node) => node.textContent,
     );
     expect(notes).toHaveLength(20);
-    expect(notes[0]).toBe('note 4');
-    expect(notes[19]).toBe('note 23');
+    expect(notes[0]).toBe('note 2');
+    expect(notes[19]).toBe('note 21');
+    expect(screen.getByText('Older notes are not kept.')).toBeVisible();
+    page.show(<p>elsewhere</p>);
+    page.show(<ProjectSteer project="alpha/app" />);
+    await page.settle();
+    expect(screen.getByText('Older notes are not kept.')).toBeVisible();
   });
 });
