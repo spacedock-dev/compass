@@ -77,7 +77,7 @@ export const GOAL_OPTIONS: readonly { readonly value: GoalValue; readonly label:
 ];
 export const HEADLESS_OPTIONS = [
   { value: 'headless', label: 'Headless' },
-  { value: 'other', label: 'Not known to be headless' },
+  { value: 'other', label: 'Hide known headless' },
 ] as const;
 export const WHENS: readonly When[] = ['any', 'hour', 'today', 'yesterday', 'week', 'unstamped'];
 const WHEN_LABELS: Readonly<Record<Exclude<When, 'unstamped'>, string>> = {

@@ -18,6 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 from compass_runtime import annotations as annotation_store
 from compass_runtime import claude_data, history, project_context, reading, records
@@ -353,6 +354,46 @@ class AGoalOverTheGoalLimitIsOfferedCutTest(unittest.TestCase):
 
 
 class TheGoalIsReadOnAppendTest(unittest.TestCase):
+    def test_an_equal_length_rewrite_reads_the_changed_goal_without_inventing_a_replacement(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            config, state = make_runtime()
+            path = Path(home, "claude.jsonl")
+            _jsonl(path, set_goal(T0 + 5, "first goal"), T0)
+            self.assertEqual(
+                claude_data.session_goal(config, state, str(path)),
+                {"text": "first goal", "at": T0 + 5},
+            )
+            stat = path.stat()
+            _jsonl(path, set_goal(T0 + 5, "other goal"), T0 + 1)
+            self.assertEqual((path.stat().st_ino, path.stat().st_size), (stat.st_ino, stat.st_size))
+            self.assertEqual(
+                claude_data.session_goal(config, state, str(path)),
+                {"text": "other goal", "at": T0 + 5},
+            )
+
+    def test_a_failed_read_discards_goal_history_and_recovers_from_the_current_file(self) -> None:
+        for failure in ("stat", "open"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as home:
+                config, state = make_runtime()
+                path = Path(home, "claude.jsonl")
+                _jsonl(path, [*set_goal(T0 + 5), clear_sentinel(T0 + 10)], T0)
+                claude_data.session_goal(config, state, str(path))
+                self.assertIsNotNone(claude_data.session_goal_cleared(state, str(path)))
+                self.assertTrue(claude_data.goal_history_known(state, str(path)))
+                with path.open("a") as source:
+                    source.write(json.dumps(prompt(T0 + 20)) + "\n")
+                target = (
+                    "compass_runtime.claude_data.os.stat" if failure == "stat" else "builtins.open"
+                )
+                with mock.patch(target, side_effect=PermissionError("cannot read transcript")):
+                    self.assertIsNone(claude_data.session_goal(config, state, str(path)))
+                self.assertIsNone(claude_data.session_goal_cleared(state, str(path)))
+                self.assertFalse(claude_data.goal_history_known(state, str(path)))
+                claude_data.session_goal(config, state, str(path))
+                self.assertIsNotNone(claude_data.session_goal_cleared(state, str(path)))
+
     def test_a_goal_appended_after_a_read_is_read_without_a_rescan_from_the_top(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             config, state = make_runtime()

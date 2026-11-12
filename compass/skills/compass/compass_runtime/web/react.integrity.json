@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2317275,
+    "bytes": 2317287,
     "file": "react.html",
-    "sha256": "f4a4727a33f1ee3ab16275649f499a90608e47ede80b29655986bcd402087f1e"
+    "sha256": "ef8c52d7773c51ff514db8aed9a841be253f93afb621fec3e6a1d193befc638e"
   },
   "format": 1,
   "frontend": "react",
@@ -1239,7 +1239,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "135b52d94e07988f1cd0abac602019091bd3ca88566ec78920fb9f4e74ebdfa1"
+        "sha256": "e33b7616e7317691283ee7ed2aa2c1d53cd20f2c3cd6237745ab4a0c20f1db33"
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
@@ -1267,7 +1267,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "9111b7055a9a728404ea5739781731fca0d83fc6158977693bdfb23815f5d09b"
+        "sha256": "4b6f857ac4f87532b8316e7da43abd8194e1e3fb926f790a062a603c673baacc"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",

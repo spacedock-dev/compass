@@ -185,20 +185,22 @@ export const HideKnownHeadless: Story = {
     const popup = await openFilter(canvasElement, 'headless', 'Headless');
     await expect(options(popup, 'headless').map(({ label, count }) => ({ label, count }))).toEqual([
       { label: 'Headless', count: '1' },
-      { label: 'Not known to be headless', count: '11' },
+      { label: 'Hide known headless', count: '11' },
     ]);
-    await expect(
-      within(popup).getByText(
-        'Read from Claude Code transcripts. Unknown entrypoints and other harnesses stay under Not known to be headless.',
-      ),
-    ).toBeVisible();
-    await pick(popup, 'Not known to be headless');
+    await waitFor(() =>
+      expect(
+        within(popup).getByText(
+          'Read from Claude Code transcripts. Hide known headless keeps unknown entrypoints and other harnesses shown.',
+        ),
+      ).toBeVisible(),
+    );
+    await pick(popup, 'Hide known headless');
     await closeFilters();
     await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
     await expect(rowOf(canvasElement, 'A')).not.toBeNull();
     await expect(rowOf(canvasElement, 'B')).toBeNull();
     await expect(rowOf(canvasElement, 'C')).not.toBeNull();
-    await expect(chips(canvasElement)).toEqual(['Headless: Not known to be headless']);
+    await expect(chips(canvasElement)).toEqual(['Headless: Hide known headless']);
     await poll();
     await waitFor(() => expect(shownRows(canvasElement)).toBe('ACDEFGHIJKL'));
     const canvas = within(canvasElement);

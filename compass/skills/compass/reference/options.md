@@ -117,7 +117,7 @@ storage and leaves the check setting as it was.
 - **Headless** is reported only from a Claude Code session's own transcript. The session payload's
   `headless` field is `true` for `entrypoint: sdk-cli`, `false` for `entrypoint: cli`, and `null`
   when no measured entrypoint was read, including other harnesses. The bounded incremental read can
-  miss an older entrypoint on a cold read. The Sessions filter's Not known to be headless option keeps
+  miss an older entrypoint on a cold read. The Sessions filter's Hide known headless option keeps
   both `false` and unknown values; all sessions show until a filter is chosen.
 - **Current-turn estimates** compare elapsed generation time with completed turns from the same
   session. They are withheld when there is no defensible sample. A quiet gap longer than five

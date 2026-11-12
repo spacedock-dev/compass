@@ -120,7 +120,7 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 | Date | Filter by Started (the default) or Last active. Then Any time, Last hour, Today, Yesterday, Last 7 days, or the not-published option. A checkbox, "Also show sessions with no start time" | Started: `started_at`, otherwise `first_prompt_at`, the order the session's age uses. Last active: `last_activity` |
 | Project | Exact published labels in `Intl.Collator('en')` order, the blank label after them and the empty label last. A "Find a project" field narrows a list of more than 8 | `project`, the label Sessions and Projects group on. `project_key` only for the shared-location note |
 | Harness | Harnesses the payload marks `discovered`, in payload order, with payload labels | `harness`, and `payload.harnesses` |
-| Headless | Headless; Not known to be headless | `headless === true` for Headless; every other value, including missing and null, for Not known to be headless |
+| Headless | Headless; Hide known headless | `headless === true` for Headless; every other value, including missing and null, for Hide known headless |
 | State | Waiting on you, Working, Idle, Ended, State not published | `rowState()` |
 | Drift | Drift recorded; Checked against your current words, none recorded; Not checked against your current words | Recorded drift, `departure_checked`, and a stored reading whose `revision_read` equals `annotation_revision` |
 | Goal | Goal saved; Drafted from a prompt, not saved; No goal yet | `goalCell()`: typed words are saved, a known goal without them is drafted |
@@ -130,14 +130,23 @@ measured headless runs; it does not claim that unknown sessions are interactive.
 the value is read from Claude Code transcripts. The choice shares the other facets' counts, chips and
 [tab-lifetime persistence](#persistence).
 
-The Claude collector publishes `headless` from the session's own transcript, never a child's.
+The Claude collector publishes `headless` only from non-sidechain records whose `sessionId`
+matches the transcript's filename stem. Copied records from a resumed session cannot set it.
 `entrypoint: sdk-cli` means true and `entrypoint: cli` means false, measured in
 [the headless command capture](captures/claude/headless-command-shapes-2.1.319-macos.jsonl) and
 [the interactive command capture](captures/claude/scheduled-command-shapes-2.1.319-macos.jsonl).
-The existing bounded incremental goal read also reads entrypoints, retaining the latest observed
-declaration across appends. A cold read that finds none, an unmeasured entrypoint, an unread row and
-other harnesses publish null. No parent-child relationship is inferred. This is a current board
-field; no lifecycle envelope writes it and no session-history field is added.
+The existing bounded incremental goal read also reads entrypoints, retaining the latest native
+declaration across appends. It selects entrypoints backwards within each batch, decoding only lines
+that contain an entrypoint and the native id until it finds a non-sidechain native declaration.
+The captures do not establish that a resume keeps the same entrypoint, so appends may change it.
+A changed inode, a smaller file, or a changed modification time without file growth restarts the
+bounded read for both entrypoint and goal state. The cache stores the observed size separately from
+the complete-line cursor so a rewrite beside a partial last record also restarts it. A failed stat
+or open discards that shared cache entry: headless and goal endings become unknown, goal history is
+unproven, and the next successful read is cold. A cold read that finds no native declaration, an
+unmeasured entrypoint, an unread row and other harnesses publish null. No parent-child relationship
+is inferred. This is a current board field; no lifecycle envelope writes it and no session-history
+field is added.
 
 Started is the Date default because it is what readers asked for, and because it is the only choice
 that discriminates on a 24-hour board, where every session was active inside the window by
@@ -164,7 +173,7 @@ counts sessions and never establishes a location, so no copy here states a numbe
 ## Absent values
 
 A value a session does not publish has its own named option. It is never counted as zero, as idle or
-as older. Headless groups unknown values with the measured non-headless values under Not known to be
+as older. Headless groups unknown values with the measured non-headless values under Hide known
 headless, so hiding known headless runs keeps both.
 
 - Date: a row with no stamp in the chosen field matches no dated choice. It is counted in its own
