@@ -17,7 +17,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 from urllib.parse import ParseResult, parse_qs, urlparse
 
 from compass_runtime import (
@@ -468,6 +468,96 @@ def _with_message_ordinals(
 # at most 1 MiB (`mcp_server.MAX_FRAME_BYTES`), so no question it forwards had
 # more characters than that.
 _ASK_SENT_CHARS_MAX = 1 << 20
+
+
+class AskText(NamedTuple):
+    """A question and its options as the card shows them, and what the card says
+    about a cut."""
+
+    question: str
+    options: tuple[str, ...]
+    question_sent_chars: int | None
+    dropped_options: int
+
+
+def ask_text(payload: dict[str, Any], config: runtime_config.RuntimeConfig) -> AskText | None:
+    """The card's text for a register body, or None if the body is unusable.
+
+    The one normaliser for a question and its options: `records.cut_text`, which
+    redacts the whole text before it cuts and keeps every cut inside its cap. The
+    stdio server sends its strings uncut, runs that same function on them, and
+    withdraws a question whose registered text differs from its own, so the label a reader
+    clicks is the string the session gets back. A test double of this route
+    calls this rather than copying it.
+
+    Past `ask_max_options` the leading options are kept rather than a sample,
+    and an option that bounds to empty refuses the whole request rather than
+    being dropped. Both follow from the answer being an index: the asking peer
+    resolves it against its own copy of the list, so keeping a prefix stays
+    aligned with that copy while dropping a member from the middle would
+    silently shift every later index onto the wrong option.
+
+    A non-string question or option is refused rather than coerced.
+    `records.safe_text` does `str(value or "")`, so it does not fail on one:
+    `[{"a": 1}]` published the label `{'a': 1}`, and falsiness rather than type
+    decided the rest, which is why `[1, 2]` was accepted while `[0, 1]` was
+    refused. The answer is an index into this tuple, so a stringified option is
+    a choice the asking session never offered.
+    """
+    raw_question = payload.get("question")
+    raw_options = payload.get("options")
+    if not isinstance(raw_question, str) or not isinstance(raw_options, list):
+        return None
+    whole = config.ask_body_cap_bytes
+    question, cut = records.cut_text(raw_question, config.ask_question_cap_chars, whole)
+    offered = raw_options[: config.ask_max_options]
+    if not all(isinstance(item, str) for item in offered):
+        return None
+    options = tuple(
+        records.cut_text(item, config.ask_option_cap_chars, whole)[0] for item in offered
+    )
+    # Two is the floor for a question worth putting on the board: one option is
+    # not a choice, and nothing can be rendered from an empty list. Two options
+    # the cut made identical are refused too: a reader cannot tell the buttons
+    # apart, and the asking session cannot tell the answers apart.
+    if not question or len(options) < 2 or not all(options) or len(set(options)) != len(options):
+        return None
+    return AskText(
+        question=question,
+        options=options,
+        question_sent_chars=_ask_sent_chars(
+            payload.get("question_sent_chars"), cut=cut, arrived=len(raw_question.strip())
+        ),
+        # Leading options are kept, so the dropped ones are the tail: the card
+        # says how many rather than leaving a reader to think the session
+        # offered only these.
+        dropped_options=len(raw_options) - len(options),
+    )
+
+
+def _ask_sent_chars(claim: Any, *, cut: bool, arrived: int) -> int | None:
+    """How many characters the session's question had, when this route cut it.
+
+    None unless the question's made-safe text was past the cap, so a card never
+    reports a cut nobody made: a sender cannot claim one by ending a short
+    question in "…". Otherwise the length that arrived, which is the whole
+    question since the stdio server sends it uncut. A sender's own
+    `question_sent_chars` is taken only where it is larger and no larger than
+    one frame, for a client that cut before sending. Any local process can post
+    a question, so that is consistency with a real cut rather than proof of
+    where the number came from. A bool is refused although it is an int, for
+    the reason `/api/answer` gives.
+
+    It can be under the cap: redacting a short credential lengthens it, so a
+    question the session sent at 1,995 characters can still be cut. The page
+    words that case by comparing this with the text it shows.
+    """
+    if not cut:
+        return None
+    if isinstance(claim, int) and not isinstance(claim, bool) and claim <= _ASK_SENT_CHARS_MAX:
+        return max(arrived, claim)
+    return arrived
+
 
 _LEASE_ACTIONS = frozenset({"start", "beat", "confirm", "stop"})
 _TAB_ID_CAP = 128
@@ -5697,78 +5787,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
             503,
         )
 
-    @staticmethod
-    def _ask_text(value: str, *, cap_chars: int, whole_chars: int) -> tuple[str, bool]:
-        """Agent-written text made safe and, past `cap_chars`, cut to end in "…";
-        and whether it was cut.
-
-        Made safe at `whole_chars`, the body cap, so nothing is cut before the
-        length is known. The cut goes through `records.redact_clip` again rather
-        than a slice, because a slice can land inside a redaction marker and
-        publish half of one; that is also the one case the cut may end past the
-        cap, by the length of the marker it finishes.
-        """
-        text = records.safe_text(value, whole_chars).strip()
-        if len(text) <= cap_chars:
-            return text, False
-        return records.redact_clip(text, cap_chars - 1).rstrip() + "\u2026", True
-
-    @staticmethod
-    def _ask_sent_chars(claim: Any, question: str, arrived: int) -> int | None:
-        """How long the stdio server's question was before it cut it, or None.
-
-        That server cuts before it sends, so what arrives is inside the cap and
-        only its `question_sent_chars` says a cut happened. It is believed only
-        where the card agrees: the question ends in the cut mark and the claim is
-        longer than what arrived. A bool is refused although it is an int, for
-        the reason `/api/answer` gives.
-        """
-        if (
-            question.endswith("\u2026")
-            and isinstance(claim, int)
-            and not isinstance(claim, bool)
-            and arrived < claim <= _ASK_SENT_CHARS_MAX
-        ):
-            return claim
-        return None
-
-    @staticmethod
-    def _ask_options(
-        value: Any, *, cap_chars: int, max_options: int, whole_chars: int
-    ) -> tuple[str, ...] | None:
-        """The offered options, bounded in count and length, or None if unusable.
-
-        Past `max_options` the leading options are kept rather than a sample,
-        and an option that bounds to empty refuses the whole request rather than
-        being dropped. Both follow from the answer being an index: the asking
-        peer resolves it against its own copy of the list, so keeping a prefix
-        stays aligned with that copy while dropping a member from the middle
-        would silently shift every later index onto the wrong option.
-
-        A non-string member is refused rather than coerced. `records.safe_text`
-        does `str(value or "")`, so it does not fail on one: `[{"a": 1}]`
-        published the label `{'a': 1}`, and falsiness rather than type decided
-        the rest, which is why `[1, 2]` was accepted while `[0, 1]` was refused.
-        The answer is an index into this tuple, so a stringified option is a
-        choice the asking session never offered.
-        """
-        if not isinstance(value, list):
-            return None
-        offered = value[:max_options]
-        if not all(isinstance(item, str) for item in offered):
-            return None
-        options = tuple(
-            _RequestHandler._ask_text(item, cap_chars=cap_chars, whole_chars=whole_chars)[0]
-            for item in offered
-        )
-        # Two is the floor for a question worth putting on the board: one option
-        # is not a choice, and nothing can be rendered from an empty list. Two
-        # options the cut made identical are refused too: a reader cannot tell
-        # the buttons apart, and the asking session cannot tell the answers apart.
-        if len(options) < 2 or not all(options) or len(set(options)) != len(options):
-            return None
-        return options
-
     def _ask(self) -> None:
         """Register a question a session is holding its tool call open for.
 
@@ -5786,9 +5804,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         is the same reading this makes — exactly one layer alerts for one
         question.
 
-        This is the only place the question and the options are bounded. `asks`
-        imports nothing, so it cannot reach `records.safe_text`, and every field
-        read below was written by an agent.
+        The question and the options are bounded in `ask_text` and nowhere else
+        on this side. `asks` imports nothing, so it cannot reach
+        `records.safe_text`, and every field read below was written by an agent.
         """
         application = self.server.application
         config = application.config
@@ -5808,31 +5826,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        raw_question = payload.get("question")
-        # Type-checked before it is bounded, for the reason `_ask_options` gives:
-        # `safe_text` would turn a non-string into its Python repr and publish
-        # that as the question. Falling through to the empty string keeps one 400
-        # path for every unusable body.
-        question, cut = (
-            self._ask_text(
-                raw_question,
-                cap_chars=config.ask_question_cap_chars,
-                whole_chars=config.ask_body_cap_bytes,
-            )
-            if isinstance(raw_question, str)
-            else ("", False)
-        )
-        raw_options = payload.get("options")
-        options = self._ask_options(
-            raw_options,
-            cap_chars=config.ask_option_cap_chars,
-            max_options=config.ask_max_options,
-            whole_chars=config.ask_body_cap_bytes,
-        )
-        if not question or options is None:
+        text = ask_text(payload, config)
+        if text is None:
             self._reject(400)
             return
-        arrived = len(raw_question.strip()) if isinstance(raw_question, str) else 0
         label_cap = config.ask_option_cap_chars
         # harness and session_id share the option cap: they really are short
         # labels of the same order. `project` does not, and gets its own knob
@@ -5849,16 +5846,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
             harness=harness,
             session_id=session_id,
             project=self._ask_project(payload.get("project")),
-            question=question,
-            options=options,
+            question=text.question,
+            options=text.options,
             created=application.clock(),
-            question_sent_chars=arrived
-            if cut
-            else self._ask_sent_chars(payload.get("question_sent_chars"), question, arrived),
-            # Leading options are kept, so the dropped ones are the tail: the
-            # card says how many rather than leaving a reader to think the
-            # session offered only these.
-            dropped_options=len(raw_options) - len(options) if isinstance(raw_options, list) else 0,
+            question_sent_chars=text.question_sent_chars,
+            dropped_options=text.dropped_options,
         )
         if not application.state.asks.register(
             ask,
@@ -5887,10 +5879,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
         coordinator = self.server.observation
         if coordinator is not None:
             coordinator.note_ask()
-        self._send(
-            json.dumps({"ok": True, "id": ask.id}, separators=(",", ":")).encode(),
-            "application/json",
-        )
+        # The registered text goes back with the id, so the stdio server can
+        # check that the card shows what it will answer with before anyone can
+        # click it.
+        reply = {"ok": True, "id": ask.id, "question": ask.question, "options": list(ask.options)}
+        self._send(json.dumps(reply, separators=(",", ":")).encode(), "application/json")
         # Gated on the same expression `/api/data` publishes as `native_notify`,
         # and not on `notify_mac`'s own platform guard: the page decides whether
         # to raise its own notification by reading that field, so a second,

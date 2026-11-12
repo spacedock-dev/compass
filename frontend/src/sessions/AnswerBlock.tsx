@@ -21,14 +21,20 @@ const count = (value: unknown): number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
 
 /* What Compass cut from one request before the reader saw it. The question's own text already ends in "…",
-   but that cannot say how much is missing, and options past the most a card offers leave no mark at all. */
+   but that cannot say how much is missing, and options past the most a card offers leave no mark at all.
+   The count is what the session sent, which can be no longer than the text shown: redacting a short credential
+   lengthens it, so a question sent under the cap can still be cut. Counted in code points, as the server
+   counts, so an emoji is one character on both sides. */
 function askCutNotes(ask: Row): string[] {
   const sent = count(ask['question_sent_chars']);
   const dropped = count(ask['dropped_options']);
+  const shown = [...String(ask['question'] ?? '')].length;
   return [
-    ...(sent
+    ...(sent > shown
       ? [`Shortened by Compass: the session sent ${sent.toLocaleString('en-US')} characters.`]
-      : []),
+      : sent
+        ? ['Shortened by Compass: hiding credentials made the question longer than a card shows.']
+        : []),
     ...(dropped === 1
       ? ['1 more option was not shown.']
       : dropped

@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2317891,
+    "bytes": 2318147,
     "file": "react.html",
-    "sha256": "c3d167f532cbdf217c5d46fead8ce8b030263a7b609d341b5224b265f47e70cb"
+    "sha256": "7be894996415bc13e180d9fca9bc36876efe6d48728136a262c0ec91129a8f40"
   },
   "format": 1,
   "frontend": "react",
@@ -535,7 +535,7 @@
       },
       {
         "file": "frontend/src/delegation/WaitingPanel.tsx",
-        "sha256": "3a02b3eaa91c73a7a09a465fa0e532d02e563a484d3402c5a247cee9b796ae1a"
+        "sha256": "7491d8051cec2edd077274f83b8f5377f0b17825c9634390af313831e79e6428"
       },
       {
         "file": "frontend/src/delegation/capacityRows.ts",
@@ -1035,7 +1035,7 @@
       },
       {
         "file": "frontend/src/project/ActivityViews.tsx",
-        "sha256": "dbedb7a887cb236db21513c504edb6c2b7557ac529275c0eda0d5b1defcd4fe4"
+        "sha256": "1dc4f360999c4d553ac0c84444dc20b155199be19bec621efb42c4c75f345b2c"
       },
       {
         "file": "frontend/src/project/ConsoleParts.tsx",
@@ -1059,7 +1059,7 @@
       },
       {
         "file": "frontend/src/project/RecoveryStrip.tsx",
-        "sha256": "eb96fd7f1b2586398e0049189134b03e17cf767fdceb677565f7ff4ca998b4ad"
+        "sha256": "4085b8e340c0ebbda2d45f5c41d274216e6be7ebb9643abc2e4e3f00749710e3"
       },
       {
         "file": "frontend/src/project/ScopeNav.tsx",
@@ -1207,7 +1207,7 @@
       },
       {
         "file": "frontend/src/sessions/AnswerBlock.tsx",
-        "sha256": "a5a858fc9d4711d9e1571904340d213d4a91cb2423b296c54adef208b5c651ec"
+        "sha256": "0e376811a01d260e2d32dd3f19b6f042bfc57c57b6126d9ccf5248dd8839cf03"
       },
       {
         "file": "frontend/src/sessions/DepartureParts.tsx",
@@ -1243,7 +1243,7 @@
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
-        "sha256": "9a61476d0343ace9c5b45d25e97157f449fb74ca3be7614cff2bba41599c55a6"
+        "sha256": "424eb6990a9b8678809cccaec0605fcbff955f78956b7a3aca19cdd0fdf739af"
       },
       {
         "file": "frontend/src/sessions/SummaryParts.tsx",

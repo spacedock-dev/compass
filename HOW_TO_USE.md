@@ -375,8 +375,10 @@ character, never text from anywhere else. [SECURITY.md](SECURITY.md#the-ask-lane
 why the answer travels as an index rather than a string.
 
 A card shows up to 2,000 characters of the question and 240 of each option. Anything longer ends in
-`…`, the card says how many characters the session sent, and the label the session gets back is the
-shortened one you clicked.
+`…` inside that limit. When the question is shortened, the card also says how many characters the
+session sent, or, when hiding a credential is what made it too long, says that instead. The label the
+session gets back is the shortened one you clicked. The Sessions list and the project views show
+the question's first three lines; the session's own page shows all of it.
 
 Everything else resolves to a decline the session can act on rather than an error it has to
 interpret. Observed: nothing listening, the lane switched off, and the dashboard stopped while a

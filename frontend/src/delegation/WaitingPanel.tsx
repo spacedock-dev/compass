@@ -29,7 +29,10 @@ function Waiting({
           {session.waitedText}
         </span>
       </div>
-      {session.askKnown ? <p className="next-rail-question">{session.askText}</p> : null}
+      {/* Clamped as the Sessions row is: the question can run to 2,000 characters, and the session page has it whole. */}
+      {session.askKnown ? (
+        <p className="next-rail-question line-clamp-3">{session.askText}</p>
+      ) : null}
       <div className="next-rail-wait-controls">
         {/* The raise names the exact pair this card was drawn for. A card whose row published a display id
             only has nothing to raise, and the control draws nothing for it. */}

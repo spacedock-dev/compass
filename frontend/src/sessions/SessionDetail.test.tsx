@@ -248,6 +248,8 @@ describe('answering a held request', () => {
           },
           { ...ASK, id: 'ask-2', question: 'Second?', question_sent_chars: null },
           { ...ASK, id: 'ask-3', question: 'Third?', dropped_options: 1 },
+          // Sent under the cap, then cut because redaction lengthened it.
+          { ...ASK, id: 'ask-4', question: `${'x'.repeat(1_996)}…`, question_sent_chars: 1_995 },
         ],
       }),
     );
@@ -263,6 +265,9 @@ describe('answering a held request', () => {
     ]);
     expect(notes('ask-2')).toEqual([]);
     expect(notes('ask-3')).toEqual(['1 more option was not shown.']);
+    expect(notes('ask-4')).toEqual([
+      'Shortened by Compass: hiding credentials made the question longer than a card shows.',
+    ]);
   });
 
   it('posts one numeric option index, never the option, and exactly once per press', async () => {

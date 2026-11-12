@@ -667,11 +667,16 @@ class RuntimeConfig:
     # a polling peer, so past this the register route refuses with a 503.
     ask_max_pending: int
     # The register body carries a question and up to `ask_max_options` options.
-    # Sized for the widest legal one. JSON writes a control character as six
-    # bytes even when nothing else is escaped, so a 2,000-character question and
-    # 8 options of 240 in control characters, every one cut and flagged, measured
-    # 23,594 bytes with the keys, and 26,754 with a 64-character session id and a
-    # 512-character project. 32 KiB holds that with room for a longer path.
+    # JSON writes a control character as six bytes even when nothing else is
+    # escaped, so a 2,000-character question and 8 options of 240 in control
+    # characters measured 23,594 bytes with the keys, and 26,754 with a
+    # 64-character session id and a 512-character project. The stdio server sends
+    # its text uncut and refuses a body past this rather than cutting it, so this
+    # is also how long a question it can ask: beside 8 options of 240 and a
+    # typical session id and project, measured 30,685 ASCII characters, 8,953
+    # CJK and 6,237 emoji, every one longer than a card shows. Also the length at
+    # which the route makes text safe before cutting it, which that server
+    # mirrors.
     ask_body_cap_bytes: int
     # The answer body carries an id and an integer, and nothing else is read
     # from it.

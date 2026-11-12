@@ -1501,31 +1501,139 @@ class AskEndpointTest(RuntimeTestCase):
         self.assertEqual("q" * 2_000, card["question"])
         self.assertIsNone(card["question_sent_chars"])
 
-    def test_the_stdio_servers_count_for_a_question_it_cut_is_published(self) -> None:
-        # The stdio server cuts before it sends, so what arrives is inside the
-        # cap and only the count it sends says how long the question was.
+    def test_a_senders_larger_count_for_a_question_it_trimmed_is_published(self) -> None:
+        # A client that trimmed a long question before sending it can say how
+        # long the whole was; the stdio server sends uncut and never needs to.
         config, state = self._runtime()
-        cut = "q" * 1_999 + "\u2026"
         with self._serving(cli.build_application(config, state, clock=time.time)) as port:
-            ask_id = self._register(port, question=cut, question_sent_chars=2_500)
+            ask_id = self._register(port, question="q" * 2_029, question_sent_chars=2_500)
             card = self._published_ask(port, ask_id)
-        self.assertEqual(cut, card["question"])
+        self.assertEqual("q" * 1_999 + "\u2026", card["question"])
         self.assertEqual(2_500, card["question_sent_chars"])
 
-    def test_a_count_the_shown_question_contradicts_is_not_published(self) -> None:
+    def test_a_count_for_a_question_this_route_did_not_cut_is_not_published(self) -> None:
+        # A sender cannot report a cut by ending a short question in the mark.
         config, state = self._runtime()
         claims: dict[str, tuple[str, Any]] = {
             "no cut mark": ("Ship it?", 5_000),
+            "a mark on a short question": ("Ship\u2026", 1_000_000),
             "not longer than shown": ("Ship\u2026", 5),
             "a boolean": ("Ship\u2026", True),
             "a string": ("Ship\u2026", "5000"),
             "past anything the stdio server reads": ("Ship\u2026", (1 << 20) + 1),
+            "a question exactly at the cap": ("q" * 1_999 + "\u2026", 2_500),
         }
         with self._serving(cli.build_application(config, state, clock=time.time)) as port:
             for label, (question, claim) in claims.items():
                 with self.subTest(label=label):
                     ask_id = self._register(port, question=question, question_sent_chars=claim)
-                    self.assertIsNone(self._published_ask(port, ask_id)["question_sent_chars"])
+                    card = self._published_ask(port, ask_id)
+                    self.assertEqual(question, card["question"])
+                    self.assertIsNone(card["question_sent_chars"])
+
+    def test_a_count_inconsistent_with_a_real_cut_falls_back_to_what_arrived(self) -> None:
+        config, state = self._runtime()
+        claims: dict[str, Any] = {
+            "a boolean": True,
+            "a string": "5000",
+            "not past the cap": 2_000,
+            "past anything the stdio server reads": (1 << 20) + 1,
+        }
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            for label, claim in claims.items():
+                with self.subTest(label=label):
+                    ask_id = self._register(port, question="q" * 2_100, question_sent_chars=claim)
+                    self.assertEqual(
+                        2_100, self._published_ask(port, ask_id)["question_sent_chars"]
+                    )
+
+    def test_a_question_redaction_grew_past_the_cap_publishes_what_the_session_sent(
+        self,
+    ) -> None:
+        # Redacting a short credential lengthens it, so a 1,995-character question
+        # can be cut. The count stays the length the session sent; the page words
+        # a count no longer than the card's text differently.
+        config, state = self._runtime()
+        question = "x" * 1_815 + (" password=" + "q" * 8) * 10
+        self.assertEqual(1_995, len(question))
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, question=question)
+            card = self._published_ask(port, ask_id)
+        self.assertTrue(card["question"].endswith("password=\u2026"), card["question"][-30:])
+        self.assertLessEqual(len(card["question"]), 2_000)
+        self.assertEqual(1_995, card["question_sent_chars"])
+
+    def test_the_register_reply_carries_the_text_the_card_shows(self) -> None:
+        config, state = self._runtime()
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            body = {"question": "q" * 2_500, "options": ["o" * 300, "hold"]}
+            status, raw = self._post(port, "/api/ask", json.dumps(body).encode())
+            self.assertEqual(200, status, raw)
+            reply = json.loads(raw)
+            card = self._published_ask(port, reply["id"])
+        self.assertEqual(card["question"], reply["question"])
+        self.assertEqual(card["options"], reply["options"])
+        self.assertEqual(["o" * 239 + "\u2026", "hold"], reply["options"])
+
+    def test_a_cut_never_passes_its_cap_and_keeps_a_marker_whole(self) -> None:
+        # A credential straddling the cut is redacted on the whole text first,
+        # and the cut then moves back before its marker rather than finishing it
+        # past the cap and adding the mark after that.
+        config, state = self._runtime()
+        key = "sk-ant-" + "A" * 35
+        tail = " tail" * 20
+        question = "x" * 1_993 + " " + key + tail
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(
+                port, question=question, options=["x" * 233 + " " + key + tail, "hold"]
+            )
+            card = self._published_ask(port, ask_id)
+        for text, cap in ((card["question"], 2_000), (card["options"][0], 240)):
+            with self.subTest(cap=cap):
+                self.assertLessEqual(len(text), cap)
+                self.assertTrue(text.endswith("x\u2026"), text[-20:])
+                self.assertNotIn("sk-an", text)
+                self.assertNotIn("REDACT", text)
+        self.assertEqual(len(question), card["question_sent_chars"])
+
+    def test_a_credential_past_the_cap_is_redacted_before_the_cut(self) -> None:
+        # Cutting first left the head of an access key on the card, and a head
+        # too short to match was published as it stood.
+        config, state = self._runtime()
+        option = "x" * 225 + " AKIA" + "A" * 16 + " tail" * 20
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, options=[option, "hold"])
+            card = self._published_ask(port, ask_id)
+        self.assertEqual("x" * 225 + " AKIA\u2026REDACTED\u2026", card["options"][0])
+
+    def test_the_stdio_servers_own_copy_is_the_card_the_route_registers(self) -> None:
+        # End to end through the real route: what `mcp_server` will answer with
+        # is what the reply says the card shows, for the inputs that differed
+        # when each side cut on its own.
+        import mcp_server  # noqa: PLC0415 - the edge script, imported only here
+
+        key = "sk-ant-" + "A" * 35
+        cases = {
+            "a redacted option under the cap": ["x" * 130 + " " + key, "hold"],
+            "a key straddling the option cap": [
+                "x" * 225 + " AKIA" + "A" * 16 + " tail" * 20,
+                "no",
+            ],
+            "a marker straddling the option cap": ["x" * 233 + " " + key + " tail" * 20, "no"],
+        }
+        config, state = self._runtime()
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            for label, options in cases.items():
+                with self.subTest(label=label):
+                    ask = mcp_server._arguments({"question": "q" * 2_500, "options": options})
+                    assert not isinstance(ask, str)
+                    body = {"question": ask.sent_question, "options": list(ask.sent_options)}
+                    status, raw = self._post(port, "/api/ask", json.dumps(body).encode())
+                    self.assertEqual(200, status, raw)
+                    reply = json.loads(raw)
+                    self.assertEqual(ask.question, reply["question"])
+                    self.assertEqual(list(ask.options), reply["options"])
+                    self.assertNotIn("A" * 12, raw.decode())
 
     def test_options_past_the_most_offered_publish_how_many_were_dropped(self) -> None:
         config, state = self._runtime()

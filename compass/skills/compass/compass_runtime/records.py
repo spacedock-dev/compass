@@ -1667,6 +1667,38 @@ def safe_text(value: Any, limit: int) -> str:
     return redact_clip(text, limit)
 
 
+# Ends text `cut_text` shortened, inside the cap, so a reader sees text is missing.
+CUT_MARK: Final = "…"
+_TOKEN_TEXT: Final = "".join(sorted(_TOKEN_CHARS))
+
+
+def cut_text(value: str, cap: int, whole: int) -> tuple[str, bool]:
+    """`value` made safe whole, stripped, and past `cap` cut to end in `CUT_MARK`;
+    and whether it was cut.
+
+    Made safe at `whole` before the cut, so a credential is redacted on all of
+    its characters rather than on whatever half the cap leaves. Unlike
+    `redact_clip`, the result never passes `cap`, mark included: a cut that would
+    land inside a redaction marker, or inside the kept prefix in front of one,
+    moves back to before that prefix rather than finishing the marker past the
+    cap. The ask lane promises its caps exactly, and both of its ends run this
+    function on the same text so the card and the answer cannot differ.
+    """
+    text = safe_text(value, whole).strip()
+    if len(text) <= cap:
+        return text, False
+    limit = cap - len(CUT_MARK)
+    head = text[:limit]
+    # The window `redact_clip` searches, for the same reason.
+    first = max(limit - len(_SECRET_MARKER) + 1, 0)
+    start = text.find(_SECRET_MARKER, first, limit + _SECRET_MAX_KEEP + len(_SECRET_MARKER) - 1)
+    if start != -1:
+        # The kept prefix is token characters (`sk-ant-`, `AKIA`); stepping back
+        # over a word that was not one only cuts a little earlier.
+        head = text[: min(start, limit)].rstrip(_TOKEN_TEXT)
+    return head.rstrip() + CUT_MARK, True
+
+
 def iso_epoch(value: Any) -> float | None:
     """One ISO-8601 string as epoch seconds, or nothing. **The repo-wide rule.**
 

@@ -16,6 +16,14 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-12, a long held question is clamped where it is shown compactly. A session's question may now run to
+2,000 characters, so the Sessions row's blocked note, the project's waiting rail, the Activity row and the
+recovery strip show its first three lines, and the session page's answer block shows all of it. The whole text
+stays in the DOM. The retired page drew the question whole in each place. No golden file is changed.
+`rail.differential.test.tsx` removes the clamp class from the React side's rail question before comparing, so
+every other class, attribute and word is still held to the recording. The `Sessions/Long question clamp` stories
+hold the clamp in the Sessions row and the waiting rail at 1280 and 400 pixels.
+
 2026-11-05, the reading-scope sentence leaves out what Compass answered. The two sentences that say what a
 reading reads (the offer before a first reading and the scope after one) now say the observed record in the
 session's activity "except entries marked as Compass's answer", because the server marks what the agent ran and
