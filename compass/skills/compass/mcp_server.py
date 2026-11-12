@@ -35,9 +35,12 @@ list. A forged or confused answer can therefore only pick the wrong one of the
 options the agent itself offered, and can never introduce text into an agent's
 context. `docs/design-ask-lane.md` records why an index rather than a string.
 
-The list it registered is also the list the operator saw. Bounding happens once,
-in ``_arguments``, so the string handed back is character for character the label
-on the card that was clicked: nobody can approve text that was never shown.
+The list it registered is also the list the operator saw. Its own copy is cut
+by ``records.cut_text``, the function the dashboard cuts the card with, run on
+the very strings it sends; the dashboard's register reply echoes the card's text,
+and a question whose card differs is withdrawn before anyone can click it. So the
+string handed back is character for character the label on the card that was
+clicked: nobody can approve text that was never shown.
 
 ## Why three threads
 
@@ -93,6 +96,10 @@ if _HERE not in sys.path:
 # this server needs the response status and body.
 import notify_hook  # noqa: E402 — needs the sys.path insert above
 
+# The dashboard's own redaction and cut, imported for the reason `notify_hook`
+# is: a second copy is a second answer to what the card says.
+from compass_runtime import records  # noqa: E402 — needs the sys.path insert above
+
 SERVER_NAME: Final = "compass"
 # Not the plugin version. That lives in five manifest fields owned by the
 # release workflow, and a sixth copy here would drift silently while no client
@@ -111,14 +118,18 @@ STATE_READ_CAP_BYTES: Final = 65_536
 RESPONSE_CAP_BYTES: Final = 65_536
 MAX_FRAME_BYTES: Final = 1 << 20
 
-# Mirror the dashboard's `ask_*` caps in config.py. The server bounds this text
-# authoritatively at its ingress; bounding it here too is what keeps a long
-# question from being refused as an oversized body instead of asked.
-QUESTION_CAP_CHARS: Final = 500
-OPTION_CAP_CHARS: Final = 120
+# Mirror the dashboard's `ask_*` caps in config.py. The dashboard cuts the card's
+# text from what this process sends uncut; this process cuts its own copy the
+# same way, to answer with the label that was clicked.
+QUESTION_CAP_CHARS: Final = 2_000
+OPTION_CAP_CHARS: Final = 240
 MAX_OPTIONS: Final = 8
 MIN_OPTIONS: Final = 2
-BODY_CAP_BYTES: Final = 8_192
+# Mirrors `ask_body_cap_bytes`; config.py carries the arithmetic. The one bound
+# on what is sent, and refused past rather than cut. The dashboard also makes
+# text safe at this many characters before it cuts, so this process uses the
+# same figure for its copy to match.
+BODY_CAP_BYTES: Final = 32_768
 
 REGISTER_TIMEOUT_SEC: Final = 3.0
 # A withdrawal runs before the caller's reply is written, and one of its two
@@ -219,10 +230,42 @@ DECLINE_REFUSED: Final = (
     "it was never shown and nothing was chosen. Proceed on your own judgement and say which "
     "option you took and why."
 )
+# Which part of the register body put it over the cap, so the agent is told
+# what to shorten. A modest question beside eight long options once heard that a
+# shorter question could be asked, which would have been refused again.
+_TOO_LARGE_HEAD: Final = (
+    "No operator was reached: {part} over the {cap:,}-byte limit on one question, "
+)
+_TOO_LARGE_SHOWN: Final = "so nothing was shown and nothing was chosen. "
+_TOO_LARGE_TAIL: Final = (
+    "Otherwise proceed on your own judgement and say which option you took and why."
+)
+DECLINE_TOO_LARGE_QUESTION: Final = (
+    _TOO_LARGE_HEAD.format(part="the question alone is", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {QUESTION_CAP_CHARS:,} characters of a question, so a shorter question "
+    "can be asked again. " + _TOO_LARGE_TAIL
+)
+DECLINE_TOO_LARGE_OPTIONS: Final = (
+    _TOO_LARGE_HEAD.format(part="the options alone are", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {OPTION_CAP_CHARS} characters of an option, so the question can be asked "
+    "again with shorter options. " + _TOO_LARGE_TAIL
+)
 DECLINE_TOO_LARGE: Final = (
-    "No operator was reached: the question, the options and this session's own attribution "
-    "are together too large to send, so nothing was shown and nothing was chosen. Proceed on "
-    "your own judgement and say which option you took and why."
+    _TOO_LARGE_HEAD.format(part="the question and the options together are", cap=BODY_CAP_BYTES)
+    + _TOO_LARGE_SHOWN
+    + f"A card shows {QUESTION_CAP_CHARS:,} characters of a question and {OPTION_CAP_CHARS} of "
+    "an option, so a shorter question or shorter options can be asked again. " + _TOO_LARGE_TAIL
+)
+DECLINE_TOO_LARGE_ATTRIBUTION: Final = (
+    _TOO_LARGE_HEAD.format(
+        part="this session's own attribution, its project path and session id, is",
+        cap=BODY_CAP_BYTES,
+    )
+    + _TOO_LARGE_SHOWN
+    + "No shorter question would fit. Proceed on your own judgement and say which option "
+    "you took and why."
 )
 # The reasons the register route publishes. An unknown one falls back to the
 # generic refusal rather than to unreachable, so a newer dashboard inventing a
@@ -238,6 +281,17 @@ DECLINE_UNANSWERED: Final = (
 DECLINE_INTERNAL: Final = (
     "No option was chosen: the question could not be delivered. Proceed on your own "
     "judgement and say which option you took and why."
+)
+# A dashboard that registered the question but sent back no card text predates
+# the echo `_register` checks, and is still running after the plugin was updated.
+# Worded as `terminal_drift.CLIENT_OUTDATED_IN_SESSION` is, without its harness's
+# command: this process cannot tell Codex from an unmeasured harness.
+DECLINE_OUTDATED: Final = (
+    "No operator was reached: the Compass dashboard running here is older than this "
+    "plugin, so the question was taken back before anyone could answer it and nothing was "
+    "chosen. Tell the person to restart it: ask Compass to stop the dashboard, then start "
+    "Compass again to run this version. Proceed on your own judgement and say which option "
+    "you took and why."
 )
 
 
@@ -378,38 +432,96 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _arguments(raw: Any) -> tuple[str, tuple[str, ...]] | str:
-    """The validated question and options, or a sentence saying what is wrong.
+@dataclasses.dataclass(frozen=True)
+class _Ask:
+    """One validated call: what is sent, and what the card will show.
 
-    The text is bounded to the advertised caps **here and nowhere else**. Doing it
-    at registration instead is what let the card show 120 characters while the
-    answer resolved against the untruncated tuple, so a reader could approve a
-    string they were never shown, and two options differing only past the cap
+    `sent_question` and `sent_options` go in the register body exactly as the
+    agent wrote them. `question` and `options` are `records.cut_text` of those
+    same strings, which is what the dashboard publishes and what an answer
+    resolves against.
+    """
+
+    sent_question: str
+    sent_options: tuple[str, ...]
+    question: str
+    options: tuple[str, ...]
+
+
+def _arguments(raw: Any) -> _Ask | str:
+    """The validated call, or a sentence saying what is wrong.
+
+    Nothing is cut before it is sent: the dashboard is the one place the card's
+    text is made, redacting the whole of each string before cutting it, and it
+    measures the question's length from what it received. The card's text is
+    computed here only as this process's copy, with the dashboard's own function
+    on the same strings, and `_register` refuses a card whose text differs. The
+    one bound on what is sent is the register body cap, refused past with a
+    sentence rather than cut, because a cut here is a cut before redaction. Bounding
+    after registration instead is what let the card show 120 characters while
+    the answer resolved against the untruncated tuple, so a reader could approve
+    a string they were never shown, and two options differing only past the cap
     rendered as the same button. Consent has to be to the thing that happens, so
-    one bounded tuple is registered and answered from.
+    the answer resolves against the text the card showed.
     """
     if not isinstance(raw, dict):
         return "ask_operator needs an arguments object with `question` and `options`."
     question = raw.get("question")
-    if not isinstance(question, str) or not question.strip():
+    sent_question = question if isinstance(question, str) else ""
+    shown = records.cut_text(sent_question, QUESTION_CAP_CHARS, BODY_CAP_BYTES)[0]
+    if not shown:
         return "ask_operator needs a non-empty `question` string."
     raw_options = raw.get("options")
     if not isinstance(raw_options, list):
         return f"ask_operator needs an `options` array of {MIN_OPTIONS} to {MAX_OPTIONS} strings."
+    sent_options = tuple(item for item in raw_options if isinstance(item, str) and item.strip())
     options = tuple(
-        # Stripped after the cut as well: the dashboard strips what it stores, so
-        # a cut landing on a space would otherwise leave the card one character
-        # short of the string returned here.
-        item.strip()[:OPTION_CAP_CHARS].strip()
-        for item in raw_options
-        if isinstance(item, str) and item.strip()
+        records.cut_text(item, OPTION_CAP_CHARS, BODY_CAP_BYTES)[0] for item in sent_options
     )
-    if len(options) != len(raw_options) or not MIN_OPTIONS <= len(options) <= MAX_OPTIONS:
+    if (
+        len(options) != len(raw_options)
+        or not MIN_OPTIONS <= len(options) <= MAX_OPTIONS
+        or not all(options)
+    ):
         # Length-checked rather than truncated. A model told it may offer eight
         # options and offering twelve would otherwise be answered from a set it
         # never saw chosen from.
         return f"ask_operator needs {MIN_OPTIONS} to {MAX_OPTIONS} non-empty option strings."
-    return question.strip()[:QUESTION_CAP_CHARS].strip(), options
+    if len(set(options)) != len(options):
+        # Two options the cut made identical would be two buttons a reader cannot
+        # tell apart, and an answer the agent cannot tell apart either.
+        return (
+            "ask_operator needs options that differ within their first "
+            f"{OPTION_CAP_CHARS} characters."
+        )
+    return _Ask(
+        sent_question=sent_question,
+        sent_options=sent_options,
+        question=shown,
+        options=options,
+    )
+
+
+def _encoded_size(payload: dict[str, Any]) -> int:
+    """`payload`'s size as `_register` sends it."""
+    return len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode())
+
+
+def _too_large(payload: dict[str, Any]) -> str:
+    """The refusal for a register body past the cap, naming the part to shorten.
+
+    Each part is measured beside the rest of the body with the other emptied, so
+    "alone" means that part cannot fit however short the other is.
+    """
+    if _encoded_size({**payload, "question": "", "options": []}) > BODY_CAP_BYTES:
+        return DECLINE_TOO_LARGE_ATTRIBUTION
+    question_over = _encoded_size({**payload, "options": []}) > BODY_CAP_BYTES
+    options_over = _encoded_size({**payload, "question": ""}) > BODY_CAP_BYTES
+    if question_over and not options_over:
+        return DECLINE_TOO_LARGE_QUESTION
+    if options_over and not question_over:
+        return DECLINE_TOO_LARGE_OPTIONS
+    return DECLINE_TOO_LARGE
 
 
 def _call_key(request_id: Any) -> str:
@@ -650,8 +762,7 @@ class AskServer:
         validated = _arguments(arguments)
         if isinstance(validated, str):
             return validated, True
-        question, options = validated
-        registration = self._register(question, options)
+        registration = self._register(validated)
         if isinstance(registration, str):
             return registration, False
         base, ask_id = registration
@@ -664,14 +775,14 @@ class AskServer:
             return DECLINE_UNANSWERED, False
         state, index = outcome
         # The whole security property of this feature. The answer names a
-        # position in the list this process was called with; it never carries
-        # text, and an index the dashboard should not have sent resolves to a
-        # decline rather than to somebody else's string.
-        if state != "answered" or index is None or not 0 <= index < len(options):
+        # position in this process's own copy of the list, cut exactly as the
+        # card was; it never carries text, and an index the dashboard should not
+        # have sent resolves to a decline rather than to somebody else's string.
+        if state != "answered" or index is None or not 0 <= index < len(validated.options):
             return DECLINE_UNANSWERED, False
-        return options[index], False
+        return validated.options[index], False
 
-    def _register(self, question: str, options: tuple[str, ...]) -> tuple[str, str] | str:
+    def _register(self, ask: _Ask) -> tuple[str, str] | str:
         """(base url, ask id), or the sentence to hand the agent instead.
 
         The candidate list is walked only past a **connection-level** failure. Any
@@ -680,10 +791,16 @@ class AskServer:
         where a different reader answered it: measured with `--no-ask` on the
         preferred port, which is the switch cli.py calls the rollback switch. So a
         refusal ends the walk and its reason becomes the answer.
+
+        A 200 whose echoed question and options are not this process's own copy
+        is withdrawn: the card would show one thing and the answer return
+        another, which is the consent failure `_arguments` exists to prevent. A
+        reply that echoes neither came from a dashboard older than the echo, and
+        is withdrawn too, with a sentence asking for that dashboard's restart.
         """
         payload: dict[str, Any] = {
-            "question": question,
-            "options": list(options),
+            "question": ask.sent_question,
+            "options": list(ask.sent_options),
             **attribution(),
         }
         # ensure_ascii=False so the gate here measures the axis the dashboard
@@ -693,7 +810,7 @@ class AskServer:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
         if len(body) > BODY_CAP_BYTES:
             log(f"payload of {len(body)} bytes is over the {BODY_CAP_BYTES} byte cap")
-            return DECLINE_TOO_LARGE
+            return _too_large(payload)
         for port in self._ports:
             base = f"http://127.0.0.1:{port}"
             answer = _request(f"{base}/api/ask", data=body, timeout=REGISTER_TIMEOUT_SEC)
@@ -714,16 +831,29 @@ class AskServer:
                     return DECLINE_BY_REASON.get(reason, DECLINE_REFUSED)
                 return DECLINE_REFUSED
             ask_id = data.get("id")
-            if data.get("ok") is True and isinstance(ask_id, str) and ASK_ID_RE.match(ask_id):
+            decline = DECLINE_INTERNAL
+            if (
+                not isinstance(ask_id, str)
+                or data.get("ok") is not True
+                or not ASK_ID_RE.match(ask_id)
+            ):
+                log(f"register on {port} returned an unusable id")
+            elif "question" not in data and "options" not in data:
+                # An older dashboard: it shows text this process cannot confirm.
+                log(f"register on {port} echoed no card text; that dashboard is older")
+                decline = DECLINE_OUTDATED
+            elif data.get("question") != ask.question or data.get("options") != list(ask.options):
+                log(f"register on {port} shows a question unlike the one asked")
+            else:
                 return base, ask_id
-            log(f"register on {port} returned an unusable id")
             # A 200 means that dashboard took the question, so a card nothing can
-            # poll is on somebody's board. The id goes in a body rather than a
-            # path, which is why one this process refuses to interpolate into a
-            # URL can still be withdrawn.
+            # poll, or one whose answer would not be the label clicked, is on
+            # somebody's board. The id goes in a body rather than a path, which is
+            # why one this process refuses to interpolate into a URL can still be
+            # withdrawn.
             if isinstance(ask_id, str):
                 self._withdraw(base, ask_id)
-            return DECLINE_INTERNAL
+            return decline
         return DECLINE_UNREACHABLE
 
     def _withdraw(self, base: str, ask_id: str) -> None:

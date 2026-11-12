@@ -45,6 +45,8 @@ class PendingAsk:
         question: str,
         options: Sequence[str],
         created: float,
+        question_sent_chars: int | None = None,
+        dropped_options: int = 0,
     ) -> None:
         # Generated here, and never accepted from a caller: an id chosen by the
         # peer that registers the ask would let one session address another's
@@ -56,6 +58,11 @@ class PendingAsk:
         self.project = project
         self.question = question
         self.options: tuple[str, ...] = tuple(options)
+        # What the card says about a cut: the question's length before it was
+        # shortened (None when it was not), and how many options past the most a
+        # card offers were never shown.
+        self.question_sent_chars = question_sent_chars
+        self.dropped_options = dropped_options
         self.created = created
         # Stamped by the registry the first time a sweep observes an outcome,
         # and read only by that sweep, which is what bounds how long a resolved

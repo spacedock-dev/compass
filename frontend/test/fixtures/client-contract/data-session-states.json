@@ -45,6 +45,7 @@
       "asks": [
         {
           "age_sec": 240,
+          "dropped_options": 0,
           "harness": "claude",
           "id": "ask-fixture-1",
           "options": [
@@ -53,15 +54,18 @@
           ],
           "project": "alpha-app",
           "question": "Approve the retry plan?",
+          "question_sent_chars": null,
           "session_id": "b2c3d4e5"
         },
         {
           "age_sec": 240,
+          "dropped_options": 0,
           "harness": "claude",
           "id": "ask-fixture-2",
           "options": [],
           "project": "unknown",
           "question": "Which environment should this deploy to?",
+          "question_sent_chars": null,
           "session_id": "no-such-session"
         }
       ],
@@ -2276,7 +2280,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "65645",
+      "Content-Length": "65747",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json",
       "X-Compass-Revision": "1900000000.1"

@@ -56,6 +56,10 @@ describe('the Console rail agrees with the legacy page', () => {
           continue;
         }
         restateLiveOpener(mine);
+        // The waiting rail clamps a question to three lines, where the retired page drew it whole: see
+        // docs/design-frontend-migration.md#held-to-recorded-answers (2026-11-12). Only that class departs.
+        for (const question of mine.querySelectorAll('.next-rail-question'))
+          question.classList.remove('line-clamp-3');
         const found = firstShapeDifference(shape(theirs), shape(mine));
         if (found)
           failures.push(`seed ${String(seed)} project ${JSON.stringify(project)}: ${found}`);

@@ -42,6 +42,10 @@ export interface PayloadAsk {
   readonly project: string;
   readonly question: string;
   readonly options: readonly string[];
+  /* The question's length before Compass shortened it; null when it was not. */
+  readonly question_sent_chars?: number | null;
+  /* How many options past the most a card offers were not shown. */
+  readonly dropped_options?: number;
   readonly age_sec: number;
 }
 

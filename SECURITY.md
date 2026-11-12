@@ -4879,7 +4879,20 @@ answer can do is select the wrong one of the options the asking agent itself wro
 new content into that agent's context.
 
 What is bounded. The question text and the option list are bounded when they arrive, and rendered as
-text and never as markup. The number of questions outstanding at once is capped, and the honest
+text and never as markup: 2,000 characters for the question, 240 for an option, and at most eight
+options. A cut is never silent. Cut text ends in `…` inside its cap. The MCP server sends the
+question and options uncut, refusing with a sentence only past the register body cap, and the
+dashboard is the one place they are cut: credentials are redacted on the whole text first, and a cut
+that would split a redaction marker moves back to before it. When the question is shortened, the
+card says how many characters the session sent, measured on what the dashboard received; a figure a
+sender supplies is shown only when the dashboard made a cut itself and the figure is the larger. A
+question posted straight to the dashboard with more than eight options shows the first eight and
+says how many it did not show; the MCP server refuses more than eight instead. Options the cut would
+make identical are refused, so no two buttons read the same. The MCP server cuts its own copy with
+the same function, on the same text it sends, and withdraws a question whose registered card
+differs from that copy, so the answer resolves to the shortened label the reader saw, by index. The
+question shows whole only in a session's answer block; the Sessions row and the compact project
+views show its first three lines. The number of questions outstanding at once is capped, and the honest
 answer past the cap is a refusal the server turns into a decline rather than an error. A question
 that is never answered expires and declines. The question is also delivered as a notification: on macOS by the server,
 through the same truncation and AppleScript escaping the needs-input popup uses, and elsewhere by the page, which
@@ -5475,7 +5488,7 @@ plausibility now reaches a reader with no tab open, because the question also ra
 title renders the display label of the harness key the registration claimed, and neither the key nor the
 claim is verified. A registration that inherits or forges the harness environment variable titles the
 banner with that harness. What the registry lookup does buy is that the title is a name the registry
-carries or nothing at all, so a 120-character agent-authored string cannot reach it, and an
+carries or nothing at all, so an agent-authored string, bounded only by the option cap, cannot reach it, and an
 unattributable question is announced as "An agent" rather than under a borrowed name.
 Verifying it would need a per-session secret that the sessions do not have and that the loopback
 boundary could not keep.

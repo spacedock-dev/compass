@@ -74,8 +74,21 @@ const ASK = {
   age_sec: 30,
 };
 
+/* A question and options Compass shortened, at the caps the stdio server sends: 2,000 characters for the
+   question and 240 for an option, each ending in "…". One option is a run with no spaces, the widest a label
+   can be. */
+const WORDS = 'Should the synthetic migration run against the staging copy first ';
+const SHORTENED_ASK = {
+  ...ASK,
+  question: `${WORDS.repeat(40).slice(0, 1_999).trimEnd()}…`,
+  options: [`${WORDS.repeat(4).slice(0, 239).trimEnd()}…`, `${'o'.repeat(239)}…`, 'Not yet'],
+  question_sent_chars: 2_500,
+  dropped_options: 2,
+};
+
 interface Log {
   answers: string[];
+  ask: Record<string, unknown>;
   asking: boolean;
   gate: boolean;
   resumable: boolean;
@@ -88,6 +101,7 @@ interface Log {
 }
 const log: Log = {
   answers: [],
+  ask: ASK,
   asking: false,
   gate: false,
   resumable: true,
@@ -104,6 +118,7 @@ const log: Log = {
    record page until the story releases it. */
 function PageExample({
   asking = false,
+  ask = ASK,
   gate = false,
   resumable = true,
   cites = null,
@@ -114,6 +129,8 @@ function PageExample({
   readingWindow = G - 200,
 }: {
   readonly asking?: boolean;
+  /** The exact request published while `asking`. */
+  readonly ask?: Record<string, unknown>;
   /** A harness's own gate: the session waits on you with no exact request Compass can show. */
   readonly gate?: boolean;
   /** Whether the session publishes a token its harness's CLI takes back in. */
@@ -127,6 +144,7 @@ function PageExample({
 }) {
   const [shell] = useState(() => {
     log.answers = [];
+    log.ask = ask;
     log.asking = asking;
     log.gate = gate;
     log.resumable = resumable;
@@ -177,7 +195,7 @@ function PageExample({
             harnesses: [
               { key: 'claude', label: 'Claude Code', reports_rate: true, discovered: true },
             ],
-            ...(log.asking ? { ask: true, asks: [ASK] } : {}),
+            ...(log.asking ? { ask: true, asks: [log.ask] } : {}),
             sessions: [
               {
                 harness: 'claude',
@@ -764,6 +782,49 @@ export const QuestionLeadsAndAnswersOnce: Story = {
     log.release?.();
     await waitFor(() => expect(named(canvasElement)[0]).toBe('Intent'));
     await expect(log.answers).toHaveLength(1);
+  },
+};
+
+/* A question Compass shortened says so under its options, with the length the session sent and how many options
+   were never shown; the cut text still ends in "…", and the longest labels wrap inside the card at phone width. */
+export const ShortenedQuestion: Story = {
+  render: () => <PageExample asking ask={SHORTENED_ASK} />,
+  play: async ({ canvasElement }) => {
+    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
+    for (const width of [1280, 400]) {
+      await atWidth(width, async () => {
+        const question = asked.querySelector('.next-session-ask-question') as HTMLElement;
+        await expect(question.textContent).toHaveLength(2_000);
+        await expect(question.textContent?.endsWith('…')).toBe(true);
+        const notes = [...asked.querySelectorAll<HTMLElement>('[data-next-session-ask-cut]')];
+        await expect(notes.map((note) => note.textContent)).toEqual([
+          'Shortened by Compass: the session sent 2,500 characters.',
+          '2 more options were not shown.',
+        ]);
+        for (const note of notes) await expect(note).toBeVisible();
+        const buttons = within(asked).getAllByRole('button');
+        await expect(buttons).toHaveLength(3);
+        const card = asked.getBoundingClientRect();
+        for (const button of buttons)
+          await expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(card.right + 1);
+        // Below the options, so the reader meets the choice first and the note before leaving it.
+        const options = asked.querySelector('.next-session-answer-options') as HTMLElement;
+        await expect(notes[0]?.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+          options.getBoundingClientRect().bottom,
+        );
+        await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+      });
+    }
+  },
+};
+
+/* A question inside every cap carries no note. */
+export const UnshortenedQuestionHasNoNote: Story = {
+  render: () => <PageExample asking />,
+  play: async ({ canvasElement }) => {
+    const asked = await within(canvasElement).findByRole('region', { name: 'Asked you' });
+    await expect(asked).toHaveTextContent('Run the synthetic migration now?');
+    await expect(asked.querySelector('[data-next-session-ask-cut]')).toBeNull();
   },
 };
 

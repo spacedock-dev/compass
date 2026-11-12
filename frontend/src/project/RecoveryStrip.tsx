@@ -184,7 +184,9 @@ function Waiting({
         <Value text={session.titleText} known={session.titleKnown} />
       </RouteAnchor>
       <Value text={session.waitedText} known={session.waitedKnown} />
-      {session.askKnown ? <p className="next-cockpit-source">{session.askText}</p> : null}
+      {session.askKnown ? (
+        <p className="next-cockpit-source line-clamp-3">{session.askText}</p>
+      ) : null}
       <div className="next-rail-wait-controls">
         <RaiseControl
           harness={session.harness.trim()}

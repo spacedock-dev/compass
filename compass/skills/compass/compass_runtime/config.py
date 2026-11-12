@@ -666,8 +666,17 @@ class RuntimeConfig:
     # A hard cap, not a queue: every outstanding ask costs a card on the page and
     # a polling peer, so past this the register route refuses with a 503.
     ask_max_pending: int
-    # The register body carries a question and up to `ask_max_options` options,
-    # so it is sized like the event envelope rather than like a notification.
+    # The register body carries a question and up to `ask_max_options` options.
+    # JSON writes a control character as six bytes even when nothing else is
+    # escaped, so a 2,000-character question and 8 options of 240 in control
+    # characters measured 23,594 bytes with the keys, and 26,754 with a
+    # 64-character session id and a 512-character project. The stdio server sends
+    # its text uncut and refuses a body past this rather than cutting it, so this
+    # is also how long a question it can ask: beside 8 options of 240 and a
+    # typical session id and project, measured 30,685 ASCII characters, 8,953
+    # CJK and 6,237 emoji, every one longer than a card shows. Also the length at
+    # which the route makes text safe before cutting it, which that server
+    # mirrors.
     ask_body_cap_bytes: int
     # The answer body carries an id and an integer, and nothing else is read
     # from it.
@@ -1153,10 +1162,10 @@ def build_runtime_config(
         ask_retention_sec=60.0,
         ask_poll_timeout_sec=10.0,
         ask_max_pending=16,
-        ask_body_cap_bytes=8_192,
+        ask_body_cap_bytes=32_768,
         ask_answer_body_cap_bytes=1_024,
-        ask_question_cap_chars=500,
-        ask_option_cap_chars=120,
+        ask_question_cap_chars=2_000,
+        ask_option_cap_chars=240,
         ask_project_cap_chars=512,
         ask_max_options=8,
         observer_head_bytes=65_536,

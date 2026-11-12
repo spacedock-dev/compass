@@ -8,6 +8,7 @@ worth asserting here is reachable without either.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os
@@ -25,6 +26,7 @@ from unittest import mock
 
 import mcp_server
 import notify_hook
+from compass_runtime import http_api
 from compass_runtime.config import build_runtime_config
 
 _LOGGED: list[str] = []
@@ -170,6 +172,31 @@ def _text(frame: dict[str, Any]) -> str:
     return str(content[0]["text"])
 
 
+def _config() -> Any:
+    return build_runtime_config(
+        environ={"HOME": "/nonexistent-compass-test"},
+        platform_name="linux",
+        os_name="posix",
+        launcher_path=pathlib.Path(mcp_server.__file__),
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class _Echo:
+    """Register as the real route does: `http_api.ask_text` on the body, then
+    the id with the card's question and options, or a 400 if it refuses.
+
+    Calling the route's own normaliser rather than restating it is the point: a
+    double that echoed what it was sent hid a card that differed from the answer.
+    """
+
+    ask_id: str = "ask-1"
+
+
+_Register = tuple[int, dict[str, Any]] | _Echo | None
+_ECHO = _Echo()
+
+
 class _FakeDashboard:
     """A stand-in for the loopback dashboard, patched in at `mcp_server._open`.
 
@@ -180,8 +207,8 @@ class _FakeDashboard:
     def __init__(
         self,
         *,
-        register: tuple[int, dict[str, Any]] | None = (200, {"ok": True, "id": "ask-1"}),
-        register_by_port: dict[int, tuple[int, dict[str, Any]] | None] | None = None,
+        register: _Register = _ECHO,
+        register_by_port: dict[int, _Register] | None = None,
         poll: list[tuple[int, dict[str, Any] | None]] | None = None,
         withdraw: tuple[int, dict[str, Any]] | None = (200, {"ok": True, "withdrawn": True}),
     ) -> None:
@@ -193,6 +220,9 @@ class _FakeDashboard:
         self.withdraw = withdraw
         self.requests: list[str] = []
         self.registrations: list[dict[str, Any]] = []
+        # What each register was answered with, so a test reads the card's text
+        # where the real route publishes it.
+        self.replies: list[dict[str, Any]] = []
         self.withdrawals: list[dict[str, Any]] = []
         self.polls = threading.Semaphore(0)
         self._lock = threading.Lock()
@@ -212,15 +242,7 @@ class _FakeDashboard:
             status, body = self.withdraw
             return status, json.dumps(body).encode()
         if url.endswith("/api/ask"):
-            with self._lock:
-                self.registrations.append(_body(request))
-            answer = self.register
-            if self.register_by_port is not None:
-                answer = self.register_by_port.get(urllib.parse.urlsplit(url).port or 0)
-            if answer is None:
-                return None
-            status, body = answer
-            return status, json.dumps(body).encode()
+            return self._registered(request)
         self.polls.release()
         step: tuple[int, dict[str, Any] | None] | None
         with self._lock:
@@ -233,6 +255,26 @@ class _FakeDashboard:
             return None
         poll_status, poll_body = step
         return poll_status, b"" if poll_body is None else json.dumps(poll_body).encode()
+
+    def _registered(self, request: urllib.request.Request) -> tuple[int, bytes] | None:
+        sent = _body(request)
+        with self._lock:
+            self.registrations.append(sent)
+        answer = self.register
+        if self.register_by_port is not None:
+            answer = self.register_by_port.get(urllib.parse.urlsplit(request.full_url).port or 0)
+        if answer is None:
+            return None
+        if isinstance(answer, _Echo):
+            text = http_api.ask_text(sent, _config())
+            if text is None:
+                return 400, b""
+            card = {"question": text.question, "options": list(text.options)}
+            answer = (200, {"ok": True, "id": answer.ask_id, **card})
+        status, body = answer
+        with self._lock:
+            self.replies.append(body)
+        return status, json.dumps(body).encode()
 
     def poll_count(self) -> int:
         with self._lock:
@@ -434,24 +476,35 @@ class CallFlowTest(_CallCase):
         self.assertEqual(1, len(frames))
         self.assertEqual(mcp_server.DECLINE_INTERNAL, _text(frames[0]))
 
-    def test_the_registered_body_carries_the_bounded_question_and_options(self) -> None:
-        captured: list[bytes] = []
-
-        def record(request: urllib.request.Request, timeout: float) -> tuple[int, bytes] | None:
-            del timeout
-            if request.full_url.endswith("/api/ask"):
-                assert isinstance(request.data, bytes)
-                captured.append(request.data)
-                return 200, json.dumps({"ok": True, "id": "ask-1"}).encode()
-            return 200, json.dumps({"state": "answered", "index": 0}).encode()
-
-        with mock.patch.object(mcp_server, "_open", record), _Harness() as harness:
-            harness.push(_call(1, "Q" * 900, ["A" * 400, "hold"]))
-            harness.wait_for_frames(1)
-        body = json.loads(captured[0])
-        self.assertEqual(mcp_server.QUESTION_CAP_CHARS, len(body["question"]))
-        self.assertEqual(mcp_server.OPTION_CAP_CHARS, len(body["options"][0]))
+    def test_the_registered_body_carries_the_question_and_options_uncut(self) -> None:
+        # The dashboard redacts the whole of each string before it cuts, and
+        # measures the question from what it received, so nothing is cut here.
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Q" * 2_500, ["A" * 400, "hold"]))
+        body = dashboard.registrations[0]
+        self.assertEqual("Q" * 2_500, body["question"])
+        self.assertEqual(["A" * 400, "hold"], body["options"])
+        self.assertNotIn("question_sent_chars", body)
         self.assertIn("harness", body)
+
+    def test_a_question_over_the_cap_ends_in_an_ellipsis_on_the_card(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Q" * 2_500, ["ship", "hold"]))
+        self.assertEqual("Q" * 1_999 + "\u2026", dashboard.replies[0]["question"])
+
+    def test_a_question_at_the_cap_is_sent_whole_and_unflagged(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        self._run(dashboard, _call(1, "Q" * 2_000, ["ship", "hold"]))
+        body = dashboard.registrations[0]
+        self.assertEqual("Q" * 2_000, body["question"])
+        self.assertEqual("Q" * 2_000, dashboard.replies[0]["question"])
+        self.assertNotIn("question_sent_chars", body)
+
+    def test_an_option_over_the_cap_ends_in_an_ellipsis_inside_it(self) -> None:
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        frame = self._run(dashboard, _call(1, "Which?", ["o" * 241, "p" * 240]))
+        self.assertEqual(["o" * 239 + "\u2026", "p" * 240], dashboard.replies[0]["options"])
+        self.assertEqual("o" * 239 + "\u2026", _text(frame))
 
 
 class RegisterRefusalTest(_CallCase):
@@ -462,9 +515,9 @@ class RegisterRefusalTest(_CallCase):
     dashboard, which is exactly what the rollback switch is supposed to prevent.
     """
 
-    def _refused(self, first: tuple[int, dict[str, Any]]) -> tuple[dict[str, Any], _FakeDashboard]:
+    def _refused(self, first: _Register) -> tuple[dict[str, Any], _FakeDashboard]:
         dashboard = _FakeDashboard(
-            register_by_port={4553: first, 4554: (200, {"ok": True, "id": "ask-2"})},
+            register_by_port={4553: first, 4554: _Echo("ask-2")},
             poll=[(200, {"state": "answered", "index": 0})],
         )
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]), ports=(4553, 4554))
@@ -501,7 +554,7 @@ class RegisterRefusalTest(_CallCase):
 
     def test_a_refused_connection_still_walks_to_the_next_candidate(self) -> None:
         dashboard = _FakeDashboard(
-            register_by_port={4554: (200, {"ok": True, "id": "ask-2"})},
+            register_by_port={4554: _Echo("ask-2")},
             poll=[(200, {"state": "answered", "index": 1})],
         )
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]), ports=(4553, 4554))
@@ -561,20 +614,100 @@ class OperatorConsentTest(_CallCase):
     """The agent gets the string the operator saw, not a longer one."""
 
     def test_the_returned_option_is_the_one_that_was_registered(self) -> None:
-        long_option = "y" * 40 + "z" * 200
+        long_option = "y" * 40 + "z" * 300
         dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 1})])
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", long_option]))
-        registered = dashboard.registrations[0]["options"]
+        registered = dashboard.replies[0]["options"]
         # Consent has to be to the thing that happens: the card can only show the
         # truncated label, so that is the string the answer resolves to.
         self.assertEqual(mcp_server.OPTION_CAP_CHARS, len(registered[1]))
         self.assertEqual(registered[1], _text(frame))
 
-    def test_two_options_differing_past_the_cap_answer_to_what_was_shown(self) -> None:
+    def test_two_options_differing_only_past_the_cap_are_refused_not_registered(self) -> None:
         head = "a" * mcp_server.OPTION_CAP_CHARS
-        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        dashboard = _FakeDashboard()
         frame = self._run(dashboard, _call(1, "Which?", [head + "-one", head + "-two"]))
-        self.assertEqual(head, _text(frame))
+        self.assertIs(True, frame["result"]["isError"])
+        self.assertEqual(
+            "ask_operator needs options that differ within their first 240 characters.",
+            _text(frame),
+        )
+        self.assertEqual([], dashboard.registrations)
+
+    def test_cut_options_keep_every_index_on_the_option_shown(self) -> None:
+        # The reader pressed a button showing a cut label, and the registered
+        # string at that position is what comes back, with the uncut option after
+        # them still answering as itself.
+        options = ["b" * 300, "c" * 300, "hold"]
+        for index in range(3):
+            with self.subTest(index=index):
+                dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": index})])
+                frame = self._run(dashboard, _call(1, "Which?", options))
+                registered = dashboard.replies[0]["options"]
+                self.assertEqual(3, len(registered))
+                self.assertEqual("hold", registered[2])
+                self.assertEqual(registered[index], _text(frame))
+
+
+class CardMatchesAnswerTest(_CallCase):
+    """The card is redacted before it is cut, and the answer is that card's text.
+
+    Each side cut on its own before, and they disagreed: the card showed a
+    redacted label while the session was answered with the unredacted string.
+    """
+
+    KEY = "sk-ant-" + "A" * 35
+
+    def test_a_redacted_option_answers_as_the_card_shows_it(self) -> None:
+        option = "x" * 130 + " " + self.KEY
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        frame = self._run(dashboard, _call(1, "Ship it?", [option, "hold"]))
+        shown = dashboard.replies[0]["options"][0]
+        self.assertEqual(shown, _text(frame))
+        self.assertEqual("x" * 130 + " sk-ant-\u2026REDACTED", shown)
+        self.assertNotIn("A" * 12, _text(frame))
+
+    def test_a_key_straddling_the_cap_is_redacted_before_anything_is_cut(self) -> None:
+        # Cutting first sent the card `AKIAAAAAAAAAA…`, a head too short to match.
+        option = "x" * 225 + " AKIA" + "A" * 16 + " tail" * 20
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        frame = self._run(dashboard, _call(1, "Ship it?", [option, "hold"]))
+        self.assertEqual("x" * 225 + " AKIA\u2026REDACTED\u2026", _text(frame))
+        # Sent whole, so the dashboard saw all of the key and redacted it.
+        self.assertEqual(option, dashboard.registrations[0]["options"][0])
+
+    def test_a_marker_straddling_the_cap_is_cut_before_and_the_answer_fits(self) -> None:
+        option = "x" * 233 + " " + self.KEY + " tail" * 20
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        frame = self._run(dashboard, _call(1, "Ship it?", [option, "hold"]))
+        self.assertEqual("x" * 233 + "\u2026", _text(frame))
+        self.assertEqual(_text(frame), dashboard.replies[0]["options"][0])
+
+    def test_a_reply_without_the_card_text_is_withdrawn_and_declined(self) -> None:
+        dashboard = _FakeDashboard(
+            register=(200, {"ok": True, "id": "ask-1"}),
+            poll=[(200, {"state": "answered", "index": 0})],
+        )
+        frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
+        # What a dashboard from before the echo answers: it is told apart from a
+        # card that differs, because the fix is a restart.
+        self.assertEqual(mcp_server.DECLINE_OUTDATED, _text(frame))
+        self.assertIn("restart", _text(frame))
+        self.assertEqual([{"id": "ask-1"}], dashboard.withdrawals)
+        self.assertEqual(0, dashboard.poll_count())
+
+    def test_a_card_unlike_this_processs_copy_is_withdrawn_and_declined(self) -> None:
+        # A dashboard of another version, or something else on the port, showing
+        # different labels: the reader would click one string and the session
+        # would get another.
+        unlike = {"ok": True, "id": "ask-1", "question": "Ship it?", "options": ["ship", "rm"]}
+        dashboard = _FakeDashboard(
+            register=(200, unlike), poll=[(200, {"state": "answered", "index": 1})]
+        )
+        frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
+        self.assertEqual(mcp_server.DECLINE_INTERNAL, _text(frame))
+        self.assertEqual([{"id": "ask-1"}], dashboard.withdrawals)
+        self.assertEqual(0, dashboard.poll_count())
 
 
 class PayloadSizeTest(_CallCase):
@@ -586,15 +719,66 @@ class PayloadSizeTest(_CallCase):
         # gate, so it was refused locally and reported as no dashboard running.
         question = "測" * mcp_server.QUESTION_CAP_CHARS
         options = [
-            "選" * mcp_server.OPTION_CAP_CHARS + str(n) for n in range(mcp_server.MAX_OPTIONS)
+            str(n) + "選" * mcp_server.OPTION_CAP_CHARS for n in range(mcp_server.MAX_OPTIONS)
         ]
         dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
         with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/tmp/x"}, clear=False):
             frame = self._run(dashboard, _call(1, question, options))
         self.assertEqual(1, len(dashboard.registrations))
-        body = dashboard.registrations[0]
-        self.assertEqual(mcp_server.QUESTION_CAP_CHARS, len(body["question"]))
-        self.assertEqual(body["options"][0], _text(frame))
+        reply = dashboard.replies[0]
+        self.assertEqual(mcp_server.QUESTION_CAP_CHARS, len(reply["question"]))
+        self.assertEqual(reply["options"][0], _text(frame))
+
+    def test_the_widest_legal_text_is_registered_rather_than_refused(self) -> None:
+        # A control character is the widest a character gets on the wire: JSON
+        # escapes it to six bytes even with ensure_ascii off. Every field just
+        # past its cap, sent uncut, still has to fit the gate.
+        # Each led by a visible character: control characters alone are made
+        # safe as spaces and strip to nothing, which is refused.
+        question = "q" + "\x01" * mcp_server.QUESTION_CAP_CHARS
+        options = [
+            str(n) + "\x01" * mcp_server.OPTION_CAP_CHARS for n in range(mcp_server.MAX_OPTIONS)
+        ]
+        project = "/" + "\x01" * 511
+        dashboard = _FakeDashboard(poll=[(200, {"state": "answered", "index": 0})])
+        with mock.patch.dict(
+            os.environ,
+            {"CLAUDE_PROJECT_DIR": project, "CLAUDE_CODE_SESSION_ID": "s" * 64},
+            clear=False,
+        ):
+            frame = self._run(dashboard, _call(1, question, options))
+        self.assertEqual(1, len(dashboard.registrations))
+        self.assertEqual(dashboard.replies[0]["options"][0], _text(frame))
+
+    def test_a_question_past_the_body_cap_is_refused_with_a_sentence_not_cut(self) -> None:
+        # Cutting here would cut before the dashboard redacts, so the bound on
+        # what is sent is a refusal that says how much a card shows.
+        dashboard = _FakeDashboard()
+        frame = self._run(dashboard, _call(1, "q" * mcp_server.BODY_CAP_BYTES, ["ship", "hold"]))
+        self.assertEqual([], dashboard.requests)
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_QUESTION, _text(frame))
+        self.assertIn("32,768-byte limit", _text(frame))
+        self.assertIn("2,000 characters of a question", _text(frame))
+
+    def test_long_options_beside_a_short_question_are_named_as_the_part_over(self) -> None:
+        # It used to say a shorter question could be asked, of an 11-character one.
+        options = [f"opt {n} " + "z" * 4100 for n in range(mcp_server.MAX_OPTIONS)]
+        dashboard = _FakeDashboard()
+        with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/tmp/x"}, clear=False):
+            frame = self._run(dashboard, _call(1, "Which plan?", options))
+        self.assertEqual([], dashboard.requests)
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_OPTIONS, _text(frame))
+        self.assertIn("shorter options", _text(frame))
+        self.assertNotIn("shorter question", _text(frame))
+
+    def test_a_question_and_options_over_only_together_name_both(self) -> None:
+        question = "q" * 17_000
+        options = ["a" * 8_000, "b" * 8_000]
+        dashboard = _FakeDashboard()
+        frame = self._run(dashboard, _call(1, question, options))
+        self.assertEqual([], dashboard.requests)
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE, _text(frame))
+        self.assertIn("shorter question or shorter options", _text(frame))
 
     def test_a_payload_over_the_byte_cap_says_so_instead_of_blaming_the_dashboard(self) -> None:
         # Reachable through the one field this process does not bound: the
@@ -605,7 +789,7 @@ class PayloadSizeTest(_CallCase):
         ):
             frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
         self.assertEqual([], dashboard.requests)
-        self.assertEqual(mcp_server.DECLINE_TOO_LARGE, _text(frame))
+        self.assertEqual(mcp_server.DECLINE_TOO_LARGE_ATTRIBUTION, _text(frame))
         self.assertNotIn("no Compass dashboard is running", _text(frame))
 
 
@@ -857,12 +1041,7 @@ class ContractTest(unittest.TestCase):
         Any because config.py belongs to another lane; its absence is the failure
         this reports.
         """
-        config = build_runtime_config(
-            environ={"HOME": "/nonexistent-compass-test"},
-            platform_name="linux",
-            os_name="posix",
-            launcher_path=pathlib.Path(mcp_server.__file__),
-        )
+        config = _config()
         self.assertTrue(hasattr(config, name), f"RuntimeConfig.{name} is missing")
         return getattr(config, name)
 

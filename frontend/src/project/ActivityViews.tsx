@@ -128,7 +128,9 @@ function ActivityCard({
       {session.stuckKnown ? (
         <span className="next-activity-stuck">{`stuck · ${session.stuckText}`}</span>
       ) : null}
-      {session.askKnown ? <span className="next-activity-question">{session.askText}</span> : null}
+      {session.askKnown ? (
+        <span className="next-activity-question line-clamp-3">{session.askText}</span>
+      ) : null}
       {session.isNeeds ? (
         <span className="next-activity-metric">{session.waitedText}</span>
       ) : (

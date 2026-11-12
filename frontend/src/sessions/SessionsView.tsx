@@ -105,7 +105,8 @@ function Fact({
     >
       <small>{label}</small>
       <strong {...(tone === 'unknown' ? { className: 'next-absence' } : {})}>{value}</strong>
-      {detail ? <em>{detail}</em> : null}
+      {/* A held question can run to 2,000 characters: the row shows its opening, the session page all of it. */}
+      {detail ? <em className="line-clamp-3">{detail}</em> : null}
     </span>
   );
 }
