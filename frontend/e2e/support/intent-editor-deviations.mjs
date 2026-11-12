@@ -18,7 +18,7 @@ function sourceLine(marks) {
   return `Drafted from ${name} · not saved${clipped}`;
 }
 
-export function intentEditorDeviations(recorded) {
+export function intentEditorDeviations(recorded, caps) {
   const value = structuredClone(recorded);
   const added = [];
   const drafted = value.fields?.[0]?.marks.includes('from your prompt') ?? false;
@@ -26,7 +26,10 @@ export function intentEditorDeviations(recorded) {
     // The popup's options are proven through its roles; the recorded native option DOM is retired.
     field.menu = [];
     // Both counts read "n / cap", as the mockup draws the goal's.
-    field.counts = field.counts.map((count) => count.replace(/^(\d+)\/(\d+)$/, '$1 / $2'));
+    const cap = field.kind === 'goal' ? caps.annotate_goal_cap : caps.annotate_cap;
+    field.counts = field.counts.map((count) =>
+      count.replace(/^(\d+)\s*\/\s*\d+$/, `$1 / ${String(cap)}`),
+    );
     if (field.kind === 'goal') {
       field.buttons = field.buttons.filter(([label]) => label !== 'Clear');
       if (field.marks) {

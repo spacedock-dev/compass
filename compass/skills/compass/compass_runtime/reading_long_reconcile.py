@@ -181,6 +181,7 @@ class _Final(reading_long_worker._Passes):  # noqa: SLF001 - shared registered p
                 stop_reason=self.stop,
                 detail_cap_chars=self.config.annotation_text_cap_chars,
                 goal_cap_chars=self.config.annotation_goal_cap_chars,
+                line_cap_chars=self.config.annotation_line_cap_chars,
                 on_observation=self.observe,
                 on_prepared=prepared,
             )

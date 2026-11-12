@@ -1,7 +1,7 @@
 """A reader's expected outcome, written as a checklist and read one line at a time (DRC-4685).
 
 [DEC-24](docs/design-reading-a-session.md#dec-24-your-intent-is-a-drafted-goal-and-a-checklist-and-a-correction-is-yours-to-copy)
-item 3 turns the single expected output into up to six lines, each at most 240 characters on one
+item 3 turns the single expected output into up to six lines, each at most 800 characters on one
 line, each recording its source, each read as its own constraint. Every test here is a sentence
 about the person who typed those lines: what they get back, what they are refused and why, and
 what never reaches a model they did not ask to run.
@@ -90,6 +90,18 @@ class _StoreCase(unittest.TestCase):
 
 
 class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
+    def test_an_800_character_line_is_stored(self) -> None:
+        for index, char in enumerate(("x", "界", "😀")):
+            with self.subTest(char=char):
+                line = char * 800
+                outcome = annotation_store.annotate(
+                    self.config, self.state, "claude", f"s-{index}", lines=[line], now=NOW
+                )
+                self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+                self.assertEqual(
+                    line, self.entry(f"s-{index}")["revisions"][-1]["lines"][0]["text"]
+                )
+
     def test_a_reader_who_types_six_lines_gets_six_lines_back_each_marked_typed(self) -> None:
         outcome = annotation_store.annotate(
             self.config, self.state, "claude", "s-1", goal="Harden the ingest", lines=SIX, now=NOW
@@ -149,7 +161,7 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
             self.assertEqual(before, handle.read())
         self.assertEqual(1, self.entry()["revisions"][-1]["n"])
 
-    def test_a_line_over_240_characters_is_refused_rather_than_saved_clipped(self) -> None:
+    def test_an_801_character_line_is_refused_naming_cap_800(self) -> None:
         reason: dict[str, str | int] = {}
         outcome = annotation_store.annotate(
             self.config,
@@ -157,18 +169,18 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
             "claude",
             "s-1",
             goal="Save the whole request",
-            lines=["", "short", "y" * 241],
+            lines=["", "short", "y" * 801],
             now=NOW,
             reason=reason,
         )
 
         self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
-        self.assertEqual({"code": "line_too_long", "line": 3, "length": 241, "cap": 240}, reason)
+        self.assertEqual({"code": "line_too_long", "line": 3, "length": 801, "cap": 800}, reason)
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
 
     def test_the_refusal_names_the_configured_line_cap(self) -> None:
-        config = dataclasses.replace(self.config, annotation_text_cap_chars=3)
+        config = dataclasses.replace(self.config, annotation_line_cap_chars=3)
         reason: dict[str, str | int] = {}
 
         outcome = annotation_store.annotate(
@@ -239,7 +251,7 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
         )
 
         self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
-        self.assertEqual({"code": "line_too_long", "line": 1, "length": 4001, "cap": 240}, reason)
+        self.assertEqual({"code": "line_too_long", "line": 1, "length": 4001, "cap": 800}, reason)
         self.assertEqual((), annotation_store.load(self.config))
 
     def test_saving_the_same_list_again_mints_no_revision(self) -> None:
@@ -447,6 +459,22 @@ class ALineKeepsItsSourceTest(_StoreCase):
 
 
 class AnOlderStoreStillReadsTest(_StoreCase):
+    def test_a_store_written_with_240_lines_loads_unchanged(self) -> None:
+        lines = [{"text": "界" * 240, "source": "typed"}] * 6
+        self.write_raw(
+            {
+                "v": 1,
+                "entries": [
+                    {
+                        "harness": "claude",
+                        "sid": "s-1",
+                        "revisions": [{"n": 1, "at": NOW, "goal": "G", "lines": lines}],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(tuple(lines), self.entry()["revisions"][-1]["lines"])
+
     def test_an_old_single_expected_output_reads_as_one_typed_line(self) -> None:
         self.write_raw(
             {
@@ -649,13 +677,13 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
     """
 
     def full_entry(self, index: int, char: str) -> annotation_store.Annotation:
-        text = char * 240
+        text = char * self.config.annotation_line_cap_chars
         criterion = {
             "result": reading.RESULT_DEPARTURE,
             "cites": tuple(
                 f"{index:04d}".ljust(annotation_store.KEY_CAP_CHARS, "k") for _ in range(12)
             ),
-            "detail": text,
+            "detail": char * self.config.annotation_text_cap_chars,
             "clause": text,
             "why": "",
         }
@@ -685,7 +713,15 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
                     "ended_at_read": None,
                     "evidence_through": NOW,
                     "criteria": {
-                        name: dict(criterion)
+                        name: {
+                            **criterion,
+                            "clause": char
+                            * (
+                                self.config.annotation_goal_cap_chars
+                                if name == "goal"
+                                else self.config.annotation_line_cap_chars
+                            ),
+                        }
                         for name in ("goal", *(f"line_{k}" for k in range(1, 7)))
                     },
                 },
@@ -698,19 +734,19 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
         entry = self.full_entry(0, "a")
         criteria = entry["assessment"]["criteria"]
         criteria["goal"]["clause"] = "g" * 900
-        criteria["line_1"]["clause"] = "l" * 300
+        criteria["line_1"]["clause"] = "l" * 900
 
         self.assertTrue(annotation_store.save(self.config, [entry]))
 
         (loaded,) = annotation_store.load(self.config)
         read = loaded["assessment"]["criteria"]
         self.assertEqual("g" * 900, read["goal"]["clause"])
-        self.assertEqual(self.config.annotation_text_cap_chars, len(read["line_1"]["clause"]))
+        self.assertEqual(self.config.annotation_line_cap_chars, len(read["line_1"]["clause"]))
 
     def test_the_read_limit_is_sixteen_mib(self) -> None:
         self.assertEqual(16 * 1024 * 1024, self.config.annotation_read_cap_bytes)
 
-    def test_every_count_bound_full_still_writes_and_reads_back_whole(self) -> None:
+    def test_every_count_bound_full_trims_oldest_and_reads_back_whole(self) -> None:
         entries = [self.full_entry(i, "a") for i in range(self.config.annotation_max_sessions)]
 
         self.assertTrue(annotation_store.save(self.config, entries))
@@ -718,7 +754,9 @@ class TheStoreNeverOutgrowsItsReadLimitTest(_StoreCase):
         size = os.path.getsize(annotation_store.store_path(self.config))
         self.assertLessEqual(size, self.config.annotation_read_cap_bytes)
         loaded = annotation_store.load(self.config)
-        self.assertEqual(self.config.annotation_max_sessions, len(loaded))
+        self.assertGreater(len(loaded), 0)
+        self.assertLess(len(loaded), self.config.annotation_max_sessions)
+        self.assertNotIn("s-0000", {entry["sid"] for entry in loaded})
         self.assertEqual(16, len(loaded[-1]["revisions"]))
         self.assertEqual(6, len(loaded[-1]["revisions"][-1]["lines"]))
 
@@ -1266,7 +1304,7 @@ class TheStoresOwnEdgeRulesTest(_StoreCase):
 
     def test_a_goal_beside_a_list_the_store_refuses_is_not_saved_either(self) -> None:
         outcome = annotation_store.annotate(
-            self.config, self.state, "claude", "s-1", goal="G", lines=["y" * 241], now=NOW
+            self.config, self.state, "claude", "s-1", goal="G", lines=["y" * 801], now=NOW
         )
 
         self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
@@ -1317,6 +1355,7 @@ class TheStoresOwnEdgeRulesTest(_StoreCase):
 
 class _Config:
     reading_settle_sec = 8.0
+    annotation_line_cap_chars = 800
     annotation_text_cap_chars = 240
     annotation_goal_cap_chars = 1_000
 
@@ -1479,7 +1518,13 @@ class EachLineIsAskedOnItsOwnTest(_ProducerCase):
         }
 
         criteria = reading.resolve(
-            parsed, selection, goal="", lines=SIX[:2], detail_cap_chars=240, window_start=50.0
+            parsed,
+            selection,
+            goal="",
+            lines=SIX[:2],
+            detail_cap_chars=240,
+            window_start=50.0,
+            line_cap_chars=800,
         )
 
         self.assertEqual(reading.WHY_CHECK_DOES_NOT_SHOW_IT, criteria["line_1"]["why"])
@@ -2000,10 +2045,12 @@ class TheAnnotateRouteTakesAListTest(unittest.TestCase):
 
         self.assertEqual(400, status)
 
-    def test_the_body_cap_is_16384_bytes(self) -> None:
-        self.assertEqual(16_384, self.config.annotation_body_cap_bytes)
+    def test_the_body_cap_is_40960_bytes(self) -> None:
+        self.assertEqual(40_960, self.config.annotation_body_cap_bytes)
         base = {"harness": "claude", "sid": "s-1", "lines": ["a"], "pad": ""}
-        spare = 16_384 - len(json.dumps(base).encode())
+        # The over body must be one byte past the configured cap, not past an older figure: a
+        # spare computed from 16,384 left both bodies under 40,960 and both answered 200.
+        spare = self.config.annotation_body_cap_bytes - len(json.dumps(base).encode())
         with self.serving() as port:
             fits, _ = self.post(port, json.dumps({**base, "pad": "p" * spare}).encode())
             over, _ = self.post(port, json.dumps({**base, "pad": "p" * (spare + 1)}).encode())
@@ -2085,7 +2132,7 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
                     "harness": "claude",
                     "sid": "abcd1234",
                     "goal": "Save the whole request",
-                    "lines": ["", "short", "x" * 286, "y" * 249, "z" * 140],
+                    "lines": ["", "short", "x" * 846, "y" * 809, "z" * 140],
                 }
             ).encode(),
         )
@@ -2096,14 +2143,14 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
         self.assertEqual("refused", answer["outcome"])
         self.assertIs(False, answer["persisted"])
         self.assertEqual(
-            {"code": "line_too_long", "line": 3, "length": 286, "cap": 240}, answer["reason"]
+            {"code": "line_too_long", "line": 3, "length": 846, "cap": 800}, answer["reason"]
         )
         self.assertIsNone(answer["saved_revision"])
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
 
     def test_an_overlong_redacted_line_reports_its_original_submitted_length(self) -> None:
-        line = "sk-" + "C" * 48 + " " + "x" * 250
+        line = "sk-" + "C" * 48 + " " + "x" * 810
         status, body = self.post(
             json.dumps({"harness": "claude", "sid": "abcd1234", "lines": [line]}).encode()
         )
@@ -2112,13 +2159,13 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
         answer = json.loads(body)
         self.assertEqual("refused", answer["outcome"])
         self.assertEqual(
-            {"code": "line_too_long", "line": 1, "length": 302, "cap": 240}, answer["reason"]
+            {"code": "line_too_long", "line": 1, "length": 862, "cap": 800}, answer["reason"]
         )
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
 
     def test_redaction_that_exceeds_the_cap_reports_the_sanitized_length(self) -> None:
-        for suffix_length, sanitized_length in ((213, 242), (214, 243)):
+        for suffix_length, sanitized_length in ((773, 802), (774, 803)):
             with self.subTest(suffix_length=suffix_length):
                 line = "http://user:a@example.com/" + "x" * suffix_length
                 status, body = self.post(
@@ -2141,7 +2188,7 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
                         "code": "line_too_long",
                         "line": 1,
                         "length": sanitized_length,
-                        "cap": 240,
+                        "cap": 800,
                     },
                     answer["reason"],
                 )
@@ -2362,14 +2409,14 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
 
     def test_legacy_output_uses_the_same_line_refusal(self) -> None:
         status, body = self.post(
-            json.dumps({"harness": "claude", "sid": "abcd1234", "output": "x" * 241}).encode()
+            json.dumps({"harness": "claude", "sid": "abcd1234", "output": "x" * 801}).encode()
         )
 
         self.assertEqual(200, status)
         answer = json.loads(body)
         self.assertEqual("refused", answer["outcome"])
         self.assertEqual(
-            {"code": "line_too_long", "line": 1, "length": 241, "cap": 240}, answer["reason"]
+            {"code": "line_too_long", "line": 1, "length": 801, "cap": 800}, answer["reason"]
         )
         self.assertEqual((), annotation_store.load(self.config))
 
@@ -2539,8 +2586,8 @@ class TheRulingStatesEveryFigureTest(unittest.TestCase):
         item = self.item_three()
         figures = {
             "lines": f"{reading.MAX_OUTCOME_LINES} lines",
-            "line cap": f"{config.annotation_text_cap_chars} characters",
-            "prompt share": f"{reading.INTENT_SHARE_BYTES:,} of {observer.OBSERVER_MODEL_MAX_PROMPT_BYTES:,} bytes",
+            "line cap": f"{config.annotation_line_cap_chars} characters",
+            "prompt share": f"larger of {reading.INTENT_SHARE_BYTES:,} bytes and a quarter of the prompt budget",
             "reply cap": f"{reading.REPLY_CAP_BYTES:,} bytes",
             "body cap": f"{config.annotation_body_cap_bytes:,} bytes",
             "read limit": f"{config.annotation_read_cap_bytes // (1024 * 1024)} MiB",

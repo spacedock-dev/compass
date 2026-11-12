@@ -54,6 +54,7 @@ def read(
         window_start=50.0,
         line_requests=line_requests,
         recorded=reading.recorded_from(facts, "claude", "s1"),
+        line_cap_chars=800,
     )
 
 

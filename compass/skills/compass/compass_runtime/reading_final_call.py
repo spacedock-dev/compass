@@ -41,6 +41,9 @@ class Inputs:
     settled_through: float | None = None
     open_call_at: float | None = None
     message_words: tuple[MessageWords, ...] = ()
+    # The saved lines a packet had no room to pose (`reading_map_call.lines_fit`), set aside
+    # whole: `revision` then carries none, and each is published as `WHY_LINES_NO_ROOM`.
+    unposed_lines: tuple[str, ...] = ()
 
 
 def _request_data(inputs: Inputs) -> tuple[dict[str, float], frozenset[str], float | None]:
@@ -312,6 +315,7 @@ def _resolve(
     context: dict[str, Any],
     detail_cap_chars: int,
     goal_cap_chars: int | None,
+    line_cap_chars: int,
 ) -> tuple[dict[str, reading.Criterion] | None, str]:
     if not isinstance(raw, str):
         return None, "invalid-reply"
@@ -331,13 +335,19 @@ def _resolve(
         return None, "invalid-reply"
     floors, uncitable, _ = _request_data(inputs)
     output = inputs.tool_output
+    lines = selected.lines
+    if inputs.unposed_lines and not lines:
+        # The single prompt's answer for lines it had no room for: each is published, not asked.
+        selected = replace(selected, asked_output=False, lines_no_room=True)
+        lines = inputs.unposed_lines
     return reading.resolve(
         parsed,
         selected,
         goal=str(inputs.revision.get("goal") or ""),
-        lines=selected.lines,
+        lines=lines,
         detail_cap_chars=detail_cap_chars,
         goal_cap_chars=goal_cap_chars,
+        line_cap_chars=line_cap_chars,
         window_start=reading.window_start(inputs.revision),
         scope=context["window"]["scope"],
         line_requests=floors,
@@ -404,6 +414,7 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - ordered prepare/cal
     stop_reason: Callable[[], str | None],
     detail_cap_chars: int,
     goal_cap_chars: int | None = None,
+    line_cap_chars: int,
     on_observation: Callable[[dict[str, Any]], bool] | None = None,
     on_prepared: Callable[[Preparation], bool] | None = None,
 ) -> Result:
@@ -536,7 +547,9 @@ def run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - ordered prepare/cal
         return result(
             "model-failed", status if status in analyze_diagnostics.INPUT_OUTCOMES else "error"
         )
-    criteria, reason = _resolve(raw, packet, inputs, context, detail_cap_chars, goal_cap_chars)
+    criteria, reason = _resolve(
+        raw, packet, inputs, context, detail_cap_chars, goal_cap_chars, line_cap_chars
+    )
     if criteria is None:
         return result("parse-failed", reason)
     if set(built.unresolved) == {"agent-words-partial"}:

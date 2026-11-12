@@ -133,14 +133,14 @@ CONSTRAINT_CLAIMS = "claims"
 MAX_OUTCOME_LINES = 6
 _OUTCOME_LINE = re.compile(r"line_([1-9][0-9]*)")
 
-# Two of the figures item 3 left to this layer, and they are written there. The
-# intent's share of `observer.OBSERVER_MODEL_MAX_PROMPT_BYTES`: the worst goal
-# and six lines at four bytes a character, with the claims question, measure
-# 9,6xx bytes with the non-final scope, so this leaves at least 6,656 for the record.
-# The goal's cap rose from 240 to 1,000 on 2026-10-27 and the worst header then
-# measured 12,515 bytes, so the share rose to 12,800: past it every outcome line
-# goes unasked, which costs the reader more than the record's narrower worst
-# case (3,584 bytes, met only by a goal and six lines written in emoji).
+# The intent share keeps its 12,800-byte floor for Analyze's smallest prompt
+# (`settings.ANALYZE_PROMPT_MIN_BYTES`, 16 KiB), where a quarter of the budget
+# would leave the goal and lines 4,096 bytes; the unasked lane never sends
+# outcome lines. With a 1,000-character goal and six 800-character lines, the widest UTF-8
+# header measures 26,081 bytes non-final and 25,900 final with the claims question.
+# It exceeds that floor; an Analyze press gives it a quarter of its prompt
+# budget (131,072 at the 524,288 default). Lines that do not fit go unasked with
+# WHY_LINES_NO_ROOM; they are never clipped to squeeze into the header.
 # The reply cap: eight answers with twelve four-digit citations and a
 # 240-character detail each measure 4,751 bytes compact and 5,664 indented in
 # raw two-byte UTF-8, and a
@@ -284,6 +284,7 @@ CRITERION_KEYS = ("result", "cites", "detail", "clause", "why")
 # result stands as the model gave it.
 WHY_STANDS = ""
 WHY_NOT_ASKED = "not-asked"
+WHY_LINES_NO_ROOM = "lines-no-room"
 WHY_UNREADABLE = "unreadable"
 WHY_UNCITED = "uncited"
 WHY_NO_WORK_SHOWN = "no-work-shown"
@@ -337,6 +338,7 @@ WHY_LONG_RECONCILIATION_COVERAGE = "long-reconciliation-coverage"
 WHY_TOKENS = (
     WHY_STANDS,
     WHY_NOT_ASKED,
+    WHY_LINES_NO_ROOM,
     WHY_UNREADABLE,
     WHY_UNCITED,
     WHY_NO_WORK_SHOWN,
@@ -1293,6 +1295,7 @@ class Selection:
     # The outcome lines as `build_prompt` numbered them, posed or not, so the
     # answers are read and resolved against the same numbering the prompt used.
     lines: tuple[str, ...] = ()
+    lines_no_room: bool = False
     # Whether the session's record holds a check failing inside the window
     # that the ledger never carried: no grant sent it. `produce` sets it from
     # the facts; the checks the ledger did carry are read from the fields above.
@@ -3733,6 +3736,16 @@ def _newest_final(  # noqa: C901, PLR0911 - one guard per selected source/word b
     return row, replacement, "whole"
 
 
+def intent_share(budget: int) -> int:
+    """The most of a prompt the instructions, goal and lines may take before the lines go unasked.
+
+    The single prompt (`build_prompt`) and a long reading's packets
+    (`reading_map_call.lines_fit`) hold the same rule, so the same saved words are posed, or set
+    aside as `WHY_LINES_NO_ROOM`, whichever route reads them.
+    """
+    return min(max(INTENT_SHARE_BYTES, budget // 4), budget)
+
+
 def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one byte ledger
     ledger: Sequence[LedgerEntry],
     *,
@@ -3778,8 +3791,9 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
     selection: the header is sized with them, and dropped to the header
     without them when nothing selected bears on them. They go together or not
     at all, never some of them, and they go when the header holding them
-    would pass `INTENT_SHARE_BYTES`. No line is clipped here: the store
-    already bounds each to one line of 240 characters. If even the smaller
+    would pass the larger of `INTENT_SHARE_BYTES` and a quarter of the prompt budget.
+    No line is clipped here: the store already bounds each to one line of 800 characters.
+    If even the smaller
     header cannot fit, no prompt or entries are returned: the producer
     withholds without calling a model.
 
@@ -3832,7 +3846,8 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         failures_only=failures_only,
     )
     posed = bool(line_texts)
-    if len(header.encode("utf-8", "replace")) > min(INTENT_SHARE_BYTES, budget):
+    lines_no_room = len(header.encode("utf-8", "replace")) > intent_share(budget)
+    if lines_no_room:
         header, posed = without, False
     head_size = len(header.encode("utf-8", "replace"))
     citable = [entry for entry in ledger if _citable(entry)]
@@ -3854,6 +3869,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
             unread_failures=tuple(failures),
             unread_checks=tuple(checks),
             asked_output=posed,
+            lines_no_room=lines_no_room,
             lines=line_texts,
         )
 
@@ -3960,6 +3976,7 @@ def build_prompt(  # noqa: PLR0913, PLR0915 - selection and allocation share one
         unread_failures=tuple(entry for entry in failures if id(entry) not in taken),
         unread_checks=tuple(entry for entry in checks if id(entry) not in taken),
         asked_output=posed,
+        lines_no_room=lines_no_room,
         lines=line_texts,
         asked_claims=asked_claims,
         goal_whole=goal_read != goal_text,
@@ -5214,7 +5231,7 @@ def _goal_beside_lines(out: dict[str, Criterion], *, lines_asked: bool) -> None:
     The lines are the reader's own account of what the Goal means, so a Goal cannot be shown
     while one of them is not. Its citations are emptied like any withdrawal the page reads as
     `check-does-not-show-it`. Lines the prompt never posed do not count, including those it had
-    no room to pose (`checks-not-read`): `lines_asked` is the selection's `asked_output`.
+    no room to pose (`lines-no-room`): `lines_asked` is the selection's `asked_output`.
     """
     goal = out.get(CONSTRAINT_GOAL)
     if not lines_asked or goal is None or goal.get("result") != RESULT_CONSISTENT:
@@ -5222,7 +5239,7 @@ def _goal_beside_lines(out: dict[str, Criterion], *, lines_asked: bool) -> None:
     if any(
         row.get("result") != RESULT_CONSISTENT
         for key, row in out.items()
-        if is_outcome_line(key) and row.get("why") != WHY_NOT_ASKED
+        if is_outcome_line(key) and row.get("why") not in {WHY_NOT_ASKED, WHY_LINES_NO_ROOM}
     ):
         out[CONSTRAINT_GOAL] = {
             **goal,
@@ -6939,6 +6956,7 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
     lines: Sequence[str] = (),
     detail_cap_chars: int,
     goal_cap_chars: int | None = None,
+    line_cap_chars: int,
     window_start: float = 0.0,
     scope: str = SCOPE_LAST_TURN,
     line_requests: Mapping[str, float] | None = None,
@@ -7032,15 +7050,23 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
         clause_cap = (
             goal_cap_chars
             if name == CONSTRAINT_GOAL and goal_cap_chars is not None
+            else line_cap_chars
+            if is_outcome_line(name)
             else detail_cap_chars
         )
         clause = records.safe_text(clauses[name], clause_cap)
         if refused:
+            # A line the prompt had no room for keeps saying so: "not asked" would hide that
+            # the reader's words, not the refusal, kept it out.
             out[name] = {
                 "cites": (),
                 "detail": "",
                 "clause": clause,
-                "why": WHY_STANDS if name == CONSTRAINT_GOAL else WHY_NOT_ASKED,
+                "why": WHY_STANDS
+                if name == CONSTRAINT_GOAL
+                else WHY_LINES_NO_ROOM
+                if is_outcome_line(name) and selection.lines_no_room
+                else WHY_NOT_ASKED,
                 "result": RESULT_GOAL_UNCLEAR if name == CONSTRAINT_GOAL else RESULT_UNVERIFIABLE,
             }
             continue
@@ -7066,7 +7092,13 @@ def resolve(  # noqa: PLR0913 - one keyword per fact the rules read, as `_resolv
                     "cites": (),
                     "detail": "",
                     "clause": clause,
-                    "why": WHY_CHECKS_NOT_READ if crowded else WHY_NOT_ASKED,
+                    "why": (
+                        WHY_LINES_NO_ROOM
+                        if is_outcome_line(name) and selection.lines_no_room
+                        else WHY_CHECKS_NOT_READ
+                        if crowded
+                        else WHY_NOT_ASKED
+                    ),
                 },
             )
             continue
@@ -7458,6 +7490,7 @@ def produce(  # noqa: C901, PLR0911, PLR0913, PLR0915 - ordered gates and measur
         lines=selected.lines,
         detail_cap_chars=config.annotation_text_cap_chars,
         goal_cap_chars=config.annotation_goal_cap_chars,
+        line_cap_chars=config.annotation_line_cap_chars,
         window_start=window_start(latest),
         scope=scope,
         line_requests=line_request_floors(latest, request_sources, harness, sid),
@@ -8128,7 +8161,7 @@ def adopted_prompt(
 ) -> tuple[str, str] | None:
     """The adopted goal's source prompt as (fact id, whole words), or None.
 
-    The goal box keeps 240 characters of an adopted prompt, and on Claude Code
+    The goal box keeps 1,000 characters of an adopted prompt, and on Claude Code
     the latest prompt only its first line, which measured dropping the
     instruction that mattered and keeping a plan file's preamble (the first
     drift replay run). A reading reads the prompt whole instead: the person's

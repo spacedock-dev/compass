@@ -529,7 +529,7 @@ export function criterion(
        a reason under the result. Today's limit wins where both exist, because it describes the harness the
        reader is looking at now. */
     const sentence = STORED_WHY[stored] ?? '';
-    if (stored === 'not-asked') limitText = sentence;
+    if (stored === 'not-asked' || stored === 'lines-no-room') limitText = sentence;
     else why = sentence;
   }
   /* What a consistent row names as its source, by the cited entry's type: a tool outcome is what the tool

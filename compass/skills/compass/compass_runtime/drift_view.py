@@ -81,6 +81,7 @@ _STORED_AS_PAGE = {reading.WHY_UNREADABLE: WHY_MALFORMED}
 
 LIMIT_ROUTE = "route"
 LIMIT_NOT_ASKED = "not-asked"
+LIMIT_LINES_NO_ROOM = "lines-no-room"
 
 _CLAIMS = reading.CONSTRAINT_CLAIMS
 _UNIX_MAX = 253402300799
@@ -967,8 +968,10 @@ def criterion(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one arm per rule, as t
             else reading.WHY_FAILED_CHECK_ON_RECORD
         )
     if result == unverifiable and not why and not limit_text and stored in _STORED_WHY:
-        if stored == reading.WHY_NOT_ASKED:
-            limit_text = LIMIT_NOT_ASKED
+        if stored in {reading.WHY_NOT_ASKED, reading.WHY_LINES_NO_ROOM}:
+            limit_text = (
+                LIMIT_LINES_NO_ROOM if stored == reading.WHY_LINES_NO_ROOM else LIMIT_NOT_ASKED
+            )
         else:
             why = _STORED_AS_PAGE.get(stored, stored)
     tool = None

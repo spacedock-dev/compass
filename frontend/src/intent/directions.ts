@@ -24,6 +24,7 @@ import {
   editedRefusal,
   goalKey,
   intentChanges,
+  intentOverLimit,
   intentDraft,
   intentKey,
   intentUnsaved,
@@ -575,6 +576,7 @@ export async function saveIntentAndLine(ctx: Ctx, row: Row): Promise<void> {
   }
   const input = readInput(ctx, identity, row);
   if (!input) return;
+  if (intentOverLimit(input)) return;
   const changes = intentChanges(input);
   if (changes.any || changes.chosen) {
     await saveIntent(ctx, row);

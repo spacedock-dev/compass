@@ -323,7 +323,7 @@ _PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", "chosen-prompt", _SES
 _GOAL_HARNESSES: Final = ("claude", "codex", "antigravity")
 _PROMPT_HARNESSES: Final = ("claude", "codex")
 _EXCERPT_READ_WHOLE: Final = " · Shortened here; Analyze reads the whole prompt"
-_HELD_CAP_DEFAULT: Final = 240
+_HELD_CAP_DEFAULT: Final = 800
 _LINES_MAX: Final = 6
 
 

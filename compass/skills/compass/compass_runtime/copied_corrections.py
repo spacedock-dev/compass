@@ -45,9 +45,11 @@ SCHEMA_VERSION = 1
 # goal, six outcome lines and a contradicted claim) of 277 each, the label's 36 and a stored
 # detail's 240 and its "…", and since the owner's second ruling of that day room for seven quotes
 # of the agent's own words (the goal and six outcome lines) of 132 each. The lines' 2,000 became
-# 2,760 when the goal's cap rose to 1,000 (owner, 2026-10-27): 2,760 + 8 * 277 + 7 * 132.
+# 2,760 when the goal's cap rose to 1,000 (owner, 2026-10-27), then 6,560, re-measured when the
+# lines rose to 800 (owner, 2026-11-12; `correction.LINES_CAP_CHARS` has the measurement):
+# 6,560 + 8 * 277 + 7 * 132 = 9,700.
 # `correction.py` holds the parts and `test_correction` the sum.
-CORRECTION_CAP_CHARS = 5900
+CORRECTION_CAP_CHARS = 9700
 # The owner's bound, 2026-09-28: eight per session, the oldest dropped. It counts copies still
 # waiting for their message; a recognised message moves to `matches` and leaves this count.
 COPIES_PER_SESSION = 8
@@ -72,7 +74,8 @@ _KEY_CAP_CHARS = 64
 # bytes (review, 2026-10-20): the shared 12,288 refused 4,216 CJK characters, the page still said
 # Copied, and the paste then counted as the reader's words. Twelve bytes a character is the widest
 # any JSON encoding spells one code point (an escaped surrogate pair), for the text and for both
-# identity fields at the widest this store keeps them, with room for the object around them.
+# identity fields at the widest this store keeps them, with room for the object around them:
+# 12 * (9,700 + 2 * 64) + 256 = 118,192 bytes.
 COPY_BODY_CAP_BYTES = 12 * (CORRECTION_CAP_CHARS + 2 * _KEY_CAP_CHARS) + 256
 _LOCK_WAIT_SECONDS = 10.0
 # Only Claude Code's messages are read for a digest, which is what item 9 rules.

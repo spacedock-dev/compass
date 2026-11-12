@@ -293,7 +293,7 @@ class AnnotationStoreTest(unittest.TestCase):
         matches the shape list and is published intact.
         """
         secret = "AKIA" + "Q" * 16
-        cap = self.config.annotation_text_cap_chars
+        cap = self.config.annotation_goal_cap_chars
         # Straddling the cap on purpose. A short fixture never reaches the clip,
         # so clip-then-redact and redact-then-clip are indistinguishable and the
         # test proves nothing about the order it is named for. Here the tail
@@ -324,7 +324,7 @@ class AnnotationStoreTest(unittest.TestCase):
         assert entry is not None
         self.assertEqual(goal, entry["revisions"][-1]["goal"])
         self.assertGreater(
-            self.config.annotation_goal_cap_chars, self.config.annotation_text_cap_chars
+            self.config.annotation_goal_cap_chars, self.config.annotation_line_cap_chars
         )
 
     def test_binding_uses_the_full_session_id_not_a_display_prefix(self) -> None:
@@ -786,6 +786,14 @@ class AnnotationWiringTest(unittest.TestCase):
     """
 
     NOW = 1_800_000_000.0
+
+    def test_api_data_publishes_annotate_cap_800(self) -> None:
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, True)
+        config, state = make_runtime(state_home=home, state_dir=Path(home))
+        data = cli.build_application(config, state, clock=lambda: 0.0).collect(show_all=True)
+        self.assertEqual(800, data["annotate_cap"])
+        self.assertEqual(240, config.annotation_text_cap_chars)
 
     def test_the_flag_reaches_the_config(self) -> None:
         """Through `build_runtime`, not through argparse.

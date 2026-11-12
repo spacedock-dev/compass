@@ -3,7 +3,7 @@ import { Label } from '../ui/label';
 import { clock as clockText, endedAt } from '../observed';
 import { promptClip } from './derive';
 import { ActionButton } from './ActionButton';
-import { storeUnreadable } from './annotation';
+import { storeUnreadable, characterCount } from './annotation';
 import { heldSentence } from './cues';
 import { clearGoal, escapeGoal, keepSavedGoal, takeDetectedGoal, typeGoal } from './edit';
 import {
@@ -23,7 +23,7 @@ import { answerLines } from './directions';
 import { HeldTextarea } from './HeldTextarea';
 import { FindGoal, FindGoalNote, FoundCites } from './FindGoal';
 import { PromptSelect } from './PromptSelect';
-import { ENDED_CAVEAT, GOAL_HINT, RULE_HINT } from './sentences';
+import { ENDED_CAVEAT, GOAL_HINT, RULE_HINT, goalOverLimit } from './sentences';
 import { usePanel } from './useIntent';
 
 /* "Keep your standing outcome lines with this goal?": asked once when a direction became the goal, and Save
@@ -96,6 +96,8 @@ export function GoalField() {
   const drafted = intentDraft(input);
   const saved = goalBaseline(input);
   const text = held.goals.has(key) ? (held.goals.get(key) ?? saved) : saved;
+  const count = characterCount(text);
+  const over = count > cap;
   const untouched = Boolean(drafted) && text === drafted?.text;
   /* A goal found in the prompts is marked as a /goal is, for as long as the box holds its words. */
   const found = foundGoal(input);
@@ -152,7 +154,8 @@ export function GoalField() {
         id={boxId}
         rows={3}
         className="min-h-[5.5rem]"
-        maxLength={cap}
+        aria-invalid={over || undefined}
+        aria-describedby={over ? `${boxId}-over` : undefined}
         memoryKey={key}
         focusKey={key}
         text={text}
@@ -168,6 +171,11 @@ export function GoalField() {
           escapeGoal(ctx, input);
         }}
       />
+      {over ? (
+        <p id={`${boxId}-over`} className="text-[var(--clay)]">
+          {goalOverLimit(count, cap)}
+        </p>
+      ) : null}
       {refused ? (
         <p
           className="m-0 py-0.5 pl-2.5 text-body leading-[1.5] text-foreground [border-left:3px_solid_var(--clay)]"
@@ -183,8 +191,12 @@ export function GoalField() {
           {GOAL_HINT}
         </p>
         <FoundCites />
-        <span className="next-cockpit-held-count ms-auto" data-next-cockpit-held-count="goal">
-          {`${String(text.length)} / ${String(cap)}`}
+        <span
+          className={`next-cockpit-held-count ms-auto ${over ? 'text-[var(--clay)]' : ''}`}
+          data-over={over}
+          data-next-cockpit-held-count="goal"
+        >
+          {`${String(count)} / ${String(cap)}`}
         </span>
       </div>
       {/* The absence sentence answers "why is this empty", so it goes when the box stops being empty. It

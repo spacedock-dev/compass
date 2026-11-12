@@ -306,10 +306,17 @@ try {
     await awaitRecordRead(o.page);
     return settled(() => o.page.evaluate(summarizeEditor));
   };
+  const currentEditor = async (recorded) => {
+    const caps = await react.page.evaluate(async () => {
+      const payload = await (await fetch('/api/data')).json();
+      return { annotate_cap: payload.annotate_cap, annotate_goal_cap: payload.annotate_goal_cap };
+    });
+    return intentEditorDeviations(recorded, caps);
+  };
   /* The React editor against the previous editor's recorded reading of the same state, under `key`. */
   async function versus(key, message) {
     const mine = await readEditor(react);
-    const old = intentEditorDeviations(golden.observe(key));
+    const old = await currentEditor(golden.observe(key));
     assert.deepEqual(norm(mine), old, message);
     return old;
   }
@@ -317,7 +324,7 @@ try {
     await load(react, fragmentOf(sid));
     await prepare(react);
     const mine = await readEditor(react);
-    const old = intentEditorDeviations(golden.observe(`editor: ${label}`));
+    const old = await currentEditor(golden.observe(`editor: ${label}`));
     assert.deepEqual(norm(mine), old, `the editor differs from the recorded editor (${label})`);
     return old;
   }
@@ -513,7 +520,7 @@ try {
       // The words reached the page's held state, which is what Save intent would send.
       assert.match(
         await react.page.locator('[data-next-cockpit-held-count="goal"]').innerText(),
-        /^18\/240$/,
+        /^18 \/ 1000$/,
       );
       assert.deepEqual(react.log.nonGet, [], 'typing and revisions sent a write');
     },
@@ -598,7 +605,7 @@ try {
       // The held draft is the committed words, never the provisional ones.
       assert.equal(
         await react.page.locator('[data-next-cockpit-held-count="goal"]').innerText(),
-        '5/240',
+        '5 / 1000',
       );
       await cdp.detach();
     },

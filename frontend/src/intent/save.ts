@@ -20,6 +20,7 @@ import {
   discardKey,
   goalKey,
   intentChanges,
+  intentOverLimit,
   intentDraft,
   intentKey,
   linesDraft,
@@ -168,6 +169,10 @@ export async function adoptPrompt(
   }
   const body = reply.body;
   try {
+    if (body?.outcome === 'refused' && body.reason) {
+      ctx.held.mark(intentKey(row), 'error', body.reason);
+      return false;
+    }
     if (reply.ok && body && ['untrusted', 'unreadable'].includes(String(body.outcome || ''))) {
       /* Not a changed prompt: the store could not take the save at all, and saying the prompt changed would
          send the reader to the wrong place. */
@@ -321,7 +326,13 @@ async function saveWork(
       return saveWork(ctx, identity, row, signal, { frozen, revision: minted.revision });
     }
     if (adopted === true) ctx.held.mark(key, 'saved');
-    return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
+    return adopted === true
+      ? 'saved'
+      : adopted === 'unconfirmed'
+        ? 'unconfirmed'
+        : ctx.held.kind(key) === 'error'
+          ? 'error'
+          : null;
   }
   if (!changes.any) {
     /* The goal back at the draft adopts it, never a typed save of an excerpt. */
@@ -330,7 +341,13 @@ async function saveWork(
       const adopted = await adoptPrompt(ctx, identity, row, drafted.source, signal, null, fromNow);
       // Marked as the chained adoption marks it, so an earlier "Not confirmed" does not outlive this save.
       if (adopted === true) ctx.held.mark(key, 'saved');
-      return adopted === true ? 'saved' : adopted === 'unconfirmed' ? 'unconfirmed' : null;
+      return adopted === true
+        ? 'saved'
+        : adopted === 'unconfirmed'
+          ? 'unconfirmed'
+          : ctx.held.kind(key) === 'error'
+            ? 'error'
+            : null;
     }
     return null;
   }
@@ -370,7 +387,7 @@ async function saveWork(
   // disk, and a false there is not a failed save: the words are held for this run and the store says so.
   if (!reply.ok || !saved || saved.ok !== true) {
     // The drafts stay. Losing what someone typed to report a failure is the one outcome worse than it.
-    ctx.held.mark(key, 'error');
+    ctx.held.mark(key, 'error', saved?.reason);
     return 'error';
   }
   const kind = outcomeKind(saved);
@@ -378,7 +395,7 @@ async function saveWork(
      there, and only while its box still holds what was sent. `persisted:false` leaves the revision in this
      process alone, and the next collection reloads the file and drops it: dropping the draft then destroyed
      the only remaining copy of what someone typed. */
-  ctx.held.mark(key, kind);
+  ctx.held.mark(key, kind, saved.reason);
   if (kind !== 'saved' && kind !== 'unchanged') {
     // Nothing landed, so the store's answer is the whole outcome and no refresh has words to draw.
     void refresh(ctx);
@@ -434,7 +451,7 @@ export async function saveIntent(ctx: Ctx, row: Row, fromNow = false): Promise<v
      it an inert-but-reachable control mints a revision identical to the stored one. An inert press starts
      nothing. */
   const changes = intentChanges(input);
-  if (directionLinesQuestion(ctx.held, row)) return;
+  if (directionLinesQuestion(ctx.held, row) || intentOverLimit(input)) return;
   if (!changes.any && !changes.chosen && !changes.adoptable) return;
   const press = pendingStart(ctx, control, 'Saving…', 'Saving your intent.');
   if (!press) return;

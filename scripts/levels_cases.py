@@ -911,7 +911,9 @@ def _admit(config: Any, value: Any) -> Any:
         sys.path.insert(0, _SKILL)
     from compass_runtime import annotations  # noqa: PLC0415
 
-    return annotations._assessment(value, config.annotation_text_cap_chars)  # noqa: SLF001
+    return annotations._assessment(  # noqa: SLF001
+        value, config.annotation_text_cap_chars, line_cap=config.annotation_line_cap_chars
+    )
 
 
 # ------------------------------------------------------- the Codex replay allowance

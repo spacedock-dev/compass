@@ -157,6 +157,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
                 goal="ship the parser",
                 lines=["a CSV at ./out.csv"],
                 detail_cap_chars=200,
+                line_cap_chars=800,
             )
             for criterion in criteria.values():
                 if "result" in criterion:
@@ -171,6 +172,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
             goal="ship the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertNotIn("result", criterion)
 
@@ -183,6 +185,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
                     goal="rename the flag",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
 
@@ -211,6 +214,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )
                 self.assertNotIn("result", criteria[reading.CONSTRAINT_GOAL])
 
@@ -224,6 +228,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
             goal="rename the flag",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
 
@@ -239,6 +244,7 @@ class TheThreeThingsAReadingMayConcludeAboutAConstraint(unittest.TestCase):
             goal="rename the flag",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion["clause"], "rename the flag")
 
@@ -269,6 +275,7 @@ class WhatAReaderIsToldWhenTheReadingCouldNotBeRead(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertNotIn("result", criterion)
                 self.assertEqual(criterion["detail"], "")
@@ -282,6 +289,7 @@ class WhatAReaderIsToldWhenTheReadingCouldNotBeRead(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion["detail"], "")
 
@@ -302,6 +310,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion["cites"], ())
                 self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
@@ -314,6 +323,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="ship the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion["cites"], ())
         self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
@@ -327,6 +337,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion["cites"], ())
 
@@ -337,6 +348,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="ship the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion["cites"], ("f1",))
 
@@ -348,6 +360,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="ship the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertLessEqual(len(criterion["cites"]), len(ledger))
 
@@ -358,6 +371,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="ship the parser",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         for criterion in criteria.values():
             self.assertEqual(criterion["cites"], ())
@@ -375,6 +389,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                     goal="ship the parser",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
                 self.assertEqual(criterion["cites"], ())
@@ -390,6 +405,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="ship the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
 
@@ -403,6 +419,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
             goal="add a CSV export",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
 
@@ -432,6 +449,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                     goal="do X",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[reading.CONSTRAINT_GOAL]
                 self.assertEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
 
@@ -455,6 +473,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                         goal="g",
                         lines=(),
                         detail_cap_chars=200,
+                        line_cap_chars=800,
                     )[reading.CONSTRAINT_GOAL]
                     self.assertEqual(cited["cites"], (row["id"],))
 
@@ -482,6 +501,7 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
                 goal="g",
                 lines=(),
                 detail_cap_chars=200,
+                line_cap_chars=800,
             )
         header_bytes = len(reading._header("g", (), tool_note=False).encode())
         _, selection = reading.build_prompt(
@@ -490,9 +510,9 @@ class WhatADepartureIsAllowedToRestOn(unittest.TestCase):
         self.assertIsInstance(selection, reading.Selection)
         self.assertTrue(selection.entries)
         self.assertLess(len(selection.entries), len(ledger))
-        cited = reading.resolve(parsed, selection, goal="g", lines=(), detail_cap_chars=200)[
-            reading.CONSTRAINT_GOAL
-        ]
+        cited = reading.resolve(
+            parsed, selection, goal="g", lines=(), detail_cap_chars=200, line_cap_chars=800
+        )[reading.CONSTRAINT_GOAL]
         # Entry 1 is the first row the model was SHOWN, which the cap made a
         # different row from the first in the record.
         self.assertEqual(cited["cites"], (selection.entries[0]["id"],))
@@ -513,6 +533,7 @@ class TheVerdictAReadingIsNotAllowedToState(unittest.TestCase):
             goal="rename the flag",
             lines=(),
             detail_cap_chars=cap,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
 
     def test_a_reader_never_reads_that_their_goal_was_met_however_it_is_dressed(self) -> None:
@@ -612,6 +633,7 @@ class TheVerdictAReadingIsNotAllowedToState(unittest.TestCase):
             goal="rename the flag",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertNotIn("result", criterion)
 
@@ -647,6 +669,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                     goal="export the report",
                     lines=(),
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )
                 # No line was typed, so no line has a row at all, whatever the
                 # reply volunteered about one.
@@ -662,6 +685,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
             goal="export the report",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         on_claude = reading.resolve(
             obedient,
@@ -669,6 +693,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
             goal="export the report",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(on_pi, on_claude)
         self.assertNotIn("line_1", on_pi)
@@ -686,6 +711,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
             goal="",
             lines=["a written report"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertNotEqual(criterion.get("result"), reading.RESULT_CONSISTENT)
         self.assertNotEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
@@ -714,6 +740,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                     goal="ship the parser",
                     lines=["SENTINEL_DELIVERABLE"],
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )["line_1"]
                 self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
                 self.assertEqual(criterion["cites"], ())
@@ -725,6 +752,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
             goal="add a CSV export",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(criteria[reading.CONSTRAINT_GOAL]["clause"], "add a CSV export")
         self.assertEqual(criteria["line_1"]["clause"], "a CSV at ./out.csv")
@@ -736,6 +764,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
             goal="ship it" + RTL_OVERRIDE + "DETRESREVER\x1b[31m" + "x" * 5000,
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertNotIn(RTL_OVERRIDE, criterion["clause"])
         self.assertNotIn("\x1b", criterion["clause"])
@@ -760,6 +789,7 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                 goal="ship the parser",
                 lines=[output],
                 detail_cap_chars=200,
+                line_cap_chars=800,
             )
 
         not_asked = read(
@@ -836,13 +866,14 @@ class WhichConstraintsWerePutToTheReading(unittest.TestCase):
                     goal="ship the parser",
                     lines=[output],
                     detail_cap_chars=200,
+                    line_cap_chars=800,
                 )[constraint]
                 self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
                 self.assertEqual(criterion["why"], expected)
                 self.assertIn(expected, reading.WHY_TOKENS)
                 seen.add(expected)
         self.assertEqual(4, len(seen))
-        self.assertEqual(20, len(reading.WHY_TOKENS))
+        self.assertEqual(21, len(reading.WHY_TOKENS))
         self.assertIn(reading.WHY_STANDS, reading.WHY_TOKENS)
         # Final reconciliation may lack whole agent prose even when every map succeeded.
         self.assertIn(reading.WHY_LONG_RECONCILIATION_COVERAGE, reading.WHY_TOKENS)
@@ -888,6 +919,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="write a CSV",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(criterion.get("result"), reading.RESULT_CONSISTENT)
         self.assertEqual(criterion["cites"], ("a1",))
@@ -906,6 +938,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="write a CSV",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
         self.assertEqual(criterion["why"], reading.WHY_NO_WORK_SHOWN)
@@ -919,6 +952,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="write a CSV",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
         self.assertEqual(criterion["why"], reading.WHY_NO_WORK_SHOWN)
@@ -929,6 +963,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="write a CSV",
             lines=["a CSV at ./out.csv"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(both.get("result"), reading.RESULT_CONSISTENT)
         self.assertEqual(both["cites"], ("p1", "a1"))
@@ -951,6 +986,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="add a CSV export",
             lines=["report.csv exists"],
             detail_cap_chars=200,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(criterion.get("result"), reading.RESULT_CONSISTENT)
 
@@ -962,6 +998,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
             goal="fix the parser",
             lines=(),
             detail_cap_chars=200,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         self.assertEqual(criterion.get("result"), reading.RESULT_DEPARTURE)
 
@@ -983,6 +1020,7 @@ class WhoseWordAReadingIsWillingToTake(unittest.TestCase):
                         goal="add a CSV export",
                         lines=["report.csv exists"],
                         detail_cap_chars=200,
+                        line_cap_chars=800,
                     )[constraint]
                     self.assertEqual(criterion.get("result"), reading.RESULT_UNVERIFIABLE)
                     self.assertEqual(criterion["detail"], "")
@@ -1277,6 +1315,7 @@ class WhetherAPressCouldReadIsSaidBeforeThePress(unittest.TestCase):
 
     class _Config:
         reading_settle_sec = 8.0
+        annotation_line_cap_chars = 800
         annotation_text_cap_chars = 240
         annotation_goal_cap_chars = 1_000
 
@@ -1877,6 +1916,7 @@ class WhatOnePressActuallyCostsAndProduces(unittest.TestCase):
 
     class _Config:
         reading_settle_sec = 8.0
+        annotation_line_cap_chars = 800
         annotation_text_cap_chars = 240
         annotation_goal_cap_chars = 1_000
         claude_reading_model = "claude-sonnet-5-5"
@@ -2100,6 +2140,7 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
 
         class _Config:
             reading_settle_sec = 8.0
+            annotation_line_cap_chars = 800
             annotation_text_cap_chars = 240
             annotation_goal_cap_chars = 1_000
             claude_reading_model = "claude-sonnet-5-5"
@@ -2266,7 +2307,7 @@ class WhatAClaudeCodeReadingCostsAndProduces(unittest.TestCase):
             "readings": 1,
             "withheld": old,
         }
-        entry = annotation_store._entry(stored, text_cap=240, revision_cap=8)
+        entry = annotation_store._entry(stored, text_cap=240, revision_cap=8, detail_cap=240)
         assert entry is not None
         self.assertEqual(
             reading.WITHHELD[reading.WITHHELD_MODEL_UNAVAILABLE], entry.get("withheld")
@@ -2749,12 +2790,12 @@ class ALineAboutWhatTheAgentTellsYouIsReadAgainstItsMessages(AClaudeCodeReadingP
         self.assertEqual(reading.WHY_TELLS_THE_PERSON, row["why"])
         self.assertEqual((), row["cites"])
 
-    def test_a_telling_verb_past_the_display_cap_is_still_read(self) -> None:
+    def test_a_telling_verb_past_the_old_clause_cap_is_still_read(self) -> None:
         line = "node --test tests/game.test.js " + "runs every case " * 20 + "and is reported"
-        self.assertGreater(len(line), self.config.annotation_text_cap_chars)
+        self.assertGreater(len(line), 240)
         row = self._read(line, "consistent")
         self.assertEqual(reading.WHY_TELLS_THE_PERSON, row["why"])
-        self.assertNotIn("reported", row["clause"])
+        self.assertEqual(line, row["clause"])
 
     def test_every_telling_form_on_a_check_alone_is_withdrawn_and_stands_on_a_message(
         self,
@@ -2972,6 +3013,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             lines=["tests pass"],
             detail_cap_chars=200,
             window_start=0.0,
+            line_cap_chars=800,
         )["line_1"]
         # The reader typed an expected output and allowed tool output, and no
         # check had room: the stored reason says so, not "never asked".
@@ -3000,6 +3042,7 @@ class YourOwnWordsAreAlwaysInThePrompt(unittest.TestCase):
             lines=["tests pass"],
             detail_cap_chars=200,
             window_start=50.0,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
         self.assertEqual(reading.WHY_FAILED_CHECK_UNREAD, row["why"])
@@ -3628,6 +3671,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
             goal=self.goal,
             lines=self.lines,
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(reading.RESULT_DEPARTURE, result["goal"]["result"])
         self.assertEqual(reading.RESULT_UNVERIFIABLE, result["line_1"]["result"])
@@ -3654,6 +3698,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
             goal=self.goal,
             lines=self.lines,
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(reading.RESULT_DEPARTURE, result["goal"]["result"])
         self.assertEqual(reading.RESULT_UNVERIFIABLE, result["line_1"]["result"])
@@ -3699,6 +3744,7 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
             goal=self.goal,
             lines=self.lines,
             detail_cap_chars=200,
+            line_cap_chars=800,
         )
         self.assertEqual(reading.RESULT_DEPARTURE, result["goal"]["result"])
         # A line's departure on the agent's message alone gives way (DEC-17, 2026-10-30); the
@@ -3719,7 +3765,9 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
         parsed = reading.parse_reply(
             json.dumps({"goal": {"result": "consistent", "cites": [agent_index], "detail": ""}})
         )
-        result = reading.resolve(parsed, selected, goal=self.goal, detail_cap_chars=200)
+        result = reading.resolve(
+            parsed, selected, goal=self.goal, detail_cap_chars=200, line_cap_chars=800
+        )
         self.assertEqual(reading.RESULT_CONSISTENT, result["goal"]["result"])
 
     def test_an_excluded_old_stall_is_not_added_back_to_the_current_prompt(self) -> None:
@@ -3761,7 +3809,12 @@ class NonfinalReadingsSeparateUnknownConditionsFromPendingWork(unittest.TestCase
                     )
                 )
                 result = reading.resolve(
-                    parsed, selected, goal=self.goal, detail_cap_chars=200, scope=scope
+                    parsed,
+                    selected,
+                    goal=self.goal,
+                    detail_cap_chars=200,
+                    scope=scope,
+                    line_cap_chars=800,
                 )
                 if scope == reading.SCOPE_FINAL:
                     self.assertNotIn("result", result["goal"])
@@ -3818,6 +3871,7 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
             detail_cap_chars=200,
             scope=scope,
             open_call_at=open_call_at,
+            line_cap_chars=800,
         )["goal"]
 
     def line_selected(self, line: str, *later: dict[str, Any]) -> reading.Selection:
@@ -3848,6 +3902,7 @@ class AReadingOfARunningTurnDoesNotCallWorkInProgressADeparture(unittest.TestCas
             lines=selection.lines,
             detail_cap_chars=200,
             scope=reading.SCOPE_MID_FLIGHT,
+            line_cap_chars=800,
         )["line_1"]
 
     @staticmethod
@@ -3968,6 +4023,86 @@ class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
     header the prompt actually used, so a verdict volunteered on a clause the
     model never saw is never published."""
 
+    def test_default_analyze_budget_poses_six_800_character_emoji_lines(self) -> None:
+        ledger = reading.build_ledger(
+            [WORDS_FACT, check_fact(result="passed")], "claude", "s1", tool_output={}
+        )
+        for char in ("x", "界", "😀"):
+            with self.subTest(char=char):
+                prompt, selection = reading.build_prompt(
+                    ledger, goal=char * 1000, lines=[char * 800] * 6, max_bytes=524_288
+                )
+                self.assertTrue(selection.asked_output)
+                self.assertEqual(6, prompt.count('<outcome_line n="'))
+                self.assertTrue(selection.entries)
+                self.assertLessEqual(len(prompt.encode()), 524_288)
+
+    def test_16k_budget_marks_unposed_lines_no_room(self) -> None:
+        ledger = reading.build_ledger(
+            [WORDS_FACT, check_fact(result="passed")], "claude", "s1", tool_output={}
+        )
+        lines = ["😀" * 800] * 6
+        prompt, selection = reading.build_prompt(
+            ledger, goal="😀" * 1000, lines=lines, max_bytes=16_384
+        )
+        self.assertNotIn('<outcome_line n="', prompt)
+        rows = reading.resolve(
+            {}, selection, goal="😀" * 1000, lines=lines, detail_cap_chars=240, line_cap_chars=800
+        )
+        self.assertEqual(["lines-no-room"] * 6, [rows[f"line_{k}"]["why"] for k in range(1, 7)])
+
+    def test_a_refused_goal_keeps_lines_no_room_for_lines_the_prompt_had_no_room_for(
+        self,
+    ) -> None:
+        ledger = reading.build_ledger(
+            [WORDS_FACT, check_fact(result="passed")], "claude", "s1", tool_output={}
+        )
+        lines = ["😀" * 800] * 6
+        _prompt, selection = reading.build_prompt(
+            ledger, goal="😀" * 1000, lines=lines, max_bytes=16_384
+        )
+        self.assertTrue(selection.lines_no_room)
+        rows = reading.resolve(
+            {"goal": {"token": "goal_unclear", "cites": [1], "detail": "unclear"}},
+            selection,
+            goal="😀" * 1000,
+            lines=lines,
+            detail_cap_chars=240,
+            line_cap_chars=800,
+        )
+        self.assertEqual(reading.RESULT_GOAL_UNCLEAR, rows["goal"]["result"])
+        self.assertEqual(reading.WHY_STANDS, rows["goal"]["why"])
+        for k in range(1, 7):
+            with self.subTest(line=k):
+                row = rows[f"line_{k}"]
+                self.assertEqual("lines-no-room", row["why"])
+                self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
+                self.assertEqual(((), ""), (tuple(row["cites"]), row["detail"]))
+
+    def test_a_refused_goal_still_marks_posed_lines_not_asked(self) -> None:
+        rows = reading.resolve(
+            {"goal": {"token": "goal_unclear"}},
+            reading.Selection((entry(),), asked_output=True),
+            goal="Ship",
+            lines=["The tests pass"],
+            detail_cap_chars=240,
+            line_cap_chars=800,
+        )
+        self.assertEqual(reading.WHY_NOT_ASKED, rows["line_1"]["why"])
+
+    def test_a_reading_detail_is_still_cut_at_240(self) -> None:
+        line = "界" * 800
+        rows = reading.resolve(
+            reply(reading.RESULT_DEPARTURE, goal_cites=(1,), goal_detail="d" * 400),
+            reading.Selection((entry(),)),
+            goal="Ship",
+            lines=[line],
+            detail_cap_chars=240,
+            line_cap_chars=800,
+        )
+        self.assertEqual("d" * 240 + "…", rows["goal"]["detail"])
+        self.assertEqual(line, rows["line_1"]["clause"])
+
     def test_six_full_length_outcomes_still_reach_the_reader_with_a_check(self) -> None:
         ledger = reading.build_ledger(
             [WORDS_FACT, check_fact(result="passed")], "claude", "s1", tool_output={}
@@ -4006,6 +4141,7 @@ class TheResolverTakesTheQuestionFromThePrompt(unittest.TestCase):
             lines=[output],
             detail_cap_chars=200,
             window_start=0.0,
+            line_cap_chars=800,
         )["line_1"]
         self.assertEqual(reading.RESULT_UNVERIFIABLE, row["result"])
 
@@ -4140,6 +4276,7 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
             lines=(),
             detail_cap_chars=300,
             masked_values=masked,
+            line_cap_chars=800,
         )[reading.CONSTRAINT_GOAL]
         return str(criterion["detail"])
 
@@ -4209,6 +4346,7 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
                 detail_cap_chars=300,
                 masked_values=frozenset({"FakeNewPass88"}),
                 scrub_partial=partial,
+                line_cap_chars=800,
             )[reading.CONSTRAINT_GOAL]
             return str(criterion["detail"])
 
@@ -4329,6 +4467,7 @@ class AStoredExplanationHoldsTheCallsMaskedValuesMasked(unittest.TestCase):
                 scrub_partial=True,
                 scope=reading.SCOPE_MID_FLIGHT if unfinished else reading.SCOPE_LAST_TURN,
                 open_call_at=1e12 if unfinished else None,
+                line_cap_chars=800,
             )[reading.CONSTRAINT_GOAL]
             self.assertEqual(
                 reading.RESULT_NOT_REACHED if unfinished else reading.RESULT_DEPARTURE,

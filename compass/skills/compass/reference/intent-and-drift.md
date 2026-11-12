@@ -15,12 +15,12 @@ counts until anything in it writes again; a subagent write counts. Marks live in
 ## Recording what a session should achieve
 
 You can record a goal and an expected outcome against one session, in your own words. The
-expected outcome starts with one optional empty line and holds up to six lines, each at most 240
+expected outcome starts with one optional empty line and holds up to six lines, each at most 800
 characters. The goal is a three-row box of at most 1,000, so a prompt you choose as the goal fits whole. Both are optional and set independently, and saving one
 leaves the other alone. Open the session's page: the fields are the first thing in its drift
 block, for a session with or without a project. The how-to beside Intent says what an analysis
-reads and that Compass never writes into the session. Each box shows how many of its characters (1,000 for the goal, 240 for a line)
-you have used as you type, and a hint under the goal box says what to write there. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
+reads and that Compass never writes into the session. Each box shows how many of its characters (1,000 for the goal, 800 for a line)
+you have used as you type, and a hint under the goal box says what to write there. A paste past the limit stays in the box. The counter marks it as over, a sentence names the limit, and Save intent waits until the text fits. The Intent card shows the saved reads-from line beside its status word, and keeps `Clear` and `How Intent and drift works` in its `More` menu.
 The Expected outcome sits in an accordion under the Goal, labelled "Expected outcome (optional) · up to 6 lines" and closed until it has something to show: it opens by itself over saved lines, a line being edited, a pending later direction, or a departure that cites a line, and a close you make holds until one of those arises again. Inside it each outcome line has `Remove`, and `Add a line` sits under the list; Add adds another until there are six, where it stays
 on the page, refuses a seventh and says why (replace or merge a line instead). `Save intent` stays
 visible and saves the drafted goal or your edits. `Undo changes` is drawn beside it, inert until there is a goal edit or prompt
@@ -34,7 +34,7 @@ and saving words under a full native session UUID is refused rather than stored 
 no row can show. Discard and settle can still reach entries an earlier build stored under one.
 Other harnesses keep their published ids. `expected_revision` refuses a goal or a list
 saved from a view of an older revision (the page sends it with both and keeps what you typed), and
-a seventh non-blank line or a non-blank line over 240 characters is refused rather than clipped.
+a seventh non-blank line or a non-blank line over 800 characters is refused rather than clipped.
 Lines that are blank after sanitizing and stripping are dropped regardless of length.
 `"read_from_now": true` beside them, or beside `adopt`, opens a new reading window as a first save does; without it a save over saved words keeps the window it had. It writes a numbered revision; an earlier revision is never edited, so anything citing
 revision 1 still means what it meant. Send `{"clear": true}` to forget a session's words entirely
@@ -57,9 +57,11 @@ saved over). A save may send `origins`, the saved position each line came from, 
 share text each keep their own source. The page draws a different sentence for each, and
 re-saving the same words never mints a revision.
 
+A refused save keeps your draft and shows the server's reason beside Save intent.
+
 Every HTTP 200 reply also carries `reason`, which is `null` except for these diagnosed refusals:
 
-- `{"code": "line_too_long", "line": 3, "length": 286, "cap": 240}` names the first line
+- `{"code": "line_too_long", "line": 3, "length": 846, "cap": 800}` names the first line
   the cap would clip. `line` is its 1-based position in the posted list, including blank entries;
   `length` counts characters in the submitted string or, when redaction lengthens it, the
   sanitized text. Validation compares the sanitized, redacted text with its capped form.
@@ -169,7 +171,7 @@ says no analysis was started, and starts none; `Analyze drift` stays beside the 
 anything. `Add as a line` opens the selected direction's first sentence as a pending line under
 Expected outcome, marked "not saved", with the hint "Write the rule, not the moment.", for you to edit;
 the one `Save intent` saves it, after any unsaved goal or line words, and settles through that direction
-only, so the question comes back for any later one: a line over 240 characters is refused rather than
+only, so the question comes back for any later one: a line over 800 characters is refused rather than
 clipped, and at six lines you choose the line it replaces. `Make it the goal` fills the goal with that
 first sentence and the same hint, asks whether to keep standing outcome lines with two buttons, and waits for
 Save intent. A saved line names when you said it ("added from your 11:05 message"). Add on an activity entry

@@ -4588,7 +4588,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             }
         else:
             text, clipped, fits = annotation_store.direction_review(
-                found[1], config.annotation_text_cap_chars, cut=found[2]
+                found[1], config.annotation_line_cap_chars, cut=found[2]
             )
             answer = {
                 "ok": True,

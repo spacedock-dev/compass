@@ -1419,3 +1419,33 @@ export const RaisedWhileYouWereAway: Story = {
     await waitFor(() => expect(departures(shown)).toHaveLength(1));
   },
 };
+
+export const LinesDidNotFitThePrompt: Story = {
+  name: 'Lines Did Not Fit the Prompt',
+  ...scenario({
+    session: stored(
+      reading({
+        goal: GOAL_CONSISTENT,
+        line_1: {
+          result: 'not verifiable from available evidence',
+          cites: [],
+          detail: '',
+          clause: 'Tests pass',
+          why: 'lines-no-room',
+        },
+      }),
+    ),
+    facts: [PERSON, PASSED],
+  }),
+  play: async ({ canvasElement }) => {
+    const drift = await card(canvasElement);
+    await result(drift);
+    await expect(
+      within(drift).getByText(
+        "Not asked: your goal and lines did not fit in this reading's prompt.",
+      ),
+    ).toBeVisible();
+    await expect(quietRow(drift, 'line_1')).toHaveTextContent('Tests pass');
+    await expect(quietRow(drift, 'line_1')).toHaveAttribute('data-next-result-state', 'cant-tell');
+  },
+};

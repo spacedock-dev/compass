@@ -3375,7 +3375,7 @@ nothing in the record can show. The existing `check-does-not-show-it` sentence w
 because it says the check's latest run did not pass with no change after it, and here it did.
 
 Matching is on whole words and ignores case, and it reads the whole line rather than the
-240-character clause stored on the row, so a telling word past that cap still counts. "Report"
+800-character clause stored on the row, so a telling word past that cap still counts. "Report"
 matches as a noun as well as a verb, and "reporter", "reportage" and "sayings" do not match. The
 one other exclusion is a word followed directly by `.` or `/` and then a letter, digit or
 underscore, such as `report.csv` or `reports/summary.md`. Nothing else about paths or tools is
@@ -4729,26 +4729,30 @@ the later-direction floor (item 9).
    and adopts it, so a drafted goal has one way to be saved, and Undo changes stays inert until
    there is an edit.
 3. The checklist. The expected outcome starts with one optional empty line. Add a line and per-line
-   Remove appear after use; the checklist still holds up to six lines the reader types, each at most 240
+   Remove appear after use; the checklist still holds up to six lines the reader types, each at most 800
    characters and one line, each read and shown as its own constraint under DEC-17's rules. Each
    line records its source: typed, or added from entry #n. The bounds, fixed by DRC-4685, the layer
    that first stores and sends outcome lines:
-   - The store holds 6 lines of at most 240 characters on each revision. A seventh line, or a line
-     over 240 characters, is refused rather than clipped. The store's read limit is 16 MiB, and a
+   - The store holds 6 lines of at most 800 characters on each revision. A seventh line, or a line
+     over 800 characters, is refused rather than clipped. The store's read limit is 16 MiB, and a
      write trims the least recently written entries until the file fits, so the next read reads
      what the write kept (owner, 2026-09-24). The entry being written is never the one trimmed:
      when it cannot fit even alone, nothing is written and the save answers `unwritable`.
    - The history copy is one flat field per line, at most 256 characters each, with a closed
      source token beside it and no entry id.
-   - The goal and the lines take at most 12,800 of 16,384 bytes of the prompt (9,728 until the
-     goal's cap rose to 1,000, [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)). Over that share,
-     every line is dropped together as not asked, never some of them.
-   - The reply cap is 8,192 bytes, and a reply cut at the cap keeps each answer that arrived
-     whole.
-   - The annotation request body cap is 16,384 bytes. The widest body the page can send is a
-     goal and six lines pasted as control characters, which the browser writes as six bytes each
-     before the store collapses them: 14,798 bytes with a 64-character session id and a
-     1,000-character goal (10,238 and a 12,288 cap before [2026-10-27](#amended-2026-10-27-owner-the-goal-holds-1000-characters)).
+   - The goal and lines take the larger of 12,800 bytes and a quarter of the prompt budget.
+     At the default 524,288 bytes, that is 131,072 bytes. A 1,000-character goal and six
+     800-character emoji lines measure 26,081 bytes in the non-final header (25,900 final),
+     including the claims question. At the 16,384-byte floor, every line that cannot fit
+     goes unasked together with `lines-no-room`, never some of them; a long reading holds the
+     same share per packet. The page says
+     "Not asked: your goal and lines did not fit in this reading's prompt."
+   - The reply cap is 8,192 bytes. Model-written details stay at 240 characters, with a closing
+     ellipsis when cut, and a reply cut at the byte cap keeps each answer that arrived whole.
+   - The annotation request body cap is 40,960 bytes. A goal of 1,000 characters and six lines
+     of 800 control characters, escaped by the browser to six bytes each, measure 35,031
+     bytes with a 64-character session id, six null origins, a 16-digit expected revision
+     and `read_from_now`. This replaces the 16,384-byte cap sized for 240-character lines.
 4. A later direction before an analysis. When the record holds an unsettled later direction of the
    reader's, the Drift section asks before the press, naming how many are unsettled. For one it
    says "You gave a later direction at #<n>: "<first line>"."; for several, "You gave <N> later
@@ -4756,7 +4760,7 @@ the later-direction floor (item 9).
    my intent and analyze" or "Add it to my intent". Keep settles all of them (DEC-16's "The
    baseline still applies") and analyzes in one press, and counts as "Allow" where the disclosure
    beside it has not been allowed yet. Add opens a new outcome line holding the direction's raw text
-   for review. A direction over 240 characters or on several lines is edited by the reader to one
+   for review. A direction over 800 characters or on several lines is edited by the reader to one
    line before saving, and never saved as a summary. When six lines exist, the reader replaces or
    merges an existing line, and a seventh line is refused with a sentence saying why. The goal is
    kept.
@@ -10277,3 +10281,30 @@ it from deliberate standalone adoption, so it cannot undo another dashboard's di
 Typed saves and adoptions return their own locked revision receipt. A later read may already
 show another writer's revision. Saving supplies intent; a monitor check still has to produce
 a level. No save starts that monitor.
+
+## Amended 2026-11-12 (owner): outcome lines hold 800 characters
+
+Each of the six outcome lines holds up to 800 characters, separately from the model-written
+reading detail's 240. The goal stays at 1,000. A paste past either limit stays visible in its
+box; its counter marks it as over and a sentence gives its length and limit. Save intent waits
+until every box fits. Escape restores the saved words. A refused save keeps the draft and
+shows the line length, line count or session-identity reason the server returned.
+
+The correction's lines budget is re-measured rather than grown by 6 × (800 - 240): the widest
+correction saved words can be owed is a departed 1,000-character goal adopted from a prompt, six
+800-character lines the session says are done, a contradicted claim at its widest title and a
+failed check, every time drawn with its date. It needs 6,485 characters before explanations and
+quotes, so the budget rises from 2,760 to 6,560, which holds it with 75 to spare and refuses no
+correction that saved words can be owed. Explanations and quotes keep their own room:
+6,560 + 8 × 277 + 7 × 132 = 9,700 characters.
+The 16 MiB annotation store still trims the oldest other sessions first; the larger lines
+reach that bound sooner. History keeps each goal and line's opening at its unchanged
+256-character field cap. A reading's quoted outcome clause keeps the full 800 characters.
+
+A long reading holds the single prompt's share per packet: when the goal and lines would pass
+the larger of 12,800 bytes and a quarter of one packet, the lines are set aside before the
+reading's intent is frozen, every packet and the final call read the goal alone, and each line
+is published with `lines-no-room`. At Analyze's smallest prompt, 16,384 bytes, a
+1,000-character goal and six 800-character CJK or emoji lines read this way rather than
+leaving no packet at all. A goal the model refuses as unclear keeps `lines-no-room` on the
+lines its prompt had no room for.

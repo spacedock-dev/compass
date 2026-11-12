@@ -1,3 +1,4 @@
+import type { AnnotateReceipt } from '../api/types';
 import { CUE_TTL_MS, createKeyedState, type KeyedState } from '../controls/keyedState';
 import type { Announcer } from '../shell/announcer';
 import type { Clock } from '../transport/ports';
@@ -127,6 +128,7 @@ export interface HeldDeps {
 
 export function createHeld(deps: HeldDeps) {
   const { clock, announcer } = deps;
+  const refusals = new Map<string, AnnotateReceipt['reason']>();
   const goals = new Map<string, string>();
   const cleared = new Set<string>();
   const lines = new Map<string, string[]>();
@@ -176,6 +178,7 @@ export function createHeld(deps: HeldDeps) {
 
   function dropGuard(key: string): void {
     marks.delete(key);
+    refusals.delete(key);
     stamps.delete(key);
     announcer.forget(key);
   }
@@ -194,6 +197,7 @@ export function createHeld(deps: HeldDeps) {
     clock,
     announcer,
     goals,
+    refusals,
     cleared,
     lines,
     origins,
@@ -244,7 +248,9 @@ export function createHeld(deps: HeldDeps) {
     /* Stamps a mark. `say` is the caller's: a press whose outcome is said once its refresh has drawn it
        stamps without saying. Marking is not dropping, so the guard stays and a repeat of the same sentence
        is not announced twice. */
-    mark(key: string, kind: CueKind): void {
+    mark(key: string, kind: CueKind, reason?: AnnotateReceipt['reason']): void {
+      if (reason) refusals.set(key, reason);
+      else refusals.delete(key);
       marks.delete(key);
       marks.set(key, kind);
       stamps.set(key, clock.now());

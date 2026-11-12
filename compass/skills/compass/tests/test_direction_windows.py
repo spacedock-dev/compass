@@ -506,7 +506,7 @@ class TheServerVerifiesAnExplicitDirection(_ClaudeSession):
                         )
                         choice = opened["goal_choice"]
                         expected = annotation_store.direction_review(
-                            words, self.config.annotation_text_cap_chars
+                            words, self.config.annotation_line_cap_chars
                         )[0]
                         self.assertEqual(expected, choice["text"])
                         menu = self.request(

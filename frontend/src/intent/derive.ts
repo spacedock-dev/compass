@@ -19,6 +19,8 @@ import {
   annotationDiscarded,
   annotationLines,
   goalCap,
+  heldCap,
+  characterCount,
   storeUnreadable,
   OUTCOME_LINES_MAX,
   type Annotation,
@@ -35,6 +37,8 @@ import {
   LINES_FULL,
   directionTooLong,
   goalCut,
+  goalOverLimit,
+  lineOverLimit,
 } from './sentences';
 import { conflictCandidates, type WorkEntry, type WorkSource } from './work';
 
@@ -547,7 +551,7 @@ export function directionWhy(
   input: DraftInput | null,
   cap: number,
 ): string {
-  if (String(line.text || '').length > cap) return directionTooLong(cap);
+  if (characterCount(String(line.text || '')) > cap) return directionTooLong(cap);
   const annotation = input?.annotation ?? null;
   if (annotationLines(annotation).length >= OUTCOME_LINES_MAX && (line.replace ?? null) === null) {
     return LINES_FULL;
@@ -830,4 +834,14 @@ export function goalSourceLine(input: DraftInput): string {
     return `You typed this · ${savedAt !== null && savedAt > 0 ? `saved at ${clockText(savedAt)}` : 'saved'}`;
   }
   return '';
+}
+
+export function intentOverLimit(input: DraftInput): string {
+  const goal = intentChanges(input).typed;
+  const cap = goalCap(input.payload);
+  if (characterCount(goal) > cap) return goalOverLimit(characterCount(goal), cap);
+  const lines = linesDraft(input.held, input.session, input.annotation);
+  const lineCap = heldCap(input.payload);
+  const index = lines.findIndex((line) => characterCount(line) > lineCap);
+  return index < 0 ? '' : lineOverLimit(index + 1, characterCount(lines[index] ?? ''), lineCap);
 }

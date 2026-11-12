@@ -294,8 +294,8 @@ def observation(row: Mapping[str, Any]) -> Observation | None:
         # before it bounds, so what reaches this row has been through the
         # redaction the contract's third condition requires, in the order it
         # requires. `_text` here only strips reordering characters and applies
-        # this store's own cap: wider than an outcome line's 240, and narrower
-        # than the goal's 1,000, so a long goal is kept here as its opening.
+        # this store's own cap: narrower than an outcome line's 800 and
+        # the goal's 1,000, so a long goal or line is kept here as its opening.
         # The annotation store holds it whole; a change past this cut still
         # records a transition through `annotation_revision`.
         "annotation_goal": _annotation_text(row.get("annotation_goal")),

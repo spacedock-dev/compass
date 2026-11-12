@@ -1,3 +1,4 @@
+import type { AnnotateReceipt } from '../api/types';
 import { clock } from '../observed';
 /* The sentences the Intent panel prints more than once, spelt once. Each is the legacy page's own wording,
    because the same fact worded two ways is two promises, and a refusal always names the step that
@@ -215,3 +216,24 @@ export function feedbackSummary(message: string): string {
 
 export const DRIFT_SUBTITLE = 'How far the session has moved from the goal';
 export const LIVE_MONITOR = 'Live monitor';
+
+/* Grouped as every other count on the page is ("1,100"), whatever the reader's locale. */
+const count = (n: number): string => n.toLocaleString('en-US');
+
+export const lineOverLimit = (line: number, length: number, cap: number): string =>
+  `Line ${String(line)} is ${count(length)} characters; the limit is ${count(cap)}.`;
+export const goalOverLimit = (length: number, cap: number): string =>
+  `The goal is ${count(length)} characters; the limit is ${count(cap)}.`;
+
+export function saveRefusal(reason: AnnotateReceipt['reason']): string {
+  switch (reason?.code) {
+    case 'line_too_long':
+      return `Not saved: line ${String(reason.line)} is ${count(reason.length)} characters; the limit is ${count(reason.cap)}.`;
+    case 'too_many_lines':
+      return `Not saved: at most ${count(reason.max)} lines.`;
+    case 'unmatchable_session':
+      return 'Not saved: that session id is not one the board shows.';
+    default:
+      return HELD_CUES['error'] ?? '';
+  }
+}

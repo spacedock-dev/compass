@@ -113,6 +113,27 @@ def invoke(  # noqa: PLR0913 - one frozen invocation and its owned seams
     return result(state, reason, reply)
 
 
+def lines_fit(goal: str, lines: Sequence[str], prompt_bytes: int) -> bool:
+    """Whether a long reading's packets may pose the saved lines, by the single prompt's rule.
+
+    Measured on the map header that carries them, the protocol and the frozen intent, against
+    `reading.intent_share` of one packet. Lines that do not fit are set aside whole, never
+    clipped, so the evidence keeps its room (`reading_native.prepare`).
+    """
+    frozen_lines = tuple(lines)
+    clauses = (
+        reading.CONSTRAINT_GOAL,
+        *(reading.outcome_line(n) for n in range(1, len(frozen_lines) + 1)),
+    )
+    header = (
+        protocol_prefix(goal, frozen_lines, clauses)
+        + reading_passes.FROZEN_INTENT_BOUNDARY
+        + json.dumps(reading_pass_context.intent(goal, frozen_lines), ensure_ascii=False)
+        + reading_passes.EVIDENCE_BOUNDARY
+    )
+    return len(header.encode("utf-8", "replace")) <= reading.intent_share(prompt_bytes)
+
+
 def protocol_prefix(goal: str, lines: Sequence[str], clauses: Sequence[str]) -> str:
     """The complete owned map protocol, validated before allocation or calling."""
     frozen_lines, frozen_clauses = tuple(lines), tuple(clauses)

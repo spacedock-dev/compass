@@ -171,6 +171,7 @@ class ReconciliationPacketTest(unittest.TestCase):
             detail_cap_chars=400,
             scope=reading.SCOPE_FINAL,
             recorded=reading.recorded_from(facts, "claude", "s1"),
+            line_cap_chars=800,
         )
         self.assertEqual(reading.RESULT_UNVERIFIABLE, resolved["line_1"]["result"])
 
@@ -212,6 +213,7 @@ class ReconciliationPacketTest(unittest.TestCase):
             detail_cap_chars=400,
             scope=reading.SCOPE_FINAL,
             recorded=reading.recorded_from(facts, "claude", "s1"),
+            line_cap_chars=800,
         )
         self.assertEqual(("check",), resolved["line_1"]["cites"])
 
@@ -479,5 +481,6 @@ class ReconciliationPacketTest(unittest.TestCase):
                     detail_cap_chars=400,
                     scope=reading.SCOPE_FINAL,
                     recorded=reading.recorded_from(facts, "claude", SHORT, tool_output=output),
+                    line_cap_chars=800,
                 )
                 self.assertEqual(expected, resolved["line_1"]["result"])

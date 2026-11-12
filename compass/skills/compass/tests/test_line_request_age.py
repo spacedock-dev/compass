@@ -215,7 +215,7 @@ class RequestAgeSurvivesOnlyUnchangedStoredWords(unittest.TestCase):
             raw = {"harness": "claude", "sid": sid, "revisions": [{**_revision(), "at": at}]}
             with self.subTest(sid=sid, at=at):
                 entry = annotation_store._entry(
-                    json.loads(json.dumps(raw)), text_cap=240, revision_cap=8
+                    json.loads(json.dumps(raw)), text_cap=240, revision_cap=8, detail_cap=240
                 )
                 assert entry is not None
                 line = entry["revisions"][-1]["lines"][0]
@@ -320,6 +320,7 @@ class EarlierWorkCannotAnswerALaterLine(unittest.TestCase):
             lines=("Write the result as JSON",),
             detail_cap_chars=240,
             line_requests={"line_1": REQUEST_AT} if requested else {},
+            line_cap_chars=800,
         )["line_1"]
 
     def test_only_later_actions_can_raise_a_sourced_line_departure(self) -> None:

@@ -133,7 +133,7 @@ def prompts_from_facts(
     ]
 
 
-def build_prompt(prompts: Iterable[Prompt], *, goal_cap: int = 240) -> str:
+def build_prompt(prompts: Iterable[Prompt], *, goal_cap: int) -> str:
     """The one message sent: the rules, then each prompt under a boundary no prompt can close.
 
     The closing tag carries a number drawn for this call, so words in a prompt that imitate one

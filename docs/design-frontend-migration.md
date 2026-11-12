@@ -39,6 +39,18 @@ hold these departures. No golden file is changed. The on-demand `storage-conform
 `console-parity.mjs` and `controls-continuity.mjs` still encode the retired 500-unit cuts, `maxlength`,
 and last-fifty-on-add behavior; they were not run for this change and do not certify these new limits.
 
+2026-11-12: outcome lines hold 800 characters, while the goal stays at 1,000. The
+`intent-parity.mjs` comparison passes the current payload's `annotate_cap` and
+`annotate_goal_cap` to `intentEditorDeviations`, which replaces only the recorded counter's
+denominator (`38/240`, `29/240`, `16/240`) and retains its numerator. The annotation
+differential test still asks for every recorded cap; only an absent or invalid published cap
+uses the new fallback of 800. The recordings are unchanged.
+Over-limit pastes now stay in the goal and line boxes and block Save until they fit. IntentCard's
+Over Cap Line Blocks Save, Over Cap Goal Blocks Save and Refused Save Shows Reason stories
+assert the retained text, counter, save control and refusal sentence. The correction cap rises
+to 9,700 (6,560 for the goal and lines); its recorded 2,000-character edit arithmetic still uses
+`RECORDED_CAP`. Model-written details retain their 240-character bound.
+
 2026-11-05, the reading-scope sentence leaves out what Compass answered. The two sentences that say what a
 reading reads (the offer before a first reading and the scope after one) now say the observed record in the
 session's activity "except entries marked as Compass's answer", because the server marks what the agent ran and

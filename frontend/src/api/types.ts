@@ -148,7 +148,18 @@ export type AnnotateOutcome =
   | 'untrusted'
   | 'unreadable';
 
+export type AnnotateRefusal =
+  | {
+      readonly code: 'line_too_long';
+      readonly line: number;
+      readonly length: number;
+      readonly cap: number;
+    }
+  | { readonly code: 'too_many_lines'; readonly count: number; readonly max: number }
+  | { readonly code: 'unmatchable_session' };
+
 export interface AnnotateReceipt {
+  readonly reason?: AnnotateRefusal | null;
   readonly ok?: boolean;
   readonly outcome?: AnnotateOutcome | string;
   readonly persisted?: boolean;

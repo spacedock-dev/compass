@@ -63,25 +63,31 @@ describe('typing in the goal box', () => {
     expect(page.posts()).toBe(0);
   });
 
-  it('collapses a pasted line break to the one space the store would keep, and cuts at the bound', async () => {
+  it('collapses a pasted line break to the one space the store would keep, and keeps an over-limit paste', async () => {
     const page = mountSession();
     await settle(page);
     type(goalBox(), 'one\ntwo');
     expect(goalBox().value).toBe('one two');
     type(goalBox(), 'x'.repeat(1100));
-    expect(goalBox().value).toHaveLength(1000);
+    expect(goalBox().value).toHaveLength(1100);
+    expect(inert(control('held-save'))).toBe(true);
+    expect(text('.next-cockpit-held')).toContain(
+      'The goal is 1,100 characters; the limit is 1,000.',
+    );
+    type(goalBox(), 'g'.repeat(1000));
+    expect(inert(control('held-save'))).toBe(false);
     expect(text('[data-next-cockpit-held-count="goal"]')).toBe('1000 / 1000');
   });
 
-  it('holds a whole long prompt as the goal while an outcome line keeps its own 240', async () => {
+  it('holds a whole long prompt as the goal while an outcome line keeps its own 800', async () => {
     const page = mountSession({
       store: { goal: 'Saved goal', lines: ['A saved line'], revision: 1 },
     });
     await settle(page);
     type(goalBox(), 'g'.repeat(900));
     expect(goalBox().value).toHaveLength(900);
-    type(lineBoxes()[0] as HTMLTextAreaElement, 'l'.repeat(300));
-    expect(lineBoxes()[0]?.value).toHaveLength(240);
+    type(lineBoxes()[0] as HTMLTextAreaElement, 'l'.repeat(800));
+    expect(lineBoxes()[0]?.value).toHaveLength(800);
   });
 
   it('keeps the words, the caret and the selection across a board refresh that changes nothing they stand on', async () => {
