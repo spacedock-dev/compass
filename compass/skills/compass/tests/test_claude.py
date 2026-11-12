@@ -4216,6 +4216,100 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
         self.assertIsNone(row["work_in_flight_until"])
 
+    def test_pre_tool_use_summary_does_not_retire_background_wait(self) -> None:
+        rows = [
+            *self.background(),
+            _turn_records(self.START + 5, hookLabel="PreToolUse")[-1],
+        ]
+        row = self.row(rows)
+        self.assertEqual("waiting on 1 background task", row["state_detail"])
+        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+        self.assertEqual("working", self.overlay_row(row)["state"])
+
+    def test_stop_continuation_feedback_does_not_retire_background_wait(self) -> None:
+        for errors in ([], ["tests still fail"]):
+            with self.subTest(hook_errors=errors):
+                reply, stop = _turn_records(self.START + 6, hookErrors=errors)[1:]
+                feedback = {
+                    "type": "user",
+                    "sessionId": TURN_SID,
+                    "timestamp": self.START + 5.95,
+                    "isMeta": True,
+                    "message": {"role": "user", "content": "Stop hook feedback: tests still fail"},
+                }
+                rows = [*self.background(), reply, feedback, stop]
+                row = self.row(rows)
+                self.assertIsNone(row["turn_end_at"])
+                self.assertEqual("waiting on 1 background task", row["state_detail"])
+                self.assertEqual("working", self.overlay_row(row)["state"])
+                ended = self.row([*rows, *_turn_records(self.START + 8)[1:]])
+                self.assertEqual("idle", ended["state"])
+                self.assertIsNone(ended["work_in_flight_until"])
+
+    def test_human_prompts_without_intent_text_retire_in_flight_work(self) -> None:
+        boundaries: list[dict[str, Any]] = [
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "commandMode": "prompt",
+                    "origin": {"kind": "human"},
+                    "prompt": "change direction",
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "image", "source": {"type": "base64", "data": ""}}],
+                },
+            },
+        ]
+        for boundary in boundaries:
+            for background in (False, True):
+                with self.subTest(boundary=boundary["type"], background=background):
+                    rows = [
+                        *(self.background() if background else [self.call()]),
+                        {"sessionId": TURN_SID, "timestamp": self.START + 6, **boundary},
+                    ]
+                    row = self.row(rows)
+                    self.assertEqual("idle", row["state"])
+                    self.assertIsNone(row["work_in_flight_until"])
+                    rows.extend(_turn_records(self.START + 8)[1:])
+                    ended = self.row(rows)
+                    self.assertEqual(
+                        ("idle", "awaiting your message"),
+                        (ended["state"], ended["state_detail"]),
+                    )
+                    self.assertEqual("idle", self.overlay_row(ended, stop_at=8)["state"])
+
+    def test_unvalidated_queued_attachments_do_not_retire_in_flight_work(self) -> None:
+        attachment = {
+            "type": "queued_command",
+            "commandMode": "prompt",
+            "origin": {"kind": "human"},
+            "prompt": "change direction",
+        }
+        for change in (
+            {"origin": {"kind": "task-notification"}},
+            {"origin": None},
+            {"commandMode": "command"},
+            {"commandMode": None},
+            {"type": "other"},
+        ):
+            for background in (False, True):
+                with self.subTest(change=change, background=background):
+                    rows = [
+                        *(self.background() if background else [self.call()]),
+                        {
+                            "type": "attachment",
+                            "sessionId": TURN_SID,
+                            "timestamp": self.START + 6,
+                            "attachment": {**attachment, **change},
+                        },
+                    ]
+                    self.assertEqual("working", self.row(rows)["state"])
+
     def test_unacknowledged_or_retired_background_launch_does_not_suppress_stop(self) -> None:
         call = self.call(name="Agent", run_in_background=True)
         for acknowledged in (False, True):
@@ -4309,6 +4403,19 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertEqual(5, row["delegated_unpaired"])
         self.assertEqual("waiting on 2 background tasks", row["state_detail"])
         self.assertEqual(self.START + 932, row["work_in_flight_until"])
+
+    def test_waiting_detail_excludes_current_turn_launches_past_their_cap(self) -> None:
+        rows = [
+            *self.background(),
+            self.call(850, name="Agent", call_id="new", run_in_background=True),
+            self.result(851, call_id="new", agentId="new-child"),
+        ]
+        self.assertEqual("waiting on 2 background tasks", self.row(rows, age=900)["state_detail"])
+        row = self.row(rows, age=900.01)
+        self.assertEqual(2, row["delegated_unpaired"])
+        self.assertEqual("waiting on 1 background task", row["state_detail"])
+        self.assertEqual(self.START + 1750, row["work_in_flight_until"])
+        self.assertEqual("idle", self.row(rows, age=1750.01)["state"])
 
     def test_task_output_completion_keeps_its_existing_pairing(self) -> None:
         rows = [

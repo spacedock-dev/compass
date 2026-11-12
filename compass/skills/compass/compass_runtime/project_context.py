@@ -9353,27 +9353,17 @@ def _last_person_at(parent: list[dict[str, Any]], harness: str = "claude") -> fl
 
 
 def _delegated_last_turn_floor(parent: list[dict[str, Any]]) -> float:
-    stops = sorted(
-        _record_timestamp(record) or 0
-        for record in parent
-        if record.get("type") == "system" and record.get("subtype") == "stop_hook_summary"
-    )
+    stops = []
+    conversation: str | None = None
     directions = []
     for record in parent:
-        # The intent reader deliberately drops interruption markers as injected
-        # text. They still retire background waits, including acknowledged ones.
-        if record.get("type") == "user" and _tool_result_text(
-            records.message_dict(record)
-        ).startswith("[Request interrupted by user"):
+        if claude_data.is_turn_stop_record(record, conversation):
+            stops.append(_record_timestamp(record) or 0)
+        if record.get("type") in ("user", "assistant"):
+            conversation = record["type"]
+        if claude_data.is_human_prompt_record(record):
             directions.append(_record_timestamp(record) or 0)
-            continue
-        if observer.message_record_role(record) != "user":
-            continue
-        message = observer.parse_message_record(record)
-        if message is not None and message.get("role") == "user":
-            text = str(message.get("text") or "")
-            if not records.injected_prompt(text, "claude"):
-                directions.append(_record_timestamp(record) or 0)
+    stops.sort()
     return max([*directions, stops[-2] if len(stops) > 1 else 0])
 
 
@@ -9651,6 +9641,7 @@ def delegated_work_status(
         if row["at"] >= last_turn_floor
         and row["acknowledged"]
         and row["source"] in {"Claude Agent call", "Claude Task call"}
+        and runtime_sessions.is_fresh(config, now, row["at"], config.claude_tool_in_flight_max_sec)
     ]
     return (
         published,

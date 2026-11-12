@@ -1031,6 +1031,33 @@ def is_turn_stop_record(record: Any, after: str | None) -> bool:
     )
 
 
+def is_human_prompt_record(record: dict[str, Any]) -> bool:
+    """A human turn boundary, even when it supplies no publishable intent text."""
+    if record.get("isSidechain") or record.get("isMeta") or record.get("isCompactSummary"):
+        return False
+    if record.get("type") == "attachment":
+        # Measured in mid-turn-and-answer-shapes-2.1.305-macos.jsonl;
+        # task notifications travel in the same queue but are not human turns.
+        attachment = records.as_dict(record.get("attachment"))
+        return (
+            attachment.get("type") == "queued_command"
+            and attachment.get("commandMode") == "prompt"
+            and records.as_dict(attachment.get("origin")).get("kind") == "human"
+        )
+    if not records.claude_prompt_record(record):
+        return False
+    content = records.message_dict(record).get("content")
+    text = records.extract_text(content).strip()
+    if text:
+        return text.startswith("[Request interrupted by user") or not records.injected_prompt(
+            text, "claude"
+        )
+    return any(
+        isinstance(block, dict) and block.get("type") == "image"
+        for block in records.as_list(content)
+    )
+
+
 class _PendingForeground:
     def __init__(self, path: str) -> None:
         self.session_id = os.path.basename(path).removesuffix(".jsonl")
@@ -1048,6 +1075,7 @@ class _PendingForeground:
         # immediately precedes it.
         if (
             is_turn_stop_record(record, "assistant")
+            or is_human_prompt_record(record)
             or record.get("isCompactSummary") is True
             or (kind == "system" and record.get("subtype") == "compact_boundary")
             or (
