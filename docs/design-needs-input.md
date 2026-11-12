@@ -114,6 +114,12 @@ all. The two conditions had been written as if they were the same kind of eviden
 So they are now separated. Fresh own-transcript activity still outranks a hook. A live subagent
 outranks only a hook this build does not recognise.
 
+Claude's capped outstanding-tool and background-launch extension also yields to a standing hook,
+including the legacy path without a recognised type. It does not extend the 90-second window that
+fresh own-transcript activity gets above, and it never advances the activity stamp that clears an
+explicit permission overlay. The [overlay contract](design-event-driven-observation.md#event-overlays-versus-store-truth)
+owns the 900-second cap and the headless measurement.
+
 ## N-3: recognised, not merely actionable
 
 The ingress already classifies a notification before storing it, and an unknown structured type

@@ -1502,6 +1502,41 @@ collector evidence. Working overlays get a measured deadline so a missed stop ca
 Needs-input overlays do not get an arbitrary time-only expiry; event-source liveness can become stale
 without silently clearing a real hours-long permission wait.
 
+Claude has a second, bounded source-specific rule, measured on 2026-11-12 with Claude Code
+2.1.322 on macOS against Compass 2.11.0. The three headless arms in
+[the headless-wait capture](captures/claude/headless-wait-2.1.322-macos.jsonl) show a foreground
+Bash call and a shell loop becoming Idle after 90 seconds without a result, and a parent becoming
+Idle at Stop while `claude -p` remains alive waiting for its background Agent. A child file going
+quiet does not establish completion. The capture also shows the stale Working tail after exit.
+
+`claude_data.analyze_transcript` now matches all main-transcript tool uses against results, keeping
+the newest unanswered non-input tool separately from the existing input tools. The Claude collector
+keeps that call Working as `running <tool>`. It also reuses `project_context.delegated_work_status`'s
+cached completion pairing: an outstanding parent launch keeps the row Working as
+`waiting on N background tasks`, even after a transcript stop and with an old child file. Both
+rules expire at `claude_tool_in_flight_max_sec` (900 seconds), measured from the tool record or
+newest unpaired launch, never from child activity or a newer completed launch. The ceiling matches
+Pi because neither transcript can prove a process killed mid-call survived. After expiry the
+existing freshness and stop rules apply. No process-liveness probe is added.
+
+The collector publishes nullable `work_in_flight_until` solely as bounded outstanding-work
+evidence; `state_detail` carries the wording. It does not advance `own_activity`, `work_activity`
+or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
+that cap, without weakening an explicit input overlay or changing its activity guard. Transcript
+input tools and standing notification waits retain precedence over this extension. An observed
+`ended_at` disables the exception; after reduction, `Application._apply_overlays` settles an ended
+Claude row to Idle and clears the lease, also ending the existing fresh-child Working tail. A new
+Working or input overlay can still retire an old end under the existing reopening contract.
+
+Notification delivery reads the final reduced row. The browser's Working-to-Idle quiet edge is
+therefore delayed for this outstanding work; a real completed turn still settles immediately under
+the existing stop rules. Native quiet nudges still read the harness's `idle_prompt` notification.
+Permission waits still set their original `blocked_since`, enter Attention's input queue and notify
+once. Task and turn ETA calculations keep their existing inputs; the extension invents no activity
+or progress measurements. `ClaudeHeadlessActivityTest` covers the capture shapes, cap, completion,
+end and prompt precedence; `ApplicationPopupTest.test_extended_claude_work_yields_to_a_gate_and_notifies_once`
+covers the final row, shared Attention queue and notification transition without a server.
+
 `session_ended` is non-destructive. It retires overlays and hook state but never removes a row; only
 the collector may do that. Claude is documented as firing it on `/clear` as well as on exit, so a
 user who clears and immediately prompts again can produce `session_ended` and `turn_started` for the

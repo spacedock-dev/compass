@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import claude_data, notifications, records, spacedock, transcripts
+from compass_runtime import (
+    aggregate,
+    claude_data,
+    events,
+    notifications,
+    records,
+    spacedock,
+    transcripts,
+)
 from compass_runtime import io as runtime_io
 from compass_runtime import sessions as runtime_sessions
 from compass_runtime.collectors import claude as claude_collector
@@ -3931,6 +3939,248 @@ class ClaudeTranscriptTurnStopTest(RuntimeTestCase):
             with self.subTest(change=change):
                 row = self.row_at(stop + 120, _turn_records(stop, **change))
                 self.assertIsNone(row["turn_end_at"])
+
+
+class ClaudeHeadlessActivityTest(RuntimeTestCase):
+    # Shapes from headless-wait-2.1.322-macos.jsonl; the clock never waits on a tool.
+    START = 1_800_000_000.0
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory(prefix="compass-headless-activity-")
+        self.addCleanup(self.tmp.cleanup)
+        self.project = Path(self.tmp.name) / "projects" / "sample"
+        self.project.mkdir(parents=True)
+        self.enterContext(store_patch(PROJECTS_DIR=str(self.project.parent)))
+        self.enterContext(store_patch(TASKS_DIR=str(Path(self.tmp.name) / "no-tasks")))
+        self.enterContext(config_patch(state_dir=Path(self.tmp.name), state_home=self.tmp.name))
+
+    def call(
+        self, at: float = 0, *, name: str = "Bash", call_id: str = "call", **inputs: Any
+    ) -> dict[str, Any]:
+        return {
+            "type": "assistant",
+            "sessionId": TURN_SID,
+            "timestamp": self.START + at,
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": call_id, "name": name, "input": inputs},
+                ],
+            },
+        }
+
+    def result(self, at: float = 1, *, call_id: str = "call", **metadata: Any) -> dict[str, Any]:
+        return {
+            "type": "user",
+            "sessionId": TURN_SID,
+            "timestamp": self.START + at,
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": call_id, "content": "returned"},
+                ],
+            },
+            "toolUseResult": metadata,
+        }
+
+    def background(self) -> list[dict[str, Any]]:
+        return [
+            self.call(name="Agent", run_in_background=True),
+            self.result(agentId="child"),
+            *_turn_records(self.START + 3)[1:],
+        ]
+
+    def row(
+        self, rows: list[dict[str, Any]], *, age: float = 120, child_age: float | None = None
+    ) -> dict[str, Any]:
+        transcript = self.project / f"{TURN_SID}.jsonl"
+        transcript.write_text(
+            "".join(
+                json.dumps(
+                    {
+                        **row,
+                        "timestamp": datetime.fromtimestamp(row["timestamp"], UTC).isoformat()
+                        if isinstance(row["timestamp"], (int, float))
+                        else row["timestamp"],
+                    }
+                )
+                + "\n"
+                for row in rows
+            )
+        )
+        newest = max(
+            float(row["timestamp"])
+            if isinstance(row["timestamp"], (int, float))
+            else records.parse_ts(row["timestamp"]) or 0
+            for row in rows
+        )
+        os.utime(transcript, (newest, newest))
+        if child_age is not None:
+            child = self.project / TURN_SID / "subagents" / "agent-child.jsonl"
+            child.parent.mkdir(parents=True, exist_ok=True)
+            child.write_text(json.dumps(self.call(name="Bash")) + "\n")
+            at = self.START + age - child_age
+            os.utime(child, (at, at))
+        return collect_claude(self.START + age, 24, False)[0]
+
+    def overlay_row(
+        self, row: dict[str, Any], *, age: float = 120, end: bool = False, prompt: bool = False
+    ) -> dict[str, Any]:
+        config, state = runtime()
+        ledger = [
+            events.overlay_for(
+                events.Event(
+                    harness="claude",
+                    sid=TURN_SID[:8],
+                    session_id=TURN_SID,
+                    event="input_requested" if prompt else "turn_stopped",
+                    timestamp=self.START + (100 if prompt else 3),
+                    arrival_seq=1,
+                ),
+                config=config,
+            )
+        ]
+        source = mock.Mock()
+        source.overlays_for.return_value = [] if end else ledger
+        source.finished_at.return_value = self.START + 3
+        source.ended_at.return_value = self.START + 110 if end else 0.0
+        source.git_for.return_value = None
+        source.focusable.return_value = False
+        app = aggregate.Application(
+            config,
+            state,
+            (),
+            overlays=source,
+            clock=lambda: self.START + age,
+            native_notifier=lambda _config: "",
+            popup_notifier=lambda _title, _body: None,
+            diagnostic_sink=lambda _line: None,
+        )
+        app._apply_overlays([row], now=self.START + age)
+        return row
+
+    def test_unanswered_tools_outlive_freshness_until_the_call_cap(self) -> None:
+        for name in ("Bash", "Read"):
+            with self.subTest(tool=name):
+                row = self.row([self.call(name=name)])
+                self.assertEqual(
+                    ("working", f"running {name}"), (row["state"], row["state_detail"])
+                )
+                self.assertIsNone(row["blocked_since"])
+                old = self.row([self.call(name=name)], age=1000)
+                self.assertEqual(
+                    ("idle", "last turn not recorded as finished"),
+                    (old["state"], old["state_detail"]),
+                )
+
+    def test_the_default_cap_expires_from_the_call_timestamp(self) -> None:
+        for rows in ([self.call()], self.background()):
+            with self.subTest(background=len(rows) > 1):
+                self.assertEqual("working", self.row(rows, age=900)["state"])
+                self.assertEqual("idle", self.row(rows, age=900.01)["state"])
+
+    def test_an_input_tool_is_not_expired_by_the_working_cap(self) -> None:
+        row = self.row([self.call(name="AskUserQuestion")], age=1000)
+        self.assertEqual("needs_input", row["state"])
+        self.assertEqual(self.START, row["blocked_since"])
+
+    def test_result_matching_and_newest_unanswered_tool_determine_the_detail(self) -> None:
+        rows = [
+            self.call(),
+            self.call(5, name="Read", call_id="read"),
+            self.result(6, call_id="read"),
+        ]
+        newest = self.row(rows[:2])
+        self.assertEqual("running Read", newest["state_detail"])
+        row = self.row(rows)
+        self.assertEqual(("working", "running Bash"), (row["state"], row["state_detail"]))
+        self.assertEqual("idle", self.row([*rows, self.result(7)])["state"])
+
+    def test_background_work_outlives_the_parent_stop_and_a_quiet_child(self) -> None:
+        row = self.row(self.background(), child_age=120)
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertEqual(
+            ("working", "waiting on 1 background task"), (row["state"], row["state_detail"])
+        )
+        self.assertIsNone(row["turn_end_at"])
+        row = self.overlay_row(row)
+        self.assertEqual(
+            ("working", "waiting on 1 background task"), (row["state"], row["state_detail"])
+        )
+        self.assertIsNone(row["finished_at"])
+        self.assertEqual(
+            "idle", self.overlay_row(self.row(self.background(), age=1000), age=1000)["state"]
+        )
+
+    def test_completion_and_real_stops_still_settle_without_waiting_for_freshness(self) -> None:
+        rows = self.background()
+        completion = {
+            "type": "user",
+            "timestamp": self.START + 5,
+            "message": {
+                "content": "<task-notification><tool-use-id>call</tool-use-id><status>completed</status></task-notification>"
+            },
+        }
+        row = self.row([*rows, completion, *_turn_records(self.START + 7)[1:]], age=8)
+        self.assertEqual(0, row["delegated_unpaired"])
+        self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
+        self.assertEqual("idle", self.overlay_row(row, age=8)["state"])
+        self.assertEqual("idle", self.row(_turn_records(self.START + 3), age=4)["state"])
+
+    def test_newer_completed_launch_does_not_renew_an_older_outstanding_launch(self) -> None:
+        rows = [
+            *self.background(),
+            self.call(950, name="Agent", call_id="new", run_in_background=True),
+            self.result(951, call_id="new", agentId="new-child"),
+            {
+                "type": "user",
+                "timestamp": self.START + 952,
+                "message": {
+                    "content": "<task-notification><tool-use-id>new</tool-use-id><status>completed</status></task-notification>"
+                },
+            },
+            *_turn_records(self.START + 955)[1:],
+        ]
+        self.assertEqual("idle", self.row(rows, age=1000)["state"])
+
+    def test_input_tools_and_permission_notifications_outrank_the_extended_work(self) -> None:
+        for rows in (
+            [self.call(), self.call(10, name="AskUserQuestion", call_id="ask")],
+            self.background(),
+        ):
+            with self.subTest(background=len(rows) > 2):
+                state_of().hook_notifications[TURN_SID[:8]] = {
+                    "ts": self.START + 100,
+                    "message": "permission requested",
+                    "notification_type": "permission_prompt",
+                }
+                row = self.row(rows)
+                self.assertEqual("needs_input", row["state"])
+                self.assertIsNotNone(row["blocked_since"])
+                self.assertIsNone(row["turn_end_at"])
+
+    def test_permission_overlay_outranks_tools_and_background_work(self) -> None:
+        for rows in ([self.call()], self.background()):
+            with self.subTest(background=len(rows) > 1):
+                row = self.overlay_row(self.row(rows), prompt=True)
+                self.assertEqual("needs_input", row["state"])
+                self.assertEqual(self.START + 100, row["blocked_since"])
+
+    def test_observed_end_stops_tool_and_background_work_including_fresh_child_tail(self) -> None:
+        for rows in ([self.call()], self.background()):
+            with self.subTest(background=len(rows) > 1):
+                row = self.overlay_row(self.row(rows, child_age=10), end=True)
+                self.assertEqual("idle", row["state"])
+                self.assertFalse(row["active"])
+                self.assertEqual(self.START + 110, row["ended_at"])
+                self.assertIsNone(row["work_in_flight_until"])
+
+    def test_configured_cap_is_measured_from_launch_not_recent_bookkeeping(self) -> None:
+        with config_patch(claude_tool_in_flight_max_sec=100):
+            for rows in ([self.call()], self.background()):
+                with self.subTest(background=len(rows) > 1):
+                    self.assertEqual("idle", self.row(rows)["state"])
 
 
 class TheTurnStopRecordIsTheScorersRecordTest(unittest.TestCase):

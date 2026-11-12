@@ -9519,7 +9519,7 @@ def _pair_background_launches(
             launch["last_activity_at"] = max(launch["last_activity_at"], launch["completed_at"])
 
 
-def delegated_work_published(
+def delegated_work_status(
     config: RuntimeConfig,
     transcript_path: str | None,
     *,
@@ -9527,8 +9527,12 @@ def delegated_work_published(
     now: float,
     state: RuntimeState | None = None,
     child_paths: Sequence[str] | None = None,
-) -> dict[str, Any]:
-    """Counts and times only; a command-line launch cannot identify another session.
+) -> tuple[dict[str, Any], float | None]:
+    """Published counts and times, plus the newest unpaired parent launch's stamp.
+
+    The collector's activity cap must start at that launch, not at a newer
+    completed launch or a child's most recent write. Reuse this cached pairing
+    so state and delegated counts cannot disagree about a completion.
 
     [DEC-23](docs/design-reading-a-session.md#amended-2026-10-04-owner-delegated-launches)
     """
@@ -9571,7 +9575,7 @@ def delegated_work_published(
     activity = max((row["last_activity_at"] for row in unpaired), default=None)
     last_turn_launch = any(row["at"] >= last_turn_floor for row in unpaired)
     quiet = max(activity, own_activity) if activity is not None and last_turn_launch else None
-    return {
+    published = {
         "delegated_launches": sum(row["count"] for row in launches)
         if transcript_path and (launches or not partial)
         else None,
@@ -9593,6 +9597,28 @@ def delegated_work_published(
             else "recorded"
         ),
     }
+
+    return published, max((row["at"] for row in unpaired), default=None)
+
+
+def delegated_work_published(
+    config: RuntimeConfig,
+    transcript_path: str | None,
+    *,
+    own_activity: float,
+    now: float,
+    state: RuntimeState | None = None,
+    child_paths: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    published, _newest_unpaired = delegated_work_status(
+        config,
+        transcript_path,
+        own_activity=own_activity,
+        now=now,
+        state=state,
+        child_paths=child_paths,
+    )
+    return published
 
 
 def claude_tool_reports(  # noqa: PLR0913 - each is one keyword its caller names

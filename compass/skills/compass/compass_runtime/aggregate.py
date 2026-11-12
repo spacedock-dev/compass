@@ -707,6 +707,19 @@ def _attach_annotations(
             row[f"annotation_{name}"] = value
 
 
+def _settle_ended_claude(session: Session) -> None:
+    if session["harness"] == "claude" and session.get("ended_at"):
+        # Only the overlay pass knows the observed end. A fresh child file or
+        # an unanswered tool is no evidence that its parent survived.
+        session.update(
+            state="idle",
+            state_detail="awaiting your message",
+            active=False,
+            blocked_since=None,
+            work_in_flight_until=None,
+        )
+
+
 def _work_activity(session: Session) -> float:
     """The activity that retires an observed stop or end: `work_activity`, else `last_activity`.
 
@@ -1537,6 +1550,9 @@ class Application:
                     # of the one above because a turn stopping and a session id
                     # ending are different facts about a row (DRC-4036).
                     ended_at=ended_at,
+                    work_in_flight_until=float(session.get("work_in_flight_until") or 0.0)
+                    if harness == "claude"
+                    else 0.0,
                     # Reduced rather than written onto the row for the reason the
                     # mark above is: a reading taken at a session end must still
                     # lose to any overlay saying the session is alive again.
@@ -1551,6 +1567,7 @@ class Application:
                         patch["state_detail"] = f"Waiting for input · {duration}"
                 self._note_dispute(session, patch, overlays, now=now)
                 runtime_events.apply_patch(session, _keep_wait_detail(session, patch))
+                _settle_ended_claude(session)
                 if (
                     harness in {"pi", "opencode"}
                     and patch.get("acquisition") == runtime_events.ACQUISITION_EVENT

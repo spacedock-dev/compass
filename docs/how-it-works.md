@@ -178,6 +178,15 @@ at the top always cover the whole board. If a filter hides a session that is wai
 links to it, or to Attention when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
+A quiet transcript can still be working. For Claude Code, an unanswered tool call reads
+`running <tool>`, and a background launch with no recorded completion reads
+`waiting on N background tasks`, for up to 15 minutes from the newest outstanding call or launch.
+A turn stopping does not end that wait; an observed session end does. An input request still takes
+precedence. After the cap, Compass falls back to its usual 90-second activity rule. This covers
+long foreground calls and headless sessions waiting on a background subagent, measured with Claude
+Code 2.1.322 on macOS. The [state reference](../compass/skills/compass/reference/dashboard.md#session-states)
+explains the other harnesses.
+
 A project's Console view collects delegated work, requests waiting on you and capacity. It also has an
 early terminal bridge and session history view; the
 [cockpit design contract](design-next-ui.md#cockpit-reconciliation) records their limits.

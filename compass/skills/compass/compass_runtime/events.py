@@ -807,7 +807,7 @@ def _needs_input_patch(overlay: Overlay, ordered: list[Overlay], *, now: float) 
     }
 
 
-def reduce_overlays(
+def reduce_overlays(  # noqa: PLR0913 - each argument is independently sourced collector evidence
     overlays: Iterable[Overlay],
     *,
     now: float,
@@ -816,6 +816,7 @@ def reduce_overlays(
     activity_grace_sec: float = 0.0,
     finished_at: float = 0.0,
     ended_at: float = 0.0,
+    work_in_flight_until: float = 0.0,
     git: tuple[bool, int] | None = None,
 ) -> dict[str, Any]:
     """The field patch a session's live overlays imply, in `arrival_seq` order.
@@ -898,6 +899,11 @@ def reduce_overlays(
     in front of it, so nulling here would erase the mark for exactly the sessions
     it exists to distinguish. It also skips the activity guard the stop takes —
     `_side_channel_patch` says why.
+
+    `work_in_flight_until` is the Claude collector's capped outstanding-work
+    evidence. While it stands, Idle and remembered turn stops yield, but a
+    needs-input overlay keeps its normal precedence and actual activity guard.
+    An observed session end disables this exception.
     """
     ordered = sorted(overlays, key=lambda item: item.arrival_seq)
     active_repeating = _active_repeating_sources(
@@ -910,7 +916,15 @@ def reduce_overlays(
         activity_grace_sec=activity_grace_sec,
         git=git,
     )
+    # A headless parent's Stop can precede its background task completing. The
+    # collector supplies a bounded lease, not activity that could clear a prompt.
+    # docs/design-event-driven-observation.md#event-overlays-versus-store-truth
+    in_flight = bool(work_in_flight_until) and work_in_flight_until >= now and not ended_at
+    if in_flight:
+        patch["finished_at"] = None
     for overlay in ordered:
+        if in_flight and overlay.kind == OVERLAY_IDLE:
+            continue
         if _is_overlay_suppressed(
             overlay,
             ordered=ordered,

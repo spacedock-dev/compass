@@ -23,6 +23,7 @@ from compass_runtime import (
     dismissals,
     notifications,
     records,
+    terminal_sessions,
     unasked,
 )
 from compass_runtime import events as runtime_events
@@ -1970,6 +1971,63 @@ class ApplicationPopupTest(unittest.TestCase):
         # server composes the body, so `maybe_popup`'s "Session … needs your
         # input" default cannot fire on a truthy f-string.
         self.assertEqual([("Claude is waiting on you", "[proj] needs your input")], self.popups)
+
+    def test_extended_claude_work_yields_to_a_gate_and_notifies_once(self) -> None:
+        spec = _popup_spec(
+            "claude",
+            "Claude",
+            [
+                {
+                    "sid": "abcd1234",
+                    "state": "working",
+                    "state_detail": "waiting on 1 background task",
+                    "active": True,
+                    "last_activity": 4_000.0,
+                    "work_in_flight_until": 5_100.0,
+                }
+            ],
+        )
+        config, state = self.runtime()
+        stopped = runtime_events.overlay_for(
+            runtime_events.Event(
+                harness="claude",
+                sid="abcd1234",
+                session_id="abcd1234",
+                event="turn_stopped",
+                timestamp=4_500.0,
+                arrival_seq=1,
+            ),
+            config=config,
+        )
+        overlays = _StubOverlays({("claude", "abcd1234"): [stopped]})
+        application = self.application((spec,), config=config, state=state, overlays=overlays)
+        working = application.collect(show_all=False)
+        self.assertEqual("working", working["sessions"][0]["state"])
+        self.assertIsNone(working["sessions"][0]["blocked_since"])
+        self.assertEqual([], self.popups)
+        self.assertEqual((0, frozenset()), terminal_sessions.waiting_queue(working))
+        requested = runtime_events.overlay_for(
+            runtime_events.Event(
+                harness="claude",
+                sid="abcd1234",
+                session_id="abcd1234",
+                event="input_requested",
+                timestamp=4_900.0,
+                arrival_seq=2,
+            ),
+            config=config,
+        )
+        overlays.table[("claude", "abcd1234")] = [stopped, requested]
+        waiting = application.collect(show_all=False)
+        self.assertEqual("needs_input", waiting["sessions"][0]["state"])
+        self.assertEqual(4_900.0, waiting["sessions"][0]["blocked_since"])
+        self.assertEqual(1, waiting["summary"]["needs_input"])
+        self.assertEqual(
+            (1, frozenset({("claude", "abcd1234")})), terminal_sessions.waiting_queue(waiting)
+        )
+        self.assertEqual([("Claude is waiting on you", "[proj] needs your input")], self.popups)
+        application.collect(show_all=False)
+        self.assertEqual(1, len(self.popups))
 
     def test_a_standing_gate_pops_once_and_not_on_every_collection(self) -> None:
         spec = _popup_spec("codex", "Codex", [self._gate_row("codex-1")])
