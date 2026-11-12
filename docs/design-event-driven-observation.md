@@ -1518,15 +1518,25 @@ the newest remaining call Working as `running <tool>` until its own tool timesta
 `claude_tool_in_flight_max_sec` (900 seconds). A Stop or interruption always ends this foreground wait.
 
 The collector also reuses `project_context.delegated_work_status`'s cached completion pairing, but
-only outstanding parent Agent/Task launches with `run_in_background` at or after the current turn's
-floor qualify. Background Bash launches, shell `&` jobs, Monitor calls and earlier-turn launches do
-not. The row reads `waiting on 1 background task` or `waiting on N background tasks`, counting only
-qualifying launches, even after the parent's Stop and with an old child file. Existing TaskOutput
-and task-notification completion pairing is unchanged. This background lease expires at the newest
-qualifying unpaired launch plus the same cap, independently of any foreground call. Neither child
+only outstanding parent Agent/Task launches with `run_in_background`, a successful launch tool
+result, and a launch at or after the current turn's floor qualify. A later interruption or new user
+prompt retires a launch even if it was acknowledged. Calls, acknowledgements, completion pairing
+and turn boundaries use only records with the parent's native session id (the transcript filename
+stem), excluding sidechain records. Missing identity earns no exception. Background Bash launches,
+shell `&` jobs, Monitor calls and earlier-turn launches do not qualify. The row reads
+`waiting on 1 background task` or `waiting on N background tasks`, counting only qualifying launches,
+even after the parent's Stop and with an old child file. TaskOutput and task-notification completion
+pairing includes the queued attachment's `attachment.prompt`, measured in
+[the mid-turn shape capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl).
+This background lease expires at the newest qualifying unpaired launch plus the same cap,
+independently of any foreground call. Neither child
 activity nor a newer completed launch renews it. The ceiling matches Pi because neither transcript
-can prove a process killed mid-call survived. After either expiry the existing freshness and stop
-rules apply. No process-liveness probe is added.
+can prove a process killed mid-call survived. The accepted cost is that a session killed mid-tool
+without an observed end reads Working until the 900-second cap rather than the former 90-second
+activity window. SIGKILL was the only measured ending without SessionEnd in
+[the ending capture](captures/claude/session-end-2.1.261-macos.jsonl); every other measured ending
+sent it. After either expiry the existing freshness and stop rules apply. No process-liveness probe
+is added.
 
 The collector publishes nullable `work_in_flight_until` solely as current-turn background-subagent
 evidence; `state_detail` carries the wording. It does not advance `own_activity`, `work_activity`
@@ -1535,7 +1545,9 @@ that background cap only; foreground evidence never suppresses either stop. It d
 explicit input overlay or change its activity guard. Transcript
 input tools and standing notification waits retain precedence over this extension. An observed
 `ended_at` disables the exception; after reduction, `Application._apply_overlays` settles an ended
-Claude row to Idle and clears the lease, also ending the existing fresh-child Working tail. A new
+Claude row to Idle and clears the lease, also ending the existing fresh-child Working tail. A
+remembered Stop that survives reduction also settles a Working Claude row to Idle when its live
+overlay is gone; preserving `finished_at` alone would leave the foreground extension running. A new
 Working or input overlay can still retire an old end under the existing reopening contract.
 
 Notification delivery reads the final reduced row. The browser's Working-to-Idle quiet edge is

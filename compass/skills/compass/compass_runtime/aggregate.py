@@ -707,10 +707,12 @@ def _attach_annotations(
             row[f"annotation_{name}"] = value
 
 
-def _settle_ended_claude(session: Session) -> None:
-    if session["harness"] == "claude" and session.get("ended_at"):
-        # Only the overlay pass knows the observed end. A fresh child file or
-        # an unanswered tool is no evidence that its parent survived.
+def _settle_stopped_claude(session: Session) -> None:
+    if session["harness"] == "claude" and (
+        session.get("ended_at") or (session.get("finished_at") and session["state"] == "working")
+    ):
+        # The reducer guards remembered Stops and lets acknowledged background
+        # work retire them. An unanswered foreground tool cannot do that.
         session.update(
             state="idle",
             state_detail="awaiting your message",
@@ -1567,7 +1569,7 @@ class Application:
                         patch["state_detail"] = f"Waiting for input · {duration}"
                 self._note_dispute(session, patch, overlays, now=now)
                 runtime_events.apply_patch(session, _keep_wait_detail(session, patch))
-                _settle_ended_claude(session)
+                _settle_stopped_claude(session)
                 if (
                     harness in {"pi", "opencode"}
                     and patch.get("acquisition") == runtime_events.ACQUISITION_EVENT

@@ -9360,6 +9360,13 @@ def _delegated_last_turn_floor(parent: list[dict[str, Any]]) -> float:
     )
     directions = []
     for record in parent:
+        # The intent reader deliberately drops interruption markers as injected
+        # text. They still retire background waits, including acknowledged ones.
+        if record.get("type") == "user" and _tool_result_text(
+            records.message_dict(record)
+        ).startswith("[Request interrupted by user"):
+            directions.append(_record_timestamp(record) or 0)
+            continue
         if observer.message_record_role(record) != "user":
             continue
         message = observer.parse_message_record(record)
@@ -9441,11 +9448,25 @@ def _notification_completions(
 ) -> dict[str, float]:
     found: dict[str, float] = {}
     for record in parent:
-        if record.get("type") != "user" or (record.get("isSidechain") is True) is not sidechain:
+        if (record.get("isSidechain") is True) is not sidechain:
             continue
         at = _record_timestamp(record)
-        text = _tool_result_text(records.message_dict(record))
-        if at is None or not text.lstrip().startswith("<task-notification>"):
+        attachment = record.get("attachment")
+        if (
+            record.get("type") == "attachment"
+            and isinstance(attachment, dict)
+            and attachment.get("commandMode") == "task-notification"
+        ):
+            text = attachment.get("prompt")
+        elif record.get("type") == "user":
+            text = _tool_result_text(records.message_dict(record))
+        else:
+            continue
+        if (
+            at is None
+            or not isinstance(text, str)
+            or not text.lstrip().startswith("<task-notification>")
+        ):
             continue
         call_id = _notification_field(text, "tool-use-id") or task_calls.get(
             _notification_field(text, "task-id"),
@@ -9519,6 +9540,21 @@ def _pair_background_launches(
             launch["last_activity_at"] = max(launch["last_activity_at"], launch["completed_at"])
 
 
+def _delegated_tally(
+    config: RuntimeConfig, transcript_path: str, paths: Sequence[str]
+) -> _ToolReportTally:
+    scan = _live_check_scan(config, transcript_path, child_paths=paths)
+    session_id = os.path.basename(transcript_path).removesuffix(".jsonl")
+    # Calls, acknowledgements, completion pairing and turn boundaries must all
+    # share the parent's native identity before they can earn a Stop exception.
+    parent = [
+        row
+        for row in scan.parent
+        if row.get("sessionId") == session_id and row.get("isSidechain") is not True
+    ]
+    return _tally_from_scan(scan._replace(parent=parent))
+
+
 def delegated_work_status(
     config: RuntimeConfig,
     transcript_path: str | None,
@@ -9556,8 +9592,17 @@ def delegated_work_status(
         if hit is not None and hit[0] == stamp:
             launches, partial, last_turn_floor = hit[1:]
         else:
-            tally = _claude_tally(config, transcript_path, child_paths=paths)
-            launches = list(tally.launches.values())
+            tally = _delegated_tally(config, transcript_path, paths)
+            launches = []
+            for call_id, launch in tally.launches.items():
+                result = tally.results.get(_launch_record_id(call_id, "parent"))
+                launches.append(
+                    {
+                        **launch,
+                        "acknowledged": result is not None
+                        and result.block.get("is_error") is not True,
+                    }
+                )
             partial = tally.reads_from is not None or tally.parent_failed
             last_turn_floor = tally.last_turn_floor
             if state is not None:
@@ -9604,6 +9649,7 @@ def delegated_work_status(
         row
         for row in unpaired
         if row["at"] >= last_turn_floor
+        and row["acknowledged"]
         and row["source"] in {"Claude Agent call", "Claude Task call"}
     ]
     return (

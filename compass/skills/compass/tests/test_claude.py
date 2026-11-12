@@ -4168,6 +4168,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertIsNone(row["work_in_flight_until"])
         row = self.overlay_row(row, remembered=True)
         self.assertEqual(self.START + 3, row["finished_at"])
+        self.assertEqual("idle", row["state"])
 
     def test_stop_after_a_partial_parallel_result_or_foreign_record_ends_the_extension(
         self,
@@ -4214,6 +4215,82 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         self.assertEqual(1, row["delegated_unpaired"])
         self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
         self.assertIsNone(row["work_in_flight_until"])
+
+    def test_unacknowledged_or_retired_background_launch_does_not_suppress_stop(self) -> None:
+        call = self.call(name="Agent", run_in_background=True)
+        for acknowledged in (False, True):
+            for text in (None, "[Request interrupted by user]", "do something else"):
+                if acknowledged and text is None:
+                    continue
+                with self.subTest(acknowledged=acknowledged, boundary=text):
+                    rows = [call, *([self.result(agentId="child")] if acknowledged else [])]
+                    if text is not None:
+                        rows.append(
+                            {
+                                "type": "user",
+                                "sessionId": TURN_SID,
+                                "timestamp": self.START + 2,
+                                "message": {"role": "user", "content": text},
+                            }
+                        )
+                        interrupted = self.row(rows)
+                        self.assertIsNone(interrupted["work_in_flight_until"])
+                        self.assertEqual("idle", interrupted["state"])
+                    rows.extend(_turn_records(self.START + 3)[1:])
+                    row = self.row(rows)
+                    self.assertIsNone(row["work_in_flight_until"])
+                    self.assertEqual("idle", row["state"])
+                    self.assertEqual("idle", self.overlay_row(row)["state"])
+
+    def test_background_launch_and_acknowledgement_must_belong_to_the_parent(self) -> None:
+        for other in ({"isSidechain": True}, {"sessionId": "other-session"}, {"sessionId": None}):
+            for foreign_call in (False, True):
+                with self.subTest(other=other, foreign_call=foreign_call):
+                    rows = [
+                        {
+                            **self.call(name="Agent", run_in_background=True),
+                            **(other if foreign_call else {}),
+                        },
+                        {**self.result(agentId="child"), **other},
+                        *_turn_records(self.START + 3)[1:],
+                    ]
+                    row = self.row(rows)
+                    self.assertIsNone(row["work_in_flight_until"])
+                    self.assertEqual("idle", self.overlay_row(row)["state"])
+
+    def test_foreign_background_completion_and_boundaries_do_not_retire_parent_work(self) -> None:
+        for other in ({"isSidechain": True}, {"sessionId": "other-session"}, {"sessionId": None}):
+            completion: dict[str, Any] = {
+                "type": "user",
+                "sessionId": TURN_SID,
+                "timestamp": self.START + 5,
+                "message": {
+                    "content": "<task-notification><tool-use-id>call</tool-use-id><status>completed</status></task-notification>"
+                },
+            }
+            boundaries = [
+                *_turn_records(self.START + 50),
+                {
+                    "type": "user",
+                    "timestamp": self.START + 51,
+                    "message": {"role": "user", "content": "[Request interrupted by user]"},
+                },
+            ]
+            attachment = {
+                "type": "attachment",
+                "sessionId": TURN_SID,
+                "timestamp": self.START + 5,
+                "attachment": {
+                    "type": "queued_command",
+                    "commandMode": "task-notification",
+                    "prompt": completion["message"]["content"],
+                },
+            }
+            for records_ in ([completion], [attachment], boundaries):
+                with self.subTest(other=other, records=records_):
+                    row = self.row([*self.background(), *[{**r, **other} for r in records_]])
+                    self.assertEqual("working", self.overlay_row(row)["state"])
+                    self.assertEqual(self.START + 900, row["work_in_flight_until"])
 
     def test_waiting_detail_counts_only_current_turn_agent_and_task_launches(self) -> None:
         rows = [
@@ -4283,17 +4360,32 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
 
     def test_completion_and_real_stops_still_settle_without_waiting_for_freshness(self) -> None:
         rows = self.background()
-        completion = {
+        completion: dict[str, Any] = {
             "type": "user",
+            "sessionId": TURN_SID,
             "timestamp": self.START + 5,
             "message": {
                 "content": "<task-notification><tool-use-id>call</tool-use-id><status>completed</status></task-notification>"
             },
         }
-        row = self.row([*rows, completion, *_turn_records(self.START + 7)[1:]], age=8)
-        self.assertEqual(0, row["delegated_unpaired"])
-        self.assertEqual(("idle", "awaiting your message"), (row["state"], row["state_detail"]))
-        self.assertEqual("idle", self.overlay_row(row, age=8)["state"])
+        attachment = {
+            "type": "attachment",
+            "sessionId": TURN_SID,
+            "timestamp": self.START + 5,
+            "attachment": {
+                "type": "queued_command",
+                "commandMode": "task-notification",
+                "prompt": completion["message"]["content"],
+            },
+        }
+        for notification in (completion, attachment):
+            with self.subTest(form=notification["type"]):
+                row = self.row([*rows, notification, *_turn_records(self.START + 7)[1:]], age=8)
+                self.assertEqual(0, row["delegated_unpaired"])
+                self.assertEqual(
+                    ("idle", "awaiting your message"), (row["state"], row["state_detail"])
+                )
+                self.assertEqual("idle", self.overlay_row(row, age=8)["state"])
         self.assertEqual("idle", self.row(_turn_records(self.START + 3), age=4)["state"])
 
     def test_newer_completed_launch_does_not_renew_an_older_outstanding_launch(self) -> None:
@@ -4303,6 +4395,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
             self.result(951, call_id="new", agentId="new-child"),
             {
                 "type": "user",
+                "sessionId": TURN_SID,
                 "timestamp": self.START + 952,
                 "message": {
                     "content": "<task-notification><tool-use-id>new</tool-use-id><status>completed</status></task-notification>"
