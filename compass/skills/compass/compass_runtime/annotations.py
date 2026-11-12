@@ -2905,23 +2905,27 @@ def _typed_lines(
     one space and the line stays one line. A line the cap would clip is
     refused rather than saved clipped: a reader must never find a line saved
     that is not the line they wrote. The goal still clips, as it always has.
-    Blank lines are dropped, and more than six refuses the save whole.
+    Blank lines are dropped regardless of length, and more than six refuses the save whole.
     `reason` receives `line_too_long` (the first offending posted position,
-    1-based, its submitted character length and the cap) or `too_many_lines`
-    (the non-blank count and maximum). Length counts the original string;
-    the clipping decision still compares its sanitized forms.
+    1-based, its character length and the cap) or `too_many_lines` (the
+    non-blank count and maximum). Length counts the submitted string or,
+    when redaction lengthens it, the sanitized text used for the clipping decision.
     """
     if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
         return None
     texts: list[str] = []
     for position, item in enumerate(value, start=1):
+        whole = records.safe_text(item, max(cap, len(item)) * 16)
+        if not whole.strip():
+            continue
         text = records.safe_text(item, cap)
-        if text != records.safe_text(item, cap * 16):
+        if text != whole:
             if reason is not None:
-                reason.update(code="line_too_long", line=position, length=len(item), cap=cap)
+                reason.update(
+                    code="line_too_long", line=position, length=max(len(item), len(whole)), cap=cap
+                )
             return None
-        if text.strip():
-            texts.append(text)
+        texts.append(text)
     if len(texts) > reading.MAX_OUTCOME_LINES:
         if reason is not None:
             reason.update(code="too_many_lines", count=len(texts), max=reading.MAX_OUTCOME_LINES)

@@ -30,10 +30,13 @@ reading reads each line on its own and shows one row per line.
 `POST /api/annotate` with a harness, a session id and `goal` or `lines` (a list of strings, the
 whole checklist) does the same thing without the page. Use the `harness` and `sid` published by
 `/api/data` or `/api/session`: Claude Code's `sid` is the eight-character transcript prefix,
-and a full native session UUID is refused rather than stored under a key no row can show.
+and saving words under a full native session UUID is refused rather than stored under a key
+no row can show. Discard and settle can still reach entries an earlier build stored under one.
 Other harnesses keep their published ids. `expected_revision` refuses a goal or a list
 saved from a view of an older revision (the page sends it with both and keeps what you typed), and
-a seventh line or a line over 240 characters is refused rather than clipped. `"read_from_now": true` beside them, or beside `adopt`, opens a new reading window as a first save does; without it a save over saved words keeps the window it had. It writes a numbered revision; an earlier revision is never edited, so anything citing
+a seventh non-blank line or a non-blank line over 240 characters is refused rather than clipped.
+Lines that are blank after sanitizing and stripping are dropped regardless of length.
+`"read_from_now": true` beside them, or beside `adopt`, opens a new reading window as a first save does; without it a save over saved words keeps the window it had. It writes a numbered revision; an earlier revision is never edited, so anything citing
 revision 1 still means what it meant. Send `{"clear": true}` to forget a session's words entirely
 (beside `expected_revision`, a discard naming an older revision than the stored one is refused
 and takes nothing; the page's Discard everything sends the revision it had drawn when the discard
@@ -58,8 +61,9 @@ Every HTTP 200 reply also carries `reason`, which is `null` except for these dia
 
 - `{"code": "line_too_long", "line": 3, "length": 286, "cap": 240}` names the first line
   the cap would clip. `line` is its 1-based position in the posted list, including blank entries;
-  `length` counts characters in the original submitted string. Validation still compares the
-  sanitized, redacted text with its capped form. The legacy `output` field counts as line 1.
+  `length` counts characters in the submitted string or, when redaction lengthens it, the
+  sanitized text. Validation compares the sanitized, redacted text with its capped form.
+  The legacy `output` field counts as line 1.
 - `{"code": "too_many_lines", "count": 7, "max": 6}` counts non-blank lines after sanitizing.
   The first overlong line takes precedence if the list breaks both limits.
 - `{"code": "unmatchable_session"}` means the identity cannot match a published row, using

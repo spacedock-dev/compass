@@ -200,6 +200,48 @@ class SixLinesAreKeptAndShownOneByOneTest(_StoreCase):
         texts = [line["text"] for line in self.entry()["revisions"][-1]["lines"]]
         self.assertEqual(["one", "two"], texts)
 
+    def test_blank_lines_are_dropped_regardless_of_length(self) -> None:
+        blanks = {
+            "empty": "",
+            "at-cap": " " * 240,
+            "over-cap": " " * 241,
+            "long": " " * 5000,
+            "sanitized": "\u202e\x00\t\n" * 1000,
+        }
+        for name, blank in blanks.items():
+            with self.subTest(blank=name):
+                reason: dict[str, str | int] = {}
+                outcome = annotation_store.annotate(
+                    self.config,
+                    self.state,
+                    "claude",
+                    name,
+                    lines=[blank, *SIX],
+                    now=NOW,
+                    reason=reason,
+                )
+
+                self.assertEqual(annotation_store.OUTCOME_STORED, outcome)
+                self.assertEqual({}, reason)
+                texts = [line["text"] for line in self.entry(name)["revisions"][-1]["lines"]]
+                self.assertEqual(SIX, texts)
+
+    def test_a_nonblank_line_after_long_whitespace_is_still_refused(self) -> None:
+        reason: dict[str, str | int] = {}
+        outcome = annotation_store.annotate(
+            self.config,
+            self.state,
+            "claude",
+            "s-1",
+            lines=[" " * 4000 + "x"],
+            now=NOW,
+            reason=reason,
+        )
+
+        self.assertEqual(annotation_store.OUTCOME_REFUSED, outcome)
+        self.assertEqual({"code": "line_too_long", "line": 1, "length": 4001, "cap": 240}, reason)
+        self.assertEqual((), annotation_store.load(self.config))
+
     def test_saving_the_same_list_again_mints_no_revision(self) -> None:
         annotation_store.annotate(self.config, self.state, "claude", "s-1", lines=SIX, now=NOW)
 
@@ -2075,6 +2117,37 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
         self.assertEqual((), annotation_store.load(self.config))
         self.assertEqual((), annotation_store.active(self.config, self.state))
 
+    def test_redaction_that_exceeds_the_cap_reports_the_sanitized_length(self) -> None:
+        for suffix_length, sanitized_length in ((213, 242), (214, 243)):
+            with self.subTest(suffix_length=suffix_length):
+                line = "http://user:a@example.com/" + "x" * suffix_length
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": "claude",
+                            "sid": "abcd1234",
+                            "goal": "Save the whole request",
+                            "lines": [line],
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual(
+                    {
+                        "code": "line_too_long",
+                        "line": 1,
+                        "length": sanitized_length,
+                        "cap": 240,
+                    },
+                    answer["reason"],
+                )
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
     def test_a_seventh_line_with_a_goal_preserves_stored_and_cached_words(self) -> None:
         self.post(
             json.dumps(
@@ -2163,6 +2236,42 @@ class AnnotateRefusalReasonsTest(unittest.TestCase):
                 self.assertEqual("refused", answer["outcome"])
                 self.assertIs(False, answer["persisted"])
                 self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+                self.assertEqual((), annotation_store.load(self.config))
+                self.assertEqual((), annotation_store.active(self.config, self.state))
+
+    def test_each_word_save_under_a_full_claude_uuid_is_unmatchable(self) -> None:
+        saves: dict[str, dict[str, Any]] = {
+            "lines": {"lines": ["Keep the public API"]},
+            "adopt": {
+                "adopt": "first-prompt",
+                "expected_prompt": "Keep the public API",
+                "expected_prompt_at": NOW - 10,
+                "expected_revision": 0,
+            },
+            "add_direction": {
+                "add_direction": "fact:later-direction",
+                "text": "Keep the public API",
+                "expected_revision": 0,
+            },
+        }
+        for name, save in saves.items():
+            with self.subTest(save=name):
+                status, body = self.post(
+                    json.dumps(
+                        {
+                            "harness": "claude",
+                            "sid": "abcd1234-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                            **save,
+                        }
+                    ).encode()
+                )
+
+                self.assertEqual(200, status)
+                answer = json.loads(body)
+                self.assertEqual("refused", answer["outcome"])
+                self.assertIs(False, answer["persisted"])
+                self.assertEqual({"code": "unmatchable_session"}, answer["reason"])
+                self.assertIsNone(answer["saved_revision"])
                 self.assertEqual((), annotation_store.load(self.config))
                 self.assertEqual((), annotation_store.active(self.config, self.state))
 

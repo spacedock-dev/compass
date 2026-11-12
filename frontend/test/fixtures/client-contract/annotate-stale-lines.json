@@ -24,6 +24,7 @@
       "ok": true,
       "outcome": "refused",
       "persisted": false,
+      "reason": null,
       "removed": null,
       "revision": 1,
       "revision_count": 1,
@@ -33,7 +34,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "173",
+      "Content-Length": "187",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Content-Type": "application/json"
     },
