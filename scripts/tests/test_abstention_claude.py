@@ -1625,6 +1625,9 @@ class DRC4731PreparationBeforeChargeTest(unittest.TestCase):
         with (
             mock.patch.object(tempfile, "mkstemp", side_effect=mkstemp),
             mock.patch.object(os, "fdopen", side_effect=OSError("cannot open stream")),
+            # The settings check before preparation also opens files with `os.fdopen` when this
+            # machine has a remote-settings cache; it is not the stream this test breaks.
+            mock.patch.object(observer, "claude_lane_refusal", return_value=""),
         ):
             self.refused()
         self.assertEqual(1, len(descriptors))

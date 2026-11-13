@@ -185,6 +185,9 @@ class CodexQualificationTest(_CodexInstallationFixture):
         parser_patch = mock.patch.object(sources, "parser_digest", return_value=self.parser)
         parser_patch.start()
         self.addCleanup(parser_patch.stop)
+        # A CODEX_HOME must exist, be this account's and be writable by no other before the
+        # route names OpenAI (`claude_settings.verified_folder`).
+        (self.home / "codex").mkdir(mode=0o700)
         for patch in (
             mock.patch.object(authority, "real_home", return_value=str(self.home)),
             mock.patch.object(authority, "CODEX_GRANT_PATH", str(self.home / "grant.json")),
