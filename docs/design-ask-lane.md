@@ -79,6 +79,10 @@ A read deadline on the accept path. `BaseHTTPRequestHandler.timeout` is `None`. 
 small `Content-Length` and then goes silent pins a handler indefinitely, and a design whose normal
 case is a pinned handler cannot tell that apart from its normal case.
 
+The server has since gained a 10-second socket timeout and a cap of 64 connections. Neither
+reverses the ruling: a held request per question would spend one of those capped slots for as long
+as a person takes to answer, and the timeout bounds waits on the socket, not a wait on a reader.
+
 Each poll returns inside `ask_poll_timeout_sec`, so all three become ordinary. The cost is a request
 every few seconds per outstanding question, against a loopback server that already publishes a
 snapshot on a five second cadence.
