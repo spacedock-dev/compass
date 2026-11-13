@@ -69,7 +69,7 @@ local-network access to the allowed origins. Separate loopback fixtures prove th
 receive no HTTP request or WebSocket upgrade. The policy and permission belong only to this test
 browser context.
 Stories have a separate
-strict typecheck with dependency declaration checking skipped because Storybook 10.6.0's declarations
+strict typecheck with dependency declaration checking skipped because Storybook 10.6's declarations
 fail with TypeScript 6 and exact optional properties; the page's declaration checks stay strict.
 Stories are excluded from page coverage and the CSS budget. They live outside Tailwind's explicit
 source paths. `pnpm build:check` checks the page and its source provenance; dependency edits
