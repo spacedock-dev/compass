@@ -454,6 +454,21 @@ describe('leaving while the start is in flight', () => {
   });
 });
 
+describe('leaving while the start waits out the dashboard’s cap', () => {
+  it('sends no further start once the reader has gone', async () => {
+    const server = leaseServer();
+    server.next = () => busy();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    expect(actions(server)).toEqual(['start']);
+    await page.go('#n=intent');
+    await page.settle();
+    await page.advance(5_000);
+    expect(actions(server)).toEqual(['start']);
+  });
+});
+
 describe('an old lease does not carry into a new one', () => {
   it('forgets the old question and level on leaving and on pressing again', async () => {
     const server = leaseServer();

@@ -35,18 +35,30 @@ export const BEAT_MS = 20_000;
 const BUSY_RETRIES = 3;
 const BUSY_WAIT_MAX_SEC = 2;
 
+/** The pauses between tries that are still pending, so leaving can end them at once. */
+type Pauses = Set<() => void>;
+
 async function untilNotBusy<T>(
   send: () => Promise<ApiResult<T>>,
   env: Environment,
   cancelled: () => boolean,
+  pauses: Pauses,
 ): Promise<ApiResult<T>> {
   let result = await send();
   for (let tries = 0; tries < BUSY_RETRIES && !cancelled(); tries += 1) {
     if (result.kind !== 'http-error' || result.retryAfter === undefined) break;
     const seconds = Math.min(result.retryAfter, BUSY_WAIT_MAX_SEC);
     await new Promise<void>((resolve) => {
-      env.clock.setTimeout(resolve, seconds * 1000);
+      const end = () => {
+        env.clock.clearTimeout(handle);
+        pauses.delete(end);
+        resolve();
+      };
+      const handle = env.clock.setTimeout(end, seconds * 1000);
+      pauses.add(end);
     });
+    // Leaving during the pause: nothing more is sent, so no start is made after the reader has gone.
+    if (cancelled()) break;
     result = await send();
   }
   return result;
@@ -291,6 +303,7 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
     // The server said the lease is gone, so there is nothing left to stop.
     let gone = false;
     let timer: unknown = null;
+    const pauses: Pauses = new Set();
     // Aborts the beats only. The start is never aborted: a lease the server made after the reader had
     // gone has to be answered, and stopped.
     const abort = new AbortController();
@@ -306,6 +319,7 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
         () => client.postLiveMonitor(body('beat', { visible }), abort.signal),
         env,
         () => closed,
+        pauses,
       ).then((result) => {
         if (closed || result.kind !== 'ok') return;
         const lease = learn(result.body.state);
@@ -329,6 +343,7 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
       () => client.postLiveMonitor(body('start', { observer_model: 1, visible: !env.isHidden() })),
       env,
       () => closed,
+      pauses,
     ).then((result) => {
       if (result.kind === 'aborted') return;
       if (result.kind !== 'ok') {
@@ -366,6 +381,7 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
     });
     return () => {
       closed = true;
+      for (const end of [...pauses]) end();
       stopBeats();
       offHidden();
       offVisible();
