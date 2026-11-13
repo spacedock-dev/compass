@@ -5542,7 +5542,10 @@ A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encodin
 server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
 closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
 health probes wait that refusal out within their own timeouts rather than reading it as an answer;
-a probe that never gets past it says the dashboard is busy and stops nothing. The terminal Live
+a probe that never gets past it says the dashboard is busy and stops nothing. So do the terminal
+Live monitor's start and stop requests, which report busy rather than refused when the cap never
+clears, and the page's Live monitor start and beats, which send again a few times and then show
+the dashboard as unreachable. The terminal Live
 monitor holder's heartbeat and the tmux interaction client's lease renewal wait it out too, so a
 busy dashboard does not end a lease: the holder counts it against its failure budget, and the pane
 client keeps trying until its lease would have lapsed. A connection that sends nothing for 10

@@ -23,6 +23,7 @@ from compass_runtime import monitor_store
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
 
+from . import support
 from .support import SERVER_PATH, saturated_server
 from .test_terminal_client import FakeDashboard
 
@@ -877,3 +878,73 @@ class MonitorCorrectionsTest(unittest.TestCase):
             if worker is not None:
                 worker.kill()
                 worker.wait()
+
+
+class MonitorAtTheConnectionCapTest(unittest.TestCase):
+    def test_the_stop_is_delivered_once_a_slot_frees(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            dashboard = client.Dashboard(httpd.server_port, 7, 1.0, None)
+            posts: list[dict[str, Any]] = []
+
+            def post(*_args: Any, **kwargs: Any) -> client.Reply:
+                posts.append(kwargs)
+                return client.Reply(200, {"ok": True})
+
+            found = client.Dashboard(httpd.server_port, 7, 1.0, None)
+            with (
+                mock.patch.object(client, "probe", return_value=found),
+                mock.patch.object(client, "post", post),
+            ):
+                self.assertFalse(monitor._stop_holder(dashboard, "one", "a" * 32))
+        self.assertTrue(posts[0]["wait_when_busy"])
+
+    def test_a_stop_at_a_cap_that_never_clears_is_reported_busy(self) -> None:
+        dashboard = client.Dashboard(4554, 7, 1.0, None)
+        busy = client.DashboardBusy("busy")
+        with (
+            mock.patch.object(client, "probe", return_value=dashboard),
+            mock.patch.object(client, "post", side_effect=busy),
+        ):
+            self.assertTrue(monitor._stop_holder(dashboard, "one", "a" * 32))
+
+    def test_a_stop_is_busy_when_even_the_probe_meets_the_cap(self) -> None:
+        with support.saturated_server() as (httpd, _release):
+            dashboard = client.Dashboard(httpd.server_port, 7, 1.0, None)
+            with mock.patch.object(client, "post") as post:
+                self.assertTrue(monitor._stop_holder(dashboard, "one", "a" * 32))
+        post.assert_not_called()
+
+    def test_a_start_at_a_cap_that_never_clears_is_said_to_be_busy_not_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            generation = "b" * 32
+            store = monitor_store.Store(home, "one")
+            store.write(
+                "run",
+                {"sid": "one", "generation": generation, "dashboard": [4554, 7, 1.0, None]},
+            )
+            posts: list[dict[str, Any]] = []
+
+            def post(*_args: Any, **kwargs: Any) -> client.Reply:
+                posts.append(kwargs)
+                raise client.DashboardBusy("busy")
+
+            with (
+                mock.patch.dict(os.environ, {"COMPASS_STATE_HOME": home}),
+                mock.patch.object(client, "state_home", return_value=home),
+                mock.patch.object(client, "post", post),
+                mock.patch.object(monitor, "_stop_holder", return_value=False),
+            ):
+                self.assertEqual(1, monitor.sidecar("one", generation))
+            status = store.read("status")
+        self.assertTrue(posts[0]["wait_when_busy"])
+        self.assertEqual("busy", status["reason"])
+        self.assertFalse(status["started"])
+
+    def test_the_command_tells_a_busy_start_from_a_refused_one(self) -> None:
+        store = mock.Mock()
+        store.read.return_value = {"generation": "a" * 32, "reason": "busy", "answer": {}}
+        with mock.patch.object(monitor, "spawn"), mock.patch("sys.stderr", io.StringIO()) as err:
+            self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
+        self.assertIn(client.sentence("dashboard_busy"), err.getvalue())
+        self.assertNotIn(client.sentence("monitor_refused"), err.getvalue())
