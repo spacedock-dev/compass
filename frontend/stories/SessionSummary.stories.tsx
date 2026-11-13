@@ -1055,7 +1055,7 @@ export const StoppedByClaudeCodeSettings: Story = {
     const none = await stateOf(region, 'none');
     const reason = none.querySelector('[data-next-summary-reason]');
     await expect(reason).toHaveTextContent(
-      'Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies. It kept no finished part.',
+      'Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check. It kept no finished part.',
     );
     await expect(reason).not.toHaveTextContent('settings-refused');
     await expect(reason).not.toHaveTextContent(/claude command/);

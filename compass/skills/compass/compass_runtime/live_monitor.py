@@ -163,6 +163,16 @@ def _key(config: RuntimeConfig, session_key: str) -> tuple[str, str]:
     return (str(config.state_dir), session_key)
 
 
+# The shared settings check's reason, held here so the lease table reaches it through this
+# module rather than importing `observer` itself (the reviewed runtime import graph).
+SETTINGS_REFUSED = observer.SETTINGS_REFUSED
+
+
+def settings_refusal(config: RuntimeConfig) -> str:
+    """`SETTINGS_REFUSED` when the check every Claude lane shares refuses this one, or ""."""
+    return SETTINGS_REFUSED if observer.claude_lane_refusal(config.claude_monitor_model) else ""
+
+
 @contextlib.contextmanager
 def prepare(
     config: RuntimeConfig,
@@ -177,8 +187,8 @@ def prepare(
     )
     # The settings check every Claude lane shares, said as its own reason; preparation runs it
     # again, and both come before this lane's charge.
-    if observer.claude_lane_refusal(config.claude_monitor_model):
-        raise observer.ClaudePreparationError(observer.SETTINGS_REFUSED)
+    if settings_refusal(config):
+        raise observer.ClaudePreparationError(SETTINGS_REFUSED)
     with observer.prepare_claude_exec(
         config,
         runner=runner,

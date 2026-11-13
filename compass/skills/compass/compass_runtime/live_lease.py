@@ -27,7 +27,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import live_monitor, observer, reading_policy, reading_route, supervise
+from . import live_monitor, reading_policy, reading_route, supervise
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -45,7 +45,7 @@ END_REASONS = (
     "declined",
     "stopped",
     "cap",
-    observer.SETTINGS_REFUSED,
+    live_monitor.SETTINGS_REFUSED,
 )
 # What a refused start says, and the reasons a lapsed end can be told apart by.
 _ENDED_KEPT = 256
@@ -56,10 +56,11 @@ _REFUSAL_ENDS = {
     "model-calls-paused": "paused",
     "run-disabled": "paused",
     "not-monitored": "stopped",
-    # Settings that changed under a running lease: ending it says why, where staying on would
-    # make no check and say nothing.
-    observer.SETTINGS_REFUSED: observer.SETTINGS_REFUSED,
 }
+# Refused ticks in a row before settings that changed under a running lease end it, saying why
+# rather than staying on and checking nothing. One is not enough: a settings file caught
+# mid-write reads as unreadable once, and a refused tick is uncharged, so the next one retries.
+SETTINGS_REFUSALS_TO_END = 2
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,6 +85,7 @@ class _Lease:
     episode: int
     holders: dict[str, _Holder] = dataclasses.field(default_factory=dict)
     last_attempt: float | None = None
+    settings_refused: int = 0
 
 
 class Leases:
@@ -377,7 +379,14 @@ class Leases:
         with self._lock:
             if self._leases.get(key) is not lease:
                 return
-            if end is not None and result.reason != "stopped":
+            refused = result.status == "refused" and result.reason == live_monitor.SETTINGS_REFUSED
+            lease.settings_refused = lease.settings_refused + 1 if refused else 0
+            if refused:
+                if lease.settings_refused >= SETTINGS_REFUSALS_TO_END:
+                    self._end_locked(key, live_monitor.SETTINGS_REFUSED, now)
+                else:
+                    lease.last_attempt = now
+            elif end is not None and result.reason != "stopped":
                 self._end_locked(key, end, now)
             elif result.status in {"ran", "failed", "skipped", "cancelled"}:
                 lease.last_attempt = now
@@ -436,7 +445,7 @@ class Leases:
             del self._ended[next(iter(self._ended))]
         live_monitor.end(self.config, key)
 
-    def _start_refusal(self, harness: str, sid: str, now: float) -> str:  # noqa: PLR0911 - one exit per refusal
+    def _start_refusal(self, harness: str, sid: str, now: float) -> str:
         if self.config.model_calls_disabled:
             return "no-observer-model"
         if harness != HARNESS:
@@ -455,9 +464,7 @@ class Leases:
             return "unavailable"
         # The check every tick's preparation runs, asked here too so the switch says why at once
         # instead of turning on and checking nothing. It reads files only and charges nothing.
-        if observer.claude_lane_refusal(self.config.claude_monitor_model):
-            return observer.SETTINGS_REFUSED
-        return ""
+        return live_monitor.settings_refusal(self.config)
 
     def _answer(self, harness: str, sid: str, refusal: str) -> dict[str, Any]:
         state = self._state(harness, sid, self._clock())

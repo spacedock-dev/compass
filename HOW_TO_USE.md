@@ -719,8 +719,10 @@ whole procedure.
 
 ## When Claude Code settings stop a check
 
-Find goal, session summaries, unasked checks and the Live monitor all run through your Claude Code.
-Before each call, Compass reads the Claude Code settings your organization manages. If those
+Session summaries and the Live monitor run through your Claude Code, and so do Find goal and
+unasked checks when Claude Code reads the session (Codex reads it when `claude` is not on the
+dashboard's PATH; see the Codex paragraph below). Before each call, Compass reads the Claude Code
+settings your organization manages. If those
 settings could send the call somewhere Compass cannot name, or run a command of their own, Compass
 does not start it, and nothing is sent or charged for it. Find goal and the Live monitor say so
 beside their control, a summary says so on its card, and `--summary` and `--monitor` say so in the
@@ -749,15 +751,31 @@ To find the setting:
      and `disableAllHooks`.
 
 Metrics export on its own (`CLAUDE_CODE_ENABLE_TELEMETRY` with an OTLP endpoint) does not stop a
-check. Three things stop it without any of those keys: a configuration profile for Claude Code under
-`/Library/Managed Preferences` on macOS, which Compass cannot read; `CLAUDE_CODE_MANAGED_SETTINGS_PATH`
-set in the dashboard's environment; and a `CLAUDE_CONFIG_DIR` that is not a folder you own and only
-you can write to.
+check. These stop it without any of the keys above:
+
+- a configuration profile for Claude Code under `/Library/Managed Preferences` on macOS, which
+  Compass cannot read;
+- `CLAUDE_CODE_MANAGED_SETTINGS_PATH` set in the dashboard's environment;
+- a `CLAUDE_CONFIG_DIR` that is not a folder you own and only you can write to;
+- a settings file Compass cannot read as plain JSON: a syntax error, a key given twice, or an
+  `env` value that is not text;
+- a managed file that sets `agent`, or sets `HOME`, `USER`, `CLAUDE_CONFIG_DIR` or
+  `CLAUDE_CODE_MANAGED_SETTINGS_PATH` in its `env`.
+
+On Windows and under WSL, only the `CLAUDE_CONFIG_DIR` check applies.
+
+When Codex reads the session, Find goal and unasked checks stop for two other reasons. One is a
+`CODEX_HOME` that is not a folder you own and only you can write to, because that folder chooses the
+account the call signs in as. The other is no private folder for the call to run in: Compass makes
+one in your temporary folder, or in `/tmp` when the temporary folder is inside your home folder or
+names your account, and stops when neither will do. Find goal says which applies.
 
 If the setting is yours to change, change it and press again. Compass reads these files before every
-call, so nothing needs a restart; turn the Live monitor on again yourself. If your organization
-manages the setting, it is doing what they set it up to do, so ask whoever manages it. Compass does
-not run these checks around it.
+call, so a changed file needs no restart. A changed `CLAUDE_CONFIG_DIR` or
+`CLAUDE_CODE_MANAGED_SETTINGS_PATH` reaches Compass only after you restart the dashboard from a
+shell that has it. Turn the Live monitor on again yourself. If your organization manages the
+setting, it is doing what they set it up to do, so ask whoever manages it. Compass does not run
+these checks around it.
 
 ## Alert once on a workflow stage
 

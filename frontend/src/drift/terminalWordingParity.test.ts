@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, it, vi } from 'vitest';
 import { parseFocusedSummary, stampModel } from '../api/summary';
+import { refusalNote } from './monitor';
 import * as observed from '../observed';
 import { policyReason } from './route';
 import * as sentences from './sentences';
@@ -200,6 +201,7 @@ it('a person reads the page wording and derived reading in their terminal', () =
           POLICY_UNREADABLE: policyReason({ reason: 'store-unavailable' }),
         },
       },
+      monitor: { 'settings-refused': refusalNote('settings-refused') },
       summary: {
         withheld: WITHHELD_LINES,
         gaps: GAP_LINES,

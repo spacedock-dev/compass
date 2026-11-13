@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2325571,
+    "bytes": 2327423,
     "file": "react.html",
-    "sha256": "24785c8ae97b99a8dc616c5b8c7bc2aecc189f8f2fe0762f56f870780666a629"
+    "sha256": "689dda3e80e86fe22f6d434564dc281bd5b7a27ae47843d7eab6eec9048128ce"
   },
   "format": 1,
   "frontend": "react",
@@ -763,7 +763,7 @@
       },
       {
         "file": "frontend/src/drift/monitor.ts",
-        "sha256": "cdf37493960278e408bf4d65f328eaef0bf573b24eaf231076c0ed8175535037"
+        "sha256": "180d278b8a89fe28f7d1e7d4531732d8a09e4ac25a9decb9f8c32b8b3ee4afb4"
       },
       {
         "file": "frontend/src/drift/notice.ts",
@@ -791,7 +791,7 @@
       },
       {
         "file": "frontend/src/drift/sentences.ts",
-        "sha256": "be0c7f626879c5843cc13e05932a45361af7578f36035d9c8577975a21489357"
+        "sha256": "9f477ffd21eecfc0473e5621458d405ac58beacff9fde4208361e7a60640b84d"
       },
       {
         "file": "frontend/src/drift/shape.ts",
@@ -911,7 +911,7 @@
       },
       {
         "file": "frontend/src/intent/find.ts",
-        "sha256": "b6594b22db0c2af9da09f7ad9a7cac11cce479c9d8ad59823070f84656ce58eb"
+        "sha256": "0829eb439d2f0a21f60f5c7bb727f7edc605b147c3f0816c3edd31681c906a47"
       },
       {
         "file": "frontend/src/intent/held.ts",
@@ -955,7 +955,7 @@
       },
       {
         "file": "frontend/src/intent/sentences.ts",
-        "sha256": "0cfc56345af3fd158f997b2d2620d96f969ffc4c5b7ce7e41b00b3b884894d57"
+        "sha256": "7feb40d7487715bc6358f9c51de57a950623ae8f960ad03db8227f9e0fc82f15"
       },
       {
         "file": "frontend/src/intent/testing.tsx",
@@ -1307,7 +1307,7 @@
       },
       {
         "file": "frontend/src/sessions/summary.ts",
-        "sha256": "d7230c7501f1219b2d048272faf9c772ba203d75e8bb13d5759ebae1b0a1ad24"
+        "sha256": "8c7843a1f088d568b4e27468e0982c92c26ad38cae1972d18782b120fc3991aa"
       },
       {
         "file": "frontend/src/sessions/summaryActions.ts",

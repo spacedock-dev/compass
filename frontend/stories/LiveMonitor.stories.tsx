@@ -283,7 +283,7 @@ export const RefusedToStartByClaudeCodeSettings: Story = {
     await userEvent.click(toggle);
     await waitFor(() =>
       expect(note()).toHaveTextContent(
-        'Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+        'Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.',
       ),
     );
     await expect(note()).not.toHaveTextContent(/not available to monitor/);
@@ -301,7 +301,7 @@ export const TurnedOffByClaudeCodeSettings: Story = {
     await endsBy('settings-refused', args, card);
     await waitFor(() =>
       expect(note()).toHaveTextContent(
-        'Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+        'Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.',
       ),
     );
     await expect(await monitorSwitch(card)).toHaveAttribute('aria-checked', 'false');

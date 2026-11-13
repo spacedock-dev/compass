@@ -60,6 +60,10 @@ export const FIND_GOAL_LOST =
 export const FIND_GOAL_REFUSED = 'Compass could not look for a goal just now. Nothing was changed.';
 /* `goal_find.WHY_SETTINGS_REFUSED`: the shared settings check refused before the charge, so nothing left. */
 export const FIND_GOAL_SETTINGS_REFUSED = `Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. ${CLAUDE_SETTINGS_LOOK}`;
+/* The same reason on a Codex route: the Codex lane refuses an unverified CODEX_HOME or a temp folder it cannot
+   make private, never a Claude Code setting. */
+export const FIND_GOAL_CODEX_SETTINGS_REFUSED =
+  'Compass did not look for a goal, because it could not verify the Codex folder this call would sign in from, or could not make a private folder for it to run in. Nothing was sent or charged. Check that CODEX_HOME, if set, is a folder you own that only you can write to, and that your temporary folder is not inside your home folder.';
 export const FIND_GOAL_RUNNING = 'A search for a goal is already running for this session.';
 export const FIND_GOAL_FAILED = (label: string): string =>
   `${label} did not answer, so no goal was found. Nothing was changed. Press Find goal to try again.`;

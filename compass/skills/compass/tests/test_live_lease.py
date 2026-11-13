@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import live_lease, live_monitor, observer, reading_policy, reading_route
+from compass_runtime import live_lease, live_monitor, reading_policy, reading_route
 
 from .support import make_config
 from .test_live_monitor import GOAL, FakeRunner, facts
@@ -142,10 +142,10 @@ class StartIsRefusedFor(Rig):
         # The lanes' shared settings check, asked at the start so the switch says why at once
         # rather than turning on and making no check.
         with mock.patch.object(
-            observer, "claude_lane_refusal", return_value="context-config"
+            live_monitor, "settings_refusal", return_value=live_monitor.SETTINGS_REFUSED
         ) as checked:
             refused = self.start()
-        checked.assert_called_with(self.config.claude_monitor_model)
+        checked.assert_called_with(self.config)
         self.assertEqual((False, "settings-refused"), (refused["ok"], refused["reason"]))
         self.assertFalse(refused["state"]["on"])
         self.run_for(70, beat=(TAB_A,))
@@ -392,15 +392,56 @@ class WhatEndsTheLeaseOtherwise(Rig):
         state = self.leases.state(HARNESS, SID)
         self.assertEqual((False, "cap"), (state["on"], state["last_end"]["reason"]))
 
-    def test_settings_that_move_the_call_end_it_with_their_own_reason(self) -> None:
-        # Settings changed after the start: the tick is refused uncharged, and the lease ends
-        # saying so instead of staying on and checking nothing.
+    def test_one_refused_tick_is_skipped_and_the_next_one_retries(self) -> None:
+        # A settings file caught mid-write reads as unreadable once; that must not end the lease.
         self.verdict = live_monitor.Tick("refused", "settings-refused")
         self.start()
-        self.run_for(70, beat=(TAB_A,))
+        self.run_for(20, beat=(TAB_A,))
+        self.assertEqual(1, len(self.ticks))
+        self.assertTrue(self.leases.state(HARNESS, SID)["on"])
+        self.verdict = live_monitor.Tick("skipped", "unchanged")
+        self.run_for(60, beat=(TAB_A,))
+        self.assertEqual(2, len(self.ticks))
+        self.assertEqual(NOW + 20 + 60 - 15, self.ticks[1][1], "retried one interval later")
+        state = self.leases.state(HARNESS, SID)
+        self.assertTrue(state["on"])
+        self.assertIsNone(state["last_end"])
+
+    def test_two_refused_ticks_in_a_row_end_it_with_their_own_reason(self) -> None:
+        # Settings changed after the start: each tick is refused uncharged, and the second ends
+        # the lease saying so instead of staying on and checking nothing.
+        self.verdict = live_monitor.Tick("refused", "settings-refused")
+        self.start()
+        self.run_for(80, beat=(TAB_A,))
+        self.assertEqual(2, len(self.ticks))
         state = self.leases.state(HARNESS, SID)
         self.assertEqual((False, "settings-refused"), (state["on"], state["last_end"]["reason"]))
-        self.assertEqual(1, len(self.ticks))
+
+    def test_a_check_between_two_refusals_starts_the_count_again(self) -> None:
+        refused = live_monitor.Tick("refused", "settings-refused")
+        verdicts = iter([refused, live_monitor.Tick("skipped", "unchanged"), refused])
+
+        def tick(_config: Any, session_key: str, **_kwargs: Any) -> live_monitor.Tick:
+            self.ticks.append((session_key, self.now))
+            return next(verdicts)
+
+        leases = live_lease.Leases(
+            self.config,
+            clock=lambda: self.now,
+            row_for=lambda harness, sid: self.rows.get((harness, sid)),
+            inputs_for=self._inputs,
+            tick=tick,
+            start_thread=False,
+        )
+        self.addCleanup(leases.close)
+        leases.start(HARNESS, SID, TAB_A)
+        end = self.now + 140
+        while self.now < end:
+            self.now += 5
+            leases.beat(HARNESS, SID, TAB_A)
+            leases.step()
+        self.assertEqual(3, len(self.ticks))
+        self.assertTrue(leases.state(HARNESS, SID)["on"])
 
     def test_pause_ends_every_lease_paused_and_cancels_a_check_in_flight(self) -> None:
         self.rows[(HARNESS, "two")] = {"harness": HARNESS, "sid": "two", "ended_at": None}

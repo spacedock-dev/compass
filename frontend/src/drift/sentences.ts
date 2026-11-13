@@ -4,11 +4,12 @@
    token set against this table. */
 
 /* Where to look when the settings check every Claude Code lane shares refuses a call (`settings-refused`): the
-   sources that check reads are the managed ones, never the reader's own settings.json
+   sources that check reads are the managed ones and the config folder, never the reader's own settings.json
    ([SECURITY.md](../../../SECURITY.md#claude-code-reading-calls)). Find goal, a summary and the Live monitor end
-   their refusal with it; HOW_TO_USE.md walks through each setting. */
+   their refusal with it. It names the common causes and points at HOW_TO_USE.md for the rest, because the
+   check refuses on more than a sentence can list. */
 export const CLAUDE_SETTINGS_LOOK =
-  'Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.';
+  'Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.';
 
 export const DEPARTURE = 'departure';
 export const CONSISTENT = 'consistent with the evidence read';
