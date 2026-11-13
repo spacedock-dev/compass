@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -362,6 +363,26 @@ def poll_fast(httpd: Any) -> Any:
     Use as a thread target in place of the bound `httpd.serve_forever`.
     """
     return functools.partial(httpd.serve_forever, SERVE_POLL_INTERVAL)
+
+
+@contextlib.contextmanager
+def saturated_server() -> Any:
+    """A dashboard at its connection cap: one slot, held by a client that sends nothing.
+
+    Yields the server and a callable that lets the held connection go, which returns the slot.
+    """
+    bounded = type("Bounded", (http_api.CompassHTTPServer,), {"CONNECTION_LIMIT": 1})
+    httpd = bounded(("127.0.0.1", 0), build_app(), PAGE_BYTES)
+    thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+    thread.start()
+    held = socket.create_connection(("127.0.0.1", httpd.server_port), timeout=5.0)
+    try:
+        yield httpd, held.close
+    finally:
+        held.close()
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
 
 
 def serve_until_closed(httpd: Any) -> threading.Thread:

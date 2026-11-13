@@ -1884,7 +1884,10 @@ class _ReadingRouteHandler(unittest.TestCase):
         )
         handler._reject = lambda code, *_a: self.replies.append(({}, code))
         body = json.dumps(payload).encode()
-        handler.headers = {"Host": "127.0.0.1:4580", "Content-Length": str(len(body))}
+        # A parsed header block, as the server builds one: admission counts each field.
+        handler.headers = http.client.HTTPMessage()
+        handler.headers["Host"] = "127.0.0.1:4580"
+        handler.headers["Content-Length"] = str(len(body))
         handler.client_address = ("127.0.0.1", 10000)
         handler.rfile = io.BytesIO(body)
         return handler

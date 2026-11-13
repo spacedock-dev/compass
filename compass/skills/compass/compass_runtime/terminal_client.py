@@ -112,6 +112,9 @@ SENTENCES: Final[dict[str, str]] = {
     "loopback_blocked": (
         "Compass's connection to the dashboard was blocked by a sandbox or permissions."
     ),
+    "dashboard_busy": (
+        "The dashboard has every connection in use, so nothing was sent; try again in a moment."
+    ),
     "starting": "Compass was not running, so this started it as `--daemon` does.",
     "start_failed": "Compass could not start the dashboard; start it with `{start}`.",
     "start_failed_in_session": (
@@ -765,19 +768,24 @@ def probe(port: int, timeout: float = HEALTH_TIMEOUT_SEC) -> Dashboard | Refusal
     """
     import http.client  # noqa: PLC0415 — only a command that reaches the dashboard pays for it
 
-    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+    from compass_runtime.loopback_transport import Busy, exchange  # noqa: PLC0415
 
     try:
-        status, body = exchange("GET", port, "/api/health", timeout=timeout, cap=HEALTH_CAP_BYTES)
+        status, body = exchange(
+            "GET", port, "/api/health", timeout=timeout, cap=HEALTH_CAP_BYTES, wait_when_busy=True
+        )
         if status != 200 or len(body) > HEALTH_CAP_BYTES:
             return None
         data = json.loads(body)
+    except Busy:
+        # Not "nothing there": that would start a second dashboard on a port this one holds.
+        return Refusal(sentence("dashboard_busy"))
     except OSError as error:
         return Refusal(sentence("loopback_blocked")) if permission_denied(error) else None
     except (http.client.HTTPException, ValueError, RecursionError):
         return None
     if not isinstance(data, dict):
-        return None
+        data = {}  # refused below, on `ok`
     pid, reported, started = data.get("pid"), data.get("port"), data.get("started")
     if (
         data.get("ok") is not True

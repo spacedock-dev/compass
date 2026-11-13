@@ -421,6 +421,27 @@ class CallFlowTest(_CallCase):
         self.assertEqual("ship", _text(frame))
         self.assertEqual(3, dashboard.poll_count())
 
+    def test_the_connection_caps_refusal_is_a_hold_and_the_question_is_not_withdrawn(
+        self,
+    ) -> None:
+        # A dashboard at its connection cap refuses before reading the poll. The question is
+        # still on the board, so the poll waits rather than taking it back.
+        dashboard = _FakeDashboard(
+            poll=[(mcp_server.BUSY, None), (200, {"state": "answered", "index": 0})]
+        )
+        frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
+        self.assertEqual("ship", _text(frame))
+        self.assertEqual([], dashboard.withdrawals)
+
+    def test_a_disabled_ask_lane_declines_at_once(self) -> None:
+        # The poll route's own 503 (a dashboard restarted with --no-ask): the card is gone, so
+        # waiting out the whole deadline would end in "nobody answered" for nothing.
+        dashboard = _FakeDashboard(poll=[(503, None)])
+        with mock.patch.object(mcp_server, "OVERALL_DEADLINE_SEC", 2.0):
+            frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
+        self.assertEqual(mcp_server.DECLINE_UNANSWERED, _text(frame))
+        self.assertEqual(1, dashboard.poll_count())
+
     def test_a_404_mid_poll_means_the_ask_is_gone(self) -> None:
         dashboard = _FakeDashboard(poll=[(404, None)])
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
@@ -950,6 +971,26 @@ class TransportGuardTest(unittest.TestCase):
         self.assertIsNotNone(answer)
         assert answer is not None
         self.assertEqual(503, answer[0])
+
+    def test_the_connection_caps_refusal_is_told_apart_from_a_route_503(self) -> None:
+        for headers, body, expected in (
+            ({"Retry-After": "1"}, b"", mcp_server.BUSY),
+            ({}, b"<html>the ask lane is disabled</html>", 503),
+        ):
+
+            def build_opener(*_handlers: Any, headers: Any = headers, body: bytes = body) -> Any:
+                error = urllib.error.HTTPError(
+                    "http://127.0.0.1:4553/x", 503, "no", headers, io.BytesIO(body)
+                )
+                return mock.Mock(open=mock.Mock(side_effect=error))
+
+            with (
+                self.subTest(headers=headers),
+                mock.patch.object(urllib.request, "build_opener", build_opener),
+            ):
+                answer = mcp_server._request("http://127.0.0.1:4553/x", data=None, timeout=1.0)
+                assert answer is not None
+                self.assertEqual(expected, answer[0])
 
     def test_a_transport_failure_is_none_not_an_exception(self) -> None:
         def build_opener(*_handlers: Any) -> Any:

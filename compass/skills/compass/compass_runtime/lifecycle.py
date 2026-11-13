@@ -170,19 +170,25 @@ def remove_state(config: RuntimeConfig, port: int) -> None:
 def probe_port(port: int, timeout: float = 1.0) -> tuple[str, dict[str, Any] | None]:
     """What is listening on `port`, or whether permissions blocked the probe.
 
-    Returns ("compass", health), or ("foreign" | "closed" | "blocked", None).
+    Returns ("compass", health), or ("foreign" | "closed" | "blocked" | "busy", None).
+    "busy" is a dashboard at its connection cap for the whole timeout: it refused before
+    reading the request, so it is not evidence of another program on the port.
 
     The distinction is the entire point of this function. "Something is
     listening" reading as "Compass is running" is how a stop command ends up
     aimed at an unrelated local server.
     """
-    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+    from compass_runtime.loopback_transport import Busy, exchange  # noqa: PLC0415
 
     try:
-        status, body = exchange("GET", port, "/api/health", timeout=timeout, cap=4096)
+        status, body = exchange(
+            "GET", port, "/api/health", timeout=timeout, cap=4096, wait_when_busy=True
+        )
         if status != 200 or len(body) > 4096:
             return ("foreign", None)
         data = json.loads(body)
+    except Busy:
+        return ("busy", None)
     except (OSError, http.client.HTTPException) as exc:
         if terminal_client.permission_denied(exc):
             return ("blocked", None)
@@ -451,8 +457,8 @@ def instance_status(config: RuntimeConfig, port: int) -> dict[str, Any]:
             "started": health.get("started"),
             "log": recorded_log,
         }
-    if kind == "foreign":
-        return {"state": "foreign", "port": port, "pid": (state or {}).get("pid")}
+    if kind in ("foreign", "busy"):
+        return {"state": kind, "port": port, "pid": (state or {}).get("pid")}
     return {
         "state": "stale" if state is not None else "absent",
         "port": port,
@@ -485,6 +491,11 @@ def render_status(status: dict[str, Any]) -> str:
             f"Compass: port {port} is held by another process — what answered "
             f"/api/health is not Compass. Nothing was stopped or removed."
         )
+    if state == "busy":
+        return (
+            f"Compass: the dashboard on port {port} has every connection in use and asked to "
+            f"be tried again shortly. Nothing was stopped or removed."
+        )
     if state == "stale":
         return (
             f"Compass: not running on port {port}. A stale state file remains "
@@ -503,8 +514,8 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
     """
     status = instance_status(config, port)
     state = status["state"]
-    if state in ("foreign", "blocked"):
-        # The state file is evidence about a port we do not own. Leave it.
+    if state in ("foreign", "blocked", "busy"):
+        # The state file is evidence about a port we do not own, or cannot reach. Leave it.
         return (render_status(status), 1)
     if state == "running":
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)

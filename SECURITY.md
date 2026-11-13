@@ -322,7 +322,9 @@ The posture rests on two invariants:
    the port can cause that hourly rewrite; it cannot choose what is written.
    `GET /api/observe` is a trigger rather than a poll: it derives one session's goal, stage and open
    block and records the answer as a sidecar under `~/.compass/observer/`, again Compass's own
-   state and never a harness store. Its two components are the harness key and the session id, and
+   state and never a harness store. It answers only a loopback request that carries no proxy
+   forwarding header and refuses a document or frame navigation, so a non-default bind does not
+   widen it. Its two components are the harness key and the session id, and
    both must match `[A-Za-z0-9._-]{1,128}` before either reaches a path. `records.safe_text`
    bounds a string and strips control characters, and passes a separator straight through, so the
    grammar is what keeps the write inside that directory rather than the join. The file holds
@@ -1301,9 +1303,10 @@ last: to a caller without the token a live session and one that never existed ar
 unfocusable one, and the feature being off is a 503 rather than a 404 because it is a run-wide fact
 that leaks nothing about any session, where a 404 would read as a build too old to have the route.
 
-The ceiling is claimed after the body is read rather than before it. The body read is blocking and
-carries no socket timeout, so claiming a process-wide one-slot gate ahead of it let a peer that sent
-a length and then nothing hold focus shut for as long as it kept the socket open. Nothing in the
+The ceiling is claimed after the body is read rather than before it. The body read is blocking, and
+its socket timeout bounds each wait for a byte rather than the whole body, so claiming a
+process-wide one-slot gate ahead of it let a peer that sent a length and then trickled its body hold
+focus shut for as long as it kept sending. Nothing in the
 body distinguishes one session from another, so reading it first adds no oracle, and the gate still
 precedes the raise, which is what "cannot repeat the raise" asks for.
 
@@ -5105,8 +5108,15 @@ The terminal is off unless both `--interaction-origin-session` and
 `/api/interaction/` join the ordinary routes: `register`, `renew`, `probe-unregistered`,
 `probe-spoofed`, `control`, `input`, `expire`, `disconnect`, `reconnect`, and `reset`.
 Registration requires the session-side registration token; renewal requires the lease token.
-The probe and lifecycle controls have the normal loopback/origin checks, with no additional
-capability. `control` and `input` always refuse. Normal serving returns 404 for this prefix.
+The probe and lifecycle controls carry no additional capability. `control` and `input` always
+refuse. Normal serving returns 404 for this prefix.
+
+Every route under `/api/interaction/`, the GET reads, the POST operations and the WebSocket, is
+loopback-only: it answers only a loopback peer with a loopback Host, carrying no proxy forwarding
+header, and refuses a fetch labelled `same-site` or `cross-site`. The reads and the WebSocket also
+refuse a document or frame navigation. Under `--host 0.0.0.0` or `--allow-host`, a remote reader
+cannot see the terminal at all. At most eight terminal sockets are open at once and the next is
+refused with 503; a viewer that stops reading is dropped once a send to it has waited 10 seconds.
 
 `interaction_prototype.py` joins `focus.py` as a module allowed to invoke tmux. It validates the
 registered pane identity before capturing output and attaches a read-only control-mode client.
@@ -5345,18 +5355,54 @@ scheme and port combinations are refused. An explicit Host port must match the a
 port; an omitted Host port uses that Origin's port. This admits
 `Host: content-pipeline-dev.exe.xyz` with
 `Origin: https://content-pipeline-dev.exe.xyz` when Compass listens on 8000, without trusting
-another service on a different port of the same name. The existing IP-literal and loopback
-port and Origin rules remain unchanged, as do capability tokens and model consent. Loopback-only
-routes require both a loopback TCP peer and a loopback Host authority: a `LOCAL_HOSTS` name
-(`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never grants those powers,
-even when a local reverse proxy connects from `127.0.0.1`. The hook forwarders' destinations
-remain loopback-only. The proxy must preserve Host; Compass does not infer identity or
-authentication from `X-Forwarded-*` headers.
+another service on a different port of the same name. Capability tokens and model consent are
+unchanged by an allowed name.
+
+For an IP literal or loopback Host, a supplied Origin must be `http`, carry only a scheme and
+authority, and name the same host and port as Host, and that port must be the listening port.
+`localhost` and `127.0.0.1` are different origins to a browser, so an Origin that spells the host
+differently from Host is refused, and under `--host 0.0.0.0` an Origin on another admitted
+address is refused as another site's page.
+
+Every GET and POST must carry exactly one Host header and at most one each of Origin,
+`Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, none of them a comma-joined list. A
+repeated or combined value is refused with 403 on every bind, with or without `--allow-host`,
+because the gate reads the first copy and a proxy may act on the last. A header line the parser
+cannot read, such as one with whitespace before its colon, is refused with 400 and the connection
+closed, because the parser stops there and every header after it would go unseen.
+
+Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
+`LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
+grants those powers, even when a local reverse proxy connects from `127.0.0.1`. They also refuse
+any request carrying `Forwarded`, `Via`, `X-Real-IP` or any `X-Forwarded-*` header, whatever its
+peer and Host, so a proxied request never reaches them. Compass reads those headers only to refuse;
+it never infers identity or authentication from them. The hook forwarders' destinations remain
+loopback-only.
+
+A reverse proxy in front of `--allow-host` must forward the client's exact Host: the allowed name
+as the one Host header, never rewritten to a loopback authority and never added beside the
+client's own. A proxy that rewrites Host to `127.0.0.1` and strips its own forwarding headers is
+indistinguishable from a local process and passes the loopback-only checks, which is the
+local-process exposure stated below, now reachable through the proxy.
 
 An absolute-form request-target with an authority must match Host after the same normalization,
 including case, one trailing DNS dot and the port. A mismatch is refused with the existing 403
 response before routing, for GET and POST alike; other methods have no route. This is an
 admission refusal, like an untrusted Host, rather than a separate request-parser error.
+
+A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encoding` is refused with
+501 before routing and its connection is closed. Every connection holds a handler thread, so the
+server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
+closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
+health probes wait that refusal out within their own timeouts rather than reading it as an answer;
+a probe that never gets past it says the dashboard is busy and stops nothing. A connection that
+sends nothing for 10 seconds, or stops partway through its request for as long, is closed and its
+slot returned. The 10 seconds bound each wait on the socket, not the whole request, so a peer that
+trickles bytes keeps its slot; the cap is what bounds that. Responses are written 64 KiB at a time,
+so the same 10 seconds bound each slice rather than the whole page, and a slow reader still
+receives all of it while one that stops reading is dropped. Anything that
+can reach the port can still fill the 64 slots and keep the board unavailable while it holds them;
+like the local-process exposure below, that is accepted rather than defended.
 
 An allowed name is a trust grant, not authentication. Whoever controls its DNS and web content
 could serve a hostile page on that name and then rebind it to Compass; that exact name has been
