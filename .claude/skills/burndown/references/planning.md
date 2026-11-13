@@ -72,6 +72,15 @@ lower one waits unsubmitted for the review of the one above.
   each carries the built bundle for its own tree.
 - A group that touches none of the web surface, `SKILL.md`, `config.py` or another in-flight group's
   files is an independent pull request on `main`, built in parallel.
+- Groups off the web surface that must still land in order also form a native stack (`gh stack`),
+  each layer built on its parent from the start: one that edits a file another in-flight group edits,
+  or builds on the contract another group adds (a discovery that extends a layer under review is the
+  usual case). `gh stack merge --squash` then lands the chain in one merge-queue run, and
+  `gh stack sync` rebases every layer at once when `main` moves, so the chain pays one CI cycle
+  rather than a land, rebase and re-run per pull request. Link pull requests already open with
+  `gh stack link <bottom> ... <top>`. Keep truly independent groups out of a stack: a red layer holds
+  every layer above it. Measured 2026-11-12 (#903 to #905): queueing the bottom pull request alone
+  and restacking each layer after it landed cost a CI cycle per layer that one stack merge avoids.
 - A group that touches `SKILL.md` or `config.py` but not the web surface is either a layer of the
   stack (when a web-surface layer depends on it) or a single pull request that waits until no other
   in-flight group touches that file. It is never built in parallel with one that does.
