@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import select
 import shutil
 import socket
 import subprocess
@@ -3547,6 +3548,156 @@ class ConnectionBoundTest(unittest.TestCase):
             started = time.monotonic()
             self.assertEqual(200, self._health_eventually(httpd))
         self.assertLess(time.monotonic() - started, 10.0)
+
+
+class RequestDeadlineTest(unittest.TestCase):
+    """The whole request, line, headers and body, arrives within one deadline or its slot goes.
+
+    The per-wait socket timeout alone let a peer that sent one byte inside every wait keep its
+    connection, and enough of them held every slot, `--stop` and `--status` included. Both
+    bounds are shrunk here; the peer's byte interval sits inside the per-wait timeout, so only
+    the whole-request deadline can end it.
+    """
+
+    PER_WAIT = 0.5
+    DEADLINE = 1.5
+    TRICKLE_EVERY = 0.2
+
+    def setUp(self) -> None:
+        for name, value in (("timeout", self.PER_WAIT), ("REQUEST_DEADLINE_SEC", self.DEADLINE)):
+            patcher = mock.patch.object(http_api._RequestHandler, name, value, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _serve(self, limit: int = 1) -> http_api.CompassHTTPServer:
+        bounded = type("Bounded", (http_api.CompassHTTPServer,), {"CONNECTION_LIMIT": limit})
+        httpd: http_api.CompassHTTPServer = bounded(("127.0.0.1", 0), build_app(), PAGE_BYTES)
+        thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+        thread.start()
+
+        def stop() -> None:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+        self.addCleanup(stop)
+        return httpd
+
+    def _trickle(self, httpd: http_api.CompassHTTPServer, opening: bytes) -> threading.Event:
+        """Send `opening`, then one byte per TRICKLE_EVERY until the server closes the socket.
+
+        Returns an event set once the server has closed it. The peer keeps sending for the
+        whole test otherwise, so a slot it still holds is never freed by the peer giving up.
+        """
+        client = socket.create_connection(("127.0.0.1", httpd.server_port), timeout=WAIT_SEC)
+        self.addCleanup(client.close)
+        client.sendall(opening)
+        closed = threading.Event()
+        stop = threading.Event()
+
+        def run() -> None:
+            while not stop.wait(self.TRICKLE_EVERY):
+                try:
+                    client.sendall(b"a")
+                    readable, _, _ = select.select([client], [], [], 0)
+                    if readable and not client.recv(1):
+                        break
+                except OSError:
+                    break
+            if not stop.is_set():
+                closed.set()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+
+        def end() -> None:
+            stop.set()
+            thread.join(timeout=2)
+
+        self.addCleanup(end)
+        return closed
+
+    def _health_within(self, httpd: http_api.CompassHTTPServer, seconds: float) -> int:
+        deadline = time.monotonic() + seconds
+        status = 0
+        while time.monotonic() < deadline:
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5.0)
+            try:
+                connection.request("GET", "/api/health")
+                status = connection.getresponse().status
+            except (OSError, http.client.HTTPException):
+                status = 0
+            finally:
+                connection.close()
+            if status == 200:
+                break
+            time.sleep(0.05)
+        return status
+
+    def _assert_the_slot_comes_back(self, opening: bytes) -> None:
+        httpd = self._serve()
+        closed = self._trickle(httpd, opening)
+        self.assertTrue(
+            closed.wait(WAIT_SEC), "a peer still trickling must be closed at the deadline"
+        )
+        self.assertEqual(200, self._health_within(httpd, WAIT_SEC))
+
+    def test_a_peer_trickling_its_headers_is_closed_and_its_slot_admits_another(self) -> None:
+        self._assert_the_slot_comes_back(b"GET /api/health HTTP/1.1\r\nX-Slow: ")
+
+    def test_a_peer_trickling_its_request_line_is_closed(self) -> None:
+        self._assert_the_slot_comes_back(b"GET /api/health")
+
+    def test_a_peer_trickling_a_declared_body_is_closed_and_its_slot_admits_another(
+        self,
+    ) -> None:
+        def opening(port: int) -> bytes:
+            return (
+                f"POST /api/usage HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                "Content-Type: application/json\r\nContent-Length: 4096\r\n\r\n"
+            ).encode()
+
+        httpd = self._serve()
+        closed = self._trickle(httpd, opening(httpd.server_port))
+        self.assertTrue(closed.wait(WAIT_SEC), "a body still trickling must be cut off")
+        self.assertEqual(200, self._health_within(httpd, WAIT_SEC))
+
+    def test_a_slow_but_honest_request_is_still_answered(self) -> None:
+        # Each pause sits inside the per-wait timeout and the whole request inside the deadline,
+        # so the server sees a request that took longer than one wait and still finishes it.
+        httpd = self._serve()
+        client = socket.create_connection(("127.0.0.1", httpd.server_port), timeout=WAIT_SEC)
+        self.addCleanup(client.close)
+        for piece in (
+            b"GET /api/health HTTP/1.1\r\n",
+            f"Host: 127.0.0.1:{httpd.server_port}\r\n".encode(),
+            b"Accept: application/json\r\n",
+            b"\r\n",
+        ):
+            client.sendall(piece)
+            time.sleep(self.TRICKLE_EVERY)
+        self.assertIn(b" 200 ", client.recv(256).split(b"\r\n", 1)[0])
+
+    def test_the_server_closes_after_every_response(self) -> None:
+        # The request deadline is armed once per connection, which holds only while no second
+        # request can follow on it: HTTP/1.0 closes after every response.
+        self.assertEqual("HTTP/1.0", http_api._RequestHandler.protocol_version)
+
+    def test_an_event_stream_outlives_the_deadline(self) -> None:
+        # The deadline bounds reading the request. A stream only writes after that, so it
+        # keeps sending heartbeats long after the deadline has passed.
+        httpd = self._serve(limit=4)
+        httpd.application.config = dataclasses.replace(
+            httpd.application.config, stream_heartbeat_sec=0.2
+        )
+        connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=WAIT_SEC)
+        self.addCleanup(connection.close)
+        connection.request("GET", "/api/stream")
+        response = connection.getresponse()
+        self.assertEqual(200, response.status)
+        opened = time.monotonic()
+        while time.monotonic() - opened < 2 * self.DEADLINE:
+            self.assertTrue(response.readline(), "the stream ended before the client did")
 
 
 class VerificationFixTest(unittest.TestCase):

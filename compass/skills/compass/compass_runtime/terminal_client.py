@@ -683,6 +683,13 @@ class DashboardUnreachable(OSError):  # noqa: N818
     """Nothing answered, or what answered broke the HTTP exchange."""
 
 
+class DashboardBusy(DashboardUnreachable):
+    """Every try met the dashboard's connection-cap refusal; only `wait_when_busy` raises it.
+
+    A kind of unreachable, so a caller that copes with no answer keeps its own retry budget.
+    """
+
+
 class UnreadableSessionsError(ValueError):
     """The dashboard's session list could not be read; this is never an empty list."""
 
@@ -826,11 +833,14 @@ def request(
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
     cap: int | None = None,
+    wait_when_busy: bool = False,
 ) -> Reply:
     """One loopback exchange. The host is the literal 127.0.0.1 and the port an integer.
 
     `http.client` reads no proxy variable and follows no redirect, so there is nothing to switch
     off: a 3xx comes back as an ordinary reply with `data` empty and no second request.
+    `wait_when_busy` tries a dashboard at its connection cap again within `timeout`, and raises
+    DashboardBusy if it never gets a slot, rather than returning the cap's empty 503.
     """
     if not _valid_port(port):
         msg = "port must be an integer from 1 to 65535"
@@ -841,12 +851,22 @@ def request(
     import http.client  # noqa: PLC0415 — see `probe`
 
     limit = REPLY_CAP_BYTES if cap is None else cap
-    from compass_runtime.loopback_transport import exchange  # noqa: PLC0415
+    from compass_runtime.loopback_transport import Busy, exchange  # noqa: PLC0415
 
     try:
         status, raw = exchange(
-            method, port, path, body, headers=headers, timeout=timeout, cap=limit
+            method,
+            port,
+            path,
+            body,
+            headers=headers,
+            timeout=timeout,
+            cap=limit,
+            wait_when_busy=wait_when_busy,
         )
+    except Busy as error:
+        msg = f"127.0.0.1:{port} has every connection in use"
+        raise DashboardBusy(msg) from error
     except (OSError, http.client.HTTPException) as error:
         if permission_denied(error):
             raise LoopbackBlockedError from error
@@ -877,12 +897,21 @@ def post(
     *,
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
+    wait_when_busy: bool = False,
 ) -> Reply:
     """One JSON POST. `http.client` sends no `Origin` or `Sec-Fetch-*` header, so the dashboard
     sees a local process, which SECURITY.md says its Host, Origin and fetch-metadata checks do not
     stop: loopback is not a per-user boundary."""
     sent = {"Content-Type": "application/json", **(headers or {})}
-    return request("POST", port, path, json.dumps(payload).encode(), headers=sent, timeout=timeout)
+    return request(
+        "POST",
+        port,
+        path,
+        json.dumps(payload).encode(),
+        headers=sent,
+        timeout=timeout,
+        wait_when_busy=wait_when_busy,
+    )
 
 
 def version_guard(

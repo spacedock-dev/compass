@@ -516,6 +516,28 @@ class RequestPathTest(unittest.TestCase):
             terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
         )
 
+    def test_a_post_that_may_wait_gets_the_route_s_answer_once_the_cap_clears(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            reply = terminal_client.post(
+                httpd.server_port, "/api/no-such-route", {}, timeout=5.0, wait_when_busy=True
+            )
+        self.assertEqual(404, reply.status)
+
+    def test_a_post_that_may_wait_and_never_gets_a_slot_is_busy_not_answered(self) -> None:
+        # Busy is a kind of unreachable: a caller that already copes with no answer keeps its
+        # own retry budget, rather than reading the cap's empty 503 as the route refusing it.
+        with (
+            support.saturated_server() as (httpd, _release),
+            self.assertRaises(terminal_client.DashboardBusy),
+        ):
+            terminal_client.post(
+                httpd.server_port, "/api/no-such-route", {}, timeout=0.5, wait_when_busy=True
+            )
+        self.assertTrue(
+            issubclass(terminal_client.DashboardBusy, terminal_client.DashboardUnreachable)
+        )
+
     def test_a_failure_after_the_caps_refusal_is_still_busy(self) -> None:
         # A dashboard that refused at its cap and then timed out is still a dashboard: read as
         # "nothing there", --forget or an automatic start would act on a port it holds.
@@ -529,6 +551,46 @@ class RequestPathTest(unittest.TestCase):
         with (
             mock.patch.object(loopback_transport, "_exchange", attempt),
             self.assertRaises(loopback_transport.Busy),
+        ):
+            loopback_transport.exchange(
+                "GET", 4553, "/api/health", timeout=5.0, cap=4096, wait_when_busy=True
+            )
+
+    def test_a_connection_the_cap_closed_mid_send_is_waited_out(self) -> None:
+        # The cap writes its 503 and closes before reading the request, so a POST still sending
+        # its body can meet a broken pipe or a reset instead of the 503. That is the cap too:
+        # measured on a macOS runner, where a POST waiting out a 0.3 s cap was read as busy at once.
+        tries = iter((BrokenPipeError(32, "Broken pipe"), (503, b"", "1"), ConnectionResetError()))
+
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            step = next(tries, (404, b"{}", None))
+            if isinstance(step, BaseException):
+                raise step
+            return step
+
+        with mock.patch.object(loopback_transport, "_exchange", attempt):
+            status, _raw = loopback_transport.exchange(
+                "POST", 4553, "/api/x", b"{}", timeout=5.0, cap=4096, wait_when_busy=True
+            )
+        self.assertEqual(404, status)
+
+    def test_a_closed_connection_is_not_waited_out_unless_asked(self) -> None:
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        with (
+            mock.patch.object(loopback_transport, "_exchange", attempt),
+            self.assertRaises(BrokenPipeError),
+        ):
+            loopback_transport.exchange("POST", 4553, "/api/x", b"{}", timeout=5.0, cap=4096)
+
+    def test_a_refused_connect_is_no_dashboard_even_when_waiting(self) -> None:
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            raise ConnectionRefusedError(61, "Connection refused")
+
+        with (
+            mock.patch.object(loopback_transport, "_exchange", attempt),
+            self.assertRaises(ConnectionRefusedError),
         ):
             loopback_transport.exchange(
                 "GET", 4553, "/api/health", timeout=5.0, cap=4096, wait_when_busy=True

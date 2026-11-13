@@ -75,6 +75,15 @@ def exchange(
                 cap=cap,
             )
         except (OSError, http.client.HTTPException) as error:
+            # The cap writes its 503 and closes before reading, so a request still being sent
+            # can meet a broken pipe or a reset instead: that is the cap, and is waited out.
+            # A refused connect is no dashboard at all.
+            if wait_when_busy and isinstance(error, (BrokenPipeError, ConnectionResetError)):
+                refused = True
+                if deadline - time.monotonic() <= BUSY_PAUSE_SEC:
+                    raise Busy(port) from error
+                time.sleep(BUSY_PAUSE_SEC)
+                continue
             if refused:
                 raise Busy(port) from error
             raise

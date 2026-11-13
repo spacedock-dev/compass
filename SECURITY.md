@@ -1304,9 +1304,9 @@ unfocusable one, and the feature being off is a 503 rather than a 404 because it
 that leaks nothing about any session, where a 404 would read as a build too old to have the route.
 
 The ceiling is claimed after the body is read rather than before it. The body read is blocking, and
-its socket timeout bounds each wait for a byte rather than the whole body, so claiming a
-process-wide one-slot gate ahead of it let a peer that sent a length and then trickled its body hold
-focus shut for as long as it kept sending. Nothing in the
+a peer that sent a length and then trickled its body could keep it going for up to the 30-second
+request deadline, so claiming a process-wide one-slot gate ahead of it let that peer hold focus
+shut for as long as it kept sending. Nothing in the
 body distinguishes one session from another, so reading it first adds no oracle, and the gate still
 precedes the raise, which is what "cannot repeat the raise" asks for.
 
@@ -5395,14 +5395,20 @@ A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encodin
 server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
 closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
 health probes wait that refusal out within their own timeouts rather than reading it as an answer;
-a probe that never gets past it says the dashboard is busy and stops nothing. A connection that
-sends nothing for 10 seconds, or stops partway through its request for as long, is closed and its
-slot returned. The 10 seconds bound each wait on the socket, not the whole request, so a peer that
-trickles bytes keeps its slot; the cap is what bounds that. Responses are written 64 KiB at a time,
-so the same 10 seconds bound each slice rather than the whole page, and a slow reader still
-receives all of it while one that stops reading is dropped. Anything that
-can reach the port can still fill the 64 slots and keep the board unavailable while it holds them;
-like the local-process exposure below, that is accepted rather than defended.
+a probe that never gets past it says the dashboard is busy and stops nothing. The terminal Live
+monitor holder's heartbeat and the tmux interaction client's lease renewal wait it out too, so a
+busy dashboard does not end a lease: the holder counts it against its failure budget, and the pane
+client keeps trying until its lease would have lapsed. A connection that sends nothing for 10
+seconds, or stops partway through its request for as long, is closed and its slot returned. The
+10 seconds bound each wait on the socket, and the whole request (its request line, headers and
+any body) must also arrive within 30 seconds of the connection being accepted, so a peer that
+sends a byte inside every wait is closed at 30 seconds and its slot returned. The 30 seconds bound
+reading the request only: an event stream, the terminal socket and an ask poll's hold all begin
+after it. Responses are written 64 KiB at a time, so the same 10 seconds bound each slice rather
+than the whole page, and a slow reader still receives all of it while one that stops reading is
+dropped. Anything that can reach the port can still fill the 64 slots, and by opening a new
+connection as each one is returned it can keep the board unavailable for as long as it keeps
+connecting; like the local-process exposure below, that is accepted rather than defended.
 
 An allowed name is a trust grant, not authentication. Whoever controls its DNS and web content
 could serve a hostile page on that name and then rebind it to Compass; that exact name has been

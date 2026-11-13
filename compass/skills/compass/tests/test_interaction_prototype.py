@@ -551,6 +551,21 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             finally:
                 client.close()
 
+    def test_a_quiet_stream_outlives_the_request_deadline(self) -> None:
+        # The whole-request deadline bounds reading the upgrade request, not the socket after it.
+        with mock.patch.object(http_api._RequestHandler, "REQUEST_DEADLINE_SEC", 0.3):
+            self._request("GET", "/api/interaction/state")
+            client = self._open_stream()
+            try:
+                self._read_stream_frame(client)
+                time.sleep(1.0)
+                self.adapter.emit_frame()
+                opcode, payload = self._read_stream_frame(client)
+                self.assertEqual(1, opcode)
+                self.assertIn("stream frame 2", json.loads(payload)["data"])
+            finally:
+                client.close()
+
     def test_streams_beyond_the_limit_are_refused_rather_than_held(self) -> None:
         self._request("GET", "/api/interaction/state")
         limit = http_api.CompassHTTPServer.INTERACTION_STREAM_LIMIT
@@ -588,6 +603,200 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
             handler._interaction_post("register")
         self.assertEqual([400], sent)
         self.assertEqual(2, handler.rfile.tell())
+
+
+class _ClientlessAdapter(FakeTmuxAdapter):
+    """Records what the pane client would be started with, so the real client can be run."""
+
+    def start_client(
+        self,
+        port: int,
+        registration_token: str,
+        compass_session_id: str,
+        lease_sec: float,
+        origin: interaction.TmuxOrigin,
+    ) -> None:
+        del port, lease_sec
+        self.registration_token = registration_token
+        self.compass_session_id = compass_session_id
+        self.origin = origin
+
+
+class LeaseAtTheConnectionCapTest(unittest.TestCase):
+    """The pane client's renewals wait out the cap's refusal instead of ending the lease.
+
+    The refusal is a 503 with an empty body, written before the request is read. Read as an
+    answer it said "renewal refused", the client exited, and the lease lapsed while the
+    dashboard was only busy.
+    """
+
+    LEASE_SEC = 3.0
+
+    def setUp(self) -> None:
+        self.adapter = _ClientlessAdapter()
+        self.prototype = interaction.InteractionPrototype(self.adapter, lease_sec=self.LEASE_SEC)
+        self.refusals: list[float] = []
+        refusals = self.refusals
+
+        class Bounded(http_api.CompassHTTPServer):
+            CONNECTION_LIMIT = 1
+
+            def _refuse_connection(self, request: Any) -> None:
+                refusals.append(time.monotonic())
+                super()._refuse_connection(request)
+
+        self.httpd = Bounded(
+            ("127.0.0.1", 0), build_app(), PAGE_BYTES, interaction_prototype=self.prototype
+        )
+        thread = threading.Thread(target=poll_fast(self.httpd), daemon=True)
+        thread.start()
+
+        def stop() -> None:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+            thread.join(timeout=2)
+
+        self.addCleanup(stop)
+
+    def _renewals(self) -> int:
+        # In process, so watching the lease takes none of the one connection slot.
+        state = self.prototype.state(self.httpd.server_port)
+        self.assertEqual("registered", state["origin_state"])
+        return int(state["renewal_count"])
+
+    def _renewals_reach(self, count: int) -> int:
+        deadline = time.monotonic() + 30.0
+        seen = 0
+        while time.monotonic() < deadline:
+            seen = self._renewals()
+            if seen >= count:
+                break
+            time.sleep(0.05)
+        return seen
+
+    def _hold_the_slot(self) -> socket.socket:
+        """Take the one slot; a connection that met the cap is answered at once, so try again."""
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            held = socket.create_connection(("127.0.0.1", self.httpd.server_port), timeout=5.0)
+            readable, _, _ = select.select([held], [], [], 0.2)
+            if not readable:
+                return held
+            held.close()
+        raise self.failureException("could not take the connection slot")
+
+    def test_a_renewal_waits_out_the_cap_and_the_lease_survives(self) -> None:
+        port = self.httpd.server_port
+        self.prototype._ensure_started(port)
+        origin = self.adapter.origin
+        assert origin is not None
+        output = io.StringIO()
+        ended: list[int] = []
+        with (
+            mock.patch.object(interaction, "_discover_origin", return_value=origin),
+            contextlib.redirect_stdout(output),
+        ):
+            client = threading.Thread(
+                target=lambda: ended.append(
+                    interaction._run_tmux_client(
+                        port,
+                        self.adapter.registration_token,
+                        self.adapter.compass_session_id,
+                        self.LEASE_SEC,
+                    )
+                ),
+                daemon=True,
+            )
+            client.start()
+            before = self._renewals_reach(1)
+            held = self._hold_the_slot()
+            refused_before = len(self.refusals)
+            # Longer than one renewal interval (a third of the lease), shorter than the
+            # client's own two-second budget for one request.
+            time.sleep(1.5)
+            held.close()
+            after = self._renewals_reach(before + 1)
+            self.prototype.expire(port)
+            client.join(timeout=10.0)
+        self.assertGreater(len(self.refusals), refused_before, "no renewal met the cap")
+        self.assertNotIn("renewal refused: unknown", output.getvalue())
+        self.assertGreater(after, before, "the lease was not renewed after the cap cleared")
+
+
+class LeaseThroughALongCapTest(unittest.TestCase):
+    """A cap held for longer than one request's budget, on a clock the test drives.
+
+    The dashboard is modelled as the real one behaves at the client: registration starts a
+    15-second lease, a renewal inside it extends it, a renewal after it is refused, and while the
+    cap is held a request waits within its two-second budget, raising DashboardBusyError if the
+    cap outlasts it.
+    """
+
+    LEASE_SEC = 15.0
+
+    def _run(self, busy_from: float, busy_until: float) -> tuple[list[float], str, float]:
+        now = [100.0]
+        registered_at = [now[0]]
+        expires = [0.0]
+        tries: list[float] = []
+
+        def request(
+            _port: int, _method: str, path: str, _body: Any = None, *, timeout: float = 2.0
+        ) -> tuple[int, dict[str, Any]]:
+            if path.endswith("register"):
+                registered_at[0] = now[0]
+                expires[0] = now[0] + self.LEASE_SEC
+                return 200, {"state": "registered", "origin_id": "o", "lease_token": "t"}
+            at = now[0] - registered_at[0]
+            tries.append(at)
+            if busy_from <= at < busy_until:
+                # Retried inside the budget, it gets through the moment the cap clears.
+                if busy_until - at >= timeout:
+                    now[0] += timeout
+                    raise interaction.DashboardBusyError(_port)
+                now[0] += busy_until - at
+            if now[0] >= expires[0]:
+                return 200, {"state": "refused", "reason": "lease-expired"}
+            expires[0] = now[0] + self.LEASE_SEC
+            return 200, {"state": "renewed"}
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds
+
+        origin = FakeTmuxAdapter().prepare()
+        output = io.StringIO()
+        with (
+            mock.patch.object(interaction, "_discover_origin", return_value=origin),
+            mock.patch.object(time, "monotonic", lambda: now[0]),
+            mock.patch.object(time, "sleep", sleep),
+            contextlib.redirect_stdout(output),
+        ):
+            # Ended by the first renewal the dashboard refuses after the cap clears.
+            stop_at = busy_until + 3 * self.LEASE_SEC
+
+            def ending_request(*args: Any, **kwargs: Any) -> tuple[int, dict[str, Any]]:
+                if now[0] - registered_at[0] > stop_at:
+                    return 200, {"state": "refused", "reason": "test-over"}
+                return request(*args, **kwargs)
+
+            with mock.patch.object(interaction, "request", ending_request):
+                interaction._run_tmux_client(1, "token", "sid", self.LEASE_SEC)
+        return tries, output.getvalue(), now[0] - registered_at[0]
+
+    def test_a_cap_held_across_two_renewals_inside_the_lease_does_not_end_it(self) -> None:
+        # From just before the first renewal (at 5 s) to well past the second (at 10 s).
+        tries, output, _ended = self._run(4.9, 14.1)
+        self.assertGreaterEqual(len([at for at in tries if 4.9 <= at < 14.1]), 2)
+        self.assertNotIn("lease-expired", output)
+        self.assertNotIn("renewal stopped", output)
+        self.assertIn("refused: test-over", output, "the lease must outlive the cap")
+
+    def test_a_cap_held_past_the_lease_ends_it_once_it_would_have_lapsed(self) -> None:
+        _tries, output, ended = self._run(4.9, 1_000.0)
+        self.assertIn("renewal stopped: dashboard busy", output)
+        # The last renewal is at registration; it lapses at 15 s, and the client gives up within
+        # one request budget of that rather than an interval later.
+        self.assertLessEqual(ended, self.LEASE_SEC + 2.1)
 
 
 class InteractionPrototypeDisabledTest(unittest.TestCase):

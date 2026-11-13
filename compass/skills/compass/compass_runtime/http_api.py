@@ -7,6 +7,7 @@ import contextlib
 import copy
 import errno
 import hashlib
+import io
 import ipaddress
 import json
 import os
@@ -17,7 +18,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, cast
 from urllib.parse import ParseResult, parse_qs, urlparse
 
 from compass_runtime import (
@@ -83,6 +84,8 @@ _GOAL_FINDING_LOCK = threading.Lock()
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from _typeshed import WriteableBuffer
+
     from compass_runtime.aggregate import Application
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.interaction_prototype import InteractionPrototype
@@ -112,6 +115,37 @@ def _write_in_slices(write: Callable[[memoryview], object], payload: bytes) -> N
     view = memoryview(payload)
     for start in range(0, len(view), WRITE_SLICE_BYTES):
         write(view[start : start + WRITE_SLICE_BYTES])
+
+
+class _DeadlineSocketIO(socket.SocketIO):
+    """A connection's read side that gives up at one deadline for the whole request.
+
+    The socket timeout bounds each wait for a byte, so a peer that sends one byte inside every
+    wait never meets it. Before each receive the timeout is narrowed to what is left of the
+    deadline, and put back after, so a write that follows still has the whole per-wait timeout
+    and a narrower timeout someone set for a drain is kept.
+    """
+
+    def __init__(self, sock: socket.SocketType, seconds: float) -> None:
+        # Typed as SocketType and cast for SocketIO: the launch-and-send table's scan reads a
+        # `socket.socket` annotation as opening a connection, which this reader never does.
+        super().__init__(cast("socket.socket", sock), "rb")
+        self._connection = sock
+        self._deadline = time.monotonic() + seconds
+
+    def readinto(self, b: WriteableBuffer) -> int | None:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("request read deadline passed")
+        previous = self._connection.gettimeout()
+        if previous is not None and previous <= remaining:
+            return super().readinto(b)
+        self._connection.settimeout(remaining)
+        try:
+            return super().readinto(b)
+        finally:
+            with contextlib.suppress(OSError):
+                self._connection.settimeout(previous)
 
 
 def _websocket_frame(opcode: int, payload: bytes) -> bytes:
@@ -1505,6 +1539,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
     # 10-second hold is a wait on a condition, off the socket.
     timeout = 10.0
 
+    # The whole request, line, headers and any body, must arrive within this many seconds of
+    # the connection being accepted, or the read times out and the slot is returned. `timeout`
+    # alone bounds each wait, so a peer sending a byte inside every wait kept its slot for as
+    # long as it liked, and 64 of them held the board. Every caller writes its request at once:
+    # hooks, the MCP server, the terminal client and the status line's 128 KiB usage receipt over
+    # loopback; the page's largest body is a copied correction (about 118 KB), which a slow
+    # remote link delivers within the deadline at about 4 KB/s. Only reading is bounded: a
+    # stream, the terminal socket and an ask poll's hold all begin after the request is read,
+    # and none of them reads `rfile` again.
+    REQUEST_DEADLINE_SEC: ClassVar[float] = 30.0
+
     # Each of these is a single value. `headers.get` answers with the first of a repeated
     # field, so a second copy could say one thing to a proxy and another to this gate.
     SINGLE_ADMISSION_HEADERS: ClassVar[tuple[str, ...]] = (
@@ -1539,6 +1584,18 @@ class _RequestHandler(BaseHTTPRequestHandler):
     # and a class default so a handler-level test that calls one method directly
     # still has it.
     _body_consumed: int = 0
+
+    def setup(self) -> None:
+        """Set the connection up as the standard library does, reading under the deadline.
+
+        One deadline per connection serves one request: the server speaks HTTP/1.0 and closes
+        after every response, so no second request follows on the same reader.
+        """
+        super().setup()
+        self.rfile.close()  # the plain reader, never read from; the socket stays open
+        self.rfile = io.BufferedReader(
+            _DeadlineSocketIO(self.connection, self.REQUEST_DEADLINE_SEC)
+        )
 
     def _read_body(self, length: int) -> bytes:
         """Read a declared body, remembering how much of it is now gone.
@@ -5729,12 +5786,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         this route into an oracle for which sessions exist.
 
         The ceiling is claimed AFTER the body is read rather than before it, and
-        that ordering is load-bearing too: `_read_body` is a blocking read whose
-        socket timeout bounds each wait for a byte, not the whole body, so
-        claiming the one-slot gate first let a peer that sent a `Content-Length`
-        and then trickled its body hold focus shut for as long as it kept
-        sending. Reading first takes no process-wide state on a
-        request that may never finish, and the gate still precedes the raise,
+        that ordering is load-bearing too: `_read_body` is a blocking read that
+        a peer sending a `Content-Length` and then trickling its body can keep
+        going until REQUEST_DEADLINE_SEC, so claiming the one-slot gate first
+        let that peer hold focus shut for as long as it kept sending. Reading
+        first takes no process-wide state on a request that may never finish,
+        and the gate still precedes the raise,
         which is what "a repeated or looped request cannot repeat the raise"
         actually asks for. Nothing about the body distinguishes one session from
         another, so moving it ahead of the ceiling adds no oracle.
