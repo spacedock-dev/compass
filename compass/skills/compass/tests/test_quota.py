@@ -8,17 +8,22 @@ well as successes, and neither `collect` nor `--diagnose` can trigger a fetch.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import email.message
 import http.client
 import json
 import math
+import os
+import socket
 import tempfile
 import threading
 import time
 import unittest
 import urllib.error
+import urllib.request
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Self
@@ -31,7 +36,14 @@ from compass_runtime.collectors import cursor as cursor_collector
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
 
-from .support import SERVER_PATH, RuntimeTestCase, make_server, poll_fast, runtime
+from .support import (
+    SERVER_PATH,
+    RuntimeTestCase,
+    make_server,
+    poll_fast,
+    runtime,
+    serve_until_closed,
+)
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
@@ -1885,3 +1897,315 @@ class WindowSampleRingTest(RuntimeTestCase):
         entry: dict[str, Any] = {"harness": "claude", "asOf": int(NOW), "state": "refused"}
         quota.observe_windows(_config(), state, [entry])
         self.assertEqual({"harness": "claude", "asOf": int(NOW), "state": "refused"}, entry)
+
+
+class TokenShapeTest(unittest.TestCase):
+    """A token goes on the wire as one header value, or not at all.
+
+    Surrounding whitespace is a storage artefact and is stripped, as Cursor's
+    reader always did. Anything else that is not visible ASCII cannot belong to a
+    bearer token, and a CR or LF inside one would end the header line, so such a
+    token is refused before any request is built. The refusal surfaces the way an
+    unreadable token does: a fixed category word, no entry, and no request.
+    """
+
+    def _claude(self, token: str, opener: Any) -> tuple[list[dict[str, Any]], str | None]:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(home=tmp)
+            path = Path(quota.credentials_path(config))
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"claudeAiOauth": {"accessToken": token}}))
+            return quota._claude_entries(config, NOW, opener, _no_runner)
+
+    def test_surrounding_whitespace_on_the_claude_token_is_stripped(self) -> None:
+        requests: list[Any] = []
+        entries, note = self._claude(f" \t{TOKEN}\r\n", _opener(_usage_body(), requests=requests))
+        self.assertIsNone(note)
+        self.assertEqual(1, len(entries))
+        (request,) = requests
+        self.assertEqual(f"Bearer {TOKEN}", request.get_header("Authorization"))
+
+    def test_a_claude_token_with_a_control_character_is_never_sent(self) -> None:
+        for inner in ("\r\n", "\n", "\r", "\x00", "\t", "\x7f", "\x85", chr(0x2028), " "):
+            with self.subTest(inner=repr(inner)):
+                entries, note = self._claude(f"{TOKEN}{inner}x", _forbidden_opener())
+                self.assertEqual(([], "malformed oauth token"), (entries, note))
+
+    def test_a_cursor_token_with_a_control_character_is_never_sent(self) -> None:
+        for inner in ("\r\n", "\t", "\x7f"):
+            with self.subTest(inner=repr(inner)):
+                runner = _keychain_runner(
+                    f"{TOKEN}{inner}x\n", service=quota.CURSOR_KEYCHAIN_SERVICE
+                )
+                entries, note = quota._cursor_entries(
+                    _config(platform_name="darwin"), NOW, _forbidden_opener(), runner
+                )
+                self.assertEqual(([], "malformed token"), (entries, note))
+
+    def test_the_refusal_reaches_diagnostics_as_a_category_and_publishes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(home=tmp)
+            path = Path(quota.credentials_path(config))
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"claudeAiOauth": {"accessToken": f"{TOKEN}\r\nX: y"}}))
+            state = _state(config)
+            log: list[str] = []
+            _fetch_claude(
+                config,
+                state,
+                clock=lambda: NOW,
+                opener=_forbidden_opener(),
+                runner=_no_runner,
+                diagnostic_sink=log.append,
+            )
+        self.assertEqual(["[claude] usage fetch: malformed oauth token"], log)
+        self.assertEqual([], quota.cached_entries(config, state, "claude", NOW, 24.0))
+
+
+class _VendorStub(BaseHTTPRequestHandler):
+    """A vendor endpoint that answers, redirects or drips, as its test says."""
+
+    owner: Any
+
+    def _answer(self) -> None:
+        self.owner.calls.append((self.command, self.path, dict(self.headers.items())))
+        {"redirect": self.redirect, "drip": self.drip}.get(self.owner.mode, self.ok)()
+
+    def ok(self) -> None:
+        body = json.dumps(_usage_body()).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def redirect(self) -> None:
+        self.send_response(self.owner.redirect_status)
+        self.send_header("Location", "/second")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def drip(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Length", "1000")
+        self.end_headers()
+        began = time.monotonic()
+        try:
+            while time.monotonic() - began < self.owner.DRIP_SEC:
+                if self.owner.stop.wait(0.02):
+                    return
+                self.wfile.write(b" ")
+                self.wfile.flush()
+        except OSError:
+            return
+
+    def do_GET(self) -> None:
+        self._answer()
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self._answer()
+
+    def log_message(self, *_args: object) -> None:
+        pass
+
+
+class VendorTransportTest(unittest.TestCase):
+    """The production opener, over a real local socket.
+
+    Only TLS is taken out: the endpoint constants point at a loopback stub and
+    `HTTPSConnection.connect` opens plain TCP, so the opener, its redirect and
+    proxy handling, the deadline and the request bytes all run unchanged.
+    """
+
+    DRIP_SEC = 3.0
+
+    def setUp(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, str]]] = []
+        self.mode = "ok"
+        self.redirect_status = 302
+        self.stop = threading.Event()
+        self.addCleanup(self.stop.set)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        serve_until_closed(server)
+        self.addCleanup(server.shutdown)
+        self.port = server.server_port
+        for name, path in (("USAGE_ENDPOINT", "/api/oauth/usage"), ("CURSOR_USAGE_ENDPOINT", "/c")):
+            patch = mock.patch.object(quota, name, f"https://127.0.0.1:{self.port}{path}")
+            patch.start()
+            self.addCleanup(patch.stop)
+        plain = mock.patch.object(
+            http.client.HTTPSConnection, "connect", http.client.HTTPConnection.connect
+        )
+        plain.start()
+        self.addCleanup(plain.stop)
+        clean = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}
+        environ = mock.patch.dict(os.environ, clean, clear=True)
+        environ.start()
+        self.addCleanup(environ.stop)
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        return type("Handler", (_VendorStub,), {"owner": self})
+
+    def _claude(self, **changes: Any) -> tuple[RuntimeConfig, RuntimeState, list[str], float]:
+        config = _config(platform_name="darwin", **changes)
+        state = _state(config)
+        log: list[str] = []
+        began = time.monotonic()
+        # The production opener: no `opener=` override anywhere on this path.
+        quota.request_fetch(
+            config,
+            state,
+            clock=lambda: NOW,
+            runner=_keychain_runner(_credentials()),
+            diagnostic_sink=log.append,
+            spawn=lambda run: run(),
+        )
+        elapsed = time.monotonic() - began
+        # Cursor's reader finds no Keychain item under this runner and says so;
+        # only Claude's lines are about the request this class makes.
+        return config, state, [line for line in log if line.startswith("[claude]")], elapsed
+
+    def _proxy_listener(self) -> tuple[int, list[object]]:
+        accepted: list[object] = []
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(8)
+        listener.settimeout(0.05)
+        self.addCleanup(listener.close)
+
+        def accept() -> None:
+            while not self.stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    return
+                accepted.append(conn)
+                conn.close()
+
+        threading.Thread(target=accept, daemon=True).start()
+        return listener.getsockname()[1], accepted
+
+    def _proxy_environ(self, port: int) -> dict[str, str]:
+        proxy = f"http://127.0.0.1:{port}"
+        names = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")
+        return {
+            **dict.fromkeys(names, proxy),
+            **{name.lower(): proxy for name in names},
+            "NO_PROXY": "",
+            "no_proxy": "",
+        }
+
+    def test_the_stub_answers_the_production_opener(self) -> None:
+        config, state, log, _ = self._claude()
+        self.assertEqual([], log)
+        (call,) = self.calls
+        self.assertEqual(("GET", "/api/oauth/usage"), call[:2])
+        self.assertEqual(f"Bearer {TOKEN}", call[2]["Authorization"])
+        (entry,) = quota.cached_entries(config, state, "claude", NOW, 24.0)
+        self.assertEqual("ok", entry["state"])
+
+    def test_a_redirect_is_refused_without_a_second_request(self) -> None:
+        self.mode = "redirect"
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                self.calls.clear()
+                self.redirect_status = status
+                config, state, log, _ = self._claude()
+                self.assertEqual(1, len(self.calls))
+                self.assertEqual([f"[claude] usage fetch: HTTP {status}"], log)
+                self.assertEqual([], quota.cached_entries(config, state, "claude", NOW, 24.0))
+
+    def test_a_cursor_redirect_is_refused_without_a_second_request(self) -> None:
+        self.mode = "redirect"
+        runner = _keychain_runner(f"{TOKEN}\n", service=quota.CURSOR_KEYCHAIN_SERVICE)
+        entries, note = quota._cursor_entries(
+            _config(platform_name="darwin"), NOW, quota._open_endpoint, runner
+        )
+        self.assertEqual(([], "HTTP 302"), (entries, note))
+        self.assertEqual([("POST", "/c")], [call[:2] for call in self.calls])
+
+    def test_a_non_https_endpoint_is_refused_before_any_connection(self) -> None:
+        with mock.patch.object(quota, "USAGE_ENDPOINT", f"http://127.0.0.1:{self.port}/u"):
+            _, _, log, _ = self._claude()
+        self.assertEqual([], self.calls)
+        self.assertEqual(["[claude] usage fetch: ValueError"], log)
+
+    def test_an_unlisted_url_is_refused_before_any_connection(self) -> None:
+        request = urllib.request.Request(
+            f"https://127.0.0.1:{self.port}/elsewhere",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        with self.assertRaises(ValueError) as caught:
+            quota._open_endpoint(request, timeout=1.0)
+        self.assertEqual([], self.calls)
+        self.assertNotIn(TOKEN, str(caught.exception))
+
+    def test_ambient_proxies_are_never_consulted(self) -> None:
+        port, accepted = self._proxy_listener()
+        with (
+            mock.patch.dict(os.environ, self._proxy_environ(port)),
+            mock.patch.object(
+                urllib.request, "getproxies", wraps=urllib.request.getproxies
+            ) as lookup,
+        ):
+            config, state, log, _ = self._claude()
+        self.assertEqual([], log)
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual([], accepted)
+        # On macOS this is also the route to the system proxy settings (`_scproxy`).
+        lookup.assert_not_called()
+        (entry,) = quota.cached_entries(config, state, "claude", NOW, 24.0)
+        self.assertEqual("ok", entry["state"])
+
+    def test_the_proxy_listener_would_see_a_proxied_request(self) -> None:
+        # The control for the test above: urllib's default opener, given the same
+        # environment, goes to the listener. Without this an inert listener would
+        # make "no proxy contacted" pass for any opener.
+        port, accepted = self._proxy_listener()
+        with mock.patch.dict(os.environ, self._proxy_environ(port)):
+            opener = urllib.request.build_opener()
+            with contextlib.suppress(OSError, http.client.HTTPException):
+                opener.open(quota.USAGE_ENDPOINT, timeout=2.0).close()
+        deadline = time.monotonic() + 2.0
+        while not accepted and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(1, len(accepted))
+        self.assertEqual([], self.calls)
+
+    def test_a_hung_claude_lookup_does_not_hold_cursor_off(self) -> None:
+        # The two vendors fetch on threads of their own. One resolver slot for
+        # both would turn Claude's stalled lookup into Cursor's "resolver busy".
+        release = threading.Event()
+        self.addCleanup(release.set)
+        real = socket.getaddrinfo
+        stalled: list[bool] = []
+
+        def resolve(*args: Any, **kwargs: Any) -> Any:
+            if not stalled:
+                stalled.append(True)
+                release.wait(2)
+            return real(*args, **kwargs)
+
+        config = _config(platform_name="darwin", usage_fetch_timeout_sec=0.3)
+        cursor_runner = _keychain_runner(f"{TOKEN}\n", service=quota.CURSOR_KEYCHAIN_SERVICE)
+        with mock.patch.object(socket, "getaddrinfo", side_effect=resolve):
+            claude = quota._claude_entries(
+                config, NOW, quota._open_endpoint, _keychain_runner(_credentials())
+            )
+            quota._cursor_entries(config, NOW, quota._open_endpoint, cursor_runner)
+        # urllib wraps the lookup's TimeoutError in a URLError.
+        self.assertEqual(([], "URLError"), claude)
+        self.assertEqual([("POST", "/c")], [call[:2] for call in self.calls])
+
+    def test_a_dripping_response_ends_at_the_deadline_and_clears_the_inflight_mark(
+        self,
+    ) -> None:
+        self.mode = "drip"
+        _, state, log, elapsed = self._claude(usage_fetch_timeout_sec=0.3)
+        self.assertLess(elapsed, self.DRIP_SEC / 2)
+        self.assertEqual(["[claude] usage fetch: TimeoutError"], log)
+        with state.usage_fetch_lock:
+            self.assertEqual(set(), state.usage_fetch_inflight)
+            self.assertEqual({"ts": NOW, "entries": []}, state.usage_fetch_cache["claude"])

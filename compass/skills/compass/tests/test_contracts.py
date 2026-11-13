@@ -1908,14 +1908,19 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The quota fetch: the whole outbound network surface, kept below the
         # collectors so the one provider that fetches shares nothing with the
-        # eight that read disk.
+        # eight that read disk. `https_transport` and `reach` for the same opener and
+        # whole-exchange deadline the release lookup uses, rather than a third copy.
         "compass_runtime.quota": {
             "compass_runtime.config",
+            "compass_runtime.https_transport",
             "compass_runtime.io",
+            "compass_runtime.reach",
             "compass_runtime.records",
             "compass_runtime.sessions",
             "compass_runtime.state",
         },
+        # Standard library only: the bounded HTTPS exchange under the two outbound requests.
+        "compass_runtime.https_transport": set(),
         # `records` for `safe_text`: the workflow README's `title` is published
         # as the goal line, the one piece of project-authored text on the
         # surface, and it goes through the same bounding and control-character
@@ -2180,6 +2185,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.settings": {"compass_runtime.config", "compass_runtime.io"},
         "compass_runtime.update_check": {
             "compass_runtime.config",
+            "compass_runtime.https_transport",
             "compass_runtime.io",
             "compass_runtime.settings",
             "compass_runtime.reach",

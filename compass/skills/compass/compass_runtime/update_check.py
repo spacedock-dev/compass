@@ -11,21 +11,18 @@ import json
 import math
 import os
 import re
-import socket
-import ssl
 import stat
 import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
-from contextlib import suppress
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from . import config as runtime_config
+from . import https_transport, settings
 from . import io as runtime_io
-from . import settings
 from .reach import build_reach_opener
 
 if TYPE_CHECKING:
@@ -141,125 +138,19 @@ def _version(value: Any) -> tuple[Any, ...] | None:
     return int(major), int(minor), int(patch), pre is None, identifiers
 
 
-# A hung system resolver may outlive its caller, but cannot accumulate more resolver threads.
+# Its own slot rather than the quota fetch's: one lane's hung resolver cannot fail the other's.
 _DNS_SLOT = threading.BoundedSemaphore(1)
 
 
-def _remaining(deadline: float) -> float:
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise TimeoutError("release lookup deadline")
-    return remaining
-
-
-def _resolve(host: str, port: int, deadline: float) -> list[Any]:
-    if not _DNS_SLOT.acquire(blocking=False):
-        raise TimeoutError("release lookup resolver busy")
-    ready = threading.Event()
-    answers: list[Any] = []
-    errors: list[OSError] = []
-
-    def resolve() -> None:
-        try:
-            answers.extend(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
-        except OSError as exc:
-            errors.append(exc)
-        finally:
-            _DNS_SLOT.release()
-            ready.set()
-
-    worker = threading.Thread(target=resolve, daemon=True)
-    try:
-        worker.start()
-    except RuntimeError:
-        _DNS_SLOT.release()
-        raise
-    if not ready.wait(_remaining(deadline)):
-        raise TimeoutError("release lookup DNS deadline")
-    _remaining(deadline)
-    if errors:
-        raise errors[0]
-    return answers
-
-
-class _ReleaseConnection(http.client.HTTPSConnection):
-    def __init__(self, host: str, *, deadline: float, **kwargs: Any) -> None:
-        super().__init__(host, **kwargs)
-        self.deadline = deadline
-        self.transport: socket.socket | None = None
-        self._create_connection = self._connect
-
-    def _connect(self, address: tuple[str, int], *_args: Any) -> socket.socket:
-        error: OSError = OSError("release lookup has no addresses")
-        for family, kind, protocol, _, target in _resolve(*address, self.deadline):
-            _remaining(self.deadline)
-            sock = socket.socket(family, kind, protocol)
-            self.transport = sock
-            try:
-                sock.settimeout(_remaining(self.deadline))
-                sock.connect(target)
-                sock.settimeout(_remaining(self.deadline))
-            except OSError as exc:
-                sock.close()
-                error = exc
-            else:
-                return sock
-        raise error
-
-    def connect(self) -> None:
-        super().connect()
-        self.transport = self.sock
-        _remaining(self.deadline)
-
-    def interrupt(self) -> None:
-        if self.transport is not None:
-            # A whole-exchange watchdog interrupts HTTP's internal header and body reads,
-            # including chunk parsing; inactivity timeouts alone permit an endless drip.
-            with suppress(OSError):
-                self.transport.shutdown(socket.SHUT_RDWR)
-
-
-class _ReleaseHTTPS(urllib.request.HTTPSHandler):
-    handler_order = 499  # Before urllib's default HTTPS handler, retaining the no-redirect opener.
-
-    def __init__(self, deadline: float) -> None:
-        self.context = ssl.create_default_context()
-        super().__init__(context=self.context)
-        self.deadline = deadline
-        self.connections: list[_ReleaseConnection] = []
-
-    def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
-        def connection(host: str, **kwargs: Any) -> _ReleaseConnection:
-            conn = _ReleaseConnection(host, deadline=self.deadline, **kwargs)
-            self.connections.append(conn)
-            return conn
-
-        return self.do_open(connection, req, context=self.context)
-
-    def interrupt(self) -> None:
-        for conn in self.connections:
-            conn.interrupt()
-
-
 def fetch_release(config: RuntimeConfig) -> str:
-    deadline = time.monotonic() + _TIMEOUT_SEC
     req = request(config)
-    handler = _ReleaseHTTPS(deadline)
-    opener = build_reach_opener()
-    opener.add_handler(handler)
-    watchdog = threading.Timer(_remaining(deadline), handler.interrupt)
-    watchdog.daemon = True
-    watchdog.start()
-    try:
-        # request() admits only HTTPS; the shared opener refuses every redirect and proxy.
-        with opener.open(req, timeout=_remaining(deadline)) as response:
-            if response.status != 200:
-                raise ValueError("release lookup did not answer successfully")
-            raw = response.read(_MAX_ANSWER_BYTES + 1)
-            _remaining(deadline)
-    finally:
-        watchdog.cancel()
-        watchdog.join()
+    # request() admits only HTTPS; the shared opener refuses every redirect and proxy.
+    with https_transport.open_bounded(
+        build_reach_opener(), req, timeout=_TIMEOUT_SEC, dns_slot=_DNS_SLOT
+    ) as response:
+        if response.status != 200:
+            raise ValueError("release lookup did not answer successfully")
+        raw = response.read(_MAX_ANSWER_BYTES + 1)
     if len(raw) > _MAX_ANSWER_BYTES:
         raise ValueError("release answer too large")
     answer = json.loads(raw)

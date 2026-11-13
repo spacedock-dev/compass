@@ -751,7 +751,8 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
     # Runtime module -> text of the row that accounts for what it starts or requests.
     LAUNCHERS: ClassVar[dict[str, str]] = {
         "quota": "Vendor quota poll",
-        "update_check": "Daily release lookup",
+        # The release lookup's requests go through `https_transport`, whose row names it.
+        "https_transport": "The bounded HTTPS transport",
         "reach": "Reach nudge",
         "supervise": "A press for a reading",
         "loopback_transport": "The bounded loopback transport",
