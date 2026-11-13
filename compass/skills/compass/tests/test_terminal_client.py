@@ -148,6 +148,7 @@ class ClockedDashboard:
         headers: Mapping[str, str] | None = None,  # noqa: ARG002 - exchange's keyword contract
         timeout: float,
         cap: int,
+        wait_when_busy: bool = False,  # noqa: ARG002 - exchange's keyword contract
     ) -> tuple[int, bytes]:
         self.requests.append((method, path))
         delay = self.delays.get(path, 0.0)
