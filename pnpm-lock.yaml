@@ -163,9 +163,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  undici: '>=8.12.2 <9'
-  glob: '>=14.0.2 <15'
-  minimatch: '>=11.0.1 <12'
+  undici: 8.12.3
+  glob: 14.0.3
+  minimatch: 11.0.3
+  '@isaacs/nonrecursive-glob-match': 1.0.3
 
 importers:
 
@@ -670,8 +671,8 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@isaacs/nonrecursive-glob-match@1.1.0':
-    resolution: {integrity: sha512-GPm/Dbvk5RLmhRnxXIa7nTpK0xtl4E0wj0MslsuNiJ1FIROU+2+9lgUC/dgF7Ey4QCWhfEsgxilMRMCdHPfDfw==}
+  '@isaacs/nonrecursive-glob-match@1.0.3':
+    resolution: {integrity: sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==}
 
   '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0':
     resolution: {integrity: sha512-qvsTEwEFefhdirGOPnu9Wp6ChfIwy2dBCRuETU3uE+4cC+PFoxMSiiEhxk4lOluA34eARHA0OxqsEUYDqRMgeQ==}
@@ -1599,8 +1600,8 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
-  glob@14.0.5:
-    resolution: {integrity: sha512-nbKW5Sl53DEM5PkmZ5Jwfeyss1ohuqcgOBjOarSjz1fp8W4ss4EOOvKADQRbApD6JmVBX+HkpZYfBez4wXbeQQ==}
+  glob@14.0.3:
+    resolution: {integrity: sha512-A1vjIwC3qpdCso45Iw127gnp7sPhqgY8lUQhDrArIs+GbmfaaVPFuoyy7WyLT9EPZCRZ7j7aLdwUhQmHWesEow==}
     engines: {node: 18 || 20 || >=22}
 
   graceful-fs@4.2.11:
@@ -1872,9 +1873,9 @@ packages:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
     engines: {node: '>=4'}
 
-  minimatch@11.0.8:
-    resolution: {integrity: sha512-nFQuYSTVrGvysVBps5Ih+0BdnYFN/Cj3C816r6+p7yK+FHrVLGE4O4N9AFwykrlNlvM2HYt+Rad1Uiro6h88Ig==}
-    engines: {node: 20 || >=22}
+  minimatch@11.0.3:
+    resolution: {integrity: sha512-iny/40PEGkNJQ5/Pv6z3nm6FbRAby32GeZRjCUJk2WnNDbgPSTcdI+DDvLqsgBdD4cD5sMtMheqPPnehCCa8Nw==}
+    engines: {node: 18 || 20 || >=22}
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
@@ -2165,8 +2166,8 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@8.12.4:
-    resolution: {integrity: sha512-8Mx+uNKKER2bA4AdtedkqRbwUCIJFr2nJckXRe5yrDqzePqwLP7VNcctN8/XdmDSbF7mS+jJKIszlL+vbam1VA==}
+  undici@8.12.3:
+    resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
 
   update-browserslist-db@1.3.4:
@@ -2651,11 +2652,11 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@isaacs/nonrecursive-glob-match@1.1.0': {}
+  '@isaacs/nonrecursive-glob-match@1.0.3': {}
 
   '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0(typescript@6.0.3)(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0))':
     dependencies:
-      glob: 14.0.5
+      glob: 14.0.3
       react-docgen-typescript: 2.4.0(typescript@6.0.3)
       vite: 8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)
     optionalDependencies:
@@ -3424,9 +3425,9 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
-  glob@14.0.5:
+  glob@14.0.3:
     dependencies:
-      minimatch: 11.0.8
+      minimatch: 11.0.3
       minipass: 7.1.3
       path-scurry: 3.0.0
 
@@ -3499,7 +3500,7 @@ snapshots:
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2
-      undici: 8.12.4
+      undici: 8.12.3
       w3c-xmlserializer: 6.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -3644,9 +3645,9 @@ snapshots:
 
   min-indent@1.0.1: {}
 
-  minimatch@11.0.8:
+  minimatch@11.0.3:
     dependencies:
-      '@isaacs/nonrecursive-glob-match': 1.1.0
+      '@isaacs/nonrecursive-glob-match': 1.0.3
       brace-expansion: 5.0.12
 
   minimist@1.2.8: {}
@@ -3956,7 +3957,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@8.12.4: {}
+  undici@8.12.3: {}
 
   update-browserslist-db@1.3.4(browserslist@4.29.3):
     dependencies:
