@@ -814,7 +814,7 @@ WITHHELD = {
     ),
     WITHHELD_CONTEXT_CHANGED: (
         "The attempt was counted, but the model did not start because its configuration "
-        "could not pass the final check. Check the Claude managed settings before trying again."
+        "could not pass the final check. Check the CLI's managed settings before trying again."
     ),
     WITHHELD_TURN_STOP: (
         "A turn stop was observed and no session end was, so there is no end for a "

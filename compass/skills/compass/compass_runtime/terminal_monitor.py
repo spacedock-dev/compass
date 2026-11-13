@@ -227,7 +227,7 @@ def _command(
         until = time.monotonic() + READY_SEC
         while store.running() and time.monotonic() < until:
             time.sleep(0.05)
-        return _say("failed", failed=True) if store.running() else _say("stopped")
+        return _stopped_report(store, generation)
     if off:
         record = store.read("run")
         if terminal_sessions.names(record, named.sid):
@@ -240,6 +240,15 @@ def _command(
         no_update_check=no_update_check,
         server_options=server_options,
     )
+
+
+def _stopped_report(store: monitor_store.Store, generation: object) -> int:
+    if store.running():
+        return _say("failed", failed=True)
+    status = store.read("status")
+    if status.get("generation") == generation and status.get("stop_busy") is True:
+        return _say("stop_undelivered", failed=True)
+    return _say("stopped")
 
 
 def _start(
@@ -515,9 +524,12 @@ def _stop_holder(dashboard: client.Dashboard, sid: str, generation: str) -> bool
     the stop then went undelivered and the dashboard's own check-in expiry ends the monitor.
     """
     current = client.probe(dashboard.port)
-    if isinstance(current, client.Refusal):
-        return current.message == client.sentence("dashboard_busy")
-    if isinstance(current, client.Dashboard) and current[1:3] == dashboard[1:3]:
+    # A probe that meets the cap cannot name the dashboard, but the cap's refusal is written before
+    # any request is read, so the stop is sent anyway and waits for a slot within its own budget.
+    at_cap = isinstance(current, client.Refusal) and current.message == client.sentence(
+        "dashboard_busy"
+    )
+    if at_cap or (isinstance(current, client.Dashboard) and current[1:3] == dashboard[1:3]):
         try:
             client.post(
                 dashboard.port,

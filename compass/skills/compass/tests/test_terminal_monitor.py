@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
-from compass_runtime import monitor_store
+from compass_runtime import monitor_store, terminal_sessions
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
 
@@ -882,22 +882,16 @@ class MonitorCorrectionsTest(unittest.TestCase):
 
 class MonitorAtTheConnectionCapTest(unittest.TestCase):
     def test_the_stop_is_delivered_once_a_slot_frees(self) -> None:
+        # The real server at cap 1 with its one slot held: neither the probe nor the stop gets in
+        # until the slot is released half a second in, and the stop still arrives.
         with support.saturated_server() as (httpd, release):
-            threading.Timer(0.3, release).start()
+            threading.Timer(0.5, release).start()
             dashboard = client.Dashboard(httpd.server_port, 7, 1.0, None)
-            posts: list[dict[str, Any]] = []
-
-            def post(*_args: Any, **kwargs: Any) -> client.Reply:
-                posts.append(kwargs)
-                return client.Reply(200, {"ok": True})
-
-            found = client.Dashboard(httpd.server_port, 7, 1.0, None)
-            with (
-                mock.patch.object(client, "probe", return_value=found),
-                mock.patch.object(client, "post", post),
-            ):
-                self.assertFalse(monitor._stop_holder(dashboard, "one", "a" * 32))
-        self.assertTrue(posts[0]["wait_when_busy"])
+            with mock.patch.object(client, "post", wraps=client.post) as post:
+                busy = monitor._stop_holder(dashboard, "one", "a" * 32)
+        self.assertFalse(busy)
+        post.assert_called_once()
+        self.assertTrue(post.call_args.kwargs["wait_when_busy"])
 
     def test_a_stop_at_a_cap_that_never_clears_is_reported_busy(self) -> None:
         dashboard = client.Dashboard(4554, 7, 1.0, None)
@@ -908,12 +902,10 @@ class MonitorAtTheConnectionCapTest(unittest.TestCase):
         ):
             self.assertTrue(monitor._stop_holder(dashboard, "one", "a" * 32))
 
-    def test_a_stop_is_busy_when_even_the_probe_meets_the_cap(self) -> None:
+    def test_a_stop_is_busy_when_the_cap_never_clears_for_the_probe_or_the_post(self) -> None:
         with support.saturated_server() as (httpd, _release):
             dashboard = client.Dashboard(httpd.server_port, 7, 1.0, None)
-            with mock.patch.object(client, "post") as post:
-                self.assertTrue(monitor._stop_holder(dashboard, "one", "a" * 32))
-        post.assert_not_called()
+            self.assertTrue(monitor._stop_holder(dashboard, "one", "a" * 32))
 
     def test_a_start_at_a_cap_that_never_clears_is_said_to_be_busy_not_refused(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -948,3 +940,37 @@ class MonitorAtTheConnectionCapTest(unittest.TestCase):
             self.assertEqual(1, monitor._await_start(store, "one", "a" * 32))
         self.assertIn(client.sentence("dashboard_busy"), err.getvalue())
         self.assertNotIn(client.sentence("monitor_refused"), err.getvalue())
+
+    def test_off_says_when_the_dashboard_was_never_told(self) -> None:
+        generation = "c" * 32
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write("run", {"sid": "one", "generation": generation})
+            store.write(
+                "status", {"generation": generation, "reason": "stopped", "stop_busy": True}
+            )
+            named = client.Session("claude", "one", "flag")
+            with (
+                mock.patch.object(store, "running", side_effect=[True, False, False]),
+                mock.patch.object(terminal_sessions, "names", return_value=True),
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                self.assertEqual(1, monitor._command(store, named, off=True, in_session=False))
+        self.assertIn(client.sentence("monitor_stop_undelivered"), err.getvalue())
+
+    def test_off_says_stopped_when_the_stop_was_delivered(self) -> None:
+        generation = "c" * 32
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write("run", {"sid": "one", "generation": generation})
+            store.write(
+                "status", {"generation": generation, "reason": "stopped", "stop_busy": False}
+            )
+            named = client.Session("claude", "one", "flag")
+            with (
+                mock.patch.object(store, "running", side_effect=[True, False, False]),
+                mock.patch.object(terminal_sessions, "names", return_value=True),
+                mock.patch("sys.stdout", io.StringIO()) as out,
+            ):
+                self.assertEqual(0, monitor._command(store, named, off=True, in_session=False))
+        self.assertIn(client.sentence("monitor_stopped"), out.getvalue())

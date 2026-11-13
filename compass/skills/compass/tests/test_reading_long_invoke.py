@@ -7,6 +7,7 @@ import threading
 import unittest
 from typing import Any
 
+from compass_runtime import reading as runtime_reading
 from compass_runtime import reading_policy as policy
 from compass_runtime import supervise
 
@@ -114,6 +115,12 @@ class LongBeforeInvokeTest(unittest.TestCase):
         self.assertEqual(("", "context-config-after-reserve"), (raw, status))
         self.assertTrue(guard.reserved)
         self.assertEqual([], fixture.calls)
+
+    def test_the_after_charge_sentence_names_no_one_provider(self) -> None:
+        # The same reason is published for a Codex lane, so it cannot send the reader to Claude.
+        sentence = runtime_reading.WITHHELD[runtime_reading.WITHHELD_CONTEXT_CHANGED]
+        self.assertIn("was counted", sentence)
+        self.assertNotIn("Claude", sentence)
 
     def test_cancellation_during_callback_is_rechecked(self) -> None:
         cancelled = threading.Event()

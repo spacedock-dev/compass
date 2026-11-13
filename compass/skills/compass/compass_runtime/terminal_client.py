@@ -98,6 +98,10 @@ SENTENCES: Final[dict[str, str]] = {
     "monitor_started": "Live monitor started for this session.",
     "monitor_already_running": "Live monitor is already running for this session.",
     "monitor_stopped": "This terminal's Live monitor stopped.",
+    "monitor_stop_undelivered": (
+        "This terminal's Live monitor stopped checking in, but the dashboard had every connection "
+        "in use, so it was not told. It may still show Live monitor on until it notices."
+    ),
     "monitor_not_running": "This terminal's Live monitor is not running.",
     "monitor_busy": "Another monitor command is still running.",
     "monitor_failed": "Compass could not start or stop this terminal's Live monitor.",
