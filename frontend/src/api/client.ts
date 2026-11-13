@@ -108,7 +108,16 @@ async function settle<T>(
   }
   const text = await readText(response);
   if (signal?.aborted) return { kind: 'aborted' };
-  if (!response.ok) return { kind: 'http-error', status: response.status, body: parseLoose(text) };
+  if (!response.ok) {
+    const failure = {
+      kind: 'http-error',
+      status: response.status,
+      body: parseLoose(text),
+    } as const;
+    const header = response.status === 503 ? response.headers.get('Retry-After') : null;
+    const wait = header === null || header.trim() === '' ? Number.NaN : Number(header);
+    return Number.isFinite(wait) && wait >= 0 ? { ...failure, retryAfter: wait } : failure;
+  }
   let body: unknown;
   try {
     body = JSON.parse(text) as unknown;

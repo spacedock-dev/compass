@@ -232,6 +232,27 @@ describe('POST adapters', () => {
     expect(calls.every((call) => call.init?.method === 'POST')).toBe(true);
   });
 
+  it('reports a 503 with Retry-After, the connection cap, as retryable and a bare 503 as not', async () => {
+    const send = (headers?: Record<string, string>) =>
+      createApiClient({
+        fetch: recorder(() => new Response('', { status: 503, ...(headers ? { headers } : {}) }))
+          .fetch,
+      }).postLiveMonitor({
+        harness: 'claude',
+        sid: 's',
+        action: 'beat',
+        tab_id: 't',
+        visible: true,
+      });
+    expect(await send({ 'Retry-After': '1' })).toEqual({
+      kind: 'http-error',
+      status: 503,
+      body: '',
+      retryAfter: 1,
+    });
+    expect(await send()).toEqual({ kind: 'http-error', status: 503, body: '' });
+  });
+
   it('keeps a 409 and a 422 as http errors with their JSON bodies', async () => {
     const { fetch } = recorder(() => json({ ok: false, reason: 'not-running' }, { status: 409 }));
     expect(

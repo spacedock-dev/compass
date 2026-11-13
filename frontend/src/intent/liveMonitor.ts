@@ -12,6 +12,8 @@ import {
   type LeaseState,
 } from '../drift/monitor';
 import { useShell, type Shell } from '../shell/context';
+import type { ApiResult } from '../api/types';
+import type { Environment } from '../transport/ports';
 
 /* The Live monitor, as the page holds it. The server holds the lease, its clock and the Haiku level; this
    keeps only what this tab wants, whether its start was accepted, the last state the server told it, and
@@ -26,6 +28,29 @@ export const LIVE_HARNESSES: ReadonlySet<string> = new Set(['claude']);
 const SAMPLE = { harness: 'claude', sid: 'sample' } as const;
 /** How often a tab says it is still here. The server lets a visible tab go quiet for 50 seconds. */
 export const BEAT_MS = 20_000;
+
+/* The dashboard answers a full connection cap with a 503 and a Retry-After before it reads the request, so
+   the same request can be sent again. Tried a few times and no longer than a beat's own cadence allows;
+   after that the result stands, and the lease's own cadence and 50-second grace take over. */
+const BUSY_RETRIES = 3;
+const BUSY_WAIT_MAX_SEC = 2;
+
+async function untilNotBusy<T>(
+  send: () => Promise<ApiResult<T>>,
+  env: Environment,
+  cancelled: () => boolean,
+): Promise<ApiResult<T>> {
+  let result = await send();
+  for (let tries = 0; tries < BUSY_RETRIES && !cancelled(); tries += 1) {
+    if (result.kind !== 'http-error' || result.retryAfter === undefined) break;
+    const seconds = Math.min(result.retryAfter, BUSY_WAIT_MAX_SEC);
+    await new Promise<void>((resolve) => {
+      env.clock.setTimeout(resolve, seconds * 1000);
+    });
+    result = await send();
+  }
+  return result;
+}
 
 export interface MonitorEntry {
   /** This tab asked for the monitor on this session. */
@@ -277,7 +302,11 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
       return parsed;
     };
     const beat = (visible: boolean) => {
-      void client.postLiveMonitor(body('beat', { visible }), abort.signal).then((result) => {
+      void untilNotBusy(
+        () => client.postLiveMonitor(body('beat', { visible }), abort.signal),
+        env,
+        () => closed,
+      ).then((result) => {
         if (closed || result.kind !== 'ok') return;
         const lease = learn(result.body.state);
         if (!result.body.ok) {
@@ -296,30 +325,32 @@ export function useLiveMonitorLease(session: Row, payload: Row): void {
       if (timer !== null) env.clock.clearInterval(timer);
       timer = null;
     };
-    void client
-      .postLiveMonitor(body('start', { observer_model: 1, visible: !env.isHidden() }))
-      .then((result) => {
-        if (result.kind === 'aborted') return;
-        if (result.kind !== 'ok') {
-          if (!closed) store.refuse(key, 'unreachable', null);
-          return;
-        }
-        const lease = learn(result.body.state);
-        if (closed) {
-          // The reader had already gone: a lease the server just made must not outlive them.
-          if (result.body.ok) void client.postLiveMonitor(body('stop'));
-          return;
-        }
-        if (!result.body.ok) {
-          store.refuse(key, result.body.reason, lease);
-          return;
-        }
-        started = true;
-        store.update(key, { started: true });
-        // A tab hidden by now holds the lease without a visible cadence, and says so.
-        if (env.isHidden()) beat(false);
-        else startBeats();
-      });
+    void untilNotBusy(
+      () => client.postLiveMonitor(body('start', { observer_model: 1, visible: !env.isHidden() })),
+      env,
+      () => closed,
+    ).then((result) => {
+      if (result.kind === 'aborted') return;
+      if (result.kind !== 'ok') {
+        if (!closed) store.refuse(key, 'unreachable', null);
+        return;
+      }
+      const lease = learn(result.body.state);
+      if (closed) {
+        // The reader had already gone: a lease the server just made must not outlive them.
+        if (result.body.ok) void client.postLiveMonitor(body('stop'));
+        return;
+      }
+      if (!result.body.ok) {
+        store.refuse(key, result.body.reason, lease);
+        return;
+      }
+      started = true;
+      store.update(key, { started: true });
+      // A tab hidden by now holds the lease without a visible cadence, and says so.
+      if (env.isHidden()) beat(false);
+      else startBeats();
+    });
     const offHidden = env.onBecameHidden(() => {
       if (!started) return;
       stopBeats();

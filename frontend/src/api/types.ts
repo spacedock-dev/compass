@@ -250,7 +250,14 @@ export interface NotifyReceipt {
 /** A request the server received and settled is a status plus a body that may not be JSON. */
 export type ApiResult<T> =
   | { readonly kind: 'ok'; readonly status: number; readonly body: T; readonly revision: string }
-  | { readonly kind: 'http-error'; readonly status: number; readonly body: unknown }
+  | {
+      readonly kind: 'http-error';
+      readonly status: number;
+      readonly body: unknown;
+      /** Seconds from a 503's `Retry-After`: the dashboard answers its full connection cap that way,
+          before it reads the request, so a retry is never a second write. A route's own 503 has none. */
+      readonly retryAfter?: number;
+    }
   | { readonly kind: 'malformed'; readonly status: number }
   | { readonly kind: 'network-error' }
   | { readonly kind: 'aborted' };

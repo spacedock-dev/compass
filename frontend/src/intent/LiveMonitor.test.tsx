@@ -50,6 +50,8 @@ const actions = (server: ReturnType<typeof leaseServer>) =>
     call['action'] === 'beat' ? `beat:${String(call['visible'])}` : String(call['action']),
   );
 
+const busy = () => new Response('', { status: 503, headers: { 'Retry-After': '1' } });
+
 const press = async (page: ReturnType<typeof mountSession>) => {
   await act(async () => {
     fireEvent.click(switchButton());
@@ -221,6 +223,59 @@ describe('the live monitor switch', () => {
     expect(note()).toMatch(/stopped checking in/);
     await page.advance(60_000);
     expect(actions(server)).toEqual(['start', 'beat:true']);
+  });
+
+  it('sends a beat again when the dashboard answers its connection cap, and keeps the lease', async () => {
+    const server = leaseServer();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    let refused = 0;
+    server.next = () => {
+      refused += 1;
+      return refused === 1 ? busy() : receipt(true, lease());
+    };
+    await page.advance(20_000);
+    await page.advance(1_000);
+    expect(actions(server)).toEqual(['start', 'beat:true', 'beat:true']);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('sends the start again when the dashboard answers its connection cap', async () => {
+    const server = leaseServer();
+    let refused = 0;
+    server.next = () => {
+      refused += 1;
+      return refused === 1 ? busy() : receipt(true, lease());
+    };
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await page.advance(1_000);
+    expect(actions(server)).toEqual(['start', 'start']);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('gives up after a few tries and says the dashboard could not be reached, not that it refused', async () => {
+    const server = leaseServer();
+    server.next = () => busy();
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    for (let second = 0; second < 5; second += 1) await page.advance(1_000);
+    expect(actions(server)).toEqual(['start', 'start', 'start', 'start']);
+    expect(switchButton().getAttribute('aria-checked')).toBe('false');
+    expect(note()).toMatch(/could not be reached/);
+  });
+
+  it('does not repeat a route’s own 503, which carries no Retry-After', async () => {
+    const server = leaseServer();
+    server.next = () => new Response('{}', { status: 503 });
+    const page = mountSession({ routes: { '/api/live-monitor': server.handler } });
+    await page.settle();
+    await press(page);
+    await page.advance(10_000);
+    expect(actions(server)).toEqual(['start']);
   });
 
   it('is drawn only for Claude Code with annotations on, and sends nothing for any other', async () => {
