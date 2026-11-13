@@ -1,7 +1,7 @@
 import { nextNumber } from '../api/bootstrap';
 import { clock, isRecord, type Row } from '../observed';
 import type { DriftLevel } from './level';
-import { LIVE_LEVEL_NAMES } from './sentences';
+import { CLAUDE_SETTINGS_LOOK, LIVE_LEVEL_NAMES } from './sentences';
 
 /* What the page reads of the Live monitor's lease, which the server holds: the clock, the words it says
    are sent, the level a Haiku check earned, and why a lease ended. Pure: the page keeps none of this in
@@ -16,6 +16,7 @@ export const END_REASONS = [
   'declined',
   'stopped',
   'cap',
+  'settings-refused',
 ] as const;
 export type EndReason = (typeof END_REASONS)[number];
 
@@ -126,6 +127,8 @@ export const END_NOTES: Readonly<Record<Exclude<EndReason, 'stopped'>, string>> 
     'Live monitor turned off: no answer after {minutes}, so no more model calls were made.',
   declined: 'Live monitor turned off, as you asked.',
   cap: 'Live monitor turned off: it reached its own limit of checks, which is not your Analyze budget. Analyze is unaffected, and the level comes from checks and file paths.',
+  /* Settings changed while it was on: the check was refused before its charge (`live_monitor.prepare`). */
+  'settings-refused': `Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
 };
 
 export function endNote(reason: EndReason, options: { readonly answerMinutes?: number }): string {
@@ -146,6 +149,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   'unknown-session': 'Live monitor did not start: this session is not on the board.',
   'unsupported-harness': 'Live monitor did not start: it checks Claude Code sessions only.',
   sample: 'Live monitor did not start: the sample session is view only.',
+  'settings-refused': `Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
 };
 
 export function refusalNote(reason: string): string {

@@ -504,6 +504,7 @@ class ReadinessTest(unittest.TestCase):
             ("paused", "paused"),
             ("no-observer-model", "--no-observer-model"),
             ("ended", "ended"),
+            ("settings-refused", "your Claude Code settings could send"),
         ):
             with self.subTest(reason=reason), mock.patch("sys.stderr", io.StringIO()) as err:
                 self.assertEqual(1, monitor._report_start({"ok": False, "reason": reason}))

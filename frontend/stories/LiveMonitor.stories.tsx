@@ -270,6 +270,44 @@ export const RefusedToStart: Story = {
   },
 };
 
+/* Claude Code settings the shared check refuses: the switch stays off and says why and where to look, rather
+   than turning on and making no check. */
+export const RefusedToStartByClaudeCodeSettings: Story = {
+  ...scenario({
+    facts: FACTS,
+    lease: { ...leaseScenario(leaseState({ on: false })), refuse: 'settings-refused' },
+  }),
+  play: async ({ canvasElement, args }) => {
+    const card = await drawn(canvasElement);
+    const toggle = await monitorSwitch(card);
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(note()).toHaveTextContent(
+        'Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+      ),
+    );
+    await expect(note()).not.toHaveTextContent(/not available to monitor/);
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(actions(args.scenario.lease as LeaseScenario)).toEqual(['start']);
+  },
+};
+
+/* Settings that change while it is on: the server refuses the next check uncharged and ends the lease with that
+   reason, and the card says so instead of staying on and checking nothing. */
+export const TurnedOffByClaudeCodeSettings: Story = {
+  ...scenario({ facts: FACTS, clock: {}, lease: leaseScenario(leaseState({ now: 5000 })) }),
+  play: async ({ canvasElement, args }) => {
+    const card = await drawn(canvasElement);
+    await endsBy('settings-refused', args, card);
+    await waitFor(() =>
+      expect(note()).toHaveTextContent(
+        'Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+      ),
+    );
+    await expect(await monitorSwitch(card)).toHaveAttribute('aria-checked', 'false');
+  },
+};
+
 export const AnalyzeOutranksTheMonitor: Story = {
   ...scenario({
     facts: FACTS,

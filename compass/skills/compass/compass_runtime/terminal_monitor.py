@@ -106,7 +106,9 @@ def _report_start(answer: Mapping[str, Any], *, repeat: bool = False) -> int:
     if answer.get("ok") is not True:
         reason = answer.get("reason")
         return _say(
-            str(reason) if reason in {"paused", "no-observer-model", "ended"} else "refused",
+            str(reason)
+            if reason in {"paused", "no-observer-model", "ended", "settings-refused"}
+            else "refused",
             failed=True,
         )
     receipt = answer.get("terminal") or {}

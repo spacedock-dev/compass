@@ -1039,6 +1039,31 @@ export const Interrupted: Story = {
   },
 };
 
+/* Stopped by Claude Code settings the shared check refuses, before the first call: the reason says the call was
+   neither sent nor charged and where to look, never that the claude command could not be reached. */
+export const StoppedByClaudeCodeSettings: Story = {
+  render: () => (
+    <SummaryPage
+      summary={{
+        ...ABSENT,
+        job: job({ state: 'refused', reason: 'settings-refused', parts: 3, finished_parts: [] }),
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const region = await card(canvasElement);
+    const none = await stateOf(region, 'none');
+    const reason = none.querySelector('[data-next-summary-reason]');
+    await expect(reason).toHaveTextContent(
+      'Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies. It kept no finished part.',
+    );
+    await expect(reason).not.toHaveTextContent('settings-refused');
+    await expect(reason).not.toHaveTextContent(/claude command/);
+    await poll();
+    await expect(summaryPosts()).toHaveLength(0);
+  },
+};
+
 /* Cancelled after two parts: the saved summary stands, with what the cancel kept said beside it. */
 export const CancelledKeepsParts: Story = {
   render: () => (

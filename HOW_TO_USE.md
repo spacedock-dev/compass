@@ -717,6 +717,48 @@ files. It finds the
 instance with the same probe `--status` and `--stop` use, so `--stop` and then `--forget` is the
 whole procedure.
 
+## When Claude Code settings stop a check
+
+Find goal, session summaries, unasked checks and the Live monitor all run through your Claude Code.
+Before each call, Compass reads the Claude Code settings your organization manages. If those
+settings could send the call somewhere Compass cannot name, or run a command of their own, Compass
+does not start it, and nothing is sent or charged for it. Find goal and the Live monitor say so
+beside their control, a summary says so on its card, and `--summary` and `--monitor` say so in the
+terminal. An unasked check skips without a note, because nothing was spent. Analyze runs a stricter
+form of the same check and says so in its own words.
+
+To find the setting:
+
+1. Open the managed settings file: `/Library/Application Support/ClaudeCode/managed-settings.json`
+   on macOS, `/etc/claude-code/managed-settings.json` on Linux. Open every `.json` file in the
+   `managed-settings.d` folder beside it too.
+2. Open `remote-settings.json` in your Claude Code folder (`~/.claude`, or the folder
+   `CLAUDE_CONFIG_DIR` names). Claude Code keeps it as its copy of the settings your organization
+   sends from its Claude account.
+3. In each file, look for any of these:
+   - a helper command: `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
+     `otelHeadersHelper` or `policyHelper`;
+   - a login gateway: `forceLoginGatewayUrl`, or `forceLoginMethod` set to `gateway`;
+   - `forceRemoteSettingsRefresh` set to `true`;
+   - telemetry that logs a call's words, in the file's `env`: `OTEL_LOG_USER_PROMPTS`,
+     `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_ASSISTANT_RESPONSES` or
+     `OTEL_LOG_RAW_API_BODIES` turned on, or `ENABLE_BETA_TRACING_DETAILED` with a
+     `BETA_TRACING_ENDPOINT`;
+   - in `remote-settings.json` only, any key other than `$schema`, `channelsEnabled`,
+     `companyAnnouncements`, `cleanupPeriodDays`, `includeCoAuthoredBy`, `attribution`, `hooks`
+     and `disableAllHooks`.
+
+Metrics export on its own (`CLAUDE_CODE_ENABLE_TELEMETRY` with an OTLP endpoint) does not stop a
+check. Three things stop it without any of those keys: a configuration profile for Claude Code under
+`/Library/Managed Preferences` on macOS, which Compass cannot read; `CLAUDE_CODE_MANAGED_SETTINGS_PATH`
+set in the dashboard's environment; and a `CLAUDE_CONFIG_DIR` that is not a folder you own and only
+you can write to.
+
+If the setting is yours to change, change it and press again. Compass reads these files before every
+call, so nothing needs a restart; turn the Live monitor on again yourself. If your organization
+manages the setting, it is doing what they set it up to do, so ask whoever manages it. Compass does
+not run these checks around it.
+
 ## Alert once on a workflow stage
 
 Open a project's Course tab, find Workflow stage conditions, choose a declared stage and press
@@ -1014,6 +1056,7 @@ pile.
 | The session says no dashboard is running | It is looking at a different `COMPASS_HOME` or port | Export `COMPASS_HOME` in the shell that launches the harness |
 | The session says the lane is switched off | The dashboard was started with `--no-ask` | Restart without the flag |
 | A hook works in one shell and not another | Two Pythons on the PATH | Use one interpreter for everything |
+| Find goal, a summary or the Live monitor says your Claude Code settings stopped it | A managed setting can move the call or run a command | Follow [When Claude Code settings stop a check](#when-claude-code-settings-stop-a-check) |
 
 Anything that looks like a defect rather than a configuration problem belongs in an issue. The
 security contact is in [SECURITY.md](SECURITY.md).

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
-import { FIND_GOAL_NOTHING } from '../src/intent/sentences';
+import { FIND_GOAL_NOTHING, FIND_GOAL_SETTINGS_REFUSED } from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
@@ -441,6 +441,34 @@ export const NothingFound: Story = {
     await expect(before).toBe(FIRST);
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
     await expect(view.getByRole('button', { name: 'Find goal' })).toBeVisible();
+    await expect(finds()).toHaveLength(1);
+  },
+};
+
+/* Claude Code settings the shared check refuses (a helper command, a login gateway, telemetry that logs prompts):
+   the server starts nothing and charges nothing, and the note says so and where to look, never that the claude
+   command could not be reached. */
+export const ClaudeCodeSettingsStopTheSearch: Story = {
+  args: {
+    setup: {
+      find: () =>
+        json(
+          { ok: false, produced: false, found: null, why: 'settings-refused', route: FOUND.route },
+          503,
+        ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await intentCard(canvasElement);
+    const view = within(card);
+    const before = (view.getByRole('textbox', { name: 'Goal' }) as HTMLTextAreaElement).value;
+    await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
+    await waitFor(() => expect(note(card)).toBe(FIND_GOAL_SETTINGS_REFUSED));
+    await expect(note(card)).toBe(
+      'Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+    );
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(before);
+    await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
     await expect(finds()).toHaveLength(1);
   },
 };

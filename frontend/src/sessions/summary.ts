@@ -9,6 +9,7 @@ import type {
   SummaryPlan,
 } from '../api/summary';
 import { CUE_TTL_MS } from '../controls/keyedState';
+import { CLAUDE_SETTINGS_LOOK } from '../drift/sentences';
 import { clock } from '../observed';
 
 /* What the What the session has done card says about a summary. Every reason token the server can publish is
@@ -112,6 +113,10 @@ export const SUMMARY_REASONS: Readonly<Record<string, (context: ReasonContext) =
   stopping: () => 'The summary is stopping.',
   'model-unavailable': () =>
     'Compass could not reach your Claude Code (the claude command), so the summary stopped.',
+  /* The shared settings check runs before each call's charge, so the call it stopped was neither sent nor
+     charged; parts finished before it were, and `partsKept` says how many were kept. */
+  'settings-refused': () =>
+    `Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
   interrupted: () =>
     'Compass restarted while this summary ran, so it stopped. It does not resume on its own.',
   'job-failed': () => 'The summary stopped on an error.',

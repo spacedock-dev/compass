@@ -270,6 +270,8 @@ spacedock-compass --monitor --off --session claude:ID
     exits
   - you pause model calls
   - it reaches its check limit
+  - your Claude Code settings change so that a check could go somewhere Compass cannot name
+    ([what to check](HOW_TO_USE.md#when-claude-code-settings-stop-a-check))
   - the dashboard stops or restarts
   - two hours pass with nothing new
 - It raises no notification. See its level in the

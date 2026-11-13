@@ -373,6 +373,17 @@ LEDE_REASONS = {
 }
 
 
+# The job stops said in summary.ts's words rather than as their token; any other is printed raw.
+JOB_REASONS = {
+    "settings-refused": (
+        "Compass stopped the summary before its next model call, because your Claude Code "
+        "settings could send it somewhere Compass cannot name. That call was not sent or "
+        "charged. Check the Claude Code settings your organization manages for a helper command "
+        "such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies."
+    ),
+}
+
+
 def _unlinked(summary: Mapping[str, Any], labels: Mapping[str, str]) -> int:
     bullets = [
         bullet
@@ -405,8 +416,11 @@ def render(summary: Mapping[str, Any], labels: Mapping[str, str], *, page_url: s
     lines.append(stamp)
     job = summary.get("job") or {}
     if job.get("state") not in (None, "running", "stopping", "complete"):
-        reason = f" ({job['reason']})" if job.get("reason") else ""
+        said = JOB_REASONS.get(str(job.get("reason")))
+        reason = f" ({job['reason']})" if job.get("reason") and not said else ""
         lines.append(f"Summary job: {job['state']}{reason}; stored summary shown below.")
+        if said:
+            lines.append(said)
     lines.extend(_freshness(summary))
     lines.extend(_notes(summary))
 
@@ -552,10 +566,9 @@ def _run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - one bounded comman
                 return 1
             active = job.get("state") in ("running", "stopping")
         if not summary.get("exists"):
-            print(
-                f"No stored summary ({job.get('reason') or job.get('state') or 'unavailable'}).",
-                file=err,
-            )
+            why = job.get("reason") or job.get("state") or "unavailable"
+            said = JOB_REASONS.get(str(why))
+            print(f"No stored summary. {said}" if said else f"No stored summary ({why}).", file=err)
             return 1
         url = terminal_drift.session_url(
             board.port, str(row.get("project") or ""), who["harness"], who["sid"]

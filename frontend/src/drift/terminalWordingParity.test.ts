@@ -132,6 +132,12 @@ function summaryCases() {
         reasonSentence(reason, { grant: null, harness: 'claude', largest: null }),
       ]),
     ),
+    jobReasons: Object.fromEntries(
+      ['settings-refused'].map((reason) => [
+        reason,
+        reasonSentence(reason, { grant: null, harness: 'claude', largest: null }),
+      ]),
+    ),
     notes,
     freshness,
     bullets,

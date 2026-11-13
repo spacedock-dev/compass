@@ -8,6 +8,7 @@ import {
   refusalNote,
   type LeaseState,
 } from './monitor';
+import { CLAUDE_SETTINGS_LOOK } from './sentences';
 
 /* What the page makes of the lease the server publishes: the state it reads, the level it draws, and the
    note each reason a lease ends is shown with. The server owns every clock in it. */
@@ -115,7 +116,7 @@ describe('the level the monitor draws', () => {
 describe('the note each end is shown with', () => {
   it('has one for every reason a lease ends, and none for the reader’s own off', () => {
     expect(Object.keys(END_NOTES).sort()).toEqual(
-      ['cap', 'declined', 'ended', 'left', 'paused', 'unanswered'].sort(),
+      ['cap', 'declined', 'ended', 'left', 'paused', 'settings-refused', 'unanswered'].sort(),
     );
     expect(endNote('stopped', {})).toBe('');
   });
@@ -142,5 +143,21 @@ describe('the note each end is shown with', () => {
     expect(refusalNote('ended')).toMatch(/ended/);
     expect(refusalNote('no-observer-model')).toMatch(/off for this run/);
     expect(refusalNote('something-new')).toMatch(/did not start/);
+  });
+
+  it('says Claude Code settings stopped it, that nothing was sent, and where to look', () => {
+    expect(refusalNote('settings-refused')).toBe(
+      `Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
+    );
+    expect(refusalNote('settings-refused')).not.toMatch(/not available to monitor/);
+    expect(endNote('settings-refused', {})).toBe(
+      `Live monitor turned off: your Claude Code settings could send its checks somewhere Compass cannot name, so that check was not sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
+    );
+  });
+
+  it('points at the settings the check reads', () => {
+    expect(CLAUDE_SETTINGS_LOOK).toBe(
+      'Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies.',
+    );
   });
 });

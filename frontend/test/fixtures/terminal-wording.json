@@ -214,6 +214,9 @@
       "ceiling": "The summary reached one of its limits on calls, bytes or time, so the parts after it were not summarized.",
       "refused": "A model call was refused, so the summary stopped."
     },
+    "jobReasons": {
+      "settings-refused": "Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. Check the Claude Code settings your organization manages for a helper command such as apiKeyHelper, a login gateway, or telemetry that logs prompts or replies."
+    },
     "notes": [
       {
         "input": {

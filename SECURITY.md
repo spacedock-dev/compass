@@ -2268,10 +2268,12 @@ WSL nothing applicable can be read beyond the config folder check; the destinati
 on either (under WSL Claude Code also reads the Windows policy folder and registry), and those
 lanes still run on the reader's words, as they did. A lane refused before its charge publishes
 the reason `settings-refused`, never a success; the route's destination reads "wherever your
-Claude Code settings send it, which Compass cannot name". Until the page has a sentence of its own
-for that reason, Find goal shows its general "could not look for a goal just now", a summary shows
-"The summary stopped (settings-refused).", and an unasked check or a Live monitor check records
-nothing.
+Claude Code settings send it, which Compass cannot name". Find goal, a summary and the Live monitor
+each say, on the page and in the terminal, that the call was not started, that nothing was sent or
+charged for it, and which managed settings to check ([the procedure](HOW_TO_USE.md#when-claude-code-settings-stop-a-check)).
+The Live monitor asks the same check when it is switched on and refuses the start, and a lease whose
+settings change under it ends with that reason rather than staying on and checking nothing. An
+unasked check records nothing, because nothing was spent.
 
 What reaches Anthropic besides the reading prompt was measured on 2.1.283, 2026-09-27, by
 running the real CLI against a local stub with every outbound connection off this machine blocked
@@ -3244,7 +3246,8 @@ with a `monitor` notice shown before the first charged call. A terminal start ch
   20 minutes and removes its holders if nobody answers within 10 minutes, or answers No. A
   terminal start is consent and has no question or consent deadline. Browser expiry or No leaves
   terminal holders running. The lease ends when its last holder leaves, the session ends or
-  disappears, model calls are paused, the server stops, or a cap is spent. A restart starts with
+  disappears, model calls are paused, the server stops, a cap is spent, or the shared settings
+  check refuses a tick (`settings-refused`, which a start is refused for too). A restart starts with
   no lease and makes no check until a caller starts one.
 - Terminal holders. `--monitor` starts one detached holder per Claude Code session; `--monitor
   --off` stops only that holder and leaves the dashboard and browser holders running. The skill's

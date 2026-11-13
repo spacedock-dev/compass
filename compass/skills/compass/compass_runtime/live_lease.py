@@ -27,7 +27,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from . import io as runtime_io
-from . import live_monitor, reading_policy, reading_route, supervise
+from . import live_monitor, observer, reading_policy, reading_route, supervise
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -37,7 +37,16 @@ if TYPE_CHECKING:
 HARNESS = "claude"
 SAMPLE_SID = "sample"
 # Why a lease ended, each shown to the reader with a note of its own.
-END_REASONS = ("ended", "left", "paused", "unanswered", "declined", "stopped", "cap")
+END_REASONS = (
+    "ended",
+    "left",
+    "paused",
+    "unanswered",
+    "declined",
+    "stopped",
+    "cap",
+    observer.SETTINGS_REFUSED,
+)
 # What a refused start says, and the reasons a lapsed end can be told apart by.
 _ENDED_KEPT = 256
 # `live_monitor.tick` refusals that end the lease, and the end each one is.
@@ -47,6 +56,9 @@ _REFUSAL_ENDS = {
     "model-calls-paused": "paused",
     "run-disabled": "paused",
     "not-monitored": "stopped",
+    # Settings that changed under a running lease: ending it says why, where staying on would
+    # make no check and say nothing.
+    observer.SETTINGS_REFUSED: observer.SETTINGS_REFUSED,
 }
 
 
@@ -424,7 +436,7 @@ class Leases:
             del self._ended[next(iter(self._ended))]
         live_monitor.end(self.config, key)
 
-    def _start_refusal(self, harness: str, sid: str, now: float) -> str:
+    def _start_refusal(self, harness: str, sid: str, now: float) -> str:  # noqa: PLR0911 - one exit per refusal
         if self.config.model_calls_disabled:
             return "no-observer-model"
         if harness != HARNESS:
@@ -441,6 +453,10 @@ class Leases:
         # twice, so a start does not tell a caller which session ids exist.
         if row is None or row.get("ambiguous") or row.get("ended_at"):
             return "unavailable"
+        # The check every tick's preparation runs, asked here too so the switch says why at once
+        # instead of turning on and checking nothing. It reads files only and charges nothing.
+        if observer.claude_lane_refusal(self.config.claude_monitor_model):
+            return observer.SETTINGS_REFUSED
         return ""
 
     def _answer(self, harness: str, sid: str, refusal: str) -> dict[str, Any]:

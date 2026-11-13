@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import live_lease, live_monitor, reading_policy, reading_route
+from compass_runtime import live_lease, live_monitor, observer, reading_policy, reading_route
 
 from .support import make_config
 from .test_live_monitor import GOAL, FakeRunner, facts
@@ -137,6 +137,19 @@ class StartIsRefusedFor(Rig):
         reading_policy.set_consent(self.config, False, now=NOW)
         refused = self.start()
         self.assertEqual((False, "paused"), (refused["ok"], refused["reason"]))
+
+    def test_claude_code_settings_that_move_the_call_with_a_reason_of_their_own(self) -> None:
+        # The lanes' shared settings check, asked at the start so the switch says why at once
+        # rather than turning on and making no check.
+        with mock.patch.object(
+            observer, "claude_lane_refusal", return_value="context-config"
+        ) as checked:
+            refused = self.start()
+        checked.assert_called_with(self.config.claude_monitor_model)
+        self.assertEqual((False, "settings-refused"), (refused["ok"], refused["reason"]))
+        self.assertFalse(refused["state"]["on"])
+        self.run_for(70, beat=(TAB_A,))
+        self.assertEqual([], self.ticks)
 
     def test_the_startup_switch_that_refuses_every_model_call(self) -> None:
         off = dataclasses.replace(self.config, model_calls_disabled=True)
@@ -378,6 +391,16 @@ class WhatEndsTheLeaseOtherwise(Rig):
         self.run_for(70, beat=(TAB_A,))
         state = self.leases.state(HARNESS, SID)
         self.assertEqual((False, "cap"), (state["on"], state["last_end"]["reason"]))
+
+    def test_settings_that_move_the_call_end_it_with_their_own_reason(self) -> None:
+        # Settings changed after the start: the tick is refused uncharged, and the lease ends
+        # saying so instead of staying on and checking nothing.
+        self.verdict = live_monitor.Tick("refused", "settings-refused")
+        self.start()
+        self.run_for(70, beat=(TAB_A,))
+        state = self.leases.state(HARNESS, SID)
+        self.assertEqual((False, "settings-refused"), (state["on"], state["last_end"]["reason"]))
+        self.assertEqual(1, len(self.ticks))
 
     def test_pause_ends_every_lease_paused_and_cancels_a_check_in_flight(self) -> None:
         self.rows[(HARNESS, "two")] = {"harness": HARNESS, "sid": "two", "ended_at": None}

@@ -26,6 +26,7 @@ import {
   FIND_GOAL_OUTRANKED,
   FIND_GOAL_REFUSED,
   FIND_GOAL_RUNNING,
+  FIND_GOAL_SETTINGS_REFUSED,
   FIND_GOAL_UNAVAILABLE,
   INTENT_FOUND_SAID,
 } from './sentences';
@@ -86,6 +87,8 @@ function refusal(status: number, body: Record<string, unknown> | null, label: st
   if (status === 409 && reason === 'in-flight') return FIND_GOAL_RUNNING;
   if (status === 400 && reason === 'page-outdated') return PAGE_OUTDATED;
   if (status === 502) return FIND_GOAL_FAILED(label);
+  if (status === 503 && textOf(body?.['why']) === 'settings-refused')
+    return FIND_GOAL_SETTINGS_REFUSED;
   if (status === 503 && textOf(body?.['why']) === 'model-unavailable')
     return FIND_GOAL_UNAVAILABLE(label);
   return FIND_GOAL_REFUSED;
