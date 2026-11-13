@@ -573,9 +573,10 @@ def _open_endpoint(
     """The production opener: a listed endpoint, over HTTPS, inside one deadline.
 
     `urllib.request.urlopen` was the default here, and each of its defaults was a
-    way for the credential to leave by another route: it followed redirects
-    (re-sending the authorization header to wherever a 307 pointed), it read
-    `HTTPS_PROXY` and on macOS the system proxy settings, and its timeout bound
+    way for the credential to leave by another route: it followed redirects and
+    copied the authorization header onto each (Claude's GET on 301-303, 307 and
+    308; Cursor's POST on 301-303, re-sent as a GET), it read `HTTPS_PROXY` and
+    on macOS the system proxy settings, and its timeout bound
     each socket read rather than the exchange, so a response trickling a byte at
     a time held the vendor in flight indefinitely and no later fetch could start.
     The URL is checked against the endpoint list at call time, so a request for

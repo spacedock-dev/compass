@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 # could never be mistaken for a real one.
 TOKEN = "usage-test-access-token"  # noqa: S105 — deliberately fake; asserted ABSENT from outputs
 NOW = 1_700_000_000.0
+REAL_TIME_TESTS = True  # Measures the vendor fetch's whole-exchange and DNS deadline in wall time.
 
 # The two rows whose only route to a number is the fetch cache. Kept as one
 # mapping so a freshness assertion cannot be written for one and forgotten
@@ -2146,6 +2147,9 @@ class VendorTransportTest(unittest.TestCase):
         port, accepted = self._proxy_listener()
         with (
             mock.patch.dict(os.environ, self._proxy_environ(port)),
+            # urllib caches `urlopen`'s opener per process, with whatever proxies
+            # were set when it was built; clearing it keeps this test order-free.
+            mock.patch.object(urllib.request, "_opener", None),
             mock.patch.object(
                 urllib.request, "getproxies", wraps=urllib.request.getproxies
             ) as lookup,

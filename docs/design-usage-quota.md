@@ -422,11 +422,13 @@ credential retries on the same cadence as a healthy fetch. That is the "never a 
 posture in one mechanism.
 
 The marker clears only when the thread returns, so the request itself has to end. It goes through
-`https_transport`, the same exchange the daily release lookup uses: HTTPS only, no proxy read from
-the environment or the macOS system settings, no redirect followed, and one deadline across DNS,
-connect, headers and every body read. `urllib.request.urlopen` was the default here before, and each
-of its defaults was a hole in the contract above. It followed redirects, and for a 307 or 308 it
-re-sends the authorization header to the new host. It honoured `HTTPS_PROXY`, `ALL_PROXY` and the
+`reach`'s opener, which reads no proxy from the environment or the macOS system settings and follows
+no redirect, and through `https_transport`, which admits HTTPS only and holds one deadline across DNS,
+connect, headers and every body read. The daily release lookup takes the same route.
+`urllib.request.urlopen` was the default here before, and each of its defaults was a hole in the
+contract above. It followed redirects and copied every request header onto them, the authorization
+header included: Claude's GET followed 301, 302, 303, 307 and 308, and Cursor's POST followed 301 to
+303 as a GET (urllib refuses to re-send a POST on 307 or 308). It honoured `HTTPS_PROXY` and the macOS
 system proxy, so the token could travel through a host the endpoint list never names. Its timeout
 bounded each socket read rather than the exchange, so a response trickling one byte at a time kept
 the vendor in flight, and no later fetch for that vendor could start until the trickle ended. The
