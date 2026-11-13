@@ -93,6 +93,28 @@ class LongBeforeInvokeTest(unittest.TestCase):
             self.fixture.captured(guard)
         self.assert_charged_without_entry(guard, "refused")
 
+    def test_settings_refusal_after_reservation_publishes_the_after_charge_reason(self) -> None:
+        refusing = [False]
+        fixture = self.fixture
+
+        class Model:
+            def settings_refusal(self) -> str:
+                return "settings-refused" if refusing[0] else ""
+
+            def __call__(self, prompt: str, *, output_cap_bytes: int) -> tuple[str, str]:
+                fixture.calls.append((prompt, output_cap_bytes))
+                return "reply", "ok"
+
+        def reserved() -> None:
+            fixture.reservations.append(True)
+            refusing[0] = True
+
+        guard = self.guard(model=Model(), on_reserved=reserved)
+        raw, status = guard("prompt", output_cap_bytes=10)
+        self.assertEqual(("", "context-config-after-reserve"), (raw, status))
+        self.assertTrue(guard.reserved)
+        self.assertEqual([], fixture.calls)
+
     def test_cancellation_during_callback_is_rechecked(self) -> None:
         cancelled = threading.Event()
         guard = self.guard(before_invoke=cancelled.set, cancelled=cancelled.is_set)

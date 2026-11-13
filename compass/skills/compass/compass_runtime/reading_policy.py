@@ -1708,11 +1708,21 @@ class GuardedModel:
             outcome = "context-config-after-reserve"
         return raw, outcome
 
+    def _after_charge(self) -> str | None:
+        """`_preflight` once the charge is committed.
+
+        A settings refusal here (an unverified `CODEX_HOME`, no owner-only folder) is the
+        after-charge reason the Claude lanes already use, because the page's settings wording
+        says nothing was counted and the reservation says otherwise.
+        """
+        refusal = self._preflight()
+        return "context-config-after-reserve" if refusal == "settings-refused" else refusal
+
     def _before_invoke(self) -> str | None:
         """Recheck after reservation callbacks; this is adapter entry, not child spawn."""
         if self.reserve_prompt is None:
             return "cancelled" if self.cancelled is not None and self.cancelled() else None
-        if refusal := self._preflight():
+        if refusal := self._after_charge():
             return refusal
         if self.before_invoke is not None:
             reason = self.before_invoke()
@@ -1722,7 +1732,7 @@ class GuardedModel:
                 raise RefusedError(_answer(reason=reason))
             # Context checks can block. A Cancel or destination change during
             # them still prevents entry, without undoing the committed charge.
-            return self._preflight()
+            return self._after_charge()
         return None
 
 
