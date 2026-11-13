@@ -537,7 +537,7 @@ class RouteSidecarGuards(unittest.TestCase):
             mock.patch.object(
                 self.route.shutil,
                 "which",
-                side_effect=lambda name: (
+                side_effect=lambda name, **_kwargs: (
                     str(self.root / "native-cli") if name == "claude" else None
                 ),
             ),
@@ -706,7 +706,7 @@ class RouteSidecarGuards(unittest.TestCase):
             mock.patch.object(
                 self.route.shutil,
                 "which",
-                side_effect=lambda name: (
+                side_effect=lambda name, **_kwargs: (
                     str(self.root / "native-cli") if name == "claude" else None
                 ),
             ),

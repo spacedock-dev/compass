@@ -659,10 +659,16 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
 
     def test_a_windows_folder_may_use_either_separator_but_never_climb(self) -> None:
         import ntpath  # noqa: PLC0415
+        import types  # noqa: PLC0415
 
+        # Only the module under test sees Windows: swapping the process-wide `os.path` broke
+        # coverage's own sysconfig lookup under Python 3.14 (AttributeError: 'userbase').
+        windows_os = types.ModuleType("os")
+        windows_os.__dict__.update(os.__dict__)
+        windows_os.name = "nt"  # type: ignore[attr-defined]
+        windows_os.path = ntpath  # type: ignore[attr-defined]
         with (
-            mock.patch.object(os, "name", "nt"),
-            mock.patch.object(os, "path", ntpath),
+            mock.patch.object(claude_settings, "os", windows_os),
             mock.patch.object(ntpath, "isdir", return_value=True),
         ):
             for value, verified in (
