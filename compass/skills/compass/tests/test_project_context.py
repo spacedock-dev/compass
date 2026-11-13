@@ -2566,7 +2566,7 @@ class DispatchSecurityTest(unittest.TestCase):
     def test_checked_fallback_works_without_xdg_runtime_directory(self) -> None:
         with (
             mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}),
-            mock.patch.object(project_context, "_DISPATCH_DIRECTORY", str(self.directory)),
+            mock.patch.object(spacedock, "DISPATCH_DIRECTORY", str(self.directory)),
         ):
             self.assertEqual(
                 "Safe assignment", project_context._dispatch_file_assignment(str(self.artifact))

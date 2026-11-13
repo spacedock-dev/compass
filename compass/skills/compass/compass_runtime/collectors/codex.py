@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import heapq
+import io
 import json
 import math
 import os
@@ -37,7 +38,6 @@ _CHILD_ASSIGNMENT_CAP = 140
 _ENSIGN_AGENT_PATH_RE = re.compile(
     r"^/root/spacedock_ensign_([a-z0-9][a-z0-9_]*?)(?:_cycle[0-9]+)?$"
 )
-_DISPATCH_DIRECTORY = "/tmp/spacedock-dispatch"  # noqa: S108
 
 
 def _dispatch_workflow_dir(line: str) -> str:
@@ -258,16 +258,18 @@ def _ensign_dispatch_metadata(agent_path: str) -> tuple[str, str, str, str]:
     if match is None or not match.group(1):
         return "", "", "", ""
     slug = match.group(1).replace("_", "-")
-    artifact = f"{_DISPATCH_DIRECTORY}/spacedock-ensign-{slug}.md"
+    artifact = f"{spacedock.DISPATCH_DIRECTORY}/spacedock-ensign-{slug}.md"
     title = ""
     stage = ""
     workflow = ""
-    for raw in runtime_io.iter_bounded_text_lines(
-        artifact,
-        max_lines=40,
-        per_line_bytes=2048,
-    ):
-        line = raw.strip()
+    # The shared reader owns every check on the shared directory; the line bounds below are this
+    # collector's own, kept as they were when it opened the file itself.
+    source = io.BytesIO(spacedock.read_dispatch_artifact(artifact))
+    for _ in range(40):
+        chunk = source.readline(2048)
+        if not chunk:
+            break
+        line = chunk.decode("utf-8", "replace").strip()
         if line.startswith("You are working on:"):
             title = records.safe_text(
                 line[len("You are working on:") :].strip(),

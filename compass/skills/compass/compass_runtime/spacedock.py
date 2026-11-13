@@ -1,8 +1,8 @@
 """Spacedock workflow cartography: parsing, attribution and the read policy.
 
-Every read here is a project read rather than a store read, so the identity
-checks, symlink refusal and byte bounds in this module are the security
-boundary described in SECURITY.md.
+Every read here is a project read or a dispatch-directory read rather than a
+store read, so the identity checks, symlink refusal and byte bounds in this
+module are the security boundary described in SECURITY.md.
 """
 
 from __future__ import annotations
@@ -85,6 +85,86 @@ SD_CYCLE_RE = re.compile(r"^(?:cycle|pass|round|c|v|p|r)\d+[a-z]?$|^(?:retry|rer
 
 
 SD_COMMISSIONED_PREFIX = "spacedock@"
+
+
+# Where `spacedock dispatch build` leaves ensign prompts. It is transcript grammar from the dispatch
+# contract, not a location Compass creates or writes, and it sits in the shared temporary namespace,
+# so every read of it goes through `read_dispatch_artifact`. SECURITY.md, "Cockpit dispatch and
+# terminal reads", is the contract.
+DISPATCH_DIRECTORY = "/tmp/spacedock-dispatch"  # noqa: S108 — legacy producer path; checked reads below.
+DISPATCH_MAX_BYTES = 64 * 1024
+_DISPATCH_FILE_PREFIX = "spacedock-ensign-"
+
+
+def dispatch_directories() -> tuple[str, ...]:
+    """The dispatch directories in lookup order: the private runtime one first, when set."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    if runtime and os.path.isabs(runtime):
+        return (os.path.join(runtime, "spacedock-dispatch"), DISPATCH_DIRECTORY)
+    return (DISPATCH_DIRECTORY,)
+
+
+def dispatch_artifact_identity(artifact: str) -> tuple[str, str] | None:
+    """The (entity, stage) an exact ``spacedock-ensign-<entity>-<stage>.md`` path names, or None."""
+    directory, name = os.path.split(artifact)
+    if (
+        directory not in dispatch_directories()
+        or not name.startswith(_DISPATCH_FILE_PREFIX)
+        or not name.endswith(".md")
+    ):
+        return None
+    name = name[len(_DISPATCH_FILE_PREFIX) : -len(".md")]
+    slug, separator, stage = name.rpartition("-")
+    if not separator or not SD_STAGE_RE.fullmatch(slug):
+        return None
+    if not SD_STAGE_RE.fullmatch(stage):
+        return None
+    return slug, stage
+
+
+def read_dispatch_artifact(artifact: str) -> bytes:
+    """The whole of one dispatch artifact, or ``b""`` when any check refuses it.
+
+    The one reader of a dispatch directory: every caller takes these checks rather than opening
+    the path itself, because a plain open follows a planted symlink and blocks on a planted FIFO.
+    """
+    if (
+        dispatch_artifact_identity(artifact) is None
+        or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "getuid")
+    ):
+        return b""
+    directory = os.path.dirname(artifact)
+    try:
+        resolved_directory = os.path.realpath(directory)
+        if os.path.dirname(os.path.realpath(artifact)) != resolved_directory:
+            return b""
+        # The directory fd anchors the open even if an entry is replaced between
+        # realpath and open. Inspect the opened file, never a pre-open stat.
+        with contextlib.ExitStack() as stack:
+            directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            stack.callback(os.close, directory_fd)
+            if os.fstat(directory_fd).st_uid != os.getuid():
+                return b""
+            descriptor = os.open(
+                os.path.basename(artifact),
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=directory_fd,
+            )
+            with os.fdopen(descriptor, "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if (
+                    not stat_module.S_ISREG(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_mode & 0o022
+                    or info.st_size > DISPATCH_MAX_BYTES
+                ):
+                    return b""
+                # One byte past the bound catches growth after the fstat.
+                raw = handle.read(DISPATCH_MAX_BYTES + 1)
+                return raw if len(raw) <= DISPATCH_MAX_BYTES else b""
+    except (OSError, ValueError):
+        return b""
 
 
 def frontmatter_lines(config: RuntimeConfig, text: str) -> list[str]:
