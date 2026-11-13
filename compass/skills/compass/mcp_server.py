@@ -149,6 +149,11 @@ POLL_FLOOR_SEC: Final = 0.25
 # is what normally ends a wait; this is the backstop for one that keeps
 # answering 204 forever.
 OVERALL_DEADLINE_SEC: Final = 600.0
+
+# The status `_open` reports for the dashboard's connection-cap refusal: a 503 carrying
+# Retry-After, written before the request is read. Outside the HTTP range on purpose, so it is
+# never mistaken for the poll route's own 503, which says the ask lane is off.
+BUSY: Final = 0
 LOOP_TICK_SEC: Final = 0.5
 WORKER_JOIN_SEC: Final = 2.0
 
@@ -404,6 +409,8 @@ def _open(request: urllib.request.Request, timeout: float) -> tuple[int, bytes] 
         body = b""
         with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
             body = exc.read(RESPONSE_CAP_BYTES)
+        if exc.code == 503 and exc.headers.get("Retry-After") is not None:
+            return BUSY, body
         return int(exc.code), body
     except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
         return None
@@ -907,9 +914,10 @@ class AskServer:
                     return str(state), index if usable else None
                 # A 200 naming a state this version does not know is not a
                 # resolution, so it is waited out rather than read as one.
-            elif status not in (204, 503):
-                # 503 is a dashboard at its connection cap, which refused before reading the
+            elif status not in (204, BUSY):
+                # BUSY is a dashboard at its connection cap, which refused before reading the
                 # poll: the question is still on the board, so it is waited out like a 204.
+                # The route's own 503 (the ask lane is off) is not; the card is gone.
                 return None
             self._floor(started, abort)
         return None

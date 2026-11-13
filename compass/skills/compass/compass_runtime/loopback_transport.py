@@ -58,21 +58,29 @@ def exchange(
     With `wait_when_busy`, a dashboard at its connection cap is tried again within the same
     budget. Its refusal is a 503 carrying Retry-After, written before the request is read, so it
     says nothing about the route, only that every connection is in use; Busy is raised if the
-    budget runs out with every answer that refusal.
+    budget runs out with every answer that refusal, or if a later try fails outright after
+    one: a dashboard that said it is busy and then timed out is still there.
     """
     deadline = time.monotonic() + timeout
+    refused = False
     while True:
-        status, raw, retry = _exchange(
-            method,
-            port,
-            path,
-            body,
-            headers=headers,
-            timeout=max(deadline - time.monotonic(), 0.001),
-            cap=cap,
-        )
+        try:
+            status, raw, retry = _exchange(
+                method,
+                port,
+                path,
+                body,
+                headers=headers,
+                timeout=max(deadline - time.monotonic(), 0.001),
+                cap=cap,
+            )
+        except (OSError, http.client.HTTPException) as error:
+            if refused:
+                raise Busy(port) from error
+            raise
         if not wait_when_busy or status != 503 or retry is None:
             return status, raw
+        refused = True
         if deadline - time.monotonic() <= BUSY_PAUSE_SEC:
             raise Busy(port)
         time.sleep(BUSY_PAUSE_SEC)

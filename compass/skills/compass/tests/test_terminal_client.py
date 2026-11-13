@@ -515,6 +515,24 @@ class RequestPathTest(unittest.TestCase):
             terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
         )
 
+    def test_a_failure_after_the_caps_refusal_is_still_busy(self) -> None:
+        # A dashboard that refused at its cap and then timed out is still a dashboard: read as
+        # "nothing there", --forget or an automatic start would act on a port it holds.
+        tries = iter((1, 2))
+
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            if next(tries) == 1:
+                return 503, b"", "1"
+            raise TimeoutError("loopback exchange deadline")
+
+        with (
+            mock.patch.object(loopback_transport, "_exchange", attempt),
+            self.assertRaises(loopback_transport.Busy),
+        ):
+            loopback_transport.exchange(
+                "GET", 4553, "/api/health", timeout=5.0, cap=4096, wait_when_busy=True
+            )
+
     def test_a_get_returns_the_status_and_the_parsed_body(self) -> None:
         with FakeDashboard(answers={"/api/x": (200, {}, b'{"a": 1}')}) as fake:
             reply = terminal_client.get(fake.port, "/api/x")

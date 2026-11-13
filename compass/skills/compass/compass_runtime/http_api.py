@@ -1765,19 +1765,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def parse_request(self) -> bool:
-        """Parse as the standard library does, then refuse a header block it read only in part.
+        """Parse as the standard library does, then refuse any header block it reports a
+        defect or a payload for.
 
         At a line such as `Name : value` the parser records a defect and stops, leaving every
         later header in the message payload, where admission never looks: a `Sec-Fetch-Site`
         or `Transfer-Encoding` after it went unseen. RFC 9112 section 5.1 asks for a 400 on
-        whitespace before the colon. Curl-style headers, empty values and folded lines raise
-        no defect.
+        whitespace before the colon. The rule is wider than that line: the parser also records
+        a defect for a `multipart/*` or `message/rfc822` Content-Type, which no Compass caller
+        sends, and those are refused too. Curl-style headers, empty values and folded lines
+        raise no defect.
         """
         if not super().parse_request():
             return False
         if self.headers.defects or self.headers.get_payload():
             self.close_connection = True
-            self.send_error(400, "Malformed header line")
+            self.send_error(400, "Unreadable header block")
             return False
         return True
 
