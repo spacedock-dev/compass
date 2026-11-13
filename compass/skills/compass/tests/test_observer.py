@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import http.client
 import inspect
+import itertools
 import json
 import os
 import shutil
@@ -1703,7 +1704,10 @@ class CodexExecArgvTest(unittest.TestCase):
         self.assertEqual(subprocess.DEVNULL, kwargs["stderr"])
         self.assertEqual(observer.OBSERVER_MODEL_TIMEOUT_SEC, kwargs["timeout"])
         self.assertFalse(kwargs["check"], "a raising subprocess would crash a collection")
-        self.assertEqual(str(caller.config.state_dir), kwargs["cwd"])
+        # Never the state directory, which names the account and holds the board's files; the
+        # folder it runs in is pinned in `test_model_lane_boundaries`.
+        self.assertNotEqual(str(caller.config.state_dir), kwargs["cwd"])
+        self.assertIn(("--config", "mcp_servers={}"), list(itertools.pairwise(command)))
 
     def test_every_execution_and_integration_feature_is_disabled_on_the_command(self) -> None:
         seen, caller = self._capture()

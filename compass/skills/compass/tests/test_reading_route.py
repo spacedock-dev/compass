@@ -562,12 +562,18 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         import pwd  # noqa: PLC0415
 
         entry = pwd.getpwuid(os.getuid())
+        self.assertEqual(
+            "Anthropic",
+            reading_route.destination("claude", environ={}, root=self.root, system="Darwin"),
+        )
+        # A cache under the password file's home that can move the endpoint is read: it is why
+        # nothing is named once it exists.
         self._write(
             f"{entry.pw_dir}/.claude/remote-settings.json",
             json.dumps({"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}),
         )
         named = reading_route.destination("claude", environ={}, root=self.root, system="Darwin")
-        self.assertEqual("Amazon Bedrock", named)
+        self.assertEqual("", named)
 
     def test_with_no_home_and_no_password_entry_nothing_is_named(self) -> None:
         with mock.patch.object(reading_route, "_account", return_value=("", "")):
@@ -595,11 +601,14 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self.assertEqual("gw.example", self._claude({}, system="Linux"))
 
     def test_remote_managed_settings_cached_on_this_machine_count(self) -> None:
+        # A cached remote policy is a snapshot the CLI may refresh at launch, so one holding a
+        # key outside the owner's harmless six, `env` among them, names no receiver at all,
+        # even one its snapshot names today.
         self._write(
             "/Users/r/.claude/remote-settings.json",
             json.dumps({"env": {"CLAUDE_CODE_USE_VERTEX": "1"}}),
         )
-        self.assertEqual("Google Vertex AI", self._claude({}))
+        self.assertEqual("", self._claude({}))
 
     def test_two_sources_disagreeing_about_the_endpoint_name_nothing(self) -> None:
         self._write(
@@ -650,6 +659,57 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
                 self._write(path, "")
                 self.assertEqual("", self._codex({}))
                 (self.root / path.lstrip("/")).unlink()
+
+    def test_settings_that_route_run_a_helper_or_export_telemetry_name_nothing(self) -> None:
+        managed = "/Library/Application Support/ClaudeCode/managed-settings.json"
+        remote = "/Users/r/.claude/remote-settings.json"
+        for document in (
+            {"forceLoginGatewayUrl": "https://gateway.invalid"},
+            {"forceLoginMethod": "gateway"},
+            {"modelOverrides": {"claude-sonnet-5-5": "another-model"}},
+            {"policyHelper": {"path": "/never/run"}},
+            {"forceRemoteSettingsRefresh": True},
+            {"apiKeyHelper": "/never/run"},
+            {"awsAuthRefresh": "/never/run"},
+            {"awsCredentialExport": "/never/run"},
+            {"gcpAuthRefresh": "/never/run"},
+            {"otelHeadersHelper": "/never/run"},
+            {"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}},
+            {"env": {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"}},
+        ):
+            for path in (managed, remote):
+                with self.subTest(document=document, path=path):
+                    self._write(path, json.dumps(document))
+                    self.assertEqual("", self._claude({}))
+                    (self.root / path.lstrip("/")).unlink()
+        # A cached remote policy holding a key outside the owner's harmless six.
+        self._write(remote, json.dumps({"permissions": {"allow": []}}))
+        self.assertEqual("", self._claude({}))
+        # The harmless key alone still names the vendor: what the owner's board holds today.
+        self._write(remote, json.dumps({"channelsEnabled": True}))
+        self.assertEqual("Anthropic", self._claude({}))
+
+    def test_a_telemetry_exporter_in_the_daemons_environment_names_nothing(self) -> None:
+        for environ in (
+            {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"},
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"},
+            {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector.invalid"},
+        ):
+            with self.subTest(environ=environ):
+                self.assertEqual("", self._claude(environ))
+                self.assertEqual("", self._codex(environ))
+        self.assertEqual("Anthropic", self._claude({"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}))
+
+    @unittest.skipIf(sys.platform == "win32", "ownership and mode bits are POSIX")
+    def test_a_codex_home_compass_cannot_verify_names_nothing(self) -> None:
+        (self.root / "codex-home").mkdir(mode=0o700)
+        shared = self.root / "codex-shared"
+        shared.mkdir()
+        shared.chmod(0o777)
+        self.assertEqual("OpenAI", self._codex({"CODEX_HOME": "/codex-home"}))
+        for value in ("/codex-shared", "/absent", "relative/codex"):
+            with self.subTest(value=value):
+                self.assertEqual("", self._codex({"CODEX_HOME": value}))
 
 
 # A path-embedded key, built at run time so no credential shape sits in source.

@@ -7916,7 +7916,7 @@ class CodexReadingModel:
         config: RuntimeConfig,
         *,
         runner: Any = supervise.run,
-        binary_resolver: Any = shutil.which,
+        binary_resolver: Any = observer.codex_binary,
         on_spawn: Callable[[supervise.Group], None] | None = None,
     ) -> None:
         self.config = config
@@ -7940,7 +7940,7 @@ class CodexReadingModel:
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""
         binary = self.binary_resolver("codex")
-        return bool(binary and os.path.isabs(binary))
+        return bool(binary and observer.rooted(binary))
 
 
 class ClaudeReadingModel:
@@ -8016,6 +8016,11 @@ class ClaudeReadingModel:
         try:
             validate_claude_reading_model(self.config.claude_reading_model)
         except ValueError:
+            return False
+        # Goal find and the unasked lane charge after this preflight, so the settings refusal
+        # every Claude lane shares is asked here, uncharged. Analyze asks it at its own
+        # admission, which names the reason, and again at the launch.
+        if not self.analyze and observer.claude_lane_refusal(self.config.claude_reading_model):
             return False
         binary = self.binary_resolver("claude")
         return bool(binary and os.path.isabs(binary))

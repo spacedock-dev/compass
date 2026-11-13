@@ -141,8 +141,7 @@ _CLAUDE_CLOUDS = {
 }
 
 
-# Keep destination's existing env-only interpretation and test seams. The shared
-# reader also exposes top-level fields to Analyze, without applying them here.
+# The shared reader's seams, kept under the names destination's tests patch.
 _UnnamedError = claude_settings.SettingsError
 _under = claude_settings.under
 _present = claude_settings.present
@@ -151,7 +150,25 @@ _account = claude_settings.account
 
 def _claude_sources(environ: Mapping[str, str], root: Path, system: str) -> list[Mapping[str, str]]:
     documents = claude_settings.documents(environ, root, system, account_reader=_account)
+    # Top-level settings move the call too: a login gateway, a model remap, a helper that runs a
+    # shell command for credentials, or telemetry export. The rule is `resolve`'s own, so a lane
+    # refusing on a source and the board naming its receiver cannot disagree.
+    if any(claude_settings.unnameable(source) for source in documents):
+        raise _UnnamedError
     return [environ, *(source.data.get("env", {}) for source in documents)]
+
+
+def _exports_telemetry(environ: Mapping[str, str]) -> bool:
+    """Telemetry configured in the daemon's environment, which no child is handed.
+
+    Both children's environments are allowlists without these variables, so the export cannot
+    reach a reading from here; an operator who configured one is still not told a vendor name
+    beside it, because the build has not measured each CLI with it removed.
+    """
+    try:
+        return claude_settings.exports_telemetry(environ)
+    except claude_settings.SettingsError:
+        return True
 
 
 # Two settings measured in the 2.1.281 binary that move the API host without a
@@ -275,6 +292,12 @@ def _codex_destination(environ: Mapping[str, str], root: Path, system: str) -> s
     # measured, so their presence is a destination this build cannot name.
     if any(environ.get(key, "").strip() for key in ("OPENAI_BASE_URL", "OPENAI_API_BASE")):
         raise _UnnamedError
+    # CODEX_HOME holds the sign-in Codex sends under, so a folder another account could write
+    # chooses the account; verified as `CLAUDE_CONFIG_DIR` is.
+    if environ.get("CODEX_HOME") and not claude_settings.verified_folder(
+        str(_under(root, environ["CODEX_HOME"])) if os.path.isabs(environ["CODEX_HOME"]) else ""
+    ):
+        raise _UnnamedError
     paths = list(CODEX_MANAGED_FILES)
     if system == "Darwin":
         _home, user = _account(environ)
@@ -308,6 +331,8 @@ def destination(
     env = os.environ if environ is None else environ
     base = Path("/") if root is None else root
     name = platform.system() if system is None else system
+    if _exports_telemetry(env):
+        return ""
     try:
         if provider == CLAUDE:
             return _claude_destination(_claude_sources(env, base, name))

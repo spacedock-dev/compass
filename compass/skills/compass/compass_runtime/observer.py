@@ -28,10 +28,11 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from . import (
     claude_settings,
+    git_status,
     reading_capacity,
     reading_policy,
     records,
@@ -217,20 +218,52 @@ def _spawn_hook(
     return options
 
 
+def rooted(path: str) -> bool:
+    """`git_status._rooted`: no working directory can reinterpret this path, on any OS."""
+    return git_status._rooted(path)  # noqa: SLF001 - the one rooted-path rule, shared
+
+
+def codex_binary(name: str) -> str | None:
+    """Where `codex` is, against the PATH with every unrooted element removed.
+
+    `git_status.executable`, the resolver the repository probe uses, so a relative PATH element
+    cannot supply the program a reading starts.
+    """
+    return git_status.executable(name, git_status.probe_environment(os.environ))
+
+
+def _codex_preflight(binary: str | None) -> tuple[str, str]:
+    """A refusal status before anything is created, or "" and the folder to work in."""
+    # Rooted, not `os.path.isabs`: on Windows a driveless root is absolute to `isabs` and
+    # still resolves against the current drive.
+    if not binary or not rooted(binary):
+        return "unavailable", ""
+    # An unverified CODEX_HOME would choose the account the call signs in as, and the published
+    # destination already names nothing for it; nothing is started rather than a silent switch
+    # to the default folder's account.
+    if os.environ.get("CODEX_HOME") and "CODEX_HOME" not in codex_environment(os.environ):
+        return "failed", ""
+    # Codex tells the model its working directory, and `--sandbox read-only` still lets it read
+    # there, so the call runs in an empty owner-only folder that names neither the account nor
+    # the state directory, as a Claude Code reading does (`reading_workdir_root`).
+    root = reading_workdir_root()
+    return ("failed", "") if root is None else ("", root)
+
+
 def codex_exec(
     config: RuntimeConfig,
     prompt: str,
     *,
     output_cap_bytes: int,
     runner: Any = supervise.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = codex_binary,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     timeout: float | None = None,
     before_call: Callable[[], None] | None = None,
 ) -> tuple[str, str]:
     """One bounded, ephemeral Codex call. Returns the output and a status.
 
-    `unavailable` when no absolute `codex` resolves, `failed` on a non-zero
+    `unavailable` when no rooted `codex` resolves, `failed` on a non-zero
     exit, a timeout or an OS error, `unstopped` when a killed CLI would not
     exit, `oversized` when it wrote past `OUTPUT_FILE_LIMIT_BYTES` and was
     killed for it, `ok` otherwise. What an EMPTY output means
@@ -246,11 +279,14 @@ def codex_exec(
     first can cut a recognizable credential into a fragment the scrub misses.
     """
     binary = binary_resolver("codex")
-    if not binary or not os.path.isabs(binary):
-        return "", "unavailable"
+    refusal, root = _codex_preflight(binary)
+    if refusal or not binary:
+        return "", refusal
     os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
     output_path = ""
+    workdir = ""
     try:
+        workdir = tempfile.mkdtemp(prefix="reading-codex-cwd-", dir=root)
         with tempfile.NamedTemporaryFile(
             prefix="observer-model-",
             suffix=".txt",
@@ -273,6 +309,13 @@ def codex_exec(
             "project_doc_max_bytes=0",
             "--config",
             "skills.include_instructions=false",
+            # Asks for no MCP servers. Measured on codex-cli 0.167.2 with the provider pointed at
+            # a closed loopback port: a CODEX_HOME server did not start under
+            # `--ignore-user-config`, and this override alone did not stop one, because a `-c`
+            # table merges into the loaded one rather than replacing it. So the flag above is
+            # what keeps the user's servers out; this one only states the request.
+            "--config",
+            "mcp_servers={}",
             "--model",
             OBSERVER_MODEL,
             "--config",
@@ -291,9 +334,10 @@ def codex_exec(
         result = runner(
             command,
             input=prompt,
-            cwd=str(config.state_dir),
+            cwd=workdir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=codex_environment(os.environ),
             text=True,
             encoding="utf-8",
             timeout=OBSERVER_READING_TIMEOUT_SEC if timeout is None else timeout,
@@ -316,9 +360,13 @@ def codex_exec(
     except (OSError, subprocess.SubprocessError):
         return "", "failed"
     finally:
+        # The supervised runner has killed and reaped the CLI's group before any exception
+        # reaches here, a timeout's included; `unstopped` is the one case it may outlive this.
         if output_path:
             with contextlib.suppress(OSError):
                 os.unlink(output_path)
+        if workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 # The default is an explicit request, never the CLI's floating alias. Accounts
@@ -430,19 +478,133 @@ def reading_workdir_root() -> str | None:
     return None
 
 
-def claude_environment(environ: Mapping[str, str], *, analyze: bool = False) -> dict[str, str]:
-    """The reading call's environment: the daemon's, minus the opener's session.
+# What a model CLI child may inherit from the daemon: an allowlist, because a denylist misses
+# whatever a shell adds next (NODE_OPTIONS can preload code into the CLI; OTEL_* exports what it
+# records). Kept: the account and locale basics a CLI needs to find its own sign-in (on macOS the
+# login keychain is found from HOME and USER), temp folders, proxies and extra CA certificates
+# (a proxy carries the call without changing who answers it, owner 2026-09-24, and a TLS-
+# inspecting proxy needs its CA), and on Windows the profile and system folders. Not proven
+# unneeded, so kept: XDG_* (Linux credential and config folders) and DBUS_SESSION_BUS_ADDRESS
+# (a Linux secret service). The Windows names are case-sensitive here, as `os.environ` reports
+# them on that platform.
+_CHILD_NAMES: Final = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "TERM",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "__CF_USER_TEXT_ENCODING",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "SYSTEMROOT",
+        "SystemRoot",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "USERNAME",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "ProgramData",
+        "PROGRAMFILES",
+        "ProgramFiles",
+    }
+)
+_CHILD_PREFIXES: Final = ("LC_", "XDG_")
+# Claude Code's own: how the operator chose an endpoint and account, which `reading_route`
+# reads to name the destination, and the variables that only lower the context window, which
+# `claude_settings` reads. `CLAUDE_CODE_*` beyond these is not passed: the session markers,
+# telemetry, and shell variables such as `CLAUDE_CODE_SHELL_PREFIX` are among them.
+_CLAUDE_PREFIXES: Final = (
+    "ANTHROPIC_",
+    "CLAUDE_CODE_USE_",
+    "AWS_",
+    "GOOGLE_",
+    "GCLOUD_",
+    "CLOUDSDK_",
+    "VERTEX_REGION_",
+)
+_CLAUDE_NAMES: Final = frozenset(
+    {
+        "CLOUD_ML_REGION",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+        "CLAUDE_CODE_CLIENT_CERT",
+        "CLAUDE_CODE_CLIENT_KEY",
+        "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+        "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+        "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+        "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+        "CLAUDE_CODE_HTTP_PROXY",
+        "CLAUDE_CODE_HTTPS_PROXY",
+        "CLAUDE_CODE_PROXY_URL",
+        "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+        "DISABLE_COMPACT",
+        "DISABLE_TELEMETRY",
+        "DISABLE_ERROR_REPORTING",
+        "DISABLE_AUTOUPDATER",
+    }
+)
+# Codex's own: its OpenAI sign-in (`OPENAI_BASE_URL` and `OPENAI_API_BASE` are passed so the
+# destination `reading_route` refuses to name for them is the one the child would use) and its
+# CA bundle variable.
+_CODEX_PREFIXES: Final = ("OPENAI_",)
+_CODEX_NAMES: Final = frozenset({"CODEX_CA_CERTIFICATE"})
 
-    Public and pure, as `git_status.probe_environment` is, so a test asserts
-    the scrub without spawning anything.
-    """
-    env = {
+
+def _allowlisted(
+    environ: Mapping[str, str], names: frozenset[str], prefixes: tuple[str, ...]
+) -> dict[str, str]:
+    return {
         key: value
         for key, value in environ.items()
-        if key not in _CLAUDE_SESSION_MARKERS
-        and not key.startswith("CLAUDE_CODE_MESSAGING_")
-        and not (key.startswith("CLAUDE_CODE_") and "SESSION" in key)
+        if key in _CHILD_NAMES
+        or key in names
+        or key.startswith(_CHILD_PREFIXES)
+        or key.startswith(prefixes)
     }
+
+
+def _verified_folder_variable(environ: Mapping[str, str], name: str, env: dict[str, str]) -> None:
+    value = environ.get(name, "")
+    if value and claude_settings.verified_folder(value):
+        env[name] = value
+
+
+def claude_environment(environ: Mapping[str, str], *, analyze: bool = False) -> dict[str, str]:
+    """The reading call's environment: an allowlist of the daemon's.
+
+    Public, as `git_status.probe_environment` is, so a test asserts it without spawning
+    anything. It stats `CLAUDE_CONFIG_DIR` and is pure otherwise: an unverified folder is not
+    passed on, and every lane also refuses before starting the CLI while one is set
+    (`claude_settings.documents`), so a reading never runs signed in as another account.
+    """
+    env = _allowlisted(environ, _CLAUDE_NAMES, _CLAUDE_PREFIXES)
+    _verified_folder_variable(environ, "CLAUDE_CONFIG_DIR", env)
     # Measured on 2.1.283 under a no-egress sandbox: without it the CLI looked
     # up six other hosts per call (telemetry, feature flags); with it, none
     # (review, Sent F3). Forced, so an operator's 0 does not turn it back on.
@@ -450,6 +612,31 @@ def claude_environment(environ: Mapping[str, str], *, analyze: bool = False) -> 
     if analyze:
         env["DISABLE_COMPACT"] = "1"
     return env
+
+
+def codex_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """The Codex call's environment: the same allowlist, with Codex's own sign-in variables.
+
+    `CODEX_HOME` is passed only when verified; while an unverified one is set, `codex_exec`
+    refuses before it starts anything.
+    """
+    env = _allowlisted(environ, _CODEX_NAMES, _CODEX_PREFIXES)
+    _verified_folder_variable(environ, "CODEX_HOME", env)
+    return env
+
+
+def claude_lane_refusal(model: str, *, analyze: bool = False) -> str:
+    """The status a Claude lane refuses with before it starts the CLI, or "".
+
+    The one check all five lanes share (Analyze, goal find, unasked checks, summaries and the
+    Live monitor): `prepare_claude_exec` runs it for every call, and the models whose lane
+    charges before calling (the reading model and the summary model) ask
+    it from `available` too, so a refused press is not charged. Analyze refuses on all of
+    `claude_settings.resolve`; the others on what moves the call (`claude_settings.lane_refusal`).
+    """
+    if analyze:
+        return "context-config" if claude_settings.resolve(model).refusal else ""
+    return "context-config" if claude_settings.lane_refusal(model) else ""
 
 
 def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and timeout
@@ -561,6 +748,8 @@ class PreparedClaude:
         environment = claude_environment(os.environ, analyze=self.analyze)
         # Re-read immediately before launching. This narrows, but cannot remove,
         # the file-mutation/remote-refresh race inside the external CLI.
+        if not self.analyze and claude_lane_refusal(self.model):
+            return "", "context-config"
         if self.analyze:
             controls = claude_settings.resolve(self.model, environ=environment)
             capacity = reading_capacity.assess(
@@ -777,7 +966,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             selected_model = validator(config.claude_reading_model if model is None else model)
         except ValueError as error:
             raise ClaudePreparationError("unavailable") from error
-        if analyze and claude_settings.resolve(selected_model).refusal:
+        if claude_lane_refusal(selected_model, analyze=analyze):
             raise ClaudePreparationError("context-config")
         try:
             binary = binary_resolver("claude")
@@ -882,7 +1071,7 @@ class CodexGoalModel:
         config: RuntimeConfig,
         *,
         runner: Any = supervise.run,
-        binary_resolver: Any = shutil.which,
+        binary_resolver: Any = codex_binary,
         child_assignment: bool = False,
         consent: bool = False,
         session_key: str = "",

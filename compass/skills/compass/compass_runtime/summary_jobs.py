@@ -477,8 +477,10 @@ class ClaudeSummaryModel:
             on_spawn=self.spawned,
         )
 
-    @staticmethod
-    def available() -> bool:
+    def available(self) -> bool:
+        # The settings refusal every Claude lane shares, asked before the summary is charged.
+        if observer.claude_lane_refusal(self.application.config.claude_reading_model):
+            return False
         binary = shutil.which("claude")
         return bool(binary and os.path.isabs(binary))
 

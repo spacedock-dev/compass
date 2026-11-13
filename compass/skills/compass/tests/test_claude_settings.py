@@ -396,3 +396,91 @@ class AnalyzeClaudeExecutionTest(unittest.TestCase):
             ):
                 self.assertEqual(("", "context-config"), prepared("small", output_cap_bytes=8192))
             runner.assert_not_called()
+
+
+class EveryClaudeLaneReadsTheSameSettingsTest(unittest.TestCase):
+    """Shell helpers, telemetry and an unverified config folder, as every Claude lane sees them."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.env = {"HOME": "/Users/r", "USER": "r"}
+
+    def write(self, document: Any, path: str = "/etc/claude-code/managed-settings.json") -> None:
+        target = self.root / path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(document), encoding="utf-8")
+
+    def resolve(self) -> claude_settings.Controls:
+        return claude_settings.resolve(
+            "claude-sonnet-5-5", environ=self.env, root=self.root, system="Linux"
+        )
+
+    def test_a_shell_helper_in_managed_or_remote_settings_is_dynamic_policy(self) -> None:
+        for helper in (
+            "apiKeyHelper",
+            "awsAuthRefresh",
+            "awsCredentialExport",
+            "gcpAuthRefresh",
+            "otelHeadersHelper",
+        ):
+            for path in (
+                "/etc/claude-code/managed-settings.json",
+                "/Users/r/.claude/remote-settings.json",
+            ):
+                with self.subTest(helper=helper, path=path):
+                    self.write({helper: "/never/run"}, path)
+                    self.assertEqual("dynamic-policy", self.resolve().refusal)
+                    (self.root / path.lstrip("/")).unlink()
+
+    def test_telemetry_export_in_managed_settings_is_dynamic_and_off_is_not(self) -> None:
+        for env, refusal in (
+            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}, "dynamic-policy"),
+            ({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"}, "dynamic-policy"),
+            ({"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector.invalid"}, "dynamic-policy"),
+            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "maybe"}, "context-config"),
+            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}, ""),
+        ):
+            with self.subTest(env=env):
+                self.write({"env": env})
+                self.assertEqual(refusal, self.resolve().refusal)
+
+    @unittest.skipIf(sys.platform == "win32", "ownership and mode bits are POSIX")
+    def test_a_config_folder_compass_cannot_verify_refuses(self) -> None:
+        owned = self.root / "owned"
+        owned.mkdir(mode=0o700)
+        shared = self.root / "shared"
+        shared.mkdir()
+        shared.chmod(0o777)
+        for value, refusal in (
+            (str(owned), ""),
+            (str(self.root / "absent"), "context-config"),
+            (str(shared), "context-config"),
+            (f"{owned}/../owned", "context-config"),
+        ):
+            with self.subTest(value=value):
+                self.env["CLAUDE_CONFIG_DIR"] = value
+                controls = claude_settings.resolve(
+                    "claude-sonnet-5-5", environ=self.env, root=Path("/"), system="Linux"
+                )
+                self.assertEqual(refusal, controls.refusal)
+
+    def test_a_lane_refuses_on_settings_it_cannot_read_or_that_move_the_call(self) -> None:
+        def lane(system: str = "Linux") -> str:
+            return claude_settings.lane_refusal(
+                "claude-sonnet-5-5", environ=self.env, root=self.root, system=system
+            )
+
+        self.assertEqual("", lane())
+        self.write({"fallbackModel": "claude-sonnet-5"})
+        self.assertEqual("", lane(), "a fallback conflict is Analyze's own envelope")
+        self.write({"apiKeyHelper": "/never/run"})
+        self.assertEqual("dynamic-policy", lane())
+        self.write({"env": {"CLAUDE_CODE_USE_BEDROCK": "perhaps"}})
+        self.assertEqual("context-config", lane())
+        # Nothing on Windows or under WSL can be read, and the board already says the
+        # destination cannot be named there: the lane keeps running as it did.
+        self.assertEqual("", lane("Windows"))
+        self.env["WSL_DISTRO_NAME"] = "Ubuntu"
+        self.assertEqual("", lane())

@@ -68,6 +68,39 @@ def account(environ: Mapping[str, str]) -> tuple[str, str]:
     return home or entry.pw_dir, user or entry.pw_name
 
 
+def verified_folder(path: str) -> bool:
+    """Whether a configuration folder named by the environment can be trusted as this account's.
+
+    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` decide where a CLI reads its sign-in and settings, so
+    a folder another account could write would let that account choose both. Verified means:
+    absolute and already normal (no `.` or `..` part, no doubled separator), an existing
+    directory owned by this account and writable by nobody else, and every symbolic link on the
+    way to it owned by this account or by root. The value is passed on unchanged, never
+    resolved, because Claude Code names its keychain entry after the folder as written. POSIX
+    only; Windows has no owner and mode bits to read, so there the folder must only exist.
+    """
+    if not path or not os.path.isabs(path) or os.path.normpath(path) != path.rstrip(os.sep):
+        return False
+    if os.name == "nt":
+        return os.path.isdir(path)
+    uid = os.getuid()
+    walk = os.sep
+    try:
+        for part in [segment for segment in path.split(os.sep) if segment]:
+            walk = os.path.join(walk, part)
+            info = os.lstat(walk)
+            if stat.S_ISLNK(info.st_mode) and info.st_uid not in {0, uid}:
+                return False
+        final = os.stat(path)
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(final.st_mode)
+        and final.st_uid == uid
+        and not final.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    )
+
+
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     data: dict[str, Any] = {}
     for key, value in pairs:
@@ -137,7 +170,11 @@ def documents(
             raise SettingsError from exc
         sources.extend(Source(document(drop_ins / name)) for name in sorted(names))
     home, user = account_reader(environ)
-    if not home or not user:
+    if not home or not user or not os.path.isabs(home):
+        raise SettingsError
+    if environ.get("CLAUDE_CONFIG_DIR") and not verified_folder(
+        str(under(root, environ["CLAUDE_CONFIG_DIR"]))
+    ):
         raise SettingsError
     if system == "Darwin" and any(
         present(under(root, f"{PREFERENCES_DIR}/{prefix}{MANAGED_PREFERENCES}"))
@@ -269,6 +306,33 @@ _REMOTE_HARMLESS: Final = frozenset(
 )
 
 
+# Settings keys whose value is a command Claude Code runs through a shell before or during a
+# call: to fetch a key or cloud credentials, or the headers of a telemetry export. Restricted mode
+# still applies them from managed and remote settings, and Compass never names or runs one, so
+# each makes the call's sign-in and destination something this reader cannot vouch for.
+# https://code.claude.com/docs/en/settings-reference
+SHELL_HELPERS: Final = (
+    "apiKeyHelper",
+    "awsAuthRefresh",
+    "awsCredentialExport",
+    "gcpAuthRefresh",
+    "otelHeadersHelper",
+)
+_OTLP_EXPORT: Final = "OTEL_EXPORTER_OTLP_"
+
+
+def exports_telemetry(env: Mapping[str, str]) -> bool:
+    """Whether an environment turns on Claude Code's telemetry or names an OTLP exporter.
+
+    Either sends what the CLI records about a call to a collector this reader cannot name. A
+    switch that is neither on nor off is unreadable, as a provider switch is.
+    """
+    switch = env.get("CLAUDE_CODE_ENABLE_TELEMETRY")
+    if switch is not None and _flag(switch):
+        return True
+    return any(key.startswith(_OTLP_EXPORT) and value.strip() for key, value in env.items())
+
+
 def _source_flags(source: Source) -> tuple[bool, bool]:
     data = source.data
     overrides = data.get("modelOverrides", {})
@@ -282,8 +346,9 @@ def _source_flags(source: Source) -> tuple[bool, bool]:
     dynamic = (
         (source.remote and not data.keys() <= _REMOTE_HARMLESS)
         or refresh
-        or any(key in data for key in ("policyHelper", "forceLoginGatewayUrl"))
+        or any(key in data for key in ("policyHelper", "forceLoginGatewayUrl", *SHELL_HELPERS))
         or data.get("forceLoginMethod") == "gateway"
+        or exports_telemetry(data.get("env", {}))
     )
     # No automatic fallback is a top-level print contract, not a promise about
     # a configured named agent whose model behavior can differ.
@@ -349,3 +414,41 @@ def resolve(
         )
     except SettingsError:
         return Controls(refusal="context-config")
+
+
+def unnameable(source: Source) -> bool:
+    """Whether a source can move the call, its model or its sign-in where no name can follow.
+
+    The destination's half of `resolve`: a source `resolve` treats as remapped or dynamic is one
+    whose receiver this reader cannot name, so the board and the refusal read one rule.
+    """
+    remapped, dynamic = _source_flags(source)
+    return remapped or dynamic
+
+
+# The refusals every Claude lane shares: an applicable source Compass cannot read, or one that
+# can move the call or run a helper. The compaction and fallback conflicts are not among them,
+# because they concern Analyze's own envelope (`DISABLE_COMPACT`, `switchModelsOnFlag`).
+_LANE_REFUSALS: Final = frozenset({"context-config", "dynamic-policy"})
+
+
+def lane_refusal(
+    model: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+    root: Path | None = None,
+    system: str | None = None,
+) -> Refusal:
+    """What a Claude lane other than Analyze refuses on before it starts the CLI, or "".
+
+    On Windows and under WSL nothing applicable can be read, and the published destination
+    already says Compass cannot name where the words go; a reading still runs on the reader's
+    words there, as SECURITY.md records, so those lanes are not refused for it. Analyze keeps
+    `resolve`'s whole refusal everywhere.
+    """
+    env = os.environ if environ is None else environ
+    name = system or platform.system()
+    if name not in MANAGED_DIRS or env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP"):
+        return ""
+    refusal = resolve(model, environ=env, root=root, system=name).refusal
+    return refusal if refusal in _LANE_REFUSALS else ""
