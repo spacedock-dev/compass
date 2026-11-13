@@ -1,5 +1,6 @@
 import { act, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { CLAUDE_SETTINGS_LOOK } from '../drift/sentences';
 import { POLICY, ROUTE } from '../drift/testing';
 import { json, mountIntent, type Handler } from './testing';
 import { board, control, goalBox, SESSION_HASH, stored, text, type } from './panel.testing';
@@ -298,6 +299,44 @@ describe('while model calls are paused or the day is spent', () => {
     await settle(page);
     expect(note()).toMatch(/limit reached/i);
     expect(goalBox().value).toBe('Ship the queue worker');
+  });
+
+  it('says Claude Code settings stopped the search, that nothing was sent or charged, and where to look', async () => {
+    const refused = { ok: false, produced: false, found: null, why: 'settings-refused' };
+    const page = mount({ find: () => json({ ...refused, route: FOUND.route }, 503) });
+    await settle(page);
+    await press(find());
+    await settle(page);
+    expect(finds(page)).toHaveLength(1);
+    expect(note()).toBe(
+      `Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
+    );
+    expect(goalBox().value).toBe('Ship the queue worker');
+  });
+
+  it('on a Codex route, says the Codex folder could not be verified, never the Claude Code settings', async () => {
+    const codex = { ...ROUTE, provider: 'codex', label: 'Codex', model: '' };
+    const reading = {
+      ...POLICY,
+      providers: { codex: true },
+      words: { codex: true },
+      tool_output: { codex: [] },
+    };
+    const refused = { ok: false, produced: false, found: null, why: 'settings-refused' };
+    const page = mount({
+      data: data({}, {}, { reading, reading_routes: { claude: codex } }),
+      find: () =>
+        json({ ...refused, route: { ...FOUND.route, provider: 'codex', label: 'Codex' } }, 503),
+    });
+    await settle(page);
+    await press(find());
+    await settle(page);
+    expect(finds(page)).toHaveLength(1);
+    expect(finds(page)[0]?.body).toMatchObject({ provider: 'codex' });
+    expect(note()).toBe(
+      'Compass did not look for a goal, because it could not verify the Codex folder this call would sign in from, or could not make a private folder for it to run in. Nothing was sent or charged. Check that CODEX_HOME, if set, is a folder you own that only you can write to, and that your temporary folder is not inside your home folder.',
+    );
+    expect(note()).not.toMatch(/Claude Code settings/);
   });
 
   it('sends nothing, and says why, where no reader is published for the session', async () => {

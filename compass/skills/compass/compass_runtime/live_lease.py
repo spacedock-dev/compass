@@ -37,7 +37,16 @@ if TYPE_CHECKING:
 HARNESS = "claude"
 SAMPLE_SID = "sample"
 # Why a lease ended, each shown to the reader with a note of its own.
-END_REASONS = ("ended", "left", "paused", "unanswered", "declined", "stopped", "cap")
+END_REASONS = (
+    "ended",
+    "left",
+    "paused",
+    "unanswered",
+    "declined",
+    "stopped",
+    "cap",
+    live_monitor.SETTINGS_REFUSED,
+)
 # What a refused start says, and the reasons a lapsed end can be told apart by.
 _ENDED_KEPT = 256
 # `live_monitor.tick` refusals that end the lease, and the end each one is.
@@ -48,6 +57,10 @@ _REFUSAL_ENDS = {
     "run-disabled": "paused",
     "not-monitored": "stopped",
 }
+# Refused ticks in a row before settings that changed under a running lease end it, saying why
+# rather than staying on and checking nothing. One is not enough: a settings file caught
+# mid-write reads as unreadable once, and a refused tick is uncharged, so the next one retries.
+SETTINGS_REFUSALS_TO_END = 2
 
 
 @dataclasses.dataclass(frozen=True)
@@ -72,6 +85,7 @@ class _Lease:
     episode: int
     holders: dict[str, _Holder] = dataclasses.field(default_factory=dict)
     last_attempt: float | None = None
+    settings_refused: int = 0
 
 
 class Leases:
@@ -365,7 +379,14 @@ class Leases:
         with self._lock:
             if self._leases.get(key) is not lease:
                 return
-            if end is not None and result.reason != "stopped":
+            refused = result.status == "refused" and result.reason == live_monitor.SETTINGS_REFUSED
+            lease.settings_refused = lease.settings_refused + 1 if refused else 0
+            if refused:
+                if lease.settings_refused >= SETTINGS_REFUSALS_TO_END:
+                    self._end_locked(key, live_monitor.SETTINGS_REFUSED, now)
+                else:
+                    lease.last_attempt = now
+            elif end is not None and result.reason != "stopped":
                 self._end_locked(key, end, now)
             elif result.status in {"ran", "failed", "skipped", "cancelled"}:
                 lease.last_attempt = now
@@ -441,7 +462,9 @@ class Leases:
         # twice, so a start does not tell a caller which session ids exist.
         if row is None or row.get("ambiguous") or row.get("ended_at"):
             return "unavailable"
-        return ""
+        # The check every tick's preparation runs, asked here too so the switch says why at once
+        # instead of turning on and checking nothing. It reads files only and charges nothing.
+        return live_monitor.settings_refusal(self.config)
 
     def _answer(self, harness: str, sid: str, refusal: str) -> dict[str, Any]:
         state = self._state(harness, sid, self._clock())

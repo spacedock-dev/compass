@@ -23,7 +23,7 @@ from compass_runtime import monitor_store
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
 
-from .support import saturated_server
+from .support import SERVER_PATH, saturated_server
 from .test_terminal_client import FakeDashboard
 
 
@@ -504,11 +504,18 @@ class ReadinessTest(unittest.TestCase):
             ("paused", "paused"),
             ("no-observer-model", "--no-observer-model"),
             ("ended", "ended"),
+            ("settings-refused", "your Claude Code settings could send"),
         ):
             with self.subTest(reason=reason), mock.patch("sys.stderr", io.StringIO()) as err:
                 self.assertEqual(1, monitor._report_start({"ok": False, "reason": reason}))
                 self.assertIn(words, err.getvalue())
                 self.assertEqual(1, len(err.getvalue().splitlines()))
+
+    def test_a_person_reads_the_pages_settings_refusal_word_for_word(self) -> None:
+        expected = json.loads(
+            (SERVER_PATH.parents[3] / "frontend/test/fixtures/terminal-wording.json").read_text()
+        )["monitor"]
+        self.assertEqual(expected["settings-refused"], client.sentence("monitor_settings-refused"))
 
     def test_a_person_whose_start_times_out_does_not_leave_a_late_ready_worker(self) -> None:
         store = mock.Mock()

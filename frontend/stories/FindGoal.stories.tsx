@@ -2,7 +2,11 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { App } from '../src/App';
-import { FIND_GOAL_NOTHING } from '../src/intent/sentences';
+import {
+  FIND_GOAL_CODEX_SETTINGS_REFUSED,
+  FIND_GOAL_NOTHING,
+  FIND_GOAL_SETTINGS_REFUSED,
+} from '../src/intent/sentences';
 import { createRouter } from '../src/router/router';
 import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
@@ -97,6 +101,7 @@ const POLICY = {
 interface Setup {
   readonly session?: Record<string, unknown>;
   readonly policy?: Record<string, unknown>;
+  readonly route?: Record<string, unknown>;
   readonly find?: () => Response | Promise<Response>;
 }
 
@@ -139,7 +144,7 @@ function Harness({ setup }: { readonly setup?: Setup }) {
             reading_check: 'passed',
             intent_revision: 'r1',
             reading: { ...POLICY, ...(setup?.policy ?? {}) },
-            reading_routes: { claude: ROUTE },
+            reading_routes: { claude: { ...ROUTE, ...(setup?.route ?? {}) } },
             projects: [
               { project: 'alpha/app', project_key: '/repo/alpha', sessions: ['claude:s1'] },
             ],
@@ -442,6 +447,68 @@ export const NothingFound: Story = {
     await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
     await expect(view.getByRole('button', { name: 'Find goal' })).toBeVisible();
     await expect(finds()).toHaveLength(1);
+  },
+};
+
+/* Claude Code settings the shared check refuses (a helper command, a login gateway, telemetry that logs prompts):
+   the server starts nothing and charges nothing, and the note says so and where to look, never that the claude
+   command could not be reached. */
+export const ClaudeCodeSettingsStopTheSearch: Story = {
+  args: {
+    setup: {
+      find: () =>
+        json(
+          { ok: false, produced: false, found: null, why: 'settings-refused', route: FOUND.route },
+          503,
+        ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await intentCard(canvasElement);
+    const view = within(card);
+    const before = (view.getByRole('textbox', { name: 'Goal' }) as HTMLTextAreaElement).value;
+    await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
+    await waitFor(() => expect(note(card)).toBe(FIND_GOAL_SETTINGS_REFUSED));
+    await expect(note(card)).toBe(
+      'Compass did not look for a goal, because your Claude Code settings could send your prompts somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check.',
+    );
+    await expect(view.getByRole('textbox', { name: 'Goal' })).toHaveValue(before);
+    await expect(card.querySelector('[data-next-goal-detected]')).toBeNull();
+    await expect(finds()).toHaveLength(1);
+  },
+};
+
+/* The same refusal on a Codex route (a Claude Code session read by Codex where `claude` is not on the PATH): the
+   Codex lane refuses an unverified CODEX_HOME or a temp folder it cannot make private, so the note names those
+   and never Claude Code's settings. */
+export const CodexFolderStopsTheSearch: Story = {
+  args: {
+    setup: {
+      route: { provider: 'codex', label: 'Codex', model: '' },
+      policy: { providers: { codex: true }, words: { codex: true }, tool_output: { codex: [] } },
+      find: () =>
+        json(
+          {
+            ok: false,
+            produced: false,
+            found: null,
+            why: 'settings-refused',
+            route: { ...FOUND.route, provider: 'codex', label: 'Codex' },
+          },
+          503,
+        ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = await intentCard(canvasElement);
+    const view = within(card);
+    await userEvent.click(await view.findByRole('button', { name: 'Find goal' }));
+    await waitFor(() => expect(note(card)).toBe(FIND_GOAL_CODEX_SETTINGS_REFUSED));
+    await expect(note(card)).toBe(
+      'Compass did not look for a goal, because it could not verify the Codex folder this call would sign in from, or could not make a private folder for it to run in. Nothing was sent or charged. Check that CODEX_HOME, if set, is a folder you own that only you can write to, and that your temporary folder is not inside your home folder.',
+    );
+    await expect(note(card)).not.toMatch(/Claude Code settings/);
+    await expect(finds()[0]?.body).toMatchObject({ provider: 'codex' });
   },
 };
 

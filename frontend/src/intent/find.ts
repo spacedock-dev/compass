@@ -18,6 +18,7 @@ import {
 import { findGoalOffered, goalBaseline, goalKey, intentKey } from './derive';
 import type { FoundCite, FoundGoal } from './held';
 import {
+  FIND_GOAL_CODEX_SETTINGS_REFUSED,
   FIND_GOAL_FAILED,
   FIND_GOAL_LEFT,
   FIND_GOAL_LOST,
@@ -26,6 +27,7 @@ import {
   FIND_GOAL_OUTRANKED,
   FIND_GOAL_REFUSED,
   FIND_GOAL_RUNNING,
+  FIND_GOAL_SETTINGS_REFUSED,
   FIND_GOAL_UNAVAILABLE,
   INTENT_FOUND_SAID,
 } from './sentences';
@@ -77,7 +79,12 @@ export function parseFound(raw: unknown, label: string): FoundGoal | null {
 
 /* What an answered refusal says: the policy's own sentence where it carries one, so a pause and a spent day
    read as they do on the Analyze card, and otherwise the reason. */
-function refusal(status: number, body: Record<string, unknown> | null, label: string): string {
+function refusal(
+  status: number,
+  body: Record<string, unknown> | null,
+  label: string,
+  provider: string,
+): string {
   const policy = body && isRecord(body['reading']) ? policyReason(body['reading']) : '';
   if (policy) return policy;
   const reason = textOf(body?.['reason']);
@@ -86,6 +93,8 @@ function refusal(status: number, body: Record<string, unknown> | null, label: st
   if (status === 409 && reason === 'in-flight') return FIND_GOAL_RUNNING;
   if (status === 400 && reason === 'page-outdated') return PAGE_OUTDATED;
   if (status === 502) return FIND_GOAL_FAILED(label);
+  if (status === 503 && textOf(body?.['why']) === 'settings-refused')
+    return provider === 'codex' ? FIND_GOAL_CODEX_SETTINGS_REFUSED : FIND_GOAL_SETTINGS_REFUSED;
   if (status === 503 && textOf(body?.['why']) === 'model-unavailable')
     return FIND_GOAL_UNAVAILABLE(label);
   return FIND_GOAL_REFUSED;
@@ -134,7 +143,7 @@ export async function findGoal(ctx: Ctx, identity: SessionIdentity): Promise<voi
     }
     const answer = reply.body as Record<string, unknown> | null;
     if (!reply.ok || !answer || answer['ok'] !== true || typeof answer['produced'] !== 'boolean') {
-      said(reply.ok ? FIND_GOAL_LOST : refusal(reply.status, answer, label));
+      said(reply.ok ? FIND_GOAL_LOST : refusal(reply.status, answer, label, provider));
       await refresh(ctx);
       return;
     }

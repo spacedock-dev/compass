@@ -1,3 +1,4 @@
+import { CLAUDE_SETTINGS_LOOK } from '../drift/sentences';
 import { describe, expect, it } from 'vitest';
 import { parseFocusedSummary, parseGrant, parseJob, stampModel } from '../api/summary';
 import {
@@ -174,6 +175,7 @@ const JOB_REASONS = [
   'refused',
   'stopped',
   'output_bound_too_small',
+  'settings-refused',
 ];
 const GAP_REASONS = [
   'before_window',
@@ -200,6 +202,20 @@ describe('every published token has its sentence', () => {
   });
   it.each(WITHHELD_REASONS)('withheld %s', (token) => {
     expect(WITHHELD_LINES[token]).toBeDefined();
+  });
+});
+
+describe('a summary Claude Code settings stopped', () => {
+  it('says the call was not started, nothing was sent or charged for it, and where to look', () => {
+    const sentence = reasonSentence('settings-refused', {
+      grant: null,
+      harness: 'claude',
+      largest: null,
+    });
+    expect(sentence).toBe(
+      `Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. ${CLAUDE_SETTINGS_LOOK}`,
+    );
+    expect(sentence).not.toMatch(/claude command/);
   });
 });
 

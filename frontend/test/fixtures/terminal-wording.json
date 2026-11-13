@@ -142,6 +142,9 @@
       "POLICY_UNREADABLE": "Reading permission or its daily budget could not be read or saved. Restore access to the Compass store before analyzing drift."
     }
   },
+  "monitor": {
+    "settings-refused": "Live monitor did not start: your Claude Code settings could send its checks somewhere Compass cannot name. Nothing was sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check."
+  },
   "summary": {
     "withheld": {
       "completion_claim": "Left out: this line said work was done or working, and the record does not back that.",
@@ -213,6 +216,9 @@
       "bytes": "The summary reached the largest size it may be saved at, so its newest parts were left out.",
       "ceiling": "The summary reached one of its limits on calls, bytes or time, so the parts after it were not summarized.",
       "refused": "A model call was refused, so the summary stopped."
+    },
+    "jobReasons": {
+      "settings-refused": "Compass stopped the summary before its next model call, because your Claude Code settings could send it somewhere Compass cannot name. That call was not sent or charged. Check the Claude Code settings your organization manages (for example apiKeyHelper, a login gateway, or telemetry that logs prompts or replies) and the folder CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code settings stop a check."
     },
     "notes": [
       {

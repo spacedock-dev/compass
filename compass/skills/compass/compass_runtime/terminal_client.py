@@ -107,6 +107,14 @@ SENTENCES: Final[dict[str, str]] = {
     "monitor_paused": "Live monitor cannot start while model calls are paused.",
     "monitor_no-observer-model": "Live monitor cannot start under --no-observer-model.",
     "monitor_ended": "Live monitor cannot start because this session has ended.",
+    "monitor_settings-refused": (
+        "Live monitor did not start: your Claude Code settings could send its checks somewhere "
+        "Compass cannot name. Nothing was sent or charged. "
+        "Check the Claude Code settings your organization manages (for example apiKeyHelper, a "
+        "login gateway, or telemetry that logs prompts or replies) and the folder "
+        "CLAUDE_CONFIG_DIR names. How to use Compass lists every cause under When Claude Code "
+        "settings stop a check."
+    ),
     "monitor_missing": "Live monitor is on and makes no check until a goal is saved.",
     "not_running": "Compass is not running; start it with `{start}`.",
     "loopback_blocked": (
@@ -1180,6 +1188,7 @@ MONITOR_END_NOTES: Final = {
     "unanswered": "monitor off: no answer",
     "declined": "monitor off: as you asked",
     "cap": "monitor off: check limit reached",
+    "settings-refused": "monitor off: Claude Code settings",
     "stopped": "",
 }
 MONITOR_END_SEC: Final = 300.0

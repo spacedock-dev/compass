@@ -89,6 +89,7 @@ class APersonReadsASummary(unittest.TestCase):
             for case in expected["stamps"]:
                 self.assertEqual(case["expected"], terminal_summary._stamp(case["input"]))
         self.assertEqual(expected["ledeReasons"], terminal_summary.LEDE_REASONS)
+        self.assertEqual(expected["jobReasons"], terminal_summary.JOB_REASONS)
         for case in expected["unlinked"]:
             with mock.patch.object(terminal_summary, "_unlinked", return_value=case["count"]):
                 self.assertIn(
@@ -464,6 +465,34 @@ class APersonReadsASummary(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("Summary job: cancelled (model-calls-paused)", out)
         self.assertIn("Merging PRs", out)
+
+    def test_a_person_whose_settings_stop_the_summary_reads_why_and_where_to_look(self) -> None:
+        # The summary model refuses before its charge when Claude Code's settings could move the
+        # call; the job stops with that reason, and the terminal says it as the page does.
+        board = Board({"exists": False})
+        first = copy.deepcopy(board.payload)
+        board.answer = (202, {"job": {"id": "mine", "state": "running"}})
+        board.payload["summary"]["job"] = {
+            "id": "mine",
+            "state": "refused",
+            "reason": "settings-refused",
+        }
+        with mock.patch.object(board, "summary", side_effect=[first, board.payload]):
+            code, _, err = self.run_command(board, sleep=lambda _: None)
+        self.assertEqual(1, code)
+        self.assertIn(terminal_summary.JOB_REASONS["settings-refused"], err)
+        self.assertIn("not sent or charged", err)
+        self.assertNotIn("(settings-refused)", err)
+
+        kept = Board(recorded())
+        kept.payload["summary"]["job"] = {
+            "id": "mine",
+            "state": "refused",
+            "reason": "settings-refused",
+        }
+        _, out, _ = self.run_command(kept)
+        self.assertIn(terminal_summary.JOB_REASONS["settings-refused"], out)
+        self.assertNotIn("(settings-refused)", out)
 
     def test_a_person_sees_cut_citations_and_phase_limits_without_the_withheld_title(self) -> None:
         summary = recorded()
