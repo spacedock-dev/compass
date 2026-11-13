@@ -166,10 +166,7 @@ _SEMANTIC_FACT_TYPES = {
     "command_run": "tool_report",
 }
 _DISPATCH_BUILD_RE = re.compile(r"^\s*spacedock\s+dispatch\s+build(?:\s+(.*))?$", re.IGNORECASE)
-# This is transcript grammar from the dispatch contract, not a location we create or write.
-_DISPATCH_DIRECTORY = "/tmp/spacedock-dispatch"  # noqa: S108 — legacy producer path; checked file reads below.
-DISPATCH_MAX_BYTES = 64 * 1024
-_DISPATCH_FILE_PREFIX = f"{_DISPATCH_DIRECTORY}/spacedock-ensign-"
+_DISPATCH_FILE_PREFIX = f"{spacedock.DISPATCH_DIRECTORY}/spacedock-ensign-"
 _DISPATCH_VALUE_OPTIONS = {
     "--checklist-file",
     "--host",
@@ -1270,15 +1267,8 @@ def _subagent_tasks(arguments: dict[str, Any]) -> list[str]:
     return tasks
 
 
-def _dispatch_directories() -> tuple[str, ...]:
-    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
-    if runtime and os.path.isabs(runtime):
-        return (os.path.join(runtime, "spacedock-dispatch"), _DISPATCH_DIRECTORY)
-    return (_DISPATCH_DIRECTORY,)
-
-
 def _dispatch_artifact(text: str) -> str:
-    for directory in _dispatch_directories():
+    for directory in spacedock.dispatch_directories():
         pattern = re.escape(directory + "/spacedock-ensign-") + r"[A-Za-z0-9][A-Za-z0-9._-]*\.md"
         match = re.search(pattern, text)
         if match is not None:
@@ -1286,65 +1276,14 @@ def _dispatch_artifact(text: str) -> str:
     return ""
 
 
-def _dispatch_artifact_identity(artifact: str) -> tuple[str, str] | None:
-    directory, name = os.path.split(artifact)
-    if (
-        directory not in _dispatch_directories()
-        or not name.startswith("spacedock-ensign-")
-        or not name.endswith(".md")
-    ):
-        return None
-    name = name[len("spacedock-ensign-") : -len(".md")]
-    slug, separator, stage = name.rpartition("-")
-    if not separator or not spacedock.SD_STAGE_RE.fullmatch(slug):
-        return None
-    if not spacedock.SD_STAGE_RE.fullmatch(stage):
-        return None
-    return slug, stage
-
-
 def _read_dispatch_artifact(artifact: str) -> str:
-    if (
-        _dispatch_artifact_identity(artifact) is None
-        or not hasattr(os, "O_NOFOLLOW")
-        or not hasattr(os, "getuid")
-    ):
-        return ""
-    directory = os.path.dirname(artifact)
-    try:
-        resolved_directory = os.path.realpath(directory)
-        if os.path.dirname(os.path.realpath(artifact)) != resolved_directory:
-            return ""
-        # The directory fd anchors the open even if an entry is replaced between
-        # realpath and open. Inspect the opened file, never a pre-open stat.
-        with contextlib.ExitStack() as stack:
-            directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            stack.callback(os.close, directory_fd)
-            if os.fstat(directory_fd).st_uid != os.getuid():
-                return ""
-            descriptor = os.open(
-                os.path.basename(artifact),
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                dir_fd=directory_fd,
-            )
-            with os.fdopen(descriptor, "rb") as handle:
-                info = os.fstat(handle.fileno())
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_uid != os.getuid()
-                    or info.st_mode & 0o022
-                    or info.st_size > DISPATCH_MAX_BYTES
-                ):
-                    return ""
-                raw = handle.read(DISPATCH_MAX_BYTES + 1)
-                return raw.decode("utf-8", "replace") if len(raw) <= DISPATCH_MAX_BYTES else ""
-    except (OSError, ValueError):
-        return ""
+    """Decoded text through `spacedock.read_dispatch_artifact`, the one checked reader."""
+    return spacedock.read_dispatch_artifact(artifact).decode("utf-8", "replace")
 
 
 def _dispatch_file_assignment(artifact: str) -> str:
     """Read the bounded human work title from one exact dispatch artifact."""
-    if _dispatch_artifact_identity(artifact) is None:
+    if spacedock.dispatch_artifact_identity(artifact) is None:
         return ""
     prefix = "You are working on:"
     for raw in _read_dispatch_artifact(artifact).splitlines()[:40]:
@@ -11455,12 +11394,12 @@ def _codex_dispatch_artifact(task_name: str) -> tuple[str, str, str, str] | None
     artifact = next(
         (
             candidate
-            for directory in _dispatch_directories()
+            for directory in spacedock.dispatch_directories()
             if _read_dispatch_artifact(candidate := f"{directory}/spacedock-ensign-{stem}.md")
         ),
         "",
     )
-    identity = _dispatch_artifact_identity(artifact)
+    identity = spacedock.dispatch_artifact_identity(artifact)
     if identity is None or not os.path.isfile(artifact):
         return None
     entity, stage = identity
@@ -12112,7 +12051,7 @@ def _bind_dispatch_artifacts(events: list[dict[str, Any]]) -> list[dict[str, Any
     for source_event in events:
         event = dict(source_event)
         artifact = str(event.get("dispatch_artifact") or "")
-        identity = _dispatch_artifact_identity(artifact)
+        identity = spacedock.dispatch_artifact_identity(artifact)
         if event.get("kind") in {"task_started", "task_result"} and identity is not None:
             entity, stage = identity
             event.update(

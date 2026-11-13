@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
+import threading
 import time
+import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -552,9 +555,9 @@ class CodexCollectorTest(RuntimeTestCase):
                 with (
                     store_patch(CODEX_SESSIONS_DIR=tmp),
                     mock.patch.object(
-                        runtime_io,
-                        "iter_bounded_text_lines",
-                        return_value=iter(artifact_lines),
+                        spacedock,
+                        "read_dispatch_artifact",
+                        return_value="".join(artifact_lines).encode(),
                     ),
                 ):
                     config, state = runtime()
@@ -1609,3 +1612,143 @@ class CodexPlanRowTest(RuntimeTestCase):
         )
 
         self.assertIsNone(session["eta_h"])
+
+
+@unittest.skipUnless(
+    hasattr(os, "O_NOFOLLOW") and hasattr(os, "getuid") and hasattr(os, "mkfifo"),
+    "requires POSIX file ownership",
+)
+class CodexDispatchArtifactSecurityTest(unittest.TestCase):
+    """The Codex child-assignment read takes the shared, checked dispatch reader."""
+
+    AGENT_PATH = "/root/spacedock_ensign_project_cockpit_shaping_cycle2"
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.directory = self.root / "spacedock-dispatch"
+        self.directory.mkdir(mode=0o700)
+        self.artifact = self.directory / "spacedock-ensign-project-cockpit-shaping.md"
+        self.artifact.write_text(
+            "You are working on: Project cockpit and remembered goal\n"
+            "Stage: shaping\n"
+            "spacedock dispatch show-stage-def --workflow-dir /repo/.spacedock/explore"
+            " --stage shaping\n",
+            encoding="utf-8",
+        )
+        self.artifact.chmod(0o600)
+        for patch in (
+            mock.patch.object(spacedock, "DISPATCH_DIRECTORY", str(self.directory)),
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": ""}),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def metadata(self) -> tuple[str, str, str, str]:
+        return codex_collector._ensign_dispatch_metadata(self.AGENT_PATH)
+
+    def assert_refused(self) -> None:
+        self.assertEqual(("", "", "", ""), self.metadata())
+
+    def test_valid_artifact_yields_title_entity_stage_and_workflow(self) -> None:
+        self.assertEqual(
+            (
+                "Project cockpit and remembered goal",
+                "project-cockpit",
+                "shaping",
+                os.path.realpath("/repo/.spacedock/explore"),
+            ),
+            self.metadata(),
+        )
+
+    def test_line_reads_keep_their_forty_line_and_per_line_bounds(self) -> None:
+        # A 2,048-byte read splits a long line, and only forty reads are made, so a title
+        # written after them is never seen: the same bounds the line reader always had.
+        self.artifact.write_text(
+            "x" * 4096 + "\n" + "filler\n" * 37 + "You are working on: Too late\n",
+            encoding="utf-8",
+        )
+        self.assertEqual("", self.metadata()[0])
+        self.artifact.write_text(
+            "filler\n" * 39 + "You are working on: Just in time\n", encoding="utf-8"
+        )
+        self.assertEqual("Just in time", self.metadata()[0])
+
+    def test_symlinked_entry_is_refused(self) -> None:
+        target = self.root / "elsewhere.md"
+        self.artifact.replace(target)
+        self.artifact.symlink_to(target)
+        self.assert_refused()
+
+    def test_symlinked_directory_is_refused(self) -> None:
+        target = self.root / "elsewhere"
+        self.directory.rename(target)
+        self.directory.symlink_to(target, target_is_directory=True)
+        self.assert_refused()
+
+    def test_fifo_entry_is_refused_without_blocking(self) -> None:
+        self.artifact.unlink()
+        os.mkfifo(self.artifact, 0o600)
+        result: list[tuple[str, str, str, str]] = []
+        reader = threading.Thread(target=lambda: result.append(self.metadata()), daemon=True)
+        reader.start()
+        reader.join(timeout=5)
+        if reader.is_alive():
+            # Release the blocked reader so the daemon thread does not outlive the test.
+            os.close(os.open(self.artifact, os.O_WRONLY | os.O_NONBLOCK))
+            self.fail("reading a FIFO dispatch artifact blocked")
+        self.assertEqual([("", "", "", "")], result)
+
+    def test_group_or_world_writable_artifact_is_refused(self) -> None:
+        for mode in (0o622, 0o602):
+            with self.subTest(mode=oct(mode)):
+                self.artifact.chmod(mode)
+                self.assert_refused()
+
+    def test_group_or_world_writable_directory_is_refused(self) -> None:
+        # A sticky bit does not help: another account can still create a new name there.
+        for mode in (0o777, 0o1777, 0o720):
+            with self.subTest(mode=oct(mode)):
+                self.directory.chmod(mode)
+                self.assert_refused()
+        self.directory.chmod(0o755)
+        self.assertEqual("Project cockpit and remembered goal", self.metadata()[0])
+
+    def test_hard_linked_artifact_is_refused(self) -> None:
+        os.link(self.artifact, self.root / "second-name.md")
+        self.assertEqual(2, self.artifact.stat().st_nlink)
+        self.assert_refused()
+
+    def test_artifact_owned_by_another_uid_is_refused(self) -> None:
+        fstat = os.fstat
+
+        def foreign_file(descriptor: int) -> os.stat_result:
+            info = fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                return info
+            fields = list(info)
+            fields[4] = os.getuid() + 1
+            return os.stat_result(fields)
+
+        with mock.patch.object(os, "fstat", side_effect=foreign_file):
+            self.assert_refused()
+
+    def test_directory_owned_by_another_uid_is_refused(self) -> None:
+        fstat = os.fstat
+
+        def foreign_directory(descriptor: int) -> os.stat_result:
+            info = fstat(descriptor)
+            if not stat.S_ISDIR(info.st_mode):
+                return info
+            fields = list(info)
+            fields[4] = os.getuid() + 1
+            return os.stat_result(fields)
+
+        with mock.patch.object(os, "fstat", side_effect=foreign_directory):
+            self.assert_refused()
+
+    def test_artifact_over_the_dispatch_size_bound_is_refused(self) -> None:
+        with self.artifact.open("a", encoding="utf-8") as handle:
+            handle.write("x" * spacedock.DISPATCH_MAX_BYTES)
+        self.assert_refused()
