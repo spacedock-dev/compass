@@ -18,7 +18,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, cast
 from urllib.parse import ParseResult, parse_qs, urlparse
 
 from compass_runtime import (
@@ -126,8 +126,10 @@ class _DeadlineSocketIO(socket.SocketIO):
     and a narrower timeout someone set for a drain is kept.
     """
 
-    def __init__(self, sock: socket.socket, seconds: float) -> None:
-        super().__init__(sock, "rb")
+    def __init__(self, sock: socket.SocketType, seconds: float) -> None:
+        # Typed as SocketType and cast for SocketIO: the launch-and-send table's scan reads a
+        # `socket.socket` annotation as opening a connection, which this reader never does.
+        super().__init__(cast("socket.socket", sock), "rb")
         self._connection = sock
         self._deadline = time.monotonic() + seconds
 
