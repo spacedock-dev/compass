@@ -1592,6 +1592,11 @@ class GuardedModel:
         )
 
     def _preflight(self) -> str | None:
+        # The Claude lanes' shared settings check, under its own reason and before any charge.
+        refused = getattr(self.model, "settings_refusal", None)
+        reason = refused() if callable(refused) else ""
+        if isinstance(reason, str) and reason:
+            return reason
         available = getattr(self.model, "available", None)
         if available is not None and not available():
             return "unavailable"

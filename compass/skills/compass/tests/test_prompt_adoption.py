@@ -175,7 +175,7 @@ class AdoptionRouteTest(unittest.TestCase):
         handler.server.server_port = 4580
         handler.rfile = io.BytesIO(body)
         codex_on_path = mock.patch.object(
-            shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+            shutil, "which", lambda name, **_: f"/usr/local/bin/{name}" if name == "codex" else None
         )
         # This machine's endpoint settings must not decide an adoption test:
         # with no nameable destination the press asks nothing about tool output.

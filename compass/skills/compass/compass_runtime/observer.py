@@ -224,20 +224,23 @@ def rooted(path: str) -> bool:
 
 
 def codex_binary(name: str) -> str | None:
-    """Where `codex` is, against the PATH with every unrooted element removed.
+    """Where a model CLI is, against the PATH with every unrooted element removed.
 
-    `git_status.executable`, the resolver the repository probe uses, so a relative PATH element
-    cannot supply the program a reading starts.
+    The rule `git_status.executable` applies to `git`, so a relative PATH element cannot supply
+    the program a reading starts: the scrubbed PATH (`git_status.probe_environment`) is handed to
+    `shutil.which`, and its answer must be rooted too. Spelled out rather than delegated, so a
+    seam that replaces the git probe's resolver does not also choose the model CLI.
     """
-    return git_status.executable(name, git_status.probe_environment(os.environ))
+    resolved = shutil.which(name, path=git_status.probe_environment(os.environ).get("PATH"))
+    return resolved if resolved and rooted(resolved) else None
 
 
-def _codex_preflight(binary: str | None) -> tuple[str, str]:
-    """A refusal status before anything is created, or "" and the folder to work in."""
-    # Rooted, not `os.path.isabs`: on Windows a driveless root is absolute to `isabs` and
-    # still resolves against the current drive.
-    if not binary or not rooted(binary):
-        return "unavailable", ""
+def codex_refusal() -> tuple[str, str]:
+    """Why a Codex call cannot start on this machine now, or "" and the folder to work in.
+
+    Asked by `codex_exec` and, before a reading is charged, by the reading model's
+    `available`, so a refused reading spends nothing and is not published as a failed call.
+    """
     # An unverified CODEX_HOME would choose the account the call signs in as, and the published
     # destination already names nothing for it; nothing is started rather than a silent switch
     # to the default folder's account.
@@ -248,6 +251,15 @@ def _codex_preflight(binary: str | None) -> tuple[str, str]:
     # the state directory, as a Claude Code reading does (`reading_workdir_root`).
     root = reading_workdir_root()
     return ("failed", "") if root is None else ("", root)
+
+
+def _codex_preflight(binary: str | None) -> tuple[str, str]:
+    """A refusal status before anything is created, or "" and the folder to work in."""
+    # Rooted, not `os.path.isabs`: on Windows a driveless root is absolute to `isabs` and
+    # still resolves against the current drive.
+    if not binary or not rooted(binary):
+        return "unavailable", ""
+    return codex_refusal()
 
 
 def codex_exec(
@@ -512,6 +524,7 @@ _CHILD_NAMES: Final = frozenset(
         "all_proxy",
         "no_proxy",
         "NODE_EXTRA_CA_CERTS",
+        "NODE_USE_SYSTEM_CA",
         "SSL_CERT_FILE",
         "SSL_CERT_DIR",
         "REQUESTS_CA_BUNDLE",
@@ -540,6 +553,7 @@ _CLAUDE_PREFIXES: Final = (
     "ANTHROPIC_",
     "CLAUDE_CODE_USE_",
     "AWS_",
+    "AZURE_",
     "GOOGLE_",
     "GCLOUD_",
     "CLOUDSDK_",
@@ -559,6 +573,10 @@ _CLAUDE_NAMES: Final = frozenset(
         "CLAUDE_CODE_HTTP_PROXY",
         "CLAUDE_CODE_HTTPS_PROXY",
         "CLAUDE_CODE_PROXY_URL",
+        "CLAUDE_CODE_CERT_STORE",
+        "CLAUDE_CODE_GIT_BASH_PATH",
+        "API_TIMEOUT_MS",
+        "GCE_METADATA_HOST",
         "CLAUDE_CODE_DISABLE_1M_CONTEXT",
         "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
@@ -623,6 +641,11 @@ def codex_environment(environ: Mapping[str, str]) -> dict[str, str]:
     env = _allowlisted(environ, _CODEX_NAMES, _CODEX_PREFIXES)
     _verified_folder_variable(environ, "CODEX_HOME", env)
     return env
+
+
+# The reason a lane other than Analyze publishes when the settings check refuses it before
+# anything is charged: its own token, so the page can say so rather than "unavailable".
+SETTINGS_REFUSED: Final = "settings-refused"
 
 
 def claude_lane_refusal(model: str, *, analyze: bool = False) -> str:

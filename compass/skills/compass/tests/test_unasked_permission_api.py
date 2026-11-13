@@ -103,7 +103,9 @@ class UnaskedGrantHTTPTest(unittest.TestCase):
         with (
             named_machine(),
             mock.patch.object(
-                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+                shutil,
+                "which",
+                side_effect=lambda name, **_: "/bin/codex" if name == "codex" else None,
             ),
             mock.patch.object(reading, "produce", side_effect=AssertionError("a model ran")),
             self._serving(app) as port,
@@ -198,7 +200,9 @@ class UnaskedGrantRouteDriftTest(UnaskedGrantHTTPTest):
         with (
             named_machine(),
             mock.patch.object(
-                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+                shutil,
+                "which",
+                side_effect=lambda name, **_: "/bin/codex" if name == "codex" else None,
             ),
             self._serving(app) as port,
         ):
@@ -208,7 +212,7 @@ class UnaskedGrantRouteDriftTest(UnaskedGrantHTTPTest):
             self.assertTrue(json.loads(body)["reading"]["words"]["codex"])
         with (
             named_machine(),
-            mock.patch.object(shutil, "which", side_effect=lambda name: f"/bin/{name}"),
+            mock.patch.object(shutil, "which", side_effect=lambda name, **_: f"/bin/{name}"),
             self._serving(app) as port,
         ):
             # Claude Code is now on PATH and takes the route.

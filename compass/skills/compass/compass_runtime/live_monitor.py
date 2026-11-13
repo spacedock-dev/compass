@@ -175,6 +175,10 @@ def prepare(
     options: dict[str, Any] = (
         {} if binary_resolver is None else {"binary_resolver": binary_resolver}
     )
+    # The settings check every Claude lane shares, said as its own reason; preparation runs it
+    # again, and both come before this lane's charge.
+    if observer.claude_lane_refusal(config.claude_monitor_model):
+        raise observer.ClaudePreparationError(observer.SETTINGS_REFUSED)
     with observer.prepare_claude_exec(
         config,
         runner=runner,
@@ -917,7 +921,11 @@ def _call(  # noqa: PLR0913 - the tick's own state, handed on rather than rebuil
             )
     except observer.ClaudePreparationError as error:
         _withdraw(config, notice)
-        return _refused(error.status if error.status in _NOT_SENT else "unavailable")
+        return _refused(
+            error.status
+            if error.status in _NOT_SENT or error.status == observer.SETTINGS_REFUSED
+            else "unavailable"
+        )
     except reading_policy.RefusedError as exc:
         _withdraw(config, notice)
         return _refused(exc.answer["reason"] or "store-unavailable")

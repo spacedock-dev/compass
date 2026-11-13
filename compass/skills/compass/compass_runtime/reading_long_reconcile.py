@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import math
-import shutil
 import time
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from . import (
+    observer,
     reading,
     reading_final_call,
     reading_long_context,
@@ -229,7 +229,7 @@ def finish(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one closed final-call lif
     stamp_text: str,
     clock: Callable[[], float] = time.time,
     runner: Any = supervise.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = observer.codex_binary,
 ) -> Finished:
     """Reuse the frozen map corpus once; return a publication candidate, never store it."""
     native, series, budget = mapped.prepared, mapped.series, mapped.budget

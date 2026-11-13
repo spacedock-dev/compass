@@ -4995,7 +4995,7 @@ class ReadingRouteTest(unittest.TestCase):
             mock.patch.object(
                 shutil,
                 "which",
-                lambda name: f"/usr/local/bin/{name}" if name in installed else None,
+                lambda name, **_: f"/usr/local/bin/{name}" if name in installed else None,
             ),
             mock.patch.object(
                 runtime_project_context,
@@ -5455,7 +5455,7 @@ class ReadingRouteTest(unittest.TestCase):
             self._open_claude(),
             mock.patch.object(runtime_reading, "CodexReadingModel", _Delayed),
             mock.patch.object(runtime_reading, "ClaudeReadingModel", _Delayed),
-            mock.patch.object(shutil, "which", lambda n: f"/usr/local/bin/{n}"),
+            mock.patch.object(shutil, "which", lambda n, **_: f"/usr/local/bin/{n}"),
             mock.patch.object(runtime_project_context, "collect", facts),
             mock.patch.object(runtime_reading_route, "destination", lambda *_a, **_k: ""),
             mock.patch.object(state.streams, "publish", recorded),

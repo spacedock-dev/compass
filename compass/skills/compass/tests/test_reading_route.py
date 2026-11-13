@@ -41,7 +41,7 @@ STATES = ("usable", "missing", "unqualified")
 def _resolver(installed: set[str]) -> Any:
     asked: list[str] = []
 
-    def which(name: str) -> str | None:
+    def which(name: str, path: str | None = None) -> str | None:  # noqa: ARG001 - as shutil.which takes it
         asked.append(name)
         return f"/usr/local/bin/{name}" if name in installed else None
 
@@ -674,8 +674,8 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
             {"awsCredentialExport": "/never/run"},
             {"gcpAuthRefresh": "/never/run"},
             {"otelHeadersHelper": "/never/run"},
-            {"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}},
-            {"env": {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"}},
+            {"env": {"OTEL_LOG_USER_PROMPTS": "1"}},
+            {"env": {"OTEL_LOG_TOOL_DETAILS": "1"}},
         ):
             for path in (managed, remote):
                 with self.subTest(document=document, path=path):
@@ -689,16 +689,41 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self._write(remote, json.dumps({"channelsEnabled": True}))
         self.assertEqual("Anthropic", self._claude({}))
 
-    def test_a_telemetry_exporter_in_the_daemons_environment_names_nothing(self) -> None:
-        for environ in (
-            {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"},
-            {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"},
-            {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector.invalid"},
+    def test_telemetry_in_the_daemons_environment_names_both_vendors(self) -> None:
+        # Owner ruling 2026-11-13: neither child is handed these, so neither destination moves.
+        environ = {
+            "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector.invalid",
+            "OTEL_LOG_USER_PROMPTS": "1",
+        }
+        self.assertEqual("Anthropic", self._claude(environ))
+        self.assertEqual("OpenAI", self._codex(environ))
+        for child in (observer.claude_environment(environ), observer.codex_environment(environ)):
+            self.assertEqual(set(), set(child) & set(environ))
+
+    def test_under_wsl_claude_codes_destination_is_not_named(self) -> None:
+        # Claude Code under WSL also reads the Windows policy folder and registry.
+        for marker in ("WSL_DISTRO_NAME", "WSL_INTEROP"):
+            with self.subTest(marker=marker):
+                self.assertEqual("", self._claude({marker: "x"}, system="Linux"))
+
+    def test_a_bedrock_endpoint_override_names_nothing_only_while_bedrock_is_on(self) -> None:
+        managed = "/Library/Application Support/ClaudeCode/managed-settings.json"
+        bedrock = {"CLAUDE_CODE_USE_BEDROCK": "1"}
+        for key in (
+            "AWS_ENDPOINT_URL",
+            "AWS_ENDPOINT_URL_BEDROCK",
+            "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
         ):
-            with self.subTest(environ=environ):
-                self.assertEqual("", self._claude(environ))
-                self.assertEqual("", self._codex(environ))
-        self.assertEqual("Anthropic", self._claude({"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}))
+            with self.subTest(key=key, where="daemon"):
+                self.assertEqual("", self._claude({**bedrock, key: "https://elsewhere.invalid"}))
+            with self.subTest(key=key, where="managed"):
+                self._write(managed, json.dumps({"env": {key: "https://elsewhere.invalid"}}))
+                self.assertEqual("", self._claude(bedrock))
+                (self.root / managed.lstrip("/")).unlink()
+        self.assertEqual("Amazon Bedrock", self._claude(bedrock))
+        self.assertEqual("Anthropic", self._claude({"AWS_ENDPOINT_URL": "https://e.invalid"}))
 
     @unittest.skipIf(sys.platform == "win32", "ownership and mode bits are POSIX")
     def test_a_codex_home_compass_cannot_verify_names_nothing(self) -> None:

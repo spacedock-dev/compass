@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
 import threading
 import time
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -70,7 +69,7 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
     *,
     clock: Callable[[], float] = time.time,
     runner: Any = supervise.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = observer.codex_binary,
     on_reserved: Callable[[], None] | None = None,
     source_current: Callable[[], bool] | None = None,
     on_spawn: Callable[[], None] | None = None,

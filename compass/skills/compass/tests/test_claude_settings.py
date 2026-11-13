@@ -434,13 +434,20 @@ class EveryClaudeLaneReadsTheSameSettingsTest(unittest.TestCase):
                     self.assertEqual("dynamic-policy", self.resolve().refusal)
                     (self.root / path.lstrip("/")).unlink()
 
-    def test_telemetry_export_in_managed_settings_is_dynamic_and_off_is_not(self) -> None:
+    def test_only_telemetry_that_exports_words_is_dynamic(self) -> None:
+        # Owner ruling 2026-11-13: metrics and usage export alone neither refuse nor unname.
+        export = {
+            "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid",
+        }
         for env, refusal in (
-            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}, "dynamic-policy"),
-            ({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.invalid"}, "dynamic-policy"),
-            ({"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector.invalid"}, "dynamic-policy"),
-            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "maybe"}, "context-config"),
-            ({"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}, ""),
+            (export, ""),
+            ({**export, "OTEL_LOG_USER_PROMPTS": "1"}, "dynamic-policy"),
+            ({**export, "OTEL_LOG_TOOL_DETAILS": "true"}, "dynamic-policy"),
+            ({**export, "OTEL_LOG_TOOL_CONTENT": "1"}, "dynamic-policy"),
+            ({**export, "OTEL_LOG_RAW_API_BODIES": "1"}, "dynamic-policy"),
+            ({**export, "OTEL_LOG_USER_PROMPTS": "0"}, ""),
+            ({"OTEL_LOG_USER_PROMPTS": "maybe"}, "context-config"),
         ):
             with self.subTest(env=env):
                 self.write({"env": env})
@@ -484,3 +491,155 @@ class EveryClaudeLaneReadsTheSameSettingsTest(unittest.TestCase):
         self.assertEqual("", lane("Windows"))
         self.env["WSL_DISTRO_NAME"] = "Ubuntu"
         self.assertEqual("", lane())
+
+    def lane(self, system: str = "Linux") -> str:
+        return claude_settings.lane_refusal(
+            "claude-sonnet-5-5", environ=self.env, root=self.root, system=system
+        )
+
+    def test_a_conflict_beside_a_dynamic_source_still_refuses_the_lane(self) -> None:
+        # `resolve` reports the first conflict and drops `dynamic`; the lanes must not.
+        for document in (
+            {"apiKeyHelper": "/never/run", "fallbackModel": "claude-sonnet-5"},
+            {"forceLoginGatewayUrl": "https://gateway.invalid", "env": {"DISABLE_COMPACT": "0"}},
+            {"env": {"OTEL_LOG_TOOL_DETAILS": "1"}, "switchModelsOnFlag": True},
+        ):
+            with self.subTest(document=document):
+                self.write(document)
+                self.assertEqual("dynamic-policy", self.lane())
+
+    def test_an_unverified_config_folder_refuses_the_lane_on_every_system(self) -> None:
+        self.env["CLAUDE_CONFIG_DIR"] = str(self.root / "absent")
+        self.assertEqual("context-config", self.lane())
+        self.assertEqual("context-config", self.lane("Windows"))
+        self.env["WSL_DISTRO_NAME"] = "Ubuntu"
+        self.assertEqual("context-config", self.lane())
+
+    def test_detailed_beta_tracing_to_an_endpoint_exports_words(self) -> None:
+        tracing = {
+            "ENABLE_BETA_TRACING_DETAILED": "1",
+            "BETA_TRACING_ENDPOINT": "http://collector.invalid",
+        }
+        self.write({"env": tracing})
+        self.assertEqual("dynamic-policy", self.resolve().refusal)
+        for env in (
+            {"BETA_TRACING_ENDPOINT": "http://collector.invalid"},
+            {"ENABLE_BETA_TRACING_DETAILED": "1"},
+            {**tracing, "ENABLE_BETA_TRACING_DETAILED": "0"},
+        ):
+            with self.subTest(env=env):
+                self.write({"env": env})
+                self.assertEqual("", self.resolve().refusal)
+
+    def test_managed_hooks_unname_the_destination_and_refuse_no_lane(self) -> None:
+        # Owner ruling 2026-11-13: "Unname, don't refuse".
+        hooks = {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/never/run"}]}]}
+        for path in (
+            "/etc/claude-code/managed-settings.json",
+            "/etc/claude-code/managed-settings.d/10-hooks.json",
+        ):
+            with self.subTest(path=path):
+                self.write({"hooks": hooks}, path)
+                self.assertEqual("", self.lane())
+                self.assertEqual(
+                    "",
+                    reading_route.destination(
+                        "claude", environ=self.env, root=self.root, system="Linux"
+                    ),
+                )
+                self.write({"hooks": hooks, "disableAllHooks": True}, path)
+                self.assertEqual(
+                    "Anthropic",
+                    reading_route.destination(
+                        "claude", environ=self.env, root=self.root, system="Linux"
+                    ),
+                )
+                (self.root / path.lstrip("/")).unlink()
+        self.write({"hooks": hooks}, "/Users/r/.claude/remote-settings.json")
+        self.assertEqual("", self.lane(), "a cached remote hook does not refuse a lane either")
+
+    def test_a_bedrock_endpoint_override_is_an_unknown_deployment(self) -> None:
+        self.env["CLAUDE_CODE_USE_BEDROCK"] = "1"
+        self.assertEqual("cloud", self.resolve().deployment)
+        for key in ("AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME"):
+            with self.subTest(key=key):
+                self.write({"env": {key: "https://elsewhere.invalid"}})
+                self.assertEqual("unknown", self.resolve().deployment)
+        del self.env["CLAUDE_CODE_USE_BEDROCK"]
+        self.assertEqual("direct", self.resolve().deployment)
+
+
+@unittest.skipIf(sys.platform == "win32", "ownership and mode bits are POSIX")
+class AConfigFolderIsThisAccountsTest(unittest.TestCase):
+    """`verified_folder`: who owns the folder and every link on the way, and who may write it."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        self.folder = self.root / "config"
+        self.folder.mkdir(mode=0o700)
+
+    def group(self, name: str, members: list[str]) -> Any:
+        import grp  # noqa: PLC0415 - POSIX only
+
+        entry = mock.Mock(spec=grp.struct_group)
+        entry.gr_name, entry.gr_mem = name, members
+        return entry
+
+    def primary(self, gid: int) -> Any:
+        import pwd  # noqa: PLC0415 - POSIX only
+
+        real = pwd.getpwuid(os.getuid())
+        return mock.Mock(pw_gid=gid, pw_name=real.pw_name)
+
+    def test_an_owner_only_folder_is_verified(self) -> None:
+        self.assertTrue(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_world_writable_folder_is_refused(self) -> None:
+        self.folder.chmod(0o777)
+        self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
+    def test_group_write_is_allowed_only_for_the_accounts_private_group(self) -> None:
+        import pwd  # noqa: PLC0415 - POSIX only
+
+        self.folder.chmod(0o770)
+        gid = self.folder.stat().st_gid
+        name = pwd.getpwuid(os.getuid()).pw_name
+        with (
+            mock.patch("pwd.getpwuid", return_value=self.primary(gid)),
+            mock.patch("grp.getgrgid", return_value=self.group(name, [])),
+        ):
+            self.assertTrue(claude_settings.verified_folder(str(self.folder)))
+        for group, primary in (
+            (self.group("staff-for-test", []), gid),
+            (self.group(name, ["someone-else"]), gid),
+            (self.group(name, []), gid + 1),
+        ):
+            with (
+                self.subTest(group=group.gr_name, members=group.gr_mem, primary=primary),
+                mock.patch("pwd.getpwuid", return_value=self.primary(primary)),
+                mock.patch("grp.getgrgid", return_value=group),
+            ):
+                self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_folder_another_account_owns_is_refused(self) -> None:
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_symlink_another_account_owns_on_the_way_is_refused(self) -> None:
+        link = self.root / "link"
+        link.symlink_to(self.folder)
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        real_lstat = os.lstat
+
+        def lstat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+            info = real_lstat(path, *args, **kwargs)
+            if os.fspath(path) == str(link):
+                fields = list(info)
+                fields[4] = os.getuid() + 1  # st_uid
+                return os.stat_result(fields)
+            return info
+
+        with mock.patch.object(os, "lstat", side_effect=lstat):
+            self.assertFalse(claude_settings.verified_folder(str(link)))

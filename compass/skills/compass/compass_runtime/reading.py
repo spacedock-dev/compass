@@ -762,6 +762,7 @@ WITHHELD_CONTEXT_COMPACTION = "context-compaction"
 WITHHELD_CONTEXT_FALLBACK = "context-fallback"
 WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
 WITHHELD_CONTEXT_LIMIT = "context-limit"
+WITHHELD_SETTINGS_REFUSED = "settings-refused"
 WITHHELD = {
     WITHHELD_CONTEXT_LIMIT: (
         "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
@@ -805,6 +806,11 @@ WITHHELD = {
         "Nothing was sent to the model, and no Analyze attempt was counted. "
         "Managed settings permit automatic model fallback. "
         "Ask your administrator to disable fallback before running Analyze on this route."
+    ),
+    WITHHELD_SETTINGS_REFUSED: (
+        "Nothing was sent to the model, and no reading was counted. Claude Code's managed or "
+        "cached settings can send the call somewhere Compass cannot name or run a helper "
+        "command, so Compass did not start it."
     ),
     WITHHELD_CONTEXT_CHANGED: (
         "The attempt was counted, but the model did not start because its configuration "
@@ -7627,6 +7633,7 @@ _STATUS_FAILURES = {
     "context-compaction": (WITHHELD_CONTEXT_COMPACTION, False),
     "context-fallback": (WITHHELD_CONTEXT_FALLBACK, False),
     "context-config-after-reserve": (WITHHELD_CONTEXT_CHANGED, True),
+    "settings-refused": (WITHHELD_SETTINGS_REFUSED, False),
     "unstopped": (WITHHELD_UNSTOPPED, True),
     "oversized": (WITHHELD_OVERSIZED, True),
     "closed": (WITHHELD_STOPPING, False),
@@ -7940,7 +7947,7 @@ class CodexReadingModel:
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""
         binary = self.binary_resolver("codex")
-        return bool(binary and observer.rooted(binary))
+        return bool(binary and observer.rooted(binary)) and not observer.codex_refusal()[0]
 
 
 class ClaudeReadingModel:
@@ -7990,6 +7997,17 @@ class ClaudeReadingModel:
             return "", "context-limit"
         return raw, status
 
+    def settings_refusal(self) -> str:
+        """`observer.SETTINGS_REFUSED` when the shared settings check refuses this lane, or "".
+
+        Asked by `GuardedModel` before its charge, for goal find and the unasked lane. Analyze
+        answers "" here: its admission names its own reason, and its launch checks again.
+        """
+        if self.analyze:
+            return ""
+        refused = observer.claude_lane_refusal(self.config.claude_reading_model)
+        return observer.SETTINGS_REFUSED if refused else ""
+
     def _reported_context_limit(self) -> bool:
         diagnostic = self.diagnostic or {}
         code = diagnostic.get("returncode")
@@ -8016,11 +8034,6 @@ class ClaudeReadingModel:
         try:
             validate_claude_reading_model(self.config.claude_reading_model)
         except ValueError:
-            return False
-        # Goal find and the unasked lane charge after this preflight, so the settings refusal
-        # every Claude lane shares is asked here, uncharged. Analyze asks it at its own
-        # admission, which names the reason, and again at the launch.
-        if not self.analyze and observer.claude_lane_refusal(self.config.claude_reading_model):
             return False
         binary = self.binary_resolver("claude")
         return bool(binary and os.path.isabs(binary))

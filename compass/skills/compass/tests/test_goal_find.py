@@ -350,7 +350,9 @@ class FindGoalRouteTest(unittest.TestCase):
             mock.patch.object(runtime_reading, "ClaudeReadingModel", Model),
             mock.patch.object(runtime_reading, "CodexReadingModel", Model),
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "claude" else None
+                shutil,
+                "which",
+                lambda name, **_: f"/usr/local/bin/{name}" if name == "claude" else None,
             ),
             mock.patch.object(runtime_reading_route, "destination", lambda *_a, **_k: ""),
             mock.patch.object(http_api, "_prompt_facts", lambda *_a, **_k: sent),

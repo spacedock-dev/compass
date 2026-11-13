@@ -8,6 +8,7 @@ watches the runner it would spawn with, so a lane that skips the shared check tu
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import os
 import shutil
@@ -83,6 +84,13 @@ class ClaudeChildEnvironmentIsAnAllowlist(unittest.TestCase):
         "https_proxy": "http://proxy.invalid:3128",
         "NO_PROXY": "localhost",
         "NODE_EXTRA_CA_CERTS": "/etc/ssl/corp.pem",
+        "NODE_USE_SYSTEM_CA": "1",
+        "CLAUDE_CODE_CERT_STORE": "system",
+        "CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://login.invalid",
+        "AZURE_CLIENT_ID": "test-client-not-real",
+        "CLAUDE_CODE_GIT_BASH_PATH": "C:/Program Files/Git/bin/bash.exe",
+        "API_TIMEOUT_MS": "600000",
+        "GCE_METADATA_HOST": "metadata.invalid",
     }
     DROPPED = (
         "NODE_OPTIONS",
@@ -163,40 +171,81 @@ class EveryClaudeLaneRefusesSettingsThatMoveTheCall(unittest.TestCase):
         )
         self.assertEqual([], self.runner.calls)
 
-    def test_goal_find_and_unasked_refuse_before_the_charge_and_the_spawn(self) -> None:
-        # Both lanes build this model with `analyze` off (`http_api._goal_find_session`,
-        # `unasked.Lane`), behind a GuardedModel whose preflight asks `available` first.
+    def test_goal_find_refuses_before_the_charge_with_a_reason_of_its_own(self) -> None:
+        # Goal find builds this model with `analyze` off (`http_api._goal_find_session`), behind
+        # a GuardedModel whose preflight asks the settings check before anything is charged.
         self.settings({"forceLoginGatewayUrl": "https://gateway.invalid"})
         model = self.reading_model(analyze=False)
-        self.assertFalse(model.available())
+        self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
         self.assertEqual(("", "context-config"), model("p", output_cap_bytes=64))
         guarded = reading_policy.GuardedModel(self.config, model, time.time, provider="claude")
         prompt = goal_find.Prompt(1, "f1", 0.0, None, "ship the parser")
         result = goal_find.find([prompt], guarded, goal_cap=200)
         self.assertFalse(result.called, "a refused press must not be charged")
+        self.assertEqual(goal_find.WHY_SETTINGS_REFUSED, result.why)
         self.assertFalse(guarded.reserved)
         self.assertEqual([], self.runner.calls)
+
+    def test_the_unasked_lane_refuses_unspent_with_a_reason_of_its_own(self) -> None:
+        self.settings({"apiKeyHelper": "/never/run"})
+        model = self.reading_model(analyze=False)
+        guarded = reading_policy.GuardedModel(
+            self.config, model, time.time, provider="claude", unasked=True
+        )
+        self.assertEqual(("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64))
+        self.assertEqual(
+            (runtime_reading.WITHHELD_SETTINGS_REFUSED, False),
+            runtime_reading._call_failed(model, observer.SETTINGS_REFUSED),
+        )
+        self.assertEqual([], self.runner.calls)
+
+    def test_analyze_keeps_its_own_admission_reasons(self) -> None:
+        self.settings({"apiKeyHelper": "/never/run"})
+        self.assertEqual("", self.reading_model(analyze=True).settings_refusal())
 
     def test_a_summary_refuses_before_the_charge_and_the_spawn(self) -> None:
         self.settings({"awsAuthRefresh": "/never/run"})
         application = SimpleNamespace(config=self.config)
-        model = summary_jobs.ClaudeSummaryModel(application, SimpleNamespace())  # type: ignore[arg-type]
+        job = SimpleNamespace(reason="")
+        model = summary_jobs.ClaudeSummaryModel(application, job)  # type: ignore[arg-type]
+        self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
+        self.assertIn(observer.SETTINGS_REFUSED, summary_jobs.PRODUCER_STOPS)
         with (
             mock.patch("shutil.which", return_value="/usr/local/bin/claude"),
             mock.patch.object(supervise, "run") as run,
         ):
-            self.assertFalse(model.available())
             self.assertEqual(("", "context-config"), model("p", output_cap_bytes=64))
         run.assert_not_called()
 
     def test_the_live_monitor_refuses_before_spawning(self) -> None:
-        self.settings({"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}})
+        self.settings({"env": {"OTEL_LOG_USER_PROMPTS": "1"}})
         with (
             self.assertRaises(observer.ClaudePreparationError) as raised,
             live_monitor.prepare(self.config, runner=self.runner, binary_resolver=self.which),
         ):
             self.fail("prepared a monitor call under settings that export telemetry")
-        self.assertEqual("context-config", raised.exception.status)
+        self.assertEqual(observer.SETTINGS_REFUSED, raised.exception.status)
+        self.assertEqual([], self.runner.calls)
+
+    def test_a_conflict_beside_a_helper_still_refuses_every_lane(self) -> None:
+        for document in (
+            {"apiKeyHelper": "/never/run", "fallbackModel": "claude-sonnet-5"},
+            {"forceLoginGatewayUrl": "https://gateway.invalid", "env": {"DISABLE_COMPACT": "0"}},
+            {"env": {"OTEL_LOG_TOOL_DETAILS": "1"}, "switchModelsOnFlag": True},
+        ):
+            with self.subTest(document=document):
+                self.settings(document)
+                self.assertEqual(
+                    "context-config", observer.claude_lane_refusal("claude-sonnet-5-5")
+                )
+
+    def test_settings_that_change_after_preparation_stop_the_launch(self) -> None:
+        self.settings({"channelsEnabled": True})
+        with observer.prepare_claude_exec(
+            self.config, runner=self.runner, binary_resolver=self.which
+        ) as prepared:
+            self.settings({"gcpAuthRefresh": "/never/run"})
+            self.assertEqual(("", "context-config"), prepared("p", output_cap_bytes=64))
         self.assertEqual([], self.runner.calls)
 
     def test_a_config_folder_another_account_could_write_refuses_every_lane(self) -> None:
@@ -277,6 +326,66 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         self.assertEqual([], self.runner.calls)
 
     @POSIX_ONLY
+    def test_a_refused_codex_reading_is_not_charged(self) -> None:
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        folder.chmod(0o777)
+        model = runtime_reading.CodexReadingModel(
+            self.config, runner=self.runner, binary_resolver=lambda _name: "/usr/bin/codex"
+        )
+        self.assertTrue(model.available())
+        for patch in (
+            mock.patch.dict(os.environ, {"CODEX_HOME": str(folder)}),
+            mock.patch.object(observer, "reading_workdir_root", return_value=None),
+        ):
+            with self.subTest(patch=patch), patch:
+                self.assertFalse(model.available())
+                guarded = reading_policy.GuardedModel(
+                    self.config, model, time.time, provider="codex"
+                )
+                self.assertEqual(("", "unavailable"), guarded("p", output_cap_bytes=64))
+                self.assertFalse(guarded.reserved)
+        self.assertEqual([], self.runner.calls)
+
+    @POSIX_ONLY
+    def test_a_relative_path_entry_is_skipped_when_codex_is_looked_up(self) -> None:
+        here = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, here, True)
+        for folder in ("rel", "abs"):
+            program = here / folder / "codex"
+            program.parent.mkdir()
+            program.write_text("#!/bin/sh\n")
+            program.chmod(0o700)
+        cwd = os.getcwd()
+        os.chdir(here)
+        self.addCleanup(os.chdir, cwd)
+        with mock.patch.dict(os.environ, {"PATH": f"rel{os.pathsep}{here / 'abs'}"}):
+            self.assertEqual(str(here / "abs" / "codex"), observer.codex_binary("codex"))
+
+    def test_every_codex_lookup_defaults_to_the_rooted_resolver(self) -> None:
+        from compass_runtime import (  # noqa: PLC0415
+            reading_long_coordinator,
+            reading_long_execution,
+            reading_long_reconcile,
+            reading_long_worker,
+            reading_route,
+        )
+
+        for function in (
+            reading_long_execution.guard,
+            reading_long_worker.run_maps,
+            reading_long_reconcile.finish,
+            reading_long_coordinator.launch,
+        ):
+            with self.subTest(function=function.__qualname__):
+                default = inspect.signature(function).parameters["binary_resolver"].default
+                self.assertIs(observer.codex_binary, default)
+        which = mock.Mock(return_value=None)
+        with mock.patch.object(observer, "codex_binary", which):
+            reading_route.resolve("codex", environ={}, root=Path("/nonexistent"))
+        self.assertTrue(which.called)
+
+    @POSIX_ONLY
     def test_a_codex_home_another_account_could_write_is_never_used(self) -> None:
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, True)
@@ -292,13 +401,23 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
             "OPENAI_API_KEY": "test-key-not-real",
             "HTTPS_PROXY": "http://proxy.invalid:3128",
             "SSL_CERT_FILE": "/etc/ssl/corp.pem",
+            "NODE_USE_SYSTEM_CA": "1",
+            "CODEX_CA_CERTIFICATE": "/etc/ssl/corp.pem",
             "NODE_OPTIONS": "--require x",
             "OTEL_EXPORTER_OTLP_ENDPOINT": "http://c.invalid",
             "SOME_TOOL_TOKEN": "x",
             "CLAUDECODE": "1",
         }
         child = observer.codex_environment(environ)
-        for name in ("PATH", "HOME", "OPENAI_API_KEY", "HTTPS_PROXY", "SSL_CERT_FILE"):
+        for name in (
+            "PATH",
+            "HOME",
+            "OPENAI_API_KEY",
+            "HTTPS_PROXY",
+            "SSL_CERT_FILE",
+            "NODE_USE_SYSTEM_CA",
+            "CODEX_CA_CERTIFICATE",
+        ):
             with self.subTest(kept=name):
                 self.assertEqual(environ[name], child.get(name))
         for name in (

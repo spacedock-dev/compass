@@ -1907,7 +1907,9 @@ class _ReadingRouteHandler(unittest.TestCase):
         handler = self._handler(config, state, payload)
         with (
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+                shutil,
+                "which",
+                lambda name, **_: f"/usr/local/bin/{name}" if name == "codex" else None,
             ),
             mock.patch.object(reading_route, "destination", return_value=""),
             mock.patch.object(
@@ -1956,7 +1958,9 @@ class KeepRouteTest(_ReadingRouteHandler):
         handler = self._handler(config, state, payload)
         with (
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+                shutil,
+                "which",
+                lambda name, **_: f"/usr/local/bin/{name}" if name == "codex" else None,
             ),
             mock.patch.object(reading_route, "destination", return_value=""),
             mock.patch.object(
@@ -1999,7 +2003,9 @@ class KeepRouteTest(_ReadingRouteHandler):
         handler._reading_route = stale_cache
         with (
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+                shutil,
+                "which",
+                lambda name, **_: f"/usr/local/bin/{name}" if name == "codex" else None,
             ),
             mock.patch.object(reading_route, "destination", return_value=""),
             mock.patch.object(
@@ -2202,7 +2208,9 @@ class APlainPressNamesItsRevisionTest(_ReadingRouteHandler):
         self._between(handler, act)
         with (
             mock.patch.object(
-                shutil, "which", lambda name: f"/usr/local/bin/{name}" if name == "codex" else None
+                shutil,
+                "which",
+                lambda name, **_: f"/usr/local/bin/{name}" if name == "codex" else None,
             ),
             mock.patch.object(reading_route, "destination", return_value=""),
             mock.patch.object(
