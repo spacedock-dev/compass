@@ -16,3 +16,9 @@ strictDepBuilds: true
 allowBuilds: {}
 dangerouslyAllowAllBuilds: false
 sideEffectsCache: false
+# Floors for transitive devDependencies with published advisories (undici via jsdom and vitest,
+# glob via the Storybook docgen plugin). Raise or drop them once the parents ship patched ranges.
+overrides:
+  undici: ">=8.12.2 <9"
+  glob: ">=14.0.2 <15"
+  minimatch: ">=11.0.1 <12"
