@@ -146,15 +146,12 @@ def _private_group(gid: int, uid: int) -> bool:
     try:
         account = pwd.getpwuid(uid)
         group = grp.getgrgid(gid)
-        others = [entry for entry in pwd.getpwall() if entry.pw_gid == gid and entry.pw_uid != uid]
+        if account.pw_gid != gid or group.gr_name != account.pw_name or group.gr_mem:
+            return False
+        # Last, because it reads every account: only once the cheap checks would admit.
+        return not any(entry.pw_gid == gid and entry.pw_uid != uid for entry in pwd.getpwall())
     except (KeyError, OSError):
         return False
-    return (
-        account.pw_gid == gid
-        and group.gr_name == account.pw_name
-        and not group.gr_mem
-        and not others
-    )
 
 
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

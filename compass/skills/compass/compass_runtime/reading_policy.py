@@ -1592,7 +1592,8 @@ class GuardedModel:
         )
 
     def _preflight(self) -> str | None:
-        # The Claude lanes' shared settings check, under its own reason and before any charge.
+        # A model's own settings check (Claude Code's lanes, Codex's set-up), under its own
+        # reason and before any charge.
         refused = getattr(self.model, "settings_refusal", None)
         reason = refused() if callable(refused) else ""
         if isinstance(reason, str) and reason:

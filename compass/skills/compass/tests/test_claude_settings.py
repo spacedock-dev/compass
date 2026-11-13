@@ -638,6 +638,25 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
             ):
                 self.assertFalse(claude_settings.verified_folder(str(self.folder)))
 
+    def test_the_password_database_is_read_only_when_the_group_could_pass(self) -> None:
+        import pwd  # noqa: PLC0415 - POSIX only
+
+        self.folder.chmod(0o770)
+        gid = self.folder.stat().st_gid
+        name = pwd.getpwuid(os.getuid()).pw_name
+        for group, primary in (
+            (self.group("staff-for-test", []), gid),
+            (self.group(name, ["someone-else"]), gid),
+            (self.group(name, []), gid + 1),
+        ):
+            with (
+                self.subTest(group=group.gr_name, members=group.gr_mem, primary=primary),
+                mock.patch("pwd.getpwuid", return_value=self.primary(primary)),
+                mock.patch("pwd.getpwall", side_effect=AssertionError("read the whole database")),
+                mock.patch("grp.getgrgid", return_value=group),
+            ):
+                self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
     def test_a_windows_folder_may_use_either_separator_but_never_climb(self) -> None:
         import ntpath  # noqa: PLC0415
 

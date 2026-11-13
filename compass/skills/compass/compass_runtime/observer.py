@@ -236,8 +236,9 @@ def codex_binary(name: str) -> str | None:
     the program a reading starts: every element that is not rooted is dropped before
     `shutil.which` sees the PATH, and its answer must be rooted too.
     """
+    # An unset PATH searches the default one, as `shutil.which` and the git probe do.
     path = os.pathsep.join(
-        part for part in os.environ.get("PATH", "").split(os.pathsep) if rooted(part)
+        part for part in os.environ.get("PATH", os.defpath).split(os.pathsep) if rooted(part)
     )
     resolved = shutil.which(name, path=path)
     return resolved if resolved and rooted(resolved) else None
@@ -246,8 +247,9 @@ def codex_binary(name: str) -> str | None:
 def codex_refusal() -> tuple[str, str]:
     """Why a Codex call cannot start on this machine now, or "" and the folder to work in.
 
-    Asked by `codex_exec` and, before a reading is charged, by the reading model's
-    `available`, so a refused reading spends nothing and is not published as a failed call.
+    Asked by `codex_exec`, by a goal line before its notice, and, before a reading is
+    charged, by the reading model's `settings_refusal`, so a refused call spends nothing and is
+    published as `settings-refused`, not as a failed call.
     """
     # An unverified CODEX_HOME would choose the account the call signs in as, and the published
     # destination already names nothing for it; nothing is started rather than a silent switch
@@ -1206,6 +1208,10 @@ class CodexGoalModel:
             .encode("utf-8", "replace")[:OBSERVER_MODEL_MAX_PROMPT_BYTES]
             .decode("utf-8", "ignore")
         )
+        if codex_refusal()[0]:
+            # This machine's set-up refuses the call, which "failed" would misstate.
+            self.status = SETTINGS_REFUSED
+            return None
         try:
             enhanced, status = codex_exec(
                 self.config,

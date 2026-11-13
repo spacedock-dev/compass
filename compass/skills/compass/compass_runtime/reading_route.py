@@ -18,6 +18,7 @@ import ipaddress
 import os
 import platform
 import re
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from urllib.parse import urlsplit
@@ -292,6 +293,29 @@ def _host(url: str) -> str:
 _AWS_PROFILE_ENDPOINTS = ("endpoint_url", "services")
 
 
+def _aws_config(target: Path) -> configparser.ConfigParser | None:
+    """The parsed file, an empty parser when there is none, or None when it cannot be read.
+
+    Read as `claude_settings.document` reads: never blocking on a pipe or a terminal, regular
+    files only, bounded. A NUL in the path, valid in a managed `env`, is a ValueError.
+    """
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        if not _present(target):
+            return parser
+        descriptor = os.open(target, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            raw = handle.read(claude_settings.DOCUMENT_BYTES + 1)
+        if len(raw) > claude_settings.DOCUMENT_BYTES:
+            return None
+        parser.read_string(raw.decode("utf-8"))
+    except (OSError, ValueError, configparser.Error, _UnnamedError):
+        return None
+    return parser
+
+
 def _aws_profile_moves(
     sources: list[Mapping[str, str]], root: Path, environ: Mapping[str, str]
 ) -> bool:
@@ -315,18 +339,11 @@ def _aws_profile_moves(
         path = f"{home}/.aws/config"
     if not os.path.isabs(path):
         return True
-    target = _under(root, path)
-    try:
-        if not _present(target):
-            return False
-        with target.open("rb") as handle:
-            raw = handle.read(claude_settings.DOCUMENT_BYTES + 1)
-        if len(raw) > claude_settings.DOCUMENT_BYTES:
-            return True
-        parser = configparser.ConfigParser(interpolation=None, strict=False)
-        parser.read_string(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, configparser.Error, _UnnamedError):
+    parser = _aws_config(_under(root, path))
+    if parser is None:
         return True
+    if not parser.sections():
+        return False
     profile = chosen.get("AWS_PROFILE", "default")
     sections = [f"profile {profile}"] + (["default"] if profile == "default" else [])
     return any(

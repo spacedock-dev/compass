@@ -355,6 +355,44 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         self.assertEqual([], self.runner.calls)
 
     @POSIX_ONLY
+    def test_with_no_path_set_codex_is_looked_up_on_the_default_path(self) -> None:
+        here = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, here, True)
+        program = here / "codex"
+        program.write_text("#!/bin/sh\n")
+        program.chmod(0o700)
+        environ = {key: value for key, value in os.environ.items() if key != "PATH"}
+        with (
+            mock.patch.dict(os.environ, environ, clear=True),
+            mock.patch.object(os, "defpath", str(here)),
+        ):
+            self.assertEqual(str(program), observer.codex_binary("codex"))
+
+    @POSIX_ONLY
+    def test_a_goal_line_refused_by_this_machines_set_up_says_so(self) -> None:
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        folder.chmod(0o777)
+        caller = observer.CodexGoalModel(
+            self.config,
+            runner=self.runner,
+            binary_resolver=lambda _name: "/usr/bin/codex",
+            consent=True,
+            session_key="codex:one",
+        )
+        with (
+            mock.patch.object(
+                reading_policy,
+                "status",
+                return_value={"consent": True, "off": False, "reason": ""},
+            ),
+            mock.patch.dict(os.environ, {"CODEX_HOME": str(folder)}),
+        ):
+            self.assertIsNone(caller("a transcript tail", "stage"))
+        self.assertEqual(observer.SETTINGS_REFUSED, caller.status)
+        self.assertEqual([], self.runner.calls)
+
+    @POSIX_ONLY
     def test_a_relative_path_entry_is_skipped_when_codex_is_looked_up(self) -> None:
         here = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, here, True)

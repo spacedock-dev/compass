@@ -725,6 +725,32 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self.assertEqual("Amazon Bedrock", self._claude(bedrock))
         self.assertEqual("Anthropic", self._claude({"AWS_ENDPOINT_URL": "https://e.invalid"}))
 
+    def test_an_aws_config_path_that_cannot_be_read_names_nothing(self) -> None:
+        bedrock = {"CLAUDE_CODE_USE_BEDROCK": "1"}
+        # A NUL is valid in a managed settings `env`; it must unname, never raise.
+        self._write(
+            "/Library/Application Support/ClaudeCode/managed-settings.json",
+            json.dumps({"env": {"AWS_CONFIG_FILE": "/etc/aws\u0000config"}}),
+        )
+        self.assertEqual("", self._claude(bedrock))
+
+    @unittest.skipIf(sys.platform == "win32", "named pipes are POSIX")
+    def test_a_named_pipe_at_the_aws_config_path_names_nothing_without_blocking(self) -> None:
+        import threading  # noqa: PLC0415
+
+        config = self.root / "Users/r/.aws/config"
+        config.parent.mkdir(parents=True)
+        os.mkfifo(config)
+        answer: list[str] = []
+        worker = threading.Thread(
+            target=lambda: answer.append(self._claude({"CLAUDE_CODE_USE_BEDROCK": "1"})),
+            daemon=True,
+        )
+        worker.start()
+        worker.join(5)
+        self.assertFalse(worker.is_alive(), "reading the AWS config blocked on a pipe")
+        self.assertEqual([""], answer)
+
     def test_an_aws_profile_that_moves_bedrock_names_nothing(self) -> None:
         bedrock = {"CLAUDE_CODE_USE_BEDROCK": "1"}
         config = "/Users/r/.aws/config"
