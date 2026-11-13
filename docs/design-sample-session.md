@@ -188,6 +188,15 @@ was 274.949 ms before and 276.888 ms after. There were no model calls, JavaScrip
 external requests. These local measurements support this bounded allowance; they are not a
 service-level target or a claim that the page is generally faster.
 
+On 2026-11-13, the settings-refusal sentences (Find goal, summaries and the Live monitor, each
+saying that nothing was sent or charged and what to check, with a Codex variant) and the Live
+monitor's resend of a full-dashboard refusal raised the page built on `main` at `2a8a0e15`
+(2,325,571 bytes, 1,544 under the bound) to 2,327,423 bytes with the sentences and 2,328,127 bytes
+with both: 2,556 bytes (0.11%), 1,012 over the bound. The page allowance is increased by 8 KiB, to
+the same 1,884,747-byte baseline plus 440 KiB: 2,335,307 bytes, leaving 7,180 bytes above the
+measured build. No timing comparison was run for an increase of this size. The fixture
+allowance remains 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
