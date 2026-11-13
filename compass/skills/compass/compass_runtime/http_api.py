@@ -1541,10 +1541,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
     # the connection being accepted, or the read times out and the slot is returned. `timeout`
     # alone bounds each wait, so a peer sending a byte inside every wait kept its slot for as
     # long as it liked, and 64 of them held the board. Every caller writes its request at once:
-    # hooks, the MCP server and the terminal client over loopback, the page a few kilobytes of
-    # headers and at most a 128 KiB usage receipt. Three per-wait timeouts leaves a slow remote
-    # link room. Only reading is bounded: a stream, the terminal socket and an ask poll's hold
-    # all begin after the request is read, and none of them reads `rfile` again.
+    # hooks, the MCP server, the terminal client and the status line's 128 KiB usage receipt over
+    # loopback; the page's largest body is a copied correction (about 118 KB), which a slow
+    # remote link delivers within the deadline at about 4 KB/s. Only reading is bounded: a
+    # stream, the terminal socket and an ask poll's hold all begin after the request is read,
+    # and none of them reads `rfile` again.
     REQUEST_DEADLINE_SEC: ClassVar[float] = 30.0
 
     # Each of these is a single value. `headers.get` answers with the first of a repeated

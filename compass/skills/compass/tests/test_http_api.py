@@ -3678,6 +3678,11 @@ class RequestDeadlineTest(unittest.TestCase):
             time.sleep(self.TRICKLE_EVERY)
         self.assertIn(b" 200 ", client.recv(256).split(b"\r\n", 1)[0])
 
+    def test_the_server_closes_after_every_response(self) -> None:
+        # The request deadline is armed once per connection, which holds only while no second
+        # request can follow on it: HTTP/1.0 closes after every response.
+        self.assertEqual("HTTP/1.0", http_api._RequestHandler.protocol_version)
+
     def test_an_event_stream_outlives_the_deadline(self) -> None:
         # The deadline bounds reading the request. A stream only writes after that, so it
         # keeps sending heartbeats long after the deadline has passed.

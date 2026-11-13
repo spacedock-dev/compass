@@ -723,6 +723,82 @@ class LeaseAtTheConnectionCapTest(unittest.TestCase):
         self.assertGreater(after, before, "the lease was not renewed after the cap cleared")
 
 
+class LeaseThroughALongCapTest(unittest.TestCase):
+    """A cap held for longer than one request's budget, on a clock the test drives.
+
+    The dashboard is modelled as the real one behaves at the client: registration starts a
+    15-second lease, a renewal inside it extends it, a renewal after it is refused, and while the
+    cap is held a request waits within its two-second budget, raising DashboardBusyError if the
+    cap outlasts it.
+    """
+
+    LEASE_SEC = 15.0
+
+    def _run(self, busy_from: float, busy_until: float) -> tuple[list[float], str, float]:
+        now = [100.0]
+        registered_at = [now[0]]
+        expires = [0.0]
+        tries: list[float] = []
+
+        def request(
+            _port: int, _method: str, path: str, _body: Any = None, *, timeout: float = 2.0
+        ) -> tuple[int, dict[str, Any]]:
+            if path.endswith("register"):
+                registered_at[0] = now[0]
+                expires[0] = now[0] + self.LEASE_SEC
+                return 200, {"state": "registered", "origin_id": "o", "lease_token": "t"}
+            at = now[0] - registered_at[0]
+            tries.append(at)
+            if busy_from <= at < busy_until:
+                # Retried inside the budget, it gets through the moment the cap clears.
+                if busy_until - at >= timeout:
+                    now[0] += timeout
+                    raise interaction.DashboardBusyError(_port)
+                now[0] += busy_until - at
+            if now[0] >= expires[0]:
+                return 200, {"state": "refused", "reason": "lease-expired"}
+            expires[0] = now[0] + self.LEASE_SEC
+            return 200, {"state": "renewed"}
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds
+
+        origin = FakeTmuxAdapter().prepare()
+        output = io.StringIO()
+        with (
+            mock.patch.object(interaction, "_discover_origin", return_value=origin),
+            mock.patch.object(time, "monotonic", lambda: now[0]),
+            mock.patch.object(time, "sleep", sleep),
+            contextlib.redirect_stdout(output),
+        ):
+            # Ended by the first renewal the dashboard refuses after the cap clears.
+            stop_at = busy_until + 3 * self.LEASE_SEC
+
+            def ending_request(*args: Any, **kwargs: Any) -> tuple[int, dict[str, Any]]:
+                if now[0] - registered_at[0] > stop_at:
+                    return 200, {"state": "refused", "reason": "test-over"}
+                return request(*args, **kwargs)
+
+            with mock.patch.object(interaction, "request", ending_request):
+                interaction._run_tmux_client(1, "token", "sid", self.LEASE_SEC)
+        return tries, output.getvalue(), now[0] - registered_at[0]
+
+    def test_a_cap_held_across_two_renewals_inside_the_lease_does_not_end_it(self) -> None:
+        # From just before the first renewal (at 5 s) to well past the second (at 10 s).
+        tries, output, _ended = self._run(4.9, 14.1)
+        self.assertGreaterEqual(len([at for at in tries if 4.9 <= at < 14.1]), 2)
+        self.assertNotIn("lease-expired", output)
+        self.assertNotIn("renewal stopped", output)
+        self.assertIn("refused: test-over", output, "the lease must outlive the cap")
+
+    def test_a_cap_held_past_the_lease_ends_it_once_it_would_have_lapsed(self) -> None:
+        _tries, output, ended = self._run(4.9, 1_000.0)
+        self.assertIn("renewal stopped: dashboard busy", output)
+        # The last renewal is at registration; it lapses at 15 s, and the client gives up within
+        # one request budget of that rather than an interval later.
+        self.assertLessEqual(ended, self.LEASE_SEC + 2.1)
+
+
 class InteractionPrototypeDisabledTest(unittest.TestCase):
     def test_normal_dashboard_has_no_prototype_routes(self) -> None:
         # Given: the normal dashboard server has no interaction prototype.

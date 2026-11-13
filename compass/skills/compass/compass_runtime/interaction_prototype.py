@@ -1129,8 +1129,10 @@ def _run_tmux_client(
     renewal_count = 0
     interval = max(0.05, lease_sec / 3)
     renewed_at = time.monotonic()
+    delay = interval
     while True:
-        time.sleep(interval)
+        time.sleep(delay)
+        delay = interval
         try:
             _status, renewed = request(
                 port,
@@ -1139,11 +1141,14 @@ def _run_tmux_client(
                 {"origin_id": origin_id, "lease_token": lease_token},
             )
         except DashboardBusyError:
-            # Busy is not a refusal: only the dashboard ends the lease. Keep trying until it
-            # would have lapsed, after which a renewal could only be refused.
-            if time.monotonic() - renewed_at >= lease_sec:
+            # Busy is not a refusal: only the dashboard ends the lease. Try again at once rather
+            # than an interval later, which let a cap that cleared inside the lease outlast it,
+            # until the lease would have lapsed, after which a renewal could only be refused.
+            left = renewed_at + lease_sec - time.monotonic()
+            if left <= 0:
                 print("renewal stopped: dashboard busy", flush=True)
                 return 0
+            delay = min(BUSY_PAUSE_SEC, left)
             continue
         except (OSError, ValueError):
             print("renewal stopped: dashboard disconnected", flush=True)
