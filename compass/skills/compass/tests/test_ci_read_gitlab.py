@@ -372,6 +372,58 @@ class AHostWhoseConfigurationRedirectsTheCallIsNotRead(unittest.TestCase):
         self.assertEqual("", read(self.stub)["error"])
 
 
+class TheConfigurationIsReadOnlyWhereYamlAndPythonAgreeOnLines(unittest.TestCase):
+    """Go's yaml.v3 refuses control characters and breaks lines on CR, LF, CRLF, NEL, LS and PS."""
+
+    def setUp(self) -> None:
+        self.stub = StubGlab(self)
+
+    def write(self, text: str) -> None:
+        directory = self.stub.home / ".config" / "glab-cli"
+        (directory / "config.yml").write_bytes(text.encode("utf-8"))
+
+    def hosts(self) -> frozenset[str]:
+        return ci_read.glab_hosts(self.stub.environ)
+
+    def block(self, *lines: str, newline: str = "\n") -> str:
+        body = "".join(f"        {line}{newline}" for line in lines)
+        return f"hosts:{newline}    {HOST}:{newline}        token: FakePass99{newline}{body}"
+
+    def test_lf_and_crlf_configurations_still_admit_an_https_host(self) -> None:
+        for newline in ("\n", "\r\n"):
+            with self.subTest(newline=newline):
+                self.write(self.block("api_protocol: https", newline=newline))
+                self.assertIn(HOST, self.hosts())
+
+    def test_lf_and_crlf_configurations_still_refuse_a_redirected_host(self) -> None:
+        for newline in ("\n", "\r\n"):
+            for line in (
+                "api_protocol: http",
+                "api_host: other.example.com",
+                "skip_tls_verify: true",
+            ):
+                with self.subTest(newline=newline, line=line):
+                    self.write(self.block(line, newline=newline))
+                    self.assertNotIn(HOST, self.hosts())
+
+    def test_a_lone_carriage_return_is_a_line_break(self) -> None:
+        self.write(self.block("api_protocol: http", newline="\r"))
+        self.assertEqual(frozenset(), self.hosts())
+
+    def test_a_character_python_and_yaml_split_differently_refuses_the_whole_file(self) -> None:
+        refused = ["\x00", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x1f", "\x7f", "\x85"]
+        refused += ["\u2028", "\u2029"]
+        for char in refused:
+            with self.subTest(char=hex(ord(char))):
+                self.write(self.block(f"note: a{char}b"))
+                self.assertEqual(frozenset(), self.hosts())
+                self.assertEqual(ci_read.ERROR_HOST, read(self.stub)["error"])
+
+    def test_a_tab_does_not_refuse_the_file(self) -> None:
+        self.write(self.block("api_protocol: https\t"))
+        self.assertIn(HOST, self.hosts())
+
+
 class TheLaunchKeepsEverySafeguard(unittest.TestCase):
     def setUp(self) -> None:
         self.stub = StubGlab(self)

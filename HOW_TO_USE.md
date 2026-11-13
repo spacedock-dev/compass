@@ -756,7 +756,8 @@ built from GitLab's documented answers, and the first press on your own host is 
    quoted or not; a comment, a tag or a value on the next line counts as not false) is not read, and neither is one whose block holds a key that is not
    a plain name or a line Compass cannot place a key in (a tab, a flow mapping or sequence, a complex key, a tag, a block
    scalar). An anchor, alias or merge key anywhere under `hosts:` leaves no host read at all, since one host's
-   anchor can be merged into another's. The card says the host is not configured.
+   anchor can be merged into another's. So does a file that holds a control character other than tab, CR and LF, or a
+   line separator such as U+2028, because glab and Compass could disagree on where a line ends. The card says the host is not configured.
 
 `--no-ci-read` and the page's switch turn the read off. [SECURITY.md](SECURITY.md#pull-request-ci-reads) lists
 every bound the read keeps, the 60 second deadline over the whole GitLab read among them.
