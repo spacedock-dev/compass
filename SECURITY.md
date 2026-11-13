@@ -1302,9 +1302,10 @@ last: to a caller without the token a live session and one that never existed ar
 unfocusable one, and the feature being off is a 503 rather than a 404 because it is a run-wide fact
 that leaks nothing about any session, where a 404 would read as a build too old to have the route.
 
-The ceiling is claimed after the body is read rather than before it. The body read is blocking and
-carries no socket timeout, so claiming a process-wide one-slot gate ahead of it let a peer that sent
-a length and then nothing hold focus shut for as long as it kept the socket open. Nothing in the
+The ceiling is claimed after the body is read rather than before it. The body read is blocking, and
+its socket timeout bounds each wait for a byte rather than the whole body, so claiming a
+process-wide one-slot gate ahead of it let a peer that sent a length and then trickled its body hold
+focus shut for as long as it kept sending. Nothing in the
 body distinguishes one session from another, so reading it first adds no oracle, and the gate still
 precedes the raise, which is what "cannot repeat the raise" asks for.
 
@@ -5353,10 +5354,12 @@ authority, and name the same host and port as Host, and that port must be the li
 differently from Host is refused, and under `--host 0.0.0.0` an Origin on another admitted
 address is refused as another site's page.
 
-Every request must carry exactly one Host header and at most one each of Origin,
+Every GET and POST must carry exactly one Host header and at most one each of Origin,
 `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, none of them a comma-joined list. A
 repeated or combined value is refused with 403 on every bind, with or without `--allow-host`,
-because the gate reads the first copy and a proxy may act on the last.
+because the gate reads the first copy and a proxy may act on the last. A header line the parser
+cannot read, such as one with whitespace before its colon, is refused with 400 and the connection
+closed, because the parser stops there and every header after it would go unseen.
 
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
@@ -5379,10 +5382,15 @@ admission refusal, like an untrusted Host, rather than a separate request-parser
 
 A POST body is framed by Content-Length alone. A POST carrying `Transfer-Encoding` is refused with
 501 before routing and its connection is closed. Every connection holds a handler thread, so the
-server serves at most 64 at once and answers the next with a 503 and closes it rather than queuing
-it. A connection that sends nothing for 10 seconds, or stops partway through its request for as
-long, is closed and its slot returned. The 10 seconds bound each wait on the socket, not the whole
-request, so a peer that trickles bytes keeps its slot; the cap is what bounds that. Anything that
+server serves at most 64 at once and answers the next with a 503 carrying `Retry-After: 1` and
+closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
+health probes wait that refusal out within their own timeouts rather than reading it as an answer;
+a probe that never gets past it says the dashboard is busy and stops nothing. A connection that
+sends nothing for 10 seconds, or stops partway through its request for as long, is closed and its
+slot returned. The 10 seconds bound each wait on the socket, not the whole request, so a peer that
+trickles bytes keeps its slot; the cap is what bounds that. Responses are written 64 KiB at a time,
+so the same 10 seconds bound each slice rather than the whole page, and a slow reader still
+receives all of it while one that stops reading is dropped. Anything that
 can reach the port can still fill the 64 slots and keep the board unavailable while it holds them;
 like the local-process exposure below, that is accepted rather than defended.
 
