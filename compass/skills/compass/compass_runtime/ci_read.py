@@ -707,8 +707,16 @@ def _redirects(key: str, value: str, host: str) -> bool:
     )
 
 
+# Go's yaml.v3 rejects every control character but tab, CR and LF, and also breaks a line at NEL,
+# LS and PS, which `_LINE_BREAK` does not: a file holding any of them is a file this reader and
+# glab would split differently, so it names no host. `str.splitlines` also splits at VT, FF and
+# FS/GS/RS, which yaml.v3 refuses outright, hence the split on CRLF, CR and LF alone.
+_YAML_DISAGREES = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]")
+_LINE_BREAK = re.compile("\r\n|\r|\n")
+
+
 def _glab_config_text(environ: Mapping[str, str]) -> str:
-    """glab's configuration file, or empty when its folder is relative or it cannot be read."""
+    """glab config file text, empty when unreadable, relative or holding a control character."""
     base = environ.get("XDG_CONFIG_HOME", "") or (
         environ.get("APPDATA", "")
         if os.name == "nt"
@@ -722,7 +730,8 @@ def _glab_config_text(environ: Mapping[str, str]) -> str:
         )
     except OSError:
         return ""
-    return raw.decode("utf-8", "replace")
+    text = raw.decode("utf-8", "replace")
+    return "" if _YAML_DISAGREES.search(text) else text
 
 
 def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
@@ -732,13 +741,14 @@ def glab_hosts(environ: Mapping[str, str]) -> frozenset[str]:
     never keeps one (only `api_protocol`, `api_host` and `skip_tls_verify` are read, as values to
     refuse a host that redirects the call). A host that is not a plain dotted name (an IP literal,
     one with a port) is dropped, so the set can only hold hosts a launch may name. Unreadable or
-    absent is empty.
+    absent is empty, and so is a file holding a character yaml.v3 and this reader would split on
+    differently.
     """
     text = _glab_config_text(environ)
     hosts: set[str] = set()
     redirected: set[str] = set()
     inside, depth, current = False, 0, ""
-    for line in text.splitlines():
+    for line in _LINE_BREAK.split(text):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
