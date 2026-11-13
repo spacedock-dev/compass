@@ -203,6 +203,13 @@ def request(
                 port, method, path, raw, headers, max(deadline - time.monotonic(), 0.001)
             )
         except (OSError, http.client.HTTPException) as error:
+            # As in loopback_transport: the cap closing on a request still being sent is the cap.
+            if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+                refused = True
+                if deadline - time.monotonic() <= BUSY_PAUSE_SEC:
+                    raise DashboardBusyError(port) from error
+                time.sleep(BUSY_PAUSE_SEC)
+                continue
             if refused:
                 raise DashboardBusyError(port) from error
             raise

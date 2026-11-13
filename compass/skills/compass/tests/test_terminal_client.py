@@ -556,6 +556,46 @@ class RequestPathTest(unittest.TestCase):
                 "GET", 4553, "/api/health", timeout=5.0, cap=4096, wait_when_busy=True
             )
 
+    def test_a_connection_the_cap_closed_mid_send_is_waited_out(self) -> None:
+        # The cap writes its 503 and closes before reading the request, so a POST still sending
+        # its body can meet a broken pipe or a reset instead of the 503. That is the cap too:
+        # measured on a macOS runner, where a POST waiting out a 0.3 s cap was read as busy at once.
+        tries = iter((BrokenPipeError(32, "Broken pipe"), (503, b"", "1"), ConnectionResetError()))
+
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            step = next(tries, (404, b"{}", None))
+            if isinstance(step, BaseException):
+                raise step
+            return step
+
+        with mock.patch.object(loopback_transport, "_exchange", attempt):
+            status, _raw = loopback_transport.exchange(
+                "POST", 4553, "/api/x", b"{}", timeout=5.0, cap=4096, wait_when_busy=True
+            )
+        self.assertEqual(404, status)
+
+    def test_a_closed_connection_is_not_waited_out_unless_asked(self) -> None:
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        with (
+            mock.patch.object(loopback_transport, "_exchange", attempt),
+            self.assertRaises(BrokenPipeError),
+        ):
+            loopback_transport.exchange("POST", 4553, "/api/x", b"{}", timeout=5.0, cap=4096)
+
+    def test_a_refused_connect_is_no_dashboard_even_when_waiting(self) -> None:
+        def attempt(*_args: Any, **_kwargs: Any) -> tuple[int, bytes, str | None]:
+            raise ConnectionRefusedError(61, "Connection refused")
+
+        with (
+            mock.patch.object(loopback_transport, "_exchange", attempt),
+            self.assertRaises(ConnectionRefusedError),
+        ):
+            loopback_transport.exchange(
+                "GET", 4553, "/api/health", timeout=5.0, cap=4096, wait_when_busy=True
+            )
+
     def test_a_get_returns_the_status_and_the_parsed_body(self) -> None:
         with FakeDashboard(answers={"/api/x": (200, {}, b'{"a": 1}')}) as fake:
             reply = terminal_client.get(fake.port, "/api/x")
