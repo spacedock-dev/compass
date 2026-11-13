@@ -84,8 +84,9 @@ def verified_folder(path: str) -> bool:
     `CLAUDE_CONFIG_DIR` and `CODEX_HOME` decide where a CLI reads its sign-in and settings, so
     a folder another account could write would let that account choose both. Verified means:
     absolute and already normal (no `.` or `..` part, no doubled separator), an existing
-    directory owned by this account and writable by nobody else, and every symbolic link on the
-    way to it owned by this account or by root. The value is passed on unchanged, never
+    directory owned by this account and writable by nobody else, every symbolic link on the
+    way to it owned by this account or by root, and every directory above it held the same way
+    (`_held_parent`). The value is passed on unchanged, never
     resolved, because Claude Code names its keychain entry after the folder as written. POSIX
     only; Windows has no owner and mode bits to read, so there the folder must only exist.
     """
@@ -94,13 +95,10 @@ def verified_folder(path: str) -> bool:
     if not path or not os.path.isabs(path) or os.path.normpath(path) != path.rstrip(os.sep):
         return False
     uid = os.getuid()
-    walk = os.sep
     try:
-        for part in [segment for segment in path.split(os.sep) if segment]:
-            walk = os.path.join(walk, part)
-            info = os.lstat(walk)
-            if stat.S_ISLNK(info.st_mode) and info.st_uid not in {0, uid}:
-                return False
+        parents = _holding_folders(path, uid)
+        if parents is None or not all(_held_parent(os.stat(parent), uid) for parent in parents):
+            return False
         final = os.stat(path)
     except OSError:
         return False
@@ -110,6 +108,63 @@ def verified_folder(path: str) -> bool:
         and not final.st_mode & stat.S_IWOTH
         and (not final.st_mode & stat.S_IWGRP or _private_group(final.st_gid, uid))
     )
+
+
+# Links followed before a path counts as unverifiable: Linux's own limit, above macOS's 32.
+LINK_HOPS: Final = 40
+
+
+def _holding_folders(path: str, uid: int) -> set[str] | None:
+    """Every real directory an entry on the way to `path` sits in, or None to refuse.
+
+    Resolved one link at a time, as the kernel does, so a link inside a link's target adds the
+    folder it sits in too: `os.path.realpath` would report only where the chain ends, and another
+    account able to write a folder midway could repoint the chain later. Each link must be owned
+    by this account or root, and more than `LINK_HOPS` links refuse.
+    """
+    pending = [part for part in path.split(os.sep) if part]
+    current = os.sep
+    folders: set[str] = set()
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part == ".":
+            continue
+        if part == "..":
+            current = os.path.dirname(current)
+            continue
+        folders.add(current)
+        entry = os.path.join(current, part)
+        info = os.lstat(entry)
+        if not stat.S_ISLNK(info.st_mode):
+            current = entry
+            continue
+        hops += 1
+        if hops > LINK_HOPS or info.st_uid not in {0, uid}:
+            return None
+        target = os.readlink(entry)
+        if os.path.isabs(target):
+            current = os.sep
+        pending[:0] = [part for part in target.split(os.sep) if part]
+    return folders
+
+
+def _held_parent(info: os.stat_result, uid: int) -> bool:
+    """Whether no other account can rename an entry out of this directory and plant its own.
+
+    Every directory holding a part of the path, link by link (`_holding_folders`): another account
+    able to write one could swap the folder, or a link to it, after the check. Owned by this
+    account or root, and writable by nobody else, unless sticky (as /tmp is), where only an
+    entry's owner may rename it and the entries below are checked in turn. Group write passes
+    for this account's private group, as on the folder itself.
+    """
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, uid}:
+        return False
+    if info.st_mode & stat.S_ISVTX:
+        return True
+    if info.st_mode & stat.S_IWOTH:
+        return False
+    return not info.st_mode & stat.S_IWGRP or _private_group(info.st_gid, uid)
 
 
 def _windows_folder(path: str) -> bool:

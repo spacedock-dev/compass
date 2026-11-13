@@ -683,6 +683,95 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
                 with self.subTest(value=value):
                     self.assertEqual(verified, claude_settings.verified_folder(value))
 
+    def test_a_parent_another_account_could_write_is_refused(self) -> None:
+        # Another account able to write a parent could rename the checked folder away and put
+        # its own in its place after the check.
+        self.root.chmod(0o777)
+        self.addCleanup(self.root.chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+        # A sticky parent, as /tmp is, lets nobody else rename an entry this account owns.
+        self.root.chmod(0o1777)
+        self.assertTrue(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_parent_another_account_owns_is_refused(self) -> None:
+        real_stat = os.stat
+
+        def stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+            info = real_stat(path, *args, **kwargs)
+            if os.fspath(path) == str(self.root):
+                fields = list(info)
+                fields[4] = os.getuid() + 1  # st_uid
+                return os.stat_result(fields)
+            return info
+
+        with mock.patch.object(os, "stat", side_effect=stat):
+            self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_group_writable_parent_is_refused_unless_the_group_is_private(self) -> None:
+        import pwd  # noqa: PLC0415 - POSIX only
+
+        self.root.chmod(0o770)
+        self.addCleanup(self.root.chmod, 0o700)
+        gid = self.root.stat().st_gid
+        name = pwd.getpwuid(os.getuid()).pw_name
+        with (
+            mock.patch("pwd.getpwuid", return_value=self.primary(gid)),
+            mock.patch("pwd.getpwall", return_value=self.everyone(gid)),
+            mock.patch("grp.getgrgid", return_value=self.group("staff-for-test", [])),
+        ):
+            self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+        with (
+            mock.patch("pwd.getpwuid", return_value=self.primary(gid)),
+            mock.patch("pwd.getpwall", return_value=self.everyone(gid)),
+            mock.patch("grp.getgrgid", return_value=self.group(name, [])),
+        ):
+            self.assertTrue(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_link_kept_in_a_folder_another_account_could_write_is_refused(self) -> None:
+        shared = self.root / "shared"
+        shared.mkdir()
+        link = shared / "link"
+        link.symlink_to(self.folder)
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        shared.chmod(0o777)
+        self.addCleanup(shared.chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(link)))
+
+    def test_every_hop_of_a_link_chain_sits_in_a_held_folder(self) -> None:
+        # home/link -> m/hop -> safe/real: another account able to write `m` could point `hop`
+        # elsewhere after the check, though `m` is above neither the path as written nor the
+        # folder it resolves to.
+        home = self.root / "home"
+        home.mkdir(mode=0o750)
+        hops = self.root / "m"
+        hops.mkdir(mode=0o755)
+        (hops / "hop").symlink_to(self.folder)
+        link = home / "link"
+        link.symlink_to(hops / "hop")
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        hops.chmod(0o777)
+        self.addCleanup(hops.chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(link)))
+
+    def test_a_relative_link_is_followed_from_its_own_folder(self) -> None:
+        nested = self.root / "a" / "b"
+        nested.mkdir(parents=True)
+        link = nested / "link"
+        link.symlink_to(Path("..") / ".." / "config")
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        (self.root / "a").chmod(0o777)
+        self.addCleanup((self.root / "a").chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(link)))
+
+    def test_a_chain_too_long_to_follow_is_refused(self) -> None:
+        previous = self.folder
+        for index in range(41):
+            link = self.root / f"hop{index}"
+            link.symlink_to(previous)
+            previous = link
+        self.assertFalse(claude_settings.verified_folder(str(previous)))
+        self.assertTrue(claude_settings.verified_folder(str(self.root / "hop5")))
+
     def test_a_folder_another_account_owns_is_refused(self) -> None:
         with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
             self.assertFalse(claude_settings.verified_folder(str(self.folder)))

@@ -1136,6 +1136,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         return 1
     lifecycle.sweep_stale_states(config)
     observer.sweep_claude_scratch(config)
+    observer.sweep_reading_workdirs(config)
     log_file = lifecycle.log_path(config, args.port)
     if args.daemon and not lifecycle.prepare_daemon_home(config, log_file):
         # Reported already; the message has to reach the terminal that asked,

@@ -131,7 +131,18 @@ TOOL_OUTPUT_TAIL_CHARS = 180
 # this build does not read, so no destination is named on Windows at all.
 CLAUDE_MANAGED_DIRS = claude_settings.MANAGED_DIRS
 CLAUDE_MANAGED_PREFERENCES = claude_settings.MANAGED_PREFERENCES
-CODEX_MANAGED_FILES = ("/etc/codex/managed_config.toml", "/etc/codex/config.toml")
+# `requirements.toml` added on codex-cli 0.167.2 (its strings, 2026-11-13): enforced policy that can
+# require a model provider and run managed hooks, which `--ignore-user-config` leaves in force.
+CODEX_MANAGED_FILES = (
+    "/etc/codex/managed_config.toml",
+    "/etc/codex/config.toml",
+    "/etc/codex/requirements.toml",
+)
+# Claude Code's managed MCP servers, in the managed folder. Whether one starts under the flags a
+# reading passes was not measured: the 2.1.323 binary reads the folder at a fixed system path, so
+# a test file there needs root. Its present file unnames the destination and refuses no lane, the
+# owner's 2026-11-13 ruling for managed hooks ("Unname, don't refuse"); SECURITY.md records it.
+CLAUDE_MANAGED_MCP = "managed-mcp.json"
 CODEX_MANAGED_PREFERENCES = "com.openai.codex.plist"
 MANAGED_PREFERENCES_DIR = "/Library/Managed Preferences"
 _TRUE = frozenset({"1", "true", "yes", "on"})
@@ -159,6 +170,9 @@ def _claude_sources(
     documents = claude_settings.documents(
         environ, root, system, account_reader=_account, managed_root=managed_root
     )
+    machine = root if managed_root is None else managed_root
+    if _present(_under(machine, f"{CLAUDE_MANAGED_DIRS[system]}/{CLAUDE_MANAGED_MCP}")):
+        raise _UnnamedError
     # Top-level settings move the call too: a login gateway, a model remap, a helper that runs a
     # shell command for credentials, or telemetry export. `resolve`'s own remapped-or-dynamic
     # rule; the lanes refuse on its dynamic half (`claude_settings.lane_refusal`).

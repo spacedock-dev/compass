@@ -720,10 +720,12 @@ whole procedure.
 ## When Claude Code settings stop a check
 
 Session summaries and the Live monitor run through your Claude Code, and so do Find goal and
-unasked checks when Claude Code reads the session (Codex reads it when `claude` is not on the
-dashboard's PATH; see the Codex paragraph below). Before each call, Compass reads the Claude Code
-settings your organization manages. If those
-settings could send the call somewhere Compass cannot name, or run a command of their own, Compass
+unasked checks when Claude Code reads the session. Each session has one reader, chosen before the
+press. Find goal sends a Claude Code session to Claude Code and a session from any other harness,
+Codex's included, to Codex, each falling back to the other CLI only when the first cannot run.
+Unasked checks send a Codex session to Codex and every other session to Claude Code, with the same
+fallback. The Codex paragraph below covers the Codex reader. Before each call, Compass reads the
+Claude Code settings your organization manages. If those settings could send the call somewhere Compass cannot name, or run a command of their own, Compass
 does not start it, and nothing is sent or charged for it. Find goal and the Live monitor say so
 beside their control, a summary says so on its card, and `--summary` and `--monitor` say so in the
 terminal. An unasked check skips without a note, because nothing was spent. Analyze runs a stricter
@@ -756,19 +758,25 @@ check. These stop it without any of the keys above:
 - a configuration profile for Claude Code under `/Library/Managed Preferences` on macOS, which
   Compass cannot read;
 - `CLAUDE_CODE_MANAGED_SETTINGS_PATH` set in the dashboard's environment;
-- a `CLAUDE_CONFIG_DIR` that is not a folder you own and only you can write to;
+- a `CLAUDE_CONFIG_DIR` that is not a folder you own and only you can write to, or that sits inside a
+  folder another account can write to (a sticky folder such as `/tmp` is fine);
 - a settings file Compass cannot read as plain JSON: a syntax error, a key given twice, or an
   `env` value that is not text;
+- a settings file over 1 MiB, or one that is not a regular file;
+- more than 64 entries in the `managed-settings.d` folder;
+- a relative `HOME` in the dashboard's environment, or an account with no home folder or user name;
 - a managed file that sets `agent`, or sets `HOME`, `USER`, `CLAUDE_CONFIG_DIR` or
   `CLAUDE_CODE_MANAGED_SETTINGS_PATH` in its `env`.
 
 On Windows and under WSL, only the `CLAUDE_CONFIG_DIR` check applies.
 
 When Codex reads the session, Find goal and unasked checks stop for two other reasons. One is a
-`CODEX_HOME` that is not a folder you own and only you can write to, because that folder chooses the
-account the call signs in as. The other is no private folder for the call to run in: Compass makes
+`CODEX_HOME` that is not a folder you own and only you can write to, or that sits inside a folder
+another account can write to (a sticky folder such as `/tmp` is fine), because that folder chooses
+the account the call signs in as. The other is no private folder for the call to run in: Compass makes
 one in your temporary folder, or in `/tmp` when the temporary folder is inside your home folder or
-names your account, and stops when neither will do. Find goal says which applies.
+names your account, and stops when neither will do. Find goal names both causes in one sentence,
+so check each.
 
 If the setting is yours to change, change it and press again. Compass reads these files before every
 call, so a changed file needs no restart. A changed `CLAUDE_CONFIG_DIR` or
