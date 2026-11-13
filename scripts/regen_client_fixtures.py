@@ -1731,7 +1731,9 @@ def reading_scenarios(recorder: Recorder, scratch: Scratch) -> None:
     # does not depend on which CLIs or settings the machine regenerating this happens to have.
     # Only inputs to the route's own code are fixed; no reply is written here.
     patches = contextlib.ExitStack()
-    patches.enter_context(mock.patch.object(shutil, "which", lambda name: f"/synthetic/{name}"))
+    patches.enter_context(
+        mock.patch.object(shutil, "which", lambda name, **_kwargs: f"/synthetic/{name}")
+    )
     real_destination = runtime_reading_route.destination
     empty_root = scratch.subdir("no-settings")
     patches.enter_context(
@@ -2408,7 +2410,7 @@ def guarded() -> Iterator[None]:
         ),
         mock.patch.object(runtime_reading_jobs, "launch", refuse_launch),
         mock.patch.object(subprocess.Popen, "__init__", refuse_spawn),
-        mock.patch.object(shutil, "which", lambda _name: None),
+        mock.patch.object(shutil, "which", lambda _name, **_kwargs: None),
     ):
         yield
 

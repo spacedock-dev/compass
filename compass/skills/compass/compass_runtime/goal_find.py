@@ -50,6 +50,8 @@ WHY_TOO_LONG = "too-long"
 WHY_MALFORMED = "malformed"
 WHY_MODEL_FAILED = "model-failed"
 WHY_MODEL_UNAVAILABLE = "model-unavailable"
+# Claude Code's settings could move the call or run a helper, so it was not started or charged.
+WHY_SETTINGS_REFUSED = "settings-refused"
 
 
 class Cite(TypedDict):
@@ -268,6 +270,8 @@ def find(prompts: list[Prompt], model: Model, *, goal_cap: int) -> Result:
     )
     if status in {"unavailable", "closed", "cancelled"}:
         return Result(None, WHY_MODEL_UNAVAILABLE, called=False)
+    if status == WHY_SETTINGS_REFUSED:
+        return Result(None, WHY_SETTINGS_REFUSED, called=False)
     if status != "ok":
         return Result(None, WHY_MODEL_FAILED, called=True)
     found, why = _read(reply, prompts, goal_cap)

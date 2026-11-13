@@ -10255,6 +10255,40 @@ or parsed still refuses as `context-config`. The refusal and the Next Analyze pr
 share one source, `claude_settings.resolve`, so the sentence and the refusal agree. As before, a
 read is not a policy receipt: `policy_verified` stays false.
 
+#### Amended 2026-11-13: every Claude Code lane applies the same rule
+
+Analyze was the only lane that read these settings. Find goal, unasked checks, session summaries
+and the Live monitor started the CLI without them, and the published destination read only each
+source's `env`, so a login gateway or a shell helper in managed or cached remote settings left
+the board saying "Anthropic". Now the four other lanes refuse before their charge where a source
+cannot be read or is dynamic under this ruling: the same harmless-key allowlist for the remote
+cache, plus the shell helpers (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+`gcpAuthRefresh`, `otelHeadersHelper`) and telemetry that exports words (below), which now count
+as dynamic for Analyze too. They read the sources themselves (`claude_settings.lane_refusal`) rather than `resolve`'s
+answer, because `resolve` reports the first fallback or compaction conflict and drops `dynamic`
+beside it. Those two conflicts stay Analyze's own: they concern its envelope, not where the words
+go. The destination names nothing wherever a source is dynamic or remaps the model. A remap alone
+does not stop the other lanes; the board already says the destination cannot be named, and a
+remap changes the model a call asks for, not its sign-in. On Windows and under WSL, where nothing
+applicable can be read, those lanes run as before, except that an unverified `CLAUDE_CONFIG_DIR`
+refuses everywhere. SECURITY.md lists what each lane checks and what the child is handed.
+
+The owner ruled on three questions the same day, 2026-11-13, each narrower than the first plan:
+
+- Managed hooks: "Unname, don't refuse". A non-empty `hooks` key in a managed source, or in the
+  cached remote settings, leaves the destination unnamed and refuses no lane, unless the same
+  source sets `disableAllHooks: true`. A reading then runs as it does for any unnamed destination.
+  The four lanes therefore read `hooks` and `disableAllHooks` as harmless in the remote cache;
+  Analyze keeps the allowlist above, where `hooks` still counts as dynamic.
+- Telemetry in managed or remote settings: "Only when words are exported". It refuses and unnames
+  only when it can carry the reading's words, a content switch on (`OTEL_LOG_USER_PROMPTS`,
+  `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_ASSISTANT_RESPONSES`,
+  `OTEL_LOG_RAW_API_BODIES`, read from the 2.1.323 binary) or detailed beta tracing with an
+  endpoint. Metrics and usage export alone does neither. This is narrower than the first plan,
+  which refused on any telemetry switch or OTLP endpoint.
+- Telemetry in the dashboard's own environment: "Drop it". It no longer unnames the Claude Code
+  or the Codex destination, because neither child's environment allowlist hands it on.
+
 
 ### Amended 2026-11-08: terminal goal reads and saves
 

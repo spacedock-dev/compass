@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import shutil
 import threading
 import time
 from copy import deepcopy
@@ -438,7 +437,7 @@ def launch(
     application: Application,
     started: admission.Started,
     *,
-    binary_resolver: Callable[[str], str | None] = shutil.which,
+    binary_resolver: Callable[[str], str | None] | None = None,
 ) -> threading.Thread:
     """Start once from actual admission; thread-start failure finalizes before slot release."""
     thread = threading.Thread(

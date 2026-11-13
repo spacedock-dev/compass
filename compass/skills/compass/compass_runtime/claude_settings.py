@@ -36,6 +36,16 @@ type Refusal = Literal[
 ]
 
 
+# Where machine-wide managed files are read under when a caller names no root: `/` in
+# production. The dashboard's test support points it at an empty folder so a developer's own
+# managed policy cannot decide a test; a caller that passes `root` is never redirected.
+MANAGED_ROOT: Path = Path("/")
+
+
+def _managed_root(root: Path | None) -> Path | None:
+    return MANAGED_ROOT if root is None else None
+
+
 class SettingsError(Exception):
     """An applicable source or relevant setting cannot be safely interpreted."""
 
@@ -66,6 +76,82 @@ def account(environ: Mapping[str, str]) -> tuple[str, str]:
     except (ImportError, KeyError, OSError):
         return home, user
     return home or entry.pw_dir, user or entry.pw_name
+
+
+def verified_folder(path: str) -> bool:
+    """Whether a configuration folder named by the environment can be trusted as this account's.
+
+    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` decide where a CLI reads its sign-in and settings, so
+    a folder another account could write would let that account choose both. Verified means:
+    absolute and already normal (no `.` or `..` part, no doubled separator), an existing
+    directory owned by this account and writable by nobody else, and every symbolic link on the
+    way to it owned by this account or by root. The value is passed on unchanged, never
+    resolved, because Claude Code names its keychain entry after the folder as written. POSIX
+    only; Windows has no owner and mode bits to read, so there the folder must only exist.
+    """
+    if os.name == "nt":
+        return _windows_folder(path)
+    if not path or not os.path.isabs(path) or os.path.normpath(path) != path.rstrip(os.sep):
+        return False
+    uid = os.getuid()
+    walk = os.sep
+    try:
+        for part in [segment for segment in path.split(os.sep) if segment]:
+            walk = os.path.join(walk, part)
+            info = os.lstat(walk)
+            if stat.S_ISLNK(info.st_mode) and info.st_uid not in {0, uid}:
+                return False
+        final = os.stat(path)
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(final.st_mode)
+        and final.st_uid == uid
+        and not final.st_mode & stat.S_IWOTH
+        and (not final.st_mode & stat.S_IWGRP or _private_group(final.st_gid, uid))
+    )
+
+
+def _windows_folder(path: str) -> bool:
+    """A Windows folder: a drive and a root, either separator, no `.` or `..` part, existing.
+
+    Claude Code accepts `C:/Users/me/.claude`, which `ntpath.normpath` rewrites with backslashes,
+    so the POSIX test of "already normal" would refuse a form the CLI takes. Climbing is still
+    refused part by part, and a driveless root is refused because it resolves against the
+    current drive.
+    """
+    drive, rest = os.path.splitdrive(path)
+    if not drive or rest[:1] not in {"\\", "/"}:
+        return False
+    parts = [part for part in rest.replace("/", "\\").split("\\") if part]
+    if any(part in {".", ".."} for part in parts):
+        return False
+    return os.path.isdir(path)
+
+
+def _private_group(gid: int, uid: int) -> bool:
+    """Whether `gid` is this account's own group: its primary group, named after it, no members.
+
+    A umask of 002, the default on distributions that give every user a group of their own,
+    makes a new folder group-writable; that group holds nobody else, so the write bit adds no
+    writer. Any other group could hold another account. `gr_mem` lists supplementary members
+    only, so the password database is read too: no other account may have this group as its
+    primary one. A directory service that does not enumerate its accounts (some LDAP and SSSD
+    set-ups) cannot be seen this way, and an account it alone serves goes undetected; that is
+    the one case this test fails open.
+    """
+    import grp  # noqa: PLC0415 - POSIX only
+    import pwd  # noqa: PLC0415 - POSIX only
+
+    try:
+        account = pwd.getpwuid(uid)
+        group = grp.getgrgid(gid)
+        if account.pw_gid != gid or group.gr_name != account.pw_name or group.gr_mem:
+            return False
+        # Last, because it reads every account: only once the cheap checks would admit.
+        return not any(entry.pw_gid == gid and entry.pw_uid != uid for entry in pwd.getpwall())
+    except (KeyError, OSError):
+        return False
 
 
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -116,12 +202,18 @@ def documents(
     system: str,
     *,
     account_reader: Callable[[Mapping[str, str]], tuple[str, str]] = account,
+    managed_root: Path | None = None,
 ) -> list[Source]:
-    """Same named managed sources destination resolution has always inspected."""
+    """Same named managed sources destination resolution has always inspected.
+
+    `managed_root`, when given, is where the machine-wide managed files and profiles are read
+    under instead of `root`; the account's own folders stay under `root`.
+    """
     managed = MANAGED_DIRS.get(system)
     if managed is None or environ.get("CLAUDE_CODE_MANAGED_SETTINGS_PATH"):
         raise SettingsError
-    base = under(root, managed)
+    machine = root if managed_root is None else managed_root
+    base = under(machine, managed)
     sources = [Source(document(base / "managed-settings.json"))]
     drop_ins = base / "managed-settings.d"
     if present(drop_ins):
@@ -137,10 +229,14 @@ def documents(
             raise SettingsError from exc
         sources.extend(Source(document(drop_ins / name)) for name in sorted(names))
     home, user = account_reader(environ)
-    if not home or not user:
+    if not home or not user or not os.path.isabs(home):
+        raise SettingsError
+    if environ.get("CLAUDE_CONFIG_DIR") and not verified_folder(
+        str(under(root, environ["CLAUDE_CONFIG_DIR"]))
+    ):
         raise SettingsError
     if system == "Darwin" and any(
-        present(under(root, f"{PREFERENCES_DIR}/{prefix}{MANAGED_PREFERENCES}"))
+        present(under(machine, f"{PREFERENCES_DIR}/{prefix}{MANAGED_PREFERENCES}"))
         for prefix in ("", f"{user}/")
     ):
         raise SettingsError
@@ -235,19 +331,33 @@ def _conflict(data: dict[str, Any]) -> Refusal:
     return ""
 
 
+# The AWS SDK reads these to send a Bedrock call to another host than the region's own.
+# Found in the 2.1.323 binary's strings (review, 2026-11-13); they move the call only while
+# the Bedrock switch is on, so they mean nothing on any other route.
+AWS_ENDPOINTS: Final = (
+    "AWS_ENDPOINT_URL",
+    "AWS_ENDPOINT_URL_BEDROCK",
+    "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
+)
+
+
 def _deployment(environments: list[Mapping[str, str]]) -> Deployment:
-    cloud, gateway, unknown = False, False, False
+    cloud, gateway, unknown, bedrock, aws_endpoint = False, False, False, False, False
     for env in environments:
         for key, value in env.items():
             if key.startswith("CLAUDE_CODE_USE_") and _flag(value):
                 if key in {"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"}:
                     cloud = True
+                    bedrock = bedrock or key == "CLAUDE_CODE_USE_BEDROCK"
                 else:
                     unknown = True
+            if key in AWS_ENDPOINTS and value.strip():
+                aws_endpoint = True
             if key.startswith("ANTHROPIC_") and key.endswith("_BASE_URL") and value.strip():
                 gateway = True
             if key in {"ANTHROPIC_UNIX_SOCKET", "CLAUDE_CODE_CUSTOM_OAUTH_URL"} and value.strip():
                 unknown = True
+    unknown = unknown or (bedrock and aws_endpoint)
     return "unknown" if unknown else "gateway" if gateway else "cloud" if cloud else "direct"
 
 
@@ -269,8 +379,67 @@ _REMOTE_HARMLESS: Final = frozenset(
 )
 
 
-def _source_flags(source: Source) -> tuple[bool, bool]:
+# Settings keys whose value is a command Claude Code runs through a shell before or during a
+# call: to fetch a key or cloud credentials, or the headers of a telemetry export. Restricted mode
+# still applies them from managed and remote settings, and Compass never names or runs one, so
+# each makes the call's sign-in and destination something this reader cannot vouch for.
+# https://code.claude.com/docs/en/settings-reference
+SHELL_HELPERS: Final = (
+    "apiKeyHelper",
+    "awsAuthRefresh",
+    "awsCredentialExport",
+    "gcpAuthRefresh",
+    "otelHeadersHelper",
+)
+# The switches that put a call's words into Claude Code's telemetry: the user's prompt, tool
+# input and output, assistant replies and raw API bodies, read from the 2.1.323 binary's
+# strings (its own help calls them content variables, OTEL_LOG_USER_PROMPTS among them). Owner
+# ruling 2026-11-13: telemetry refuses and unnames only when it can carry the reading's words,
+# so metrics and usage export alone (`CLAUDE_CODE_ENABLE_TELEMETRY` with an OTLP endpoint) do
+# neither.
+WORD_SWITCHES: Final = (
+    "OTEL_LOG_USER_PROMPTS",
+    "OTEL_LOG_TOOL_DETAILS",
+    "OTEL_LOG_TOOL_CONTENT",
+    "OTEL_LOG_ASSISTANT_RESPONSES",
+    "OTEL_LOG_RAW_API_BODIES",
+)
+
+
+def exports_words(env: Mapping[str, str]) -> bool:
+    """Whether an environment makes Claude Code's telemetry carry the call's words.
+
+    A content switch on, or detailed beta tracing with an endpoint to send it to. A switch that
+    is neither on nor off is unreadable, as a provider switch is.
+    """
+    if any(name in env and _flag(env[name]) for name in WORD_SWITCHES):
+        return True
+    detailed = env.get("ENABLE_BETA_TRACING_DETAILED")
+    return (
+        detailed is not None
+        and _flag(detailed)
+        and bool(env.get("BETA_TRACING_ENDPOINT", "").strip())
+    )
+
+
+def runs_hooks(source: Source) -> bool:
+    """Whether a managed source names hooks that run, which can send a call's words anywhere.
+
+    Owner ruling 2026-11-13, "Unname, don't refuse": the destination names nothing, and no lane
+    refuses for it. `disableAllHooks: true` in the same source means none runs.
+    """
+    hooks = source.data.get("hooks")
+    return bool(hooks) and source.data.get("disableAllHooks") is not True
+
+
+# Keys a remote cache may hold without stopping a lane other than Analyze: hooks unname the
+# destination instead (`runs_hooks`). Analyze keeps the 2026-11-06 allowlist above.
+_LANE_REMOTE_HARMLESS: Final = _REMOTE_HARMLESS | {"hooks", "disableAllHooks"}
+
+
+def _source_flags(source: Source, *, lane: bool = False) -> tuple[bool, bool]:
     data = source.data
+    harmless = _LANE_REMOTE_HARMLESS if lane else _REMOTE_HARMLESS
     overrides = data.get("modelOverrides", {})
     if not isinstance(overrides, dict) or not all(
         isinstance(value, str) for value in overrides.values()
@@ -280,10 +449,11 @@ def _source_flags(source: Source) -> tuple[bool, bool]:
     if type(refresh) is not bool:
         raise SettingsError
     dynamic = (
-        (source.remote and not data.keys() <= _REMOTE_HARMLESS)
+        (source.remote and not data.keys() <= harmless)
         or refresh
-        or any(key in data for key in ("policyHelper", "forceLoginGatewayUrl"))
+        or any(key in data for key in ("policyHelper", "forceLoginGatewayUrl", *SHELL_HELPERS))
         or data.get("forceLoginMethod") == "gateway"
+        or exports_words(data.get("env", {}))
     )
     # No automatic fallback is a top-level print contract, not a promise about
     # a configured named agent whose model behavior can differ.
@@ -326,7 +496,9 @@ def resolve(
     if any(env.get(key) and not os.path.isabs(env[key]) for key in ("HOME", "CLAUDE_CONFIG_DIR")):
         return Controls(refusal="context-config")
     try:
-        sources = documents(env, root or Path("/"), system or platform.system())
+        sources = documents(
+            env, root or Path("/"), system or platform.system(), managed_root=_managed_root(root)
+        )
         limits = _environment_limits(env)
         environments: list[Mapping[str, str]] = [env]
         dynamic, remapped = False, False
@@ -349,3 +521,64 @@ def resolve(
         )
     except SettingsError:
         return Controls(refusal="context-config")
+
+
+def unnameable(source: Source) -> bool:
+    """Whether a source can move the call, its model or its sign-in where no name can follow.
+
+    The destination's half of `resolve`: a source `resolve` treats as remapped or dynamic is
+    one whose receiver this reader cannot name. The lanes refuse on the dynamic half alone
+    (`lane_refusal`): a `modelOverrides` remap leaves the board naming nothing while the lanes
+    still run, which is accepted, because a remap changes the model a call asks for and the
+    destination already says it cannot be named.
+    """
+    remapped, dynamic = _source_flags(source)
+    return remapped or dynamic or runs_hooks(source)
+
+
+def config_folder_refused(environ: Mapping[str, str], root: Path | None = None) -> bool:
+    """Whether `CLAUDE_CONFIG_DIR` is set and fails `verified_folder`, on any system."""
+    value = environ.get("CLAUDE_CONFIG_DIR", "")
+    if not value:
+        return False
+    path = value if root is None else str(under(root, value)) if os.path.isabs(value) else ""
+    return not verified_folder(path)
+
+
+def lane_refusal(
+    model: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+    root: Path | None = None,
+    system: str | None = None,
+) -> Refusal:
+    """What a Claude lane other than Analyze refuses on before it starts the CLI, or "".
+
+    An unverified `CLAUDE_CONFIG_DIR` refuses everywhere, because it chooses the account the
+    call signs in as. Beyond that, on Windows and under WSL nothing applicable can be read and
+    the published destination already says Compass cannot name where the words go; a reading
+    still runs on the reader's words there, as SECURITY.md records, so those lanes are not
+    refused for it. Elsewhere the sources are read here rather than through `resolve`'s answer,
+    because `resolve` names its first conflict and drops `dynamic` beside it: a helper next to a
+    `fallbackModel` must still refuse. The compaction and fallback conflicts themselves concern
+    Analyze's own envelope and are not lane refusals, and hooks unname the destination without
+    refusing (`runs_hooks`). Analyze keeps `resolve`'s whole refusal everywhere.
+    """
+    env = os.environ if environ is None else environ
+    if config_folder_refused(env, root):
+        return "context-config"
+    name = system or platform.system()
+    if name not in MANAGED_DIRS or env.get("WSL_DISTRO_NAME") or env.get("WSL_INTEROP"):
+        return ""
+    refusal = resolve(model, environ=env, root=root, system=name).refusal
+    if refusal == "context-config":
+        return refusal
+    try:
+        sources = documents(env, root or Path("/"), name, managed_root=_managed_root(root))
+        return (
+            "dynamic-policy"
+            if any(_source_flags(source, lane=True)[1] for source in sources)
+            else ""
+        )
+    except SettingsError:
+        return "context-config"

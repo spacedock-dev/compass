@@ -1551,7 +1551,25 @@ The bounds, all of which hold together:
 - One bounded question. The generated prompt has a byte cap and the subprocess has a timeout.
   Codex is invoked ephemerally with user configuration and rules ignored, in a read-only sandbox.
   Explicit CLI overrides disable shell execution, hooks, plugins, apps, subagents, browser and
-  computer tools, image generation, web search, and automatic project/skill instructions.
+  computer tools, image generation, web search, and automatic project/skill instructions, and ask
+  for no MCP servers (`--config mcp_servers={}`). Measured on codex-cli 0.167.2 with the provider
+  pointed at a closed loopback port, it is `--ignore-user-config` that keeps an MCP server
+  configured under `CODEX_HOME` from starting; the override alone did not, because a `--config`
+  table merges into the loaded one. Codex runs in a fresh owner-only (0700) empty folder made where
+  a Claude Code reading's is (`observer.reading_workdir_root`), never the state directory, and
+  the folder is removed on every path the call returns by, a timeout included; when no such folder
+  can be made, nothing runs. `codex` is found on `PATH` with every element that is not rooted
+  removed (`observer.codex_binary`, the rule `git_status.executable` applies to `git`, restated
+  rather than imported); the Claude Code lanes still find `claude` with `shutil.which` and require
+  an absolute answer. The child's environment is an allowlist
+  (`observer.codex_environment`): the account and locale basics, temp folders, proxies, CA
+  bundles and system trust (`NODE_USE_SYSTEM_CA`, `CODEX_CA_CERTIFICATE`), `OPENAI_*` and a
+  verified `CODEX_HOME`. `NODE_OPTIONS`, `OTEL_*` and everything else stay behind. While
+  `CODEX_HOME` is set and fails the check `CLAUDE_CONFIG_DIR` gets (below), or no such folder can
+  be made, nothing runs, rather than a call signed in under the default folder's account; a
+  reading asks this before it is charged (`observer.codex_refusal`), so a refused one spends
+  nothing and publishes the reason `settings-refused`, never a failed call and never "the Codex
+  CLI was not found".
   These flags are not a proof of an empty tool set across Codex versions. The installed CLI and
   its provider remain a trust boundary; live tool suppression and provider retention are not
   verified by the dashboard's tests. Claude Code has no read-only sandbox to invoke, so its
@@ -2122,7 +2140,12 @@ The argv, every flag checked against `claude --help` on 2.1.280, run without a s
 - `--restricted`: no code-running built-in tools and no WebFetch, and user, project and local
   settings files are ignored.
 - Both leave admin-managed (policy) settings in force, as `claude --help` says, so a managed hook or
-  other managed setting still applies. `--strict-mcp-config` below does cover managed MCP servers.
+  other managed setting still applies. A hook can send the call's words anywhere, so a non-empty
+  `hooks` key in any managed source Compass reads (the managed file, a drop-in, the cached remote
+  settings) leaves the destination unnamed, unless the same source sets `disableAllHooks: true`.
+  It refuses no lane: a reading then runs under the same terms as any other unnamed destination
+  (owner ruling 2026-11-13, "Unname, don't refuse"). `--strict-mcp-config` below does cover
+  managed MCP servers.
 - `--tools ""`: the built-in tool set is empty.
 - `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`: no MCP server from anywhere.
 - `--disable-slash-commands`, `--no-chrome`, and `--no-session-persistence`, so no session is saved
@@ -2178,13 +2201,77 @@ cannot be extended. Qualification results bind their selected model too. Histori
 or replay results do not qualify another selection. The text-only CLI reply supplies no resolved
 model receipt, so the served snapshot is unknown rather than inferred from the requested ID.
 
-The process runs with the daemon's environment minus the markers of any Claude Code session the
-daemon was started from (`observer.claude_environment`: `CLAUDECODE`, `CLAUDE_CODE_*SESSION*`,
-`CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT` and
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), the set the CLI drops itself when it starts a fresh
-session. Authentication and provider variables are kept, so configuration in the daemon's
-environment, such as `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK` and
-`CLAUDE_CODE_USE_VERTEX`, decides which endpoint and which account receive the reading.
+The process runs with an allowlist of the daemon's environment (`observer.claude_environment`).
+It keeps what sign-in and the endpoint need: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, the
+temp folders, `LANG`, `LC_*`, `TZ`, `TERM`, `XDG_*`, `DBUS_SESSION_BUS_ADDRESS`, the Windows profile
+and system folders, the proxy variables, `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA` and the other
+CA bundle variables, `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, the cloud variables Bedrock, Vertex and
+Foundry sign in with (`AWS_*`, `AZURE_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`, `CLOUD_ML_REGION`,
+`VERTEX_REGION_*`, `GCE_METADATA_HOST`), Claude Code's own OAuth token, custom OAuth host
+(`CLAUDE_CODE_CUSTOM_OAUTH_URL`, passed so the child uses the host the destination already refuses
+to name for), client certificate, certificate store (`CLAUDE_CODE_CERT_STORE`), skip-auth and proxy
+variables, `CLAUDE_CODE_GIT_BASH_PATH` (Windows) and `API_TIMEOUT_MS`, the variables that only
+lower the context window (`CLAUDE_CODE_DISABLE_1M_CONTEXT`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`) and the output bound (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`),
+`DISABLE_COMPACT` and the `DISABLE_*` switches that turn traffic off, and a verified
+`CLAUDE_CONFIG_DIR`. Everything else stays behind, including `NODE_OPTIONS`, which can
+preload code into the CLI, `OTEL_*` and `CLAUDE_CODE_ENABLE_TELEMETRY`, the session markers the
+CLI drops itself when it starts a fresh session (`CLAUDECODE`, `CLAUDE_CODE_*SESSION*`,
+`CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT`,
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), and `CLAUDE_CODE_SHELL_PREFIX`. The `XDG_*` and D-Bus
+variables are kept because nothing here proves a Linux sign-in does without them. Measured on
+2.1.323, `claude auth status` (no model call) found the same Claude account sign-in under the
+allowlist as under the full environment on macOS, where the login keychain is found from `HOME`
+and `USER`. Configuration in the daemon's environment, such as `ANTHROPIC_API_KEY`,
+`ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX`, still decides
+which endpoint and which account receive the reading.
+
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME` choose the account a CLI signs in as and the settings it
+reads, so each is verified before it counts (`claude_settings.verified_folder`): absolute and
+already normal (no `.` or `..` part), an existing directory owned by this account, writable by
+nobody else, and every symbolic link on the way to it owned by this account or by root. Group
+write is allowed only where the group is this account's own: its primary group, named after it,
+with no supplementary members and no other account in the password database holding it as its
+primary group, which a umask of 002 produces on systems that give each user a group. A directory
+service that does not enumerate its accounts (some LDAP and SSSD set-ups) cannot be checked this
+way, and an account only it serves goes undetected; that is the one case this check fails open.
+Any other group, and world write, is refused. The value is passed on unchanged, because Claude
+Code names its keychain entry after the folder as written. On Windows, which has no owner and mode
+bits to read, the folder needs a drive and a root, may use either separator (Claude Code accepts
+`C:/Users/me/.claude`), may hold no `.` or `..` part, and must exist. An unverified
+`CLAUDE_CONFIG_DIR` is not handed to the child, the destination names nothing, and every Claude Code
+lane refuses before it starts the CLI, on every system, so a reading never runs signed in as
+another account.
+
+Every Claude Code lane (Analyze, Find goal, unasked checks, session summaries and the Live monitor)
+runs one settings check before it starts the CLI (`observer.claude_lane_refusal`, called from
+`observer.prepare_claude_exec`, which every lane enters, and again just before the launch). Find
+goal, unasked checks and summaries also ask it before their charge, so a refused press costs
+nothing; the Live monitor's preparation runs before its charge already. Analyze refuses on
+everything `claude_settings.resolve` refuses. The other lanes refuse where an applicable managed
+or cached remote source cannot be read, or can move the call: a login gateway, a policy helper,
+a forced remote refresh, a cached remote policy holding a key outside the six harmless ones
+and `hooks` and `disableAllHooks` (which unname instead, above), a
+shell helper (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
+`otelHeadersHelper`), or telemetry that can carry the call's words: a content switch on
+(`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`,
+`OTEL_LOG_ASSISTANT_RESPONSES`, `OTEL_LOG_RAW_API_BODIES`), or `ENABLE_BETA_TRACING_DETAILED` with a
+`BETA_TRACING_ENDPOINT`. Metrics and usage export alone (`CLAUDE_CODE_ENABLE_TELEMETRY` with an
+OTLP endpoint) neither refuses nor unnames (owner ruling 2026-11-13). Managed hooks unname the
+destination without refusing (above). They read the
+sources themselves (`claude_settings.lane_refusal`), so a fallback or compaction conflict in the
+same source does not hide one of these. Analyze's compaction and fallback conflicts concern its
+own envelope and do not on their own stop the other lanes. A `modelOverrides` remap leaves the
+destination unnamed and the other lanes running, which is accepted: it changes the model a call
+asks for, and the board already says where the words go cannot be named. On Windows and under
+WSL nothing applicable can be read beyond the config folder check; the destination names nothing
+on either (under WSL Claude Code also reads the Windows policy folder and registry), and those
+lanes still run on the reader's words, as they did. A lane refused before its charge publishes
+the reason `settings-refused`, never a success; the route's destination reads "wherever your
+Claude Code settings send it, which Compass cannot name". Until the page has a sentence of its own
+for that reason, Find goal shows its general "could not look for a goal just now", a summary shows
+"The summary stopped (settings-refused).", and an unasked check or a Live monitor check records
+nothing.
 
 What reaches Anthropic besides the reading prompt was measured on 2.1.283, 2026-09-27, by
 running the real CLI against a local stub with every outbound connection off this machine blocked
@@ -2515,7 +2602,24 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   does not know; a switch holds a value that is neither on nor off; a base URL sits beside a cloud
   switch, or any `ANTHROPIC_*_BASE_URL` other than `ANTHROPIC_BASE_URL` is set; two sources set one
   endpoint variable differently; a settings file cannot be read or parsed;
-  `CLAUDE_CODE_MANAGED_SETTINGS_PATH` is set; `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set in any source,
+  `CLAUDE_CODE_MANAGED_SETTINGS_PATH` is set; a managed or cached remote source sets a login
+  gateway (`forceLoginGatewayUrl`, `forceLoginMethod: "gateway"`), `modelOverrides`, a
+  `policyHelper`, `forceRemoteSettingsRefresh`, a shell helper (`apiKeyHelper`, `awsAuthRefresh`,
+  `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`) or telemetry that exports the
+  call's words (a content switch such as `OTEL_LOG_USER_PROMPTS` on, or detailed beta tracing with
+  an endpoint), the rule the lanes refuse by, plus the `modelOverrides` remap and hooks that run;
+  the
+  cached remote settings hold any key outside the six harmless ones, `env` included, since the CLI
+  may refresh that cache at launch; the Bedrock switch is on beside `AWS_ENDPOINT_URL`,
+  `AWS_ENDPOINT_URL_BEDROCK` or `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` in any source, or beside an
+  active AWS profile that sets `endpoint_url` or `services` in the shared config file
+  (`AWS_CONFIG_FILE` or `~/.aws/config`, profile `AWS_PROFILE` or `default`, read only while the
+  Bedrock switch is on, and counted as moving the call when it cannot be read or parsed), because
+  the AWS SDK then sends the call there; the daemon runs under WSL, where Claude Code also reads the
+  Windows policy folder and registry; `CLAUDE_CONFIG_DIR` fails the folder check above. Telemetry
+  variables in the daemon's own environment change neither destination, because neither child's
+  allowlist hands them on (owner ruling 2026-11-13); `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set in any
+  source,
   because an approved custom OAuth host replaces the first-party API host; `ANTHROPIC_UNIX_SOCKET`
   is set, because every request then goes to a local socket whose far end forwards under another
   machine's settings; `ANTHROPIC_BASE_URL` holds anything the CLI's WHATWG URL parser could read
@@ -2534,8 +2638,8 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   reads a Claude Code session on this build, it names nothing where `OPENAI_BASE_URL` or
   `OPENAI_API_BASE` is set, whether or not Codex honours them under `--ignore-user-config`, which is
   not measured; where `/etc/codex/managed_config.toml` or `/etc/codex/config.toml` exists, or a
-  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary; and on
-  Windows.
+  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary; where
+  `CODEX_HOME` is set and fails the folder check; and on Windows.
 - A proxy variable does not change the destination named: it carries the call, and the vendor that
   answers it is the same (owner, 2026-09-24). A `CLAUDE_CODE_USE_*` switch that is not a provider
   switch but is on (`CLAUDE_CODE_USE_POWERSHELL_TOOL` is one) also names nothing today. That fails

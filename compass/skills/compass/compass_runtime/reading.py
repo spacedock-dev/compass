@@ -762,6 +762,7 @@ WITHHELD_CONTEXT_COMPACTION = "context-compaction"
 WITHHELD_CONTEXT_FALLBACK = "context-fallback"
 WITHHELD_CONTEXT_CHANGED = "context-config-after-reserve"
 WITHHELD_CONTEXT_LIMIT = "context-limit"
+WITHHELD_SETTINGS_REFUSED = "settings-refused"
 WITHHELD = {
     WITHHELD_CONTEXT_LIMIT: (
         "The Claude CLI reported a context limit: the prompt was too long. This Analyze attempt "
@@ -805,6 +806,11 @@ WITHHELD = {
         "Nothing was sent to the model, and no Analyze attempt was counted. "
         "Managed settings permit automatic model fallback. "
         "Ask your administrator to disable fallback before running Analyze on this route."
+    ),
+    WITHHELD_SETTINGS_REFUSED: (
+        "Nothing was sent to the model, and no reading was counted. The CLI's settings could "
+        "send the call somewhere Compass cannot name or run a helper command, or its sign-in "
+        "or working folder could not be verified, so Compass did not start it."
     ),
     WITHHELD_CONTEXT_CHANGED: (
         "The attempt was counted, but the model did not start because its configuration "
@@ -7627,6 +7633,7 @@ _STATUS_FAILURES = {
     "context-compaction": (WITHHELD_CONTEXT_COMPACTION, False),
     "context-fallback": (WITHHELD_CONTEXT_FALLBACK, False),
     "context-config-after-reserve": (WITHHELD_CONTEXT_CHANGED, True),
+    "settings-refused": (WITHHELD_SETTINGS_REFUSED, False),
     "unstopped": (WITHHELD_UNSTOPPED, True),
     "oversized": (WITHHELD_OVERSIZED, True),
     "closed": (WITHHELD_STOPPING, False),
@@ -7916,7 +7923,7 @@ class CodexReadingModel:
         config: RuntimeConfig,
         *,
         runner: Any = supervise.run,
-        binary_resolver: Any = shutil.which,
+        binary_resolver: Any = observer.codex_binary,
         on_spawn: Callable[[supervise.Group], None] | None = None,
     ) -> None:
         self.config = config
@@ -7940,7 +7947,15 @@ class CodexReadingModel:
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""
         binary = self.binary_resolver("codex")
-        return bool(binary and os.path.isabs(binary))
+        return bool(binary and observer.rooted(binary))
+
+    def settings_refusal(self) -> str:
+        """`observer.SETTINGS_REFUSED` when this machine's set-up stops the call, or "".
+
+        An unverified `CODEX_HOME`, or no owner-only folder to run in: asked before the charge,
+        and said as its own reason, because Codex is installed and "not found" would be false.
+        """
+        return observer.SETTINGS_REFUSED if observer.codex_refusal()[0] else ""
 
 
 class ClaudeReadingModel:
@@ -7989,6 +8004,17 @@ class ClaudeReadingModel:
         if self.analyze and status == "failed" and self._reported_context_limit():
             return "", "context-limit"
         return raw, status
+
+    def settings_refusal(self) -> str:
+        """`observer.SETTINGS_REFUSED` when the shared settings check refuses this lane, or "".
+
+        Asked by `GuardedModel` before its charge, for goal find and the unasked lane. Analyze
+        answers "" here: its admission names its own reason, and its launch checks again.
+        """
+        if self.analyze:
+            return ""
+        refused = observer.claude_lane_refusal(self.config.claude_reading_model)
+        return observer.SETTINGS_REFUSED if refused else ""
 
     def _reported_context_limit(self) -> bool:
         diagnostic = self.diagnostic or {}

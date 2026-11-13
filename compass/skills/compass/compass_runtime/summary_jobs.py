@@ -44,7 +44,7 @@ ACTIVE = {"running", "stopping"}
 # Stops the producer reports about itself. Its final result is still offered for saving after
 # one of these; every other reason bars publication
 # (docs/design-session-summary.md#job-and-grant-contract).
-PRODUCER_STOPS = {"daily-cap", "model-unavailable", "stopping"}
+PRODUCER_STOPS = {"daily-cap", "model-unavailable", "stopping", observer.SETTINGS_REFUSED}
 # A summary disclosure must not renew Analyze's notice when its content changes.
 CONTENT_VERSION = 2
 # Looked up at each job start, so a test can run the whole-job ceiling on a fake clock.
@@ -415,6 +415,10 @@ class GuardedSummaryModel:
             if supervise.closed():
                 job.reason = "stopping"
                 return "", "closed"
+            refused = getattr(self.model, "settings_refusal", None)
+            if callable(refused) and refused() == observer.SETTINGS_REFUSED:
+                job.reason = observer.SETTINGS_REFUSED
+                return "", "unavailable"
             available = getattr(self.model, "available", None)
             if available is not None and not available():
                 job.reason = "model-unavailable"
@@ -476,6 +480,11 @@ class ClaudeSummaryModel:
             timeout=timeout,
             on_spawn=self.spawned,
         )
+
+    def settings_refusal(self) -> str:
+        """The settings check every Claude lane shares, asked before the summary is charged."""
+        refused = observer.claude_lane_refusal(self.application.config.claude_reading_model)
+        return observer.SETTINGS_REFUSED if refused else ""
 
     @staticmethod
     def available() -> bool:

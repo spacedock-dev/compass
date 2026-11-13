@@ -13,11 +13,12 @@ See [DEC-21](docs/design-reading-a-session.md#amended-2026-09-23-claude-code-is-
 
 from __future__ import annotations
 
+import configparser
 import ipaddress
 import os
 import platform
 import re
-import shutil
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from urllib.parse import urlsplit
@@ -141,16 +142,28 @@ _CLAUDE_CLOUDS = {
 }
 
 
-# Keep destination's existing env-only interpretation and test seams. The shared
-# reader also exposes top-level fields to Analyze, without applying them here.
+# The shared reader's seams, kept under the names destination's tests patch.
 _UnnamedError = claude_settings.SettingsError
 _under = claude_settings.under
 _present = claude_settings.present
 _account = claude_settings.account
 
 
-def _claude_sources(environ: Mapping[str, str], root: Path, system: str) -> list[Mapping[str, str]]:
-    documents = claude_settings.documents(environ, root, system, account_reader=_account)
+def _claude_sources(
+    environ: Mapping[str, str], root: Path, system: str, managed_root: Path | None = None
+) -> list[Mapping[str, str]]:
+    # Under WSL Claude Code also reads the Windows policy folder and registry, neither of which
+    # this build reads, as on Windows itself.
+    if environ.get("WSL_DISTRO_NAME") or environ.get("WSL_INTEROP"):
+        raise _UnnamedError
+    documents = claude_settings.documents(
+        environ, root, system, account_reader=_account, managed_root=managed_root
+    )
+    # Top-level settings move the call too: a login gateway, a model remap, a helper that runs a
+    # shell command for credentials, or telemetry export. `resolve`'s own remapped-or-dynamic
+    # rule; the lanes refuse on its dynamic half (`claude_settings.lane_refusal`).
+    if any(claude_settings.unnameable(source) for source in documents):
+        raise _UnnamedError
     return [environ, *(source.data.get("env", {}) for source in documents)]
 
 
@@ -167,7 +180,9 @@ def _endpoint_env(sources: list[Mapping[str, str]]) -> dict[str, str]:
     merged: dict[str, str] = {}
     for source in sources:
         for key, value in source.items():
-            if not key.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_", _OAUTH_HOST)):
+            if not key.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_", _OAUTH_HOST)) and (
+                key not in claude_settings.AWS_ENDPOINTS
+            ):
                 continue
             if key in merged and merged[key] != value:
                 raise _UnnamedError
@@ -201,6 +216,11 @@ def _claude_destination(sources: list[Mapping[str, str]]) -> str:
     ]
     if clouds:
         if base_urls:
+            raise _UnnamedError
+        # The AWS SDK sends a Bedrock call to an endpoint override instead of the region's host.
+        if clouds[0] == "CLAUDE_CODE_USE_BEDROCK" and any(
+            merged.get(key, "").strip() for key in claude_settings.AWS_ENDPOINTS
+        ):
             raise _UnnamedError
         return _CLAUDE_CLOUDS[clouds[0]]
     if not base_urls:
@@ -268,12 +288,85 @@ def _host(url: str) -> str:
     return f"{host}:{port}" if port else host
 
 
-def _codex_destination(environ: Mapping[str, str], root: Path, system: str) -> str:
+# The AWS SDK reads an endpoint for Bedrock from the active profile of the shared config file
+# as well as from the environment: `endpoint_url`, or a `services` section the profile names.
+_AWS_PROFILE_ENDPOINTS = ("endpoint_url", "services")
+
+
+def _aws_config(target: Path) -> configparser.ConfigParser | None:
+    """The parsed file, an empty parser when there is none, or None when it cannot be read.
+
+    Read as `claude_settings.document` reads: never blocking on a pipe or a terminal, regular
+    files only, bounded. A NUL in the path, valid in a managed `env`, is a ValueError.
+    """
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        if not _present(target):
+            return parser
+        descriptor = os.open(target, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            raw = handle.read(claude_settings.DOCUMENT_BYTES + 1)
+        if len(raw) > claude_settings.DOCUMENT_BYTES:
+            return None
+        parser.read_string(raw.decode("utf-8"))
+    except (OSError, ValueError, configparser.Error, _UnnamedError):
+        return None
+    return parser
+
+
+def _aws_profile_moves(
+    sources: list[Mapping[str, str]], root: Path, environ: Mapping[str, str]
+) -> bool:
+    """Whether the active AWS profile sends a Bedrock call to another host than the region's.
+
+    The file is `AWS_CONFIG_FILE` or `~/.aws/config`, the profile `AWS_PROFILE` or `default`,
+    each read from the last source that sets it, as the CLI applies managed settings over its
+    environment. A file that cannot be read or parsed counts as moving the call.
+    """
+    chosen: dict[str, str] = {}
+    for source in sources:
+        for key in ("AWS_CONFIG_FILE", "AWS_PROFILE"):
+            if source.get(key, "").strip():
+                chosen[key] = source[key].strip()
+    if "AWS_CONFIG_FILE" in chosen:
+        path = chosen["AWS_CONFIG_FILE"]
+    else:
+        home, _user = _account(environ)
+        if not home:
+            return True
+        path = f"{home}/.aws/config"
+    if not os.path.isabs(path):
+        return True
+    parser = _aws_config(_under(root, path))
+    if parser is None:
+        return True
+    if not parser.sections():
+        return False
+    profile = chosen.get("AWS_PROFILE", "default")
+    sections = [f"profile {profile}"] + (["default"] if profile == "default" else [])
+    return any(
+        parser.has_section(section) and parser.has_option(section, key)
+        for section in sections
+        for key in _AWS_PROFILE_ENDPOINTS
+    )
+
+
+def _codex_destination(
+    environ: Mapping[str, str], root: Path, system: str, machine: Path | None = None
+) -> str:
     if system not in {"Darwin", "Linux"}:
         raise _UnnamedError
     # Whether Codex honours either variable under `--ignore-user-config` is not
     # measured, so their presence is a destination this build cannot name.
     if any(environ.get(key, "").strip() for key in ("OPENAI_BASE_URL", "OPENAI_API_BASE")):
+        raise _UnnamedError
+    # CODEX_HOME holds the sign-in Codex sends under, so a folder another account could write
+    # chooses the account; verified as `CLAUDE_CONFIG_DIR` is.
+    if environ.get("CODEX_HOME") and not claude_settings.verified_folder(
+        str(_under(root, environ["CODEX_HOME"])) if os.path.isabs(environ["CODEX_HOME"]) else ""
+    ):
         raise _UnnamedError
     paths = list(CODEX_MANAGED_FILES)
     if system == "Darwin":
@@ -284,7 +377,7 @@ def _codex_destination(environ: Mapping[str, str], root: Path, system: str) -> s
         paths.append(f"{MANAGED_PREFERENCES_DIR}/{user}/{CODEX_MANAGED_PREFERENCES}")
     # Present at all is enough: these can move the endpoint and the build does
     # not parse them.
-    if any(_present(_under(root, path)) for path in paths):
+    if any(_present(_under(root if machine is None else machine, path)) for path in paths):
         raise _UnnamedError
     return VENDORS[CODEX]
 
@@ -308,11 +401,19 @@ def destination(
     env = os.environ if environ is None else environ
     base = Path("/") if root is None else root
     name = platform.system() if system is None else system
+    # Machine-wide policy is read under `claude_settings.MANAGED_ROOT` when no root is named.
+    machine = claude_settings.MANAGED_ROOT if root is None else base
     try:
         if provider == CLAUDE:
-            return _claude_destination(_claude_sources(env, base, name))
+            sources = _claude_sources(env, base, name, None if root is not None else machine)
+            named = _claude_destination(sources)
+            if named == _CLAUDE_CLOUDS["CLAUDE_CODE_USE_BEDROCK"] and _aws_profile_moves(
+                sources, base, env
+            ):
+                return ""
+            return named
         if provider == CODEX:
-            return _codex_destination(env, base, name)
+            return _codex_destination(env, base, name, machine)
     except _UnnamedError:
         return ""
     return ""
@@ -639,7 +740,7 @@ def _resolve(
     the fallback. Never a third choice, and never a second provider after a
     launch failed: the route is decided once, here, before anything is spent.
     """
-    which = binary_resolver or shutil.which
+    which = binary_resolver or observer.codex_binary
     claude_model = runtime_config.validate_claude_reading_model(
         config.claude_reading_model if config is not None else observer.CLAUDE_READING_MODEL
     )
@@ -748,7 +849,7 @@ def resolve_all(
     unasked: bool = False,
 ) -> dict[str, Route]:
     """One route per harness, looking each CLI up at most once per call."""
-    which = binary_resolver or shutil.which
+    which = binary_resolver or observer.codex_binary
     memo: dict[str, Any] = {}
 
     def cached(name: str) -> Any:

@@ -32,6 +32,7 @@ from unittest import mock
 
 from compass_runtime import (
     aggregate,
+    claude_settings,
     cli,
     diagnostics,
     http_api,
@@ -113,6 +114,29 @@ USER_HOME = _USER_HOME.name
 atexit.register(_USER_HOME.cleanup)
 os.environ["HOME"] = USER_HOME
 os.environ["USERPROFILE"] = USER_HOME
+
+# And the model lanes' settings check reads the same machine. A developer's own Claude Code
+# config folder, Codex home, telemetry switches or managed policy would otherwise decide
+# whether every lane test refuses: measured, a `CLAUDE_CONFIG_DIR` whose remote cache held one
+# `permissions` key turned 63 tests in test_observer and test_reading red. A test that wants
+# one of these sets it for itself, and one that passes `root` reads its own managed files.
+for _name in [
+    name
+    for name in os.environ
+    if name
+    in {
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "CLAUDE_CODE_ENABLE_TELEMETRY",
+        "ENABLE_BETA_TRACING_DETAILED",
+        "BETA_TRACING_ENDPOINT",
+    }
+    or name.startswith("OTEL_")
+]:
+    del os.environ[_name]
+_MANAGED_ROOT = tempfile.TemporaryDirectory(prefix="compass-test-managed-")
+atexit.register(_MANAGED_ROOT.cleanup)
+claude_settings.MANAGED_ROOT = Path(_MANAGED_ROOT.name)
 
 # Store key -> path. Patch with mock.patch.dict; runtime() folds it into config.
 STORE_OVERRIDES: dict[str, Any] = {}  # str, or a tuple/list of candidates

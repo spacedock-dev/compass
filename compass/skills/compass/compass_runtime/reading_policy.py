@@ -1592,6 +1592,12 @@ class GuardedModel:
         )
 
     def _preflight(self) -> str | None:
+        # A model's own settings check (Claude Code's lanes, Codex's set-up), under its own
+        # reason and before any charge.
+        refused = getattr(self.model, "settings_refusal", None)
+        reason = refused() if callable(refused) else ""
+        if isinstance(reason, str) and reason:
+            return reason
         available = getattr(self.model, "available", None)
         if available is not None and not available():
             return "unavailable"

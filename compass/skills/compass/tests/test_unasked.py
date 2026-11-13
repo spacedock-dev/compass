@@ -155,7 +155,7 @@ class _Harness:
         with mock.patch.object(
             shutil,
             "which",
-            side_effect=lambda name: f"/bin/{name}" if name == "codex" else None,
+            side_effect=lambda name, **_: f"/bin/{name}" if name == "codex" else None,
         ):
             self.lane.consider(self.state, rows, [_annotation()], now=now)
 
@@ -297,7 +297,7 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
 
         application.harnesses = tuple(spec(h) for h in harnesses)
         with mock.patch.object(
-            shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+            shutil, "which", side_effect=lambda name, **_: "/bin/codex" if name == "codex" else None
         ):
             payload = application.collect(show_all=True)
         routes = payload["unasked_routes"]
@@ -327,7 +327,9 @@ class TheSwitchIsTheWholeGateTest(unittest.TestCase):
         )
         with (
             mock.patch.object(
-                shutil, "which", side_effect=lambda name: "/bin/codex" if name == "codex" else None
+                shutil,
+                "which",
+                side_effect=lambda name, **_: "/bin/codex" if name == "codex" else None,
             ),
             mock.patch.object(reading, "CodexReadingModel") as codex,
             mock.patch.object(reading, "ClaudeReadingModel") as claude,
@@ -1421,7 +1423,7 @@ class TheUnaskedLaneUsesTheSessionProviderTest(unittest.TestCase):
                 return harness.assessment, "", True
 
             harness.lane.produce = produce
-            with mock.patch.object(shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+            with mock.patch.object(shutil, "which", side_effect=lambda name, **_: f"/bin/{name}"):
                 harness.lane.consider(
                     harness.state, [_row(state="working")], [_annotation()], now=5000.0
                 )
