@@ -1558,7 +1558,15 @@ The bounds, all of which hold together:
   table merges into the loaded one. Codex runs in a fresh owner-only (0700) empty folder made where
   a Claude Code reading's is (`observer.reading_workdir_root`), never the state directory, and
   the folder is removed on every path the call returns by, a timeout included; when no such folder
-  can be made, nothing runs. `codex` is found on `PATH` with every element that is not rooted
+  can be made, nothing runs. `--ignore-user-config` skips only `CODEX_HOME`'s `config.toml`: the
+  system files `/etc/codex/config.toml`, `/etc/codex/managed_config.toml` and
+  `/etc/codex/requirements.toml` still apply, and any of them can define an MCP server, a hook or
+  a model provider. Each is read as present or absent, not parsed: while one exists the
+  destination names nothing, and no Codex lane is refused for it, the owner's 2026-11-13 ruling
+  for Claude Code's managed hooks ("Unname, don't refuse") applied to a server or hook that could
+  be handed the reading. `requirements.toml` was added to the list from the 0.167.2 binary's
+  strings, which name it as enforced policy that can require a model provider and run managed
+  hooks. `codex` is found on `PATH` with every element that is not rooted
   removed (`observer.codex_binary`, the rule `git_status.executable` applies to `git`, restated
   rather than imported); the Claude Code lanes still find `claude` with `shutil.which` and require
   an absolute answer. The child's environment is an allowlist
@@ -2144,8 +2152,14 @@ The argv, every flag checked against `claude --help` on 2.1.280, run without a s
   `hooks` key in any managed source Compass reads (the managed file, a drop-in, the cached remote
   settings) leaves the destination unnamed, unless the same source sets `disableAllHooks: true`.
   It refuses no lane: a reading then runs under the same terms as any other unnamed destination
-  (owner ruling 2026-11-13, "Unname, don't refuse"). `--strict-mcp-config` below does cover
-  managed MCP servers.
+  (owner ruling 2026-11-13, "Unname, don't refuse"). A managed MCP file (`managed-mcp.json` in
+  the managed folder) is treated the same way: its servers are commands that could be handed the
+  call's words, so while it exists the destination names nothing and no lane is refused for it.
+  Whether a managed server starts under these flags is not measured. The 2.1.323 binary reads the
+  managed folder at a fixed system path, so a test file there needs root, and settling it another
+  way would need a model call. Its strings suggest the CLI refuses `--strict-mcp-config` outright
+  while a readable managed MCP file exists, so the call would fail before any server starts, but
+  that is a reading of the binary, not a measurement.
 - `--tools ""`: the built-in tool set is empty.
 - `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`: no MCP server from anywhere.
 - `--disable-slash-commands`, `--no-chrome`, and `--no-session-persistence`, so no session is saved
@@ -2213,8 +2227,12 @@ to name for), client certificate, certificate store (`CLAUDE_CODE_CERT_STORE`), 
 variables, `CLAUDE_CODE_GIT_BASH_PATH` (Windows) and `API_TIMEOUT_MS`, the variables that only
 lower the context window (`CLAUDE_CODE_DISABLE_1M_CONTEXT`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`) and the output bound (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`),
-`DISABLE_COMPACT` and the `DISABLE_*` switches that turn traffic off, and a verified
-`CLAUDE_CONFIG_DIR`. Everything else stays behind, including `NODE_OPTIONS`, which can
+`DISABLE_COMPACT` and the `DISABLE_*` switches that turn traffic off, the homes of three version
+managers (`VOLTA_HOME`, `ASDF_DATA_DIR`, `MISE_DATA_DIR`), and a verified
+`CLAUDE_CONFIG_DIR`. Each version manager's shim reads its own home, defaulting under `HOME`, to
+find the `claude` it starts, so a user who moved one would otherwise lose the CLI; that is read
+from each tool's source rather than measured on a shim, and `PATH` already decides which program
+runs, so they choose nothing more. The Codex child gets them too. Everything else stays behind, including `NODE_OPTIONS`, which can
 preload code into the CLI, `OTEL_*` and `CLAUDE_CODE_ENABLE_TELEMETRY`, the session markers the
 CLI drops itself when it starts a fresh session (`CLAUDECODE`, `CLAUDE_CODE_*SESSION*`,
 `CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT`,
@@ -2235,7 +2253,14 @@ with no supplementary members and no other account in the password database hold
 primary group, which a umask of 002 produces on systems that give each user a group. A directory
 service that does not enumerate its accounts (some LDAP and SSSD set-ups) cannot be checked this
 way, and an account only it serves goes undetected; that is the one case this check fails open.
-Any other group, and world write, is refused. The value is passed on unchanged, because Claude
+Any other group, and world write, is refused. Every directory above the folder, along the path
+as written and as resolved, is held the same way, because another account able to write one
+could rename the folder or a link to it away after the check and put its own in its place: owned
+by this account or by root, and writable by nobody else, except a sticky directory such as `/tmp`,
+where only an entry's owner may rename it, and group write for this account's private group. A
+home under `/home` or `/Users`, and a temp directory, pass. A folder under a shared,
+group-writable project directory does not, which is the case the check is for. The value is
+passed on unchanged, because Claude
 Code names its keychain entry after the folder as written. On Windows, which has no owner and mode
 bits to read, the folder needs a drive and a root, may use either separator (Claude Code accepts
 `C:/Users/me/.claude`), may hold no `.` or `..` part, and must exist. An unverified
@@ -2363,7 +2388,12 @@ directory and both files are removed on every path Compass itself runs to the en
 timeout or an OS error, and only once the CLI and anything it started have been killed and reaped.
 A hard kill of Compass (SIGKILL, a power loss) runs no cleanup and can leave both files behind,
 owner-only; the next start removes any such file in `state_dir` older than a day, which no live
-call reaches, so a second instance's call in flight keeps its own. An absent or relative
+call reaches, so a second instance's call in flight keeps its own. It can leave the empty working
+folders too, of both lanes, in the shared temp directory; the next start removes those
+(`observer.sweep_reading_workdirs`): a real directory, never a link, named with the
+`reading-claude-cwd-` or `reading-codex-cwd-` prefix, owned by this account with mode 0700, empty,
+and older than a day. Anything else in that directory is left alone. Windows is not swept, because
+it has no owner and mode bits to match. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
 same rolling cap apply.
@@ -2613,6 +2643,7 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`) or telemetry that exports the
   call's words (a content switch such as `OTEL_LOG_USER_PROMPTS` on, or detailed beta tracing with
   an endpoint), the rule the lanes refuse by, plus the `modelOverrides` remap and hooks that run;
+  a managed MCP file (`managed-mcp.json`) exists in the managed folder;
   the
   cached remote settings hold any key outside the six harmless ones, `env` included, since the CLI
   may refresh that cache at launch; the Bedrock switch is on beside `AWS_ENDPOINT_URL`,
@@ -2643,7 +2674,8 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   reads a Claude Code session on this build, it names nothing where `OPENAI_BASE_URL` or
   `OPENAI_API_BASE` is set, whether or not Codex honours them under `--ignore-user-config`, which is
   not measured; where `/etc/codex/managed_config.toml` or `/etc/codex/config.toml` exists, or a
-  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary; where
+  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary, or
+  `/etc/codex/requirements.toml`, read from the 0.167.2 binary's strings; where
   `CODEX_HOME` is set and fails the folder check; and on Windows.
 - A proxy variable does not change the destination named: it carries the call, and the vendor that
   answers it is the same (owner, 2026-09-24). A `CLAUDE_CODE_USE_*` switch that is not a provider

@@ -756,7 +756,8 @@ check. These stop it without any of the keys above:
 - a configuration profile for Claude Code under `/Library/Managed Preferences` on macOS, which
   Compass cannot read;
 - `CLAUDE_CODE_MANAGED_SETTINGS_PATH` set in the dashboard's environment;
-- a `CLAUDE_CONFIG_DIR` that is not a folder you own and only you can write to;
+- a `CLAUDE_CONFIG_DIR` that is not a folder you own and only you can write to, or that sits inside a
+  folder another account can write to (a sticky folder such as `/tmp` is fine);
 - a settings file Compass cannot read as plain JSON: a syntax error, a key given twice, or an
   `env` value that is not text;
 - a managed file that sets `agent`, or sets `HOME`, `USER`, `CLAUDE_CONFIG_DIR` or

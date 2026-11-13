@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
@@ -308,7 +309,7 @@ def codex_exec(
     output_path = ""
     workdir = ""
     try:
-        workdir = tempfile.mkdtemp(prefix="reading-codex-cwd-", dir=root)
+        workdir = tempfile.mkdtemp(prefix=CODEX_WORKDIR_PREFIX, dir=root)
         with tempfile.NamedTemporaryFile(
             prefix="observer-model-",
             suffix=".txt",
@@ -476,6 +477,11 @@ def _names_the_account(path: str, home: str, name: str) -> bool:
     return needle in parts
 
 
+# The folders each call is started in, under `reading_workdir_root`.
+CLAUDE_WORKDIR_PREFIX: Final = "reading-claude-cwd-"
+CODEX_WORKDIR_PREFIX: Final = "reading-codex-cwd-"
+
+
 def reading_workdir_root() -> str | None:
     """Where a Claude Code reading's working directory is made, or None to refuse.
 
@@ -552,6 +558,13 @@ _CHILD_NAMES: Final = frozenset(
         "ProgramData",
         "PROGRAMFILES",
         "ProgramFiles",
+        # A version manager's home, read by its shim to find the CLI it starts when moved from
+        # the default under HOME: Volta's `volta_home`, asdf's data directory and mise's. Read
+        # from each tool's source, not measured on a shim here. PATH already decides which
+        # program runs, so these choose nothing it does not.
+        "VOLTA_HOME",
+        "ASDF_DATA_DIR",
+        "MISE_DATA_DIR",
     }
 )
 _CHILD_PREFIXES: Final = ("LC_", "XDG_")
@@ -1009,7 +1022,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             if root is None:
                 raise ClaudePreparationError("failed")
             os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
-            workdir = tempfile.mkdtemp(prefix="reading-claude-cwd-", dir=root)
+            workdir = tempfile.mkdtemp(prefix=CLAUDE_WORKDIR_PREFIX, dir=root)
             descriptor, output_path = tempfile.mkstemp(
                 prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
             )
@@ -1077,6 +1090,48 @@ def sweep_claude_scratch(config: RuntimeConfig, *, now: float | None = None) -> 
             if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
                 continue
             os.unlink(entry.path)
+        except OSError:
+            continue
+        removed += 1
+    return removed
+
+
+def sweep_reading_workdirs(config: RuntimeConfig, *, now: float | None = None) -> int:
+    """Remove the empty call folders a hard kill left under `reading_workdir_root`.
+
+    Every call removes its own folder on every path it returns by; a SIGKILL or a power loss runs
+    none. The root is shared (`/tmp` among the candidates), so only what a call here makes goes:
+    a real directory, not a link, with one of the two prefixes, owned by this account with mode
+    0700, older than `reading_scratch_stale_sec`, which is far beyond any call's timeout, so a
+    call in flight in another instance keeps its folder. `os.rmdir` removes only an empty one and
+    never follows a link. Windows has no owner or mode bits to match, so nothing is swept there.
+    Returns how many were removed.
+    """
+    if os.name == "nt":
+        return 0
+    root = reading_workdir_root()
+    if root is None:
+        return 0
+    cutoff = (time.time() if now is None else now) - config.reading_scratch_stale_sec
+    uid = os.getuid()
+    removed = 0
+    try:
+        entries = list(os.scandir(root))
+    except OSError:
+        return 0
+    for entry in entries:
+        if not entry.name.startswith((CLAUDE_WORKDIR_PREFIX, CODEX_WORKDIR_PREFIX)):
+            continue
+        try:
+            info = entry.stat(follow_symlinks=False)
+            if not (
+                stat.S_ISDIR(info.st_mode)
+                and info.st_uid == uid
+                and stat.S_IMODE(info.st_mode) == 0o700
+                and info.st_mtime < cutoff
+            ):
+                continue
+            os.rmdir(entry.path)
         except OSError:
             continue
         removed += 1

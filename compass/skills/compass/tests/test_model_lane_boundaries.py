@@ -91,6 +91,11 @@ class ClaudeChildEnvironmentIsAnAllowlist(unittest.TestCase):
         "CLAUDE_CODE_GIT_BASH_PATH": "C:/Program Files/Git/bin/bash.exe",
         "API_TIMEOUT_MS": "600000",
         "GCE_METADATA_HOST": "metadata.invalid",
+        # Where a version manager's shim looks for the `claude` it starts, when moved from its
+        # default under HOME: Volta, asdf and mise each read their own.
+        "VOLTA_HOME": "/opt/volta",
+        "ASDF_DATA_DIR": "/opt/asdf",
+        "MISE_DATA_DIR": "/opt/mise",
     }
     DROPPED = (
         "NODE_OPTIONS",
@@ -452,6 +457,9 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
             "SSL_CERT_FILE": "/etc/ssl/corp.pem",
             "NODE_USE_SYSTEM_CA": "1",
             "CODEX_CA_CERTIFICATE": "/etc/ssl/corp.pem",
+            "VOLTA_HOME": "/opt/volta",
+            "ASDF_DATA_DIR": "/opt/asdf",
+            "MISE_DATA_DIR": "/opt/mise",
             "NODE_OPTIONS": "--require x",
             "OTEL_EXPORTER_OTLP_ENDPOINT": "http://c.invalid",
             "SOME_TOOL_TOKEN": "x",
@@ -466,6 +474,9 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
             "SSL_CERT_FILE",
             "NODE_USE_SYSTEM_CA",
             "CODEX_CA_CERTIFICATE",
+            "VOLTA_HOME",
+            "ASDF_DATA_DIR",
+            "MISE_DATA_DIR",
         ):
             with self.subTest(kept=name):
                 self.assertEqual(environ[name], child.get(name))
@@ -477,6 +488,88 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         ):
             with self.subTest(dropped=name):
                 self.assertNotIn(name, child)
+
+
+@POSIX_ONLY
+class AHardKillLeavesNoReadingFolderBehind(unittest.TestCase):
+    """The empty folders a killed daemon's readings left are swept at the next start."""
+
+    def setUp(self) -> None:
+        self.config = _config()
+        self.addCleanup(shutil.rmtree, self.config.state_dir, True)
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        patcher = mock.patch.object(observer, "reading_workdir_root", return_value=str(self.root))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.now = time.time()
+        self.stale = self.now - self.config.reading_scratch_stale_sec - 60
+
+    def folder(self, name: str, *, at: float, mode: int = 0o700) -> Path:
+        path = self.root / name
+        path.mkdir()
+        path.chmod(mode)
+        os.utime(path, (at, at))
+        return path
+
+    def test_stale_empty_reading_folders_go_and_nothing_else_does(self) -> None:
+        self.folder("reading-claude-cwd-dead1", at=self.stale)
+        self.folder("reading-codex-cwd-dead2", at=self.stale)
+        self.folder("reading-claude-cwd-live", at=self.now)
+        held = self.folder("reading-codex-cwd-full", at=self.stale)
+        (held / "kept").write_text("x")
+        os.utime(held, (self.stale, self.stale))
+        self.folder("reading-claude-cwd-open", at=self.stale, mode=0o755)
+        self.folder("another-cwd-dead", at=self.stale)
+        target = self.folder("target", at=self.stale)
+        link = self.root / "reading-codex-cwd-link"
+        link.symlink_to(target)
+        (self.root / "reading-claude-cwd-file").write_text("")
+        self.assertEqual(2, observer.sweep_reading_workdirs(self.config, now=self.now))
+        self.assertEqual(
+            {
+                "reading-claude-cwd-live",
+                "reading-codex-cwd-full",
+                "reading-claude-cwd-open",
+                "another-cwd-dead",
+                "target",
+                "reading-codex-cwd-link",
+                "reading-claude-cwd-file",
+            },
+            set(os.listdir(self.root)),
+        )
+
+    def test_a_folder_another_account_owns_is_left_alone(self) -> None:
+        self.folder("reading-claude-cwd-theirs", at=self.stale)
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertEqual(0, observer.sweep_reading_workdirs(self.config, now=self.now))
+        self.assertEqual(["reading-claude-cwd-theirs"], os.listdir(self.root))
+
+    def test_a_reading_in_flight_keeps_its_folder(self) -> None:
+        seen: list[bool] = []
+
+        def sweeps_mid_call(command: list[str], **kwargs: Any) -> Any:
+            observer.sweep_reading_workdirs(self.config)
+            seen.append(os.path.isdir(kwargs["cwd"]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        observer.codex_exec(
+            self.config,
+            "p",
+            output_cap_bytes=64,
+            runner=sweeps_mid_call,
+            binary_resolver=mock.Mock(return_value="/usr/bin/codex"),
+        )
+        self.assertEqual([True], seen)
+
+    def test_no_work_root_sweeps_nothing(self) -> None:
+        with mock.patch.object(observer, "reading_workdir_root", return_value=None):
+            self.assertEqual(0, observer.sweep_reading_workdirs(self.config))
+
+    def test_the_server_sweeps_them_before_it_serves(self) -> None:
+        from compass_runtime import cli  # noqa: PLC0415 - only this test needs the CLI
+
+        self.assertIn("observer.sweep_reading_workdirs(config)", inspect.getsource(cli))
 
 
 if __name__ == "__main__":

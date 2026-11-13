@@ -23,6 +23,7 @@ from unittest import mock
 
 from compass_runtime import (
     aggregate,
+    claude_settings,
     observer,
     project_context,
     reading,
@@ -642,6 +643,29 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self.assertEqual("", route["destination"])
         self.assertIn("is not sent", route["tool_output"])
 
+    def test_a_managed_mcp_file_names_nothing_and_refuses_no_lane(self) -> None:
+        # A managed MCP server is a command the CLI may start beside the call, which can be
+        # handed the reading's words: the owner's 2026-11-13 ruling for managed hooks, "Unname,
+        # don't refuse", applies to it too.
+        for system, folder in (
+            ("Darwin", "/Library/Application Support/ClaudeCode"),
+            ("Linux", "/etc/claude-code"),
+        ):
+            with self.subTest(system=system):
+                self._write(f"{folder}/managed-mcp.json", json.dumps({"mcpServers": {}}))
+                self.assertEqual("", self._claude({}, system=system))
+                self.assertEqual(
+                    "",
+                    claude_settings.lane_refusal(
+                        "claude-sonnet-5-5",
+                        environ={"HOME": "/Users/r", "USER": "r"},
+                        root=self.root,
+                        system=system,
+                    ),
+                )
+                (self.root / folder.lstrip("/") / "managed-mcp.json").unlink()
+                self.assertNotEqual("", self._claude({}, system=system))
+
     def test_a_codex_reader_with_no_override_is_told_openai(self) -> None:
         self.assertEqual("OpenAI", self._codex({}))
 
@@ -652,6 +676,8 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         for path in (
             "/etc/codex/managed_config.toml",
             "/etc/codex/config.toml",
+            # Enforced policy: it can require a model provider and run managed hooks.
+            "/etc/codex/requirements.toml",
             "/Library/Managed Preferences/com.openai.codex.plist",
             "/Library/Managed Preferences/r/com.openai.codex.plist",
         ):
