@@ -3514,13 +3514,23 @@ class ConnectionBoundTest(unittest.TestCase):
         return client
 
     def test_a_slow_reader_receives_the_whole_page(self) -> None:
-        # About 800 KB/s: the page takes five seconds, five times the timeout, while one
-        # 64 KiB slice takes a tenth of it. The timeout bounds each wait on the socket; a single
-        # write of the whole body turned that into a bound on the whole page, and a slow reader
-        # got a page cut short.
-        with mock.patch.object(http_api._RequestHandler, "timeout", 1.0):
+        # About 800 KB/s: the page takes five seconds, twice the timeout, so one write of the
+        # whole body (one sendall, which the timeout bounds as a whole) cuts it short, while each
+        # 64 KiB slice gets its own wait. The reader's receive buffer is kept small: macOS loopback
+        # otherwise buffers megabytes, so a whole-body write returned early and the test could not
+        # tell the two apart, and it frees send space in uneven steps (one slice measured over 1 s
+        # on Python 3.15 against the 1 s timeout first used here). Measured with a 32 KiB buffer
+        # on 3.12 and 3.15: slices peak near 0.4 s; a whole-body write is cut off at 1 s and 2.5 s.
+        with mock.patch.object(http_api._RequestHandler, "timeout", 2.5):
             httpd = self._serve_page(b"x" * 4_000_000)
-            client = self._ask_for_the_page(httpd)
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.addCleanup(client.close)
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 32_768)
+            client.settimeout(WAIT_SEC)
+            client.connect(("127.0.0.1", httpd.server_port))
+            client.sendall(
+                f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{httpd.server_port}\r\n\r\n".encode()
+            )
             received = bytearray()
             while chunk := client.recv(16_384):
                 received.extend(chunk)
