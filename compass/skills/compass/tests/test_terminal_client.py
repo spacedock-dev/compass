@@ -500,6 +500,21 @@ class DiscoveryTest(HomeCase):
 
 
 class RequestPathTest(unittest.TestCase):
+    def test_the_probe_waits_out_a_dashboard_at_its_connection_cap(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            answer = terminal_client.probe(httpd.server_port, timeout=5.0)
+        self.assertIsInstance(answer, terminal_client.Dashboard)
+
+    def test_a_dashboard_still_at_its_cap_is_said_to_be_busy(self) -> None:
+        # Not "nothing there": a terminal command that read it that way would start a second
+        # dashboard on a port the first still holds.
+        with support.saturated_server() as (httpd, _release):
+            answer = terminal_client.probe(httpd.server_port, timeout=0.5)
+        self.assertEqual(
+            terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
+        )
+
     def test_a_get_returns_the_status_and_the_parsed_body(self) -> None:
         with FakeDashboard(answers={"/api/x": (200, {}, b'{"a": 1}')}) as fake:
             reply = terminal_client.get(fake.port, "/api/x")

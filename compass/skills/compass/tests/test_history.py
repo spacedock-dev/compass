@@ -1326,6 +1326,25 @@ class ForgetIsRefusedWhileADashboardCouldWriteItBackTest(HistoryStoreTestCase):
         self.assertEqual(4553, probe.call_args.args[1])
         served.assert_not_called()
 
+    def test_forget_refuses_while_an_instance_has_every_connection_in_use(self) -> None:
+        # A dashboard at its connection cap is still running and would write the store back.
+        from compass_runtime import cli, http_api, lifecycle  # noqa: PLC0415
+        from compass_runtime import io as runtime_io  # noqa: PLC0415
+
+        config = self.config()
+        history.record(config, [loaded_row()], now=1_000.0)
+        busy = {"state": "busy", "port": 4553, "pid": None}
+        with (
+            mock.patch.dict(os.environ, {COMPASS_HOME_ENV: self.state_home}),
+            mock.patch.object(sys, "argv", ["server.py", "--forget"]),
+            mock.patch.object(lifecycle, "instance_status", return_value=busy),
+            mock.patch.object(runtime_io, "diag"),
+            mock.patch.object(http_api, "CompassHTTPServer"),
+        ):
+            code = cli.main()
+        self.assertEqual(1, code)
+        self.assertTrue(os.path.exists(history.store_path(config)))
+
     def test_a_lane_does_not_write_back_a_store_deleted_under_it(self) -> None:
         config = self.config()
         lane = history.Lane(config, diagnostic_sink=self.diagnostics.append)

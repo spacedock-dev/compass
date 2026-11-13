@@ -33,6 +33,15 @@ class _Socket(socket.socket):
         super().sendall(data, flags)
 
 
+# Between two tries at a dashboard that said it is at its connection cap. Short, because a
+# probe's whole budget is about a second and a slot comes free when any connection ends.
+BUSY_PAUSE_SEC = 0.05
+
+
+class Busy(Exception):  # noqa: N818 - a state the caller names, not a failure
+    """Every try within the budget met the dashboard's connection-cap refusal."""
+
+
 def exchange(
     method: str,
     port: int,
@@ -42,8 +51,43 @@ def exchange(
     headers: Mapping[str, str] | None = None,
     timeout: float,
     cap: int,
+    wait_when_busy: bool = False,
 ) -> tuple[int, bytes]:
-    """Read at most cap + 1 bytes within one monotonic connect/send/headers/body budget."""
+    """Read at most cap + 1 bytes within one monotonic connect/send/headers/body budget.
+
+    With `wait_when_busy`, a dashboard at its connection cap is tried again within the same
+    budget. Its refusal is a 503 carrying Retry-After, written before the request is read, so it
+    says nothing about the route, only that every connection is in use; Busy is raised if the
+    budget runs out with every answer that refusal.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        status, raw, retry = _exchange(
+            method,
+            port,
+            path,
+            body,
+            headers=headers,
+            timeout=max(deadline - time.monotonic(), 0.001),
+            cap=cap,
+        )
+        if not wait_when_busy or status != 503 or retry is None:
+            return status, raw
+        if deadline - time.monotonic() <= BUSY_PAUSE_SEC:
+            raise Busy(port)
+        time.sleep(BUSY_PAUSE_SEC)
+
+
+def _exchange(
+    method: str,
+    port: int,
+    path: str,
+    body: bytes | None = None,
+    *,
+    headers: Mapping[str, str] | None = None,
+    timeout: float,
+    cap: int,
+) -> tuple[int, bytes, str | None]:
     deadline = time.monotonic() + timeout
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
@@ -56,6 +100,6 @@ def exchange(
             with response:
                 raw = response.read(cap + 1)
                 sock.remaining()
-                return response.status, raw
+                return response.status, raw, response.getheader("Retry-After")
     finally:
         conn.close()

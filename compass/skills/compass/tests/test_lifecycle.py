@@ -558,6 +558,31 @@ class CompassServerTest(support.RuntimeTestCase):
         # Same port, now nothing listening.
         self.assertEqual(("closed", None), lifecycle.probe_port(port, timeout=1))
 
+    def test_probe_port_waits_out_a_dashboard_at_its_connection_cap(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            kind, health = lifecycle.probe_port(httpd.server_port, timeout=5)
+        self.assertEqual("compass", kind)
+        self.assertIsNotNone(health)
+
+    def test_probe_port_never_calls_a_dashboard_at_its_cap_foreign(self) -> None:
+        with support.saturated_server() as (httpd, _release):
+            self.assertEqual(("busy", None), lifecycle.probe_port(httpd.server_port, timeout=0.5))
+            with mock.patch.object(lifecycle, "read_state", return_value=None):
+                status = lifecycle.instance_status(cfg(), httpd.server_port)
+            self.assertEqual("busy", status["state"])
+            self.assertIn("every connection", lifecycle.render_status(status))
+
+    def test_stop_sends_nothing_to_a_dashboard_at_its_cap(self) -> None:
+        with (
+            mock.patch.object(lifecycle, "probe_port", return_value=("busy", None)),
+            mock.patch.object(http.client.HTTPConnection, "request") as request,
+        ):
+            message, code = lifecycle.stop_instance(cfg(), 4553)
+        self.assertEqual(1, code)
+        self.assertIn("every connection", message)
+        request.assert_not_called()
+
     def test_probe_port_calls_a_non_compass_listener_foreign(self) -> None:
         class Other(http.server.BaseHTTPRequestHandler):
             def do_GET(self) -> None:

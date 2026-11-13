@@ -421,6 +421,14 @@ class CallFlowTest(_CallCase):
         self.assertEqual("ship", _text(frame))
         self.assertEqual(3, dashboard.poll_count())
 
+    def test_a_503_is_a_hold_and_the_question_is_not_withdrawn(self) -> None:
+        # A dashboard at its connection cap answers 503 before reading the poll. The question
+        # is still on the board, so the poll waits rather than taking it back.
+        dashboard = _FakeDashboard(poll=[(503, None), (200, {"state": "answered", "index": 0})])
+        frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))
+        self.assertEqual("ship", _text(frame))
+        self.assertEqual([], dashboard.withdrawals)
+
     def test_a_404_mid_poll_means_the_ask_is_gone(self) -> None:
         dashboard = _FakeDashboard(poll=[(404, None)])
         frame = self._run(dashboard, _call(1, "Ship it?", ["ship", "hold"]))

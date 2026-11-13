@@ -907,7 +907,9 @@ class AskServer:
                     return str(state), index if usable else None
                 # A 200 naming a state this version does not know is not a
                 # resolution, so it is waited out rather than read as one.
-            elif status != 204:
+            elif status not in (204, 503):
+                # 503 is a dashboard at its connection cap, which refused before reading the
+                # poll: the question is still on the board, so it is waited out like a 204.
                 return None
             self._floor(started, abort)
         return None

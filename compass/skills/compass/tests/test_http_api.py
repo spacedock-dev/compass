@@ -3230,7 +3230,14 @@ class LoopbackOnlyRouteTest(unittest.TestCase):
 
     READS = ("/api/interaction/state", "/api/interaction/view", "/api/observe?harness=claude&sid=s")
 
-    def _status(self, request: bytes, *, peer: str = "127.0.0.1", bound: str = "127.0.0.1") -> int:
+    def _status(
+        self,
+        request: bytes,
+        *,
+        peer: str = "127.0.0.1",
+        bound: str = "127.0.0.1",
+        bridge: bool = True,
+    ) -> int:
         handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
         with config_patch(allowed_hosts=("vm.exe.xyz",)):
             application = build_app()
@@ -3240,7 +3247,7 @@ class LoopbackOnlyRouteTest(unittest.TestCase):
             application=application,
             page_bytes=PAGE_BYTES,
             observation=None,
-            interaction_prototype=_StubPrototype(),
+            interaction_prototype=_StubPrototype() if bridge else None,
         )
         handler.client_address = (peer, 12345)
         handler.rfile = io.BytesIO(request)
@@ -3296,6 +3303,10 @@ class LoopbackOnlyRouteTest(unittest.TestCase):
             with self.subTest(path=path):
                 status = self._status(self._get(path, *name), bound="0.0.0.0")
                 self.assertEqual(403, status)
+        post = self._post(
+            "/api/interaction/probe-unregistered", *name, ("Origin", "https://vm.exe.xyz")
+        )
+        self.assertEqual(403, self._status(post, bound="0.0.0.0"))
 
     def test_a_navigation_another_local_port_or_a_proxy_is_refused(self) -> None:
         host = ("Host", "127.0.0.1:8000")
@@ -3310,6 +3321,80 @@ class LoopbackOnlyRouteTest(unittest.TestCase):
             for path in self.READS:
                 with self.subTest(caller=label, path=path):
                     self.assertEqual(403, self._status(self._get(path, host, *headers)))
+        proxied = self._post(
+            "/api/interaction/probe-unregistered",
+            *_PAGE_POST,
+            ("X-Forwarded-For", "203.0.113.9"),
+        )
+        self.assertEqual(403, self._status(proxied))
+
+    def test_a_disabled_terminal_says_so_rather_than_refusing(self) -> None:
+        # Whether the terminal is on is a fact about the whole run, so a reader the loopback
+        # guard would refuse is still told it is off, and the page says "disabled" rather
+        # than "local request failed".
+        origin = "/api/interaction/origin?harness=claude&sid=s"
+        proxied = (*_PAGE_FETCH, ("X-Forwarded-For", "203.0.113.9"))
+        self.assertEqual(404, self._status(self._get(origin, *proxied), bridge=False))
+        self.assertEqual(403, self._status(self._get(origin, *proxied)))
+        post = self._post(
+            "/api/interaction/probe-unregistered", *_PAGE_POST, ("X-Forwarded-For", "203.0.113.9")
+        )
+        self.assertEqual(404, self._status(post, bridge=False))
+        self.assertEqual(403, self._status(post))
+
+
+def _raw_responses(request: bytes) -> tuple[list[int], Any]:
+    """Parse and answer raw request bytes on one handler, as the server's own loop would."""
+    handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+    handler.server = SimpleNamespace(
+        bound_host="127.0.0.1",
+        server_port=8000,
+        application=build_app(),
+        page_bytes=PAGE_BYTES,
+        observation=None,
+        interaction_prototype=None,
+    )
+    handler.client_address = ("127.0.0.1", 12345)
+    handler.rfile = io.BytesIO(request)
+    handler.wfile = io.BytesIO()
+    handler.connection = SimpleNamespace()
+    stopped = time.monotonic()
+    with mock.patch.object(time, "monotonic", lambda: stopped):
+        handler.handle()
+    statuses = re.findall(rb"^HTTP/1\.[01] (\d{3})", handler.wfile.getvalue(), re.MULTILINE)
+    return [int(status) for status in statuses], handler
+
+
+class HeaderLineTest(unittest.TestCase):
+    """A header line the parser cannot read refuses the request.
+
+    The standard library stops parsing at a line like `Name : value` and leaves every later
+    header in the message payload, where the gate never looks. RFC 9112 section 5.1 asks for a
+    400 on whitespace before the colon.
+    """
+
+    HEALTH = b"GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:8000\r\n"
+
+    def test_a_hidden_header_is_not_skipped(self) -> None:
+        statuses, handler = _raw_responses(
+            self.HEALTH + b"X : y\r\nSec-Fetch-Site: cross-site\r\n\r\n"
+        )
+        self.assertEqual([400], statuses)
+        self.assertTrue(handler.close_connection)
+        hidden_framing = (
+            b"POST /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:8000\r\n"
+            b"X : y\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n"
+        )
+        self.assertEqual([400], _raw_responses(hidden_framing)[0])
+
+    def test_ordinary_header_lines_are_still_read(self) -> None:
+        for extra in (
+            b"User-Agent: curl/8.7.1\r\nAccept: */*\r\n",
+            b"X-Empty:\r\n",
+            b"X-Folded: one\r\n two\r\n",
+        ):
+            with self.subTest(extra=extra):
+                self.assertEqual([200], _raw_responses(self.HEALTH + extra + b"\r\n")[0])
 
 
 class TransferEncodingTest(unittest.TestCase):
@@ -3321,24 +3406,7 @@ class TransferEncodingTest(unittest.TestCase):
     """
 
     def _responses(self, request: bytes) -> tuple[list[int], Any]:
-        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
-        handler.server = SimpleNamespace(
-            bound_host="127.0.0.1",
-            server_port=8000,
-            application=build_app(),
-            page_bytes=PAGE_BYTES,
-            observation=None,
-            interaction_prototype=None,
-        )
-        handler.client_address = ("127.0.0.1", 12345)
-        handler.rfile = io.BytesIO(request)
-        handler.wfile = io.BytesIO()
-        handler.connection = SimpleNamespace()
-        stopped = time.monotonic()
-        with mock.patch.object(time, "monotonic", lambda: stopped):
-            handler.handle()
-        statuses = re.findall(rb"^HTTP/1\.[01] (\d{3})", handler.wfile.getvalue(), re.MULTILINE)
-        return [int(status) for status in statuses], handler
+        return _raw_responses(request)
 
     def test_a_post_with_a_transfer_coding_is_refused_and_its_connection_closed(self) -> None:
         for framing in (
@@ -3410,7 +3478,9 @@ class ConnectionBoundTest(unittest.TestCase):
         # A refusal is written as soon as the connection is accepted. Queued behind the held
         # one instead, it would wait out the whole idle timeout and then be served.
         refused = self._connect(httpd, 5.0)
-        self.assertIn(b" 503 ", refused.recv(64).split(b"\r\n", 1)[0])
+        head = refused.recv(256)
+        self.assertIn(b" 503 ", head.split(b"\r\n", 1)[0])
+        self.assertIn(b"\r\nRetry-After: 1\r\n", head)
         held.close()
         self.assertEqual(200, self._health_eventually(httpd))
 
@@ -3423,6 +3493,50 @@ class ConnectionBoundTest(unittest.TestCase):
 
     def test_the_shipped_handler_ends_a_silent_connection(self) -> None:
         self.assertIsNotNone(http_api._RequestHandler.timeout)
+
+    def _serve_page(self, page: bytes, limit: int = 64) -> http_api.CompassHTTPServer:
+        bounded = type("Bounded", (http_api.CompassHTTPServer,), {"CONNECTION_LIMIT": limit})
+        httpd: http_api.CompassHTTPServer = bounded(("127.0.0.1", 0), build_app(), page)
+        thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+        thread.start()
+
+        def stop() -> None:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+        self.addCleanup(stop)
+        return httpd
+
+    def _ask_for_the_page(self, httpd: http_api.CompassHTTPServer) -> socket.socket:
+        client = self._connect(httpd, WAIT_SEC)
+        client.sendall(f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{httpd.server_port}\r\n\r\n".encode())
+        return client
+
+    def test_a_slow_reader_receives_the_whole_page(self) -> None:
+        # About 800 KB/s: the page takes five seconds, five times the timeout, while one
+        # 64 KiB slice takes a tenth of it. The timeout bounds each wait on the socket; a single
+        # write of the whole body turned that into a bound on the whole page, and a slow reader
+        # got a page cut short.
+        with mock.patch.object(http_api._RequestHandler, "timeout", 1.0):
+            httpd = self._serve_page(b"x" * 4_000_000)
+            client = self._ask_for_the_page(httpd)
+            received = bytearray()
+            while chunk := client.recv(16_384):
+                received.extend(chunk)
+                time.sleep(0.02)
+        head, _, body = bytes(received).partition(b"\r\n\r\n")
+        declared = re.search(rb"Content-Length: (\d+)", head)
+        assert declared is not None
+        self.assertEqual(int(declared.group(1)), len(body))
+
+    def test_a_reader_that_never_reads_is_dropped_and_frees_its_slot(self) -> None:
+        with mock.patch.object(http_api._RequestHandler, "timeout", 0.5):
+            httpd = self._serve_page(b"x" * 16_000_000, limit=1)
+            self._ask_for_the_page(httpd)
+            started = time.monotonic()
+            self.assertEqual(200, self._health_eventually(httpd))
+        self.assertLess(time.monotonic() - started, 10.0)
 
 
 class VerificationFixTest(unittest.TestCase):

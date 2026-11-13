@@ -857,7 +857,7 @@ def run_one_shot(
         # the dashboard was started with nor a state file. It covers the port
         # this invocation names and cannot see an instance on another one, which
         # is why the lane also drops a baseline whose file has gone.
-        if lifecycle.instance_status(config, args.port)["state"] == "running":
+        if lifecycle.instance_status(config, args.port)["state"] in ("running", "busy"):
             # All three files, because the refusal keeps all three (DRC-4547,
             # DRC-4565): a reader who ran this to drop a recorded end is owed
             # the end store's name, and one who ran it for the discard records

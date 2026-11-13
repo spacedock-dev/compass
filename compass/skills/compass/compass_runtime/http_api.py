@@ -100,6 +100,20 @@ def _websocket_accept(value: str) -> str | None:
     return base64.b64encode(digest).decode("ascii")
 
 
+# How much of a body one socket write may carry. The handler's timeout bounds each write, so
+# a whole body in one write gave a slow reader the timeout for the whole page: measured, a
+# 2.3 MB page read at 150 KB/s arrived short. 64 KiB drains within the timeout at any rate a
+# reader that is still reading can manage.
+WRITE_SLICE_BYTES = 65_536
+
+
+def _write_in_slices(write: Callable[[memoryview], object], payload: bytes) -> None:
+    """Write `payload` through `write`, at most WRITE_SLICE_BYTES at a time."""
+    view = memoryview(payload)
+    for start in range(0, len(view), WRITE_SLICE_BYTES):
+        write(view[start : start + WRITE_SLICE_BYTES])
+
+
 def _websocket_frame(opcode: int, payload: bytes) -> bytes:
     length = len(payload)
     if length < 126:
@@ -289,12 +303,14 @@ class CompassHTTPServer(ThreadingHTTPServer):
     interpreter without either one answering with the other's data.
     """
 
-    # Every connection costs a thread and a descriptor for as long as it lives. The
-    # legitimate long-lived ones are bounded already: 8 SSE streams (`stream_max_clients`),
-    # INTERACTION_STREAM_LIMIT terminal sockets, one browser's 6-socket pool per origin, an
-    # MCP poll held at most `ask_poll_timeout_sec` per asking session, and hook POSTs that
-    # last milliseconds. 64 is several times that sum and well under macOS's default soft
-    # limit of 256 descriptors, which the collection's own file reads share.
+    # Every connection costs a thread and a descriptor for as long as it lives. Most of the
+    # long-lived ones are bounded already: 8 SSE streams (`stream_max_clients`),
+    # INTERACTION_STREAM_LIMIT terminal sockets, and one browser's 6-socket pool per origin.
+    # Ask polls are not: each asking session holds one for up to `ask_poll_timeout_sec`, and
+    # nothing bounds how many sessions ask at once. 64 is several times the bounded sum, and
+    # well under macOS's default soft limit of 256 descriptors, which the collection's own file
+    # reads share. The refusal carries Retry-After, and the MCP poll and the two health probes
+    # wait it out rather than reading it as an answer.
     CONNECTION_LIMIT: ClassVar[int] = 64
 
     # Concurrent read-only terminal sockets. Above Chrome's six per origin, for the reason
@@ -354,13 +370,18 @@ class CompassHTTPServer(ThreadingHTTPServer):
 
     def _refuse_connection(self, request: Any) -> None:
         # Non-blocking, because the accept loop must never wait on a peer. A fresh socket's
-        # send buffer is empty, so the write lands whole or not at all.
+        # send buffer is empty, so the write lands whole or not at all. Whatever of the request
+        # has already arrived is read first, so the close sends FIN rather than an RST that
+        # could discard the 503 before the client reads it.
         with contextlib.suppress(OSError):
             request.setblocking(False)
             request.send(
-                b"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\n"
-                b"Connection: close\r\n\r\n"
+                b"HTTP/1.0 503 Service Unavailable\r\nRetry-After: 1\r\n"
+                b"Content-Length: 0\r\nConnection: close\r\n\r\n"
             )
+            for _ in range(16):
+                if not request.recv(65_536):
+                    break
         self.shutdown_request(request)
 
     def server_close(self) -> None:
@@ -1743,6 +1764,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
             not origins or origins == [dev.python_origin]
         )
 
+    def parse_request(self) -> bool:
+        """Parse as the standard library does, then refuse a header block it read only in part.
+
+        At a line such as `Name : value` the parser records a defect and stops, leaving every
+        later header in the message payload, where admission never looks: a `Sec-Fetch-Site`
+        or `Transfer-Encoding` after it went unseen. RFC 9112 section 5.1 asks for a 400 on
+        whitespace before the colon. Curl-style headers, empty values and folded lines raise
+        no defect.
+        """
+        if not super().parse_request():
+            return False
+        if self.headers.defects or self.headers.get_payload():
+            self.close_connection = True
+            self.send_error(400, "Malformed header line")
+            return False
+        return True
+
     def _single_admission_headers(self) -> bool:
         """Exactly one Host, at most one of each other admission header, none combined.
 
@@ -1894,7 +1932,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         for name, value in (headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(body)
+        _write_in_slices(self.wfile.write, body)
 
     def _health(self) -> None:
         """Liveness and identity, with no filesystem access.
@@ -2077,14 +2115,16 @@ class _RequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _interaction_get(self, url: ParseResult) -> None:
+        prototype = self.server.interaction_prototype
+        if prototype is None:
+            # Run-wide, and published by the 404 already: answered before the guard so a
+            # reader it refuses is still told the terminal is off, not that it failed.
+            self.send_error(404)
+            return
         # Live terminal output, so loopback-only like `_interaction_asset`, and never a
         # navigation: `do_GET` relaxes its check for a cross-site tab, which nothing here is.
         if not self._loopback_read_ok():
             self.send_error(403)
-            return
-        prototype = self.server.interaction_prototype
-        if prototype is None:
-            self.send_error(404)
             return
         route = url.path[len("/api/interaction/") :]
         query = parse_qs(url.query)
@@ -2131,8 +2171,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _interaction_stream(self, prototype: InteractionPrototype) -> None:
         """Upgrade one output-only socket; any client frame revokes the connection.
 
-        `sendall` to a peer that stopped reading gives up at the handler's socket timeout,
-        so a stalled viewer releases its slot instead of holding it.
+        A write to a peer that stopped reading gives up at the handler's socket timeout, so
+        a stalled viewer releases its slot instead of holding it.
         """
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self._reject(426)
@@ -2162,17 +2202,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     self.connection.recv(2)
                     reason = b"read-only-capability"
                     payload = (1008).to_bytes(2, "big") + reason
-                    self.connection.sendall(_websocket_frame(8, payload))
+                    _write_in_slices(self.connection.sendall, _websocket_frame(8, payload))
                     break
                 frame = prototype.wait_stream(self.server.server_port, sequence, 0.2)
                 if frame.get("state") != "streamed":
                     payload = json.dumps(frame, separators=(",", ":")).encode()
-                    self.connection.sendall(_websocket_frame(1, payload))
+                    _write_in_slices(self.connection.sendall, _websocket_frame(1, payload))
                     break
                 next_sequence = frame.get("sequence")
                 if isinstance(next_sequence, int) and next_sequence > sequence:
                     payload = json.dumps(frame, separators=(",", ":")).encode()
-                    self.connection.sendall(_websocket_frame(1, payload))
+                    _write_in_slices(self.connection.sendall, _websocket_frame(1, payload))
                     sequence = next_sequence
         except (ConnectionError, OSError, ValueError):
             pass
@@ -5798,12 +5838,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
         route()
 
     def _interaction_post(self, route: str) -> None:
-        if not self._loopback_resource_ok():
-            self._reject(403)
-            return
         prototype = self.server.interaction_prototype
         if prototype is None:
-            self._reject(404)
+            self._reject(404)  # run-wide, as `_interaction_get` answers it
+            return
+        if not self._loopback_resource_ok():
+            self._reject(403)
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
