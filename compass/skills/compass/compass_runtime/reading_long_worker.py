@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from . import annotations as annotation_store
 from . import (
-    observer,
     reading,
     reading_ci_acquire,
     reading_long_context,
@@ -383,7 +382,7 @@ def run_maps(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered fail-closed wor
     clock: Callable[[], float] = time.time,
     runner: Any = supervise.run,
     ci_runner: Any = supervise.run,
-    binary_resolver: Any = observer.codex_binary,
+    binary_resolver: Any = None,
     environ: Mapping[str, str] | None = None,
 ) -> Mapped:
     """Execute evidence only; a mapped result is never an assessment or completeness claim."""

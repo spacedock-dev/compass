@@ -62,6 +62,15 @@ def _require_slot(
         _refuse("context-changed")
 
 
+def resolver(binary_resolver: Any) -> Any:
+    """The resolver a slot launches with: the caller's, or the rooted lookup when unset.
+
+    The long-reading modules above this one pass theirs down unset rather than import the
+    observer themselves (`test_contracts.RuntimeImportGraphTest`).
+    """
+    return observer.codex_binary if binary_resolver is None else binary_resolver
+
+
 def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh permit and one runner entry
     config: RuntimeConfig,
     context: context_gate.Context,
@@ -69,7 +78,7 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
     *,
     clock: Callable[[], float] = time.time,
     runner: Any = supervise.run,
-    binary_resolver: Any = observer.codex_binary,
+    binary_resolver: Any = None,
     on_reserved: Callable[[], None] | None = None,
     source_current: Callable[[], bool] | None = None,
     on_spawn: Callable[[], None] | None = None,
@@ -148,13 +157,16 @@ def guard(  # noqa: C901, PLR0913 - bounded per-slot callbacks share the fresh p
         reading.ClaudeReadingModel(
             config,
             runner=checked_runner,
-            binary_resolver=binary_resolver,
+            binary_resolver=resolver(binary_resolver),
             on_spawn=spawned,
             analyze=True,
         )
         if route.provider == "claude"
         else reading.CodexReadingModel(
-            config, runner=checked_runner, binary_resolver=binary_resolver, on_spawn=spawned
+            config,
+            runner=checked_runner,
+            binary_resolver=resolver(binary_resolver),
+            on_spawn=spawned,
         )
     )
     return policy.GuardedModel(

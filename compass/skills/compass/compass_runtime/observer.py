@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from . import (
     claude_settings,
-    git_status,
     reading_capacity,
     reading_policy,
     records,
@@ -219,19 +218,28 @@ def _spawn_hook(
 
 
 def rooted(path: str) -> bool:
-    """`git_status._rooted`: no working directory can reinterpret this path, on any OS."""
-    return git_status._rooted(path)  # noqa: SLF001 - the one rooted-path rule, shared
+    """No working directory can reinterpret this path, on any OS.
+
+    `git_status._rooted`'s rule, restated rather than imported so this module stays below the
+    git probe in the import graph: absolute, and on Windows with a drive, because a driveless
+    root resolves against the process's current drive.
+    """
+    if not os.path.isabs(path):
+        return False
+    return os.name != "nt" or bool(os.path.splitdrive(path)[0])
 
 
 def codex_binary(name: str) -> str | None:
     """Where a model CLI is, against the PATH with every unrooted element removed.
 
     The rule `git_status.executable` applies to `git`, so a relative PATH element cannot supply
-    the program a reading starts: the scrubbed PATH (`git_status.probe_environment`) is handed to
-    `shutil.which`, and its answer must be rooted too. Spelled out rather than delegated, so a
-    seam that replaces the git probe's resolver does not also choose the model CLI.
+    the program a reading starts: every element that is not rooted is dropped before
+    `shutil.which` sees the PATH, and its answer must be rooted too.
     """
-    resolved = shutil.which(name, path=git_status.probe_environment(os.environ).get("PATH"))
+    path = os.pathsep.join(
+        part for part in os.environ.get("PATH", "").split(os.pathsep) if rooted(part)
+    )
+    resolved = shutil.which(name, path=path)
     return resolved if resolved and rooted(resolved) else None
 
 
@@ -616,7 +624,7 @@ def _verified_folder_variable(environ: Mapping[str, str], name: str, env: dict[s
 def claude_environment(environ: Mapping[str, str], *, analyze: bool = False) -> dict[str, str]:
     """The reading call's environment: an allowlist of the daemon's.
 
-    Public, as `git_status.probe_environment` is, so a test asserts it without spawning
+    Public, as the git probe's environment is, so a test asserts it without spawning
     anything. It stats `CLAUDE_CONFIG_DIR` and is pure otherwise: an unverified folder is not
     passed on, and every lane also refuses before starting the CLI while one is set
     (`claude_settings.documents`), so a reading never runs signed in as another account.

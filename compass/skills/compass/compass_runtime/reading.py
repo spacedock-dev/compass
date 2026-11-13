@@ -808,9 +808,9 @@ WITHHELD = {
         "Ask your administrator to disable fallback before running Analyze on this route."
     ),
     WITHHELD_SETTINGS_REFUSED: (
-        "Nothing was sent to the model, and no reading was counted. Claude Code's managed or "
-        "cached settings can send the call somewhere Compass cannot name or run a helper "
-        "command, so Compass did not start it."
+        "Nothing was sent to the model, and no reading was counted. The CLI's settings could "
+        "send the call somewhere Compass cannot name or run a helper command, or its sign-in "
+        "or working folder could not be verified, so Compass did not start it."
     ),
     WITHHELD_CONTEXT_CHANGED: (
         "The attempt was counted, but the model did not start because its configuration "
@@ -7947,7 +7947,15 @@ class CodexReadingModel:
     def available(self) -> bool:
         """A missing executable is known before reserving a reading attempt."""
         binary = self.binary_resolver("codex")
-        return bool(binary and observer.rooted(binary)) and not observer.codex_refusal()[0]
+        return bool(binary and observer.rooted(binary))
+
+    def settings_refusal(self) -> str:
+        """`observer.SETTINGS_REFUSED` when this machine's set-up stops the call, or "".
+
+        An unverified `CODEX_HOME`, or no owner-only folder to run in: asked before the charge,
+        and said as its own reason, because Codex is installed and "not found" would be false.
+        """
+        return observer.SETTINGS_REFUSED if observer.codex_refusal()[0] else ""
 
 
 class ClaudeReadingModel:

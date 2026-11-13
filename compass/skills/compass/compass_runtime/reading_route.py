@@ -13,6 +13,7 @@ See [DEC-21](docs/design-reading-a-session.md#amended-2026-09-23-claude-code-is-
 
 from __future__ import annotations
 
+import configparser
 import ipaddress
 import os
 import platform
@@ -286,6 +287,55 @@ def _host(url: str) -> str:
     return f"{host}:{port}" if port else host
 
 
+# The AWS SDK reads an endpoint for Bedrock from the active profile of the shared config file
+# as well as from the environment: `endpoint_url`, or a `services` section the profile names.
+_AWS_PROFILE_ENDPOINTS = ("endpoint_url", "services")
+
+
+def _aws_profile_moves(
+    sources: list[Mapping[str, str]], root: Path, environ: Mapping[str, str]
+) -> bool:
+    """Whether the active AWS profile sends a Bedrock call to another host than the region's.
+
+    The file is `AWS_CONFIG_FILE` or `~/.aws/config`, the profile `AWS_PROFILE` or `default`,
+    each read from the last source that sets it, as the CLI applies managed settings over its
+    environment. A file that cannot be read or parsed counts as moving the call.
+    """
+    chosen: dict[str, str] = {}
+    for source in sources:
+        for key in ("AWS_CONFIG_FILE", "AWS_PROFILE"):
+            if source.get(key, "").strip():
+                chosen[key] = source[key].strip()
+    if "AWS_CONFIG_FILE" in chosen:
+        path = chosen["AWS_CONFIG_FILE"]
+    else:
+        home, _user = _account(environ)
+        if not home:
+            return True
+        path = f"{home}/.aws/config"
+    if not os.path.isabs(path):
+        return True
+    target = _under(root, path)
+    try:
+        if not _present(target):
+            return False
+        with target.open("rb") as handle:
+            raw = handle.read(claude_settings.DOCUMENT_BYTES + 1)
+        if len(raw) > claude_settings.DOCUMENT_BYTES:
+            return True
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        parser.read_string(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, configparser.Error, _UnnamedError):
+        return True
+    profile = chosen.get("AWS_PROFILE", "default")
+    sections = [f"profile {profile}"] + (["default"] if profile == "default" else [])
+    return any(
+        parser.has_section(section) and parser.has_option(section, key)
+        for section in sections
+        for key in _AWS_PROFILE_ENDPOINTS
+    )
+
+
 def _codex_destination(
     environ: Mapping[str, str], root: Path, system: str, machine: Path | None = None
 ) -> str:
@@ -338,9 +388,13 @@ def destination(
     machine = claude_settings.MANAGED_ROOT if root is None else base
     try:
         if provider == CLAUDE:
-            return _claude_destination(
-                _claude_sources(env, base, name, None if root is not None else machine)
-            )
+            sources = _claude_sources(env, base, name, None if root is not None else machine)
+            named = _claude_destination(sources)
+            if named == _CLAUDE_CLOUDS["CLAUDE_CODE_USE_BEDROCK"] and _aws_profile_moves(
+                sources, base, env
+            ):
+                return ""
+            return named
         if provider == CODEX:
             return _codex_destination(env, base, name, machine)
     except _UnnamedError:

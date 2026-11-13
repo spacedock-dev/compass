@@ -89,10 +89,10 @@ def verified_folder(path: str) -> bool:
     resolved, because Claude Code names its keychain entry after the folder as written. POSIX
     only; Windows has no owner and mode bits to read, so there the folder must only exist.
     """
+    if os.name == "nt":
+        return _windows_folder(path)
     if not path or not os.path.isabs(path) or os.path.normpath(path) != path.rstrip(os.sep):
         return False
-    if os.name == "nt":
-        return os.path.isdir(path)
     uid = os.getuid()
     walk = os.sep
     try:
@@ -112,12 +112,33 @@ def verified_folder(path: str) -> bool:
     )
 
 
+def _windows_folder(path: str) -> bool:
+    """A Windows folder: a drive and a root, either separator, no `.` or `..` part, existing.
+
+    Claude Code accepts `C:/Users/me/.claude`, which `ntpath.normpath` rewrites with backslashes,
+    so the POSIX test of "already normal" would refuse a form the CLI takes. Climbing is still
+    refused part by part, and a driveless root is refused because it resolves against the
+    current drive.
+    """
+    drive, rest = os.path.splitdrive(path)
+    if not drive or rest[:1] not in {"\\", "/"}:
+        return False
+    parts = [part for part in rest.replace("/", "\\").split("\\") if part]
+    if any(part in {".", ".."} for part in parts):
+        return False
+    return os.path.isdir(path)
+
+
 def _private_group(gid: int, uid: int) -> bool:
     """Whether `gid` is this account's own group: its primary group, named after it, no members.
 
     A umask of 002, the default on distributions that give every user a group of their own,
     makes a new folder group-writable; that group holds nobody else, so the write bit adds no
-    writer. Any other group could hold another account.
+    writer. Any other group could hold another account. `gr_mem` lists supplementary members
+    only, so the password database is read too: no other account may have this group as its
+    primary one. A directory service that does not enumerate its accounts (some LDAP and SSSD
+    set-ups) cannot be seen this way, and an account it alone serves goes undetected; that is
+    the one case this test fails open.
     """
     import grp  # noqa: PLC0415 - POSIX only
     import pwd  # noqa: PLC0415 - POSIX only
@@ -125,9 +146,15 @@ def _private_group(gid: int, uid: int) -> bool:
     try:
         account = pwd.getpwuid(uid)
         group = grp.getgrgid(gid)
+        others = [entry for entry in pwd.getpwall() if entry.pw_gid == gid and entry.pw_uid != uid]
     except (KeyError, OSError):
         return False
-    return account.pw_gid == gid and group.gr_name == account.pw_name and not group.gr_mem
+    return (
+        account.pw_gid == gid
+        and group.gr_name == account.pw_name
+        and not group.gr_mem
+        and not others
+    )
 
 
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

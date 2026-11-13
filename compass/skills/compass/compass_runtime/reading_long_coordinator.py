@@ -10,7 +10,7 @@ from dataclasses import replace
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
-from . import ci_read, observer, reading, reading_preparation, supervise
+from . import ci_read, reading, reading_preparation, supervise
 from . import reading_long_admission as admission
 from . import reading_long_context as context_owner
 from . import reading_long_control as control
@@ -437,7 +437,7 @@ def launch(
     application: Application,
     started: admission.Started,
     *,
-    binary_resolver: Callable[[str], str | None] = observer.codex_binary,
+    binary_resolver: Callable[[str], str | None] | None = None,
 ) -> threading.Thread:
     """Start once from actual admission; thread-start failure finalizes before slot release."""
     thread = threading.Thread(

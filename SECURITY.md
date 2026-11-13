@@ -1559,14 +1559,17 @@ The bounds, all of which hold together:
   a Claude Code reading's is (`observer.reading_workdir_root`), never the state directory, and
   the folder is removed on every path the call returns by, a timeout included; when no such folder
   can be made, nothing runs. `codex` is found on `PATH` with every element that is not rooted
-  removed (`git_status.executable`). The child's environment is an allowlist
+  removed (`observer.codex_binary`, the rule `git_status.executable` applies to `git`, restated
+  rather than imported); the Claude Code lanes still find `claude` with `shutil.which` and require
+  an absolute answer. The child's environment is an allowlist
   (`observer.codex_environment`): the account and locale basics, temp folders, proxies, CA
   bundles and system trust (`NODE_USE_SYSTEM_CA`, `CODEX_CA_CERTIFICATE`), `OPENAI_*` and a
   verified `CODEX_HOME`. `NODE_OPTIONS`, `OTEL_*` and everything else stay behind. While
   `CODEX_HOME` is set and fails the check `CLAUDE_CONFIG_DIR` gets (below), or no such folder can
   be made, nothing runs, rather than a call signed in under the default folder's account; a
   reading asks this before it is charged (`observer.codex_refusal`), so a refused one spends
-  nothing and is not published as a failed call.
+  nothing and publishes the reason `settings-refused`, never a failed call and never "the Codex
+  CLI was not found".
   These flags are not a proof of an empty tool set across Codex versions. The installed CLI and
   its provider remain a trust boundary; live tool suppression and provider retention are not
   verified by the dashboard's tests. Claude Code has no read-only sandbox to invoke, so its
@@ -2228,10 +2231,14 @@ reads, so each is verified before it counts (`claude_settings.verified_folder`):
 already normal (no `.` or `..` part), an existing directory owned by this account, writable by
 nobody else, and every symbolic link on the way to it owned by this account or by root. Group
 write is allowed only where the group is this account's own: its primary group, named after it,
-with no other members, which a umask of 002 produces on systems that give each user a group. Any
-other group, and world write, is refused. The value is
-passed on unchanged, because Claude Code names its keychain entry after the folder as written. On
-Windows, which has no owner and mode bits to read, the folder need only exist. An unverified
+with no supplementary members and no other account in the password database holding it as its
+primary group, which a umask of 002 produces on systems that give each user a group. A directory
+service that does not enumerate its accounts (some LDAP and SSSD set-ups) cannot be checked this
+way, and an account only it serves goes undetected; that is the one case this check fails open.
+Any other group, and world write, is refused. The value is passed on unchanged, because Claude
+Code names its keychain entry after the folder as written. On Windows, which has no owner and mode
+bits to read, the folder needs a drive and a root, may use either separator (Claude Code accepts
+`C:/Users/me/.claude`), may hold no `.` or `..` part, and must exist. An unverified
 `CLAUDE_CONFIG_DIR` is not handed to the child, the destination names nothing, and every Claude Code
 lane refuses before it starts the CLI, on every system, so a reading never runs signed in as
 another account.
@@ -2243,7 +2250,8 @@ goal, unasked checks and summaries also ask it before their charge, so a refused
 nothing; the Live monitor's preparation runs before its charge already. Analyze refuses on
 everything `claude_settings.resolve` refuses. The other lanes refuse where an applicable managed
 or cached remote source cannot be read, or can move the call: a login gateway, a policy helper,
-a forced remote refresh, a cached remote policy holding a key outside the six harmless ones, a
+a forced remote refresh, a cached remote policy holding a key outside the six harmless ones
+and `hooks` and `disableAllHooks` (which unname instead, above), a
 shell helper (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
 `otelHeadersHelper`), or telemetry that can carry the call's words: a content switch on
 (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`,
@@ -2603,8 +2611,11 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   the
   cached remote settings hold any key outside the six harmless ones, `env` included, since the CLI
   may refresh that cache at launch; the Bedrock switch is on beside `AWS_ENDPOINT_URL`,
-  `AWS_ENDPOINT_URL_BEDROCK` or `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` in any source, because the AWS
-  SDK then sends the call there; the daemon runs under WSL, where Claude Code also reads the
+  `AWS_ENDPOINT_URL_BEDROCK` or `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` in any source, or beside an
+  active AWS profile that sets `endpoint_url` or `services` in the shared config file
+  (`AWS_CONFIG_FILE` or `~/.aws/config`, profile `AWS_PROFILE` or `default`, read only while the
+  Bedrock switch is on, and counted as moving the call when it cannot be read or parsed), because
+  the AWS SDK then sends the call there; the daemon runs under WSL, where Claude Code also reads the
   Windows policy folder and registry; `CLAUDE_CONFIG_DIR` fails the folder check above. Telemetry
   variables in the daemon's own environment change neither destination, because neither child's
   allowlist hands them on (owner ruling 2026-11-13); `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set in any

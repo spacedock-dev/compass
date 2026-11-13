@@ -725,6 +725,35 @@ class WhereToolOutputWouldGoIsNamedOrItIsNotSent(unittest.TestCase):
         self.assertEqual("Amazon Bedrock", self._claude(bedrock))
         self.assertEqual("Anthropic", self._claude({"AWS_ENDPOINT_URL": "https://e.invalid"}))
 
+    def test_an_aws_profile_that_moves_bedrock_names_nothing(self) -> None:
+        bedrock = {"CLAUDE_CODE_USE_BEDROCK": "1"}
+        config = "/Users/r/.aws/config"
+        self._write(config, "[default]\nregion = us-east-1\n")
+        self.assertEqual("Amazon Bedrock", self._claude(bedrock))
+        for text, environ in (
+            ("[default]\nendpoint_url = https://elsewhere.invalid\n", {}),
+            ("[default]\nservices = mine\n[services mine]\nbedrock_runtime =\n", {}),
+            (
+                (
+                    "[default]\nregion = us-east-1\n[profile work]\n"
+                    "endpoint_url = https://elsewhere.invalid\n"
+                ),
+                {"AWS_PROFILE": "work"},
+            ),
+            ("[default\nnot a config file", {}),
+        ):
+            with self.subTest(text=text, environ=environ):
+                self._write(config, text)
+                self.assertEqual("", self._claude({**bedrock, **environ}))
+        # The variable that names another file is honoured, and the default file then is not.
+        self._write(config, "[default]\nendpoint_url = https://elsewhere.invalid\n")
+        self._write("/etc/aws-for-test", "[default]\nregion = us-east-1\n")
+        self.assertEqual(
+            "Amazon Bedrock", self._claude({**bedrock, "AWS_CONFIG_FILE": "/etc/aws-for-test"})
+        )
+        # Off Bedrock the file is never read.
+        self.assertEqual("Anthropic", self._claude({}))
+
     @unittest.skipIf(sys.platform == "win32", "ownership and mode bits are POSIX")
     def test_a_codex_home_compass_cannot_verify_names_nothing(self) -> None:
         (self.root / "codex-home").mkdir(mode=0o700)

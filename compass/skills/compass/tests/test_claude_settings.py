@@ -591,7 +591,17 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
         import pwd  # noqa: PLC0415 - POSIX only
 
         real = pwd.getpwuid(os.getuid())
-        return mock.Mock(pw_gid=gid, pw_name=real.pw_name)
+        return mock.Mock(pw_gid=gid, pw_name=real.pw_name, pw_uid=os.getuid())
+
+    def everyone(self, gid: int, *others: int) -> list[Any]:
+        """The password database: this account, and one more per primary gid given."""
+        return [
+            self.primary(gid),
+            *(
+                mock.Mock(pw_gid=other, pw_name=f"other{other}", pw_uid=os.getuid() + 1)
+                for other in others
+            ),
+        ]
 
     def test_an_owner_only_folder_is_verified(self) -> None:
         self.assertTrue(claude_settings.verified_folder(str(self.folder)))
@@ -608,20 +618,45 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
         name = pwd.getpwuid(os.getuid()).pw_name
         with (
             mock.patch("pwd.getpwuid", return_value=self.primary(gid)),
+            mock.patch("pwd.getpwall", return_value=self.everyone(gid, gid + 7)),
             mock.patch("grp.getgrgid", return_value=self.group(name, [])),
         ):
             self.assertTrue(claude_settings.verified_folder(str(self.folder)))
-        for group, primary in (
-            (self.group("staff-for-test", []), gid),
-            (self.group(name, ["someone-else"]), gid),
-            (self.group(name, []), gid + 1),
+        for group, primary, others in (
+            (self.group("staff-for-test", []), gid, ()),
+            (self.group(name, ["someone-else"]), gid, ()),
+            (self.group(name, []), gid + 1, ()),
+            # `gr_mem` lists supplementary members only: an account whose primary group this is
+            # appears in the password database instead.
+            (self.group(name, []), gid, (gid,)),
         ):
             with (
-                self.subTest(group=group.gr_name, members=group.gr_mem, primary=primary),
+                self.subTest(group=group.gr_name, members=group.gr_mem, others=others),
                 mock.patch("pwd.getpwuid", return_value=self.primary(primary)),
+                mock.patch("pwd.getpwall", return_value=self.everyone(primary, *others)),
                 mock.patch("grp.getgrgid", return_value=group),
             ):
                 self.assertFalse(claude_settings.verified_folder(str(self.folder)))
+
+    def test_a_windows_folder_may_use_either_separator_but_never_climb(self) -> None:
+        import ntpath  # noqa: PLC0415
+
+        with (
+            mock.patch.object(os, "name", "nt"),
+            mock.patch.object(os, "path", ntpath),
+            mock.patch.object(ntpath, "isdir", return_value=True),
+        ):
+            for value, verified in (
+                ("C:/Users/me/.claude", True),
+                ("C:\\Users\\me\\.claude", True),
+                ("C:\\Users\\me/.claude/", True),
+                ("C:/Users/me/../me/.claude", False),
+                ("C:/Users/./me/.claude", False),
+                ("Users/me/.claude", False),
+                ("\\Users\\me\\.claude", False),
+            ):
+                with self.subTest(value=value):
+                    self.assertEqual(verified, claude_settings.verified_folder(value))
 
     def test_a_folder_another_account_owns_is_refused(self) -> None:
         with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):

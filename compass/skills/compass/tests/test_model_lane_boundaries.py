@@ -333,18 +333,25 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         model = runtime_reading.CodexReadingModel(
             self.config, runner=self.runner, binary_resolver=lambda _name: "/usr/bin/codex"
         )
-        self.assertTrue(model.available())
+        self.assertEqual("", model.settings_refusal())
         for patch in (
             mock.patch.dict(os.environ, {"CODEX_HOME": str(folder)}),
             mock.patch.object(observer, "reading_workdir_root", return_value=None),
         ):
             with self.subTest(patch=patch), patch:
-                self.assertFalse(model.available())
+                # Codex is installed; what refuses is this machine's set-up, said as such and
+                # never as "the Codex CLI was not found".
+                self.assertTrue(model.available())
+                self.assertEqual(observer.SETTINGS_REFUSED, model.settings_refusal())
                 guarded = reading_policy.GuardedModel(
                     self.config, model, time.time, provider="codex"
                 )
-                self.assertEqual(("", "unavailable"), guarded("p", output_cap_bytes=64))
+                self.assertEqual(("", observer.SETTINGS_REFUSED), guarded("p", output_cap_bytes=64))
                 self.assertFalse(guarded.reserved)
+                self.assertEqual(
+                    (runtime_reading.WITHHELD_SETTINGS_REFUSED, False),
+                    runtime_reading._call_failed(model, observer.SETTINGS_REFUSED),
+                )
         self.assertEqual([], self.runner.calls)
 
     @POSIX_ONLY
@@ -371,15 +378,19 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
             reading_route,
         )
 
+        # The long-reading modules pass their resolver down unset; the slot guard, which may
+        # import the observer, turns unset into the rooted lookup.
         for function in (
-            reading_long_execution.guard,
             reading_long_worker.run_maps,
             reading_long_reconcile.finish,
             reading_long_coordinator.launch,
         ):
             with self.subTest(function=function.__qualname__):
                 default = inspect.signature(function).parameters["binary_resolver"].default
-                self.assertIs(observer.codex_binary, default)
+                self.assertIsNone(default)
+        self.assertIs(observer.codex_binary, reading_long_execution.resolver(None))
+        named = mock.Mock()
+        self.assertIs(named, reading_long_execution.resolver(named))
         which = mock.Mock(return_value=None)
         with mock.patch.object(observer, "codex_binary", which):
             reading_route.resolve("codex", environ={}, root=Path("/nonexistent"))
