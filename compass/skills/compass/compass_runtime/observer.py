@@ -230,6 +230,17 @@ def rooted(path: str) -> bool:
     return os.name != "nt" or bool(os.path.splitdrive(path)[0])
 
 
+def _search_path() -> str:
+    """PATH, or with none set the path `shutil.which` would search: `CS_PATH`, else `os.defpath`."""
+    path = os.environ.get("PATH")
+    if path is not None:
+        return path
+    try:
+        return os.confstr("CS_PATH") or ""
+    except (AttributeError, ValueError):
+        return os.defpath
+
+
 def codex_binary(name: str) -> str | None:
     """Where a model CLI is, against the PATH with every unrooted element removed.
 
@@ -237,10 +248,7 @@ def codex_binary(name: str) -> str | None:
     the program a reading starts: every element that is not rooted is dropped before
     `shutil.which` sees the PATH, and its answer must be rooted too.
     """
-    # An unset PATH searches the default one, as `shutil.which` and the git probe do.
-    path = os.pathsep.join(
-        part for part in os.environ.get("PATH", os.defpath).split(os.pathsep) if rooted(part)
-    )
+    path = os.pathsep.join(part for part in _search_path().split(os.pathsep) if rooted(part))
     resolved = shutil.which(name, path=path)
     return resolved if resolved and rooted(resolved) else None
 
@@ -1096,23 +1104,40 @@ def sweep_claude_scratch(config: RuntimeConfig, *, now: float | None = None) -> 
     return removed
 
 
+def reading_workdir_stale_sec(config: RuntimeConfig) -> float:
+    """How old a call folder must be before a start may sweep it: twice the longest call.
+
+    Every lane that makes one is bounded by one of these: a reading, a long reading's map call
+    and an Analyze press by `OBSERVER_READING_TIMEOUT_SEC`, a goal line by
+    `OBSERVER_MODEL_TIMEOUT_SEC`, a summary by its call timeout and the Live monitor by its own.
+    The supervised runner kills and reaps the CLI at that bound before the folder is removed, so
+    twice it leaves room for the reap and still keeps another instance's call in flight.
+    """
+    longest = max(
+        OBSERVER_READING_TIMEOUT_SEC,
+        OBSERVER_MODEL_TIMEOUT_SEC,
+        config.session_summary_call_timeout,
+        config.live_monitor_timeout_sec,
+    )
+    return 2 * float(longest)
+
+
 def sweep_reading_workdirs(config: RuntimeConfig, *, now: float | None = None) -> int:
     """Remove the empty call folders a hard kill left under `reading_workdir_root`.
 
     Every call removes its own folder on every path it returns by; a SIGKILL or a power loss runs
     none. The root is shared (`/tmp` among the candidates), so only what a call here makes goes:
     a real directory, not a link, with one of the two prefixes, owned by this account with mode
-    0700, older than `reading_scratch_stale_sec`, which is far beyond any call's timeout, so a
-    call in flight in another instance keeps its folder. `os.rmdir` removes only an empty one and
-    never follows a link. Windows has no owner or mode bits to match, so nothing is swept there.
-    Returns how many were removed.
+    0700, older than `reading_workdir_stale_sec`, so a call in flight in another instance keeps
+    its folder. `os.rmdir` removes only an empty one and never follows a link. Windows has no
+    owner or mode bits to match, so nothing is swept there. Returns how many were removed.
     """
     if os.name == "nt":
         return 0
     root = reading_workdir_root()
     if root is None:
         return 0
-    cutoff = (time.time() if now is None else now) - config.reading_scratch_stale_sec
+    cutoff = (time.time() if now is None else now) - reading_workdir_stale_sec(config)
     uid = os.getuid()
     removed = 0
     try:

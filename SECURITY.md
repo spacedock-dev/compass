@@ -2253,8 +2253,9 @@ with no supplementary members and no other account in the password database hold
 primary group, which a umask of 002 produces on systems that give each user a group. A directory
 service that does not enumerate its accounts (some LDAP and SSSD set-ups) cannot be checked this
 way, and an account only it serves goes undetected; that is the one case this check fails open.
-Any other group, and world write, is refused. Every directory above the folder, along the path
-as written and as resolved, is held the same way, because another account able to write one
+Any other group, and world write, is refused. Every directory an entry on the way sits in, along
+the path as written and through each link one hop at a time (a link inside a link's target
+counts, and more than 40 links refuse), is held the same way, because another account able to write one
 could rename the folder or a link to it away after the check and put its own in its place: owned
 by this account or by root, and writable by nobody else, except a sticky directory such as `/tmp`,
 where only an entry's owner may rename it, and group write for this account's private group. A
@@ -2299,7 +2300,8 @@ nothing was sent or charged for it, and which settings to check
 ([the procedure](HOW_TO_USE.md#when-claude-code-settings-stop-a-check)). The Live monitor asks the
 same check when it is switched on and refuses the start. A lease whose settings change under it
 skips one refused tick uncharged and retries at the next, and ends with that reason after two
-refused ticks in a row (`live_lease.SETTINGS_REFUSALS_TO_END`), rather than staying on and checking
+refused ticks with no check that reached the CLI between them
+(`live_lease.SETTINGS_REFUSALS_TO_END`; a skipped tick reads no settings and clears nothing), rather than staying on and checking
 nothing; one is not enough, because a settings file caught mid-write reads as unreadable once. An
 unasked check records nothing, because nothing was spent.
 
@@ -2392,7 +2394,9 @@ call reaches, so a second instance's call in flight keeps its own. It can leave 
 folders too, of both lanes, in the shared temp directory; the next start removes those
 (`observer.sweep_reading_workdirs`): a real directory, never a link, named with the
 `reading-claude-cwd-` or `reading-codex-cwd-` prefix, owned by this account with mode 0700, empty,
-and older than a day. Anything else in that directory is left alone. Windows is not swept, because
+and older than twice the longest call any lane allows (six minutes with the defaults), so a call
+in flight in another instance keeps its folder. A restart sooner than that leaves a folder for the
+start after. Anything else in that directory is left alone. Windows is not swept, because
 it has no owner and mode bits to match. An absent or relative
 `shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
@@ -3282,7 +3286,7 @@ with a `monitor` notice shown before the first charged call. A terminal start ch
   terminal start is consent and has no question or consent deadline. Browser expiry or No leaves
   terminal holders running. The lease ends when its last holder leaves, the session ends or
   disappears, model calls are paused, the server stops, a cap is spent, or the shared settings
-  check refuses two ticks in a row (`settings-refused`, which a start is refused for at once). A
+  check refuses two ticks with no check between them (`settings-refused`, which a start is refused for at once). A
   restart starts with
   no lease and makes no check until a caller starts one.
 - Terminal holders. `--monitor` starts one detached holder per Claude Code session; `--monitor

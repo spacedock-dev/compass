@@ -366,9 +366,19 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
         program = here / "codex"
         program.write_text("#!/bin/sh\n")
         program.chmod(0o700)
+        elsewhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, True)
         environ = {key: value for key, value in os.environ.items() if key != "PATH"}
+        # `shutil.which`'s own order with no PATH: the system's `CS_PATH`, then `os.defpath`.
         with (
             mock.patch.dict(os.environ, environ, clear=True),
+            mock.patch.object(os, "confstr", return_value=str(here), create=True),
+            mock.patch.object(os, "defpath", str(elsewhere)),
+        ):
+            self.assertEqual(str(program), observer.codex_binary("codex"))
+        with (
+            mock.patch.dict(os.environ, environ, clear=True),
+            mock.patch.object(os, "confstr", side_effect=ValueError, create=True),
             mock.patch.object(os, "defpath", str(here)),
         ):
             self.assertEqual(str(program), observer.codex_binary("codex"))
@@ -492,7 +502,11 @@ class CodexRunsInAnEmptyFolderWithAnAllowlistedEnvironment(unittest.TestCase):
 
 @POSIX_ONLY
 class AHardKillLeavesNoReadingFolderBehind(unittest.TestCase):
-    """The empty folders a killed daemon's readings left are swept at the next start."""
+    """The empty folders a killed daemon's readings left are swept at the next start.
+
+    Older than twice the longest call of any lane that makes one: a restart within that window
+    keeps a folder, so another instance's call in flight keeps its own.
+    """
 
     def setUp(self) -> None:
         self.config = _config()
@@ -503,7 +517,7 @@ class AHardKillLeavesNoReadingFolderBehind(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.now = time.time()
-        self.stale = self.now - self.config.reading_scratch_stale_sec - 60
+        self.stale = self.now - observer.reading_workdir_stale_sec(self.config) - 1
 
     def folder(self, name: str, *, at: float, mode: int = 0o700) -> Path:
         path = self.root / name
@@ -538,6 +552,22 @@ class AHardKillLeavesNoReadingFolderBehind(unittest.TestCase):
             },
             set(os.listdir(self.root)),
         )
+
+    def test_a_daemon_restarted_minutes_after_a_kill_leaves_nothing(self) -> None:
+        self.folder("reading-claude-cwd-killed", at=self.now - 10 * 60)
+        self.assertEqual(1, observer.sweep_reading_workdirs(self.config, now=self.now))
+        self.assertEqual([], os.listdir(self.root))
+
+    def test_a_call_as_long_as_any_lane_allows_keeps_its_folder(self) -> None:
+        longest = max(
+            observer.OBSERVER_READING_TIMEOUT_SEC,
+            observer.OBSERVER_MODEL_TIMEOUT_SEC,
+            self.config.session_summary_call_timeout,
+            self.config.live_monitor_timeout_sec,
+        )
+        self.folder("reading-codex-cwd-slow", at=self.now - longest - 30)
+        self.assertEqual(0, observer.sweep_reading_workdirs(self.config, now=self.now))
+        self.assertEqual(["reading-codex-cwd-slow"], os.listdir(self.root))
 
     def test_a_folder_another_account_owns_is_left_alone(self) -> None:
         self.folder("reading-claude-cwd-theirs", at=self.stale)

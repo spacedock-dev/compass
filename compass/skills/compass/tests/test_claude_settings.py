@@ -737,6 +737,41 @@ class AConfigFolderIsThisAccountsTest(unittest.TestCase):
         self.addCleanup(shared.chmod, 0o700)
         self.assertFalse(claude_settings.verified_folder(str(link)))
 
+    def test_every_hop_of_a_link_chain_sits_in_a_held_folder(self) -> None:
+        # home/link -> m/hop -> safe/real: another account able to write `m` could point `hop`
+        # elsewhere after the check, though `m` is above neither the path as written nor the
+        # folder it resolves to.
+        home = self.root / "home"
+        home.mkdir(mode=0o750)
+        hops = self.root / "m"
+        hops.mkdir(mode=0o755)
+        (hops / "hop").symlink_to(self.folder)
+        link = home / "link"
+        link.symlink_to(hops / "hop")
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        hops.chmod(0o777)
+        self.addCleanup(hops.chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(link)))
+
+    def test_a_relative_link_is_followed_from_its_own_folder(self) -> None:
+        nested = self.root / "a" / "b"
+        nested.mkdir(parents=True)
+        link = nested / "link"
+        link.symlink_to(Path("..") / ".." / "config")
+        self.assertTrue(claude_settings.verified_folder(str(link)))
+        (self.root / "a").chmod(0o777)
+        self.addCleanup((self.root / "a").chmod, 0o700)
+        self.assertFalse(claude_settings.verified_folder(str(link)))
+
+    def test_a_chain_too_long_to_follow_is_refused(self) -> None:
+        previous = self.folder
+        for index in range(41):
+            link = self.root / f"hop{index}"
+            link.symlink_to(previous)
+            previous = link
+        self.assertFalse(claude_settings.verified_folder(str(previous)))
+        self.assertTrue(claude_settings.verified_folder(str(self.root / "hop5")))
+
     def test_a_folder_another_account_owns_is_refused(self) -> None:
         with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
             self.assertFalse(claude_settings.verified_folder(str(self.folder)))

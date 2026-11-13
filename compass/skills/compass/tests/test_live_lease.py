@@ -417,9 +417,9 @@ class WhatEndsTheLeaseOtherwise(Rig):
         state = self.leases.state(HARNESS, SID)
         self.assertEqual((False, "settings-refused"), (state["on"], state["last_end"]["reason"]))
 
-    def test_a_check_between_two_refusals_starts_the_count_again(self) -> None:
+    def _three_ticks(self, between: live_monitor.Tick) -> dict[str, Any]:
         refused = live_monitor.Tick("refused", "settings-refused")
-        verdicts = iter([refused, live_monitor.Tick("skipped", "unchanged"), refused])
+        verdicts = iter([refused, between, refused])
 
         def tick(_config: Any, session_key: str, **_kwargs: Any) -> live_monitor.Tick:
             self.ticks.append((session_key, self.now))
@@ -436,12 +436,22 @@ class WhatEndsTheLeaseOtherwise(Rig):
         self.addCleanup(leases.close)
         leases.start(HARNESS, SID, TAB_A)
         end = self.now + 140
-        while self.now < end:
+        while self.now < end and len(self.ticks) < 3:
             self.now += 5
             leases.beat(HARNESS, SID, TAB_A)
             leases.step()
         self.assertEqual(3, len(self.ticks))
-        self.assertTrue(leases.state(HARNESS, SID)["on"])
+        return leases.state(HARNESS, SID)
+
+    def test_a_check_between_two_refusals_starts_the_count_again(self) -> None:
+        for between in (live_monitor.Tick("ran"), live_monitor.Tick("failed", "timeout")):
+            with self.subTest(status=between.status):
+                self.ticks.clear()
+                self.assertTrue(self._three_ticks(between)["on"])
+
+    def test_a_tick_that_ran_no_check_does_not_start_the_count_again(self) -> None:
+        state = self._three_ticks(live_monitor.Tick("skipped", "unchanged"))
+        self.assertEqual((False, "settings-refused"), (state["on"], state["last_end"]["reason"]))
 
     def test_pause_ends_every_lease_paused_and_cancels_a_check_in_flight(self) -> None:
         self.rows[(HARNESS, "two")] = {"harness": HARNESS, "sid": "two", "ended_at": None}

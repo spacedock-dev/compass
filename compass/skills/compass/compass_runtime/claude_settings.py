@@ -95,19 +95,11 @@ def verified_folder(path: str) -> bool:
     if not path or not os.path.isabs(path) or os.path.normpath(path) != path.rstrip(os.sep):
         return False
     uid = os.getuid()
-    walk = os.sep
-    parents: set[str] = set()
     try:
-        for part in [segment for segment in path.split(os.sep) if segment]:
-            parents.add(os.path.realpath(walk))
-            walk = os.path.join(walk, part)
-            info = os.lstat(walk)
-            if stat.S_ISLNK(info.st_mode) and info.st_uid not in {0, uid}:
-                return False
-        final = os.stat(path)
-        parents.update(_ancestors(os.path.realpath(path)))
-        if not all(_held_parent(os.stat(parent), uid) for parent in parents):
+        parents = _holding_folders(path, uid)
+        if parents is None or not all(_held_parent(os.stat(parent), uid) for parent in parents):
             return False
+        final = os.stat(path)
     except OSError:
         return False
     return (
@@ -118,21 +110,49 @@ def verified_folder(path: str) -> bool:
     )
 
 
-def _ancestors(real: str) -> list[str]:
-    found = []
-    parent = os.path.dirname(real)
-    while True:
-        found.append(parent)
-        above = os.path.dirname(parent)
-        if above == parent:
-            return found
-        parent = above
+# Links followed before a path counts as unverifiable: Linux's own limit, above macOS's 32.
+LINK_HOPS: Final = 40
+
+
+def _holding_folders(path: str, uid: int) -> set[str] | None:
+    """Every real directory an entry on the way to `path` sits in, or None to refuse.
+
+    Resolved one link at a time, as the kernel does, so a link inside a link's target adds the
+    folder it sits in too: `os.path.realpath` would report only where the chain ends, and another
+    account able to write a folder midway could repoint the chain later. Each link must be owned
+    by this account or root, and more than `LINK_HOPS` links refuse.
+    """
+    pending = [part for part in path.split(os.sep) if part]
+    current = os.sep
+    folders: set[str] = set()
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part == ".":
+            continue
+        if part == "..":
+            current = os.path.dirname(current)
+            continue
+        folders.add(current)
+        entry = os.path.join(current, part)
+        info = os.lstat(entry)
+        if not stat.S_ISLNK(info.st_mode):
+            current = entry
+            continue
+        hops += 1
+        if hops > LINK_HOPS or info.st_uid not in {0, uid}:
+            return None
+        target = os.readlink(entry)
+        if os.path.isabs(target):
+            current = os.sep
+        pending[:0] = [part for part in target.split(os.sep) if part]
+    return folders
 
 
 def _held_parent(info: os.stat_result, uid: int) -> bool:
     """Whether no other account can rename an entry out of this directory and plant its own.
 
-    Every directory holding a part of the path, as written and as resolved: another account
+    Every directory holding a part of the path, link by link (`_holding_folders`): another account
     able to write one could swap the folder, or a link to it, after the check. Owned by this
     account or root, and writable by nobody else, unless sticky (as /tmp is), where only an
     entry's owner may rename it and the entries below are checked in turn. Group write passes

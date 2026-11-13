@@ -57,9 +57,10 @@ _REFUSAL_ENDS = {
     "run-disabled": "paused",
     "not-monitored": "stopped",
 }
-# Refused ticks in a row before settings that changed under a running lease end it, saying why
-# rather than staying on and checking nothing. One is not enough: a settings file caught
-# mid-write reads as unreadable once, and a refused tick is uncharged, so the next one retries.
+# Refused ticks, with no check that reached the CLI between them, before settings that changed
+# under a running lease end it, saying why rather than staying on and checking nothing. One is not
+# enough: a settings file caught mid-write reads as unreadable once, and a refused tick is
+# uncharged, so the next one retries. A skipped tick reads no settings, so it clears nothing.
 SETTINGS_REFUSALS_TO_END = 2
 
 
@@ -380,7 +381,11 @@ class Leases:
             if self._leases.get(key) is not lease:
                 return
             refused = result.status == "refused" and result.reason == live_monitor.SETTINGS_REFUSED
-            lease.settings_refused = lease.settings_refused + 1 if refused else 0
+            # Only a check that reached the CLI clears the count: a skipped tick read no settings.
+            if refused:
+                lease.settings_refused += 1
+            elif result.status in {"ran", "failed"}:
+                lease.settings_refused = 0
             if refused:
                 if lease.settings_refused >= SETTINGS_REFUSALS_TO_END:
                     self._end_locked(key, live_monitor.SETTINGS_REFUSED, now)
