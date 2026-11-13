@@ -421,6 +421,21 @@ against the cache stamp, and the stamp is written on failure as well as success,
 credential retries on the same cadence as a healthy fetch. That is the "never a retry storm"
 posture in one mechanism.
 
+The marker clears only when the thread returns, so the request itself has to end. It goes through
+`reach`'s opener, which reads no proxy from the environment or the macOS system settings and follows
+no redirect, and through `https_transport`, which admits HTTPS only and holds one deadline across DNS,
+connect, headers and every body read. The daily release lookup takes the same route.
+`urllib.request.urlopen` was the default here before, and each of its defaults was a hole in the
+contract above. It followed redirects and copied every request header onto them, the authorization
+header included: Claude's GET followed 301, 302, 303, 307 and 308, and Cursor's POST followed 301 to
+303 as a GET (urllib refuses to re-send a POST on 307 or 308). It honoured `HTTPS_PROXY` and the macOS
+system proxy, so the token could travel through a host the endpoint list never names. Its timeout
+bounded each socket read rather than the exchange, so a response trickling one byte at a time kept
+the vendor in flight, and no later fetch for that vendor could start until the trickle ended. The
+default opener also checks the URL against the two listed endpoints at call time. Each endpoint has
+its own resolver slot, because the two vendors fetch at the same moment and a single slot would fail
+whichever asked second.
+
 The Keychain subprocess gets a deliberately long timeout (120 seconds) because the first read can
 raise a user-facing permission prompt, and killing the prompt mid-answer would read as a denial.
 
@@ -465,7 +480,11 @@ a sign-in control. Cursor has no local expiry check, so `refused` is the only un
 reach.
 
 An unavailable token (denied Keychain prompt, missing file, malformed JSON) keeps Claude out of the
-band entirely, because a sign-in is wrong advice when the harness session may be fine. Every failure
+band entirely, because a sign-in is wrong advice when the harness session may be fine. A token that
+cannot be a header value is unavailable in the same way. Surrounding whitespace is stripped for both
+vendors, since that is how a store ends a line, but anything else outside visible ASCII is refused
+before a request is built: a CR or LF would end the authorization line and start another, and no
+bearer token has a reason to carry a control character. Every failure
 surfaces in diagnostics as a fixed category word plus an exception type name; no value read from a
 credential source or a response is ever interpolated.
 

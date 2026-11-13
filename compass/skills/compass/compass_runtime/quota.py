@@ -32,6 +32,7 @@ from __future__ import annotations
 import collections
 import copy
 import hashlib
+import http.client
 import json
 import math
 import ntpath
@@ -44,12 +45,14 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any, Final
 
+from . import https_transport, records, sessions
 from . import io as runtime_io
-from . import records, sessions
 from .config import primary_store
+from .reach import build_reach_opener
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from contextlib import AbstractContextManager
 
     from .config import RuntimeConfig
     from .state import RuntimeState
@@ -169,6 +172,20 @@ def _keychain_secret(
     return str(result.stdout), None
 
 
+def _bearer_value(token: str) -> str | None:
+    """The token as it may appear after `Bearer `, or None when it cannot.
+
+    Surrounding whitespace is how a credential store ends a line, so it is
+    stripped. Anything else outside visible ASCII has no place in a bearer token,
+    and a CR or LF would end the header line and start another, so such a token is
+    refused rather than repaired: the caller reports a category and sends nothing.
+    """
+    value = token.strip()
+    if not value or any(not ("!" <= char <= "~") for char in value):
+        return None
+    return value
+
+
 def _read_token(
     config: RuntimeConfig,
     runner: Callable[..., Any],
@@ -199,6 +216,9 @@ def _read_token(
     token = oauth.get("accessToken")
     if not isinstance(token, str) or not token.strip():
         return None, None, "no oauth token"
+    token = _bearer_value(token)
+    if token is None:
+        return None, None, "malformed oauth token"
     expires = oauth.get("expiresAt")
     expiry = (
         expires / 1000.0
@@ -539,6 +559,38 @@ def _unreadable_entry(now: float, harness: str, state: str) -> dict[str, Any]:
     return {"harness": harness, "state": state, "asOf": int(now)}
 
 
+# One resolver slot per endpoint, not one for the module: the two vendors fetch
+# on threads of their own at the same moment, and a shared slot would fail
+# whichever asked second as busy.
+_DNS_SLOTS: dict[str, threading.BoundedSemaphore] = {}
+_DNS_SLOTS_LOCK = threading.Lock()
+
+
+def _open_endpoint(
+    request: urllib.request.Request,
+    timeout: float,
+) -> AbstractContextManager[https_transport.BoundedResponse]:
+    """The production opener: a listed endpoint, over HTTPS, inside one deadline.
+
+    `urllib.request.urlopen` was the default here, and each of its defaults was a
+    way for the credential to leave by another route: it followed redirects and
+    copied the authorization header onto each (Claude's GET on 301-303, 307 and
+    308; Cursor's POST on 301-303, re-sent as a GET), it read `HTTPS_PROXY` and
+    on macOS the system proxy settings, and its timeout bound
+    each socket read rather than the exchange, so a response trickling a byte at
+    a time held the vendor in flight indefinitely and no later fetch could start.
+    The URL is checked against the endpoint list at call time, so a request for
+    anywhere else is refused before anything is resolved.
+    """
+    if request.full_url not in (USAGE_ENDPOINT, CURSOR_USAGE_ENDPOINT):
+        raise ValueError("unlisted usage endpoint")
+    with _DNS_SLOTS_LOCK:
+        slot = _DNS_SLOTS.setdefault(request.full_url, threading.BoundedSemaphore(1))
+    return https_transport.open_bounded(
+        build_reach_opener(), request, timeout=timeout, dns_slot=slot
+    )
+
+
 def _fetch_windows(
     config: RuntimeConfig,
     token: str,
@@ -566,7 +618,7 @@ def _fetch_windows(
             # that could race the harness for its own session.
             return [_unreadable_entry(now, "claude", "refused")], None
         return [], f"HTTP {exc.code}"
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
         return [], type(exc).__name__
     try:
         payload = records.as_dict(json.loads(body))
@@ -687,11 +739,14 @@ def _cursor_entries(
     token, problem = _cursor_token(config, runner)
     if problem:
         return [], problem
+    bearer = _bearer_value(token or "")
+    if bearer is None:
+        return [], "malformed token"
     request = urllib.request.Request(
         CURSOR_USAGE_ENDPOINT,
         data=b"{}",
         headers={
-            "Authorization": f"Bearer {(token or '').strip()}",
+            "Authorization": f"Bearer {bearer}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -708,7 +763,7 @@ def _cursor_entries(
             # `refused` is the only unreadable state Cursor has.
             return [_unreadable_entry(now, "cursor", "refused")], None
         return [], f"HTTP {exc.code}"
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
         return [], type(exc).__name__
     return _cursor_parse(now, body)
 
@@ -741,7 +796,7 @@ def fetch_usage(
     reader: VendorReader,
     *,
     clock: Callable[[], float] = time.time,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = _open_endpoint,
     runner: Callable[..., Any] = subprocess.run,
     diagnostic_sink: Callable[[str], object] = print,
 ) -> None:
@@ -787,7 +842,7 @@ def request_fetch(
     state: RuntimeState,
     *,
     clock: Callable[[], float] = time.time,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = _open_endpoint,
     runner: Callable[..., Any] = subprocess.run,
     diagnostic_sink: Callable[[str], object] = print,
     spawn: Callable[[Callable[[], None]], None] = _spawn_thread,

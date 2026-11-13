@@ -500,6 +500,8 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/tripwires.py",
     "skills/compass/compass_runtime/typed_press.py",
     "skills/compass/compass_runtime/quota.py",
+    # The bounded HTTPS exchange `quota` and `update_check` both open requests through.
+    "skills/compass/compass_runtime/https_transport.py",
     "skills/compass/compass_runtime/aggregate.py",
     "skills/compass/compass_runtime/annotations.py",
     "skills/compass/compass_runtime/observation.py",
