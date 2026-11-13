@@ -1551,7 +1551,19 @@ The bounds, all of which hold together:
 - One bounded question. The generated prompt has a byte cap and the subprocess has a timeout.
   Codex is invoked ephemerally with user configuration and rules ignored, in a read-only sandbox.
   Explicit CLI overrides disable shell execution, hooks, plugins, apps, subagents, browser and
-  computer tools, image generation, web search, and automatic project/skill instructions.
+  computer tools, image generation, web search, and automatic project/skill instructions, and ask
+  for no MCP servers (`--config mcp_servers={}`). Measured on codex-cli 0.167.2 with the provider
+  pointed at a closed loopback port, it is `--ignore-user-config` that keeps an MCP server
+  configured under `CODEX_HOME` from starting; the override alone did not, because a `--config`
+  table merges into the loaded one. Codex runs in a fresh owner-only (0700) empty folder made where
+  a Claude Code reading's is (`observer.reading_workdir_root`), never the state directory, and
+  the folder is removed on every path the call returns by, a timeout included; when no such folder
+  can be made, nothing runs. `codex` is found on `PATH` with every element that is not rooted
+  removed (`git_status.executable`). The child's environment is an allowlist
+  (`observer.codex_environment`): the account and locale basics, temp folders, proxies and CA
+  bundles, `OPENAI_*` and a verified `CODEX_HOME`. `NODE_OPTIONS`, `OTEL_*` and everything else
+  stay behind. While `CODEX_HOME` is set and fails the check `CLAUDE_CONFIG_DIR` gets (below),
+  nothing runs, rather than a call signed in under the default folder's account.
   These flags are not a proof of an empty tool set across Codex versions. The installed CLI and
   its provider remain a trust boundary; live tool suppression and provider retention are not
   verified by the dashboard's tests. Claude Code has no read-only sandbox to invoke, so its
@@ -2178,13 +2190,50 @@ cannot be extended. Qualification results bind their selected model too. Histori
 or replay results do not qualify another selection. The text-only CLI reply supplies no resolved
 model receipt, so the served snapshot is unknown rather than inferred from the requested ID.
 
-The process runs with the daemon's environment minus the markers of any Claude Code session the
-daemon was started from (`observer.claude_environment`: `CLAUDECODE`, `CLAUDE_CODE_*SESSION*`,
-`CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT` and
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), the set the CLI drops itself when it starts a fresh
-session. Authentication and provider variables are kept, so configuration in the daemon's
-environment, such as `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK` and
-`CLAUDE_CODE_USE_VERTEX`, decides which endpoint and which account receive the reading.
+The process runs with an allowlist of the daemon's environment (`observer.claude_environment`).
+It keeps what sign-in and the endpoint need: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, the
+temp folders, `LANG`, `LC_*`, `TZ`, `TERM`, `XDG_*`, `DBUS_SESSION_BUS_ADDRESS`, the Windows profile
+and system folders, the proxy variables, `NODE_EXTRA_CA_CERTS` and the other CA bundle variables,
+`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, the cloud variables Bedrock and Vertex sign in with (`AWS_*`,
+`GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`, `CLOUD_ML_REGION`, `VERTEX_REGION_*`), Claude Code's own
+OAuth token, client certificate, skip-auth and proxy variables, the variables that only lower the
+context window, `DISABLE_COMPACT` and the `DISABLE_*` switches that turn traffic off, and a
+verified `CLAUDE_CONFIG_DIR`. Everything else stays behind, including `NODE_OPTIONS`, which can
+preload code into the CLI, `OTEL_*` and `CLAUDE_CODE_ENABLE_TELEMETRY`, the session markers the
+CLI drops itself when it starts a fresh session (`CLAUDECODE`, `CLAUDE_CODE_*SESSION*`,
+`CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_CODE_ENTRYPOINT`,
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`), and `CLAUDE_CODE_SHELL_PREFIX`. The `XDG_*` and D-Bus
+variables are kept because nothing here proves a Linux sign-in does without them. Measured on
+2.1.323, `claude auth status` (no model call) found the same Claude account sign-in under the
+allowlist as under the full environment on macOS, where the login keychain is found from `HOME`
+and `USER`. Configuration in the daemon's environment, such as `ANTHROPIC_API_KEY`,
+`ANTHROPIC_BASE_URL` or `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX`, still decides
+which endpoint and which account receive the reading.
+
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME` choose the account a CLI signs in as and the settings it
+reads, so each is verified before it counts (`claude_settings.verified_folder`): absolute and
+already normal (no `.` or `..` part), an existing directory owned by this account and writable by
+no other, and every symbolic link on the way to it owned by this account or by root. The value is
+passed on unchanged, because Claude Code names its keychain entry after the folder as written. On
+Windows, which has no owner and mode bits to read, the folder need only exist. An unverified
+`CLAUDE_CONFIG_DIR` is not handed to the child, the destination names nothing, and every Claude Code
+lane refuses before it starts the CLI, so a reading never runs signed in as another account.
+
+Every Claude Code lane (Analyze, Find goal, unasked checks, session summaries and the Live monitor)
+runs one settings check before it starts the CLI (`observer.claude_lane_refusal`, called from
+`observer.prepare_claude_exec`, which every lane enters, and again just before the launch). Find
+goal, unasked checks and summaries also ask it before their charge, so a refused press costs
+nothing; the Live monitor's preparation runs before its charge already. Analyze refuses on
+everything `claude_settings.resolve` refuses. The other lanes refuse where an applicable managed
+or cached remote source cannot be read, or can move the call: a login gateway, a policy helper,
+a forced remote refresh, a cached remote policy holding a key outside the six harmless ones, a
+shell helper (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
+`otelHeadersHelper`), or telemetry turned on (`CLAUDE_CODE_ENABLE_TELEMETRY`, any
+`OTEL_EXPORTER_OTLP_*`). Analyze's compaction and fallback conflicts concern its own envelope and
+do not stop the other lanes. On Windows and under WSL nothing applicable can be read; the
+destination already names nothing there, and those lanes still run on the reader's words, as they
+did. A refused lane says it could not run or reach Claude Code, never that it ran, and the route's
+destination reads "wherever your Claude Code settings send it, which Compass cannot name".
 
 What reaches Anthropic besides the reading prompt was measured on 2.1.283, 2026-09-27, by
 running the real CLI against a local stub with every outbound connection off this machine blocked
@@ -2515,7 +2564,15 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   does not know; a switch holds a value that is neither on nor off; a base URL sits beside a cloud
   switch, or any `ANTHROPIC_*_BASE_URL` other than `ANTHROPIC_BASE_URL` is set; two sources set one
   endpoint variable differently; a settings file cannot be read or parsed;
-  `CLAUDE_CODE_MANAGED_SETTINGS_PATH` is set; `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set in any source,
+  `CLAUDE_CODE_MANAGED_SETTINGS_PATH` is set; a managed or cached remote source sets a login
+  gateway (`forceLoginGatewayUrl`, `forceLoginMethod: "gateway"`), `modelOverrides`, a
+  `policyHelper`, `forceRemoteSettingsRefresh`, a shell helper (`apiKeyHelper`, `awsAuthRefresh`,
+  `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`) or telemetry export
+  (`CLAUDE_CODE_ENABLE_TELEMETRY` on, any `OTEL_EXPORTER_OTLP_*`), the same rule the lanes refuse
+  by; the cached remote settings hold any key outside the six harmless ones, `env` included, since
+  the CLI may refresh that cache at launch; the daemon's own environment turns telemetry on or
+  names an OTLP exporter, which no child is handed but which this build has not measured each CLI
+  without; `CLAUDE_CONFIG_DIR` fails the folder check above; `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set in any source,
   because an approved custom OAuth host replaces the first-party API host; `ANTHROPIC_UNIX_SOCKET`
   is set, because every request then goes to a local socket whose far end forwards under another
   machine's settings; `ANTHROPIC_BASE_URL` holds anything the CLI's WHATWG URL parser could read
@@ -2534,8 +2591,9 @@ passed, ran more than one thing, or whose output is not one failed check's own (
   reads a Claude Code session on this build, it names nothing where `OPENAI_BASE_URL` or
   `OPENAI_API_BASE` is set, whether or not Codex honours them under `--ignore-user-config`, which is
   not measured; where `/etc/codex/managed_config.toml` or `/etc/codex/config.toml` exists, or a
-  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary; and on
-  Windows.
+  `com.openai.codex` managed-preferences profile, each measured in the live 0.156.1 binary; where
+  `CODEX_HOME` is set and fails the folder check; where the daemon's environment turns telemetry on
+  or names an OTLP exporter; and on Windows.
 - A proxy variable does not change the destination named: it carries the call, and the vendor that
   answers it is the same (owner, 2026-09-24). A `CLAUDE_CODE_USE_*` switch that is not a provider
   switch but is on (`CLAUDE_CODE_USE_POWERSHELL_TOOL` is one) also names nothing today. That fails
