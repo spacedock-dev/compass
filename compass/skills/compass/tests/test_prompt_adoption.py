@@ -168,7 +168,9 @@ class AdoptionRouteTest(unittest.TestCase):
             "provider": "codex",
         }
         body = json.dumps(payload).encode()
-        handler.headers = {"Host": "127.0.0.1:4580", "Content-Length": str(len(body))}
+        handler.headers = test_http_api._headers(
+            {"Host": "127.0.0.1:4580", "Content-Length": str(len(body))}
+        )
         handler.client_address = ("127.0.0.1", 10000)
         handler.server.server_port = 4580
         handler.rfile = io.BytesIO(body)

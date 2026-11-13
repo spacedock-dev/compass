@@ -9,6 +9,7 @@ import http.server
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -90,6 +91,19 @@ REAL_TIME_TESTS = True
 # fails that wait instead of slipping through when the hold gives up.
 WAIT_SEC = 30.0
 HOLD_SEC = 2 * WAIT_SEC
+
+
+def _headers(fields: dict[str, str]) -> email.message.Message:
+    """A header block as the server parses one: a message, never a plain dict."""
+    message = email.message.Message()
+    _replace_headers(message, fields)
+    return message
+
+
+def _replace_headers(message: email.message.Message, fields: dict[str, str]) -> None:
+    for name, value in fields.items():
+        del message[name]
+        message[name] = value
 
 
 def _application(os_name: str) -> Any:
@@ -2376,23 +2390,27 @@ class ReviewFixTest(RuntimeTestCase):
         thread = threading.Thread(target=poll_fast(httpd), daemon=True)
         thread.start()
         port = httpd.server_port
+        here, named = f"127.0.0.1:{port}", f"localhost:{port}"
         cases = [
-            (f"http://127.0.0.1:{port}", 200, "the dashboard's own page"),
-            (f"http://localhost:{port}", 200, "same port, other spelling"),
-            ("http://localhost:9999", 403, "another local dev server"),
-            ("http://127.0.0.1:9999", 403, "another local port"),
-            ("http://localhost", 403, "port 80"),
-            ("https://evil.example", 403, "remote origin"),
+            (here, f"http://127.0.0.1:{port}", 200, "the dashboard's own page"),
+            (named, f"http://localhost:{port}", 200, "the page opened as localhost"),
+            # localhost and 127.0.0.1 are two origins to a browser, so this is a page on
+            # one posting to the other, never the dashboard's own page.
+            (here, f"http://localhost:{port}", 403, "same port, other spelling"),
+            (here, "http://localhost:9999", 403, "another local dev server"),
+            (here, "http://127.0.0.1:9999", 403, "another local port"),
+            (here, "http://localhost", 403, "port 80"),
+            (here, "https://evil.example", 403, "remote origin"),
         ]
         try:
-            for origin, expected, why in cases:
+            for host, origin, expected, why in cases:
                 with self.subTest(why=why):
                     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=WAIT_SEC)
                     conn.request(
                         "POST",
                         "/api/notify",
                         body=b'{"session_id":"aaaaaaaa"}',
-                        headers={"Origin": origin, "Content-Type": "text/plain"},
+                        headers={"Host": host, "Origin": origin, "Content-Type": "text/plain"},
                     )
                     response = conn.getresponse()
                     self.assertEqual(expected, response.status)
@@ -2819,10 +2837,13 @@ class AllowedHostTest(RuntimeTestCase):
                     handler.server.server_port = 80
                     self.assertEqual(expected, handler._local_ok())
 
-    def test_ip_literal_rules_are_unchanged(self) -> None:
+    def test_ip_literal_origin_names_the_host(self) -> None:
         for host, origin, expected in (
-            ("127.0.0.1:9999", "http://127.0.0.1:8000", True),
-            ("192.168.0.2:9999", "http://192.168.0.2:8000", True),
+            # A page's Origin is the authority it was served from, which is the Host its own
+            # requests carry; an Origin on another port is another page.
+            ("127.0.0.1:9999", "http://127.0.0.1:8000", False),
+            ("192.168.0.2:9999", "http://192.168.0.2:8000", False),
+            ("192.168.0.2:8000", "http://192.168.0.2:8000", True),
             ("[::1]:8000", "http://[::1]:8000", True),
             ("192.168.0.2:8000", "https://192.168.0.2:8000", False),
             ("192.168.0.2:8000", "http://192.168.0.2", False),
@@ -3023,6 +3044,385 @@ class AllowedHostTest(RuntimeTestCase):
             httpd.shutdown()
             httpd.server_close()
             thread.join(timeout=2)
+
+
+class _StubPrototype:
+    """Answers every terminal route, so a test sees only whether admission let it through."""
+
+    def state(self, _port: int) -> dict[str, Any]:
+        return {"state": "viewed"}
+
+    def view(self, _port: int) -> dict[str, Any]:
+        return {"state": "viewed", "text": "terminal text"}
+
+    def resolve_session(self, _port: int, _session: str) -> dict[str, Any]:
+        return {"state": "registered"}
+
+    def probe_unregistered(self) -> dict[str, Any]:
+        return {"state": "refused", "reason": "unregistered-origin"}
+
+    def stop(self) -> None:
+        return None
+
+
+# What each legitimate caller sends, written from the caller rather than from the gate: the
+# page's same-origin fetch and POST and its terminal WebSocket (frontend/src/api/client.ts,
+# frontend/src/terminal/useTerminalOwner.ts), and the hooks, MCP server, terminal client and
+# tmux registration client, which send a Host and nothing else.
+_PAGE_FETCH = (
+    ("Host", "127.0.0.1:8000"),
+    ("Sec-Fetch-Site", "same-origin"),
+    ("Sec-Fetch-Mode", "cors"),
+    ("Sec-Fetch-Dest", "empty"),
+)
+_PAGE_POST = (*_PAGE_FETCH, ("Origin", "http://127.0.0.1:8000"))
+_PAGE_SOCKET = (
+    ("Host", "127.0.0.1:8000"),
+    ("Origin", "http://127.0.0.1:8000"),
+    ("Sec-Fetch-Site", "same-origin"),
+    ("Sec-Fetch-Mode", "websocket"),
+    ("Sec-Fetch-Dest", "websocket"),
+)
+_LOCAL_CLIENT = (("Host", "127.0.0.1:8000"),)
+
+
+class AdmissionHeaderTest(unittest.TestCase):
+    """Admission reads one value per header, and a loopback-only route is never proxied.
+
+    `headers.get` answers with the FIRST of a repeated field, so a loopback `Host` written
+    ahead of an allowed name read as a loopback request while a proxy that checks the last
+    `Host` read it as the name. A request only ever carries one of these fields.
+    """
+
+    ADMISSION = ("Host", "Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest")
+
+    def _handler(
+        self,
+        headers: tuple[tuple[str, str], ...],
+        *,
+        bound: str = "127.0.0.1",
+        peer: str = "127.0.0.1",
+        method: str = "GET",
+    ) -> Any:
+        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+        handler.headers = email.message.Message()
+        for name, value in headers:
+            handler.headers[name] = value
+        handler.command = method
+        handler.path = "/api/data"
+        handler.client_address = (peer, 12345)
+        handler.server = SimpleNamespace(
+            bound_host=bound,
+            server_port=8000,
+            application=SimpleNamespace(config=SimpleNamespace(allowed_hosts=("vm.exe.xyz",))),
+        )
+        return handler
+
+    def test_every_ordinary_caller_is_still_admitted_to_loopback_only_routes(self) -> None:
+        for name, headers, method in (
+            ("page fetch", _PAGE_FETCH, "GET"),
+            ("page post", _PAGE_POST, "POST"),
+            ("page terminal socket", _PAGE_SOCKET, "GET"),
+            ("hook, MCP or terminal client", _LOCAL_CLIENT, "POST"),
+            ("terminal client read", _LOCAL_CLIENT, "GET"),
+            (
+                "page on localhost",
+                (("Host", "localhost:8000"), ("Origin", "http://localhost:8000")),
+                "POST",
+            ),
+            ("page on ::1", (("Host", "[::1]:8000"), ("Origin", "http://[::1]:8000")), "POST"),
+        ):
+            for bound in ("127.0.0.1", "0.0.0.0"):
+                with self.subTest(caller=name, bound=bound):
+                    handler = self._handler(headers, bound=bound, method=method)
+                    self.assertTrue(handler._local_ok())
+                    self.assertTrue(handler._loopback_resource_ok())
+
+    def test_a_repeated_admission_header_is_refused_whatever_the_bind(self) -> None:
+        for bound in ("127.0.0.1", "0.0.0.0"):
+            for field in self.ADMISSION:
+                with self.subTest(bound=bound, field=field):
+                    repeated = dict(_PAGE_POST)[field]
+                    handler = self._handler(
+                        (*_PAGE_POST, (field, repeated)), bound=bound, method="POST"
+                    )
+                    self.assertFalse(handler._local_ok())
+                    self.assertFalse(handler._loopback_resource_ok())
+
+    def test_a_loopback_host_cannot_mask_a_second_named_host(self) -> None:
+        handler = self._handler(
+            (("Host", "127.0.0.1:8000"), ("Host", "vm.exe.xyz")),
+            bound="0.0.0.0",
+            method="POST",
+        )
+        self.assertFalse(handler._local_ok())
+        self.assertFalse(handler._loopback_resource_ok())
+
+    def test_a_combined_admission_value_is_refused(self) -> None:
+        for field in self.ADMISSION:
+            with self.subTest(field=field):
+                value = dict(_PAGE_POST)[field]
+                headers = tuple(
+                    (name, f"{value}, {value}" if name == field else current)
+                    for name, current in _PAGE_POST
+                )
+                self.assertFalse(self._handler(headers, method="POST")._local_ok())
+
+    def test_a_forwarded_request_never_reaches_a_loopback_only_route(self) -> None:
+        for name, value in (
+            ("Forwarded", "for=127.0.0.1"),
+            ("X-Forwarded-For", "127.0.0.1"),
+            ("X-Forwarded-Host", "127.0.0.1:8000"),
+            ("X-Forwarded-Proto", "http"),
+            ("X-Forwarded-Port", "8000"),
+            ("X-Real-IP", "127.0.0.1"),
+            ("Via", "1.1 proxy"),
+        ):
+            for caller in (_PAGE_FETCH, _LOCAL_CLIENT):
+                with self.subTest(header=name, caller=caller):
+                    handler = self._handler((*caller, (name, value)))
+                    # The board-wide routes are unchanged: a proxy was never refused there.
+                    self.assertTrue(handler._local_ok())
+                    self.assertFalse(handler._loopback_resource_ok())
+
+    def test_a_browser_origin_must_name_the_host_it_was_sent_to(self) -> None:
+        for host, origin, expected in (
+            ("127.0.0.1:8000", "http://10.0.0.99:8000", False),
+            ("10.0.0.5:8000", "http://10.0.0.99:8000", False),
+            ("127.0.0.1:8000", "http://localhost:8000", False),
+            ("localhost:8000", "http://127.0.0.1:8000", False),
+            ("127.0.0.1:8000", "http://[::1]:8000", False),
+            ("127.0.0.1", "http://127.0.0.1:8000", False),
+            ("10.0.0.5:8000", "http://10.0.0.5:8000", True),
+            ("127.0.0.1:8000", "http://127.0.0.1:8000", True),
+            ("LOCALHOST:8000", "http://localhost:8000", True),
+            ("[::1]:8000", "http://[::1]:8000", True),
+        ):
+            with self.subTest(host=host, origin=origin):
+                handler = self._handler(
+                    (("Host", host), ("Origin", origin)),
+                    bound="0.0.0.0",
+                    method="POST",
+                )
+                self.assertEqual(expected, handler._local_ok())
+
+    def test_an_origin_carries_only_a_scheme_and_an_authority(self) -> None:
+        for origin in (
+            "http://user@127.0.0.1:8000",
+            "http://user:pass@127.0.0.1:8000",
+            "http://127.0.0.1:8000/",
+            "http://127.0.0.1:8000/path",
+            "http://127.0.0.1:8000?",
+            "http://127.0.0.1:8000?x=1",
+            "http://127.0.0.1:8000#",
+            "http://127.0.0.1:8000#x",
+            "http://127.0.0.1:8000;p",
+        ):
+            with self.subTest(origin=origin):
+                handler = self._handler(
+                    (("Host", "127.0.0.1:8000"), ("Origin", origin)), method="POST"
+                )
+                self.assertFalse(handler._local_ok())
+
+
+class LoopbackOnlyRouteTest(unittest.TestCase):
+    """The terminal routes and `/api/observe` answer only a loopback page or process."""
+
+    READS = ("/api/interaction/state", "/api/interaction/view", "/api/observe?harness=claude&sid=s")
+
+    def _status(self, request: bytes, *, peer: str = "127.0.0.1", bound: str = "127.0.0.1") -> int:
+        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+        with config_patch(allowed_hosts=("vm.exe.xyz",)):
+            application = build_app()
+        handler.server = SimpleNamespace(
+            bound_host=bound,
+            server_port=8000,
+            application=application,
+            page_bytes=PAGE_BYTES,
+            observation=None,
+            interaction_prototype=_StubPrototype(),
+        )
+        handler.client_address = (peer, 12345)
+        handler.rfile = io.BytesIO(request)
+        handler.wfile = io.BytesIO()
+        handler.connection = SimpleNamespace()
+        handler.handle_one_request()
+        return int(handler.wfile.getvalue().split(b" ", 2)[1])
+
+    @staticmethod
+    def _get(path: str, *headers: tuple[str, str]) -> bytes:
+        lines = [f"GET {path} HTTP/1.1", *(f"{name}: {value}" for name, value in headers)]
+        return ("\r\n".join(lines) + "\r\n\r\n").encode()
+
+    @staticmethod
+    def _post(path: str, *headers: tuple[str, str]) -> bytes:
+        lines = [f"POST {path} HTTP/1.1", "Content-Length: 2"]
+        lines += [f"{name}: {value}" for name, value in headers]
+        return ("\r\n".join(lines) + "\r\n\r\n{}").encode()
+
+    def test_the_page_and_a_local_client_still_reach_the_terminal(self) -> None:
+        for headers in (_PAGE_FETCH, _LOCAL_CLIENT):
+            with self.subTest(headers=headers):
+                self.assertEqual(200, self._status(self._get("/api/interaction/state", *headers)))
+                status = self._status(
+                    self._get("/api/interaction/origin?harness=claude&sid=s", *headers)
+                )
+                self.assertEqual(200, status)
+        self.assertEqual(
+            200,
+            self._status(self._post("/api/interaction/probe-unregistered", *_LOCAL_CLIENT)),
+        )
+        self.assertEqual(
+            200, self._status(self._post("/api/interaction/probe-unregistered", *_PAGE_POST))
+        )
+
+    def test_a_peer_on_the_network_is_refused(self) -> None:
+        host = ("Host", "10.0.0.5:8000")
+        wildcard = "0.0.0.0"
+        for path in self.READS:
+            with self.subTest(path=path):
+                status = self._status(self._get(path, host), peer="10.0.0.5", bound=wildcard)
+                self.assertEqual(403, status)
+        status = self._status(
+            self._post("/api/interaction/probe-unregistered", host),
+            peer="10.0.0.5",
+            bound=wildcard,
+        )
+        self.assertEqual(403, status)
+
+    def test_an_allowed_name_through_a_loopback_proxy_is_refused(self) -> None:
+        name = (("Host", "vm.exe.xyz"), ("Sec-Fetch-Site", "same-origin"))
+        for path in self.READS:
+            with self.subTest(path=path):
+                status = self._status(self._get(path, *name), bound="0.0.0.0")
+                self.assertEqual(403, status)
+
+    def test_a_navigation_another_local_port_or_a_proxy_is_refused(self) -> None:
+        host = ("Host", "127.0.0.1:8000")
+        navigate = (("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "document"))
+        for label, headers in (
+            ("cross-site tab", (("Sec-Fetch-Site", "cross-site"), *navigate)),
+            ("typed into a tab", (("Sec-Fetch-Site", "none"), *navigate)),
+            ("frame", (("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Dest", "iframe"))),
+            ("another local port", (("Sec-Fetch-Site", "same-site"),)),
+            ("a proxy", (("X-Forwarded-For", "203.0.113.9"),)),
+        ):
+            for path in self.READS:
+                with self.subTest(caller=label, path=path):
+                    self.assertEqual(403, self._status(self._get(path, host, *headers)))
+
+
+class TransferEncodingTest(unittest.TestCase):
+    """A POST body is framed by Content-Length alone; a transfer coding is refused.
+
+    Read as the old route read it, a chunked body counted as zero bytes and the route ran on
+    an empty payload. The server speaks HTTP/1.0 and closes after each request, so the chunk
+    bytes were never parsed as a second request, but the handler must not guess at framing.
+    """
+
+    def _responses(self, request: bytes) -> tuple[list[int], Any]:
+        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+        handler.server = SimpleNamespace(
+            bound_host="127.0.0.1",
+            server_port=8000,
+            application=build_app(),
+            page_bytes=PAGE_BYTES,
+            observation=None,
+            interaction_prototype=None,
+        )
+        handler.client_address = ("127.0.0.1", 12345)
+        handler.rfile = io.BytesIO(request)
+        handler.wfile = io.BytesIO()
+        handler.connection = SimpleNamespace()
+        stopped = time.monotonic()
+        with mock.patch.object(time, "monotonic", lambda: stopped):
+            handler.handle()
+        statuses = re.findall(rb"^HTTP/1\.[01] (\d{3})", handler.wfile.getvalue(), re.MULTILINE)
+        return [int(status) for status in statuses], handler
+
+    def test_a_post_with_a_transfer_coding_is_refused_and_its_connection_closed(self) -> None:
+        for framing in (
+            b"Transfer-Encoding: chunked\r\n",
+            b"Transfer-Encoding: chunked\r\nContent-Length: 2\r\n",
+            b"Content-Length: 2\r\nTransfer-Encoding: identity\r\n",
+        ):
+            with self.subTest(framing=framing):
+                request = (
+                    b"POST /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:8000\r\n"
+                    + framing
+                    + b"\r\n2\r\n{}\r\n0\r\n\r\n"
+                )
+                statuses, handler = self._responses(request)
+                self.assertEqual([501], statuses)
+                self.assertTrue(handler.close_connection)
+
+    def test_a_content_length_post_is_still_routed(self) -> None:
+        request = (
+            b"POST /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:8000\r\n"
+            b"Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{}"
+        )
+        statuses, _handler = self._responses(request)
+        self.assertEqual([404], statuses)
+
+
+class ConnectionBoundTest(unittest.TestCase):
+    """Every connection holds a thread, so connections are capped and a silent one ends."""
+
+    def _serve(self, limit: int) -> http_api.CompassHTTPServer:
+        bounded = type("Bounded", (http_api.CompassHTTPServer,), {"CONNECTION_LIMIT": limit})
+        httpd: http_api.CompassHTTPServer = bounded(("127.0.0.1", 0), build_app(), PAGE_BYTES)
+        thread = threading.Thread(target=poll_fast(httpd), daemon=True)
+        thread.start()
+
+        def stop() -> None:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=2)
+
+        self.addCleanup(stop)
+        return httpd
+
+    def _connect(self, httpd: http_api.CompassHTTPServer, timeout: float) -> socket.socket:
+        client = socket.create_connection(("127.0.0.1", httpd.server_port), timeout=timeout)
+        self.addCleanup(client.close)
+        return client
+
+    def _health_eventually(self, httpd: http_api.CompassHTTPServer) -> int:
+        deadline = time.monotonic() + WAIT_SEC
+        status = 0
+        while time.monotonic() < deadline:
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5.0)
+            try:
+                connection.request("GET", "/api/health")
+                status = connection.getresponse().status
+            except (OSError, http.client.HTTPException):
+                status = 0
+            finally:
+                connection.close()
+            if status == 200:
+                break
+            time.sleep(0.05)
+        return status
+
+    def test_a_connection_over_the_limit_is_refused_at_once(self) -> None:
+        httpd = self._serve(1)
+        held = self._connect(httpd, WAIT_SEC)
+        # A refusal is written as soon as the connection is accepted. Queued behind the held
+        # one instead, it would wait out the whole idle timeout and then be served.
+        refused = self._connect(httpd, 5.0)
+        self.assertIn(b" 503 ", refused.recv(64).split(b"\r\n", 1)[0])
+        held.close()
+        self.assertEqual(200, self._health_eventually(httpd))
+
+    def test_an_idle_connection_is_closed_and_returns_its_slot(self) -> None:
+        with mock.patch.object(http_api._RequestHandler, "timeout", 0.3):
+            httpd = self._serve(1)
+            idle = self._connect(httpd, 5.0)
+            self.assertEqual(b"", idle.recv(1), "the server must end a connection that is silent")
+            self.assertEqual(200, self._health_eventually(httpd))
+
+    def test_the_shipped_handler_ends_a_silent_connection(self) -> None:
+        self.assertIsNotNone(http_api._RequestHandler.timeout)
 
 
 class VerificationFixTest(unittest.TestCase):
@@ -7613,7 +8013,7 @@ class SummaryStoreHTTPTest(unittest.TestCase):
             application=self.application, server_port=12345, record_cursor_key=b"k"
         )
         handler.path = path
-        handler.headers = {"Content-Length": str(len(body)), "Host": "127.0.0.1:12345"}
+        handler.headers = _headers({"Content-Length": str(len(body)), "Host": "127.0.0.1:12345"})
         handler.client_address = ("127.0.0.1", 10000)
         handler.rfile = io.BytesIO(body)
         handler._send = mock.Mock()
@@ -7657,7 +8057,7 @@ class SummaryStoreHTTPTest(unittest.TestCase):
         ):
             with self.subTest(headers=headers):
                 handler = self.handler(body=b"invalid JSON")
-                handler.headers.update(headers)
+                _replace_headers(handler.headers, headers)
                 with mock.patch.object(self.store, "delete") as delete:
                     handler.do_POST()
                     handler._reject.assert_called_once_with(403)
@@ -7953,7 +8353,7 @@ class SummaryJobHTTPTest(unittest.TestCase):
                 {"Host": "evil.example"},
             ):
                 handler = self.handler(path, b"invalid")
-                handler.headers.update(headers)
+                _replace_headers(handler.headers, headers)
                 with (
                     mock.patch.object(
                         handler, "_read_body", side_effect=AssertionError("body read")

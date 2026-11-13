@@ -229,6 +229,16 @@ def normalize_host(value: str) -> str:
     return name.lower() if port.isdigit() else ""
 
 
+def _same_host(first: str | None, second: str | None) -> bool:
+    """Whether two parsed hostnames name one host: equal addresses, or equal names."""
+    if not first or not second:
+        return False
+    try:
+        return ipaddress.ip_address(first) == ipaddress.ip_address(second)
+    except ValueError:
+        return first.lower() == second.lower()
+
+
 def reuse_address_allowed(os_name: str) -> bool:
     """Whether the listening socket should set ``SO_REUSEADDR``.
 
@@ -279,6 +289,18 @@ class CompassHTTPServer(ThreadingHTTPServer):
     interpreter without either one answering with the other's data.
     """
 
+    # Every connection costs a thread and a descriptor for as long as it lives. The
+    # legitimate long-lived ones are bounded already: 8 SSE streams (`stream_max_clients`),
+    # INTERACTION_STREAM_LIMIT terminal sockets, one browser's 6-socket pool per origin, an
+    # MCP poll held at most `ask_poll_timeout_sec` per asking session, and hook POSTs that
+    # last milliseconds. 64 is several times that sum and well under macOS's default soft
+    # limit of 256 descriptors, which the collection's own file reads share.
+    CONNECTION_LIMIT: ClassVar[int] = 64
+
+    # Concurrent read-only terminal sockets. Above Chrome's six per origin, for the reason
+    # `stream_max_clients` is: a board's own tabs never meet it.
+    INTERACTION_STREAM_LIMIT: ClassVar[int] = 8
+
     def __init__(
         self,
         address: tuple[str, int],
@@ -307,7 +329,39 @@ class CompassHTTPServer(ThreadingHTTPServer):
         # decide whether a non-loopback Host header is the operator's opt-in
         # (--host 0.0.0.0) rather than a DNS-rebinding probe.
         self.bound_host = address[0]
+        self.connection_slots = threading.BoundedSemaphore(self.CONNECTION_LIMIT)
+        self.interaction_stream_slots = threading.BoundedSemaphore(self.INTERACTION_STREAM_LIMIT)
         super().__init__(address, _RequestHandler)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        # Refused on the accept thread rather than queued: a waiting connection would hold
+        # its socket until a slot freed, which is the exhaustion this cap exists to stop.
+        if not self.connection_slots.acquire(blocking=False):
+            self._refuse_connection(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except RuntimeError:
+            # The thread never started, so nothing else will return the slot.
+            self.connection_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connection_slots.release()
+
+    def _refuse_connection(self, request: Any) -> None:
+        # Non-blocking, because the accept loop must never wait on a peer. A fresh socket's
+        # send buffer is empty, so the write lands whole or not at all.
+        with contextlib.suppress(OSError):
+            request.setblocking(False)
+            request.send(
+                b"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+        self.shutdown_request(request)
 
     def server_close(self) -> None:
         if self.interaction_prototype is not None:
@@ -1421,6 +1475,29 @@ class _RequestHandler(BaseHTTPRequestHandler):
     # reach 127.0.0.1-bound servers through the victim's browser).
     LOCAL_HOSTS: ClassVar[set[str]] = {"127.0.0.1", "localhost", "::1"}
 
+    # Per socket operation, not per request: `StreamRequestHandler.setup` applies it, so a
+    # connection that sends nothing, or stops partway through its request, ends and returns
+    # its slot. Nothing legitimate waits on the socket this long. The server speaks HTTP/1.0
+    # and closes after every response, so there is no idle keep-alive to cut short; the two
+    # long-lived routes only write (SSE sets its own equal `stream_write_timeout_sec`, the
+    # terminal socket reads only when `select` says a frame arrived); and an ask poll's
+    # 10-second hold is a wait on a condition, off the socket.
+    timeout = 10.0
+
+    # Each of these is a single value. `headers.get` answers with the first of a repeated
+    # field, so a second copy could say one thing to a proxy and another to this gate.
+    SINGLE_ADMISSION_HEADERS: ClassVar[tuple[str, ...]] = (
+        "Host",
+        "Origin",
+        "Sec-Fetch-Site",
+        "Sec-Fetch-Mode",
+        "Sec-Fetch-Dest",
+    )
+
+    # A request that passed through a proxy is not a loopback request, whatever socket it
+    # arrived on and whatever Host the proxy forwarded.
+    PROXY_HEADERS: ClassVar[frozenset[str]] = frozenset({"forwarded", "via", "x-real-ip"})
+
     # How much of a rejected POST's body to read and throw away. Generously above
     # every accept-path cap so a rejection drains whatever a legitimate client
     # sent, and still a hard bound so a hostile declared length cannot turn a
@@ -1478,7 +1555,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             declared = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return
-        remaining = max(0, min(declared - self._body_consumed, self.REJECT_DRAIN_CAP_BYTES))
+        self._discard(max(0, min(declared - self._body_consumed, self.REJECT_DRAIN_CAP_BYTES)))
+
+    def _discard(self, remaining: int) -> None:
+        """Read and drop up to `remaining` bytes, within REJECT_DRAIN_SECONDS."""
         if not remaining:
             return
         deadline = time.monotonic() + self.REJECT_DRAIN_SECONDS
@@ -1517,6 +1597,21 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(code)
         else:
             self.send_error(code, why)
+
+    def _refuse_transfer_coding(self) -> None:
+        """Refuse a body framed by a transfer coding, and close the connection.
+
+        Every route sizes its body by Content-Length, so a chunked body read as zero bytes
+        and the route ran on an empty payload. No caller sends one: urllib, http.client and
+        Node's `request(...).end(body)` all send Content-Length, and the page's fetches send
+        string bodies. 501 is RFC 9112's answer to a transfer coding a server does not
+        implement. The Content-Length drain cannot be trusted with a body it does not frame,
+        so whatever has already arrived is discarded within the same bounds, only so the
+        close sends FIN rather than an RST that could swallow the 501.
+        """
+        self.close_connection = True
+        self._discard(self.REJECT_DRAIN_CAP_BYTES)
+        self.send_error(501, "Transfer-Encoding is not supported; send Content-Length")
 
     def _host_admitted(self, host: str) -> bool:
         """Whether a host string is local enough for this server's bind.
@@ -1648,7 +1743,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
             not origins or origins == [dev.python_origin]
         )
 
+    def _single_admission_headers(self) -> bool:
+        """Exactly one Host, at most one of each other admission header, none combined.
+
+        Unconditional, on every bind: the named-host branch below used to be the only place
+        that counted, so a loopback Host ahead of an allowed name skipped the count.
+        """
+        for name in self.SINGLE_ADMISSION_HEADERS:
+            values = self.headers.get_all(name, [])
+            if len(values) > 1 or (name == "Host" and not values):
+                return False
+            if any("," in value for value in values):
+                return False
+        return True
+
     def _local_ok(self, *, allow_cross_site_navigation: bool = False) -> bool:
+        if not self._single_admission_headers():
+            return False
         authority = self.headers.get("Host") or ""
         host = normalize_host(authority)
         if (
@@ -1658,11 +1769,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         ):
             return False
         named = self._name_allowed(host)
-        if named and (
-            self._allowed_authority(authority) is None
-            or len(self.headers.get_all("Host", [])) != 1
-            or len(self.headers.get_all("Origin", [])) > 1
-        ):
+        if named and self._allowed_authority(authority) is None:
             return False
         if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site" and not (
             allow_cross_site_navigation and self._is_document_navigation()
@@ -1675,29 +1782,40 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 if origin is None
                 else self._allowed_origin_ok(authority, origin)
             )
-        return not origin or self._address_origin_ok(origin)
+        return not origin or self._address_origin_ok(authority, origin)
 
-    def _address_origin_ok(self, origin: str) -> bool:
+    def _address_origin_ok(self, authority: str, origin: str) -> bool:
         # Compare the whole origin, not just the host. Every port on this
         # machine is the *same site*, so Sec-Fetch-Site reports "same-site" for
         # a page served from another local port — and a hostname-only check
         # then trusted it. Any unrelated local dev server could POST here
         # (text/plain is CORS-safelisted, so no preflight would stop it).
         parsed = urlparse(origin)
+        # A serialized origin is a scheme and an authority and nothing else. Rebuilt and
+        # compared whole, because urlparse drops an empty "?" or "#" and reads past userinfo.
         if (
             parsed.scheme != "http"
+            or origin[len("http://") :] != parsed.netloc
+            or "@" in parsed.netloc
             or self._name_allowed(parsed.hostname or "")
             or not self._host_admitted(parsed.hostname or "")
         ):
             return False
+        target = urlparse("//" + authority.strip(" \t"))
         listening_port = getattr(self.server, "server_port", None)
         try:
             # Browsers omit the port when it is the scheme default, so
             # "http://localhost" is a legitimate same-origin value on port 80.
             origin_port = parsed.port if parsed.port is not None else 80
+            host_port = target.port if target.port is not None else 80
         except ValueError:
-            return False  # unparseable port in the Origin header
-        return origin_port == listening_port
+            return False  # unparseable port in the Origin or Host header
+        # The page that sent this was served from the authority the request names. Under
+        # --host 0.0.0.0 an origin on another admitted address is another site's page.
+        return (
+            _same_host(parsed.hostname, target.hostname)
+            and origin_port == host_port == listening_port
+        )
 
     def _is_document_navigation(self) -> bool:
         """Whether this is the browser navigating a tab to us, top level.
@@ -1866,9 +1984,29 @@ class _RequestHandler(BaseHTTPRequestHandler):
         site = (self.headers.get("Sec-Fetch-Site") or "").lower()
         return (
             ipaddress.ip_address(self.client_address[0]).is_loopback
+            and not self._proxied()
             and self._loopback_host(self.headers.get("Host") or "")
             and site not in {"same-site", "cross-site"}
             and self._local_ok()
+        )
+
+    def _proxied(self) -> bool:
+        """Whether a proxy says it forwarded this request.
+
+        A local reverse proxy connects from loopback and may pass the client's Host through,
+        so neither the peer nor Host shows the request came from elsewhere. Only these do.
+        """
+        return any(
+            name.lower() in self.PROXY_HEADERS or name.lower().startswith("x-forwarded-")
+            for name in self.headers
+        )
+
+    def _loopback_read_ok(self) -> bool:
+        """`_loopback_resource_ok` for a GET a page fetches and never navigates to."""
+        return (
+            self._loopback_resource_ok()
+            and not self._is_document_navigation()
+            and not self._is_frame_navigation()
         )
 
     def _interaction_asset(self, path: str) -> None:
@@ -1939,6 +2077,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _interaction_get(self, url: ParseResult) -> None:
+        # Live terminal output, so loopback-only like `_interaction_asset`, and never a
+        # navigation: `do_GET` relaxes its check for a cross-site tab, which nothing here is.
+        if not self._loopback_read_ok():
+            self.send_error(403)
+            return
         prototype = self.server.interaction_prototype
         if prototype is None:
             self.send_error(404)
@@ -1952,7 +2095,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(400)
             return
         if route == "stream":
-            self._interaction_stream(prototype)
+            self._interaction_stream_bounded(prototype)
             return
         handler = {"state": prototype.state, "view": prototype.view}.get(route)
         if handler is None:
@@ -1974,8 +2117,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
         result = prototype.resolve_session(self.server.server_port, f"{harness[0]}:{sid[0]}")
         self._send(json.dumps(result, separators=(",", ":")).encode(), "application/json")
 
+    def _interaction_stream_bounded(self, prototype: InteractionPrototype) -> None:
+        slots = self.server.interaction_stream_slots
+        if not slots.acquire(blocking=False):
+            # A refusal, not a queue, as `/api/stream` refuses past its budget.
+            self._reject(503)
+            return
+        try:
+            self._interaction_stream(prototype)
+        finally:
+            slots.release()
+
     def _interaction_stream(self, prototype: InteractionPrototype) -> None:
-        """Upgrade one output-only socket; any client frame revokes the connection."""
+        """Upgrade one output-only socket; any client frame revokes the connection.
+
+        `sendall` to a peer that stopped reading gives up at the handler's socket timeout,
+        so a stalled viewer releases its slot instead of holding it.
+        """
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self._reject(426)
             return
@@ -2327,7 +2485,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         The operator triggers it by clicking "observe" on a session card.
         Strictly same-origin: the route answers only loopback requests.
         """
-        if not self._local_ok():
+        if not self._loopback_read_ok():
             self.send_error(403)
             return
         query = parse_qs(url.query)
@@ -5528,10 +5686,11 @@ class _RequestHandler(BaseHTTPRequestHandler):
         this route into an oracle for which sessions exist.
 
         The ceiling is claimed AFTER the body is read rather than before it, and
-        that ordering is load-bearing too: `_read_body` is a blocking read with
-        no socket timeout, so claiming the one-slot gate first let a peer that
-        sent a `Content-Length` and then nothing hold focus shut for as long as
-        it kept the socket open. Reading first takes no process-wide state on a
+        that ordering is load-bearing too: `_read_body` is a blocking read whose
+        socket timeout bounds each wait for a byte, not the whole body, so
+        claiming the one-slot gate first let a peer that sent a `Content-Length`
+        and then trickled its body hold focus shut for as long as it kept
+        sending. Reading first takes no process-wide state on a
         request that may never finish, and the gate still precedes the raise,
         which is what "a repeated or looped request cannot repeat the raise"
         actually asks for. Nothing about the body distinguishes one session from
@@ -5591,6 +5750,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self._body_consumed = 0
+        if "Transfer-Encoding" in self.headers:
+            self._refuse_transfer_coding()
+            return
         if not self._local_ok():
             self._reject(403)
             return
@@ -5636,6 +5798,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         route()
 
     def _interaction_post(self, route: str) -> None:
+        if not self._loopback_resource_ok():
+            self._reject(403)
+            return
         prototype = self.server.interaction_prototype
         if prototype is None:
             self._reject(404)
@@ -5648,7 +5813,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(413)
             return
         try:
-            body = json.loads(self.rfile.read(length) or b"null")
+            body = json.loads(self._read_body(length) or b"null")
         except (ValueError, json.JSONDecodeError, RecursionError):
             body = None
         if not isinstance(body, dict):

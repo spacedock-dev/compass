@@ -506,6 +506,89 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
         finally:
             client.close()
 
+    def _upgrade_status(self, *extra: str) -> bytes:
+        client = socket.create_connection(("127.0.0.1", self.httpd.server_port), timeout=30)
+        try:
+            lines = [
+                "GET /api/interaction/stream HTTP/1.1",
+                f"Host: 127.0.0.1:{self.httpd.server_port}",
+                f"Origin: http://127.0.0.1:{self.httpd.server_port}",
+                "Upgrade: websocket",
+                "Connection: Upgrade",
+                "Sec-WebSocket-Version: 13",
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+                *extra,
+            ]
+            client.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+            return client.recv(64).split(b"\r\n", 1)[0]
+        finally:
+            client.close()
+
+    def test_the_page_socket_upgrades_and_a_proxied_or_cross_port_socket_does_not(self) -> None:
+        self._request("GET", "/api/interaction/state")
+        browser = ("Sec-Fetch-Site: same-origin", "Sec-Fetch-Mode: websocket")
+        for extra, expected in (
+            ((*browser, "Sec-Fetch-Dest: websocket"), b" 101 "),
+            (("Sec-Fetch-Site: same-site", "Sec-Fetch-Mode: websocket"), b" 403 "),
+            ((*browser, "X-Forwarded-For: 203.0.113.9"), b" 403 "),
+        ):
+            with self.subTest(extra=extra):
+                self.assertIn(expected, self._upgrade_status(*extra))
+
+    def test_a_quiet_stream_outlives_the_connection_timeout(self) -> None:
+        # The socket timeout bounds one send or read, not a stream: this socket only writes,
+        # so a terminal with nothing to say for longer than the timeout keeps its viewer.
+        with mock.patch.object(http_api._RequestHandler, "timeout", 0.2):
+            self._request("GET", "/api/interaction/state")
+            client = self._open_stream()
+            try:
+                self._read_stream_frame(client)
+                time.sleep(1.0)
+                self.adapter.emit_frame()
+                opcode, payload = self._read_stream_frame(client)
+                self.assertEqual(1, opcode)
+                self.assertIn("stream frame 2", json.loads(payload)["data"])
+            finally:
+                client.close()
+
+    def test_streams_beyond_the_limit_are_refused_rather_than_held(self) -> None:
+        self._request("GET", "/api/interaction/state")
+        limit = http_api.CompassHTTPServer.INTERACTION_STREAM_LIMIT
+        held = [self._open_stream() for _index in range(limit)]
+        try:
+            self.assertIn(b" 503 ", self._upgrade_status())
+            held.pop().close()
+            deadline = time.monotonic() + 30
+            status = b""
+            while time.monotonic() < deadline:
+                status = self._upgrade_status()
+                if b" 101 " in status:
+                    break
+                time.sleep(0.05)
+            self.assertIn(b" 101 ", status)
+        finally:
+            for client in held:
+                client.close()
+
+    def test_a_refused_body_is_read_once(self) -> None:
+        # Reading the body around `_read_body` left the drain to read it a second time: on a
+        # socket that stalls the refusal for the whole drain deadline, and here it reads the
+        # bytes that follow the body.
+        handler: Any = http_api._RequestHandler.__new__(http_api._RequestHandler)
+        handler.headers = http.client.HTTPMessage()
+        handler.headers["Content-Length"] = "2"
+        handler.rfile = io.BytesIO(b"[]" + b"after the body")
+        handler.server = SimpleNamespace(interaction_prototype=self.prototype)
+        handler._body_consumed = 0
+        sent: list[int] = []
+        with (
+            mock.patch.object(handler, "_loopback_resource_ok", return_value=True),
+            mock.patch.object(handler, "send_error", lambda code, *_args: sent.append(code)),
+        ):
+            handler._interaction_post("register")
+        self.assertEqual([400], sent)
+        self.assertEqual(2, handler.rfile.tell())
+
 
 class InteractionPrototypeDisabledTest(unittest.TestCase):
     def test_normal_dashboard_has_no_prototype_routes(self) -> None:
