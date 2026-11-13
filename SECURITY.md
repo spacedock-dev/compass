@@ -3953,6 +3953,12 @@ uid. Platforms without the POSIX no-follow and ownership checks refuse this sour
 semantic backfill limit applies to transcripts, not dispatch artifacts: a dispatch is a short
 Markdown file, and a transcript-sized allowance would let a planted artifact force a large read.
 
+`spacedock.read_dispatch_artifact` is the one reader of either directory. The project context and
+the Codex collector both call it, and the entry is opened with `O_NONBLOCK` so a planted named pipe
+is refused instead of stalling collection. The Codex collector reads only the legacy `/tmp` path
+(on macOS that is `/private/tmp`), takes at most the first 40 lines of 2,048 bytes each from what
+the reader returns, and keeps a title, a stage and a workflow directory from them.
+
 `SPACEDOCK_BIN`, when set, must be absolute; otherwise discovery resolves `spacedock` and also
 requires an absolute result. Accepting a relative override or resolution could execute a planted
 program when the working directory is on `PATH`. The child gets only `PATH` (the OS default),
@@ -4690,6 +4696,8 @@ The operator-cockpit prototype also reads dispatch evidence:
 
 - `collectors.codex._child_assignment` reads `spawn_agent` and `followup_task` arguments from
   the bounded transcript tail, matching a child task or target before summarizing its message.
+  When that message is unreadable it falls back to the child's dispatch artifact, read through
+  the checked reader in [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads).
 - `project_context._tool_call_events` and `project_context._tool_support` read Pi `bash` and
   `subagent` arguments for dispatch events, assignment summaries, and counts. The first reads
   through `project_context._call_arguments`, which the Pi check reader shares, so the check
