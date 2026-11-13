@@ -516,6 +516,28 @@ class RequestPathTest(unittest.TestCase):
             terminal_client.Refusal(terminal_client.sentence("dashboard_busy")), answer
         )
 
+    def test_a_post_that_may_wait_gets_the_route_s_answer_once_the_cap_clears(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            reply = terminal_client.post(
+                httpd.server_port, "/api/no-such-route", {}, timeout=5.0, wait_when_busy=True
+            )
+        self.assertEqual(404, reply.status)
+
+    def test_a_post_that_may_wait_and_never_gets_a_slot_is_busy_not_answered(self) -> None:
+        # Busy is a kind of unreachable: a caller that already copes with no answer keeps its
+        # own retry budget, rather than reading the cap's empty 503 as the route refusing it.
+        with (
+            support.saturated_server() as (httpd, _release),
+            self.assertRaises(terminal_client.DashboardBusy),
+        ):
+            terminal_client.post(
+                httpd.server_port, "/api/no-such-route", {}, timeout=0.5, wait_when_busy=True
+            )
+        self.assertTrue(
+            issubclass(terminal_client.DashboardBusy, terminal_client.DashboardUnreachable)
+        )
+
     def test_a_failure_after_the_caps_refusal_is_still_busy(self) -> None:
         # A dashboard that refused at its cap and then timed out is still a dashboard: read as
         # "nothing there", --forget or an automatic start would act on a port it holds.

@@ -23,6 +23,7 @@ from compass_runtime import monitor_store
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
 
+from .support import saturated_server
 from .test_terminal_client import FakeDashboard
 
 
@@ -203,6 +204,38 @@ class SidecarTest(unittest.TestCase):
         self.assertEqual("unreachable", reason)
         self.assertLessEqual(self.now, 31)
         self.assertTrue(post.called)
+
+    def test_a_person_s_beat_at_the_connection_cap_keeps_the_lease(self) -> None:
+        # The first beat is sent, with whatever the holder asks of the transport, to a dashboard
+        # whose one connection slot is taken. Read as an answer, the cap's empty 503 ended the
+        # lease as "refused"; it is a busy dashboard, retried within the failure budget.
+        ended = {
+            "ok": False,
+            "reason": "not-monitoring",
+            "state": {"on": False, "last_end": {"reason": "left"}},
+        }
+
+        def post(port: int, path: str, payload: Any, **kwargs: Any) -> client.Reply:
+            del port
+            self.actions.append(payload["action"])
+            if len(self.actions) > 1:
+                return client.Reply(200, ended)
+            with saturated_server() as (httpd, _release):
+                return client.post(httpd.server_port, path, payload, **{**kwargs, "timeout": 0.3})
+
+        reason = monitor.hold(
+            self.dashboard,
+            "one",
+            "generation",
+            clock=lambda: self.now,
+            wait=self.wait,
+            stopped=lambda: False,
+            alive=lambda: True,
+            post=post,
+            probe=lambda *_a, **_k: self.dashboard,
+        )
+        self.assertEqual("left", reason)
+        self.assertEqual(["beat", "beat"], self.actions)
 
     def test_a_person_s_idle_session_cannot_leave_an_orphan_forever(self) -> None:
         self.assertEqual("idle", self.run_loop())

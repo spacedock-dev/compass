@@ -396,6 +396,9 @@ def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state 
                             "visible": True,
                         },
                         timeout=min(5.0, max(0.001, FAILURE_SEC - (clock() - failed_at))),
+                        # The cap's refusal is not an answer: a busy dashboard counts against
+                        # this failure budget, as one that does not answer does.
+                        wait_when_busy=True,
                     )
                     if isinstance(found, client.Dashboard)
                     else None

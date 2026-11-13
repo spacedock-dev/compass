@@ -37,6 +37,8 @@ MAX_CAPTURE_CHARS: Final = 12_000
 MAX_STREAM_FRAMES: Final = 512
 MAX_STREAM_BYTES: Final = 65_536
 MAX_REGISTRATION_BYTES: Final = 16_384
+# Between two tries at a dashboard at its connection cap, as `loopback_transport` waits.
+BUSY_PAUSE_SEC: Final = 0.05
 SESSION_ENVIRONMENT: Final = {
     "codex": "CODEX_THREAD_ID",
     "claude": "CLAUDE_CODE_SESSION_ID",
@@ -170,6 +172,10 @@ class OriginAdapter(Protocol):
         """Stop only the disposable substrate created by this adapter."""
 
 
+class DashboardBusyError(Exception):
+    """Every try within the budget met the dashboard's connection-cap refusal."""
+
+
 def request(
     port: int,
     method: str,
@@ -178,15 +184,50 @@ def request(
     *,
     timeout: float = 2.0,
 ) -> tuple[int, dict[str, Any]]:
-    """Make one bounded loopback request from the disposable client."""
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    """Make one bounded loopback request from the disposable client.
+
+    A dashboard at its connection cap answers with an empty 503 carrying Retry-After before it
+    reads the request, which read as an answer said "refused" with no reason. That refusal is
+    tried again within `timeout`, and DashboardBusyError says every try met it, or that a try
+    after one failed outright. This is `loopback_transport.exchange`'s busy rule, kept here
+    because this file also runs as a script in the pane, where `compass_runtime` is not
+    importable.
+    """
     raw = None if body is None else json.dumps(body, separators=(",", ":")).encode()
     headers = {"Content-Type": "application/json"} if raw is not None else {}
+    deadline = time.monotonic() + timeout
+    refused = False
+    while True:
+        try:
+            status, retry_after, answer = _request_once(
+                port, method, path, raw, headers, max(deadline - time.monotonic(), 0.001)
+            )
+        except (OSError, http.client.HTTPException) as error:
+            if refused:
+                raise DashboardBusyError(port) from error
+            raise
+        if status != 503 or retry_after is None:
+            value = json.loads(answer or b"{}")
+            return status, value if isinstance(value, dict) else {}
+        refused = True
+        if deadline - time.monotonic() <= BUSY_PAUSE_SEC:
+            raise DashboardBusyError(port)
+        time.sleep(BUSY_PAUSE_SEC)
+
+
+def _request_once(
+    port: int,
+    method: str,
+    path: str,
+    raw: bytes | None,
+    headers: dict[str, str],
+    timeout: float,
+) -> tuple[int, str | None, bytes]:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     try:
         connection.request(method, path, body=raw, headers=headers)
         response = connection.getresponse()
-        value = json.loads(response.read() or b"{}")
-        return response.status, value if isinstance(value, dict) else {}
+        return response.status, response.getheader("Retry-After"), response.read()
     finally:
         connection.close()
 
@@ -1068,7 +1109,7 @@ def _run_tmux_client(
                 "origin": origin.as_dict(),
             },
         )
-    except (OSError, ValueError, OriginUnavailableError) as exc:
+    except (OSError, ValueError, OriginUnavailableError, DashboardBusyError) as exc:
         print(f"registration failed: {type(exc).__name__}", flush=True)
         return 1
     if status != 200 or registered.get("state") != "registered":
@@ -1087,6 +1128,7 @@ def _run_tmux_client(
     )
     renewal_count = 0
     interval = max(0.05, lease_sec / 3)
+    renewed_at = time.monotonic()
     while True:
         time.sleep(interval)
         try:
@@ -1096,6 +1138,13 @@ def _run_tmux_client(
                 "/api/interaction/renew",
                 {"origin_id": origin_id, "lease_token": lease_token},
             )
+        except DashboardBusyError:
+            # Busy is not a refusal: only the dashboard ends the lease. Keep trying until it
+            # would have lapsed, after which a renewal could only be refused.
+            if time.monotonic() - renewed_at >= lease_sec:
+                print("renewal stopped: dashboard busy", flush=True)
+                return 0
+            continue
         except (OSError, ValueError):
             print("renewal stopped: dashboard disconnected", flush=True)
             return 0
@@ -1103,6 +1152,7 @@ def _run_tmux_client(
             print(f"renewal refused: {renewed.get('reason', 'unknown')}", flush=True)
             return 0
         renewal_count += 1
+        renewed_at = time.monotonic()
         print(f"lease renewed {renewal_count}", flush=True)
 
 
