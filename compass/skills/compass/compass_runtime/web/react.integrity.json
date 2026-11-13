@@ -1803,11 +1803,11 @@
       },
       {
         "file": "package.json",
-        "sha256": "efc011003d62b57a4a2453890c232f4bba5c5bd66b8226d660b19c359ab7fb94"
+        "sha256": "97156f4757fe27f460514a85832aac9e989417cf443ad787497146332346685e"
       },
       {
         "file": "pnpm-lock.yaml",
-        "sha256": "94f0a592b109ebaef9235195bf61fdecf93ff0c9df555ae50fdd502ff50c878e"
+        "sha256": "021642670809b4cb75ae336129d569e2b6121c88ccf0536f37ab22400a3d301c"
       }
     ]
   }

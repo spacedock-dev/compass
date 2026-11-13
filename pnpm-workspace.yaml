@@ -16,3 +16,13 @@ strictDepBuilds: true
 allowBuilds: {}
 dangerouslyAllowAllBuilds: false
 sideEffectsCache: false
+# Patched transitive devDependencies with published advisories: undici via jsdom and vitest,
+# glob and minimatch via the Storybook docgen plugin, and nonrecursive-glob-match, which
+# minimatch 11 adds. Exact, and at least two weeks old when chosen, as the direct pins are
+# (docs/design-shadcn-adoption.md, "Component stories"). Drop each once its parent's own range
+# resolves to a patched release.
+overrides:
+  undici: "8.12.3"
+  glob: "14.0.3"
+  minimatch: "11.0.3"
+  "@isaacs/nonrecursive-glob-match": "1.0.3"
