@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2327423,
+    "bytes": 2328127,
     "file": "react.html",
-    "sha256": "689dda3e80e86fe22f6d434564dc281bd5b7a27ae47843d7eab6eec9048128ce"
+    "sha256": "a4e25f285a9adc12f9883d78cb7fc35393137666b2b0a4166ba096af22f0802c"
   },
   "format": 1,
   "frontend": "react",
@@ -279,7 +279,7 @@
       },
       {
         "file": "frontend/src/api/client.ts",
-        "sha256": "b28bfe1c5d158db3d036628a7c5f8c5b6afd4322530db5930a1e4a5b89938247"
+        "sha256": "581852804031ec97fc3d21a9f156362a3c3677cea38c5abe5884b53eed4a4970"
       },
       {
         "file": "frontend/src/api/explanations.ts",
@@ -331,7 +331,7 @@
       },
       {
         "file": "frontend/src/api/types.ts",
-        "sha256": "82a3aed31ff0d3cf7bd36ffe7aaa15eaed1e3452b722b8cc79e48577823033a8"
+        "sha256": "58ba3e32fd8bbc0076b3093fbdb5b4fc370c48a47c8cca5ef4eefbb5e5bac4c2"
       },
       {
         "file": "frontend/src/attention/AttentionAnnouncer.tsx",
@@ -927,7 +927,7 @@
       },
       {
         "file": "frontend/src/intent/liveMonitor.ts",
-        "sha256": "6db655b09b83768b65d6ee2dcb4350dd281d3f38ff610d69a7430e19720bb351"
+        "sha256": "6f4dcd17db624bdcdd726e340b410a9901bb60025483f65d4ea3e655ff2ec6b6"
       },
       {
         "file": "frontend/src/intent/logContext.ts",

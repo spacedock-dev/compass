@@ -5543,7 +5543,12 @@ server serves at most 64 at once and answers the next with a 503 carrying `Retry
 closes it rather than queuing it. The MCP server's poll and the `--status`, `--stop` and terminal
 health probes wait that refusal out within their own timeouts rather than reading it as an answer;
 a probe that never gets past it says the dashboard is busy and stops nothing. The terminal Live
-monitor holder's heartbeat and the tmux interaction client's lease renewal wait it out too, so a
+monitor's start request waits it out too, and says the dashboard is busy rather than that the
+start was refused. Its stop request is sent even when the probe met the cap, and when no slot
+frees in time `--monitor off` says the dashboard was not told and may still show Live monitor on
+until it notices. The page's Live monitor start and beats send again a few times and then show
+the dashboard as unreachable. The terminal Live monitor
+holder's heartbeat and the tmux interaction client's lease renewal wait it out too, so a
 busy dashboard does not end a lease: the holder counts it against its failure budget, and the pane
 client keeps trying until its lease would have lapsed. A connection that sends nothing for 10
 seconds, or stops partway through its request for as long, is closed and its slot returned. The

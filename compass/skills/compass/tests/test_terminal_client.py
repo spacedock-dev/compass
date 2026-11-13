@@ -507,6 +507,35 @@ class RequestPathTest(unittest.TestCase):
             answer = terminal_client.probe(httpd.server_port, timeout=5.0)
         self.assertIsInstance(answer, terminal_client.Dashboard)
 
+    def test_a_post_waits_out_a_dashboard_at_its_connection_cap(self) -> None:
+        with support.saturated_server() as (httpd, release):
+            threading.Timer(0.3, release).start()
+            reply = terminal_client.post(
+                httpd.server_port, "/api/live-monitor", {"action": "stop"}, wait_when_busy=True
+            )
+        self.assertNotEqual(503, reply.status)
+
+    def test_a_post_at_a_cap_that_never_clears_says_busy_not_unreachable_text(self) -> None:
+        with (
+            support.saturated_server() as (httpd, _release),
+            self.assertRaises(terminal_client.DashboardBusy) as busy,
+        ):
+            terminal_client.post(
+                httpd.server_port,
+                "/api/live-monitor",
+                {"action": "stop"},
+                timeout=0.5,
+                wait_when_busy=True,
+            )
+        self.assertIn("every connection in use", str(busy.exception))
+
+    def test_a_post_without_the_wait_gets_the_refusal_as_a_reply(self) -> None:
+        with support.saturated_server() as (httpd, _release):
+            reply = terminal_client.post(
+                httpd.server_port, "/api/live-monitor", {"action": "stop"}, timeout=2.0
+            )
+        self.assertEqual(503, reply.status)
+
     def test_a_dashboard_still_at_its_cap_is_said_to_be_busy(self) -> None:
         # Not "nothing there": a terminal command that read it that way would start a second
         # dashboard on a port the first still holds.
