@@ -144,7 +144,10 @@ def read_dispatch_artifact(artifact: str) -> bytes:
         with contextlib.ExitStack() as stack:
             directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             stack.callback(os.close, directory_fd)
-            if os.fstat(directory_fd).st_uid != os.getuid():
+            # A group- or world-writable directory lets another account create a name in it,
+            # and the sticky bit does not prevent that, so either write bit refuses.
+            directory_info = os.fstat(directory_fd)
+            if directory_info.st_uid != os.getuid() or directory_info.st_mode & 0o022:
                 return b""
             descriptor = os.open(
                 os.path.basename(artifact),
@@ -157,6 +160,9 @@ def read_dispatch_artifact(artifact: str) -> bytes:
                     not stat_module.S_ISREG(info.st_mode)
                     or info.st_uid != os.getuid()
                     or info.st_mode & 0o022
+                    # A second name is a hard-link plant; macOS has no protected_hardlinks.
+                    # Spacedock writes each file in place, so its own files have one link.
+                    or info.st_nlink != 1
                     or info.st_size > DISPATCH_MAX_BYTES
                 ):
                     return b""

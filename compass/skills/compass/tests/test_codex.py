@@ -1706,6 +1706,20 @@ class CodexDispatchArtifactSecurityTest(unittest.TestCase):
                 self.artifact.chmod(mode)
                 self.assert_refused()
 
+    def test_group_or_world_writable_directory_is_refused(self) -> None:
+        # A sticky bit does not help: another account can still create a new name there.
+        for mode in (0o777, 0o1777, 0o720):
+            with self.subTest(mode=oct(mode)):
+                self.directory.chmod(mode)
+                self.assert_refused()
+        self.directory.chmod(0o755)
+        self.assertEqual("Project cockpit and remembered goal", self.metadata()[0])
+
+    def test_hard_linked_artifact_is_refused(self) -> None:
+        os.link(self.artifact, self.root / "second-name.md")
+        self.assertEqual(2, self.artifact.stat().st_nlink)
+        self.assert_refused()
+
     def test_artifact_owned_by_another_uid_is_refused(self) -> None:
         fstat = os.fstat
 
