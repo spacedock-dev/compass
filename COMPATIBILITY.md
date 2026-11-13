@@ -216,4 +216,14 @@ agy plugin validate ./compass
      pass added the ledger's local-load table to the AGENTS.md doc map and `test_ci_read_gitlab`
      to that table's supervise reap row. -->
 
-<!-- docs-synced-through: e099f62a (2026-11-09) -->
+<!-- Reconciled 0373944b..793a6610: the dashboard's request-handling hardening and the model lane's
+     settings checks, with no harness or platform matrix change. Twelve pull requests, each with
+     its own docs: a dependency patch for the test tooling, Codex dispatch files read through the
+     checked reader, glab config split on yaml.v3's line breaks, quota requests sent only to the
+     vendor's HTTPS endpoint with no redirects or proxies, single matching Host and Origin
+     headers with bounded slow or idle connections and a 30 second request deadline, every model
+     call checked against Claude Code and Codex settings, and the Live monitor waiting out a
+     full dashboard in the terminal and on the page. This pass found no cross-PR drift in
+     SECURITY.md, the manuals or the design records, and changed nothing but this stamp. -->
+
+<!-- docs-synced-through: 793a6610 (2026-11-13) -->
