@@ -65,7 +65,12 @@ decide whether to print its one-line notice. A hook's working directory is insid
 repository, so `uv` is looked up only on PATH elements no working directory can reinterpret (a
 relative, empty or `.` element is skipped, and on Windows so is a driveless root), `uv` itself is
 given only those elements to search, and the interpreter it reports must be a full path. Antigravity's hook still prints `{}` through it
-on every path.
+on every path. A hook whose script cannot be opened, as when the plugin is upgraded or removed while
+a session runs, exits 0 having printed only `{}` (Antigravity's hook), an empty line (its status
+line) or nothing, at any Python version, because Claude Code, Codex, Gemini CLI and Droid read a
+hook's exit 2 as a decision to block the prompt or tool call. Below the floor the launcher holds at
+most 1 MiB and one byte of a hook's payload, and a payload longer than any hook reads is not
+forwarded: the hook exits 0 the same way.
 
 The third kind is one stdio MCP server, `mcp_server.py`, described under The ask lane below. It is
 not a forwarder and shares none of the four's transport: a harness spawns it, it speaks JSON-RPC on
