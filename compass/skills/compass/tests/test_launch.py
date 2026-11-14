@@ -653,6 +653,45 @@ class LauncherRootedRuleTest(unittest.TestCase):
         self.assertTrue(qualified)
         self.assertEqual("C:\\bin", search)
 
+    def test_on_windows_a_planted_uv_does_not_hide_the_real_one(self) -> None:
+        # Real files named as `ntpath` joins them, in a fresh current folder: see
+        # `test_rooted_path.windows`.
+        from .test_rooted_path import plant, windows  # noqa: PLC0415
+
+        launch: Any = _load_launcher()
+        started: list[str] = []
+
+        def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            started.append(argv[0])
+            return subprocess.CompletedProcess(argv, 1, b"", b"")
+
+        with windows("C:\\Tools;\\tools"), mock.patch.object(subprocess, "run", run):
+            plant(".\\uv.exe")
+            plant("uv.exe")
+            plant("\\tools\\uv.exe")
+            self.assertIsNone(launch.find_new_python())
+            self.assertEqual([], started, "a planted or driveless uv was started")
+            plant("C:\\Tools\\uv.exe")
+            launch.find_new_python()
+            agrees = rooted_path.which("uv")
+        self.assertEqual(["C:\\Tools\\uv.exe"], started)
+        self.assertEqual("C:\\Tools\\uv.exe", agrees)
+
+    def test_the_lookup_agrees_with_the_runtime_on_posix(self) -> None:
+        launch: Any = _load_launcher()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            shims, brew = root / ".pyenv" / "shims", root / "opt" / "homebrew" / "bin"
+            for folder in (shims, brew):
+                folder.mkdir(parents=True)
+                program = folder / "uv"
+                program.write_text("#!/bin/sh\n", encoding="utf-8")
+                program.chmod(0o755)
+            search = os.pathsep.join([str(shims), str(brew)])
+            with mock.patch.dict(os.environ, {"PATH": search}):
+                self.assertEqual(str(shims / "uv"), launch.lookup("uv", search))
+                self.assertEqual(rooted_path.which("uv"), launch.lookup("uv", search))
+
     def test_a_current_directory_answer_from_which_is_refused(self) -> None:
         # Windows `shutil.which` searches the current directory first before 3.12, whatever
         # PATH it is handed, and answers `.\\uv.exe`.

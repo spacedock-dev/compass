@@ -8,6 +8,8 @@ trust.
 
 from __future__ import annotations
 
+import contextlib
+import inspect
 import ntpath
 import os
 import shutil
@@ -15,9 +17,45 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest import mock
 
-from compass_runtime import git_status, observer, rooted_path
+from compass_runtime import git_status, observer, reading, rooted_path, summary_jobs
+
+from .support import make_config
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextlib.contextmanager
+def windows(path: str, pathext: str = ".com;.exe;.bat;.cmd") -> Iterator[Path]:
+    """Windows path rules over real files, in a fresh current folder.
+
+    `ntpath.join("C:\\Tools", "uv.exe")` is the single name `C:\\Tools\\uv.exe`, which a POSIX
+    filesystem holds as one file in the current folder, so a real stat answers for it. PATHEXT
+    is lower case so the names agree on a case-sensitive filesystem too.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        previous = os.getcwd()
+        os.chdir(tmp)
+        try:
+            with (
+                mock.patch.object(os, "name", "nt"),
+                mock.patch.object(os, "path", ntpath),
+                mock.patch.object(os, "pathsep", ";"),
+                mock.patch.dict(os.environ, {"PATH": path, "PATHEXT": pathext}),
+            ):
+                yield Path(tmp)
+        finally:
+            os.chdir(previous)
+
+
+def plant(name: str) -> None:
+    """One executable file named exactly `name` in the current folder."""
+    with open(name, "w", encoding="utf-8") as handle:
+        handle.write("")
+    os.chmod(name, 0o700)
 
 
 def _program(path: Path) -> None:
@@ -122,6 +160,113 @@ class ExecutableTest(unittest.TestCase):
                 self.assertEqual(str(root / "spacedock"), rooted_path.which("spacedock"))
             with mock.patch.dict(os.environ, {"PATH": "relbin"}):
                 self.assertIsNone(rooted_path.which("spacedock"))
+
+
+class WindowsWalkTest(unittest.TestCase):
+    """On Windows `shutil.which` looks in the current folder first, so it is not asked at all.
+
+    Before 3.12 always, and from 3.12 unless this process's own environment turns it off. A
+    planted `.\\uv.exe` then hid the real `uv`: refused as unrooted, but the real one later on
+    PATH was never tried.
+    """
+
+    def test_a_planted_program_in_the_current_folder_is_skipped_for_the_real_one(self) -> None:
+        for name in ("uv", "spacedock", "claude"):
+            with self.subTest(name=name), windows("C:\\Tools;D:\\Other"):
+                plant(f".\\{name}.exe")
+                plant(f"{name}.exe")
+                plant(f"C:\\Tools\\{name}.exe")
+                self.assertEqual(f"C:\\Tools\\{name}.exe", rooted_path.which(name))
+
+    def test_pathext_decides_the_extensions_in_their_order(self) -> None:
+        with windows("C:\\Tools", pathext=".bat;.exe"):
+            plant("C:\\Tools\\uv.exe")
+            plant("C:\\Tools\\uv.bat")
+            self.assertEqual("C:\\Tools\\uv.bat", rooted_path.which("uv"))
+        with windows("C:\\Tools", pathext=".exe"):
+            plant("C:\\Tools\\uv.cmd")
+            self.assertIsNone(rooted_path.which("uv"), "an extension PATHEXT does not name ran")
+        with windows("C:\\Tools"):
+            plant("C:\\Tools\\uv.exe")
+            self.assertEqual("C:\\Tools\\uv.exe", rooted_path.which("uv.exe"))
+
+    def test_entries_are_tried_in_order_and_unrooted_ones_never(self) -> None:
+        with windows("\\tools;C:bin;.;;C:\\First;C:\\Second"):
+            for folder in ("\\tools", "C:bin", "C:\\Second"):
+                plant(f"{folder}\\uv.exe")
+            self.assertEqual("C:\\Second\\uv.exe", rooted_path.which("uv"))
+            plant("C:\\First\\uv.exe")
+            self.assertEqual("C:\\First\\uv.exe", rooted_path.which("uv"))
+
+    def test_a_file_that_cannot_execute_or_a_folder_is_not_a_program(self) -> None:
+        with windows("C:\\Tools"):
+            os.mkdir("C:\\Tools\\uv.exe")
+            self.assertIsNone(rooted_path.which("uv"))
+        with windows("C:\\Tools"):
+            Path("C:\\Tools\\uv.exe").write_text("", encoding="utf-8")
+            os.chmod("C:\\Tools\\uv.exe", 0o644)
+            self.assertIsNone(rooted_path.which("uv"))
+
+    def test_a_name_with_a_folder_in_it_is_not_looked_up(self) -> None:
+        with windows("C:\\Tools"):
+            plant("C:\\Tools\\bin\\uv.exe")
+            self.assertIsNone(rooted_path.which("bin\\uv"))
+
+
+class PosixUnchangedTest(unittest.TestCase):
+    def test_posix_answers_as_shutil_which_does_on_the_rooted_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            shims = root / ".pyenv" / "shims"
+            brew = root / "opt" / "homebrew" / "bin"
+            for folder in (shims, brew):
+                folder.mkdir(parents=True)
+                _program(folder / "uv")
+            _program(brew / "claude")
+            path = os.pathsep.join([str(shims), str(brew)])
+            with mock.patch.dict(os.environ, {"PATH": path}):
+                self.assertEqual(str(shims / "uv"), rooted_path.which("uv"))
+                self.assertEqual(str(brew / "claude"), rooted_path.which("claude"))
+                self.assertEqual(shutil.which("uv", path=path), rooted_path.which("uv"))
+
+
+class ClaudeIsFoundByTheSameRuleTest(unittest.TestCase):
+    """Every place Compass starts or checks for `claude` resolves it through `rooted_path`."""
+
+    def test_every_default_resolver_is_the_rooted_one(self) -> None:
+        for function in (observer.claude_exec, observer.prepare_claude_exec):
+            with self.subTest(function=function.__name__):
+                default = inspect.signature(function).parameters["binary_resolver"].default
+                self.assertIs(rooted_path.which, default)
+        model = reading.ClaudeReadingModel(make_config())
+        self.assertIs(rooted_path.which, model.binary_resolver)
+
+    def test_the_summary_check_finds_the_real_claude_past_a_planted_one(self) -> None:
+        with windows("C:\\Tools"):
+            plant(".\\claude.exe")
+            self.assertFalse(summary_jobs.ClaudeSummaryModel.available())
+            plant("C:\\Tools\\claude.exe")
+            self.assertTrue(summary_jobs.ClaudeSummaryModel.available())
+
+    def test_a_driveless_claude_is_refused_where_isabs_would_accept_it(self) -> None:
+        with windows("\\tools"):
+            plant("\\tools\\claude.exe")
+            self.assertFalse(summary_jobs.ClaudeSummaryModel.available())
+            model = reading.ClaudeReadingModel(
+                make_config(), binary_resolver=lambda _name: "\\tools\\claude.exe"
+            )
+            self.assertFalse(model.available())
+            with (
+                mock.patch.object(observer, "claude_lane_refusal", return_value=""),
+                self.assertRaises(observer.ClaudePreparationError) as refused,
+                observer.prepare_claude_exec(
+                    make_config(),
+                    binary_resolver=lambda _name: "\\tools\\claude.exe",
+                    validator=lambda model: model,
+                ),
+            ):
+                pass
+            self.assertEqual("unavailable", refused.exception.status)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import secrets
-import shutil
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -24,6 +23,7 @@ from . import (
     reading_jobs,
     reading_policy,
     reading_route,
+    rooted_path,
     session_source,
     session_summary,
     summary_source,
@@ -488,8 +488,8 @@ class ClaudeSummaryModel:
 
     @staticmethod
     def available() -> bool:
-        binary = shutil.which("claude")
-        return bool(binary and os.path.isabs(binary))
+        # Only asks whether the program is there; the call itself resolves it again.
+        return rooted_path.which("claude") is not None
 
     def spawned(self, group: supervise.Group) -> None:
         with _LOCK:

@@ -105,21 +105,45 @@ def search_path(path: str) -> str:
     return os.pathsep.join(part for part in path.split(os.pathsep) if rooted(part))
 
 
+def lookup(name: str, search: str) -> "str | None":
+    """The program `name` on the rooted elements of `search`, or None.
+
+    POSIX asks `shutil.which`. Windows walks the elements by hand, with PATHEXT, because its
+    `which` looks in the current folder first, and a planted `.\\uv.exe` there hid the real one.
+    """
+    import shutil
+
+    if os.name != "nt":
+        found = shutil.which(name, path=search) if search else None
+        return found if found and rooted(found) else None
+    if os.path.dirname(name):
+        return None
+    pathext = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
+    extensions = [ext for ext in pathext.split(os.pathsep) if ext]
+    has_extension = any(name.lower().endswith(ext.lower()) for ext in extensions)
+    names = [name] if has_extension else [name + ext for ext in extensions]
+    for directory in search.split(os.pathsep):
+        if not rooted(directory):
+            continue
+        for each in names:
+            candidate = os.path.join(directory, each)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
 def find_new_python() -> "str | None":
     """A Python at or above the floor that uv already has, found only on rooted PATH elements.
 
     A hook's working directory is inside the watched repository, so a relative, empty or `.`
     PATH element would let it supply `uv`, or the interpreter `uv python find` reports.
     """
-    import shutil
     import subprocess
 
     path = os.environ.get("PATH")
     search = search_path(os.defpath if path is None else path)
-    uv = shutil.which("uv", path=search) if search else None
-    # Windows `which` searches the current directory first before 3.12 whatever PATH it is
-    # handed, and answers `.\uv.exe` from there; the answer is held to the rule too.
-    if not uv or not rooted(uv):
+    uv = lookup("uv", search)
+    if not uv:
         return None
     env = dict(os.environ)
     env["PATH"] = search
