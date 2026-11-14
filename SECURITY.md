@@ -64,7 +64,10 @@ passing the hook payload through unchanged, and a SIGTERM or SIGHUP sent to the 
 decide whether to print its one-line notice. A hook's working directory is inside the watched
 repository, so `uv` is looked up only on PATH elements no working directory can reinterpret (a
 relative, empty or `.` element is skipped, and on Windows so is a driveless root), `uv` itself is
-given only those elements to search, and the interpreter it reports must be a full path. Antigravity's hook still prints `{}` through it
+given only those elements to search, and the interpreter it reports must be a full path. On
+Windows the launcher walks those elements itself with PATHEXT, because `shutil.which` there looks
+in the current folder first, so a `uv.exe` planted in the repository neither runs nor hides the
+real one. Antigravity's hook still prints `{}` through it
 on every path. A hook whose script cannot be opened while `launch.py` still can, as when a plugin
 is partly removed or partly upgraded while a session runs, exits 0 having printed only `{}`
 (Antigravity's hook), an empty line (its status line) or nothing, at any Python version, because
@@ -1582,10 +1585,11 @@ The bounds, all of which hold together:
   for Claude Code's managed hooks ("Unname, don't refuse") applied to a server or hook that could
   be handed the reading. `requirements.toml` was added to the list from the 0.167.2 binary's
   strings, which name it as enforced policy that can require a model provider and run managed
-  hooks. `codex` is found on `PATH` with every element that is not rooted
-  removed (`observer.codex_binary`, the rule `git_status.executable` applies to `git`, restated
-  rather than imported); the Claude Code lanes still find `claude` with `shutil.which` and require
-  an absolute answer. The child's environment is an allowlist
+  hooks. `codex` and `claude` are found on `PATH` with every element that is not rooted
+  removed (`rooted_path.which`, the rule `git_status.executable` applies to `git`), and the
+  answer must be rooted too, so a driveless `\tools\claude.exe` is refused on Windows. On
+  Windows the elements are walked by hand with PATHEXT, because `shutil.which` there looks in the
+  current folder first and a planted copy would hide the real one. The child's environment is an allowlist
   (`observer.codex_environment`): the account and locale basics, temp folders, proxies, CA
   bundles and system trust (`NODE_USE_SYSTEM_CA`, `CODEX_CA_CERTIFICATE`), `OPENAI_*` and a
   verified `CODEX_HOME`. `NODE_OPTIONS`, `OTEL_*` and everything else stay behind. While
@@ -2135,7 +2139,8 @@ line; a reading returns at most `annotation_text_cap_chars * 8` bytes, 1,920 at 
 value.
 A failed call falls back to local analysis. No raw model stdout or stderr is served or logged.
 
-An absent or relative `shutil.which("codex")` result is refused. An absolute installed executable
+A `codex` that `rooted_path.which` cannot find on a full PATH entry, or finds only at a relative or
+driveless path, is refused. An absolute installed executable
 is still trusted code; replacing it as the owning user is outside this boundary.
 
 ### Claude Code reading calls
@@ -2413,8 +2418,8 @@ folders too, of both lanes, in the shared temp directory; the next start removes
 and older than twice the longest call any lane allows (six minutes with the defaults), so a call
 in flight in another instance keeps its folder. A restart sooner than that leaves a folder for the
 start after. Anything else in that directory is left alone. Windows is not swept, because
-it has no owner and mode bits to match. An absent or relative
-`shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
+it has no owner and mode bits to match. A `claude` that `rooted_path.which` cannot find on a full
+PATH entry, or finds only at a relative or driveless path, spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
 same rolling cap apply.
 
@@ -4138,7 +4143,8 @@ descriptors. The Codex collector reads only the legacy `/tmp` path
 the reader returns, and keeps a title, a stage and a workflow directory from them.
 
 `SPACEDOCK_BIN`, when set, must be a full path; otherwise discovery resolves `spacedock` on the PATH
-elements that are full paths and also requires a full-path result. On Windows a driveless
+elements that are full paths (walked by hand on Windows, never the current folder) and also
+requires a full-path result. On Windows a driveless
 `\spacedock.exe` does not count, because it resolves on the current drive. Accepting a relative
 override or resolution could execute a planted program when the working directory is on `PATH`.
 The child gets only `PATH` (the OS default with any `.` element removed),

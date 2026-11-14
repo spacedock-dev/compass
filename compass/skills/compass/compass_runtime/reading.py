@@ -47,7 +47,6 @@ import math
 import os
 import re
 import secrets
-import shutil
 import threading
 import time
 import unicodedata
@@ -55,7 +54,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict
 
-from . import analyze_diagnostics, ci_read, observer, reading_long_progress, records, supervise
+from . import (
+    analyze_diagnostics,
+    ci_read,
+    observer,
+    reading_long_progress,
+    records,
+    rooted_path,
+    supervise,
+)
 from .config import validate_claude_reading_model
 
 if TYPE_CHECKING:
@@ -7989,7 +7996,7 @@ class ClaudeReadingModel:
         config: RuntimeConfig,
         *,
         runner: Any = supervise.run,
-        binary_resolver: Any = shutil.which,
+        binary_resolver: Any = rooted_path.which,
         on_spawn: Callable[[supervise.Group], None] | None = None,
         analyze: bool = False,
     ) -> None:
@@ -8059,7 +8066,7 @@ class ClaudeReadingModel:
         except ValueError:
             return False
         binary = self.binary_resolver("claude")
-        return bool(binary and os.path.isabs(binary))
+        return bool(binary and observer.rooted(binary))
 
 
 def prompt_copied(row: Mapping[str, Any], field: str) -> bool:

@@ -679,7 +679,7 @@ def claude_exec(  # noqa: PLR0913 - summary calls supply their own prompt and ti
     *,
     output_cap_bytes: int,
     runner: Any = supervise.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = rooted_path.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
     # None, resolved at the call: a default bound to the constant at import
@@ -972,7 +972,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
     config: RuntimeConfig,
     *,
     runner: Any = supervise.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = rooted_path.which,
     on_spawn: Callable[[supervise.Group], None] | None = None,
     system_prompt: str = CLAUDE_READING_SYSTEM_PROMPT,
     timeout: float | None = None,
@@ -1004,7 +1004,8 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             raise ClaudePreparationError("context-config")
         try:
             binary = binary_resolver("claude")
-            if not binary or not os.path.isabs(binary):
+            # Rooted, not `os.path.isabs`, which keeps a driveless Windows root at 3.12.
+            if not binary or not rooted(binary):
                 raise ClaudePreparationError("unavailable")
             root = reading_workdir_root()
             if root is None:

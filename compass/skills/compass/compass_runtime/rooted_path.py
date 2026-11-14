@@ -66,17 +66,42 @@ def default_path() -> str:
         return os.defpath
 
 
+def _windows_lookup(name: str, path: str, pathext: str) -> str | None:
+    """The first rooted PATH element holding `name` as a program, walked by hand.
+
+    Windows `shutil.which` looks in the current folder first: always before 3.12, and from 3.12
+    unless this process's own environment sets `NO_CURRENT_DIRECTORY`. A planted `.\\uv.exe`
+    then answered first, was refused as unrooted, and hid the real `uv` later on PATH. The
+    extensions are PATHEXT's, in its order, unless `name` already carries one of them.
+    """
+    if os.path.dirname(name):
+        return None
+    extensions = [ext for ext in (pathext or ".COM;.EXE;.BAT;.CMD").split(os.pathsep) if ext]
+    has_extension = any(name.lower().endswith(ext.lower()) for ext in extensions)
+    names = [name] if has_extension else [name + ext for ext in extensions]
+    for directory in path.split(os.pathsep):
+        if not rooted(directory):
+            continue
+        for candidate in (os.path.join(directory, each) for each in names):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
 def executable(name: str, environ: Mapping[str, str]) -> str | None:
     """Where the named program is, on the rooted elements of `environ`'s PATH, or None.
 
-    The answer is held to `rooted` as well as the PATH it was searched on. Windows
-    `shutil.which` searches the current directory first before 3.12 whatever PATH it is handed
-    and answers `.\\name` when it matches there; the second check turns that into "not found"
-    rather than a program the repository chose. Called as `shutil.which` at call time, so a test
-    that patches `shutil.which` reaches it.
+    POSIX asks `shutil.which` at call time (so a test that patches it reaches this), which
+    never looks in the current folder for a PATH without relative elements. Windows walks the
+    elements by hand, because its `which` does (`_windows_lookup`). Either answer is held to
+    `rooted` as well as the PATH it was searched on.
     """
     path = environ.get("PATH")
-    resolved = shutil.which(name, path=search_path(default_path() if path is None else path))
+    search = search_path(default_path() if path is None else path)
+    if os.name == "nt":
+        resolved = _windows_lookup(name, search, environ.get("PATHEXT", ""))
+    else:
+        resolved = shutil.which(name, path=search)
     if resolved is None or not rooted(resolved):
         return None
     return resolved

@@ -794,9 +794,10 @@ def app_binding(application: Any, selected: dict[str, Any]) -> str:
 def transport_binding(config: Any, *, claude_executor: Any = None) -> dict[str, Any]:
     _, observer, _, _, route = _runtime()
     import score_abstention as scorer  # noqa: PLC0415 - existing native identity verifier
+    from compass_runtime import rooted_path  # noqa: PLC0415 - the lookup the reading model uses
 
     with scorer.verify_claude_binary() as verified:
-        installed = shutil.which("claude")
+        installed = rooted_path.which("claude")
         _require(
             installed
             and scorer.file_identity(os.path.realpath(installed))[-1] == verified.identity[-1],
@@ -817,7 +818,11 @@ def install_native_guard() -> Iterator[dict[str, Any]]:
     """Guard this owned genuine server process; no fake provider or replacement HTTP route."""
     qualification_snapshot()
     _, observer, _, _, _ = _runtime()
-    from compass_runtime import cli, supervise  # noqa: PLC0415 - canonical server/runtime seams
+    from compass_runtime import (  # noqa: PLC0415 - canonical runtime seams
+        cli,
+        rooted_path,
+        supervise,
+    )
 
     native_exec = observer.claude_exec
     native_codex = observer.codex_exec
@@ -854,7 +859,7 @@ def install_native_guard() -> Iterator[dict[str, Any]]:
         *,
         output_cap_bytes: int,
         runner: Any = supervise.run,
-        binary_resolver: Any = shutil.which,
+        binary_resolver: Any = rooted_path.which,
         on_spawn: Any = None,
         on_diagnostic: Any = None,
         analyze: bool = False,
@@ -864,7 +869,7 @@ def install_native_guard() -> Iterator[dict[str, Any]]:
             captured
             and config is captured["application"].config
             and runner is supervise.run
-            and binary_resolver is shutil.which,
+            and binary_resolver is rooted_path.which,
             "route callback is not the genuine protected native app model",
         )
         current = RouteVerification()

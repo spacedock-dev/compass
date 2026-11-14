@@ -489,7 +489,9 @@ class RouteSidecarGuards(unittest.TestCase):
 
     def _assert_native_call_controls(self, kwargs: Any, spawned: Any, supervise: Any) -> None:
         self.assertIs(supervise.run, kwargs["runner"])
-        self.assertIs(self.route.shutil.which, kwargs["binary_resolver"])
+        from compass_runtime import rooted_path  # noqa: PLC0415 - the reading model's lookup
+
+        self.assertIs(rooted_path.which, kwargs["binary_resolver"])
         self.assertIs(spawned, kwargs["on_spawn"])
         self.assertIs(False, kwargs["analyze"])
 
@@ -499,7 +501,11 @@ class RouteSidecarGuards(unittest.TestCase):
         from types import SimpleNamespace  # noqa: PLC0415 - owned test-only application
 
         _annotations, observer, reading, policy, _route = self.route._runtime()
-        from compass_runtime import cli, supervise  # noqa: PLC0415 - real runtime seams
+        from compass_runtime import (  # noqa: PLC0415 - real runtime seams
+            cli,
+            rooted_path,
+            supervise,
+        )
         from compass_runtime import (  # noqa: PLC0415 - actual runtime configuration
             config as runtime_config,
         )
@@ -572,7 +578,7 @@ class RouteSidecarGuards(unittest.TestCase):
                     content=policy.CONTENT_VERSION,
                 )
                 model = reading.ClaudeReadingModel(
-                    config, binary_resolver=self.route.shutil.which, on_spawn=spawned
+                    config, binary_resolver=rooted_path.which, on_spawn=spawned
                 )
                 guarded = policy.GuardedModel(
                     config,

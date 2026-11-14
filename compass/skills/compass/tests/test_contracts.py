@@ -1847,6 +1847,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.observer",
             "compass_runtime.reading_policy",
             "compass_runtime.records",
+            # `claude` is found by the rule every other started program is.
+            "compass_runtime.rooted_path",
             "compass_runtime.supervise",
             "compass_runtime.ci_read",
         },
@@ -2217,6 +2219,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_jobs",
             "compass_runtime.reading_policy",
             "compass_runtime.reading_route",
+            "compass_runtime.rooted_path",
             "compass_runtime.session_source",
             "compass_runtime.session_summary",
             "compass_runtime.state",
