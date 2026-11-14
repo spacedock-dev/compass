@@ -2145,9 +2145,10 @@ def _citable(entry: LedgerEntry) -> bool:
 # "operator · person · CONFIRMED" with no exotic character at all.
 MENU_SEPARATOR = " · "
 MENU_HEADING = "Entries in the observed record:"
-# `records._UNSAFE_CHARS` covers the C0 set and U+200B but not these three, and
-# each of them starts a new line in the menu the model reads -- one entry
+# Each of these starts a new line in the menu the model reads -- one entry
 # forging two rows, the second of them numbered by the session itself.
+# `records.safe_text` now makes them spaces too; this stays for a menu field that
+# did not come through it, and costs three replaces.
 _MENU_BREAKS = ("\u2028", "\u2029", "\x85")
 
 

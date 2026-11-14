@@ -37,14 +37,20 @@ PROMPT_SOURCES: Final = ("latest-prompt", "first-prompt", PROMPT_CHOSEN, SESSION
 # `project_context` sets it and may not import `reading`.
 COMMANDS_FLOOR_KEY: Final = "commands_floor"
 
-# C0 and DEL, the zero-width space, the two directional marks, and the bidi
+# C0, DEL and C1, the Arabic letter mark, the zero-width space, the two
+# directional marks, the Unicode line and paragraph separators, and the bidi
 # embedding and isolate ranges. Listed one by one across U+200B to U+200F rather
 # than as a range, because U+200C and U+200D are inside it and must survive:
 # ZWNJ is orthographic in Persian and several Indic scripts, sitting inside
 # words, and ZWJ is what composes an emoji sequence. Neither can reorder text,
 # so keeping them costs no protection, and stripping them would break a title in
 # those scripts anywhere in the product, not only on the row that prompted this.
-_UNSAFE_CHARS = re.compile("[\\x00-\\x1f\\x7f\\u200b\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]+")
+_UNSAFE_CHARS = re.compile(
+    "[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200b\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+"
+)
+# The line breaks among them, which `safe_text` turns into spaces before redaction rather than
+# after: the PEM body and the cued shapes are tuned to read a space there.
+_UNSAFE_BREAKS = re.compile("[\\t\\n\\x0b\\x0c\\r\\u2028\\u2029]+")
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +523,7 @@ _SECRET_MIN_CHARS: Final = 7
 # Transparent HTML formatting, rather than arbitrary <user>/<password> envelopes.
 # Quoted attributes may contain >; the disjoint alternatives keep the scan linear.
 _INLINE_MARKUP_START_RE: Final = re.compile(
-    r"</?(?:a|abbr|b|code|del|em|i|ins|kbd|mark|s|samp|small|span|strong|sub|sup|time|u|var)"
+    r"</?(?:a|abbr|b|code|del|em|i|ins|kbd|mark|s|samp|small|span|strong|sub|sup|time|u|var|wbr)"
     r"(?=[\s/>])",
     re.IGNORECASE,
 )
@@ -526,8 +532,37 @@ _INLINE_MARKUP_RE: Final = re.compile(
     re.IGNORECASE,
 )
 # A second view is bounded independently of the caller's later clipping. An
-# oversized string with formatting is withheld, never returned with an unchecked tail.
+# oversized string with an element tag is withheld, never returned with an unchecked
+# tail. Only the tags: their grammar rescans to the end from every unclosed start, so
+# it is quadratic past the bound, where comments and hidden characters are linear.
 INLINE_MARKUP_MAX_CHARS: Final = 16_384
+# Characters that render as nothing, removed from the second view so a credential they
+# were struck through matches there. Every format character (Unicode category Cf, the same
+# list in Unicode 15.0 and 17.0; `HiddenCharactersInsideACredentialTest` holds it to the
+# running Python's database), the variation selectors, the combining grapheme joiner and
+# the Mongolian selectors, and every C0 and C1 control that is not a line break. ZWNJ and
+# ZWJ are here too: only a matched span changes, so the words they sit inside keep them.
+# Line breaks stay in the view, as real spaces do, because they separate words.
+_HIDDEN_CHARS_RE: Final = re.compile(
+    "[\\x00-\\x08\\x0e-\\x1f\\x7f-\\x9f\\xad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f"
+    "\\u0890\\u0891\\u08e2\\u180b-\\u180f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064"
+    "\\u2066-\\u206f\\ufe00-\\ufe0f\\ufeff\\ufff9-\\ufffb\\U000110bd\\U000110cd"
+    "\\U00013430-\\U0001343f\\U0001bca0-\\U0001bca3\\U0001d173-\\U0001d17a"
+    "\\U000e0001\\U000e0020-\\U000e007f\\U000e0100-\\U000e01ef]+"
+)
+
+
+def _printable_ascii(text: str) -> bool:
+    """Whether `text` can hold none of `_UNSAFE_CHARS` or `_HIDDEN_CHARS_RE`.
+
+    Two C loops in front of a character-class scan that costs about 20 ns a
+    character: without them `safe_text` measured 92 -> 152 us on a 2,000-character
+    blob, and nearly every published string is printable ASCII. With them it
+    measured 80 us (2026-11-14, one loaded laptop, `timeit`). Text that does
+    carry a hidden character pays for the second view: a 140-character line with
+    emoji joiners measured 9 -> 25 us.
+    """
+    return text.isascii() and text.isprintable()
 
 
 # What a `cued` value is when it names a value rather than holding one: code
@@ -733,30 +768,85 @@ def _redact_scan(text: str) -> str:
     return "".join(out)
 
 
+def _markup_spans(text: str) -> list[tuple[int, int]]:
+    """Every supported element tag and closed HTML comment, in document order.
+
+    In order because each hides the other's opener: a `<!--` in a quoted
+    attribute is not a comment, and a tag opening inside a comment is not a tag.
+    Found separately and merged, either swallowed the visible text between them,
+    and a key split there by `<wbr>` matched in neither view.
+
+    A comment is found with `find`, not a lazy regex per opener. Comments do not
+    nest, so the pass is linear with no cap on a comment's length; a bounded
+    pattern (`<!--[\\s\\S]{0,256}?-->`) costs its bound at every opener and leaves
+    a longer comment inside a key as the bypass it was meant to close. An opener
+    nothing closes is left as text and ends the search for comments.
+    """
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    tag = _INLINE_MARKUP_RE.search(text)
+    opener = text.find("<!--")
+    while True:
+        # Each lookahead is kept until the cursor passes it, so a run of comments
+        # does not rescan the text up to a distant tag once per comment.
+        if tag is not None and tag.start() < pos:
+            tag = _INLINE_MARKUP_RE.search(text, pos)
+        if opener != -1 and opener < pos:
+            opener = text.find("<!--", pos)
+        if opener != -1 and (tag is None or opener < tag.start()):
+            close = text.find("-->", opener + 4)
+            if close == -1:
+                opener = -1
+                continue
+            spans.append((opener, close + 3))
+            pos = close + 3
+        elif tag is not None:
+            spans.append(tag.span())
+            pos = tag.end()
+        else:
+            return spans
+
+
 def _redact_inline_markup(text: str) -> str:
     """Map credentials in a formatting-free view back to their original spans.
 
-    Real spaces/newlines stay in the view. Only a credential match changes the
-    source; harmless formatting is retained. The normal raw scan still follows,
-    because a credential in an attribute is absent from this second view.
+    The view drops inline element tags, HTML comments and characters that render
+    as nothing. Real spaces/newlines stay in it. Only a credential match changes
+    the source; harmless formatting is retained, ZWNJ and ZWJ in the words around
+    a key included. The normal raw scan still follows, because a credential in an
+    attribute or a comment is absent from this second view.
     """
-    if "<" not in text:
+    tags = "<" in text
+    hidden = None if _printable_ascii(text) else _HIDDEN_CHARS_RE.search(text)
+    if not tags and hidden is None:
         return text
-    if len(text) > INLINE_MARKUP_MAX_CHARS:
-        return _SECRET_MARKER if _INLINE_MARKUP_START_RE.search(text) is not None else text
-    if _INLINE_MARKUP_RE.search(text) is None:
+    if tags and len(text) > INLINE_MARKUP_MAX_CHARS and _INLINE_MARKUP_START_RE.search(text):
+        return _SECRET_MARKER
+    spans = _markup_spans(text) if tags else []
+    if hidden is not None:
+        spans.extend(run.span() for run in _HIDDEN_CHARS_RE.finditer(text, hidden.start()))
+    if not spans:
         return text
+    spans.sort()
     parts: list[str] = []
     cuts: list[int] = []
     removed: list[int] = []
     cursor = length = 0
-    for tag in _INLINE_MARKUP_RE.finditer(text):
-        part = text[cursor : tag.start()]
+    for first, last in spans:
+        # A hidden run inside a tag or a comment is already gone. A run cannot hold `<` or `>`,
+        # so it is either wholly inside one or wholly outside: nothing here overlaps partly.
+        if last <= cursor:
+            continue
+        part = text[cursor:first]
         parts.append(part)
         length += len(part)
-        cuts.append(length)
-        removed.append(tag.end() - length)
-        cursor = tag.end()
+        # Touching spans share one cut, which `bisect` needs strictly increasing.
+        if cuts and cuts[-1] == length:
+            removed[-1] = last - length
+        else:
+            cuts.append(length)
+            removed.append(last - length)
+        cursor = last
     parts.append(text[cursor:])
     plain = "".join(parts)
     if not _needs_secret_scan(plain):
@@ -1642,14 +1732,13 @@ def safe_text(value: Any, limit: int) -> str:
     a shape whose tail fell off no longer matches, so bounding first would
     publish exactly the values this is here to catch.
 
-    A control character struck through the middle of a key defeats the match on
-    the whole key in either order, and the match is not all that is at stake.
-    The substitution above turns that character into a space, so the head in
-    front of it still matches on its own and redacts, while the TAIL behind it
-    is a run with no prefix to match on and publishes beside the marker: 75
-    characters of key on a probe that put the separator 40 characters in. That
-    is a limit of shape matching rather than of the ordering, and `SECURITY.md`
-    carries it with the rest of the residual.
+    An invisible control struck through the middle of a key is masked before it
+    becomes a space, by the second view in `redact_secrets` that reads through
+    it. As a space first, it split the key: the head matched and redacted, and
+    the TAIL behind it published beside the marker, 75 characters of key on a
+    probe that put the separator 40 characters in. A line break still does that,
+    because it is turned into a space before redaction for the shapes tuned to
+    read one, and `SECURITY.md` carries it with the rest of the residual.
 
     This is a hot path — a tool name, a model id and a title each pass through it
     on every collect — so the redaction is gated. Re-measured 2026-10-03, after
@@ -1663,7 +1752,12 @@ def safe_text(value: Any, limit: int) -> str:
     the cued shape were taken on another day and are not compared with it.
     """
     text = str(value or "").encode("utf-8", "replace").decode("utf-8")
-    text = _UNSAFE_CHARS.sub(" ", text)
+    if not _printable_ascii(text) and _UNSAFE_CHARS.search(text) is not None:
+        text = _UNSAFE_BREAKS.sub(" ", text)
+        if not _printable_ascii(text) and _UNSAFE_CHARS.search(text) is not None:
+            # Masked while the control is still there for the second view to see
+            # through. As a space it split the key, and its tail published.
+            text = _UNSAFE_CHARS.sub(" ", redact_secrets(text))
     return redact_clip(text, limit)
 
 
