@@ -1465,7 +1465,17 @@ class BundledHooksSchemaTests(unittest.TestCase):
         command = 'python3 "./skills/compass/launch.py" "./skills/compass/agy_hook.py" PostToolUse'
         self.assertEqual(
             ["skills/compass/launch.py", "skills/compass/agy_hook.py"],
-            validator._referenced_plugin_paths(command),
+            validator._referenced_plugin_paths(command, antigravity=True),
+        )
+        # Only Antigravity resolves `./` against the plugin root; every other harness runs hook
+        # commands from the session's directory.
+        self.assertEqual([], validator._referenced_plugin_paths(command))
+        # Antigravity accepts the variable form too.
+        self.assertEqual(
+            ["skills/compass/agy_hook.py"],
+            validator._referenced_plugin_paths(
+                'python3 "${CLAUDE_PLUGIN_ROOT}/skills/compass/agy_hook.py"', antigravity=True
+            ),
         )
         with tempfile.TemporaryDirectory(prefix="compass-hooks-schema-") as directory:
             plugin_root = Path(directory) / "plug"
@@ -1491,6 +1501,26 @@ class BundledHooksSchemaTests(unittest.TestCase):
                 errors = self._validate(self._agy(command), ship_script=True)
                 self.assertTrue(any("names no file this plugin ships" in e for e in errors), errors)
 
+    def test_a_relative_path_in_a_claude_hooks_file_names_no_file(self) -> None:
+        # Claude Code runs hook commands from the session's directory, so `./skills/...` there
+        # would point into the user's project, not the plugin.
+        command = "python3 ./skills/compass/launch.py"
+        document = {
+            "hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": command}]}]}
+        }
+        with tempfile.TemporaryDirectory(prefix="compass-hooks-schema-") as directory:
+            plugin_root = Path(directory) / "plug"
+            (plugin_root / "hooks").mkdir(parents=True)
+            (plugin_root / "skills/compass").mkdir(parents=True)
+            (plugin_root / "skills/compass/launch.py").write_text("#\n")
+            (plugin_root / "hooks/hooks.json").write_text(json.dumps(document))
+            validation = validator.Validation()
+            validator.validate_hooks_adapter(plugin_root, validation)
+            self.assertTrue(
+                any("names no file this plugin ships" in e for e in validation.errors),
+                validation.errors,
+            )
+
     def test_a_relative_path_cannot_leave_the_plugin_root(self) -> None:
         command = 'python3 "./skills/../../outside.py"'
         with tempfile.TemporaryDirectory(prefix="compass-hooks-schema-") as directory:
@@ -1511,7 +1541,9 @@ class BundledHooksSchemaTests(unittest.TestCase):
                 events = validator._hook_events(json.loads(path.read_text(encoding="utf-8")))
                 for command in validator._hook_commands(events):
                     with self.subTest(file=f"{root}/{relative}", command=command):
-                        found = validator._referenced_plugin_paths(command)
+                        found = validator._referenced_plugin_paths(
+                            command, antigravity=relative == "hooks.json"
+                        )
                         self.assertEqual(2, len(found), "the launcher and the hook it starts")
                         for script in found:
                             self.assertTrue((validator.ROOT / root / script).is_file(), script)

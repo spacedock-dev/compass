@@ -21,8 +21,9 @@ runs only when a lane it belongs to is on. There are seven lanes:
   ``frontend_docs_tests``. On for a document no other frontend file reads, when the whole frontend
   lane is not already running. A citation in any frontend file is read by the citation check
   (CITATION_CHECK), which resolves every one against the document's headings.
-- ``workflows``: actionlint over ``.github/workflows``. On for any workflow file, which also runs
-  the Python suites: their shape tests and release rehearsals read every workflow.
+- ``workflows``: actionlint over ``.github/workflows``. On for any workflow or local action. A
+  workflow file also runs the Python suites: their shape tests and release rehearsals read every
+  workflow.
 
 ``platform`` is not a lane of its own: it says whether the macOS legs of the ``python`` and
 ``frontend`` lanes run. On for the reviewed PLATFORM_PATHS, the gate's wiring, an unknown path,
@@ -72,6 +73,8 @@ FRONTEND_DOCS = "frontend_docs"
 PLATFORM = "platform"
 WORKFLOWS = "workflows"
 WORKFLOW_FILES = ".github/workflows/*"
+# Local composite actions, which actionlint checks wherever a workflow `uses:` one.
+ACTION_FILES = ".github/actions/*"
 
 # Root files the frontend toolchain reads. A change to any of them can change what Biome, tsc,
 # Vitest, the bundle or Storybook does.
@@ -184,6 +187,7 @@ PLATFORM_PATHS = (
     "pnpm-workspace.yaml",
     "requirements-validation.txt",
     "requirements-release.txt",
+    "requirements-build.txt",
     # The tests of the above, which are what the macOS legs run.
     "compass/skills/compass/tests/test_supervise.py",
     "compass/skills/compass/tests/test_lifecycle.py",
@@ -463,7 +467,7 @@ def lanes(path: str, python_docs: set[str], frontend_docs: FrontendReads) -> set
         read.add(FRONTEND_DOCS)
     if _matches(path, PLATFORM_PATHS):
         read.add(PLATFORM)
-    if fnmatch.fnmatchcase(path, WORKFLOW_FILES):
+    if _matches(path, (WORKFLOW_FILES, ACTION_FILES)):
         read.add(WORKFLOWS)
     return read | _by_location(path)
 

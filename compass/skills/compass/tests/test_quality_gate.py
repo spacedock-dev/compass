@@ -234,11 +234,22 @@ class ActionlintInTheGateTest(unittest.TestCase):
         # The detector's own fallback, when it cannot run at all, turns the lane on.
         self.assertIn("workflows=true", detect_step())
 
+    def assert_checksum_fails_the_step(self, script: str) -> None:
+        (line,) = [line for line in script.splitlines() if "sha256sum -c" in line]
+        self.assertTrue(line.rstrip().endswith("| sha256sum -c -"), line)
+        self.assertIn("set -euo pipefail", script)
+
     def test_the_binary_is_pinned_and_verified_before_it_runs(self) -> None:
         steps = gate_jobs()["actionlint"]["steps"]
         script = "\n".join(step.get("run", "") for step in steps)
         self.assertRegex(script, r'VERSION="\d+\.\d+\.\d+"')
         self.assertRegex(script, r'EXPECTED_SHA256="[0-9a-f]{64}"')
+        self.assert_checksum_fails_the_step(script)
+        # A swallowed mismatch is no check: the same script with `|| true` must be refused.
+        with self.assertRaises(AssertionError):
+            self.assert_checksum_fails_the_step(
+                script.replace("| sha256sum -c -", "| sha256sum -c - || true")
+            )
         check = script.index("sha256sum -c")
         self.assertLess(check, script.index("tar -xzf"))
         self.assertLess(check, script.index("./actionlint"))

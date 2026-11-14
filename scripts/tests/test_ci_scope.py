@@ -167,10 +167,12 @@ class EachKindOfChangeRunsItsLaneTest(unittest.TestCase):
         self.assertTrue((ROOT / "compass/skills/compass/tests/test_requeue_workflow.py").is_file())
         self.assertEqual("true", lanes_of("scripts/requeue_after_ejection.py")["python"])
 
-    def test_actionlint_runs_only_for_a_workflow_or_every_lane(self) -> None:
-        # actionlint reads `.github/workflows` alone: a composite action or the detector is not one.
+    def test_actionlint_runs_only_for_a_workflow_an_action_or_every_lane(self) -> None:
+        # actionlint checks a local composite action wherever a workflow `uses:` it.
+        self.assertEqual(
+            "true", lanes_of(".github/actions/frontend-toolchain/action.yml")["workflows"]
+        )
         for path in (
-            ".github/actions/frontend-toolchain/action.yml",
             ".github/ISSUE_TEMPLATE/bug_report.yml",
             "scripts/ci_scope.py",
             "compass/skills/compass/server.py",
@@ -417,6 +419,7 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
             "pnpm-workspace.yaml",
             "requirements-validation.txt",
             "requirements-release.txt",
+            "requirements-build.txt",
         ):
             with self.subTest(path=path):
                 self.assertEqual("true", lanes_of(path)["platform"])

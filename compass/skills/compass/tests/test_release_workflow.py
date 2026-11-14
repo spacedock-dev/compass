@@ -244,8 +244,10 @@ HASHED_FROM = {
     "requirements-validation.txt": "requirements-release.txt",
     "requirements-dev.in": "requirements-dev.txt",
     "requirements-cli.in": "requirements-cli.txt",
+    "requirements-build.in": "requirements-build.txt",
 }
-# PyYAML 6.0.3 publishes no CPython 3.15 wheel, so that leg builds its hashed sdist.
+# PyYAML 6.0.3 publishes no CPython 3.15 wheel, so that leg builds its hashed sdist, with build
+# tools it installed hashed first: an isolated build would fetch setuptools and Cython unhashed.
 SDIST_ALLOWED = frozenset({("quality-gate.yml", "platform-tests-current")})
 
 
@@ -338,6 +340,21 @@ class HashPinnedInstallTest(unittest.TestCase):
                 with self.subTest(file=generated, name=name):
                     self.assertEqual(version, got.get(name))
 
+    def test_an_sdist_build_uses_only_build_tools_installed_by_hash_first(self) -> None:
+        for workflow, job in sorted(SDIST_ALLOWED):
+            lines = pip_installs(load(WORKFLOWS / workflow)["jobs"][job])
+            with self.subTest(workflow=workflow, job=job):
+                self.assertEqual(2, len(lines), lines)
+                tools, sdist = lines
+                self.assertIn("--only-binary=:all:", tools)
+                self.assertIn("--require-hashes", tools)
+                self.assertEqual(["requirements-build.txt"], REQUIREMENT_FILE.findall(tools))
+                self.assertIn("--no-build-isolation", sdist)
+                self.assertEqual(["requirements-release.txt"], REQUIREMENT_FILE.findall(sdist))
+        self.assertEqual(
+            {"setuptools", "cython"}, set(requirements(ROOT / "requirements-build.in"))
+        )
+
     def test_every_workflow_install_admits_only_hashed_files(self) -> None:
         # Not only beside a credential: a read-only job's result is what the required gate trusts,
         # and the build jobs make the binary users install.
@@ -348,8 +365,9 @@ class HashPinnedInstallTest(unittest.TestCase):
                     seen.add((path.name, name))
                     with self.subTest(workflow=path.name, job=name, line=line):
                         self.assertIn("--require-hashes", line)
-                        if (path.name, name) not in SDIST_ALLOWED:
-                            self.assertIn("--only-binary=:all:", line)
+                        if "--only-binary=:all:" not in line:
+                            self.assertIn((path.name, name), SDIST_ALLOWED)
+                            self.assertIn("--no-build-isolation", line)
                         files = REQUIREMENT_FILE.findall(line)
                         self.assertTrue(files, "a hash pin lives in a requirements file")
                         for file in files:

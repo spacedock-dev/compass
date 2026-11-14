@@ -340,11 +340,14 @@ same directories through the relative symlinks under `.agents/skills/`.
   and from the pre-PR suite on 2026-10-12; they remain runnable on demand.
 - `Lint workflows (actionlint)`, a pinned, checksummed actionlint over every workflow, for any change
   under `.github/workflows/`. Run `actionlint` from the repository root to check the same thing
-  locally; `scripts/pre_pr.py` runs it when it is installed.
+  locally; `scripts/pre_pr.py` runs it when it is installed. A change to a local action under
+  `.github/actions/` runs it too.
 
 Every Python install in these jobs is checked against sha256 hashes, so a contributor's install is
-too. `requirements-dev.txt` and `requirements-cli.txt` are generated from `requirements-dev.in` and
-`requirements-cli.in`, and `requirements-release.txt` from `requirements-validation.txt`. To bump a
+too. `requirements-dev.txt`, `requirements-build.txt` and `requirements-cli.txt` are generated from
+`requirements-dev.in`, `requirements-build.in` and `requirements-cli.in`, and
+`requirements-release.txt` from `requirements-validation.txt`. The build file holds the setuptools
+and Cython that build PyYAML from source on a Python it ships no wheel for. To bump a
 pin, edit the source and regenerate with the command in the generated file's header; never edit a
 hash by hand.
 

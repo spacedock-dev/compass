@@ -671,15 +671,21 @@ class MainBranchCacheScopeTest(unittest.TestCase):
     could write outside its path before any hash was checked.
     """
 
-    def test_no_python_or_node_setup_restores_a_cache(self) -> None:
+    def test_no_step_in_any_job_restores_a_cache(self) -> None:
         for name, workflow in workflows().items():
             for job_id, job in workflow["jobs"].items():
                 for step in job.get("steps", []):
-                    action = step.get("uses", "").split("@")[0]
-                    if action not in {"actions/setup-python", "actions/setup-node"}:
-                        continue
                     with self.subTest(workflow=name, job=job_id, step=step.get("name")):
                         self.assertFalse(restores_a_cache(step))
+
+    def test_a_cache_step_planted_in_any_job_is_caught(self) -> None:
+        planted = copy.deepcopy(workflows())
+        job = planted["quality-gate.yml"]["jobs"]["platform-tests-current"]
+        job["steps"].insert(0, {"uses": "actions/cache/restore@sha", "with": {"key": "k"}})
+        result = unittest.TestResult()
+        with mock.patch(__name__ + ".workflows", return_value=planted):
+            MainBranchCacheScopeTest("test_no_step_in_any_job_restores_a_cache").run(result)
+        self.assertTrue(result.failures, "a cache restore outside a setup action went unseen")
 
     def test_the_canary_restores_nothing_and_runs_no_dependency_install_script(self) -> None:
         job = workflows()["plugin-compatibility.yml"]["jobs"]["latest-client-smoke"]

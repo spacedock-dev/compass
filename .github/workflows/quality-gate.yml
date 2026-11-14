@@ -205,7 +205,7 @@ jobs:
       # does the shipped code import, launch and pass on 3.12.
       #
       # Through scripts/run_tests.py, which is stdlib-only for exactly this job:
-      # it installs requirements-validation.txt and nothing else. Same discovery,
+      # it installs requirements-release.txt and nothing else. Same discovery,
       # fixtures and verdict as `unittest discover`, spread over the runner's
       # cores (the dashboard suite: 131s serial against 34s on four workers,
       # measured 2026-09-23; the script suite is sharded below).
@@ -286,8 +286,8 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Read-only, because this job restores the pip cache and runs the packages it installs: the sticky
-    # comment is posted by `coverage-comment`, which does neither.
+    # Read-only, because this job runs the packages it installs: the sticky
+    # comment is posted by `coverage-comment`, which runs none.
     permissions:
       contents: read
       pull-requests: read # the coverage-exception label check
@@ -387,8 +387,8 @@ jobs:
             coverage-comment.md
           retention-days: 7
 
-  # Posts the report `coverage` wrote. A separate job so the write token never shares a job with the pip cache
-  # `coverage` restores or the packages it installs; it checks out nothing and runs only the pinned artifact and
+  # Posts the report `coverage` wrote. A separate job so the write token never shares a job with
+  # the packages `coverage` installs; it checks out nothing and runs only the pinned artifact and
   # comment actions, as `frontend-coverage-comment` does. Sticky: find-and-update rather than spam. Same-repo
   # PRs only, since a fork PR gets a read-only token, and it never gates: the threshold is enforced in `coverage`.
   coverage-comment:
@@ -507,10 +507,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.15"
-      # Not wheels-only: PyYAML 6.0.3 publishes no CPython 3.15 wheel, so this builds the sdist,
-      # which requirements-release.txt hashes too.
+      # PyYAML 6.0.3 publishes no CPython 3.15 wheel, so this builds its sdist, which
+      # requirements-release.txt hashes too. The build tools go in first, by hash, and the build
+      # uses them with no isolation: an isolated build would fetch setuptools and Cython unhashed.
       - name: Install validation requirements
-        run: python -m pip install --require-hashes -r requirements-release.txt
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r requirements-build.txt
+          python -m pip install --require-hashes --no-build-isolation -r requirements-release.txt
       - name: Show interpreter
         run: python -c "import sys, os; print(sys.version, os.name, sys.platform, hasattr(os, 'waitid'))"
       - name: Run dashboard test discovery

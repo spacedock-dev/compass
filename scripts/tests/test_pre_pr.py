@@ -130,6 +130,8 @@ class LanePlanTest(unittest.TestCase):
         self.assertEqual(
             {"requirements-release.txt", "requirements-dev.txt"}, set(pre_pr.REQUIREMENTS)
         )
+        # The dev file's header gives contributors the same command.
+        self.assertIn(install, (ROOT / "requirements-dev.txt").read_text(encoding="utf-8"))
 
     def test_a_workflow_change_runs_actionlint_when_it_is_installed(self) -> None:
         lanes = {"python_suites": "true", "workflows": "true"}

@@ -1393,7 +1393,8 @@ def validate_hooks_adapter(plugin_root: Path, validation: Validation) -> None:
             validation.error(path, "bundled hooks file registers no events")
             continue
         for command in _hook_commands(events):
-            scripts = _referenced_plugin_paths(command)
+            # The root hooks.json is Antigravity's, the one harness that resolves `./`.
+            scripts = _referenced_plugin_paths(command, antigravity=relative == "hooks.json")
             if not scripts:
                 # Nothing parsed is nothing checked: fail rather than pass with zero paths.
                 validation.error(path, f"hook command names no file this plugin ships: {command}")
@@ -1457,16 +1458,16 @@ def _hook_commands(events: Any) -> list[str]:
     return found
 
 
-# A plugin-root variable, or Antigravity's `./`, which it resolves against the plugin root it runs
-# hook commands from. The `./` form counts only at the start of a word, so `$HOME/./x` is not one.
-_PLUGIN_PATH = re.compile(
-    r"(?:\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT|extensionPath|DROID_PLUGIN_ROOT)\}/"
-    r"|(?<![^\s\"'])\./)"
-    r"([^\s\"']+)"
+# A plugin-root variable, which every harness but Antigravity expands.
+_VARIABLE_PATH = re.compile(
+    r"\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT|extensionPath|DROID_PLUGIN_ROOT)\}/([^\s\"']+)"
 )
+# Antigravity's `./`, which it resolves against the plugin root it runs hook commands from. It
+# counts only at the start of a word, so `$HOME/./x` is not one.
+_DOT_PATH = re.compile(r"(?<![^\s\"'])\./([^\s\"']+)")
 
 
-def _referenced_plugin_paths(command: str) -> list[str]:
+def _referenced_plugin_paths(command: str, *, antigravity: bool = False) -> list[str]:
     """Plugin-relative paths a command names, in the order it names them, normalized.
 
     Claude, Codex, Gemini and Droid expand a plugin-root variable rather than a
@@ -1474,10 +1475,18 @@ def _referenced_plugin_paths(command: str) -> list[str]:
     records a trust hash over the hook definition, so a command carrying a
     version number would re-prompt every time the plugin updated. Antigravity
     expands none and runs the command from the plugin root, so its file names
-    `./skills/...`. A path that climbs out of the root normalizes to `../...`,
-    which the caller rejects.
+    `./skills/...`; it accepts both forms. Every other harness runs a command from
+    the session's directory, where `./` names the user's project, so there it
+    counts as no path at all. A path that climbs out of the root normalizes to
+    `../...`, which the caller rejects.
     """
-    return [posixpath.normpath(match) for match in _PLUGIN_PATH.findall(command)]
+    patterns = (_VARIABLE_PATH, _DOT_PATH) if antigravity else (_VARIABLE_PATH,)
+    found = sorted(
+        (match.start(), match.group(1))
+        for pattern in patterns
+        for match in pattern.finditer(command)
+    )
+    return [posixpath.normpath(path) for _, path in found]
 
 
 def validate_description_parity(

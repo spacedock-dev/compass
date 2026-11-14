@@ -9,10 +9,10 @@
 # Hash checking is all-or-nothing per pip command, so install this beside requirements-release.txt
 # (the hashed copy of requirements-validation.txt), never beside an unhashed file:
 #
-#     python3 -m pip install --only-binary=:all: --require-hashes \
-#         -r requirements-release.txt -r requirements-dev.txt
+#     python3 -m pip install --require-hashes -r requirements-release.txt -r requirements-dev.txt
 #
-# Generated, never edited by hand. After changing a pin in requirements-dev.in, rerun
+# CI adds `--only-binary=:all:`. Generated, never edited by hand: this header is kept, and only
+# what follows it is replaced. After changing a pin in requirements-dev.in, rerun
 #
 #     uv pip compile requirements-dev.in --universal --python-version 3.12 \
 #         --generate-hashes --no-header --no-annotate --exclude-newer <two weeks before today>
