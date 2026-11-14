@@ -33,16 +33,24 @@ git@* | ssh://*)
 		echo "publish-marketplace.sh: MARKETPLACE_DEPLOY_KEY is empty" >&2
 		exit 1
 	}
-	printf '%s\n' "$MARKETPLACE_DEPLOY_KEY" >"$scratch/key"
+	COMPASS_SSH_KEY_FILE="$scratch/key"
+	COMPASS_SSH_KNOWN_HOSTS="$scratch/known_hosts"
+	export COMPASS_SSH_KEY_FILE COMPASS_SSH_KNOWN_HOSTS
+	printf '%s\n' "$MARKETPLACE_DEPLOY_KEY" >"$COMPASS_SSH_KEY_FILE"
 	# GitHub's host keys come from its API over TLS rather than from the first connection, so a
 	# strict check can still refuse an impostor.
-	curl --fail --silent --show-error https://api.github.com/meta |
-		jq -r '.ssh_keys[] | "github.com " + .' >"$scratch/known_hosts"
-	[ -s "$scratch/known_hosts" ] || {
+	curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://api.github.com/meta |
+		jq -r '.ssh_keys[] | "github.com " + .' >"$COMPASS_SSH_KNOWN_HOSTS"
+	[ -s "$COMPASS_SSH_KNOWN_HOSTS" ] || {
 		echo "publish-marketplace.sh: no GitHub host keys fetched" >&2
 		exit 1
 	}
-	GIT_SSH_COMMAND="ssh -i $scratch/key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$scratch/known_hosts"
+	# git runs this through the shell. The paths travel in the environment and are expanded by
+	# that shell inside double quotes, so no character in the scratch path can split an argument
+	# or end the command, as it could when the path was spliced into the string here.
+	# shellcheck disable=SC2016,SC2089 # quoted and expanded by the shell git starts, not this one
+	GIT_SSH_COMMAND='ssh -i "$COMPASS_SSH_KEY_FILE" -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$COMPASS_SSH_KNOWN_HOSTS"'
+	# shellcheck disable=SC2090 # the same: git hands the string to sh -c
 	export GIT_SSH_COMMAND
 	;;
 esac

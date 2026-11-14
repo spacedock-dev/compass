@@ -706,7 +706,7 @@ token but not the key attaches the four archives and `checksums.txt` to it, and 
 read-only token and a key to the marketplace repository alone stamps the new version onto Compass's
 marketplace listing. A last job, once the archives are attached, holds a read-only token and a key to
 the Homebrew tap alone, and writes `Formula/compass.rb` there from the release's published
-`checksums.txt`. The `CLI package`
+`checksums.txt`, once its SHA-256 matches the one the attaching job reported. The `CLI package`
 workflow runs the same build on pull requests that touch the runtime, so a break shows up in review.
 The bump is skipped when the manifests already carry the tagged version, which is also how you
 release the current version as-is. Every step is idempotent, so a partially failed release is

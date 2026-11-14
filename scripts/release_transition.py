@@ -86,9 +86,17 @@ class Resolution:
     target: str
     release_commit: str
     main_tip: str
+    # False when a higher release tag exists, so publishing this one must not take the
+    # "Latest" badge from it: GitHub marks a new release latest unless told otherwise.
+    latest: bool = True
 
     def outputs(self) -> dict[str, str]:
-        return {"mode": self.mode, "version": self.version, "target": self.target}
+        return {
+            "mode": self.mode,
+            "version": self.version,
+            "target": self.target,
+            "latest": "true" if self.latest else "false",
+        }
 
 
 @dataclass(frozen=True)
@@ -147,6 +155,29 @@ def check_monotonic(tag: str, existing: list[str]) -> None:
             raise ReleaseError(message)
 
 
+def check_unique_version(tag: str, existing: list[str]) -> None:
+    """One release per version: `0.2.0` and `v0.2.0` would be two tags for one release.
+
+    A fresh release already fails `check_monotonic` on the other spelling, which counts as
+    an equal tag; a resume skips that check, so this asks for both modes, first.
+    """
+    new = parse_tag(tag)[1]
+    for name in existing:
+        if name != tag and _triple(name) == new:
+            first, second = sorted((name, tag))
+            message = (
+                f"tags {first} and {second} name the same version; delete the one that was "
+                "pushed by mistake before releasing"
+            )
+            raise ReleaseError(message)
+
+
+def is_latest(tag: str, existing: list[str]) -> bool:
+    """True unless another release tag is numerically higher."""
+    new = parse_tag(tag)[1]
+    return not any((old := _triple(name)) is not None and old > new for name in existing)
+
+
 def find_release_commit(log: str, tag: str) -> str | None:
     """The newest commit whose subject is exactly `chore(release): <tag>`.
 
@@ -172,6 +203,40 @@ def manifest_version(repo: Path, rev: str) -> str | None:
     except (ValueError, AttributeError):
         return None
     return value if isinstance(value, str) else None
+
+
+def owned_manifest_paths() -> list[str]:
+    """The bump script's own list, read in-process: no tree's code runs to answer it."""
+    return [path.relative_to(bump_version.ROOT).as_posix() for path in bump_version.MANIFESTS]
+
+
+def check_release_commit(repo: Path, commit: str) -> None:
+    """Refuse a commit as a release commit unless the workflow's bump could have written it.
+
+    A subject and a manifest version are text anyone can put in a pull request. The bump
+    commit is also committed by the release bot, has exactly one parent, and changes the
+    owned manifests' `version` values and nothing else. The diff rule is the archive
+    proof's own, with the parent standing in for the verified commit.
+    """
+    parents = run_git(repo, "rev-list", "--parents", "-n", "1", commit).split()[1:]
+    if len(parents) != 1:
+        message = (
+            f"commit {commit} has {len(parents)} parents; a release commit has exactly one "
+            "parent - refusing to resume onto it"
+        )
+        raise ReleaseError(message)
+    committer = run_git(repo, "log", "-1", "--format=%ce", commit)
+    if committer != BOT_EMAIL:
+        message = (
+            f"commit {commit} was committed by {committer!r}, not the release bot "
+            f"{BOT_EMAIL!r} - refusing to resume onto it"
+        )
+        raise ReleaseError(message)
+    try:
+        verify_release_archive.check_changes(repo, commit, parents[0], owned_manifest_paths())
+    except verify_release_archive.ArchiveError as exc:
+        message = f"commit {commit}: {exc} - refusing to resume onto it"
+        raise ReleaseError(message) from exc
 
 
 def require_sha(name: str, value: str) -> str:
@@ -222,6 +287,9 @@ def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
             "Tag the main tip with the next version instead."
         )
         raise ReleaseError(message)
+    existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
+    check_unique_version(tag, existing)
+    latest = is_latest(tag, existing)
     log = run_git(repo, "log", "--format=%H%x09%s", main_ref)
     release_commit = find_release_commit(log, tag)
     if release_commit:
@@ -232,10 +300,12 @@ def resolve(repo: Path, tag: str, main_ref: str = "origin/main") -> Resolution:
                 f"carry '{carried or ''}' - refusing to resume onto it"
             )
             raise ReleaseError(message)
-        return Resolution(tag, version, "resume", release_commit, release_commit, main_tip)
-    existing = run_git(repo, "tag", "-l", *TAG_GLOBS).split()
+        check_release_commit(repo, release_commit)
+        return Resolution(
+            tag, version, "resume", release_commit, release_commit, main_tip, latest=latest
+        )
     check_monotonic(tag, existing)
-    return Resolution(tag, version, "fresh", main_tip, "", main_tip)
+    return Resolution(tag, version, "fresh", main_tip, "", main_tip, latest=latest)
 
 
 def assert_head(repo: Path, expected: str) -> None:
@@ -303,6 +373,7 @@ def assert_checkout(
     if carried != version:
         message = f"release commit {target} carries '{carried or ''}', not {version}"
         raise ReleaseError(message)
+    check_release_commit(repo, target)
 
 
 def bump(repo: Path, version: str) -> bool:

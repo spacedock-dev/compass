@@ -210,7 +210,7 @@ The proposal carries:
 
    ```bash
    VERSION=<the proposed number>
-   git tag -l "v$VERSION"                       # must print nothing
+   git tag -l "v$VERSION" "$VERSION"            # must print nothing: either spelling blocks a release
    gh release view "v$VERSION"                  # must fail with "release not found"
    ```
 6. What pushing the tag will do, in one line each: validate the tag and fix the commit to release,
@@ -330,6 +330,14 @@ Read which job failed first:
 - **`resolve` failed with "releases are on hold".** `RELEASE_HOLD` is on `main`. Nothing was
   tagged, verified, pushed or published, and nothing needs undoing. Do not work around it: read
   [The release hold](#the-release-hold).
+- **`resolve` failed with "refusing to resume onto it".** A commit on `main` is titled
+  `chore(release): <tag>` but is not one the workflow's bump could have written: it has more than one
+  parent, the release bot did not commit it, or it changes more than the owned manifests' `version`
+  values. Nothing was tagged, verified, pushed or published. Find out how that commit reached
+  `main` before anything else; do not retitle or rewrite history to get past it.
+- **`resolve` failed with "name the same version".** The version is tagged as both `X.Y.Z` and
+  `vX.Y.Z`. Delete the tag pushed by mistake (an owner action, because the tag ruleset blocks it),
+  then Re-run all jobs.
 - **`verify-frontend` or `verify-tree` failed.** Nothing was pushed, tagged or published; the tree
   that was verified is not releasable. Fix it on `main` through a PR, then Re-run all jobs on the
   same run: `resolve` takes the new main tip and both verifiers cover it. The run uses the workflow
@@ -363,7 +371,11 @@ Read which job failed first:
   `HOMEBREW_TAP_DEPLOY_KEY is empty`, add the secret, then re-run that job alone: the formula never
   moves backwards, so it is safe. A rejected push three times means the tap's `main` is busy or the
   deploy key was removed; check the key on that repository. After **Re-run all jobs** the archives
-  are rebuilt, so `brew install` fails on a sha256 mismatch until `homebrew` succeeds again.
+  are rebuilt, so `brew install` fails on a sha256 mismatch until `homebrew` succeeds again. If the
+  log says `checksums.txt` "does not match the digest attach-cli published", the file GitHub served
+  is not the one `attach-cli` uploaded in this run. Re-run that job alone once (a just-replaced
+  asset can be served stale for a moment); if it still differs, stop and have an owner compare the
+  release's `checksums.txt` with the `attach-cli` log before anything else.
 - **A later step failed (push, tag, `stable`, publish).** Re-run all jobs: the workflow finds this
   tag's release commit on `main`, verifies that commit, and publishes it, never a newer `main`. It
   moves `stable` forward only, so resuming an older release after a newer one leaves `stable` where
