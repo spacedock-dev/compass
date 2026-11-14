@@ -500,8 +500,8 @@ class AssertCheckoutTest(unittest.TestCase):
     def test_resume_asks_again_who_committed_the_release_commit_and_what_it_changed(
         self,
     ) -> None:
-        # `resolve` is the gate; the publishing job asks again with its own copy, so a
-        # resolve from a tree that predates the check cannot wave one through.
+        # `resolve` is the gate; the job that holds the key checks again rather than
+        # trusting the target that resolve reported.
         for name, kwargs in {
             "committer": {"committer": ("Someone", "someone@example.invalid")},
             "diff": {"extra": {"notes.txt": "rode along\n"}},

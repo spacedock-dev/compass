@@ -218,7 +218,10 @@ class Fixture:
         git(self.work, "add", "-A")
         git(
             self.work, "-c", f"user.name={name}", "-c", f"user.email={email}",
-            "commit", "-q", "-m", f"chore(release): {tag}",
+            # A different author, so a check that read the author instead of the committer
+            # would refuse every release commit here.
+            "commit", "-q", "--author", "Contributor <contributor@example.invalid>",
+            "-m", f"chore(release): {tag}",
         )  # fmt: skip
         git(self.work, "push", "-q", "origin", "main")
         return git(self.work, "rev-parse", "HEAD")
