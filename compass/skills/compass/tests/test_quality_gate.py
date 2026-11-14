@@ -170,8 +170,18 @@ class QualityGateDetectorTest(unittest.TestCase):
                 "frontend_docs": "false",
                 "frontend_docs_tests": "",
                 "platform": "false",
+                "workflows": "false",
             },
             self.detect("docs/" + "design-harness-registry.md"),
+        )
+
+    def test_a_workflow_runs_the_python_suites_and_actionlint_through_the_shipped_step(
+        self,
+    ) -> None:
+        found = self.detect(".github/workflows/sast.yml")
+        self.assertEqual(
+            ("true", "true", "false", "false"),
+            (found["python_suites"], found["workflows"], found["python"], found["frontend"]),
         )
 
     def test_a_document_frontend_comments_cite_runs_the_citation_check_alone(self) -> None:
@@ -204,9 +214,45 @@ class QualityGateDetectorTest(unittest.TestCase):
                 "frontend_docs": "false",
                 "frontend_docs_tests": "",
                 "platform": "true",
+                "workflows": "true",
             },
             found,
         )
+
+
+class ActionlintInTheGateTest(unittest.TestCase):
+    """actionlint runs inside the required gate, from a pinned and checksummed release."""
+
+    def test_it_runs_on_the_workflows_lane_and_the_aggregate_requires_it(self) -> None:
+        jobs = gate_jobs()
+        job = jobs["actionlint"]
+        self.assertEqual("changes", job["needs"])
+        self.assertEqual("needs.changes.outputs.workflows == 'true'", job["if"])
+        self.assertIn("actionlint", jobs["quality-gate"]["needs"])
+        detect = jobs["changes"]
+        self.assertEqual("${{ steps.detect.outputs.workflows }}", detect["outputs"]["workflows"])
+        # The detector's own fallback, when it cannot run at all, turns the lane on.
+        self.assertIn("workflows=true", detect_step())
+
+    def test_the_binary_is_pinned_and_verified_before_it_runs(self) -> None:
+        steps = gate_jobs()["actionlint"]["steps"]
+        script = "\n".join(step.get("run", "") for step in steps)
+        self.assertRegex(script, r'VERSION="\d+\.\d+\.\d+"')
+        self.assertRegex(script, r'EXPECTED_SHA256="[0-9a-f]{64}"')
+        check = script.index("sha256sum -c")
+        self.assertLess(check, script.index("tar -xzf"))
+        self.assertLess(check, script.index("./actionlint"))
+        for step in steps:
+            if "actions/checkout" in step.get("uses", ""):
+                self.assertIs(False, step["with"]["persist-credentials"])
+
+    def test_no_path_filtered_copy_is_left_beside_it(self) -> None:
+        # A second, path-filtered workflow would lint the same files twice and is not required.
+        for path in (ROOT / ".github/workflows").glob("*.y*ml"):
+            if path.name == "quality-gate.yml":
+                continue
+            with self.subTest(workflow=path.name):
+                self.assertNotIn("actionlint", path.read_text(encoding="utf-8"))
 
 
 def gate_jobs() -> dict[str, Any]:

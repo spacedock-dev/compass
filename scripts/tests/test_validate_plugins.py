@@ -1454,6 +1454,68 @@ class BundledHooksSchemaTests(unittest.TestCase):
             "a flat handler's command went unchecked",
         )
 
+    @staticmethod
+    def _agy(command: str) -> dict[str, object]:
+        return {"compass": {"PostInvocation": [{"type": "command", "command": command}]}}
+
+    def test_an_antigravity_command_relative_to_the_plugin_is_checked(self) -> None:
+        # Antigravity runs hook commands from the plugin root and expands no variable, so the
+        # shipped file names `./skills/...`. Only the variable forms were parsed, which left every
+        # Antigravity command checking zero paths: a missing script there validated clean.
+        command = 'python3 "./skills/compass/launch.py" "./skills/compass/agy_hook.py" PostToolUse'
+        self.assertEqual(
+            ["skills/compass/launch.py", "skills/compass/agy_hook.py"],
+            validator._referenced_plugin_paths(command),
+        )
+        with tempfile.TemporaryDirectory(prefix="compass-hooks-schema-") as directory:
+            plugin_root = Path(directory) / "plug"
+            (plugin_root / "skills/compass").mkdir(parents=True)
+            (plugin_root / "hooks.json").write_text(json.dumps(self._agy(command)))
+            (plugin_root / "skills/compass/launch.py").write_text("#\n")
+            validation = validator.Validation()
+            validator.validate_hooks_adapter(plugin_root, validation)
+            self.assertEqual(
+                ["references missing skills/compass/agy_hook.py"],
+                [e.split(": hook command ", 1)[1] for e in validation.errors],
+            )
+            (plugin_root / "skills/compass/agy_hook.py").write_text("#\n")
+            validation = validator.Validation()
+            validator.validate_hooks_adapter(plugin_root, validation)
+            self.assertEqual([], validation.errors)
+
+    def test_a_hook_command_that_names_no_plugin_file_is_rejected(self) -> None:
+        # A command the parser finds nothing in is a command nothing checked; it fails rather than
+        # passing with zero paths.
+        for command in ("python3 agy_hook.py", 'python3 "$HOME/agy_hook.py"', "true"):
+            with self.subTest(command=command):
+                errors = self._validate(self._agy(command), ship_script=True)
+                self.assertTrue(any("names no file this plugin ships" in e for e in errors), errors)
+
+    def test_a_relative_path_cannot_leave_the_plugin_root(self) -> None:
+        command = 'python3 "./skills/../../outside.py"'
+        with tempfile.TemporaryDirectory(prefix="compass-hooks-schema-") as directory:
+            plugin_root = Path(directory) / "plug"
+            plugin_root.mkdir()
+            (Path(directory) / "outside.py").write_text("#\n")
+            (plugin_root / "hooks.json").write_text(json.dumps(self._agy(command)))
+            validation = validator.Validation()
+            validator.validate_hooks_adapter(plugin_root, validation)
+            self.assertTrue(any("outside the plugin" in e for e in validation.errors))
+
+    def test_every_shipped_hook_command_names_the_files_it_runs(self) -> None:
+        for root in ("compass", "compass-gemini", "compass-droid"):
+            for relative in validator.BUNDLED_HOOKS_FILES:
+                path = validator.ROOT / root / relative
+                if not path.is_file():
+                    continue
+                events = validator._hook_events(json.loads(path.read_text(encoding="utf-8")))
+                for command in validator._hook_commands(events):
+                    with self.subTest(file=f"{root}/{relative}", command=command):
+                        found = validator._referenced_plugin_paths(command)
+                        self.assertEqual(2, len(found), "the launcher and the hook it starts")
+                        for script in found:
+                            self.assertTrue((validator.ROOT / root / script).is_file(), script)
+
 
 class HookVocabularyTests(unittest.TestCase):
     """No bundled hooks file may register another harness's event names.

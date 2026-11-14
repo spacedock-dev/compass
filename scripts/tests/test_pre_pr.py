@@ -118,10 +118,32 @@ class LanePlanTest(unittest.TestCase):
         self.assertFalse(any("--coverage" in command for command in ran(plan({}, coverage=True))))
 
     def test_a_requirements_change_installs_the_toolchain_first(self) -> None:
-        install = "python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt"
+        # Both files hashed, in one command: hash checking is all-or-nothing per pip command, so an
+        # unhashed requirements-validation.txt beside the hashed dev file would fail the install.
+        install = (
+            "python3 -m pip install --require-hashes "
+            "-r requirements-release.txt -r requirements-dev.txt"
+        )
         self.assertIn(install, skipped(plan({"python": "true"})))
         commands = ran(plan({"python": "true"}, requirements=True))
         self.assertEqual(commands[0], install)
+        self.assertEqual(
+            {"requirements-release.txt", "requirements-dev.txt"}, set(pre_pr.REQUIREMENTS)
+        )
+
+    def test_a_workflow_change_runs_actionlint_when_it_is_installed(self) -> None:
+        lanes = {"python_suites": "true", "workflows": "true"}
+        self.assertIn("actionlint", ran(plan(lanes)))
+        # A known lane, so it does not turn on the whole list.
+        self.assertEqual([], pnpm(ran(plan(lanes))))
+        reasons = {item.text: item.reason for item in plan({})}
+        self.assertEqual("the workflows lane is off", reasons["actionlint"])
+
+        def without(name: str) -> str | None:
+            return None if name == "actionlint" else installed(name)
+
+        missing = {item.text: item.reason for item in plan(lanes, which=without)}
+        self.assertEqual("`actionlint` is not installed; the gate runs it", missing["actionlint"])
 
     def test_python_change_runs_both_suites_without_coverage_and_no_pnpm_step(self) -> None:
         commands = ran(plan({"python": "true", "lint": "true", "python_suites": "true"}))

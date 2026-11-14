@@ -20,8 +20,11 @@ validation. See [COMPATIBILITY.md](COMPATIBILITY.md) for why 3.12 is the floor.
 ```bash
 git clone https://github.com/spacedock-dev/compass.git compass
 cd compass
-# PyYAML for the contract validator; ruff, mypy and coverage for the quality gate.
-python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt
+# PyYAML for the contract validator; ruff, mypy and coverage for the quality gate. Both files
+# hold sha256 hashes, and pip checks hashes for every file in a command or none, so keep
+# requirements-dev.txt beside requirements-release.txt (the hashed copy of
+# requirements-validation.txt), never beside an unhashed file.
+python3 -m pip install --require-hashes -r requirements-release.txt -r requirements-dev.txt
 pnpm install --frozen-lockfile
 ```
 

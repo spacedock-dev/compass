@@ -284,7 +284,7 @@ jobs:
         timeout-minutes: 3
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --requirement requirements-validation.txt
+          python3 -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --requirement requirements-release.txt
 
       - name: Run the full validation suite on the release tree
         # A resumed release's tree was already validated when its bump commit was
@@ -364,7 +364,7 @@ jobs:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: |
           set -euo pipefail
-          "$PYTHON" -m pip install --disable-pip-version-check --only-binary=:all: --requirement requirements-cli.txt
+          "$PYTHON" -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --no-deps --requirement requirements-cli.txt
 
       - name: Build the binary and pack the archive
         timeout-minutes: 10

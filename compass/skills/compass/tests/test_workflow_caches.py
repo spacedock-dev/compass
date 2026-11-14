@@ -662,5 +662,68 @@ class WriteCredentialRestoresNoCacheTest(unittest.TestCase):
                 self.assertIs(expected, restores_a_cache(step))
 
 
+class MainBranchCacheScopeTest(unittest.TestCase):
+    """Nothing that runs on main can seed a cache another job restores, or restore one itself.
+
+    The plugin canary runs on every push to main and installs the newest upstream CLIs, whose
+    dependencies' install scripts would run with main's cache scope. The gate's jobs used to
+    restore a pip cache from that scope, and actions/cache extracts with `tar -P`, so an entry
+    could write outside its path before any hash was checked.
+    """
+
+    def test_no_python_or_node_setup_restores_a_cache(self) -> None:
+        for name, workflow in workflows().items():
+            for job_id, job in workflow["jobs"].items():
+                for step in job.get("steps", []):
+                    action = step.get("uses", "").split("@")[0]
+                    if action not in {"actions/setup-python", "actions/setup-node"}:
+                        continue
+                    with self.subTest(workflow=name, job=job_id, step=step.get("name")):
+                        self.assertFalse(restores_a_cache(step))
+
+    def test_the_canary_restores_nothing_and_runs_no_dependency_install_script(self) -> None:
+        job = workflows()["plugin-compatibility.yml"]["jobs"]["latest-client-smoke"]
+        installs = []
+        for step in job["steps"]:
+            with self.subTest(step=step.get("name") or step.get("uses")):
+                self.assertFalse(restores_a_cache(step))
+            installs += [
+                line
+                for line in step.get("run", "").replace("\\\n", " ").splitlines()
+                if re.search(r"\bnpm\s+(?:install|i|ci)\b", line)
+            ]
+        self.assertTrue(installs)
+        for line in installs:
+            with self.subTest(line=line):
+                self.assertIn("--ignore-scripts", line)
+
+
+SEMGREP_IMAGE = re.compile(r"^semgrep/semgrep:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$")
+
+
+class SemgrepPinTest(unittest.TestCase):
+    """The weekly scan runs a fixed image and a fixed rule set, and reports nothing home."""
+
+    def job(self) -> dict[str, Any]:
+        return cast("dict[str, Any]", workflows()["sast.yml"]["jobs"]["semgrep"])
+
+    def test_the_image_is_pinned_by_digest(self) -> None:
+        self.assertRegex(self.job()["container"]["image"], SEMGREP_IMAGE)
+
+    def test_the_rules_are_a_pinned_checkout_and_no_registry_config(self) -> None:
+        steps = self.job()["steps"]
+        (rules,) = [
+            s for s in steps if s.get("with", {}).get("repository") == "semgrep/semgrep-rules"
+        ]
+        self.assertRegex(rules["with"]["ref"], r"^[0-9a-f]{40}$")
+        self.assertIs(False, rules["with"]["persist-credentials"])
+        scan = "\n".join(s.get("run", "") for s in steps)
+        self.assertIn("semgrep scan", scan)
+        self.assertIn("--metrics=off", scan)
+        # `auto` and `p/...`/`r/...` names are fetched from the registry at run time, unpinned.
+        self.assertNotRegex(scan, r"--config[ =](?:auto|[pr]/|https?:)")
+        self.assertIn(f"--exclude {rules['with']['path']}", scan)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,7 @@ on:
       - 'compass-droid/**'
       - '.agents/plugins/**'
       - 'scripts/validate_plugins.py'
-      - 'requirements-validation.txt'
+      - 'requirements-release.txt'
   push:
     branches:
       - main
@@ -59,11 +59,25 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
+          # This job runs on every push to main; a cache it saved there is one every later main
+          # run could restore.
+          package-manager-cache: false
 
       - name: Install latest Codex, Claude Code, and Gemini CLI
         # Deliberately unpinned: this canary detects breaking changes in the
-        # newest published clients before users encounter them.
-        run: npm install --global @openai/codex@latest @anthropic-ai/claude-code@latest @google/gemini-cli@latest
+        # newest published clients before users encounter them. No install
+        # script runs: the clients' dependencies are third-party code, and this
+        # job runs with main's cache scope. Claude Code is the one client that
+        # needs its own: its `install.cjs` copies the platform binary that npm
+        # already downloaded over a placeholder, offline (measured with
+        # 2.1.325: without it `claude --version` exits with "native binary not
+        # installed"). It is run by name, so no other package's script does.
+        # Codex and Gemini CLI start without theirs; Gemini's skipped
+        # scripts belong to optional native modules (keytar, node-pty).
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts @openai/codex@latest @anthropic-ai/claude-code@latest @google/gemini-cli@latest
+          node "$(npm root --global)/@anthropic-ai/claude-code/install.cjs"
 
       - name: Install latest Antigravity CLI
         # The binary version floats (the bootstrap resolves the latest
@@ -179,7 +193,7 @@ jobs:
         # two copies of a required-file list is how one of them goes stale.
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet -r requirements-validation.txt
+          python3 -m pip install --quiet --only-binary=:all: --require-hashes -r requirements-release.txt
           python3 scripts/validate_plugins.py --runtime-files "$COMPASS_INSTALL_PATH"
 
       - name: Smoke test the installed dashboard end to end

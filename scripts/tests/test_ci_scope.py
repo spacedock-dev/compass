@@ -48,6 +48,7 @@ ALL_OFF = {
     "frontend_docs": "false",
     "frontend_docs_tests": "",
     "platform": "false",
+    "workflows": "false",
 }
 CHECK = "frontend/test/docCitations.test.ts"
 
@@ -134,19 +135,50 @@ class EachKindOfChangeRunsItsLaneTest(unittest.TestCase):
     def test_prose_no_test_reads_runs_nothing(self) -> None:
         for path in (
             "docs/" + "design-harness-registry.md",
-            ".github/workflows/version-guard.yml",
             ".github/ISSUE_TEMPLATE/bug_report.yml",
         ):
             with self.subTest(path=path):
                 self.assertEqual(ALL_OFF, lanes_of(path))
 
-    def test_the_requeue_workflow_is_left_to_validates_dashboard_suite(self) -> None:
-        # It runs from the default branch only, so no lane can run it. Its shape test is in the
-        # dashboard suite, which validate.yml runs whenever this detector turns no Python suite on.
-        workflow = ".github/workflows/requeue-after-ejection.yml"
-        self.assertEqual(ALL_OFF, lanes_of(workflow))
+    def test_every_workflow_runs_the_python_suites_and_actionlint(self) -> None:
+        # The script and dashboard suites read the workflows (their shape tests, the release
+        # rehearsals) and actionlint parses them. Neither ran on a workflow outside the gate's
+        # wiring before, so an edit to one merged with validate.yml's dashboard suite alone.
+        shipped = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / ".github/workflows").glob("*.y*ml")
+        )
+        self.assertIn(".github/workflows/requeue-after-ejection.yml", shipped)
+        for path in (*shipped, ".github/workflows/new-canary.yml", ".github/workflows/x.yaml"):
+            with self.subTest(path=path):
+                found = lanes_of(path)
+                self.assertEqual(("true", "true"), (found["python_suites"], found["workflows"]))
+
+    def test_a_workflow_outside_the_gates_wiring_runs_only_the_suites_and_actionlint(self) -> None:
+        for path in (
+            ".github/workflows/version-guard.yml",
+            ".github/workflows/requeue-after-ejection.yml",
+            ".github/workflows/sast.yml",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    {**ALL_OFF, "python_suites": "true", "workflows": "true"}, lanes_of(path)
+                )
         self.assertTrue((ROOT / "compass/skills/compass/tests/test_requeue_workflow.py").is_file())
         self.assertEqual("true", lanes_of("scripts/requeue_after_ejection.py")["python"])
+
+    def test_actionlint_runs_only_for_a_workflow_or_every_lane(self) -> None:
+        # actionlint reads `.github/workflows` alone: a composite action or the detector is not one.
+        for path in (
+            ".github/actions/frontend-toolchain/action.yml",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "scripts/ci_scope.py",
+            "compass/skills/compass/server.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual("false", lanes_of(path)["workflows"])
+        self.assertEqual("true", ci_scope.EVERYTHING.outputs()["workflows"])
+        self.assertEqual("true", lanes_of("somewhere/new.file")["workflows"])
 
     def test_an_unknown_path_and_an_empty_diff_fail_open(self) -> None:
         for paths in (("somewhere/new.file",), ()):
@@ -375,7 +407,8 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
 
     def test_a_dependency_bump_runs_the_macos_legs_that_install_it(self) -> None:
         # The lockfile pins per-OS native bindings (esbuild, rolldown, biome, lightningcss) and the
-        # macOS legs install requirements-validation.txt: only a macOS runner loads their darwin builds.
+        # macOS legs install requirements-release.txt, the hashed copy of requirements-validation.txt:
+        # only a macOS runner loads their darwin builds.
         for path in (
             "pnpm-lock.yaml",
             "package.json",
@@ -383,9 +416,19 @@ class PlatformSensitiveChangesRunTheMacosLegsTest(unittest.TestCase):
             ".npmrc",
             "pnpm-workspace.yaml",
             "requirements-validation.txt",
+            "requirements-release.txt",
         ):
             with self.subTest(path=path):
                 self.assertEqual("true", lanes_of(path)["platform"])
+
+    def test_a_requirements_source_runs_the_python_lane_alone(self) -> None:
+        # The tests that hold a hashed file to its source's pins are Python tests.
+        for path in ("requirements-dev.in", "requirements-cli.in"):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    {**ALL_OFF, "python": "true", "lint": "true", "python_suites": "true"},
+                    lanes_of(path),
+                )
 
     def test_an_exit_watch_change_runs_the_python_lane_on_macos(self) -> None:
         found = lanes_of("compass/skills/compass/compass_runtime/supervise.py")
@@ -600,7 +643,7 @@ class TheWorkflowRunAsksGitTest(unittest.TestCase):
             ci_scope.main(["--root", str(ROOT), "--paths", "frontend/src/main.tsx"])
         self.assertEqual(
             "python=false\nlint=false\nfrontend=true\ncontract=false\npython_suites=true\n"
-            "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\n",
+            "frontend_docs=false\nfrontend_docs_tests=\nplatform=false\nworkflows=false\n",
             output.read_text(encoding="utf-8"),
         )
         self.assertIn("frontend/src/main.tsx: frontend", out.getvalue())
