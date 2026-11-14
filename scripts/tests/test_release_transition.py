@@ -134,10 +134,7 @@ class ResolveTest(unittest.TestCase):
         self.assertIn("not on main", str(caught.exception))
 
     def release_commit(self, tag: str, version: str) -> str:
-        self.fx.set_version(version)
-        git(self.fx.work, "commit", "-q", "--amend", "-m", f"chore(release): {tag}")
-        git(self.fx.work, "push", "-q", "--force", "origin", "main")
-        return git(self.fx.work, "rev-parse", "HEAD")
+        return self.fx.release_commit(tag, version)
 
     def test_an_existing_release_commit_resumes_onto_itself(self) -> None:
         self.fx.commit("feat: work")
@@ -166,6 +163,101 @@ class ResolveTest(unittest.TestCase):
         with self.assertRaises(rt.ReleaseError) as caught:
             self.resolve("v0.2.0")
         self.assertIn("refusing to resume", str(caught.exception))
+
+    def test_a_release_commit_the_release_bot_did_not_commit_is_not_resumed(self) -> None:
+        # A squash-merged pull request titled like a release commit lands with GitHub's
+        # own committer, so its subject and manifests alone would otherwise be enough.
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        self.fx.release_commit(
+            "v0.2.0", "0.2.0", committer=("Someone", "someone@example.invalid")
+        )
+        with self.assertRaises(rt.ReleaseError) as caught:
+            self.resolve("v0.2.0")
+        text = str(caught.exception)
+        self.assertIn("refusing to resume", text)
+        self.assertIn("someone@example.invalid", text)
+        self.assertIn(rt.BOT_EMAIL, text)
+
+    def test_a_release_commit_that_changes_more_than_the_version_is_not_resumed(self) -> None:
+        manifest = json.loads((self.fx.work / MANIFESTS[1]).read_text(encoding="utf-8"))
+        manifest["description"] = "changed alongside the version"
+        for name, extra in {
+            "another file": {"notes.txt": "rode along with the bump\n"},
+            "another manifest field": {MANIFESTS[1]: json.dumps(manifest, indent=2) + "\n"},
+        }.items():
+            with self.subTest(name):
+                fx = Fixture(self)
+                fx.commit("feat: work")
+                fx.tag("v0.2.0")
+                fx.release_commit("v0.2.0", "0.2.0", extra=extra)
+                fx.fetch()
+                with self.assertRaises(rt.ReleaseError) as caught:
+                    rt.resolve(fx.work, "v0.2.0")
+                self.assertIn("refusing to resume", str(caught.exception))
+
+    def test_a_merge_commit_titled_as_a_release_is_not_resumed(self) -> None:
+        # Its diff against the first parent can be the version alone while the second
+        # parent brings anything, so a release commit must have exactly one parent.
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        base = git(self.fx.work, "rev-parse", "HEAD")
+        git(self.fx.work, "checkout", "-q", "-b", "side", base)
+        self.fx.commit("feat: from the side", push=False, branch="side")
+        git(self.fx.work, "checkout", "-q", "main")
+        self.fx.release_commit("v0.2.0", "0.2.0")
+        git(
+            self.fx.work, "-c", f"user.name={rt.BOT_NAME}", "-c", f"user.email={rt.BOT_EMAIL}",
+            "merge", "-q", "--no-ff", "-m", "chore(release): v0.2.0", "side",
+        )  # fmt: skip
+        git(self.fx.work, "push", "-q", "origin", "main")
+        with self.assertRaises(rt.ReleaseError) as caught:
+            self.resolve("v0.2.0")
+        self.assertIn("one parent", str(caught.exception))
+
+    def test_a_bot_release_commit_of_the_version_alone_still_resumes(self) -> None:
+        # The shape every release commit on the real main has: one parent, the release
+        # bot as committer, and a diff of the owned manifests' version values only.
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        release = self.release_commit("v0.2.0", "0.2.0")
+        self.assertEqual(("resume", release), self.mode_and_target("v0.2.0"))
+
+    def mode_and_target(self, tag: str) -> tuple[str, str]:
+        result = self.resolve(tag)
+        return result.mode, result.target
+
+    def test_the_same_version_under_both_tag_spellings_is_refused_in_either_mode(self) -> None:
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        self.fx.tag("0.2.0")
+        with self.assertRaises(rt.ReleaseError) as fresh:
+            self.resolve("v0.2.0")
+        self.assertIn("0.2.0 and v0.2.0", str(fresh.exception))
+        self.release_commit("v0.2.0", "0.2.0")
+        for tag in ("v0.2.0", "0.2.0"):
+            with self.subTest(tag=tag), self.assertRaises(rt.ReleaseError) as caught:
+                self.resolve(tag)
+            self.assertIn("0.2.0 and v0.2.0", str(caught.exception))
+
+    def test_a_fresh_release_is_the_latest(self) -> None:
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        result = self.resolve("v0.2.0")
+        self.assertTrue(result.latest)
+        self.assertEqual("true", result.outputs()["latest"])
+
+    def test_a_resume_is_the_latest_only_while_no_higher_release_tag_exists(self) -> None:
+        self.fx.commit("feat: work")
+        self.fx.tag("v0.2.0")
+        self.release_commit("v0.2.0", "0.2.0")
+        self.assertTrue(self.resolve("v0.2.0").latest)
+        self.fx.commit("feat: more work")
+        self.fx.tag("v0.10.0")
+        result = self.resolve("v0.2.0")
+        self.assertEqual("resume", result.mode)
+        self.assertFalse(result.latest)
+        self.assertEqual("false", result.outputs()["latest"])
 
 
 class ReleaseHoldTest(unittest.TestCase):
@@ -196,10 +288,7 @@ class ReleaseHoldTest(unittest.TestCase):
         git(self.fx.work, "push", "-q", "origin", "main")
 
     def release_commit(self, tag: str, version: str) -> str:
-        self.fx.set_version(version)
-        git(self.fx.work, "commit", "-q", "--amend", "-m", f"chore(release): {tag}")
-        git(self.fx.work, "push", "-q", "--force", "origin", "main")
-        return git(self.fx.work, "rev-parse", "HEAD")
+        return self.fx.release_commit(tag, version)
 
     def test_the_marker_is_named_in_one_place_at_the_repository_root(self) -> None:
         self.assertEqual("RELEASE_HOLD", rt.HOLD_FILE)
@@ -405,13 +494,28 @@ class AssertCheckoutTest(unittest.TestCase):
             rt.assert_checkout(self.fx.work, "maybe", self.tip, "v0.2.0", verified=self.tip)
 
     def test_resume_accepts_a_release_commit_that_main_has_moved_past(self) -> None:
-        self.fx.set_version("0.2.0")
-        git(self.fx.work, "commit", "-q", "--amend", "-m", "chore(release): v0.2.0")
-        git(self.fx.work, "push", "-q", "--force", "origin", "main")
-        release = git(self.fx.work, "rev-parse", "HEAD")
+        release = self.fx.release_commit("v0.2.0", "0.2.0")
         self.fx.commit("feat: later")
         self.checkout_main()
         rt.assert_checkout(self.fx.work, "resume", release, "v0.2.0", verified=release)
+
+    def test_resume_asks_again_who_committed_the_release_commit_and_what_it_changed(
+        self,
+    ) -> None:
+        # `resolve` is the gate; the publishing job asks again with its own copy, so a
+        # resolve from a tree that predates the check cannot wave one through.
+        for name, kwargs in {
+            "committer": {"committer": ("Someone", "someone@example.invalid")},
+            "diff": {"extra": {"notes.txt": "rode along\n"}},
+        }.items():
+            with self.subTest(name):
+                fx = Fixture(self)
+                fx.commit("feat: work")
+                release = fx.release_commit("v0.2.0", "0.2.0", **kwargs)  # type: ignore[arg-type]
+                fx.fetch()
+                git(fx.work, "checkout", "-q", "--detach", release)
+                with self.assertRaises(rt.ReleaseError):
+                    rt.assert_checkout(fx.work, "resume", release, "v0.2.0", verified=release)
 
     def test_resume_refuses_a_target_main_does_not_contain(self) -> None:
         git(self.fx.work, "checkout", "-q", "-b", "side")
@@ -568,12 +672,13 @@ class CommandLineTest(unittest.TestCase):
             timeout=60,
         )
 
-    def test_resolve_prints_and_writes_the_three_job_outputs(self) -> None:
+    def test_resolve_prints_and_writes_the_four_job_outputs(self) -> None:
         output = self.fx.root / "github-output"
         result = self.cli("resolve", "--tag", "v0.2.0", "--github-output", str(output))
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\n", output.read_text(encoding="utf-8")
+            f"mode=fresh\nversion=0.2.0\ntarget={self.tip}\nlatest=true\n",
+            output.read_text(encoding="utf-8"),
         )
 
     def test_a_hostile_tag_is_refused_before_it_reaches_any_command(self) -> None:
@@ -806,10 +911,7 @@ class RecoveryWordingTest(unittest.TestCase):
     def test_resume_checks_the_target_against_main_not_against_head(self) -> None:
         # The workflow detaches onto the target before any repository code runs, so
         # HEAD is the target and ancestry has to be asked of main's own ref.
-        self.fx.set_version("0.2.0")
-        git(self.fx.work, "commit", "-q", "--amend", "-m", "chore(release): v0.2.0")
-        git(self.fx.work, "push", "-q", "--force", "origin", "main")
-        release = git(self.fx.work, "rev-parse", "HEAD")
+        release = self.fx.release_commit("v0.2.0", "0.2.0")
         git(self.fx.work, "checkout", "-q", "--detach", release)
         rt.assert_checkout(self.fx.work, "resume", release, "v0.2.0", verified=release)
 

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest import mock
 
+from release_transition import BOT_EMAIL, BOT_NAME
 from validate_plugins import COMPASS_RUNTIME_FILES
 
 if TYPE_CHECKING:
@@ -193,6 +194,34 @@ class Fixture:
         """Edit the manifests the way a hand edit would; only fixtures may."""
         write_manifest_version(self.work, version)
         return self.commit(f"fixture: manifests at {version}", files={})
+
+    def release_commit(
+        self,
+        tag: str,
+        version: str,
+        *,
+        committer: tuple[str, str] = (BOT_NAME, BOT_EMAIL),
+        extra: dict[str, str] | None = None,
+    ) -> str:
+        """A pushed commit shaped like the workflow's bump: the manifests only, by the bot.
+
+        `committer` and `extra` (more files in the same commit) build the shapes a resume
+        must refuse.
+        """
+        self.sync()
+        write_manifest_version(self.work, version)
+        for relative, content in (extra or {}).items():
+            path = self.work / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        name, email = committer
+        git(self.work, "add", "-A")
+        git(
+            self.work, "-c", f"user.name={name}", "-c", f"user.email={email}",
+            "commit", "-q", "-m", f"chore(release): {tag}",
+        )  # fmt: skip
+        git(self.work, "push", "-q", "origin", "main")
+        return git(self.work, "rev-parse", "HEAD")
 
     def tag(self, name: str, rev: str = "HEAD", *, push: bool = True) -> str:
         git(self.work, "tag", "-f", name, rev)
