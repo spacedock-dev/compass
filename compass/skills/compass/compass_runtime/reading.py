@@ -3361,6 +3361,20 @@ NO_LINES_RULE = (
 )
 
 
+# Escaping rather than a per-call nonce (as `goal_find` fences): with a nonce on every tag the
+# worst intent measured 12,893 > 12,800 bytes and two headers 9,821 and 9,853 > 9,728.
+_CLOSING_TAG = re.compile(r"<(?=\s*/\s*(?:goal|outcome_line))", re.IGNORECASE)
+
+
+def _inert(value: str) -> str:
+    """`value` with the opening `<` of any closing form of a tag `_header` writes made `&lt;`.
+
+    Text without one is returned unchanged, so ordinary headers keep their bytes. The header is
+    measured after this, so the 3 bytes per escape count against its budget.
+    """
+    return _CLOSING_TAG.sub("&lt;", value)
+
+
 def _header(
     goal_text: str,
     line_texts: Sequence[str],
@@ -3432,11 +3446,11 @@ def _header(
         "Never declare work met, complete, delivered or verified.\n\n"
     )
     if ask_goal:
-        header += f"<goal>\n{goal_text}\n</goal>\n"
-    # The attribute is a literal the code writes. The line beside it has been
-    # through `safe_text`, which collapses the newline a forged tag would need.
+        header += f"<goal>\n{_inert(goal_text)}\n</goal>\n"
+    # The attribute is a literal the code writes. A closing tag needs no newline, so `safe_text`
+    # collapsing one is not what keeps a value inside its tag; `_inert` is.
     for k, text in enumerate(line_texts, start=1):
-        header += f'<outcome_line n="{k}">\n{text}\n</outcome_line>\n'
+        header += f'<outcome_line n="{k}">\n{_inert(text)}\n</outcome_line>\n'
     header += "\n" + MENU_HEADING + "\n"
     return records.redact_secrets(header)
 

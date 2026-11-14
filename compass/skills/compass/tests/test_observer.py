@@ -824,7 +824,7 @@ class ObserverAnalyzerTest(unittest.TestCase):
         self.assertIn("project_doc_max_bytes=0", command)
         self.assertIn("skills.include_instructions=false", command)
         self.assertEqual("read-only", command[command.index("--sandbox") + 1])
-        self.assertIn("<transcript_excerpt>", recorded["prompt"])
+        self.assertIn('<transcript_excerpt id="', recorded["prompt"])
         self.assertEqual("used", caller.metadata()["status"])
 
     def test_codex_no_goal_output_keeps_the_deterministic_goal(self) -> None:

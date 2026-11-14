@@ -28,8 +28,15 @@ and `json` cost about ten milliseconds per hook that nothing at or above the flo
    server and `server.py` always exit nonzero. Antigravity's hooks have no session-start
    event, so they print only the `{}` it reads from stdout.
 
-`COMPASS_LAUNCH_ASSUME_PYTHON` (for example `3.9.6`) makes the version check believe
-that version. It exists for `test_launch.py` and nothing else documents or reads it.
+A hook whose script cannot be opened while this launcher still can (a plugin partly removed or
+partly upgraded) exits 0 having printed only what its harness reads as nothing (`{}` for
+Antigravity's hook, an empty line for its status line), at any version. Claude Code, Codex, Gemini
+CLI and Droid read a hook's exit 2 as a decision to block the prompt or tool call. If the plugin
+directory is gone entirely, `python3` cannot open this file and exits 2 before any of it runs.
+
+`COMPASS_LAUNCH_ASSUME_PYTHON` (for example `3.9`, a major and a minor and nothing else) makes the
+version check believe that version; any other value is ignored. It exists for `test_launch.py`
+and nothing else documents or reads it.
 """
 
 import os
@@ -46,13 +53,31 @@ UV_TIMEOUT_SECONDS = 2
 HOOK_SCRIPTS = ("event_hook.py", "agy_hook.py", "notify_hook.py", "statusline_hook.py")
 SESSION_START = "SessionStart"
 AGY_HOOK = "agy_hook.py"
+# What each hook prints when it has nothing to say. Antigravity reads its hook's stdout as JSON,
+# and a status-line command that prints nothing blanks the status bar. The others print nothing on
+# every ordinary event, and Codex's empty output was measured as an abstain
+# (`docs/captures/codex/permission-abstain-0.149.0-macos.jsonl`).
+EMPTY_OUTPUT = {AGY_HOOK: "{}\n", "statusline_hook.py": "\n"}
+# Every hook reads at most 1 MiB of its payload, so one byte more says the payload is longer than
+# any hook would act on, and the launcher need hold no more than that below the floor.
+PAYLOAD_CAP = (1 << 20) + 1
+
+
+def assumed_version(value: str) -> "tuple[int, int] | None":
+    """Major and minor, ASCII digits only, without importing `re` at every hook.
+
+    `str.isdigit` is not that test: it accepts a superscript two, which `int` then refuses.
+    """
+    parts = value.split(".")
+    if len(parts) != 2 or not all(part and all(c in "0123456789" for c in part) for part in parts):
+        return None
+    return int(parts[0]), int(parts[1])
 
 
 def running_version() -> "tuple[tuple[int, ...], str]":
-    assumed = os.environ.get(SEAM)
-    if assumed:
-        parts = [int(part) for part in assumed.split(".") if part.isdigit()]
-        return tuple(parts), assumed
+    assumed = assumed_version(os.environ.get(SEAM) or "")
+    if assumed is not None:
+        return assumed, "{}.{}".format(*assumed)
     major, minor, micro = sys.version_info[:3]
     return (major, minor, micro), f"{major}.{minor}.{micro}"
 
@@ -220,25 +245,37 @@ def run_elsewhere(
     return exit_like(status)
 
 
+def abstain(target: str) -> int:
+    """A hook's no-op: what its harness reads as nothing, and exit 0."""
+    sys.stdout.write(EMPTY_OUTPUT.get(os.path.basename(target), ""))
+    return 0
+
+
 def below_floor(target: str, args: "list[str]", version_text: str) -> int:
     is_hook = os.path.basename(target) in HOOK_SCRIPTS
     payload: bytes | None = None
     if is_hook:
+        if not (os.path.isfile(target) and os.access(target, os.R_OK)):
+            return abstain(target)
         try:
-            payload = sys.stdin.buffer.read()
+            payload = sys.stdin.buffer.read(PAYLOAD_CAP)
         except (OSError, ValueError, AttributeError):
             payload = b""
+        if len(payload) >= PAYLOAD_CAP:
+            return abstain(target)
     interpreter = find_new_python()
     if interpreter:
         status = run_elsewhere(interpreter, target, args, payload)
+        # Every hook's main returns 0, so a 2 here is the interpreter failing to open a script
+        # removed during the uv lookup; re-running through this file would recurse on the seam.
+        if is_hook and status == 2 and not os.path.isfile(target):
+            return abstain(target)
         if status is not None:
             return status
     if is_hook and not (
         os.path.basename(target) == "event_hook.py" and starts_a_session(payload or b"")
     ):
-        if os.path.basename(target) == AGY_HOOK:
-            sys.stdout.write("{}\n")  # Antigravity reads stdout JSON; see SECURITY.md
-        return 0
+        return abstain(target)  # Antigravity reads stdout JSON; see SECURITY.md
     sys.stderr.write(sentence(version_text) + "\n")
     return 1
 
@@ -255,8 +292,8 @@ def main(argv: "list[str]") -> int:
         with open(target, "rb") as handle:
             code = compile(handle.read(), target, "exec")
     except OSError as error:
-        if os.path.basename(target) == AGY_HOOK:
-            sys.stdout.write("{}\n")
+        if os.path.basename(target) in HOOK_SCRIPTS:
+            return abstain(target)
         sys.stderr.write(f"launch.py: can't open {target!r}: {error.strerror}\n")
         return 2
     sys.path.insert(0, os.path.dirname(os.path.abspath(target)))

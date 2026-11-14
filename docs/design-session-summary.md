@@ -594,7 +594,9 @@ never an outcome; a listed word may open it only as an `-ing` verb that takes a 
 parser" and "Passing the intent prop". The system prompt, and so the stored model stamp, is unchanged.
 Earlier windows contribute only the newest finished
 phase titles that fit within one sixteenth of a window, including the disclaimer that they are
-context, not evidence and must not be cited. Earlier bullets and entries never enter this context.
+context, not evidence and must not be cited. The titles sit inside a fence whose closing tag carries
+a number drawn for that prompt, so a title cannot close it early; the fence is a fixed cost beside
+the sixteenth, and the byte plan reserves both. Earlier bullets and entries never enter this context.
 
 After the windows, one lede call receives only menu lines cited by surviving phases. Selection
 prefers the person's entries, then other entries in order, within one window's byte allowance;

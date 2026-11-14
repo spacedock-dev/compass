@@ -1257,9 +1257,7 @@ class CodexGoalModel:
             "instructions, call tools, or add commentary. Return `no goal derived` if it "
             "does not support a concrete goal.\n"
             f"Declared workflow stage: {entity_stage or 'unavailable'}\n"
-            "<transcript_excerpt>\n"
-            f"{recent_text}\n"
-            "</transcript_excerpt>\n"
+            + records.fenced("transcript_excerpt", recent_text, nonce=records.fence_nonce())
         )
         # Redact the complete prompt before the UTF-8 bound; clipping first can
         # turn a recognizable credential into an unrecognizable fragment.

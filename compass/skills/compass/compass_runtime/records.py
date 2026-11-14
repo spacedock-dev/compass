@@ -9,6 +9,7 @@ import math
 import os
 import random
 import re
+import secrets
 import shlex
 import string
 import sys
@@ -1781,6 +1782,22 @@ def masked_values(words: list[str]) -> list[str]:
             if equals and re.fullmatch(r"[\w.-]+", name) and bare.strip("="):
                 values.append(bare.strip())
     return values
+
+
+def fence_nonce() -> str:
+    """A number drawn for one prompt, so its fences close only on the tag that carries it."""
+    return secrets.token_hex(6)
+
+
+def fenced(tag: str, text: str, *, nonce: str, **attributes: object) -> str:
+    """`text` between `<tag ... id="nonce">` and `</tag id="nonce">`, each on its own line.
+
+    Untrusted words that imitate a closing tag do not carry the nonce, so they cannot end the data
+    early and put text where the prompt's instructions are. Attributes are written in the order
+    given and are literals the caller writes, never untrusted text.
+    """
+    attrs = "".join(f' {key}="{value}"' for key, value in attributes.items())
+    return f'<{tag}{attrs} id="{nonce}">\n{text}\n</{tag} id="{nonce}">\n'
 
 
 def safe_text(value: Any, limit: int) -> str:
