@@ -21,6 +21,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -36,7 +37,7 @@ PLUGIN_ROOT = SKILL.parents[1]
 REPO = PLUGIN_ROOT.parent
 LAUNCHER = SKILL / "launch.py"
 SEAM = "COMPASS_LAUNCH_ASSUME_PYTHON"
-OLD = "3.9.6"
+OLD = "3.9"
 SYSTEM_PYTHON = Path("/usr/bin/python3")
 SESSION_START = json.dumps({"hook_event_name": "SessionStart", "session_id": "s1"}).encode()
 POST_TOOL = json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1"}).encode()
@@ -175,12 +176,46 @@ class AtOrAboveTheFloorTest(LauncherTest):
         done = self.run_launcher(script, assume=None)
         self.assertEqual((0, b""), (done.returncode, done.stderr))
 
-    def test_a_missing_script_exits_2_like_python_does_and_agy_still_gets_its_object(self) -> None:
-        done = self.run_launcher(self.root / "nope.py", assume=None)
-        self.assertEqual(2, done.returncode)
-        self.assertNotIn(b"Traceback", done.stderr)
-        done = self.run_launcher(self.root / "agy_hook.py", assume=None)
-        self.assertEqual((2, b"{}\n"), (done.returncode, done.stdout))
+    def test_a_missing_script_that_is_not_a_hook_exits_2_like_python_does(self) -> None:
+        for name in ("nope.py", "server.py", "mcp_server.py"):
+            with self.subTest(name=name):
+                done = self.run_launcher(self.root / name, assume=None)
+                self.assertEqual(2, done.returncode)
+                self.assertNotIn(b"Traceback", done.stderr)
+
+    def test_a_missing_hook_abstains_so_the_harness_never_blocks_the_prompt(self) -> None:
+        # Claude Code, Codex, Gemini CLI and Droid read a hook's exit 2 as a decision to block
+        # the prompt or the tool call. A plugin upgraded or removed mid-session leaves the
+        # harness running hooks whose scripts are gone; each must be a no-op, as `event_hook`
+        # is on every ordinary event: nothing on stdout, exit 0. Antigravity reads `{}` from
+        # its hook and a status line from its status-line command.
+        expected = {
+            "event_hook.py": b"",
+            "notify_hook.py": b"",
+            "agy_hook.py": b"{}\n",
+            "statusline_hook.py": b"\n",
+        }
+        for name, stdout in expected.items():
+            for assume in (None, OLD):
+                with self.subTest(name=name, assume=assume):
+                    done = self.run_launcher(self.root / name, stdin=SESSION_START, assume=assume)
+                    self.assertEqual((0, stdout, b""), (done.returncode, done.stdout, done.stderr))
+
+    @unittest.skipIf(os.name != "posix" or os.geteuid() == 0, "needs a mode root cannot bypass")
+    def test_an_unreadable_hook_abstains_too(self) -> None:
+        target = self.target()
+        target.chmod(0)
+        try:
+            done = self.run_launcher(target, stdin=POST_TOOL, assume=None)
+        finally:
+            target.chmod(0o644)
+        self.assertEqual((0, b"", b""), (done.returncode, done.stdout, done.stderr))
+
+    def test_a_missing_hook_below_the_floor_asks_uv_nothing(self) -> None:
+        self.finds_this_interpreter()
+        done = self.run_launcher(self.root / "event_hook.py", stdin=SESSION_START)
+        self.assertEqual(0, done.returncode)
+        self.assertFalse(self.uv_log.exists())
 
     def test_someone_on_a_new_python_never_triggers_a_uv_lookup(self) -> None:
         self.finds_this_interpreter()
@@ -523,6 +558,64 @@ class UvIsFoundOnlyOnRootedPathTest(LauncherTest):
         done = self.run_launcher(self.target(), stdin=SESSION_START, cwd=repository)
         self.assertFalse(self.log.exists(), "the hook ran under an interpreter uv named relatively")
         self.assertEqual(1, done.returncode)
+
+
+class BoundedPayloadTest(LauncherTest):
+    """Below the floor the launcher holds a hook's payload; it holds at most what a hook reads."""
+
+    CAP = (1 << 20) + 1
+
+    def test_the_stdin_read_is_bounded(self) -> None:
+        launch: Any = _load_launcher()
+        sizes: list[object] = []
+
+        class Buffer:
+            def read(self, size: int = -1) -> bytes:
+                sizes.append(size)
+                return POST_TOOL
+
+        with (
+            mock.patch.object(sys, "stdin", SimpleNamespace(buffer=Buffer())),
+            mock.patch.object(launch, "find_new_python", return_value=None),
+        ):
+            launch.below_floor(str(self.target()), [], OLD)
+        self.assertEqual([self.CAP], sizes)
+
+    def test_an_oversized_payload_abstains_rather_than_running_or_blocking(self) -> None:
+        # Every hook reads at most 1 MiB and drops the rest, so a longer payload is one no hook
+        # could act on. It is not forwarded, and the hook still exits 0.
+        self.finds_this_interpreter()
+        oversized = POST_TOOL + b" " * (self.CAP - len(POST_TOOL) + 1)
+        for name, stdout in (("event_hook.py", b""), ("agy_hook.py", b"{}\n")):
+            with self.subTest(name=name):
+                done = self.run_launcher(self.target(name), stdin=oversized)
+                self.assertEqual((0, stdout), (done.returncode, done.stdout))
+                self.assertFalse(self.log.exists(), "an oversized payload was forwarded")
+
+    def test_a_payload_at_the_cap_is_still_forwarded(self) -> None:
+        self.finds_this_interpreter()
+        payload = POST_TOOL + b" " * ((1 << 20) - len(POST_TOOL))
+        done = self.run_launcher(self.target(), stdin=payload)
+        self.assertEqual(0, done.returncode)
+        self.assertTrue(self.log.exists())
+
+
+class AssumedVersionSeamTest(LauncherTest):
+    def test_a_malformed_assumed_version_is_ignored_rather_than_believed_or_crashed_on(
+        self,
+    ) -> None:
+        self.finds_this_interpreter()
+        for value in ("3.9.6", "3", "3.x", "\u00b2.9", "3.9\n", "-1.2", " 3.9", "3..9"):
+            with self.subTest(value=value):
+                done = self.run_launcher(self.target(), stdin=POST_TOOL, assume=value)
+                self.assertNotIn(b"Traceback", done.stderr)
+                self.assertEqual(0, done.returncode, done.stderr)
+                # Run in this process at the real version, so uv is never asked.
+                self.assertFalse(self.uv_log.exists())
+
+    def test_a_well_formed_assumed_version_is_believed(self) -> None:
+        done = self.run_launcher(self.target(), stdin=SESSION_START, assume="3.11")
+        self.assertIn(b"python3 here is 3.11", done.stderr)
 
 
 class LauncherRootedRuleTest(unittest.TestCase):

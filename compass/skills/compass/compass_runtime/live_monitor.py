@@ -19,7 +19,6 @@ import contextlib
 import dataclasses
 import hashlib
 import json
-import secrets
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -541,10 +540,9 @@ def window_turns(
 
 def build_prompt(intent: str, turns: Iterable[Turn]) -> str:
     """The one message sent: the rules, the saved goal, then each turn under a boundary."""
-    nonce = secrets.token_hex(6)
+    nonce = records.fence_nonce()
     body = "".join(
-        f'<turn n="{turn.number}" kind="{turn.kind}" id="{nonce}">\n'
-        f'{turn.text}\n</turn id="{nonce}">\n'
+        records.fenced("turn", turn.text, nonce=nonce, n=turn.number, kind=turn.kind)
         for turn in turns
     )
     goal = records.safe_text(" ".join(intent.split()), GOAL_CAP_CHARS)

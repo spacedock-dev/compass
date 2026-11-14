@@ -20,7 +20,6 @@ stored nowhere; it reaches the Goal field as words the reader may keep, edit or 
 from __future__ import annotations
 
 import json
-import secrets
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypedDict
 
@@ -141,10 +140,9 @@ def build_prompt(prompts: Iterable[Prompt], *, goal_cap: int) -> str:
     The closing tag carries a number drawn for this call, so words in a prompt that imitate one
     cannot end the data early.
     """
-    nonce = secrets.token_hex(6)
+    nonce = records.fence_nonce()
     body = "".join(
-        f'<prompt n="{prompt.number}" id="{nonce}">\n{prompt.text}\n</prompt id="{nonce}">\n'
-        for prompt in prompts
+        records.fenced("prompt", prompt.text, nonce=nonce, n=prompt.number) for prompt in prompts
     )
     return (
         "You are looking for the goal of one coding session in the prompts its operator typed.\n"

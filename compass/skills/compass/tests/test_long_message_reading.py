@@ -22,7 +22,7 @@ from compass_runtime import (
 from compass_runtime.config import build_runtime_config
 
 from .test_agent_words import _agent, _check, _person
-from .test_session_summary import Replies, entry, phase
+from .test_session_summary import Replies, entry, phase, record_body
 
 
 class SummaryMessageTextTest(unittest.TestCase):
@@ -45,7 +45,7 @@ class SummaryMessageTextTest(unittest.TestCase):
             rows, self.coverage, "claude", config=self.config, model=model, clock=lambda: 0
         )
         self.assertEqual("ok", result.state)
-        record = model.prompts[0].split("Record:\n", 1)[1]
+        record = record_body(model.prompts[0])
         self.assertIn("LATE_PERSON 界🙂", record)
         self.assertIn("LATE_AGENT 界🙂", record)
 
@@ -60,7 +60,7 @@ class SummaryMessageTextTest(unittest.TestCase):
             model=model,
             clock=lambda: 0,
         )
-        windows = [p.split("Record:\n", 1)[1] for p in model.prompts if "Reply with one" in p]
+        windows = [record_body(p) for p in model.prompts if "Reply with one" in p]
         self.assertGreater(len(windows), 1)
         fragments: list[str] = []
         for window in windows:
