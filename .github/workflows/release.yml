@@ -13,7 +13,11 @@ name: Release
 #                    Refuses the tag unless it is strict semver, on main, and STRICTLY
 #                    GREATER than every existing release tag (no back-tagging, ever);
 #                    the resume path skips that last check on purpose, because a LATER
-#                    release may have completed in between.
+#                    release may have completed in between. Both refuse a version tagged
+#                    under both spellings (`0.2.0` and `v0.2.0`). A resume needs more than
+#                    the commit's title: one parent, the release bot as committer, and a
+#                    diff of the owned manifests' version values only. Also reports
+#                    whether the release is the latest, false when a higher tag exists.
 #   verify-frontend  read-only token, checkout WITHOUT persisted credentials, no key.
 #                    The only job that installs frontend dependencies and runs them.
 #                    Rebuilds the React bundle from exactly the target and compares it
@@ -22,8 +26,8 @@ name: Release
 #                    no setup-action cache restore or post-job save of the verification log.
 #                    No job here restores or saves a cache.
 #   verify-tree      the same (no credentials). The repository validation suite on the
-#                    target; it starts `node` whenever `node` is on PATH, so it cannot
-#                    share a job with the deploy key.
+#                    target, on a resume as well; it starts `node` whenever `node` is on
+#                    PATH, so it cannot share a job with the deploy key.
 #   build-cli        read-only token, no key, one job per release target. Builds the
 #                    standalone `compass` binary with PyInstaller on a host of that OS and
 #                    architecture (it cannot cross-compile), proves the packed archive
@@ -37,7 +41,8 @@ name: Release
 #                    `stable` and publishes.
 #   attach-cli       the write token, no deploy key. Downloads the four archives the
 #                    build jobs made and attaches them, with `checksums.txt`, to the
-#                    release by running scripts/publish-cli.sh.
+#                    release by running scripts/publish-cli.sh, and reports the SHA-256 of
+#                    the `checksums.txt` it uploaded as a job output.
 #   marketplace      read-only repository token and the marketplace deploy key, a different
 #                    credential from the release key that reaches only
 #                    spacedock-dev/marketplace. Runs after `release`, so `stable` already
@@ -46,7 +51,9 @@ name: Release
 #   homebrew         read-only repository token and the tap deploy key, a third credential
 #                    that reaches only spacedock-dev/homebrew-tap. Runs after `attach-cli`,
 #                    because the formula it writes names the archives and their checksums.
-#                    Like `marketplace`, it runs no dependency code.
+#                    It downloads `checksums.txt` over HTTPS only and refuses it unless its
+#                    SHA-256 is the one attach-cli reported. Like `marketplace`, it runs no
+#                    dependency code.
 #
 # The binary embeds the interpreter and the runtime package and carries no manifest, so
 # building the target (before the bump) and building the bump commit produce the same
@@ -128,6 +135,7 @@ jobs:
       mode: ${{ steps.resolve.outputs.mode }}
       version: ${{ steps.resolve.outputs.version }}
       target: ${{ steps.resolve.outputs.target }}
+      latest: ${{ steps.resolve.outputs.latest }}
     steps:
       - name: Checkout main with full history and tags, without credentials
         # actions/checkout@v7.0.1, pinned to an immutable SHA.
@@ -261,7 +269,6 @@ jobs:
       verified: ${{ steps.verified.outputs.sha }}
     env:
       TARGET: ${{ needs.resolve.outputs.target }}
-      MODE: ${{ needs.resolve.outputs.mode }}
     steps:
       - name: Checkout exactly the target, without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -276,20 +283,17 @@ jobs:
           python3 scripts/release_transition.py assert-head --expected "$TARGET"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        if: env.MODE == 'fresh'
         with:
           python-version: "3.12"
       - name: Install release validation dependencies
-        if: env.MODE == 'fresh'
         timeout-minutes: 3
         run: |
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --requirement requirements-release.txt
 
       - name: Run the full validation suite on the release tree
-        # A resumed release's tree was already validated when its bump commit was
-        # first pushed.
-        if: env.MODE == 'fresh'
+        # On a resume too: the target is then a release commit this run did not write,
+        # and it is validated again rather than trusted from the run that pushed it.
         timeout-minutes: 20
         run: |
           set -euo pipefail
@@ -403,6 +407,7 @@ jobs:
       MODE: ${{ needs.resolve.outputs.mode }}
       VERSION: ${{ needs.resolve.outputs.version }}
       TARGET: ${{ needs.resolve.outputs.target }}
+      LATEST: ${{ needs.resolve.outputs.latest }}
       VERIFIED_FRONTEND: ${{ needs.verify-frontend.outputs.verified }}
       VERIFIED_TREE: ${{ needs.verify-tree.outputs.verified }}
     steps:
@@ -571,9 +576,17 @@ jobs:
             echo "Release $TAG already exists - nothing to publish."
             exit 0
           fi
+          # GitHub marks a new release latest unless told otherwise. resolve reports false
+          # when a higher release tag exists, which only a resume of an older tag can meet,
+          # so the badge never moves backwards. Anything but the two words is refused.
+          case "$LATEST" in
+            true | false) ;;
+            *) echo "::error::resolve reported no latest decision"; exit 1 ;;
+          esac
           gh release create "$TAG" \
             --title "Compass $VERSION" \
             --notes-file "$NOTES_FILE" \
+            --latest="$LATEST" \
             --verify-tag
 
   attach-cli:
@@ -587,6 +600,10 @@ jobs:
     # it checksums and uploads them, and never unpacks or runs one.
     permissions:
       contents: write
+    # A public digest, never a credential: homebrew uses it to refuse any checksums.txt but the
+    # one this job uploaded.
+    outputs:
+      checksums_sha256: ${{ steps.attach.outputs.checksums_sha256 }}
     env:
       TAG: ${{ github.ref_name }}
       TARGET: ${{ needs.resolve.outputs.target }}
@@ -612,6 +629,7 @@ jobs:
           path: ${{ runner.temp }}/cli
 
       - name: Attach the archives and checksums to the release
+        id: attach
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
@@ -619,6 +637,13 @@ jobs:
           set -euo pipefail
           # --clobber inside the script makes a re-run of an interrupted release safe.
           scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli"
+          # The digest of the file just uploaded, for homebrew to hold its download to.
+          DIGEST=$(sha256sum "$RUNNER_TEMP/cli/checksums.txt" | cut -d ' ' -f 1)
+          if ! [[ "$DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::could not hash the uploaded checksums.txt"
+            exit 1
+          fi
+          echo "checksums_sha256=$DIGEST" >> "$GITHUB_OUTPUT"
 
   marketplace:
     name: Stamp the marketplace listing
@@ -669,6 +694,7 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       TARGET: ${{ needs.resolve.outputs.target }}
+      CHECKSUMS_SHA256: ${{ needs.attach-cli.outputs.checksums_sha256 }}
     steps:
       - name: Checkout exactly the target, without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -688,5 +714,6 @@ jobs:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          # An unchanged or newer formula is a no-op, so a re-run of this job is safe.
-          scripts/publish-homebrew.sh "$TAG"
+          # An unchanged or newer formula is a no-op, so a re-run of this job is safe. The
+          # script refuses a checksums.txt whose SHA-256 is not the one attach-cli uploaded.
+          scripts/publish-homebrew.sh "$TAG" "$CHECKSUMS_SHA256"

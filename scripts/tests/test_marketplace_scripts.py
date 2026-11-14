@@ -17,10 +17,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import update_marketplace
+
+if TYPE_CHECKING:
+    from tests import publish_fakes
+else:
+    import publish_fakes
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 PUBLISH = SCRIPTS / "publish-marketplace.sh"
@@ -310,6 +316,49 @@ class PublishMarketplaceTest(unittest.TestCase):
 
         self.assertEqual(1, done.returncode)
         self.assertIn("MARKETPLACE_DEPLOY_KEY is empty", done.stderr)
+
+    def test_the_ssh_key_paths_reach_ssh_whole_whatever_the_scratch_path_holds(self) -> None:
+        # git runs GIT_SSH_COMMAND through the shell. A scratch path spliced into it would be
+        # split at the space and the `;` would end the ssh command; passed through the
+        # environment and quoted, it arrives as one argument. curl, jq and ssh are shims.
+        log = self.root / "log"
+        publish_fakes.install(self.root / "bin", log)
+        odd = self.root / "scratch dir;x"
+        odd.mkdir()
+        self.env.update(
+            {
+                "PATH": f"{self.root / 'bin'}{os.pathsep}{self.env['PATH']}",
+                "FAKE_LOG": str(log),
+                "TMPDIR": str(odd),
+                "MARKETPLACE_REMOTE": "git@github.com:spacedock-dev/marketplace.git",
+                "MARKETPLACE_DEPLOY_KEY": "placeholder, not a key",
+            }
+        )
+
+        done = self.publish("1.0.0")
+
+        self.assertNotEqual(0, done.returncode)
+        argv = publish_fakes.ssh_argv(log)
+        self.assertIn("-i", argv, done.stderr)
+        identity = argv[argv.index("-i") + 1]
+        self.assertTrue(identity.startswith(f"{odd}/marketplace."), identity)
+        self.assertTrue(identity.endswith("/key"), identity)
+        options = [argv[i + 1] for i, arg in enumerate(argv) if arg == "-o"]
+        known = identity.removesuffix("/key") + "/known_hosts"
+        for option in (
+            "IdentitiesOnly=yes",
+            "IdentityAgent=none",
+            "StrictHostKeyChecking=yes",
+            f"UserKnownHostsFile={known}",
+        ):
+            self.assertIn(option, options)
+        self.assertEqual(
+            ["identity file present", "known_hosts present"], publish_fakes.ssh_files(log)
+        )
+        (meta,) = publish_fakes.curl_calls(log)
+        self.assertEqual("=https", meta[meta.index("--proto") + 1])
+        self.assertIn("--tlsv1.2", meta)
+        self.assertEqual([], list(odd.iterdir()))
 
     def test_it_refuses_a_missing_version(self) -> None:
         done = subprocess.run(

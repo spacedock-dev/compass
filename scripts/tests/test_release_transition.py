@@ -169,9 +169,7 @@ class ResolveTest(unittest.TestCase):
         # own committer, so its subject and manifests alone would otherwise be enough.
         self.fx.commit("feat: work")
         self.fx.tag("v0.2.0")
-        self.fx.release_commit(
-            "v0.2.0", "0.2.0", committer=("Someone", "someone@example.invalid")
-        )
+        self.fx.release_commit("v0.2.0", "0.2.0", committer=("Someone", "someone@example.invalid"))
         with self.assertRaises(rt.ReleaseError) as caught:
             self.resolve("v0.2.0")
         text = str(caught.exception)

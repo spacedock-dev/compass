@@ -1,14 +1,16 @@
 """The Homebrew formula: what it renders, what it refuses, and the push it makes.
 
 `update_homebrew.py` is called directly. `publish-homebrew.sh` runs for real against a local bare
-repository standing in for spacedock-dev/homebrew-tap and a local directory standing in for the
-GitHub releases, which exercises the fetch, the clone, the commit and the push and needs no key
-or network: the script asks for a key only of an SSH remote.
+repository standing in for spacedock-dev/homebrew-tap, with `curl`, `jq` and `ssh` replaced on PATH
+by the shims in publish_fakes.py, which serve the GitHub releases from a local directory. That
+exercises the fetch, the digest check, the clone, the commit and the push and needs no key or
+network: the script asks for a key only of an SSH remote.
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import os
 import shutil
@@ -17,9 +19,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import update_homebrew
+
+if TYPE_CHECKING:
+    from tests import publish_fakes
+else:
+    import publish_fakes
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 PUBLISH = SCRIPTS / "publish-homebrew.sh"
@@ -246,6 +255,8 @@ class PublishHomebrewTest(unittest.TestCase):
         self.scratch.mkdir()
         self.remote = self.root / "homebrew-tap.git"
         self.releases = self.root / "releases"
+        self.log = self.root / "log"
+        publish_fakes.install(self.root / "bin", self.log)
         self.env = {
             **os.environ,
             # The developer's own git configuration (signing, hooks) must not decide a test.
@@ -253,11 +264,13 @@ class PublishHomebrewTest(unittest.TestCase):
             "GIT_CONFIG_SYSTEM": os.devnull,
             "TMPDIR": str(self.scratch),
             "HOMEBREW_TAP_REMOTE": str(self.remote),
-            "COMPASS_RELEASE_URL": self.releases.as_uri(),
             "HOMEBREW_RETRY_DELAY": "0",
+            "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_LOG": str(self.log),
+            "FAKE_RELEASES": str(self.releases),
         }
-        self.env.pop("RUNNER_TEMP", None)
-        self.env.pop("HOMEBREW_TAP_DEPLOY_KEY", None)
+        for name in ("RUNNER_TEMP", "HOMEBREW_TAP_DEPLOY_KEY", "COMPASS_RELEASE_URL"):
+            self.env.pop(name, None)
         self.git(self.root, "init", "--quiet", "--bare", "--initial-branch=main", str(self.remote))
         self.seed("Formula/subspace-beta.rb", "class SubspaceBeta < Formula\nend\n")
         self.release("v1.3.0", checksums("1.3.0", V130))
@@ -291,9 +304,18 @@ class PublishHomebrewTest(unittest.TestCase):
         (self.releases / tag).mkdir(parents=True, exist_ok=True)
         (self.releases / tag / "checksums.txt").write_text(text, encoding="utf-8")
 
-    def publish(self, tag: str = "v1.3.0") -> subprocess.CompletedProcess[str]:
+    def digest(self, tag: str) -> str:
+        """What attach-cli reports: the SHA-256 of the checksums.txt it uploaded."""
+        published = self.releases / tag / "checksums.txt"
+        if not published.exists():
+            return "0" * 64
+        return hashlib.sha256(published.read_bytes()).hexdigest()
+
+    def publish(
+        self, tag: str = "v1.3.0", digest: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [SH, str(PUBLISH), tag],
+            [SH, str(PUBLISH), tag, self.digest(tag) if digest is None else digest],
             capture_output=True,
             text=True,
             check=False,
@@ -397,7 +419,7 @@ class PublishHomebrewTest(unittest.TestCase):
             "commit", "--quiet", "-m", "other",
         )  # fmt: skip
         landed = self.root / "landed-once"
-        shim = self.root / "bin"
+        shim = self.root / "python-shim"
         shim.mkdir()
         (shim / "python3").write_text(
             "#!/bin/sh\n"
@@ -407,7 +429,7 @@ class PublishHomebrewTest(unittest.TestCase):
             encoding="utf-8",
         )
         (shim / "python3").chmod(0o755)
-        self.env["PATH"] = f"{shim}{os.pathsep}{os.environ['PATH']}"
+        self.env["PATH"] = f"{shim}{os.pathsep}{self.env['PATH']}"
 
         done = self.publish("v1.3.0")
 
@@ -437,6 +459,69 @@ class PublishHomebrewTest(unittest.TestCase):
 
         self.assertEqual(1, done.returncode)
         self.assertIn("HOMEBREW_TAP_DEPLOY_KEY is empty", done.stderr)
+
+    def test_the_download_is_https_only_and_fails_on_an_http_error(self) -> None:
+        self.assertEqual(0, self.publish("v1.3.0").returncode)
+
+        (call,) = publish_fakes.curl_calls(self.log)
+        self.assertEqual(f"{publish_fakes.RELEASES_URL}/v1.3.0/checksums.txt", call[-1])
+        # The release URL redirects to GitHub's asset host, so redirects stay allowed, but
+        # only to HTTPS, and never below TLS 1.2.
+        for flag, value in (("--proto", "=https"), ("--proto-redir", "=https")):
+            self.assertEqual(value, call[call.index(flag) + 1], flag)
+        for flag in ("--tlsv1.2", "--fail", "--location"):
+            self.assertIn(flag, call)
+
+    def test_a_checksums_file_that_differs_from_the_attached_digest_is_refused(self) -> None:
+        # attach-cli hashes the checksums.txt it uploaded; anything else served under that
+        # name (a stale or substituted asset) must not become the tap's formula.
+        done = self.publish("v1.3.0", "0" * 64)
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("does not match", done.stderr)
+        self.assertEqual(["seed"], self.commits())
+
+    def test_a_malformed_digest_is_refused_before_any_download(self) -> None:
+        for digest in ("", "abc", "A" * 64, "g" * 64, "0" * 63, f"{'0' * 64} "):
+            with self.subTest(digest=digest):
+                done = self.publish("v1.3.0", digest)
+
+                self.assertEqual(1, done.returncode)
+                self.assertIn("usage", done.stderr)
+        self.assertEqual([], publish_fakes.curl_calls(self.log))
+        self.assertEqual(["seed"], self.commits())
+
+    def test_the_ssh_key_paths_reach_ssh_whole_whatever_the_scratch_path_holds(self) -> None:
+        # git runs GIT_SSH_COMMAND through the shell. A scratch path spliced into it would be
+        # split at the space and the `;` would end the ssh command; passed through the
+        # environment and quoted, it arrives as one argument.
+        odd = self.root / "scratch dir;x"
+        odd.mkdir()
+        self.env["TMPDIR"] = str(odd)
+        self.env["HOMEBREW_TAP_REMOTE"] = "git@github.com:spacedock-dev/homebrew-tap.git"
+        self.env["HOMEBREW_TAP_DEPLOY_KEY"] = "placeholder, not a key"
+
+        done = self.publish("v1.3.0")
+
+        self.assertNotEqual(0, done.returncode)
+        argv = publish_fakes.ssh_argv(self.log)
+        self.assertIn("-i", argv, done.stderr)
+        identity = argv[argv.index("-i") + 1]
+        self.assertTrue(identity.startswith(f"{odd}/homebrew."), identity)
+        self.assertTrue(identity.endswith("/key"), identity)
+        options = [argv[i + 1] for i, arg in enumerate(argv) if arg == "-o"]
+        known = identity.removesuffix("/key") + "/known_hosts"
+        for option in (
+            "IdentitiesOnly=yes",
+            "IdentityAgent=none",
+            "StrictHostKeyChecking=yes",
+            f"UserKnownHostsFile={known}",
+        ):
+            self.assertIn(option, options)
+        self.assertEqual(
+            ["identity file present", "known_hosts present"], publish_fakes.ssh_files(self.log)
+        )
+        self.assertEqual([], list(odd.iterdir()))
 
     def test_it_refuses_a_missing_tag(self) -> None:
         done = subprocess.run(

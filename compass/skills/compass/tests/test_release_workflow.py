@@ -820,9 +820,9 @@ class KeyJobWiringTest(unittest.TestCase):
         for channel in ("actions/cache", "download-artifact", "upload-artifact", "setup-"):
             self.assertNotIn(channel, text)
 
-    def test_the_environment_is_exactly_the_six_resolved_values(self) -> None:
+    def test_the_environment_is_exactly_the_seven_resolved_values(self) -> None:
         self.assertEqual(
-            {"TAG", "MODE", "VERSION", "TARGET", "VERIFIED_FRONTEND", "VERIFIED_TREE"},
+            {"TAG", "MODE", "VERSION", "TARGET", "LATEST", "VERIFIED_FRONTEND", "VERIFIED_TREE"},
             set(jobs()["release"]["env"]),
         )
         for step in self.release_steps():
@@ -880,6 +880,17 @@ class KeyJobWiringTest(unittest.TestCase):
         self.assertEqual("${{ github.token }}", step["env"]["GH_TOKEN"])
         self.assertIn("--verify-tag", step["run"])
         self.assertIn('--notes-file "$NOTES_FILE"', step["run"])
+
+    def test_an_older_release_never_takes_the_latest_badge(self) -> None:
+        # GitHub marks a new release latest unless told otherwise, so resuming an older tag
+        # after a newer release would move the badge backwards. resolve decides, from the
+        # tags, whether a higher release exists; the create states it either way.
+        self.assertEqual(
+            "${{ steps.resolve.outputs.latest }}", jobs()["resolve"]["outputs"]["latest"]
+        )
+        self.assertEqual("${{ needs.resolve.outputs.latest }}", jobs()["release"]["env"]["LATEST"])
+        step = next(s for s in self.release_steps() if "gh release create" in s.get("run", ""))
+        self.assertIn('--latest="$LATEST"', code(step["run"]))
 
     def test_the_commit_that_publishes_is_the_one_that_was_proven(self) -> None:
         final = next(c for c in commands("release") if "release_transition.py final" in c)
@@ -1020,6 +1031,26 @@ class BuildCliJobTest(unittest.TestCase):
             self.assertNotIn(hazard, text)
         self.assertEqual([], uses("attach-cli", "actions/setup-python"))
 
+    def test_the_attaching_job_reports_the_digest_of_the_checksums_it_uploaded(self) -> None:
+        job = jobs()["attach-cli"]
+        self.assertEqual(
+            {"checksums_sha256": "${{ steps.attach.outputs.checksums_sha256 }}"}, job["outputs"]
+        )
+        step = next(s for s in steps("attach-cli") if s.get("id") == "attach")
+        body = code(step["run"])
+        upload = body.index('scripts/publish-cli.sh "$TAG" "$RUNNER_TEMP/cli"')
+        digest = body.index('sha256sum "$RUNNER_TEMP/cli/checksums.txt"')
+        self.assertLess(upload, digest, "the digest is of the file that was uploaded")
+        self.assertIn('"checksums_sha256=$DIGEST" >> "$GITHUB_OUTPUT"', body)
+        self.assertIn("[0-9a-f]{64}", body)
+
+    def test_no_job_output_carries_a_secret_or_a_token(self) -> None:
+        for name, job in jobs().items():
+            for key, value in job.get("outputs", {}).items():
+                with self.subTest(job=name, output=key):
+                    self.assertRegex(value, r"^\$\{\{ steps\.[a-z-]+\.outputs\.[a-z0-9_]+ \}\}$")
+                    self.assertNotRegex(value.lower(), r"secret|token|key")
+
     def test_the_attaching_job_has_no_key_and_binds_the_token_at_its_one_step(self) -> None:
         self.assertNotIn("RELEASE_DEPLOY_KEY", serialized(jobs()["attach-cli"]))
         step = next(s for s in steps("attach-cli") if "publish-cli.sh" in s.get("run", ""))
@@ -1106,11 +1137,14 @@ class HomebrewJobTest(unittest.TestCase):
             holders[0]["env"],
         )
         script = [line for line in code(holders[0]["run"]).splitlines() if "publish" in line]
-        self.assertEqual(['scripts/publish-homebrew.sh "$TAG"'], script)
+        self.assertEqual(['scripts/publish-homebrew.sh "$TAG" "$CHECKSUMS_SHA256"'], script)
         self.assertEqual(
             {
                 "TAG": "${{ github.ref_name }}",
                 "TARGET": "${{ needs.resolve.outputs.target }}",
+                # The digest of the checksums.txt attach-cli uploaded; the script refuses any
+                # other file it is served under that name.
+                "CHECKSUMS_SHA256": "${{ needs.attach-cli.outputs.checksums_sha256 }}",
             },
             jobs()["homebrew"]["env"],
         )
@@ -1198,8 +1232,6 @@ class GateParityTest(unittest.TestCase):
         self.assertLess(setup, install, names)
         self.assertLess(install, suite, names)
         self.assertEqual("3.12", listed[setup]["with"]["python-version"])
-        for index in (setup, install, suite):
-            self.assertEqual("env.MODE == 'fresh'", listed[index]["if"])
         text = listed[install]["run"]
         # The hashed copy of requirements-validation.txt, installed as the release job installs it.
         self.assertIn(
@@ -1214,6 +1246,15 @@ class GateParityTest(unittest.TestCase):
         ):
             self.assertIn(command, run)
         self.assertNotIn("continue-on-error", listed[suite])
+
+    def test_the_tree_is_validated_on_a_resume_as_well(self) -> None:
+        # A resumed release publishes a commit this run did not build, so its tree is
+        # validated again rather than trusted from the run that first pushed it.
+        for step in steps("verify-tree"):
+            with self.subTest(step=step.get("name") or step.get("uses")):
+                self.assertNotIn("if", step)
+        self.assertNotIn("if", jobs()["verify-tree"])
+        self.assertNotIn("MODE", jobs()["verify-tree"].get("env", {}))
 
     def test_resolve_hands_only_validated_values_to_later_jobs(self) -> None:
         resolve = next(s for s in steps("resolve") if s.get("id") == "resolve")
