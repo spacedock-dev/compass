@@ -61,7 +61,10 @@ Every one of those scripts is started through `launch.py`. On a `python3` older 
 may run `uv python find '>=3.12' --no-python-downloads --no-project --no-config --system` (two-second limit, no network,
 no download, no project or config files read and no `.venv` executed) and then start the script with the interpreter `uv` reports,
 passing the hook payload through unchanged, and a SIGTERM or SIGHUP sent to the launcher is passed on to that script (not on Windows). It adds no other traffic and reads the payload only to
-decide whether to print its one-line notice. Antigravity's hook still prints `{}` through it
+decide whether to print its one-line notice. A hook's working directory is inside the watched
+repository, so `uv` is looked up only on PATH elements no working directory can reinterpret (a
+relative, empty or `.` element is skipped, and on Windows so is a driveless root), `uv` itself is
+given only those elements to search, and the interpreter it reports must be a full path. Antigravity's hook still prints `{}` through it
 on every path.
 
 The third kind is one stdio MCP server, `mcp_server.py`, described under The ask lane below. It is
@@ -1222,6 +1225,9 @@ no focus:
     tmux -L <socket> display-message -p -t <pane> '#{pid} #{session_name}'
     tmux -L <socket> list-clients -t <session> -F '#{client_tty}'
     tmux -L <socket> switch-client -c <client tty> -t <pane>
+
+`tmux` there is the program a PATH element that is a full path holds, started by that path. When
+no such element holds one, nothing runs and the button reports that no terminal was raised.
 
 The first names the session and the server, and an earlier draft claimed less carefully that it
 "proves the pane still exists". It proves that *a* pane with that id exists in whatever server holds
@@ -4124,10 +4130,13 @@ descriptors. The Codex collector reads only the legacy `/tmp` path
 (on macOS that is `/private/tmp`), takes at most the first 40 lines of 2,048 bytes each from what
 the reader returns, and keeps a title, a stage and a workflow directory from them.
 
-`SPACEDOCK_BIN`, when set, must be absolute; otherwise discovery resolves `spacedock` and also
-requires an absolute result. Accepting a relative override or resolution could execute a planted
-program when the working directory is on `PATH`. The child gets only `PATH` (the OS default),
-`HOME` and `LANG`, a fixed argv without a shell, and a two-second timeout. Discovery output over 64 KiB is rejected after
+`SPACEDOCK_BIN`, when set, must be a full path; otherwise discovery resolves `spacedock` on the PATH
+elements that are full paths and also requires a full-path result. On Windows a driveless
+`\spacedock.exe` does not count, because it resolves on the current drive. Accepting a relative
+override or resolution could execute a planted program when the working directory is on `PATH`.
+The child gets only `PATH` (the OS default with any `.` element removed),
+`HOME`, `LANG` and `NoDefaultCurrentDirectoryInExePath=1`, a closed stdin, a fixed argv without a
+shell, and a two-second timeout. Discovery output over 64 KiB is rejected after
 capture; that is a parsing cap, not a streaming bound on subprocess output allocation.
 
 The terminal registration file is created with mode **0600**. Its reader checks that exact mode,
@@ -5268,8 +5277,12 @@ refuse a document or frame navigation. Under `--host 0.0.0.0` or `--allow-host`,
 cannot see the terminal at all. At most eight terminal sockets are open at once and the next is
 refused with 503; a viewer that stops reading is dropped once a send to it has waited 10 seconds.
 
-`interaction_prototype.py` joins `focus.py` as a module allowed to invoke tmux. It validates the
-registered pane identity before capturing output and attaches a read-only control-mode client.
+`interaction_prototype.py` joins `focus.py` as a module allowed to invoke tmux, found the same way,
+and never as a bare `tmux`. It validates the
+registered pane identity before capturing output and attaches a read-only control-mode client. A
+registered origin must name a pane as `%N` and a session as `$N`, and its socket must be a full path
+that does not start with `-`, is a UNIX socket rather than a symlink to one, and is owned by the
+user running Compass.
 The WebSocket at `/api/interaction/stream` carries output only; receiving a client frame ends the
 connection. Its upgrade response carries the same framing header as ordinary responses. Terminal
 output is a separate exposure from the redacted session summaries: a person or local process that

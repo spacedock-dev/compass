@@ -10,6 +10,7 @@ import ast
 import contextlib
 import importlib.util
 import json
+import ntpath
 import os
 import shutil
 import signal
@@ -20,7 +21,10 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
+
+from compass_runtime import rooted_path
 
 from .support import SERVER_PATH
 
@@ -86,9 +90,10 @@ class LauncherTest(unittest.TestCase):
         exit_code: int = 0,
         timeout: float = 30,
         cwd: Path | None = None,
+        path: str | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         env = {
-            "PATH": str(self.bin),
+            "PATH": str(self.bin) if path is None else path,
             "TARGET_LOG": str(self.log),
             "TARGET_EXIT": str(exit_code),
             "HOME": str(self.root),
@@ -443,6 +448,117 @@ class BelowTheFloorWithUvTest(LauncherTest):
         done = self.run_launcher(script)
         self.assertEqual(-signal.SIGKILL, done.returncode, done.stderr)
         self.assertNotIn(b"Traceback", done.stderr)
+
+
+def _load_launcher() -> object:
+    spec = importlib.util.spec_from_file_location("compass_launch_under_test", LAUNCHER)
+    assert spec is not None
+    assert spec.loader is not None
+    launch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launch)
+    return launch
+
+
+@unittest.skipUnless(os.name == "posix", "the fake uv is a /bin/sh script")
+class UvIsFoundOnlyOnRootedPathTest(LauncherTest):
+    """A hook runs with its working directory inside the watched repository.
+
+    So a relative, empty or `.` PATH element names a directory that repository controls, and a
+    `uv` found there would be run, and would then choose the interpreter the hook runs under.
+    """
+
+    def plant_uv(self, directory: Path) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        script = directory / "uv"
+        script.write_text(
+            f'#!/bin/sh\necho planted >> "{self.uv_log}"\necho "{sys.executable}"\n',
+            encoding="utf-8",
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    def test_a_uv_reachable_only_through_a_relative_element_is_never_run(self) -> None:
+        repository = self.root / "repository"
+        self.plant_uv(repository / "tools")
+        self.plant_uv(repository)
+        for path in ("tools", "./tools", ".", "", os.pathsep + str(self.bin)):
+            with self.subTest(path=path):
+                done = self.run_launcher(
+                    self.target(), stdin=SESSION_START, cwd=repository, path=path
+                )
+                self.assertFalse(self.uv_log.exists(), "a uv the repository planted ran")
+                self.assertEqual(1, done.returncode)
+                self.assertTrue(done.stderr.decode().startswith("Compass needs Python 3.12"))
+
+    def test_a_uv_on_a_rooted_element_still_runs_beside_relative_ones(self) -> None:
+        # The control: the refusal above is about the element, not about uv.
+        self.finds_this_interpreter()
+        repository = self.root / "repository"
+        self.plant_uv(repository)
+        path = os.pathsep.join([".", "tools", str(self.bin)])
+        done = self.run_launcher(self.target(), stdin=POST_TOOL, cwd=repository, path=path)
+        self.assertEqual(b"stdin:" + POST_TOOL, done.stdout)
+        self.assertNotIn("planted", self.uv_log.read_text(encoding="utf-8"))
+
+    def test_uv_itself_searches_only_the_rooted_elements(self) -> None:
+        # `uv python find` looks for interpreters on PATH, so the relative elements would let
+        # the repository supply the "Python 3.12" it reports.
+        seen = self.root / "uv-env.log"
+        self.fake_uv(
+            f'echo "$PATH" > "{seen}"\n'
+            f'echo "$NoDefaultCurrentDirectoryInExePath" >> "{seen}"\n'
+            f'echo "{sys.executable}"'
+        )
+        repository = self.root / "repository"
+        repository.mkdir()
+        path = os.pathsep.join([".", "relbin", str(self.bin), ""])
+        self.run_launcher(self.target(), stdin=POST_TOOL, cwd=repository, path=path)
+        self.assertEqual([str(self.bin), "1"], seen.read_text(encoding="utf-8").splitlines())
+
+    def test_an_interpreter_uv_names_relative_to_the_repository_is_not_run(self) -> None:
+        repository = self.root / "repository"
+        repository.mkdir()
+        planted = repository / "python3"
+        planted.symlink_to(sys.executable)
+        self.fake_uv('echo "python3"')
+        done = self.run_launcher(self.target(), stdin=SESSION_START, cwd=repository)
+        self.assertFalse(self.log.exists(), "the hook ran under an interpreter uv named relatively")
+        self.assertEqual(1, done.returncode)
+
+
+class LauncherRootedRuleTest(unittest.TestCase):
+    """The launcher's restatement of `rooted_path.rooted`, which it cannot import."""
+
+    def test_it_agrees_with_the_runtime_rule(self) -> None:
+        launch: Any = _load_launcher()
+        for candidate in ("", ".", "..", "bin", "./bin", os.path.abspath(os.sep + "bin")):
+            with self.subTest(candidate=candidate):
+                self.assertEqual(rooted_path.rooted(candidate), launch.rooted(candidate))
+
+    def test_a_driveless_windows_root_is_not_rooted(self) -> None:
+        launch: Any = _load_launcher()
+        with (
+            mock.patch.object(os, "name", "nt"),
+            mock.patch.object(os, "path", ntpath),
+            mock.patch.object(os, "pathsep", ";"),
+        ):
+            driveless = launch.rooted("\\bin")
+            qualified = launch.rooted("C:\\bin")
+            search = launch.search_path("\\bin;.;;C:\\bin;C:bin")
+        self.assertFalse(driveless)
+        self.assertTrue(qualified)
+        self.assertEqual("C:\\bin", search)
+
+    def test_a_current_directory_answer_from_which_is_refused(self) -> None:
+        # Windows `shutil.which` searches the current directory first before 3.12, whatever
+        # PATH it is handed, and answers `.\\uv.exe`.
+        launch: Any = _load_launcher()
+        run = mock.Mock()
+        with (
+            mock.patch.object(shutil, "which", return_value=os.path.join(".", "uv")),
+            mock.patch.object(subprocess, "run", run),
+        ):
+            self.assertIsNone(launch.find_new_python())
+        run.assert_not_called()
 
 
 @unittest.skipUnless(

@@ -167,7 +167,8 @@ Compass needs Python 3.12 or newer; python3 here is 3.9.6 (/usr/bin/python3). In
 ```
 
 If `uv` is on your PATH and already holds a Python 3.12 or newer, the launcher uses it and you see
-nothing. It never downloads one. The lookup is this command, bounded at two seconds, and it prints
+nothing. Only PATH entries that are full paths count: a relative entry such as `.` or `bin` is
+skipped, because a hook runs inside your project. It never downloads one. The lookup is this command, bounded at two seconds, and it prints
 the interpreter it would use:
 
 ```bash

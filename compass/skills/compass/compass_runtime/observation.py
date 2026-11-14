@@ -112,7 +112,6 @@ from __future__ import annotations
 import dataclasses
 import hmac
 import secrets
-import subprocess
 import threading
 import time
 from collections import deque
@@ -318,7 +317,7 @@ class Observation:
         # lifecycle state.
         self._focus_secret = secrets.token_hex(32)
         # Injected so the tests can drive a raise without a tmux server.
-        self._focus_runner: Callable[..., Any] = subprocess.run
+        self._focus_runner: Callable[..., Any] = runtime_focus.run_rooted
         # Injected so the tests can drive the edge without a repository, and so a
         # probe can be made to block on demand: `submit` must
         # return while this is still running.

@@ -484,6 +484,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/irreversible.py",
     "skills/compass/compass_runtime/focus.py",
     "skills/compass/compass_runtime/git_status.py",
+    "skills/compass/compass_runtime/rooted_path.py",
     "skills/compass/compass_runtime/ci_read.py",
     "skills/compass/compass_runtime/history.py",
     "skills/compass/compass_runtime/claude_data.py",

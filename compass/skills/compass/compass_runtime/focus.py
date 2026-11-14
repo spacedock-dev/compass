@@ -3,8 +3,9 @@
 `SECURITY.md`'s "Reaching a session's terminal (the focus command)" is the
 contract this module implements, and its bounds are the operator's ruling of
 2026-09-05 as amended rather than this module's preferences. A leaf: it imports
-no runtime module and holds no state, so the coordinator can call it from a
-handler thread without ordering concerns, exactly as `git_status` is called.
+no runtime module but the `rooted_path` leaf and holds no state, so the
+coordinator can call it from a handler thread without ordering concerns, exactly
+as `git_status` is called.
 
 ## Why there is one case and not three
 
@@ -68,6 +69,8 @@ import re
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
+
+from . import rooted_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -166,10 +169,11 @@ class Target:
 
 def valid(target: Target) -> bool:
     """Whether all three stored fields still pass their own grammar."""
+    # `fullmatch`: with `.match`, `$` also matches before a trailing newline, so `%3\n` passed.
     return bool(
-        TMUX_SOCKET_RE.match(target.socket) is not None
-        and TMUX_PANE_RE.match(target.pane) is not None
-        and TMUX_SERVER_RE.match(target.server) is not None
+        TMUX_SOCKET_RE.fullmatch(target.socket) is not None
+        and TMUX_PANE_RE.fullmatch(target.pane) is not None
+        and TMUX_SERVER_RE.fullmatch(target.server) is not None
     )
 
 
@@ -203,6 +207,20 @@ def fill(template: tuple[str, ...], **values: str) -> tuple[str, ...]:
         _CLIENT: values.get("client"),
     }
     return tuple(part if slots.get(part) is None else str(slots[part]) for part in template)
+
+
+def run_rooted(argv: tuple[str, ...], **options: Any) -> subprocess.CompletedProcess[bytes]:
+    """`subprocess.run` with `tmux` resolved on rooted PATH elements only, or not started.
+
+    The templates keep the bare word so a test's runner sees the fixed argv; the real start
+    replaces it with the full path. A `tmux` no rooted element holds raises
+    `FileNotFoundError`, which `_run` already reads as the focus that did not happen, so the
+    reader sees "No terminal was raised" rather than a raise by a program the daemon's working
+    directory supplied. `rooted_path` reads the PATH, so this module still reads no environment
+    of its own.
+    """
+    resolved, env = rooted_path.prepared(argv)
+    return subprocess.run(resolved, env=env, **options)  # noqa: S603, PLW1510 - caller's check
 
 
 def _run(
@@ -286,7 +304,7 @@ def _session_on_the_recorded_server(
     parts = named[0].split(" ", 1)
     if len(parts) != 2 or parts[0] != target.server:
         return None
-    return parts[1] if TMUX_SESSION_RE.match(parts[1]) is not None else None
+    return parts[1] if TMUX_SESSION_RE.fullmatch(parts[1]) is not None else None
 
 
 def _the_one_client_watching(
@@ -318,14 +336,14 @@ def _the_one_client_watching(
     )
     if len(clients) != 1:
         return None
-    return clients[0] if CLIENT_TTY_RE.match(clients[0]) is not None else None
+    return clients[0] if CLIENT_TTY_RE.fullmatch(clients[0]) is not None else None
 
 
 def raise_terminal(
     target: Target,
     *,
     timeout_sec: float,
-    runner: Callable[..., Any] = subprocess.run,
+    runner: Callable[..., Any] = run_rooted,
 ) -> bool:
     """Raise this session's pane for the one client watching it, or decline.
 

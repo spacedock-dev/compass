@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import ntpath
 import os
 import stat
 import subprocess
@@ -2654,6 +2655,80 @@ class SpacedockExecutableSecurityTest(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", options["env"])
         self.assertEqual(os.defpath, options["env"]["PATH"])
         self.assertEqual(65536, project_context.WORKFLOW_DISCOVERY_MAX_BYTES)
+
+    def _config_and_state(self) -> tuple[Any, Any]:
+        config = build_runtime_config(
+            environ={}, platform_name="linux", os_name="posix", launcher_path=Path("/server.py")
+        )
+        return config, build_runtime_state(config, started=0)
+
+    def test_a_driveless_override_is_refused_under_the_windows_flavour(self) -> None:
+        # `os.path.isabs(r"\spacedock.exe")` is True at the 3.12 floor on Windows, and the
+        # program would resolve against the current drive.
+        config, state = self._config_and_state()
+        runner = mock.Mock()
+        with (
+            mock.patch.dict(os.environ, {"SPACEDOCK_BIN": "\\spacedock.exe"}),
+            mock.patch.object(os, "name", "nt"),
+            mock.patch.object(os, "path", ntpath),
+        ):
+            result = project_context._run_project_workflow_discovery(config, state, "C:\\", runner)
+        runner.assert_not_called()
+        self.assertEqual("unavailable", result["state"])
+
+    def test_a_resolver_answer_that_is_not_rooted_is_refused(self) -> None:
+        config, state = self._config_and_state()
+        runner = mock.Mock()
+        env = {key: value for key, value in os.environ.items() if key != "SPACEDOCK_BIN"}
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(os, "name", "nt"),
+            mock.patch.object(os, "path", ntpath),
+        ):
+            result = project_context._run_project_workflow_discovery(
+                config, state, "C:\\", runner, lambda _name: "\\bin\\spacedock.exe"
+            )
+        runner.assert_not_called()
+        self.assertEqual("unavailable", result["state"])
+
+    def test_the_default_lookup_never_finds_spacedock_through_a_relative_element(self) -> None:
+        config, state = self._config_and_state()
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "relbin").mkdir()
+            planted = root / "relbin" / "spacedock"
+            planted.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            planted.chmod(planted.stat().st_mode | stat.S_IEXEC)
+            env = {key: value for key, value in os.environ.items() if key != "SPACEDOCK_BIN"}
+            env["PATH"] = os.pathsep.join(["relbin", ".", ""])
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                with mock.patch.dict(os.environ, env, clear=True):
+                    result = project_context._run_project_workflow_discovery(
+                        config, state, str(root), runner
+                    )
+            finally:
+                os.chdir(previous)
+        runner.assert_not_called()
+        self.assertEqual("unavailable", result["state"])
+
+    def test_the_child_searches_no_current_directory_and_reads_no_stdin(self) -> None:
+        # `os.defpath` is `.;C:\bin` on Windows: the current directory first, and the child
+        # runs with the project root as its working directory.
+        config, state = self._config_and_state()
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+        rooted_bin = os.path.abspath(os.sep + "bin")
+        with (
+            mock.patch.dict(os.environ, {"SPACEDOCK_BIN": "/opt/bin/spacedock"}),
+            mock.patch.object(os, "defpath", os.pathsep.join([".", rooted_bin, ""])),
+        ):
+            project_context._run_project_workflow_discovery(config, state, "/", runner)
+        options = runner.call_args.kwargs
+        self.assertEqual(rooted_bin, options["env"]["PATH"])
+        self.assertEqual("1", options["env"]["NoDefaultCurrentDirectoryInExePath"])
+        self.assertIs(subprocess.DEVNULL, options["stdin"])
 
 
 if __name__ == "__main__":

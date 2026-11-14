@@ -5,11 +5,14 @@ import dataclasses
 import hashlib
 import http.client
 import io
+import itertools
 import json
 import os
 import select
+import shutil
 import socket
 import stat
+import subprocess
 import tempfile
 import threading
 import time
@@ -28,10 +31,42 @@ from .support import PAGE_BYTES, build_app, make_server, poll_fast
 REAL_TIME_TESTS = True
 
 
+# One short-named folder for every fixture socket in this module, removed when the module ends:
+# a UNIX socket path is capped near 104 bytes on macOS, and an adapter a test only prepares is
+# never stopped, so a folder per adapter would be left behind.
+# Made on first use, so a process that only imports the module to list it makes none, and made
+# again after a teardown, which the parallel runner may run between units.
+_SOCKET_ROOT: list[str] = []
+_SOCKET_NUMBERS = itertools.count(1)
+
+
+def socket_root() -> str:
+    if not _SOCKET_ROOT or not os.path.isdir(_SOCKET_ROOT[0]):
+        _SOCKET_ROOT[:] = [tempfile.mkdtemp(prefix="cmp-")]
+    return _SOCKET_ROOT[0]
+
+
+def tearDownModule() -> None:
+    for root in _SOCKET_ROOT:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def bound_socket(directory: str, name: str) -> str:
+    """A real UNIX socket owned by this user, as tmux leaves one: an origin must name one."""
+    path = os.path.join(directory, name)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(path)
+    listener.close()
+    return path
+
+
 class FakeTmuxAdapter:
     """Exercise the registry over HTTP without requiring tmux on every runner."""
 
     def __init__(self) -> None:
+        # Short, because a UNIX socket path is limited to about 104 bytes on macOS.
+        self.socket_prefix = f"a{next(_SOCKET_NUMBERS)}"
+        self.sockets: list[str] = []
         self.connected_value = False
         self.prepare_count = 0
         self.capture_count = 0
@@ -45,13 +80,18 @@ class FakeTmuxAdapter:
         self.renewal_stop = threading.Event()
         self.renewal_thread: threading.Thread | None = None
 
+    def bound(self, name: str) -> str:
+        path = bound_socket(socket_root(), name)
+        self.sockets.append(path)
+        return path
+
     def prepare(self) -> interaction.TmuxOrigin:
         self.prepare_count += 1
         self.connected_value = True
         self.renewal_stop = threading.Event()
         suffix = str(self.prepare_count)
         return interaction.TmuxOrigin(
-            server_socket=f"/tmp/disposable-{suffix}.sock",
+            server_socket=self.bound(f"{self.socket_prefix}-{suffix}.sock"),
             server_pid=f"10{suffix}",
             session_id=f"${suffix}",
             session_name=f"disposable-{suffix}",
@@ -152,6 +192,9 @@ class FakeTmuxAdapter:
 
     def stop(self) -> None:
         self.stop_read_only_stream()
+        for path in self.sockets:
+            Path(path).unlink(missing_ok=True)
+        self.sockets.clear()
         self.connected_value = False
         self.renewal_stop.set()
         if self.renewal_thread is not None:
@@ -1272,6 +1315,119 @@ class RegistrationFileSecurityTest(unittest.TestCase):
             with mock.patch.object(interaction, "_run_tmux_client", return_value=0) as run:
                 self.assertEqual(1, interaction._run_waiting_tmux_client(path))
             run.assert_not_called()
+
+
+class OriginShapeSecurityTest(unittest.TestCase):
+    """`TmuxOrigin.from_dict` admits only coordinates `tmux -S <socket> -t <id>` cannot misread.
+
+    The socket path and the ids reach a tmux argv, so a leading dash would be a flag, and a
+    path that is not this user's own socket would aim the read-only stream at a server someone
+    else runs.
+    """
+
+    def setUp(self) -> None:
+        directory = tempfile.mkdtemp(prefix="cmp-")
+        self.addCleanup(shutil.rmtree, directory, True)
+        self.directory = directory
+        self.socket = bound_socket(directory, "tmux.sock")
+        self.valid = {
+            **FakeTmuxAdapter().prepare().as_dict(),
+            "server_socket": self.socket,
+            "session_id": "$12",
+            "pane_id": "%7",
+        }
+
+    def parsed(self, **changes: str) -> interaction.TmuxOrigin | None:
+        return interaction.TmuxOrigin.from_dict({**self.valid, **changes})
+
+    def test_a_well_formed_origin_on_this_users_socket_is_admitted(self) -> None:
+        self.assertIsNotNone(self.parsed())
+
+    def test_a_malformed_pane_id_is_refused(self) -> None:
+        for pane in ("7", "%", "%-1", "-%1", "%7 ", "%1234567890", "%7\n", "%a"):
+            with self.subTest(pane=pane):
+                self.assertIsNone(self.parsed(pane_id=pane))
+
+    def test_a_malformed_session_id_is_refused(self) -> None:
+        for session in ("12", "$", "$-1", "-$1", "$1234567890", "%12", "$1;kill-server"):
+            with self.subTest(session=session):
+                self.assertIsNone(self.parsed(session_id=session))
+
+    def test_a_socket_path_that_could_be_read_as_a_flag_or_resolved_relatively_is_refused(
+        self,
+    ) -> None:
+        for path in ("-S", "-L/tmp/x", "tmux.sock", "./tmux.sock", ""):
+            with self.subTest(path=path):
+                self.assertIsNone(self.parsed(server_socket=path))
+
+    def test_a_path_that_is_not_a_socket_is_refused(self) -> None:
+        regular = os.path.join(self.directory, "regular")
+        Path(regular).write_text("", encoding="utf-8")
+        link = os.path.join(self.directory, "link.sock")
+        os.symlink(self.socket, link)
+        missing = os.path.join(self.directory, "missing.sock")
+        for path in (regular, link, missing, self.directory):
+            with self.subTest(path=path):
+                self.assertIsNone(self.parsed(server_socket=path))
+
+    def test_a_socket_another_user_owns_is_refused(self) -> None:
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertIsNone(self.parsed())
+
+    def test_an_external_adapter_will_not_bind_an_origin_built_around_the_parser(self) -> None:
+        adapter = interaction.TmuxAdapter("/usr/bin/tmux", owns_server=False)
+        regular = os.path.join(self.directory, "regular")
+        Path(regular).write_text("", encoding="utf-8")
+        origin = interaction.TmuxOrigin(**{**self.valid, "server_socket": regular})
+        with self.assertRaises(interaction.OriginUnavailableError):
+            adapter.bind_origin(origin)
+
+
+class RootedTmuxAdapterTest(unittest.TestCase):
+    def test_a_relative_executable_is_never_started(self) -> None:
+        run = mock.Mock()
+        with mock.patch.object(subprocess, "run", run):
+            adapter = interaction.TmuxAdapter("tmux", owns_server=False)
+            with self.assertRaises(interaction.OriginUnavailableError):
+                adapter._run("list-sessions")
+        run.assert_not_called()
+
+    def test_no_rooted_tmux_means_no_server_rather_than_a_bare_word(self) -> None:
+        run = mock.Mock()
+        with (
+            mock.patch.dict(os.environ, {"PATH": os.pathsep.join(["relbin", "."])}),
+            mock.patch.object(subprocess, "run", run),
+        ):
+            adapter = interaction.TmuxAdapter()
+            with self.assertRaises(interaction.OriginUnavailableError):
+                adapter.prepare()
+            with self.assertRaises(interaction.OriginUnavailableError):
+                interaction._discover_origin()
+        run.assert_not_called()
+
+    def test_a_rooted_tmux_runs_with_the_current_directory_off(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        run = mock.Mock(return_value=completed)
+        with mock.patch.object(subprocess, "run", run):
+            adapter = interaction.TmuxAdapter("/usr/bin/tmux", owns_server=False)
+            adapter._run("list-sessions")
+        self.assertEqual("/usr/bin/tmux", run.call_args.args[0][0])
+        self.assertEqual("1", run.call_args.kwargs["env"]["NoDefaultCurrentDirectoryInExePath"])
+
+    def test_the_client_refuses_a_tmux_variable_that_does_not_name_its_own_socket(self) -> None:
+        run = mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            regular = os.path.join(tmp, "regular")
+            Path(regular).write_text("", encoding="utf-8")
+            for value in (f"{regular},1,0", "-S,1,0", "relative.sock,1,0"):
+                with (
+                    self.subTest(value=value),
+                    mock.patch.dict(os.environ, {"TMUX": value, "TMUX_PANE": "%1"}),
+                    mock.patch.object(subprocess, "run", run),
+                    self.assertRaises(interaction.OriginUnavailableError),
+                ):
+                    interaction._discover_origin()
+        run.assert_not_called()
 
 
 class ControlModeBufferSecurityTest(unittest.TestCase):
