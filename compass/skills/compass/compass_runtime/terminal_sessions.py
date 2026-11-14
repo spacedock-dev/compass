@@ -177,7 +177,12 @@ _ESCAPES = re.compile(
 # category, and all of them reorder or break what a terminal draws.
 _UNSAFE = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-_OTHER_BLANKS = re.compile(r"[\t\r\f\v\u2028\u2029]")
+_LINE_CONTROLS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")  # `_CONTROLS` less the tab
+# What `printable_text` turns into a space inside a line. A tab is left alone, because it cannot
+# steer a terminal and a log's indentation needs it. A lone `\r` stays a blank rather than a line
+# break, so a value inside a report cannot start a line of its own; only CRLF ends a line.
+_OTHER_BLANKS = re.compile(r"[\r\f\v\u2028\u2029]")
+_CRLF = re.compile(r"\r\n")
 _SPACES = re.compile(r"[ \t\r\n\f\v\u2028\u2029]+")
 
 _ACTIVE_EMPTY: Final = "No exact session has active evidence right now."
@@ -201,12 +206,14 @@ def printable_text(value: object) -> str:
     """`value` cleaned as `printable` does, but with its line breaks and spacing kept.
 
     For a multi-line report: each line is cleaned on its own, so the structure and indentation
-    survive and nothing in a line can steer the terminal. A tab, carriage return or other
-    whitespace control becomes one space, as it does in `printable`.
+    survive and nothing in a line can steer the terminal. CRLF ends a line, so a Windows log keeps
+    its shape; a tab stays; a lone carriage return, form feed, vertical tab and the Unicode line
+    separators become one space.
     """
+    text = _CRLF.sub("\n", "" if value is None else str(value))
     return "\n".join(
-        _CONTROLS.sub("", _UNSAFE.sub("", _OTHER_BLANKS.sub(" ", _ESCAPES.sub("", line))))
-        for line in ("" if value is None else str(value)).split("\n")
+        _LINE_CONTROLS.sub("", _UNSAFE.sub("", _OTHER_BLANKS.sub(" ", _ESCAPES.sub("", line))))
+        for line in text.split("\n")
     )
 
 

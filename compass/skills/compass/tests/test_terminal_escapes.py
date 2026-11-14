@@ -66,7 +66,14 @@ class PrintableStringSequencesTest(unittest.TestCase):
 
     def test_printable_text_cleans_line_by_line(self) -> None:
         text = ts.printable_text(f"  a{OSC52_8BIT}\n\tb\r\n  c\u202e")
-        self.assertEqual(text, "  a\n b \n  c")
+        self.assertEqual(text, "  a\n\tb\n  c")
+
+    def test_printable_text_keeps_tabs_and_crlf_lines(self) -> None:
+        # A daemon log is read to debug a failed start: a CRLF line gains no trailing space and a
+        # traceback keeps its tab indentation. A lone CR is still a blank, so a value inside a
+        # report cannot start a line of its own.
+        text = ts.printable_text("one\r\n\tindented\r\n10%\r100%\n")
+        self.assertEqual(text, "one\n\tindented\n10% 100%\n")
 
 
 class DiagnoseTest(unittest.TestCase):
@@ -147,6 +154,13 @@ class LifecycleTest(unittest.TestCase):
         self.assertNotRegex(text, "[\x00-\x09\x0b-\x1f\x7f-\x9f]")
         self.assertEqual(text.split("\n")[0], "first")
         self.assertEqual(text.split("\n")[-1], "    last é")
+
+    def test_log_tail_names_a_hostile_log_path_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            missing = str(Path(home) / f"gone{OSC52_8BIT}.log")
+            text = lifecycle.log_tail(missing)
+        self.assertNotIn(PAYLOAD, text)
+        self.assertNotRegex(text, "[\x00-\x1f\x7f-\x9f]")
 
     def test_render_status_cleans_a_recorded_pid(self) -> None:
         status = {"state": "stale", "port": 4800, "pid": "1" + OSC52_8BIT}
