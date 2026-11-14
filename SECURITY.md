@@ -1897,7 +1897,7 @@ The original whole-message path had one redaction limit the first sentence did n
 one line before it is redacted, so a credential the reader's text broke across a line break becomes
 two runs. The part before the break is masked only when it is still long enough to match its shape
 on its own, and the part after it has no prefix to match and is never masked, the same
-shape-matching residual Published text describes for a control character. Measured on the
+shape-matching residual Published text describes for a line break. Measured on the
 documented AWS example key and on a GitHub token shape, each split partway through: neither half was
 masked. Before this change the part after the break was on a later line and never reached a model;
 it reached the provider. Amended 2026-10-04 by the owner: the reader-requested window lookup now
@@ -5379,12 +5379,28 @@ Since 2026-10-05 the shared filter also checks a second view with transparent HT
 removed, before the credential hint check. A match masks the corresponding original span; ordinary
 spaces, newlines and harmless formatting remain, and the raw scan still masks credentials in tag
 attributes. The supported elements are `a`, `abbr`, `b`, `code`, `del`, `em`, `i`, `ins`, `kbd`, `mark`,
-`s`, `samp`, `small`, `span`, `strong`, `sub`, `sup`, `time`, `u` and `var`, including closing and
+`s`, `samp`, `small`, `span`, `strong`, `sub`, `sup`, `time`, `u`, `var` and `wbr`, including closing and
 self-closing tags and quoted attributes. Slash-command arguments are masked before their tags turn
 into spaces. This extra view is limited to 16,384 characters: longer text containing one of those
 element starts is withheld as a redaction marker, including an unfinished attribute. Plain text
 does not acquire that bound. Arbitrary envelope tags, encoded markup and unseen text beyond an
 existing source extraction bound are outside this correction's claim.
+
+Since 2026-11-14 the second view also leaves out what renders as nothing: closed HTML comments of
+any length, every Unicode format character (category Cf, which holds the zero-width joiner and
+non-joiner, the word joiner, the byte-order mark, the soft hyphen, the bidi controls and the tag
+characters), the variation selectors, the combining grapheme joiner, the Mongolian selectors, and
+every C0 and C1 control that is not a line break. Before that, one of these inside a key's prefix,
+its cue word or its body published the whole key. Comments and tags are read in document order, so
+a comment opener inside an attribute is not a comment. Neither comments nor these characters
+acquire the 16,384-character bound, so a long transcript with an emoji in it is read rather than
+withheld. Only a matched credential changes, so the joiners Persian, Indic scripts and emoji
+sequences are spelled with stay where they are in every other word. On a published row the C1
+controls, the Arabic letter mark and the Unicode line and paragraph separators now become spaces,
+as the other controls and bidi marks already did; the masking runs before that substitution, so
+the character is still there for the second view to read through. Characters that look like a
+space or a letter but are not one (a no-break space, a Hangul filler) are not removed, and neither
+is anything visible a session inserts into a key.
 
 Amended 2026-10-06: native command field boundaries are captured before the observer's
 early scrub. Each field is masked before extraction; missing closing tags remain source
@@ -5424,10 +5440,12 @@ including that `--forget` does not reach it.
 
 This reduces the exposure and does not close it, and both directions of error are real. A shape list
 covers the formats it was measured against, so a credential in a format nobody has seen goes through
-unmarked. A control character struck through the middle of a key defeats the match on the whole key,
-and what follows is worse than nothing being published: the substitution that scrubs the character
-turns it into a space, so the head in front of it still matches and redacts while the tail behind it
-publishes beside the marker, 75 characters of key on a probe. A run longer than any key its format
+unmarked. A line break struck through the middle of a key defeats the match on the whole key, and
+what follows is worse than nothing being published: the substitution that scrubs the break turns it
+into a space, so the head in front of it still matches and redacts while the tail behind it
+publishes beside the marker, 75 characters of key on a probe. An invisible control no longer does
+this (see the second view above); a line break still does, because the shapes are tuned to read the
+space it becomes. A run longer than any key its format
 issues is cut at the cap, and the characters past the cap publish. And the AWS secret access key is
 matched only when one of three spellings of its key name sits in front of the value, because a bare
 40-character base64 run cannot be told apart from a hash or a diff.
