@@ -3,7 +3,9 @@
 
 All runtime imports come from the explicitly supplied plugin copy. The optional
 terminal fixture uses synthetic HTTP registration and stream output; it
-starts no terminal, tmux, notification, provider, or child process.
+starts no terminal, tmux, notification, provider, or child process. It binds one
+UNIX socket nothing listens on, because a registered origin must name a socket
+its user owns (`SyntheticTerminal.owned_socket`).
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import argparse
 import importlib
 import json
 import os
+import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -29,10 +33,30 @@ class SyntheticTerminal:
         self.disconnected: Any = None
         self.stop_event = threading.Event()
         self.renewal: threading.Thread | None = None
+        self.socket_dir: str | None = None
+
+    def owned_socket(self) -> str:
+        """A bound UNIX socket in a private folder, which a registered origin must name.
+
+        The server admits an origin only when its socket is a socket this user owns, so a
+        made-up path is refused. Binding one opens no terminal, tmux or child process: nothing
+        listens on it and nothing connects. The folder is short-lived and short-named, because
+        macOS caps a socket path near 104 bytes, and `stop` removes it.
+        """
+        if self.socket_dir is None:
+            self.socket_dir = tempfile.mkdtemp(prefix="cmp-")  # mode 0700
+        path = os.path.join(self.socket_dir, "smoke.sock")
+        if not os.path.exists(path):
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                listener.bind(path)
+            finally:
+                listener.close()
+        return path
 
     def prepare(self) -> Any:
         self.origin = self.api.TmuxOrigin(
-            server_socket="/synthetic/installed-smoke.sock",
+            server_socket=self.owned_socket(),
             server_pid="1001",
             session_id="$1",
             session_name="installed-smoke",
@@ -111,6 +135,9 @@ class SyntheticTerminal:
         self.stop_read_only_stream()
         if self.renewal is not None:
             self.renewal.join(2)
+        if self.socket_dir is not None:
+            shutil.rmtree(self.socket_dir, ignore_errors=True)
+            self.socket_dir = None
 
 
 def isolated_environment(scratch: Path, environ: dict[str, str], *, os_name: str) -> dict[str, str]:

@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import http.client
 import io
+import itertools
 import json
 import os
 import select
@@ -30,6 +31,26 @@ from .support import PAGE_BYTES, build_app, make_server, poll_fast
 REAL_TIME_TESTS = True
 
 
+# One short-named folder for every fixture socket in this module, removed when the module ends:
+# a UNIX socket path is capped near 104 bytes on macOS, and an adapter a test only prepares is
+# never stopped, so a folder per adapter would be left behind.
+# Made on first use, so a process that only imports the module to list it makes none, and made
+# again after a teardown, which the parallel runner may run between units.
+_SOCKET_ROOT: list[str] = []
+_SOCKET_NUMBERS = itertools.count(1)
+
+
+def socket_root() -> str:
+    if not _SOCKET_ROOT or not os.path.isdir(_SOCKET_ROOT[0]):
+        _SOCKET_ROOT[:] = [tempfile.mkdtemp(prefix="cmp-")]
+    return _SOCKET_ROOT[0]
+
+
+def tearDownModule() -> None:
+    for root in _SOCKET_ROOT:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def bound_socket(directory: str, name: str) -> str:
     """A real UNIX socket owned by this user, as tmux leaves one: an origin must name one."""
     path = os.path.join(directory, name)
@@ -44,7 +65,8 @@ class FakeTmuxAdapter:
 
     def __init__(self) -> None:
         # Short, because a UNIX socket path is limited to about 104 bytes on macOS.
-        self.socket_dir = tempfile.mkdtemp(prefix="cmp-")
+        self.socket_prefix = f"a{next(_SOCKET_NUMBERS)}"
+        self.sockets: list[str] = []
         self.connected_value = False
         self.prepare_count = 0
         self.capture_count = 0
@@ -58,15 +80,18 @@ class FakeTmuxAdapter:
         self.renewal_stop = threading.Event()
         self.renewal_thread: threading.Thread | None = None
 
+    def bound(self, name: str) -> str:
+        path = bound_socket(socket_root(), name)
+        self.sockets.append(path)
+        return path
+
     def prepare(self) -> interaction.TmuxOrigin:
         self.prepare_count += 1
         self.connected_value = True
         self.renewal_stop = threading.Event()
         suffix = str(self.prepare_count)
-        # `reset` stops the adapter, which removes the directory, and then prepares again.
-        os.makedirs(self.socket_dir, exist_ok=True)
         return interaction.TmuxOrigin(
-            server_socket=bound_socket(self.socket_dir, f"disposable-{suffix}.sock"),
+            server_socket=self.bound(f"{self.socket_prefix}-{suffix}.sock"),
             server_pid=f"10{suffix}",
             session_id=f"${suffix}",
             session_name=f"disposable-{suffix}",
@@ -167,7 +192,9 @@ class FakeTmuxAdapter:
 
     def stop(self) -> None:
         self.stop_read_only_stream()
-        shutil.rmtree(self.socket_dir, ignore_errors=True)
+        for path in self.sockets:
+            Path(path).unlink(missing_ok=True)
+        self.sockets.clear()
         self.connected_value = False
         self.renewal_stop.set()
         if self.renewal_thread is not None:
