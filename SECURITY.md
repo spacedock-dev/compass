@@ -5801,7 +5801,10 @@ path and a throwaway home. That keeps Node out of reach and is not credential is
 that reaches `main` through the normal review and checks is the accepted trust boundary; the
 workflow does not defend against a reviewed commit that is hostile. The release publishes the tree
 that was verified, never a newer `main`, and a `stable` that has already moved forward is not moved
-back. Whether the ruleset bypass, the key handling of `actions/checkout` and the runner image behave
+back. A re-run resumes only onto a release commit with one parent, committed by the release bot and
+changing nothing but the manifests' version values, because a pull request can carry the release
+title and version too; both verification jobs run on it again, and an older release published
+after a newer one is not marked latest. Whether the ruleset bypass, the key handling of `actions/checkout` and the runner image behave
 as described can only be shown by a real run.
 
 The standalone `compass` binaries are built the same way: by four jobs with a read-only token, no
@@ -5811,7 +5814,10 @@ treated as data. It never reaches the job that holds the key. A separate job tha
 repository write token downloads the archives, checksums them and uploads them to the release,
 and never unpacks or runs one. That job cannot push to `main` or move a tag. The checksums file
 lives beside the archives, so it detects a corrupted download and not a hostile release; the
-binaries carry no signature of their own, and on macOS no developer identity or notarization.
+binaries carry no signature of their own, and on macOS no developer identity or notarization. The
+job that writes the Homebrew formula fetches that file over HTTPS only and uses it only when its
+SHA-256 is the one the uploading job reported, so the formula carries the checksums this run
+uploaded and not whatever was served under that name.
 
 ## Merge queue re-queue (the queue token)
 
