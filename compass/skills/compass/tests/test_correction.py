@@ -601,6 +601,31 @@ class ExplanationTest(unittest.TestCase):
             text,
         )
 
+    def test_a_control_inside_a_key_leaves_no_tail_in_the_explanation(self) -> None:
+        # `_visible` turned the control into a space before anything redacted, so the head
+        # matched and the tail after the control reached the correction the reader pastes.
+        for control in ("\x01", "\x1b", "\x7f", "\x9b"):
+            with self.subTest(control=repr(control)):
+                key = "sk-ant-api03-" + "A" * 40 + control + "B" * 55
+                text = correction.explanation(f"rotate {key} now")
+                self.assertNotIn("B" * 20, text)
+                self.assertNotIn("A" * 20, text)
+
+    def test_coloured_tool_output_reads_as_it_did(self) -> None:
+        # Recorded from the branch point: masking first must not change text with no key in it.
+        for coloured, expected in (
+            (
+                "\x1b[31mFAILED\x1b[0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+                "[31mFAILED [0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+            ),
+            (
+                "\x1b[1;32m12 passed\x1b[0m in 0.4s\x07 then token=next and \x7fdone",
+                "[1;32m12 passed [0m in 0.4s then token=next and done",
+            ),
+        ):
+            with self.subTest(coloured=coloured[:12]):
+                self.assertEqual(expected, correction.explanation(coloured))
+
     def test_a_missing_or_empty_explanation_leaves_the_approved_line(self) -> None:
         for missing in ("", "   ", None, 7, "…", "``", "# "):
             with self.subTest(detail=missing):

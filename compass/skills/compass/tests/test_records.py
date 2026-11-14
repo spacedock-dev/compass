@@ -26,6 +26,7 @@ import re
 import shlex
 import sys
 import time
+import unicodedata
 import unittest
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -829,18 +830,22 @@ class RedactSecretsTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(text, records.redact_secrets(text))
 
-    def test_a_separator_inside_a_key_leaves_its_tail_beside_the_marker(self) -> None:
-        # The residual, pinned rather than described. A control character
-        # through the middle of a key defeats the match on the whole key, and
-        # `safe_text` turns that character into a space: the head still matches
-        # on its own and redacts, and the tail behind it is a run with no prefix
-        # to match on. Both SECURITY.md and the design doc used to say the match
-        # was defeated and stop there, which reads as "nothing is published".
-        split = "sk-ant-api03-" + "A" * 40 + "\x01" + "B" * 75
-        published = records.safe_text(f"rotate {split} now", 400)
-        self.assertIn("sk-ant-…REDACTED", published)
-        self.assertEqual(75, published.count("B"))
-        self.assertNotIn("A" * 4, published, "the head in front of the separator still redacts")
+    def test_a_line_break_inside_a_key_leaves_its_tail_beside_the_marker(self) -> None:
+        # The residual, pinned rather than described. A line break through the
+        # middle of a key defeats the match on the whole key, and `safe_text`
+        # turns it into a space: the head still matches on its own and redacts,
+        # and the tail behind it is a run with no prefix to match on. Both
+        # SECURITY.md and the design doc used to say the match was defeated and
+        # stop there, which reads as "nothing is published". An invisible control
+        # no longer does this (`HiddenCharactersInsideACredentialTest`); a line
+        # break is a real separator the shapes are tuned to, so it still does.
+        for brk in ("\n", "\r", "\u2028"):
+            with self.subTest(brk=repr(brk)):
+                split = "sk-ant-api03-" + "A" * 40 + brk + "B" * 75
+                published = records.safe_text(f"rotate {split} now", 400)
+                self.assertIn("sk-ant-…REDACTED", published)
+                self.assertEqual(75, published.count("B"))
+                self.assertNotIn("A" * 4, published, "the head in front of the break redacts")
 
     def test_a_body_longer_than_the_format_issues_stops_at_the_cap(self) -> None:
         # Greedy hyphen-inclusive bodies over-reached: a key glued to the words
@@ -978,6 +983,279 @@ class RedactSecretsTest(unittest.TestCase):
             with self.subTest(shape=match.lastgroup):
                 self.assertEqual(expected, records.redact_secrets(fake))
         self.assertEqual(listed, covered)
+
+
+def _key(hidden: str = "") -> str:
+    """A synthetic Anthropic-shaped key, with `hidden` struck through the middle of its body."""
+    return "sk-ant-api03-" + "A" * 40 + hidden + "A" * 55
+
+
+class HiddenCharactersInsideACredentialTest(unittest.TestCase):
+    """Credentials an invisible character or an inert HTML construct was struck through.
+
+    Each of these renders as nothing, so a key carrying one reads as a key and copies as one, while
+    the shape filter saw two runs, or a cue word it did not know. The filter reads a second view
+    with them removed and masks the matched span in the original, so the same characters in
+    ordinary prose are left exactly where they were.
+    """
+
+    # The characters the audit named, plus the ones `safe_text` turns into spaces, which on that path
+    # used to leave the tail of a key beside the marker.
+    HIDDEN: ClassVar[tuple[str, ...]] = (
+        "\u2060",  # word joiner
+        "\ufeff",  # byte-order mark
+        "\xad",  # soft hyphen
+        "\u200c",  # zero-width non-joiner
+        "\u200d",  # zero-width joiner
+        "\u034f",  # combining grapheme joiner
+        "\u180e",  # Mongolian vowel separator
+        "\ufe0f",  # variation selector 16
+        "\U000e0100",  # variation selector 17
+        "\U000e0041",  # tag latin capital A
+        "\x85",  # C1: next line
+        "\x9b",  # C1: control sequence introducer
+        "\x01",  # C0
+        "\x1b",  # C0: escape
+        "\x7f",  # DEL
+        "\u061c",  # Arabic letter mark
+        "\u200b",  # zero-width space
+        "\u202e",  # right-to-left override
+        "\u2066",  # left-to-right isolate
+        "\u2060\u200d\ufe0f",  # several at once
+    )
+    MARKUP: ClassVar[tuple[str, ...]] = (
+        "<wbr>",
+        "<wbr/>",
+        "<WBR >",
+        "<!-- -->",
+        "<!---->",
+        # Longer than the 256 the issue suggested as a bound, which would have been a bypass.
+        "<!--" + "note " * 80 + "-->",
+        "<!-- a <b>tag</b> inside -->",
+    )
+
+    def assert_masked(self, text: str, survivor: str) -> None:
+        for name, published in (
+            ("redact_secrets", records.redact_secrets(text)),
+            ("safe_text", records.safe_text(text, 4_000)),
+        ):
+            with self.subTest(via=name):
+                self.assertNotIn(survivor, published)
+                self.assertIn(records.SECRET_MARKER, published)
+
+    def test_a_hidden_character_inside_a_key_body_masks_the_whole_key(self) -> None:
+        for hidden in self.HIDDEN + self.MARKUP:
+            with self.subTest(hidden=repr(hidden)):
+                self.assert_masked(f"rotate {_key(hidden)} now", "A" * 5)
+
+    def test_a_hidden_character_inside_a_key_prefix_masks_the_key(self) -> None:
+        # The prefix is what the hint gate and every shape anchor on, so a split there hid the
+        # whole key on both paths, not only its tail.
+        for hidden in self.HIDDEN + self.MARKUP:
+            with self.subTest(hidden=repr(hidden)):
+                anthropic = "sk-a" + hidden + "nt-api03-" + "A" * 95
+                self.assert_masked(f"rotate {anthropic} now", "A" * 5)
+                aws = "AK" + hidden + "IA" + "IOSFODNN7" + "EXAMPLE"
+                self.assert_masked(f"export {aws}", "IOSFODNN7")
+
+    def test_a_hidden_character_inside_a_cue_word_masks_its_value(self) -> None:
+        for hidden in self.HIDDEN + self.MARKUP:
+            with self.subTest(hidden=repr(hidden)):
+                self.assert_masked("DB_PASS" + hidden + "WORD=placeholder1 make", "placeholder1")
+                self.assert_masked("my_api" + hidden + "_key=placeholder1", "placeholder1")
+
+    def test_every_format_character_is_seen_through(self) -> None:
+        # The class is spelled out rather than read from `unicodedata` at import, which would walk
+        # every code point on each start. This holds the spelling to the running Python's database
+        # (Unicode 15.0 on 3.12 and 17.0 on 3.15 list the same Cf characters).
+        format_chars = [chr(cp) for cp in range(0x110000) if unicodedata.category(chr(cp)) == "Cf"]
+        self.assertGreater(len(format_chars), 150)
+        for char in format_chars:
+            with self.subTest(code_point=f"U+{ord(char):04X}"):
+                self.assertNotIn("A" * 5, records.redact_secrets(_key(char)))
+
+    def test_every_control_that_is_not_a_line_break_is_seen_through(self) -> None:
+        controls = [chr(cp) for cp in (*range(0x20), *range(0x7F, 0xA0))]
+        breaks = set("\t\n\x0b\x0c\r")
+        for char in controls:
+            if char in breaks:
+                continue
+            with self.subTest(code_point=f"U+{ord(char):04X}"):
+                self.assert_masked(_key(char), "A" * 5)
+
+    def test_ordinary_text_with_joiners_and_formatting_is_left_byte_for_byte(self) -> None:
+        for text in (
+            # A family emoji is three people joined by ZWJ; a keycap and a heart carry selectors.
+            "Ship it \U0001f468\u200d\U0001f469\u200d\U0001f467 today",
+            "keycap 1\ufe0f\u20e3 and \u2764\ufe0f and \U0001f468\u200d\U0001f4bb",
+            # A subdivision flag is a tag sequence, so every tag character in it must stay.
+            "flag \U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f here",
+            # Persian spells words with ZWNJ; Devanagari selects a conjunct form with ZWJ/ZWNJ.
+            "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 this",
+            "\u0915\u094d\u200d\u0937 and \u0915\u094d\u200c\u0937",
+            "soft\xadhyphen, word\u2060joiner, BOM\ufeff inside",
+            "a<wbr>very<wbr/>long<!-- note -->word and <em>emphasis</em>",
+            # Cue words on either side of a joiner that is not a credential.
+            "the token\u200d is fine and the key\u200c: next",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(text, records.redact_secrets(text))
+                self.assertEqual(text, records.safe_text(text, 4_000))
+
+    def test_the_text_around_a_masked_key_keeps_its_joiners(self) -> None:
+        persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"
+        emoji = "\U0001f468\u200d\U0001f4bb"
+        text = f"{persian} rotate {_key(chr(0x2060))} {emoji}"
+        expected = f"{persian} rotate sk-ant-{records.SECRET_MARKER} {emoji}"
+        self.assertEqual(expected, records.redact_secrets(text))
+        self.assertEqual(expected, records.safe_text(text, 4_000))
+
+    def test_long_text_with_a_joiner_is_read_rather_than_withheld(self) -> None:
+        # The 16,384-character bound withholds long text holding an element tag, because that
+        # grammar is quadratic over unclosed starts. Joiners and comments are linear, so a long
+        # transcript with an emoji in it is read, not replaced by a marker.
+        lead = "x " * 9_000
+        emoji = "\U0001f468\u200d\U0001f4bb"
+        text = f"{lead}{emoji} rotate {_key(chr(0x200D))} <!-- done -->"
+        published = records.redact_secrets(text)
+        self.assertTrue(published.startswith(lead + emoji))
+        self.assertTrue(published.endswith(f"sk-ant-{records.SECRET_MARKER} <!-- done -->"))
+
+    def test_a_comment_and_a_tag_are_read_in_document_order(self) -> None:
+        # Overlapping spans once merged into one, and the merge took the visible text between them
+        # with it. A `<!--` inside a quoted attribute is not a comment, and a tag that opens inside a
+        # comment is not a tag; either way the key renders whole while the raw text is split.
+        body = "api03-" + "A" * 95
+        for text in (
+            f'<b title="<!--">sk-ant-</b><wbr>{body} -->',
+            f'<!-- <b title=" -->sk-ant-<wbr>{body}">',
+        ):
+            with self.subTest(text=text[:40]):
+                self.assertNotIn("A" * 5, records.redact_secrets(text))
+
+    def test_an_unclosed_comment_hides_nothing_from_the_view(self) -> None:
+        # An opener nothing closes is literal text, so a tag after it is still formatting.
+        self.assertNotIn("A" * 5, records.redact_secrets(f"<!-- sk-ant-<wbr>api03-{'A' * 95}"))
+
+    SEPARATORS: ClassVar[tuple[str, ...]] = (
+        "\u200b",
+        "\u2060",
+        "\xad",
+        "\ufeff",
+        "\x01",
+        "\x85",
+        "<wbr>",
+        "<!-- -->",
+    )
+
+    def assert_no_body(self, text: str, runs: tuple[str, ...], tail: str) -> None:
+        for name, published in (
+            ("redact_secrets", records.redact_secrets(text)),
+            ("safe_text", records.safe_text(text, 4_000)),
+        ):
+            with self.subTest(via=name):
+                for run in runs:
+                    self.assertNotIn(run, published)
+                self.assertTrue(published.endswith(tail), published[-40:])
+
+    def test_two_keys_joined_by_a_hidden_separator_are_both_masked(self) -> None:
+        # The view reads the two as one run, so its match on the first ran into the second and
+        # was written back over the original, taking the second key's prefix with it: the raw
+        # scan then had nothing to anchor on and the second body published. The raw scan's own
+        # matches are now kept beside the view's.
+        first = "sk-ant-api03-" + "A" * 95
+        second = "sk-ant-api03-" + "B" * 95
+        npm = "npm_" + "C" * 36
+        github = "ghp_" + "D" * 36
+        for sep in self.SEPARATORS:
+            with self.subTest(sep=repr(sep)):
+                self.assert_no_body(
+                    f"rotate {first}{sep}{second} today", ("A" * 20, "B" * 20), " today"
+                )
+                self.assert_no_body(
+                    f"rotate {npm}{sep}{github} today", ("C" * 20, "D" * 20), " today"
+                )
+
+    def test_a_chain_of_keys_each_split_its_own_way_is_masked(self) -> None:
+        first = "sk-ant-api03-" + "A" * 95
+        for text, runs in (
+            (f"{first}\ufeffsk-ant-ap<b></b>i03-{'C' * 95} done", ("A" * 20, "C" * 20)),
+            (
+                f"{first}\x01sk-ant-api03-{'D' * 40}<b></b>{'D' * 55} done",
+                ("A" * 20, "D" * 20),
+            ),
+        ):
+            with self.subTest(text=text[:16]):
+                self.assert_no_body(text, runs, " done")
+
+    def test_a_key_behind_a_hidden_character_is_read_from_its_own_start(self) -> None:
+        # In the view `x` and the key touch, so the anchor that keeps `sk-` inside a longer word
+        # from matching rejected it, while the raw text saw two short runs. A removed span is a
+        # boundary, so a match is also tried from just after it.
+        for text in (
+            "x\u200bnpm_" + "E" * 18 + "\u200b" + "E" * 18 + " done",
+            "x<wbr>npm_" + "F" * 18 + "<wbr>" + "F" * 18 + " done",
+        ):
+            with self.subTest(text=text[:8]):
+                self.assert_no_body(text, ("E" * 10, "F" * 10), " done")
+
+    def test_a_control_inside_a_key_leaves_no_tail_in_mask_prose(self) -> None:
+        # The later direction's text, which reaches a model: the control used to become a space
+        # before anything redacted, so the tail after it went out beside the marker.
+        for control in ("\x01", "\x1b", "\x7f", "\x9b"):
+            with self.subTest(control=repr(control)):
+                key = "sk-ant-api03-" + "A" * 40 + control + "B" * 55
+                masked = records.mask_prose(f"rotate {key} now")
+                self.assertNotIn("B" * 20, masked)
+                self.assertNotIn("A" * 20, masked)
+                self.assertTrue(masked.endswith(" now"))
+
+    def test_coloured_tool_output_through_mask_prose_reads_as_it_did(self) -> None:
+        # Recorded from the branch point: masking first must not change text with no key in it.
+        for coloured, expected in (
+            (
+                "\x1b[31mFAILED\x1b[0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+                "[31mFAILED [0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+            ),
+            (
+                "\x1b[1;32m12 passed\x1b[0m in 0.4s\x07 then token=next and \x7fdone",
+                "[1;32m12 passed [0m in 0.4s then token=" + records.SECRET_MARKER + " and done",
+            ),
+        ):
+            with self.subTest(coloured=coloured[:12]):
+                self.assertEqual(expected, records.mask_prose(coloured))
+
+    def test_safe_text_turns_the_added_invisible_characters_into_spaces(self) -> None:
+        # What a reader sees: C1 controls, the Arabic letter mark and the Unicode line and
+        # paragraph separators each become one space, as a line feed and the other bidi marks
+        # already did. Joiners, selectors and the soft hyphen are left for the text that uses them.
+        for char in ("\x80", "\x85", "\x9f", "\u061c", "\u2028", "\u2029"):
+            with self.subTest(code_point=f"U+{ord(char):04X}"):
+                self.assertEqual("a b", records.safe_text(f"a{char}b", 40))
+
+    def test_pathological_inputs_stay_linear(self) -> None:
+        # Each of these is a shape that would turn a per-opener scan quadratic: unclosed comment
+        # openers, a comment opener in front of a run of hints, a hint broken by a hidden character
+        # tens of thousands of times. Quadratic at this size is minutes; linear measured under
+        # 1.0 s for the slowest on a loaded laptop (2026-11-14), and a megabyte of each doubled
+        # cleanly at 2 MB, the slowest 3.8 s against 1.6 s for the raw scan alone before.
+        size = 250_000
+        inputs = {
+            "unclosed comment openers": "<!--" * (size // 4),
+            "closed empty comments": "<!---->" * (size // 7),
+            "one opener then hints": "<!--" + "sk-ant-" * (size // 7),
+            "invisible run": "\u2060" * size,
+            "hint then invisible": ("sk-\u2060") * (size // 4),
+            "cue then zero-width space": ("token=\u200b") * (size // 7),
+            "joined emoji": ("\U0001f468\u200d") * (size // 2),
+            "unclosed wbr": "<wbr" * (size // 4),
+        }
+        for name, text in inputs.items():
+            with self.subTest(name=name):
+                started = time.process_time()
+                records.redact_secrets(text)
+                records.safe_text(text, 140)
+                self.assertLess(time.process_time() - started, 4.0)
 
 
 def mask(line: str) -> str:

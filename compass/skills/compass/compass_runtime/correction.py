@@ -111,10 +111,9 @@ _SAID = "said"
 
 Part = str | dict[str, str]
 
-# Line breaks `records.safe_text` leaves in place (C1 controls, NEL and the Unicode line and
-# paragraph separators, any of which can start a new line where the paste lands) and the C0 set it
-# turns into spaces, made spaces here first so the opener strip below sees them as the spaces they
-# become.
+# The controls and line breaks `records.safe_text` turns into spaces (C0, C1, NEL and the Unicode
+# line and paragraph separators, any of which can start a new line where the paste lands), made
+# spaces here first so the opener strip below sees them as the spaces they become.
 _BREAKS = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
 # Invisible characters, dropped before anything else reads the text (review, 2026-10-20): a leading
 # BOM or word joiner hid an opener from the strip, and a run of tag characters rendered as nothing
@@ -186,7 +185,9 @@ def neutralised(value: object, cap: int) -> str:
     finishes past the bound withholds the text rather than let it pass its room.
     """
     raw = value if isinstance(value, str) else ""
-    prepared = _redact_joined(_strip_openers(_visible(raw)))
+    # Masked before `_visible` makes a control a space: as a space, it split a key whose tail
+    # then passed every later redaction. `records.redact_secrets` reads through the control.
+    prepared = _redact_joined(_strip_openers(_visible(records.redact_secrets(raw))))
     text = records.safe_text(prepared, cap)
     # Cut, measured against the same text unbounded: a run of spaces collapses to one, so the raw
     # length would mark a whole sentence as cut.

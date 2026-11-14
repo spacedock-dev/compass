@@ -86,8 +86,9 @@ STORE_FILENAME: Final = "compass-history.json"
 # this is a ceiling on a tampered file rather than a bound any real value meets.
 FIELD_CAP_CHARS: Final = 256
 
-# C0 and DEL, the zero-width space, the two directional marks, and the bidi
-# embedding and isolate ranges, mirroring `records._UNSAFE_CHARS`. Inlined
+# C0, DEL and C1, the Arabic letter mark, the zero-width space, the two directional
+# marks, the line and paragraph separators, and the bidi embedding and isolate
+# ranges, mirroring `records._UNSAFE_CHARS`. Inlined
 # rather than imported because this module imports `config` and nothing else,
 # and the reason it is here at all is that these four strings reach the DOM
 # through `/api/data`: this file is one any local process could have replaced,
@@ -95,7 +96,9 @@ FIELD_CAP_CHARS: Final = 256
 # credential redaction `records.safe_text` also does is not repeated, and does
 # not need to be — every value written here came off a row that had already been
 # through it, so the only strings this guards are an attacker's own.
-_UNSAFE_CHARS = re.compile("[\x00-\x1f\x7f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069]+")
+_UNSAFE_CHARS = re.compile(
+    "[\x00-\x1f\x7f-\x9f\u061c\u200b\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]+"
+)
 
 # Why the store reports which reset it was: a corruption reset may be the user's
 # disk, a version reset is ours, and one message for both hides the difference.
