@@ -185,7 +185,9 @@ def neutralised(value: object, cap: int) -> str:
     finishes past the bound withholds the text rather than let it pass its room.
     """
     raw = value if isinstance(value, str) else ""
-    prepared = _redact_joined(_strip_openers(_visible(raw)))
+    # Masked before `_visible` makes a control a space: as a space, it split a key whose tail
+    # then passed every later redaction. `records.redact_secrets` reads through the control.
+    prepared = _redact_joined(_strip_openers(_visible(records.redact_secrets(raw))))
     text = records.safe_text(prepared, cap)
     # Cut, measured against the same text unbounded: a run of spaces collapses to one, so the raw
     # length would mark a whole sentence as cut.

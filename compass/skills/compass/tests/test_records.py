@@ -1137,6 +1137,94 @@ class HiddenCharactersInsideACredentialTest(unittest.TestCase):
         # An opener nothing closes is literal text, so a tag after it is still formatting.
         self.assertNotIn("A" * 5, records.redact_secrets(f"<!-- sk-ant-<wbr>api03-{'A' * 95}"))
 
+    SEPARATORS: ClassVar[tuple[str, ...]] = (
+        "\u200b",
+        "\u2060",
+        "\xad",
+        "\ufeff",
+        "\x01",
+        "\x85",
+        "<wbr>",
+        "<!-- -->",
+    )
+
+    def assert_no_body(self, text: str, runs: tuple[str, ...], tail: str) -> None:
+        for name, published in (
+            ("redact_secrets", records.redact_secrets(text)),
+            ("safe_text", records.safe_text(text, 4_000)),
+        ):
+            with self.subTest(via=name):
+                for run in runs:
+                    self.assertNotIn(run, published)
+                self.assertTrue(published.endswith(tail), published[-40:])
+
+    def test_two_keys_joined_by_a_hidden_separator_are_both_masked(self) -> None:
+        # The view reads the two as one run, so its match on the first ran into the second and
+        # was written back over the original, taking the second key's prefix with it: the raw
+        # scan then had nothing to anchor on and the second body published. The raw scan's own
+        # matches are now kept beside the view's.
+        first = "sk-ant-api03-" + "A" * 95
+        second = "sk-ant-api03-" + "B" * 95
+        npm = "npm_" + "C" * 36
+        github = "ghp_" + "D" * 36
+        for sep in self.SEPARATORS:
+            with self.subTest(sep=repr(sep)):
+                self.assert_no_body(
+                    f"rotate {first}{sep}{second} today", ("A" * 20, "B" * 20), " today"
+                )
+                self.assert_no_body(
+                    f"rotate {npm}{sep}{github} today", ("C" * 20, "D" * 20), " today"
+                )
+
+    def test_a_chain_of_keys_each_split_its_own_way_is_masked(self) -> None:
+        first = "sk-ant-api03-" + "A" * 95
+        for text, runs in (
+            (f"{first}\ufeffsk-ant-ap<b></b>i03-{'C' * 95} done", ("A" * 20, "C" * 20)),
+            (
+                f"{first}\x01sk-ant-api03-{'D' * 40}<b></b>{'D' * 55} done",
+                ("A" * 20, "D" * 20),
+            ),
+        ):
+            with self.subTest(text=text[:16]):
+                self.assert_no_body(text, runs, " done")
+
+    def test_a_key_behind_a_hidden_character_is_read_from_its_own_start(self) -> None:
+        # In the view `x` and the key touch, so the anchor that keeps `sk-` inside a longer word
+        # from matching rejected it, while the raw text saw two short runs. A removed span is a
+        # boundary, so a match is also tried from just after it.
+        for text in (
+            "x\u200bnpm_" + "E" * 18 + "\u200b" + "E" * 18 + " done",
+            "x<wbr>npm_" + "F" * 18 + "<wbr>" + "F" * 18 + " done",
+        ):
+            with self.subTest(text=text[:8]):
+                self.assert_no_body(text, ("E" * 10, "F" * 10), " done")
+
+    def test_a_control_inside_a_key_leaves_no_tail_in_mask_prose(self) -> None:
+        # The later direction's text, which reaches a model: the control used to become a space
+        # before anything redacted, so the tail after it went out beside the marker.
+        for control in ("\x01", "\x1b", "\x7f", "\x9b"):
+            with self.subTest(control=repr(control)):
+                key = "sk-ant-api03-" + "A" * 40 + control + "B" * 55
+                masked = records.mask_prose(f"rotate {key} now")
+                self.assertNotIn("B" * 20, masked)
+                self.assertNotIn("A" * 20, masked)
+                self.assertTrue(masked.endswith(" now"))
+
+    def test_coloured_tool_output_through_mask_prose_reads_as_it_did(self) -> None:
+        # Recorded from the branch point: masking first must not change text with no key in it.
+        for coloured, expected in (
+            (
+                "\x1b[31mFAILED\x1b[0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+                "[31mFAILED [0m tests/test_x.py::test_y - AssertionError: 2 != 3",
+            ),
+            (
+                "\x1b[1;32m12 passed\x1b[0m in 0.4s\x07 then token=next and \x7fdone",
+                "[1;32m12 passed [0m in 0.4s then token=" + records.SECRET_MARKER + " and done",
+            ),
+        ):
+            with self.subTest(coloured=coloured[:12]):
+                self.assertEqual(expected, records.mask_prose(coloured))
+
     def test_safe_text_turns_the_added_invisible_characters_into_spaces(self) -> None:
         # What a reader sees: C1 controls, the Arabic letter mark and the Unicode line and
         # paragraph separators each become one space, as a line feed and the other bidi marks
