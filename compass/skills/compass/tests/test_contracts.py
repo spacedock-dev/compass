@@ -1302,6 +1302,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.aggregate",
             "compass_runtime.config",
             "compass_runtime.io",
+            # The report is cleaned line by line before it prints.
+            "compass_runtime.terminal_sessions",
         },
         # `records` arrived with the redact-then-slice fix. Every collector that
         # bounds a prompt with a slice has to redact BEFORE it, or the sweep in
@@ -2074,6 +2076,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.lifecycle": {
             "compass_runtime.update_check",
             "compass_runtime.terminal_client",
+            # Cleans what it prints about a recorded pid, a log and a refused stop.
+            "compass_runtime.terminal_sessions",
             "compass_runtime.loopback_transport",
             "compass_runtime.config",
             "compass_runtime.http_api",

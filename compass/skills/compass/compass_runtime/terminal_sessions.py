@@ -162,9 +162,14 @@ _RESUME_TOKEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}")
 _UUID_CHARS: Final = frozenset("0123456789abcdefABCDEF-")
 _CLAUDE_SID_LEN: Final = 8
 
+# A string sequence (OSC, DCS, SOS, PM, APC) goes whole with its payload in both its 7-bit and
+# 8-bit spelling: stripping only the starter byte left an OSC 52 clipboard payload as plain text.
+# The payload excludes line breaks, which a real one never holds, so an unterminated sequence ends
+# at its line instead of swallowing the rest of a multi-line report. Terminators: BEL, ESC \ or
+# the 8-bit ST.
 _ESCAPES = re.compile(
-    "\x1b\\][^\x07\x1b\x9c]*(?:\x07|\x1b\\\\|\x9c)?"  # an OSC, up to its terminator
-    "|\x1b[PX^_][^\x1b\x9c]*(?:\x1b\\\\|\x9c)?"  # DCS, SOS, PM and APC strings
+    "(?:\x1b\\]|\x9d)[^\x07\x1b\x9c\r\n]*(?:\x07|\x1b\\\\|\x9c)?"  # an OSC
+    "|(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[^\x1b\x9c\r\n]*(?:\x1b\\\\|\x9c)?"  # DCS, SOS, PM, APC
     "|(?:\x1b\\[|\x9b)[0-?]*[ -/]*[@-~]?"  # a CSI
     "|\x1b[ -/]*[0-~]?"  # any other two-character escape
 )
@@ -172,6 +177,7 @@ _ESCAPES = re.compile(
 # category, and all of them reorder or break what a terminal draws.
 _UNSAFE = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_OTHER_BLANKS = re.compile(r"[\t\r\f\v\u2028\u2029]")
 _SPACES = re.compile(r"[ \t\r\n\f\v\u2028\u2029]+")
 
 _ACTIVE_EMPTY: Final = "No exact session has active evidence right now."
@@ -189,6 +195,19 @@ def printable(value: object) -> str:
     text = _ESCAPES.sub("", "" if value is None else str(value))
     text = _SPACES.sub(" ", text)
     return _CONTROLS.sub("", _UNSAFE.sub("", text)).strip()
+
+
+def printable_text(value: object) -> str:
+    """`value` cleaned as `printable` does, but with its line breaks and spacing kept.
+
+    For a multi-line report: each line is cleaned on its own, so the structure and indentation
+    survive and nothing in a line can steer the terminal. A tab, carriage return or other
+    whitespace control becomes one space, as it does in `printable`.
+    """
+    return "\n".join(
+        _CONTROLS.sub("", _UNSAFE.sub("", _OTHER_BLANKS.sub(" ", _ESCAPES.sub("", line))))
+        for line in ("" if value is None else str(value)).split("\n")
+    )
 
 
 def format_duration(seconds: object) -> str | None:

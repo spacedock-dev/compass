@@ -518,7 +518,7 @@ def _run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - one bounded comman
         if update and summary.get("exists"):
             start, refusal = _update(summary)
             if refusal:
-                print(refusal, file=err)
+                print(printable(refusal), file=err)
                 return 1
         if start and not active:
             body = {**who, "action": action, "origin": "press"}
@@ -533,7 +533,10 @@ def _run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - one bounded comman
                     if isinstance(answer, dict)
                     else "unconfirmed"
                 )
-                print(f"Summary request refused ({reason}); nothing else was requested.", file=err)
+                print(
+                    f"Summary request refused ({printable(reason)}); nothing else was requested.",
+                    file=err,
+                )
                 return 1
             job = answer["job"]
             own = str(job["id"])
@@ -571,7 +574,10 @@ def _run(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915 - one bounded comman
         if not summary.get("exists"):
             why = job.get("reason") or job.get("state") or "unavailable"
             said = JOB_REASONS.get(str(why))
-            print(f"No stored summary. {said}" if said else f"No stored summary ({why}).", file=err)
+            print(
+                f"No stored summary. {said}" if said else f"No stored summary ({printable(why)}).",
+                file=err,
+            )
             return 1
         url = terminal_drift.session_url(
             board.port, str(row.get("project") or ""), who["harness"], who["sid"]
