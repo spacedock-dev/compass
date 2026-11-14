@@ -31,7 +31,10 @@ follows no redirect by construction, and it finds the dashboard from state file 
 `/api/health`, never by opening a state file that holds the event-ingress tokens. `--sessions` prints
 text sessions published, such as a title, a goal or a question. Collectors leave control characters
 in that text on purpose, so the terminal strips escape sequences, bidirectional controls and every
-other control character from each value before printing it. When you invoke the `compass` skill
+other control character from each value before printing it. The same stripping covers what
+`--diagnose`, `--drift`, `--summary`, `--status` and `--stop` print (a path, a store error, a
+server's reply or version, the daemon log tail), and it removes a whole OSC, DCS, SOS, PM or APC
+sequence, payload included, in its 7-bit or 8-bit form. When you invoke the `compass` skill
 with an action word, the agent runs that operation and its output enters that session's context, so
 it goes to the session's model provider. That output is text from every session on the board, in any harness or project
 ([the row below](#what-can-reach-into-a-session) lists each field).

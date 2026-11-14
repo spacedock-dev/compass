@@ -30,6 +30,7 @@ from compass_runtime import (
     summary_jobs,
     supervise,
     terminal_client,
+    terminal_sessions,
     update_check,
 )
 from compass_runtime import interaction_prototype as runtime_interaction
@@ -499,7 +500,7 @@ def render_status(status: dict[str, Any]) -> str:
     if state == "stale":
         return (
             f"Compass: not running on port {port}. A stale state file remains "
-            f"(pid {status['pid']}); --stop removes it."
+            f"(pid {terminal_sessions.printable(status['pid'])}); --stop removes it."
         )
     return f"Compass: not running on port {port}."
 
@@ -532,7 +533,7 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
             # request was in flight — which reset the connection and reported a
             # failure for a stop that had in fact just happened. Let the port
             # decide instead of this connection.
-            failure = f"{type(exc).__name__}: {exc}"
+            failure = terminal_sessions.printable(f"{type(exc).__name__}: {exc}")
         finally:
             conn.close()
         if answered is not None and answered != 200:
@@ -687,12 +688,14 @@ def await_daemon(
             os.close(read_fd)
     pid = seen.strip().decode("ascii", "replace")
     if pid.isdigit():
-        return (f"Compass: http://127.0.0.1:{port}/ (pid {pid}, log {log_file})", 0)
+        shown = terminal_sessions.printable(log_file)
+        return (f"Compass: http://127.0.0.1:{port}/ (pid {pid}, log {shown})", 0)
     if pipe_error is not None:
         return (
             (
                 f"Compass: could not read the background server's readiness pipe "
-                f"({type(pipe_error).__name__}: {pipe_error}) — check {log_file}."
+                f"({terminal_sessions.printable(f'{type(pipe_error).__name__}: {pipe_error}')}) "
+                f"— check {terminal_sessions.printable(log_file)}."
             ),
             1,
         )
@@ -710,7 +713,7 @@ def await_daemon(
     return (
         (
             f"Compass: started in the background, but it did not report ready "
-            f"within {limit:.0f}s — check {log_file}."
+            f"within {limit:.0f}s — check {terminal_sessions.printable(log_file)}."
         ),
         1,
     )
@@ -834,8 +837,10 @@ def log_tail(log_file: str, limit: int = 2000) -> str:
             handle.seek(max(0, size - limit))
             data = handle.read()
     except OSError:
-        return f"(could not read {log_file})"
-    return data.decode("utf-8", "replace").strip() or f"({log_file} is empty)"
+        return f"(could not read {terminal_sessions.printable(log_file)})"
+    return terminal_sessions.printable_text(data.decode("utf-8", "replace")).strip() or (
+        f"({terminal_sessions.printable(log_file)} is empty)"
+    )
 
 
 def await_spawned(
@@ -864,10 +869,8 @@ def await_spawned(
         kind, health = probe_port(port, timeout=0.5)
         if kind == "compass" and health is not None:
             if health.get("pid") == proc.pid:
-                return (
-                    f"Compass: http://127.0.0.1:{port}/ (pid {health['pid']}, log {log_file})",
-                    0,
-                )
+                shown = terminal_sessions.printable(log_file)
+                return (f"Compass: http://127.0.0.1:{port}/ (pid {health['pid']}, log {shown})", 0)
             foreign = True  # someone else's dashboard; our child lost the bind
         if proc.poll() is not None:
             return (
@@ -890,7 +893,7 @@ def await_spawned(
     return (
         (
             f"Compass: started in the background, but nothing answered on port "
-            f"{port} within {limit:.0f}s — check {log_file}."
+            f"{port} within {limit:.0f}s — check {terminal_sessions.printable(log_file)}."
         ),
         1,
     )

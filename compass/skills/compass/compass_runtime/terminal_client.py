@@ -939,8 +939,8 @@ def version_guard(
         return None
     return sentence(
         "version_mismatch_in_session" if in_session else "version_mismatch",
-        own=own_version or "unknown",
-        theirs=dashboard.version or "unknown",
+        own=terminal_sessions.printable(own_version) or "unknown",
+        theirs=terminal_sessions.printable(dashboard.version) or "unknown",
     )
 
 

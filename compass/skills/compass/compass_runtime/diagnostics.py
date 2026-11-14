@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
 from compass_runtime import project_context, project_scripts, reader_checks, tripwires
+from compass_runtime.terminal_sessions import printable_text
 
 if TYPE_CHECKING:
     from compass_runtime.aggregate import Application
@@ -175,6 +176,10 @@ def _reader_check_lines(report: dict[str, Any] | None) -> list[str]:
 
 
 def render_reader_checks(report: dict[str, Any]) -> str:
+    return printable_text(_reader_checks_text(report))
+
+
+def _reader_checks_text(report: dict[str, Any]) -> str:
     lines = ["", "Reader-listed checks", f"  file       {report['path']}"]
     if report["error"]:
         lines.append(f"  [  --] not read: {report['error']}")
@@ -196,7 +201,14 @@ def render_reader_checks(report: dict[str, Any]) -> str:
 
 def render_diagnosis(report: dict[str, Any]) -> str:
     """ASCII-only rendering — this output gets pasted into bug reports from
-    consoles whose encoding we do not control."""
+    consoles whose encoding we do not control.
+
+    Cleaned once, at the end and line by line: a repo path, a store error or a harness message is
+    text a person or another process wrote, and the report keeps its shape."""
+    return printable_text(_diagnosis_text(report))
+
+
+def _diagnosis_text(report: dict[str, Any]) -> str:
     sqlite_info = report["sqlite"]
     lines = [
         "Compass diagnostics",

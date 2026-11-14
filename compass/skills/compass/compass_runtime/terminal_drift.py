@@ -32,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol, TypeGuard
 
 from compass_runtime import terminal_sessions
-from compass_runtime.terminal_sessions import format_duration, names, printable
+from compass_runtime.terminal_sessions import format_duration, names, printable, printable_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -1084,7 +1084,7 @@ def correction_text(parts: object) -> str | None:
 
 
 def _emit(stream: TextIO, lines: Iterable[str]) -> None:
-    text = "".join(f"{line}\n" for line in lines)
+    text = printable_text("".join(f"{line}\n" for line in lines))
     encoding = getattr(stream, "encoding", None) or "utf-8"
     stream.write(text.encode(encoding, "replace").decode(encoding, "replace"))
     stream.flush()
