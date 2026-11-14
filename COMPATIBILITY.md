@@ -226,4 +226,14 @@ agy plugin validate ./compass
      full dashboard in the terminal and on the page. This pass found no cross-PR drift in
      SECURITY.md, the manuals or the design records, and changed nothing but this stamp. -->
 
-<!-- docs-synced-through: 793a6610 (2026-11-13) -->
+<!-- Reconciled 793a6610..ea03886a: the second security hardening wave, with no harness or platform
+     matrix change. Five pull requests landed on 2026-11-14, each with its own docs: terminal
+     escape sequences stripped from diagnose, drift, summary and lifecycle output; credential
+     masking that also reads a second view with invisible characters, `<wbr>` and HTML comments
+     removed; uv, spacedock, tmux and claude started only from rooted PATH directories, with tmux
+     sockets and panes checked; hook scripts that abstain with exit 0 when missing, a payload cap,
+     and prompt nonce fences with escaped reading headers; and the Windows PATH walk. This pass
+     found no cross-PR drift in SECURITY.md, HOW_TO_USE.md or the design records, and changed
+     nothing but this stamp. -->
+
+<!-- docs-synced-through: ea03886a (2026-11-14) -->
