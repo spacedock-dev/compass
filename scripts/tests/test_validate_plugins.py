@@ -1071,6 +1071,7 @@ class ReleasePublicNotesGateTest(unittest.TestCase):
                     PATH=str(binary) + os.pathsep + os.environ["PATH"],
                     TAG="v9.9.9",
                     VERSION="9.9.9",
+                    LATEST="true",
                     TARGET="source-receipt",
                     FINAL="a" * 40,
                     GITHUB_REPOSITORY="example/project",
