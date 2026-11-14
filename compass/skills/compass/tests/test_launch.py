@@ -185,10 +185,11 @@ class AtOrAboveTheFloorTest(LauncherTest):
 
     def test_a_missing_hook_abstains_so_the_harness_never_blocks_the_prompt(self) -> None:
         # Claude Code, Codex, Gemini CLI and Droid read a hook's exit 2 as a decision to block
-        # the prompt or the tool call. A plugin upgraded or removed mid-session leaves the
-        # harness running hooks whose scripts are gone; each must be a no-op, as `event_hook`
+        # the prompt or the tool call. A plugin partly removed or partly upgraded can leave the
+        # launcher in place and a hook's script gone; each must then be a no-op, as `event_hook`
         # is on every ordinary event: nothing on stdout, exit 0. Antigravity reads `{}` from
-        # its hook and a status line from its status-line command.
+        # its hook and a status line from its status-line command. (With the whole plugin
+        # directory gone, `python3` cannot open launch.py and exits 2 before Compass runs.)
         expected = {
             "event_hook.py": b"",
             "notify_hook.py": b"",
@@ -210,6 +211,17 @@ class AtOrAboveTheFloorTest(LauncherTest):
         finally:
             target.chmod(0o644)
         self.assertEqual((0, b"", b""), (done.returncode, done.stdout, done.stderr))
+
+    def test_a_hook_removed_during_the_uv_lookup_still_abstains(self) -> None:
+        # The script exists when the launcher checks it and is gone when the interpreter uv
+        # found tries to open it, which then exits 2.
+        for name, stdout in (("event_hook.py", b""), ("agy_hook.py", b"{}\n")):
+            with self.subTest(name=name):
+                target = self.target(name)
+                self.fake_uv(f'/bin/rm -f "{target}"\necho "{sys.executable}"')
+                done = self.run_launcher(target, stdin=POST_TOOL, assume=OLD)
+                self.assertFalse(target.exists())
+                self.assertEqual((0, stdout), (done.returncode, done.stdout))
 
     def test_a_missing_hook_below_the_floor_asks_uv_nothing(self) -> None:
         self.finds_this_interpreter()

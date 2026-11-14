@@ -410,16 +410,29 @@ def _block(lines: Sequence[_Line], reason: str | None = None) -> Block:
     )
 
 
+# The fence `_earlier` wraps its titles in, at its fixed size: the nonce is always 12 hex digits.
+# The body's trailing newline is moved inside the fence, so this overstates the cost by one byte.
+EARLIER_FENCE_BYTES = len(records.fenced("earlier_titles", "", nonce="0" * 12).encode())
+
+
+def _earlier_reserve(config: RuntimeConfig) -> int:
+    """What a later window's earlier-titles section can cost: its sixteenth plus the fence.
+
+    The fence is beside the sixteenth rather than inside it, so it never costs a title.
+    """
+    return config.session_summary_window_bytes // 16 + EARLIER_FENCE_BYTES
+
+
 def _earlier(blocks: Sequence[Block], config: RuntimeConfig) -> str:
-    # One sixteenth of a record window, including the disclaimer, keeps context small.
+    # One sixteenth of a record window, including the disclaimer, keeps context small; the fence
+    # is a fixed cost beside it, and `_plan` reserves both (`_earlier_reserve`).
     # Only titles cross windows: docs/design-session-summary.md#producer-contract.
     budget = max(0, config.session_summary_window_bytes // 16)
     prefix = (
         "Earlier phase titles, for context only. They are not evidence and must not be cited:\n"
     )
     # A title is model output over transcript text, so it is fenced like the record: words in
-    # one that imitate a closing tag cannot leave the section. The fence is a fixed cost outside
-    # the budget, as the record's is outside the window, so it never costs a title.
+    # one that imitate a closing tag cannot leave the section.
     nonce = records.fence_nonce()
     titles = [p.title.text for b in blocks for p in b.phases if p.title.text]
     kept: list[str] = []
@@ -1888,7 +1901,7 @@ def _plan(
         return "planned_calls"
     planned = sum(
         len(_prompt(w, n + 1, len(windows), "", config).encode())
-        + (config.session_summary_window_bytes // 16 if n or context else 0)
+        + (_earlier_reserve(config) if n or context else 0)
         for n, w in enumerate(windows)
     )
     # Reserve a whole lede window before knowing its citations. This conservative plan cannot

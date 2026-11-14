@@ -111,6 +111,23 @@ class SessionSummaryFenceTest(unittest.TestCase):
         self.assertEqual(1, len(sections))
         self.assertIn(hostile, sections[0][1])
 
+    def test_a_full_earlier_section_fits_the_reserve_the_plan_counts(self) -> None:
+        # The plan prices each later window as its prompt with no earlier titles plus a reserve;
+        # the fence around the titles must be inside that reserve, or the plan undercounts.
+        window = [self.line(1, "[1] said: hello\n")]
+        bare = len(session_summary._prompt(window, 2, 2, "", self.config).encode())
+        reserve = session_summary._earlier_reserve(self.config)
+        worst = 0
+        for width in (1, 7, 30, 80):
+            for count in (1, 10, 200):
+                earlier = session_summary._earlier(
+                    [self.block(*["t" * width] * count)], self.config
+                )
+                prompt = session_summary._prompt(window, 2, 2, earlier, self.config)
+                worst = max(worst, len(prompt.encode()) - bare)
+        self.assertGreater(worst, self.config.session_summary_window_bytes // 16)
+        self.assertLessEqual(worst, reserve)
+
     def test_no_earlier_titles_means_no_section(self) -> None:
         self.assertEqual("", session_summary._earlier([], self.config))
 

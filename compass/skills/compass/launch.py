@@ -28,10 +28,11 @@ and `json` cost about ten milliseconds per hook that nothing at or above the flo
    server and `server.py` always exit nonzero. Antigravity's hooks have no session-start
    event, so they print only the `{}` it reads from stdout.
 
-A hook whose script cannot be opened exits 0 having printed only what its harness reads as
-nothing (`{}` for Antigravity's hook, an empty line for its status line), at any version. Claude
-Code, Codex, Gemini CLI and Droid read a hook's exit 2 as a decision to block the prompt or tool
-call, and a plugin upgraded or removed mid-session leaves them running hooks whose files are gone.
+A hook whose script cannot be opened while this launcher still can (a plugin partly removed or
+partly upgraded) exits 0 having printed only what its harness reads as nothing (`{}` for
+Antigravity's hook, an empty line for its status line), at any version. Claude Code, Codex, Gemini
+CLI and Droid read a hook's exit 2 as a decision to block the prompt or tool call. If the plugin
+directory is gone entirely, `python3` cannot open this file and exits 2 before any of it runs.
 
 `COMPASS_LAUNCH_ASSUME_PYTHON` (for example `3.9`, a major and a minor and nothing else) makes the
 version check believe that version; any other value is ignored. It exists for `test_launch.py`
@@ -265,6 +266,10 @@ def below_floor(target: str, args: "list[str]", version_text: str) -> int:
     interpreter = find_new_python()
     if interpreter:
         status = run_elsewhere(interpreter, target, args, payload)
+        # Every hook's main returns 0, so a 2 here is the interpreter failing to open a script
+        # removed during the uv lookup; re-running through this file would recurse on the seam.
+        if is_hook and status == 2 and not os.path.isfile(target):
+            return abstain(target)
         if status is not None:
             return status
     if is_hook and not (
