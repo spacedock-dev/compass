@@ -42,9 +42,9 @@ jobs:
   # the bundle, Storybook), `contract` (the frontend tests that start or read
   # the Python runtime, when the whole frontend lane is not running),
   # `frontend_docs` (only the Vitest files that read a changed document, named in
-  # `frontend_docs_tests`), and `python_suites` (the Python suites on Linux, which
-  # also read nearly every frontend file). `platform` adds the macOS legs to the
-  # python and frontend lanes. scripts/ci_scope.py owns the rules and why; it FAILS
+  # `frontend_docs_tests`), `python_suites` (the Python suites on Linux, which
+  # also read nearly every frontend file), and `workflows` (actionlint, for any
+  # workflow file). `platform` adds the macOS legs to the python and frontend lanes. scripts/ci_scope.py owns the rules and why; it FAILS
   # OPEN, so anything it cannot compute turns every lane on.
   changes:
     name: Detect what the gate can measure
@@ -59,6 +59,7 @@ jobs:
       frontend_docs: ${{ steps.detect.outputs.frontend_docs }}
       frontend_docs_tests: ${{ steps.detect.outputs.frontend_docs_tests }}
       platform: ${{ steps.detect.outputs.platform }}
+      workflows: ${{ steps.detect.outputs.workflows }}
     steps:
       # actions/checkout@v7.0.1 — pinned to immutable SHA.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -79,8 +80,37 @@ jobs:
           # The script fails open on its own; this covers it not running at all.
           if ! python3 scripts/ci_scope.py; then
             echo "::warning::scripts/ci_scope.py failed; running every lane."
-            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\nfrontend_docs=false\nfrontend_docs_tests=\nplatform=true\n' >> "$GITHUB_OUTPUT"
+            printf 'python=true\nlint=true\nfrontend=true\ncontract=false\npython_suites=true\nfrontend_docs=false\nfrontend_docs_tests=\nplatform=true\nworkflows=true\n' >> "$GITHUB_OUTPUT"
           fi
+
+  # actionlint over every workflow, inside the required gate so a workflow edit cannot merge
+  # unlinted. It replaced a path-filtered workflow of its own, which no ruleset required.
+  actionlint:
+    name: Lint workflows (actionlint)
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # actions/checkout@v7.0.1 — pinned to immutable SHA.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # The release archive, held to the sha256 its release's checksums file lists. Bumping
+      # actionlint is a deliberate edit to both lines, to a release at least two weeks old.
+      - name: Download actionlint
+        run: |
+          set -euo pipefail
+          VERSION="1.7.12"
+          ARCHIVE="actionlint_${VERSION}_linux_amd64.tar.gz"
+          EXPECTED_SHA256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl -sSfL -o "$ARCHIVE" \
+            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${ARCHIVE}"
+          echo "${EXPECTED_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "$ARCHIVE" actionlint
+          chmod +x actionlint
+      - name: Run actionlint
+        run: ./actionlint -color
 
   # The job keeps the name it had when it also ran the embedded-source linter, because a
   # branch ruleset may require that exact context; the frontend's sources are linted by the
@@ -100,10 +130,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
       - name: Install toolchain
-        run: python3 -m pip install -r requirements-dev.txt -r requirements-validation.txt
+        run: |
+          python3 -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt -r requirements-release.txt
       - name: Ruff lint (select = ALL)
         run: ruff check --output-format=github .
       - name: Ruff format check
@@ -122,10 +151,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
       - name: Install toolchain
-        run: python3 -m pip install -r requirements-dev.txt -r requirements-validation.txt
+        run: |
+          python3 -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt -r requirements-release.txt
       - name: Mypy (strict)
         run: mypy
 
@@ -158,14 +186,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
-          cache: pip
-          # Validation requirements only. This job stopped running the suite
-          # under `coverage`, and the rest of requirements-dev.txt is ruff and
-          # mypy, which run on 3.12 in their own jobs. PyYAML is still needed:
-          # scripts.tests.test_validate_plugins imports the validator.
-          cache-dependency-path: requirements-validation.txt
       - name: Install validation requirements
-        run: python -m pip install -r requirements-validation.txt
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r requirements-release.txt
       # Once, on the dashboard leg: the launch is the same on every leg, so repeating it would
       # only spend three more runners' start-up on the same answer.
       - name: Direct-launch smoke on the supported floor
@@ -182,7 +205,7 @@ jobs:
       # does the shipped code import, launch and pass on 3.12.
       #
       # Through scripts/run_tests.py, which is stdlib-only for exactly this job:
-      # it installs requirements-validation.txt and nothing else. Same discovery,
+      # it installs requirements-release.txt and nothing else. Same discovery,
       # fixtures and verdict as `unittest discover`, spread over the runner's
       # cores (the dashboard suite: 131s serial against 34s on four workers,
       # measured 2026-09-23; the script suite is sharded below).
@@ -222,10 +245,9 @@ jobs:
           # 3.14 for `sysmon` below, which coverage refuses with `branch = true`
           # on any earlier Python. The suites still run on 3.12 in runtime-floor.
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
       - name: Install toolchain
-        run: python3 -m pip install -r requirements-dev.txt -r requirements-validation.txt
+        run: |
+          python3 -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt -r requirements-release.txt
 
       # Each worker records its own data file and `combine` merges them, which
       # measured the same 86.8% as the serial `coverage run` (2026-09-23).
@@ -264,8 +286,8 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Read-only, because this job restores the pip cache and runs the packages it installs: the sticky
-    # comment is posted by `coverage-comment`, which does neither.
+    # Read-only, because this job runs the packages it installs: the sticky
+    # comment is posted by `coverage-comment`, which runs none.
     permissions:
       contents: read
       pull-requests: read # the coverage-exception label check
@@ -277,10 +299,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
       - name: Install toolchain
-        run: python3 -m pip install -r requirements-dev.txt
+        run: |
+          python3 -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
       - name: Fetch every leg's coverage data
         # actions/download-artifact@v8.0.1, the same pin as release.yml.
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -366,8 +387,8 @@ jobs:
             coverage-comment.md
           retention-days: 7
 
-  # Posts the report `coverage` wrote. A separate job so the write token never shares a job with the pip cache
-  # `coverage` restores or the packages it installs; it checks out nothing and runs only the pinned artifact and
+  # Posts the report `coverage` wrote. A separate job so the write token never shares a job with
+  # the packages `coverage` installs; it checks out nothing and runs only the pinned artifact and
   # comment actions, as `frontend-coverage-comment` does. Sticky: find-and-update rather than spam. Same-repo
   # PRs only, since a fork PR gets a read-only token, and it never gates: the threshold is enforced in `coverage`.
   coverage-comment:
@@ -445,14 +466,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-validation.txt
       # The dashboard server itself is stdlib-only, but the repository
       # validator that scripts/tests/test_validate_plugins.py imports needs
       # PyYAML. The lint/type tooling in requirements-dev.txt is not needed
       # here — this job only runs unittest.
       - name: Install validation requirements
-        run: python -m pip install -r requirements-validation.txt
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r requirements-release.txt
       - name: Show interpreter
         run: python -c "import sys, os; print(sys.version, os.name, sys.platform)"
       - name: Confirm sqlite3 is present on this runner
@@ -487,10 +507,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.15"
-          cache: pip
-          cache-dependency-path: requirements-validation.txt
+      # PyYAML 6.0.3 publishes no CPython 3.15 wheel, so this builds its sdist, which
+      # requirements-release.txt hashes too. The build tools go in first, by hash, and the build
+      # uses them with no isolation: an isolated build would fetch setuptools and Cython unhashed.
       - name: Install validation requirements
-        run: python -m pip install -r requirements-validation.txt
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r requirements-build.txt
+          python -m pip install --require-hashes --no-build-isolation -r requirements-release.txt
       - name: Show interpreter
         run: python -c "import sys, os; print(sys.version, os.name, sys.platform, hasattr(os, 'waitid'))"
       - name: Run dashboard test discovery
@@ -994,6 +1017,7 @@ jobs:
       - storybook
       - frontend-contract
       - frontend-docs
+      - actionlint
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1007,6 +1031,7 @@ jobs:
           SUITES: ${{ needs.changes.outputs.python_suites }}
           FRONTEND_DOCS: ${{ needs.changes.outputs.frontend_docs }}
           PLATFORM: ${{ needs.changes.outputs.platform }}
+          WORKFLOWS: ${{ needs.changes.outputs.workflows }}
           R_CHANGES: ${{ needs.changes.result }}
           R_LINT: ${{ needs.lint.result }}
           R_TYPECHECK: ${{ needs.typecheck.result }}
@@ -1022,9 +1047,10 @@ jobs:
           R_STORYBOOK: ${{ needs.storybook.result }}
           R_CONTRACT: ${{ needs.frontend-contract.result }}
           R_FRONTEND_DOCS: ${{ needs.frontend-docs.result }}
+          R_ACTIONLINT: ${{ needs.actionlint.result }}
         run: |
           set -euo pipefail
-          echo "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES frontend_docs=$FRONTEND_DOCS platform=$PLATFORM)"
+          echo "changes: $R_CHANGES (python=$PYTHON lint=$LINT frontend=$FRONTEND contract=$CONTRACT python_suites=$SUITES frontend_docs=$FRONTEND_DOCS platform=$PLATFORM workflows=$WORKFLOWS)"
 
           # The detector itself is never allowed to skip or fail. If it did, we
           # do not know whether the measurable jobs were skipped on purpose or lost,
@@ -1055,7 +1081,8 @@ jobs:
                      "frontend-coverage:$FRONTEND:$R_FRONTEND_COVERAGE" \
                      "frontend-production:$FRONTEND:$R_FRONTEND_PRODUCTION" \
                      "storybook:$FRONTEND:$R_STORYBOOK" "frontend-contract:$CONTRACT:$R_CONTRACT" \
-                     "frontend-docs:$FRONTEND_DOCS:$R_FRONTEND_DOCS"; do
+                     "frontend-docs:$FRONTEND_DOCS:$R_FRONTEND_DOCS" \
+                     "actionlint:$WORKFLOWS:$R_ACTIONLINT"; do
             job=${row%%:*}
             rest=${row#*:}
             lane=${rest%%:*}

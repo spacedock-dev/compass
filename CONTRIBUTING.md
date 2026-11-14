@@ -20,8 +20,11 @@ validation. See [COMPATIBILITY.md](COMPATIBILITY.md) for why 3.12 is the floor.
 ```bash
 git clone https://github.com/spacedock-dev/compass.git compass
 cd compass
-# PyYAML for the contract validator; ruff, mypy and coverage for the quality gate.
-python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt
+# PyYAML for the contract validator; ruff, mypy and coverage for the quality gate. Both files
+# hold sha256 hashes, and pip checks hashes for every file in a command or none, so keep
+# requirements-dev.txt beside requirements-release.txt (the hashed copy of
+# requirements-validation.txt), never beside an unhashed file.
+python3 -m pip install --require-hashes -r requirements-release.txt -r requirements-dev.txt
 pnpm install --frozen-lockfile
 ```
 
@@ -335,6 +338,18 @@ same directories through the relative symlinks under `.agents/skills/`.
 - `Storybook (ubuntu-latest)`, which builds the offline explorer and runs every story's assertions in
   pinned Chromium. The interface is verified here. The Playwright browser proofs were retired from CI
   and from the pre-PR suite on 2026-10-12; they remain runnable on demand.
+- `Lint workflows (actionlint)`, a pinned, checksummed actionlint over every workflow, for any change
+  under `.github/workflows/`. Run `actionlint` from the repository root to check the same thing
+  locally; `scripts/pre_pr.py` runs it when it is installed. A change to a local action under
+  `.github/actions/` runs it too.
+
+Every Python install in these jobs is checked against sha256 hashes, so a contributor's install is
+too. `requirements-dev.txt`, `requirements-build.txt` and `requirements-cli.txt` are generated from
+`requirements-dev.in`, `requirements-build.in` and `requirements-cli.in`, and
+`requirements-release.txt` from `requirements-validation.txt`. The build file holds the setuptools
+and Cython that build PyYAML from source on a Python it ships no wheel for. To bump a
+pin, edit the source and regenerate with the command in the generated file's header; never edit a
+hash by hand.
 
 CI exercises macOS and Linux. Windows is no longer exercised by CI for the dashboard unit suite or
 frontend. The local pre-PR command list remains unchanged.
@@ -363,7 +378,7 @@ of them. `validate` runs on every PR regardless. It resolves the Markdown links 
 anchors, and when the gate runs no Python suite it also runs the dashboard suite, which on a PR the
 detector called prose is the only place that suite runs. Do not delete that step as a duplicate of
 the gate's copy. The quality gate, validate, release and frontend build workflows turn on both
-lanes; unrelated workflow prose keeps the short path.
+lanes. Any other workflow runs the Python suites once, which read every workflow, and actionlint.
 
 `scripts/bench_collect.py` is not part of the gate. It measures what a collection costs, in total and
 per harness, against your own stores: `python3 scripts/bench_collect.py --repeat 7` prints a median,
@@ -492,6 +507,9 @@ pins.
 - Every relative Markdown link, in the skill and in the repository's prose docs, must resolve within
   the repository, and so must every `#heading-anchor`. Anchors are slugged the way GitHub does it,
   so a link to a heading you renamed fails the build.
+- Every bundled hook command must name the files it runs, through a plugin-root variable or, for
+  Antigravity, a `./` path from the plugin root, and each must ship. A command that names no plugin
+  file, or a path that climbs out of the plugin root, fails the build too.
 - No prose doc may spell the dashboard URL with `localhost`. The server is IPv4-only, so
   it is always `127.0.0.1:4553`.
 - Two link forms the checker cannot parse, both avoidable: unbalanced parentheses in a bare

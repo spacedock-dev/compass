@@ -4,6 +4,17 @@ name: Semgrep SAST
 # workflows). Adapted from DataRecce/recce-cloud-infra `sast.yml`; scheduled
 # rather than per-PR so PR latency stays low — the Quality Gate carries the
 # per-PR checks (ruff's flake8-bandit rules cover the common Python CWEs).
+#
+# Everything the scan runs is pinned. The image is a release tag held to its
+# multi-arch index digest. The rules are the semgrep-rules repository at one
+# commit, never a registry name: `--config auto` and `p/...` rulesets are
+# fetched from the Semgrep registry at run time and change without a commit
+# here (and `auto` also needs metrics on). `--metrics=off` sends nothing home.
+# Bumps are deliberate edits to a tag and commit at least two weeks old.
+#
+# The rule set is each language's `security` rules, without the low-confidence
+# `audit` subfolders: Python, JavaScript (with its browser rules), Bash and the
+# GitHub Actions rules for the workflows themselves.
 
 on:
   schedule:
@@ -19,15 +30,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: semgrep/semgrep
+      # semgrep/semgrep 1.183.0 (pushed 2026-10-29), its OCI image index digest.
+      image: semgrep/semgrep:1.183.0@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
     steps:
       # actions/checkout@v7.0.1 — pinned to immutable SHA.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # semgrep/semgrep-rules at its develop head of 2026-10-21.
+      - name: Check out the pinned rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 16b9e6d45f10649f6a531ec4838ed9924372c3bc
+          path: semgrep-rules
+          persist-credentials: false
       - name: Run Semgrep
         run: |
+          set -eu
+          # One --config per rule file: a directory would also load the YAML
+          # test targets beside the rules.
+          configs=$(find semgrep-rules/python/lang/security \
+            semgrep-rules/javascript/lang/security \
+            semgrep-rules/javascript/browser/security \
+            semgrep-rules/bash/lang/security \
+            semgrep-rules/yaml/github-actions/security \
+            -name '*.yaml' ! -path '*/audit/*' ! -name '*.test.yaml' | sort | sed 's/^/--config /')
+          test -n "$configs"
+          # shellcheck disable=SC2086 # one word per --config and path
           semgrep scan \
-            --config auto \
+            --metrics=off \
+            --disable-version-check \
+            $configs \
+            --exclude semgrep-rules \
             --error \
-            --severity WARNING
+            --severity WARNING \
+            --severity ERROR

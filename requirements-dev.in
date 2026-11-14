@@ -1,0 +1,8 @@
+# Development / CI quality-gate toolchain: the direct pins. Pinned exactly (the quality gate
+# must be reproducible), each at least two weeks old; bumps are deliberate PRs.
+#
+# Nothing installs this file. requirements-dev.txt is generated from it with every dependency
+# pinned and held to its sha256 hashes; its header says how. Regenerate it after any edit here.
+ruff==0.16.0
+mypy==2.3.0
+coverage==7.15.2

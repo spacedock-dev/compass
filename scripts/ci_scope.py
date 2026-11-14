@@ -2,7 +2,7 @@
 """Decide which of the quality gate's lanes a pull request's changes can affect.
 
 `quality-gate.yml` and `validate.yml` both run this before anything measurable, and each job
-runs only when a lane it belongs to is on. There are six lanes:
+runs only when a lane it belongs to is on. There are seven lanes:
 
 - ``python``: ruff, mypy, the coverage run and the dashboard suite on the newest CPython (on macOS
   when ``platform`` is on, on Linux otherwise). On when Python or what the Python suites assert on
@@ -21,6 +21,9 @@ runs only when a lane it belongs to is on. There are six lanes:
   ``frontend_docs_tests``. On for a document no other frontend file reads, when the whole frontend
   lane is not already running. A citation in any frontend file is read by the citation check
   (CITATION_CHECK), which resolves every one against the document's headings.
+- ``workflows``: actionlint over ``.github/workflows``. On for any workflow or local action. A
+  workflow file also runs the Python suites: their shape tests and release rehearsals read every
+  workflow.
 
 ``platform`` is not a lane of its own: it says whether the macOS legs of the ``python`` and
 ``frontend`` lanes run. On for the reviewed PLATFORM_PATHS, the gate's wiring, an unknown path,
@@ -68,6 +71,10 @@ SUITES = "python_suites"
 LINT = "lint"
 FRONTEND_DOCS = "frontend_docs"
 PLATFORM = "platform"
+WORKFLOWS = "workflows"
+WORKFLOW_FILES = ".github/workflows/*"
+# Local composite actions, which actionlint checks wherever a workflow `uses:` one.
+ACTION_FILES = ".github/actions/*"
 
 # Root files the frontend toolchain reads. A change to any of them can change what Biome, tsc,
 # Vitest, the bundle or Storybook does.
@@ -99,8 +106,7 @@ PROSE = (
     "docs/*.md",
 )
 # Workflows that wire up the gate's own jobs or the release's rebuild of the bundle. Any other
-# workflow keeps the prose short path: `validate.yml`'s suite still runs on it, and actionlint has
-# its own workflow.
+# workflow runs the Python suites and actionlint (the `workflows` lane), and nothing else.
 GATE_WIRING = (
     ".github/workflows/quality-gate.yml",
     ".github/workflows/validate.yml",
@@ -132,6 +138,7 @@ BACKEND = (
     "scripts/*",
     "pyproject.toml",
     "requirements*.txt",
+    "requirements*.in",
 )
 # Code whose behaviour differs between macOS and Linux, so a Linux run cannot stand in for it.
 # Reviewed 2026-11-06 from a grep of the runtime, launchers and scripts for sys.platform, os.name,
@@ -171,13 +178,16 @@ PLATFORM_PATHS = (
     # The shared test config takes sys.platform, so the macOS legs run every default test as darwin.
     "compass/skills/compass/tests/support.py",
     # What the macOS legs install: the lockfile's per-OS native bindings (esbuild, rolldown, biome,
-    # lightningcss) and the Node that loads them, and the wheels requirements-validation.txt pins.
+    # lightningcss) and the Node that loads them, and the wheels requirements-validation.txt pins
+    # (installed through requirements-release.txt, its hashed copy).
     ".node-version",
     ".npmrc",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "requirements-validation.txt",
+    "requirements-release.txt",
+    "requirements-build.txt",
     # The tests of the above, which are what the macOS legs run.
     "compass/skills/compass/tests/test_supervise.py",
     "compass/skills/compass/tests/test_lifecycle.py",
@@ -226,6 +236,7 @@ class Scope:
     lint: bool = False
     frontend_docs_tests: tuple[str, ...] = ()
     platform: bool = False
+    workflows: bool = False
 
     @property
     def python_suites(self) -> bool:
@@ -246,11 +257,17 @@ class Scope:
         # One line, space-separated, for `vitest run`; repository paths hold no spaces.
         found["frontend_docs_tests"] = " ".join(self.frontend_docs_tests)
         found["platform"] = str(self.platform).lower()
+        found["workflows"] = str(self.workflows).lower()
         return found
 
 
 EVERYTHING = Scope(
-    python=True, frontend=True, contract=False, reasons=("every lane: fail open",), platform=True
+    python=True,
+    frontend=True,
+    contract=False,
+    reasons=("every lane: fail open",),
+    platform=True,
+    workflows=True,
 )
 
 
@@ -408,7 +425,7 @@ def _script_javascript(path: str) -> bool:
 RULES: tuple[tuple[Callable[[str], bool], frozenset[str]], ...] = (
     (lambda path: _matches(path, GATE_WIRING), frozenset({PYTHON, FRONTEND, PLATFORM})),
     (lambda path: _matches(path, PROSE), frozenset()),
-    (lambda path: fnmatch.fnmatchcase(path, ".github/workflows/*"), frozenset()),
+    (lambda path: fnmatch.fnmatchcase(path, WORKFLOW_FILES), frozenset({SUITES})),
     # A Python test backend under frontend/test is ruff- and mypy-checked like any other.
     (
         lambda path: path.startswith("frontend/") and path.endswith(".py"),
@@ -434,7 +451,7 @@ def _by_location(path: str) -> set[str]:
     for applies, found in RULES:
         if applies(path):
             return set(found)
-    return {PYTHON, FRONTEND, PLATFORM}
+    return {PYTHON, FRONTEND, PLATFORM, WORKFLOWS}
 
 
 def lanes(path: str, python_docs: set[str], frontend_docs: FrontendReads) -> set[str]:
@@ -450,6 +467,8 @@ def lanes(path: str, python_docs: set[str], frontend_docs: FrontendReads) -> set
         read.add(FRONTEND_DOCS)
     if _matches(path, PLATFORM_PATHS):
         read.add(PLATFORM)
+    if _matches(path, (WORKFLOW_FILES, ACTION_FILES)):
+        read.add(WORKFLOWS)
     return read | _by_location(path)
 
 
@@ -484,6 +503,7 @@ def scope(
         # The whole lane runs every Vitest file already.
         frontend_docs_tests=() if FRONTEND in on else tuple(sorted(tests)),
         platform=PLATFORM in on,
+        workflows=WORKFLOWS in on,
     )
 
 

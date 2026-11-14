@@ -54,8 +54,14 @@ SCRIPTS_SUITE = f"{RUNNER} {SCRIPTS_ARGS}"
 VALIDATE_TESTS = (
     "python3 -m unittest scripts/tests/test_validate_plugins.py scripts/tests/test_bump_version.py"
 )
-INSTALL = "python3 -m pip install -r requirements-validation.txt -r requirements-dev.txt"
-REQUIREMENTS = frozenset({"requirements-validation.txt", "requirements-dev.txt"})
+# Hash checking is all-or-nothing per pip command, so the dev file goes beside the hashed copy of
+# requirements-validation.txt. Not wheels-only, unlike CI: PyYAML publishes no wheel for every
+# Python a contributor may run, and the sdist is hashed too.
+INSTALL = (
+    "python3 -m pip install --require-hashes -r requirements-release.txt -r requirements-dev.txt"
+)
+REQUIREMENTS = frozenset({"requirements-release.txt", "requirements-dev.txt"})
+ACTIONLINT = "actionlint"
 PLAYWRIGHT = "pnpm exec playwright install chromium"
 VERSION_DIFF = (
     "git diff \"$(git merge-base {base} HEAD)\"..HEAD -- '*plugin.json' "
@@ -84,6 +90,7 @@ KNOWN_OUTPUTS = frozenset(
         "frontend_docs",
         "frontend_docs_tests",
         "platform",
+        "workflows",
     }
 )
 
@@ -118,6 +125,7 @@ class Lanes:
     frontend_docs: bool = False
     frontend_docs_tests: tuple[str, ...] = ()
     platform: bool = False
+    workflows: bool = False
     unknown: tuple[str, ...] = ()
     has_frontend_docs: bool = False
 
@@ -141,6 +149,7 @@ class Lanes:
             frontend_docs=on("frontend_docs"),
             frontend_docs_tests=tuple(outputs.get("frontend_docs_tests", "").split()),
             platform=on("platform"),
+            workflows=on("workflows"),
             unknown=unknown,
             has_frontend_docs="frontend_docs" in outputs,
         )
@@ -295,6 +304,17 @@ def _canonical(lanes: Lanes, options: Options) -> list[Item]:
             items.append(Item(text, reason, check=check))
         else:
             items.append(Item(text, reason, _argv(text, options) if reason is None else ()))
+    # The gate runs a pinned, checksummed actionlint; a local copy is a convenience, so a missing
+    # one is reported rather than failed.
+    if not (every or lanes.workflows):
+        lint_reason: str | None = "the workflows lane is off"
+    elif options.which(ACTIONLINT) is None:
+        lint_reason = f"`{ACTIONLINT}` is not installed; the gate runs it"
+    else:
+        lint_reason = None
+    items.append(
+        Item(ACTIONLINT, lint_reason, _argv(ACTIONLINT, options) if lint_reason is None else ())
+    )
     for text in ("claude plugin validate ./compass --strict", "agy plugin validate ./compass"):
         tool = text.split()[0]
         found = options.which(tool)

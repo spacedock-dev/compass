@@ -1,0 +1,9 @@
+# What pip needs to build PyYAML's sdist where PyYAML publishes no wheel (CPython 3.15 today),
+# installed by hash first so the build runs with `--no-build-isolation` and fetches nothing
+# unhashed into an isolated build environment. setuptools 84 bundles bdist_wheel, so no `wheel`.
+# Pinned exactly, each at least two weeks old; bumps are deliberate PRs.
+#
+# Nothing installs this file. requirements-build.txt is generated from it with every dependency
+# pinned and held to its sha256 hashes; its header says how. Regenerate it after any edit here.
+setuptools==84.0.0
+Cython==3.3.0

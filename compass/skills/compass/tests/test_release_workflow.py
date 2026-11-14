@@ -239,6 +239,16 @@ COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
 INLINE_COMMENT = re.compile(r"(?:^|\s)#.*$")
 REQUIREMENT_FILE = re.compile(r"(?:--requirement|-r)[\s=]+(\S+)")
 HASH = re.compile(r"--hash=sha256:[0-9a-f]{64}\b")
+# Each hashed file a workflow installs, by the source it is generated from.
+HASHED_FROM = {
+    "requirements-validation.txt": "requirements-release.txt",
+    "requirements-dev.in": "requirements-dev.txt",
+    "requirements-cli.in": "requirements-cli.txt",
+    "requirements-build.in": "requirements-build.txt",
+}
+# PyYAML 6.0.3 publishes no CPython 3.15 wheel, so that leg builds its hashed sdist, with build
+# tools it installed hashed first: an isolated build would fetch setuptools and Cython unhashed.
+SDIST_ALLOWED = frozenset({("quality-gate.yml", "platform-tests-current")})
 
 
 def privileged(workflow: dict[str, Any], job: dict[str, Any]) -> bool:
@@ -318,15 +328,69 @@ class HashPinnedInstallTest(unittest.TestCase):
                     self.assertEqual("--hash", option, "no index, link or editable option")
 
     def test_the_hashed_file_pins_what_its_source_pins(self) -> None:
-        # Generated from requirements-validation.txt (the command is in its header); a bump to the
-        # source that skipped regenerating would test one version and release another. A subset,
-        # not equality: a pin with dependencies brings their hashed pins into the generated file.
-        want = requirements(ROOT / "requirements-validation.txt")
-        got = requirements(ROOT / "requirements-release.txt")
-        self.assertTrue(want)
-        for name, version in want.items():
-            with self.subTest(name=name):
-                self.assertEqual(version, got.get(name))
+        # Each is generated from its source (the command is in its header); a bump to the source
+        # that skipped regenerating would test one version and install another. A subset, not
+        # equality: a pin with dependencies brings their hashed pins into the generated file.
+        for source, generated in HASHED_FROM.items():
+            want = requirements(ROOT / source)
+            got = requirements(ROOT / generated)
+            self.assertTrue(want, source)
+            self.assert_hashed(ROOT / generated)
+            for name, version in want.items():
+                with self.subTest(file=generated, name=name):
+                    self.assertEqual(version, got.get(name))
+
+    def test_an_sdist_build_uses_only_build_tools_installed_by_hash_first(self) -> None:
+        for workflow, job in sorted(SDIST_ALLOWED):
+            lines = pip_installs(load(WORKFLOWS / workflow)["jobs"][job])
+            with self.subTest(workflow=workflow, job=job):
+                self.assertEqual(2, len(lines), lines)
+                tools, sdist = lines
+                self.assertIn("--only-binary=:all:", tools)
+                self.assertIn("--require-hashes", tools)
+                self.assertEqual(["requirements-build.txt"], REQUIREMENT_FILE.findall(tools))
+                self.assertIn("--no-build-isolation", sdist)
+                self.assertEqual(["requirements-release.txt"], REQUIREMENT_FILE.findall(sdist))
+        self.assertEqual(
+            {"setuptools", "cython"}, set(requirements(ROOT / "requirements-build.in"))
+        )
+
+    def test_every_workflow_install_admits_only_hashed_files(self) -> None:
+        # Not only beside a credential: a read-only job's result is what the required gate trusts,
+        # and the build jobs make the binary users install.
+        seen = set()
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            for name, job in load(path)["jobs"].items():
+                for line in pip_installs(job):
+                    seen.add((path.name, name))
+                    with self.subTest(workflow=path.name, job=name, line=line):
+                        self.assertIn("--require-hashes", line)
+                        if "--only-binary=:all:" not in line:
+                            self.assertIn((path.name, name), SDIST_ALLOWED)
+                            self.assertIn("--no-build-isolation", line)
+                        files = REQUIREMENT_FILE.findall(line)
+                        self.assertTrue(files, "a hash pin lives in a requirements file")
+                        for file in files:
+                            self.assertIn(file, set(HASHED_FROM.values()))
+        for job in (
+            ("release.yml", "verify-tree"),
+            ("release.yml", "build-cli"),
+            ("cli-package.yml", "package"),
+            ("plugin-compatibility.yml", "latest-client-smoke"),
+            ("quality-gate.yml", "lint"),
+            ("quality-gate.yml", "coverage"),
+            ("quality-gate.yml", "platform-tests-current"),
+        ):
+            self.assertIn(job, seen)
+
+    def test_the_binary_build_installs_exactly_the_hashed_toolchain(self) -> None:
+        # `--no-deps`: the file is the whole toolchain, so nothing it does not list is resolved.
+        for workflow, job in (("release.yml", "build-cli"), ("cli-package.yml", "package")):
+            (line,) = pip_installs(load(WORKFLOWS / workflow)["jobs"][job])
+            with self.subTest(workflow=workflow):
+                for flag in ("--only-binary=:all:", "--require-hashes", "--no-deps"):
+                    self.assertIn(flag, line)
+                self.assertEqual(["requirements-cli.txt"], REQUIREMENT_FILE.findall(line))
 
     def test_a_pull_request_check_installs_the_release_file_as_the_release_does(self) -> None:
         # Otherwise only a release ever installs requirements-release.txt, and stale hashes would
@@ -901,9 +965,10 @@ class BuildCliJobTest(unittest.TestCase):
         self.assertEqual("${{ steps.python.outputs.python-path }}", build["env"]["PYTHON"])
 
     def test_the_toolchain_is_pinned_exactly(self) -> None:
+        # The source pins; HashPinnedInstallTest holds the generated, hashed file to them.
         lines = [
             line.split(";")[0].strip()
-            for line in (ROOT / "requirements-cli.txt").read_text(encoding="utf-8").splitlines()
+            for line in (ROOT / "requirements-cli.in").read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.startswith("#")
         ]
         self.assertTrue(lines)
@@ -1136,7 +1201,10 @@ class GateParityTest(unittest.TestCase):
         for index in (setup, install, suite):
             self.assertEqual("env.MODE == 'fresh'", listed[index]["if"])
         text = listed[install]["run"]
-        self.assertIn("--requirement requirements-validation.txt", text)
+        # The hashed copy of requirements-validation.txt, installed as the release job installs it.
+        self.assertIn(
+            "--only-binary=:all: --require-hashes --requirement requirements-release.txt", text
+        )
         run = listed[suite]["run"]
         for command in (
             "python3 scripts/validate_plugins.py",

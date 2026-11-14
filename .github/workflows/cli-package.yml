@@ -61,7 +61,7 @@ jobs:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: |
           set -euo pipefail
-          "$PYTHON" -m pip install --disable-pip-version-check --only-binary=:all: --requirement requirements-cli.txt
+          "$PYTHON" -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --no-deps --requirement requirements-cli.txt
       - name: Build the binary and pack the archive
         timeout-minutes: 10
         env:

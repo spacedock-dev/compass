@@ -125,6 +125,7 @@ LANES_OF = {
     "R_STORYBOOK": ("FRONTEND",),
     "R_CONTRACT": ("CONTRACT",),
     "R_FRONTEND_DOCS": ("FRONTEND_DOCS",),
+    "R_ACTIONLINT": ("WORKFLOWS",),
 }
 ALL_ON = {
     "PYTHON": "true",
@@ -134,6 +135,7 @@ ALL_ON = {
     "SUITES": "true",
     "FRONTEND_DOCS": "true",
     "PLATFORM": "true",
+    "WORKFLOWS": "true",
 }
 ALL_OFF = dict.fromkeys(ALL_ON, "false")
 # The aggregate's env name for each job's result, and the job it reads.
@@ -152,6 +154,7 @@ RESULT_OF = {
     "R_STORYBOOK": "storybook",
     "R_CONTRACT": "frontend-contract",
     "R_FRONTEND_DOCS": "frontend-docs",
+    "R_ACTIONLINT": "actionlint",
 }
 
 
@@ -246,7 +249,7 @@ class FrontendAggregateControlsTest(unittest.TestCase):
             with self.subTest(job=job):
                 self.assertEqual(f"${{{{ needs.{job}.result }}}}", env[variable])
                 self.assertIn(job, aggregate["needs"])
-        for output in ("frontend_docs", "platform"):
+        for output in ("frontend_docs", "platform", "workflows"):
             with self.subTest(output=output):
                 self.assertIn(f"needs.changes.outputs.{output}", json.dumps(env))
         self.assertEqual(
@@ -348,6 +351,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
             ("frontend-contract", "contract"),
             ("frontend-docs", "frontend_docs"),
             ("platform-tests-current", "python"),
+            ("actionlint", "workflows"),
         ):
             with self.subTest(job=name):
                 self.assertEqual(
@@ -383,6 +387,7 @@ class FrontendWiringControlsTest(unittest.TestCase):
                 "storybook",
                 "frontend-contract",
                 "frontend-docs",
+                "actionlint",
             },
             set(aggregate["needs"]),
         )
