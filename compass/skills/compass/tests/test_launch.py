@@ -653,6 +653,7 @@ class LauncherRootedRuleTest(unittest.TestCase):
         self.assertTrue(qualified)
         self.assertEqual("C:\\bin", search)
 
+    @unittest.skipIf(sys.platform == "win32", "simulates Windows on a POSIX filesystem")
     def test_on_windows_a_planted_uv_does_not_hide_the_real_one(self) -> None:
         # Real files named as `ntpath` joins them, in a fresh current folder: see
         # `test_rooted_path.windows`.
@@ -677,6 +678,7 @@ class LauncherRootedRuleTest(unittest.TestCase):
         self.assertEqual(["C:\\Tools\\uv.exe"], started)
         self.assertEqual("C:\\Tools\\uv.exe", agrees)
 
+    @unittest.skipIf(sys.platform == "win32", "simulates Windows on a POSIX filesystem")
     def test_the_lookup_agrees_with_the_runtime_on_posix(self) -> None:
         launch: Any = _load_launcher()
         with tempfile.TemporaryDirectory() as tmp:

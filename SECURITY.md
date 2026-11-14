@@ -2139,7 +2139,8 @@ line; a reading returns at most `annotation_text_cap_chars * 8` bytes, 1,920 at 
 value.
 A failed call falls back to local analysis. No raw model stdout or stderr is served or logged.
 
-An absent or relative `shutil.which("codex")` result is refused. An absolute installed executable
+A `codex` that `rooted_path.which` cannot find on a full PATH entry, or finds only at a relative or
+driveless path, is refused. An absolute installed executable
 is still trusted code; replacing it as the owning user is outside this boundary.
 
 ### Claude Code reading calls
@@ -2417,8 +2418,8 @@ folders too, of both lanes, in the shared temp directory; the next start removes
 and older than twice the longest call any lane allows (six minutes with the defaults), so a call
 in flight in another instance keeps its folder. A restart sooner than that leaves a folder for the
 start after. Anything else in that directory is left alone. Windows is not swept, because
-it has no owner and mode bits to match. An absent or relative
-`shutil.which("claude")` spends nothing and creates nothing. The prompt is the reading prompt Codex
+it has no owner and mode bits to match. A `claude` that `rooted_path.which` cannot find on a full
+PATH entry, or finds only at a relative or driveless path, spends nothing and creates nothing. The prompt is the reading prompt Codex
 receives: redacted, then bounded by the reader's prompt size (512 KiB by default). The same remembered answer, now per provider, and the
 same rolling cap apply.
 

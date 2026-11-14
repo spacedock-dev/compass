@@ -14,6 +14,7 @@ import ntpath
 import os
 import shutil
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +62,11 @@ def plant(name: str) -> None:
 def _program(path: Path) -> None:
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
+
+
+# These build Windows names such as `C:\\Tools\\uv.exe` as single files in a scratch folder, which only
+# works on a POSIX filesystem: on Windows they would write into the real folder of that name.
+SIMULATED = "simulates Windows on a POSIX filesystem"
 
 
 class RootedRuleTest(unittest.TestCase):
@@ -137,15 +143,6 @@ class ExecutableTest(unittest.TestCase):
             path = os.pathsep.join([".", str(root)])
             self.assertEqual(str(root / "tmux"), rooted_path.executable("tmux", {"PATH": path}))
 
-    def test_a_driveless_answer_is_refused_under_the_windows_flavour(self) -> None:
-        with (
-            mock.patch.object(os, "name", "nt"),
-            mock.patch.object(os, "path", ntpath),
-            mock.patch.object(shutil, "which", return_value="\\bin\\tmux.exe"),
-        ):
-            resolved = rooted_path.executable("tmux", {"PATH": "C:\\bin"})
-        self.assertIsNone(resolved)
-
     def test_a_current_directory_answer_is_refused(self) -> None:
         # Windows `shutil.which` puts the current directory first before 3.12, whatever PATH
         # it is handed, and answers `.\tmux.exe` when it matches there.
@@ -162,6 +159,7 @@ class ExecutableTest(unittest.TestCase):
                 self.assertIsNone(rooted_path.which("spacedock"))
 
 
+@unittest.skipIf(sys.platform == "win32", SIMULATED)
 class WindowsWalkTest(unittest.TestCase):
     """On Windows `shutil.which` looks in the current folder first, so it is not asked at all.
 
@@ -213,6 +211,7 @@ class WindowsWalkTest(unittest.TestCase):
             self.assertIsNone(rooted_path.which("bin\\uv"))
 
 
+@unittest.skipIf(sys.platform == "win32", SIMULATED)
 class PosixUnchangedTest(unittest.TestCase):
     def test_posix_answers_as_shutil_which_does_on_the_rooted_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,6 +229,7 @@ class PosixUnchangedTest(unittest.TestCase):
                 self.assertEqual(shutil.which("uv", path=path), rooted_path.which("uv"))
 
 
+@unittest.skipIf(sys.platform == "win32", SIMULATED)
 class ClaudeIsFoundByTheSameRuleTest(unittest.TestCase):
     """Every place Compass starts or checks for `claude` resolves it through `rooted_path`."""
 

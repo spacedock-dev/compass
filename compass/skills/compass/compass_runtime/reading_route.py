@@ -1,9 +1,10 @@
 """Who reads a session, and the words a reader sees before pressing.
 
 One resolver for the page, the reading route and the stamp, so the provider a
-reader was told about is the provider that runs. It is pure except for
-`shutil.which`: it never starts a model, and it reads each provider's gate
-before looking for its CLI, so a gated provider is never even looked up.
+reader was told about is the provider that runs. It is pure except for the
+CLI lookup (`observer.codex_binary`, which is `rooted_path.which`): it never
+starts a model, and it reads each provider's gate before looking for its CLI,
+so a gated provider is never even looked up.
 
 A route depends only on the session's harness and on this machine, never on
 the session, which is why the reading route can resolve one from the payload's
@@ -651,7 +652,8 @@ def _state(provider: str, which: Callable[[str], Any]) -> str:
     if not annotation_store.provider_enabled(provider):
         return "unqualified"
     binary = which(BINARIES[provider])
-    return "usable" if binary and os.path.isabs(binary) else "missing"
+    # The rooted rule every reading call applies, so a driveless answer is not "usable".
+    return "usable" if binary and observer.rooted(binary) else "missing"
 
 
 def _clause(provider: str, state: str) -> str:
