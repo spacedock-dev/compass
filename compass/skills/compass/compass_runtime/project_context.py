@@ -14,7 +14,6 @@ import math
 import os
 import re
 import shlex
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -35,6 +34,7 @@ from . import (
     reader_checks,
     reading_route,
     records,
+    rooted_path,
     semantic_history,
     spacedock,
     transcripts,
@@ -248,10 +248,13 @@ def _run_project_workflow_discovery(
     state: RuntimeState,
     root: str,
     runner: Any,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = rooted_path.which,
 ) -> dict[str, Any]:
     executable = os.environ.get("SPACEDOCK_BIN") or binary_resolver("spacedock")
-    if not executable or not os.path.isabs(executable):
+    # Rooted rather than `os.path.isabs`, for the override and the lookup alike: the command
+    # runs with the project root as its working directory, and on Windows a driveless
+    # `\spacedock.exe` is absolute to `isabs` at the 3.12 floor yet resolves on the current drive.
+    if not executable or not rooted_path.rooted(executable):
         return _discovery_result(
             "unavailable", "Spacedock discovery command requires an absolute path"
         )
@@ -260,12 +263,16 @@ def _run_project_workflow_discovery(
         completed = runner(
             argv,
             cwd=root,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=WORKFLOW_DISCOVERY_TIMEOUT_SEC,
             check=False,
             shell=False,
-            env={"PATH": os.defpath, "HOME": config.home, "LANG": "C.UTF-8"},
+            # `os.defpath` is `.;C:\bin` on Windows, the current directory first.
+            env=rooted_path.child_environment(
+                {"PATH": os.defpath, "HOME": config.home, "LANG": "C.UTF-8"}
+            ),
         )
     except FileNotFoundError:
         return _discovery_result("unavailable", "Spacedock discovery command unavailable")
@@ -287,7 +294,7 @@ def discover_project_workflows(
     *,
     now: float,
     runner: Any = subprocess.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = rooted_path.which,
     force: bool = False,
 ) -> dict[str, Any]:
     """Discover commissioned workflows from one verified project root.
@@ -351,7 +358,7 @@ def _project_workflow_discovery(
     now: float,
     refresh: bool,
     runner: Any = subprocess.run,
-    binary_resolver: Any = shutil.which,
+    binary_resolver: Any = rooted_path.which,
 ) -> dict[str, Any]:
     for session in analysis_sessions:
         harness = str(session.get("harness") or "")

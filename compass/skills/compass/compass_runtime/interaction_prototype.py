@@ -14,6 +14,7 @@ import dataclasses
 import http.client
 import json
 import os
+import re
 import secrets
 import select
 import shlex
@@ -27,6 +28,8 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
+
+from . import rooted_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -70,6 +73,39 @@ STABLE_ORIGIN_FIELDS: Final = (
 )
 
 
+# The ids reach `tmux -t`, so each grammar refuses a leading dash in its first character. Matched
+# whole (`fullmatch`), because `$` alone also matches before a trailing newline.
+TMUX_PANE_ID_RE: Final = re.compile(r"%[0-9]{1,9}")
+TMUX_SESSION_ID_RE: Final = re.compile(r"\$[0-9]{1,9}")
+
+
+def own_socket(path: str) -> bool:
+    """Whether `path` is a UNIX socket this user owns, named so `tmux -S` cannot misread it.
+
+    `lstat`, so a symlink to somebody's socket is refused rather than followed; the owner,
+    because a socket in a shared directory that another user bound is another user's server.
+    No `getuid` (Windows) means no tmux socket to check, so nothing passes.
+    """
+    if not path or path.startswith("-") or not rooted_path.rooted(path):
+        return False
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        return False
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISSOCK(info.st_mode) and info.st_uid == getuid()
+
+
+def _admissible(origin: TmuxOrigin) -> bool:
+    return bool(
+        TMUX_PANE_ID_RE.fullmatch(origin.pane_id)
+        and TMUX_SESSION_ID_RE.fullmatch(origin.session_id)
+        and own_socket(origin.server_socket)
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class TmuxOrigin:
     """The exact tmux coordinates discovered by a process in one pane."""
@@ -102,7 +138,8 @@ class TmuxOrigin:
             for field in ("pane_cols", "pane_rows")
         ):
             return None
-        return cls(**fields)
+        origin = cls(**fields)
+        return origin if _admissible(origin) else None
 
     def as_dict(self) -> dict[str, str]:
         """Return the closed JSON representation used by the client."""
@@ -276,7 +313,10 @@ class TmuxAdapter:
     )
 
     def __init__(self, executable: str | None = None, *, owns_server: bool = True) -> None:
-        self._executable = executable or shutil.which("tmux") or "tmux"
+        # Never a bare `tmux` for the child to resolve: an unrooted or missing program leaves
+        # this empty, and every command below refuses rather than starts.
+        resolved = executable if executable is not None else rooted_path.which("tmux")
+        self._executable = resolved if resolved and rooted_path.rooted(resolved) else ""
         self._owns_server = owns_server
         self._root: Path | None = None
         self._socket = ""
@@ -291,7 +331,7 @@ class TmuxAdapter:
         """Create a private server whose sole pane initially runs a shell."""
         if not self._owns_server:
             raise OriginUnavailableError("external tmux adapters do not create a server")
-        if shutil.which(self._executable) is None and not Path(self._executable).is_file():
+        if not self._executable or not Path(self._executable).is_file():
             raise OriginUnavailableError("tmux executable not found")
         self._root = Path(tempfile.mkdtemp(prefix="compass-origin-"))
         self._socket = str(self._root / "tmux.sock")
@@ -361,6 +401,9 @@ class TmuxAdapter:
             return
         if self._origin is not None and not origin.same_identity(self._origin):
             raise OriginUnavailableError("external tmux origin is already bound")
+        # Again here, because an origin can be built without `from_dict`.
+        if not _admissible(origin):
+            raise OriginUnavailableError("external tmux origin is not this user's own socket")
         self._socket = origin.server_socket
         self._origin = origin
 
@@ -376,6 +419,8 @@ class TmuxAdapter:
         openpty = getattr(os, "openpty", None)
         if openpty is None:
             raise OriginUnavailableError("tmux control mode requires a POSIX pseudo-terminal")
+        if not self._executable:
+            raise OriginUnavailableError("tmux executable not found")
         self.stop_read_only_stream()
         master_fd, slave_fd = openpty()
         try:
@@ -396,6 +441,7 @@ class TmuxAdapter:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
+                env=rooted_path.child_environment(os.environ),
             )
         except OSError as exc:
             os.close(master_fd)
@@ -476,6 +522,8 @@ class TmuxAdapter:
         return TmuxOrigin(self._socket, *values)
 
     def _run(self, *arguments: str) -> str:
+        if not self._executable:
+            raise OriginUnavailableError("tmux executable not found")
         try:
             completed = subprocess.run(  # noqa: S603 - fixed executable and argument vector
                 [self._executable, "-f", "/dev/null", "-S", self._socket, *arguments],
@@ -483,6 +531,7 @@ class TmuxAdapter:
                 capture_output=True,
                 text=True,
                 timeout=2.0,
+                env=rooted_path.child_environment(os.environ),
             )
         except (OSError, subprocess.SubprocessError) as exc:
             raise OriginUnavailableError(f"tmux operation failed: {type(exc).__name__}") from exc
@@ -1091,8 +1140,9 @@ def _discover_origin() -> TmuxOrigin:
     server_socket = tmux_value.split(",", 1)[0]
     if not server_socket or not pane_id:
         raise OriginUnavailableError("the registration client is not running inside tmux")
-    executable = shutil.which("tmux") or "tmux"
-    adapter = TmuxAdapter(executable)
+    if not own_socket(server_socket) or not TMUX_PANE_ID_RE.fullmatch(pane_id):
+        raise OriginUnavailableError("the tmux variables do not name this user's own pane")
+    adapter = TmuxAdapter()
     adapter._socket = server_socket  # noqa: SLF001 - client-side adapter bootstrap
     return adapter._inspect(pane_id)  # noqa: SLF001 - one bounded discovery operation
 

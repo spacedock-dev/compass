@@ -36,6 +36,7 @@ from . import (
     reading_capacity,
     reading_policy,
     records,
+    rooted_path,
     spacedock,
     supervise,
     transcripts,
@@ -219,38 +220,17 @@ def _spawn_hook(
 
 
 def rooted(path: str) -> bool:
-    """No working directory can reinterpret this path, on any OS.
-
-    `git_status._rooted`'s rule, restated rather than imported so this module stays below the
-    git probe in the import graph: absolute, and on Windows with a drive, because a driveless
-    root resolves against the process's current drive.
-    """
-    if not os.path.isabs(path):
-        return False
-    return os.name != "nt" or bool(os.path.splitdrive(path)[0])
-
-
-def _search_path() -> str:
-    """PATH, or with none set the path `shutil.which` would search: `CS_PATH`, else `os.defpath`."""
-    path = os.environ.get("PATH")
-    if path is not None:
-        return path
-    try:
-        return os.confstr("CS_PATH") or ""
-    except (AttributeError, ValueError):
-        return os.defpath
+    """No working directory can reinterpret this path, on any OS: `rooted_path.rooted`."""
+    return rooted_path.rooted(path)
 
 
 def codex_binary(name: str) -> str | None:
     """Where a model CLI is, against the PATH with every unrooted element removed.
 
     The rule `git_status.executable` applies to `git`, so a relative PATH element cannot supply
-    the program a reading starts: every element that is not rooted is dropped before
-    `shutil.which` sees the PATH, and its answer must be rooted too.
+    the program a reading starts.
     """
-    path = os.pathsep.join(part for part in _search_path().split(os.pathsep) if rooted(part))
-    resolved = shutil.which(name, path=path)
-    return resolved if resolved and rooted(resolved) else None
+    return rooted_path.which(name)
 
 
 def codex_refusal() -> tuple[str, str]:

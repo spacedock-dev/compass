@@ -52,13 +52,14 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import stat
 import subprocess
 import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
+
+from . import rooted_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -95,23 +96,8 @@ DETACHING_ENV: Final = ("GIT_DIR", "GIT_WORK_TREE")
 
 
 def _rooted(part: str) -> bool:
-    r"""True when no working directory can reinterpret `part`.
-
-    Not `os.path.isabs`, which is not that property on Windows and is permissive
-    in the direction this repository ships: measured 2026-09-08,
-    `ntpath.isabs(r"\bin")` is True on 3.11.9 and 3.12.13 and False on 3.13.13,
-    and the gate runs 3.12 (DRC-4469). A driveless root resolves against
-    the process's current drive, which is part of its working directory.
-
-    The drive test is Windows-only because `posixpath.splitdrive` never reports
-    one, so requiring it everywhere would scrub every element. And this is the
-    filter being narrower than its own claim rather than a second DRC-4454:
-    Windows hands the resolved path to `CreateProcess` as `lpApplicationName`,
-    which the CALLING process resolves, so parent and child cannot disagree.
-    """
-    if not os.path.isabs(part):
-        return False
-    return os.name != "nt" or bool(os.path.splitdrive(part)[0])
+    """`rooted_path.rooted`, under the name the probe's tests and history use (DRC-4469)."""
+    return rooted_path.rooted(part)
 
 
 def probe_environment(environ: Mapping[str, str]) -> dict[str, str]:
@@ -130,12 +116,9 @@ def probe_environment(environ: Mapping[str, str]) -> dict[str, str]:
     the program. `_rooted` rather than `os.path.isabs` is what makes that
     sentence true on Windows as well (DRC-4469).
     """
-    scrubbed = {key: value for key, value in environ.items() if key not in DETACHING_ENV}
-    path = scrubbed.get("PATH", "")
-    if path:
-        kept = [part for part in path.split(os.pathsep) if _rooted(part)]
-        scrubbed["PATH"] = os.pathsep.join(kept)
-    return scrubbed
+    return rooted_path.child_environment(
+        {key: value for key, value in environ.items() if key not in DETACHING_ENV}
+    )
 
 
 def executable(name: str, environ: Mapping[str, str]) -> str | None:
@@ -153,10 +136,7 @@ def executable(name: str, environ: Mapping[str, str]) -> str | None:
     answers with a path built from the PATH element it matched, so a driveless
     root reaching it would otherwise be handed straight to the child.
     """
-    resolved = shutil.which(name, path=environ.get("PATH"))
-    if resolved is None or not _rooted(resolved):
-        return None
-    return resolved
+    return rooted_path.executable(name, environ)
 
 
 def _executable(environ: Mapping[str, str]) -> str | None:

@@ -3,8 +3,9 @@
 `SECURITY.md`'s "Reaching a session's terminal (the focus command)" is the
 contract this module implements, and its bounds are the operator's ruling of
 2026-09-05 as amended rather than this module's preferences. A leaf: it imports
-no runtime module and holds no state, so the coordinator can call it from a
-handler thread without ordering concerns, exactly as `git_status` is called.
+no runtime module but the `rooted_path` leaf and holds no state, so the
+coordinator can call it from a handler thread without ordering concerns, exactly
+as `git_status` is called.
 
 ## Why there is one case and not three
 
@@ -68,6 +69,8 @@ import re
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
+
+from . import rooted_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -205,6 +208,20 @@ def fill(template: tuple[str, ...], **values: str) -> tuple[str, ...]:
     return tuple(part if slots.get(part) is None else str(slots[part]) for part in template)
 
 
+def run_rooted(argv: tuple[str, ...], **options: Any) -> subprocess.CompletedProcess[bytes]:
+    """`subprocess.run` with `tmux` resolved on rooted PATH elements only, or not started.
+
+    The templates keep the bare word so a test's runner sees the fixed argv; the real start
+    replaces it with the full path. A `tmux` no rooted element holds raises
+    `FileNotFoundError`, which `_run` already reads as the focus that did not happen, so the
+    reader sees "No terminal was raised" rather than a raise by a program the daemon's working
+    directory supplied. `rooted_path` reads the PATH, so this module still reads no environment
+    of its own.
+    """
+    resolved, env = rooted_path.prepared(argv)
+    return subprocess.run(resolved, env=env, **options)  # noqa: S603, PLW1510 - caller's check
+
+
 def _run(
     argv: tuple[str, ...],
     *,
@@ -325,7 +342,7 @@ def raise_terminal(
     target: Target,
     *,
     timeout_sec: float,
-    runner: Callable[..., Any] = subprocess.run,
+    runner: Callable[..., Any] = run_rooted,
 ) -> bool:
     """Raise this session's pane for the one client watching it, or decline.
 

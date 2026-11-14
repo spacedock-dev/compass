@@ -16,8 +16,9 @@ imports below the floor sit inside the functions that need them, because `subpro
 and `json` cost about ten milliseconds per hook that nothing at or above the floor uses. Below it:
 
 1. A hook's payload is read from stdin, because the event decides whether anyone is told.
-2. `uv`, if installed, is asked for a Python 3.12 or newer that is already on the machine.
-   It never downloads (`--no-python-downloads`), never reads the project or its config
+2. `uv`, if installed on a rooted PATH element, is asked for a Python 3.12 or newer that is
+   already on the machine, searching only those elements. It never downloads
+   (`--no-python-downloads`), never reads the project or its config
    (`--no-project --no-config`), never executes a `.venv` found in or above the working
    directory, which is the user's project and not ours (`--system`), and is cut off
    after two seconds, because Gemini gives a hook five. If it finds one,
@@ -65,13 +66,39 @@ def sentence(version_text: str) -> str:
     )
 
 
+# `compass_runtime.rooted_path`'s rule, restated: this file must parse on 3.6 and runs before the
+# version check, so it cannot import that package. `test_launch.LauncherRootedRuleTest` holds the
+# two to the same answers.
+def rooted(part: str) -> bool:
+    if not os.path.isabs(part):
+        return False
+    # A driveless root resolves against the current drive, part of the working directory.
+    return os.name != "nt" or bool(os.path.splitdrive(part)[0])
+
+
+def search_path(path: str) -> str:
+    return os.pathsep.join(part for part in path.split(os.pathsep) if rooted(part))
+
+
 def find_new_python() -> "str | None":
+    """A Python at or above the floor that uv already has, found only on rooted PATH elements.
+
+    A hook's working directory is inside the watched repository, so a relative, empty or `.`
+    PATH element would let it supply `uv`, or the interpreter `uv python find` reports.
+    """
     import shutil
     import subprocess
 
-    uv = shutil.which("uv")
-    if not uv:
+    path = os.environ.get("PATH")
+    search = search_path(os.defpath if path is None else path)
+    uv = shutil.which("uv", path=search) if search else None
+    # Windows `which` searches the current directory first before 3.12 whatever PATH it is
+    # handed, and answers `.\uv.exe` from there; the answer is held to the rule too.
+    if not uv or not rooted(uv):
         return None
+    env = dict(os.environ)
+    env["PATH"] = search
+    env["NoDefaultCurrentDirectoryInExePath"] = "1"
     try:
         done = subprocess.run(
             [
@@ -87,6 +114,7 @@ def find_new_python() -> "str | None":
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            env=env,
             timeout=UV_TIMEOUT_SECONDS,
             check=False,
         )
@@ -96,7 +124,7 @@ def find_new_python() -> "str | None":
         return None
     lines = done.stdout.decode("utf-8", "replace").strip().splitlines()
     found = lines[-1].strip() if lines else ""
-    return found if found and os.path.isfile(found) else None
+    return found if found and rooted(found) and os.path.isfile(found) else None
 
 
 def starts_a_session(payload: bytes) -> bool:

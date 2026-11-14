@@ -1903,6 +1903,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_capacity",
             "compass_runtime.reading_policy",
             "compass_runtime.records",
+            "compass_runtime.rooted_path",
             "compass_runtime.spacedock",
             "compass_runtime.state",
             "compass_runtime.supervise",
@@ -2093,7 +2094,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         # The read-only terminal substrate uses only the standard library. Its
         # CLI, lifecycle and HTTP integrations stay above it.
-        "compass_runtime.interaction_prototype": set(),
+        "compass_runtime.interaction_prototype": {"compass_runtime.rooted_path"},
         "compass_runtime.io": {
             "compass_runtime.config",
             "compass_runtime.state",
@@ -2122,6 +2123,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.reading_route",
             "compass_runtime.record_pages",
             "compass_runtime.records",
+            # Spacedock discovery's program is resolved on rooted PATH elements only.
+            "compass_runtime.rooted_path",
             "compass_runtime.semantic_history",
             "compass_runtime.sessions",
             "compass_runtime.spacedock",
@@ -2260,8 +2263,9 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The focus command. A leaf for `git_status`'s reason and with the same
         # consequence: the coordinator runs it from a request thread with no
         # ordering to think about, and nothing it does can reach back into state.
-        "compass_runtime.focus": set(),
-        "compass_runtime.git_status": set(),
+        "compass_runtime.focus": {"compass_runtime.rooted_path"},
+        "compass_runtime.git_status": {"compass_runtime.rooted_path"},
+        "compass_runtime.rooted_path": set(),
         # A project's declaring files as the commit a session began on held them: it reads them
         # through `git_status`'s committed-file read and owns every bound on what it parses.
         "compass_runtime.project_scripts": {"compass_runtime.git_status"},

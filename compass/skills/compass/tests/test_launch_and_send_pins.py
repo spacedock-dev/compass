@@ -762,7 +762,6 @@ class TheLaunchAndSendTableNamesRealTestsTest(unittest.TestCase):
         "git_status": "The git probe",
         "project_scripts": "The git probe",
         "reading_source_collect": "The native long-source Git identity probes",
-        "observation": "The focus command",
         "focus": "The focus command",
         "notifications": "A native notification",
         "lifecycle": "The daemon",

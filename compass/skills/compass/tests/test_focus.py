@@ -21,11 +21,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import hashlib
+import inspect
 import json
+import os
 import re
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -259,6 +262,68 @@ class CommandBoundsTest(unittest.TestCase):
             self.assertNotIn("paste-buffer", argv)
         self.assertNotIn("send-keys", FOCUS_SOURCE)
         self.assertNotIn("paste-buffer", FOCUS_SOURCE)
+
+
+class RootedTmuxTest(unittest.TestCase):
+    """The raise starts the `tmux` a rooted PATH element holds, or starts nothing.
+
+    The daemon's working directory and PATH are whatever started it, so a bare `tmux` would be
+    resolved by the child against elements a repository could control.
+    """
+
+    def stub(self, directory: Path) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        program = directory / "tmux"
+        program.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        program.chmod(0o755)
+        return program
+
+    def test_a_tmux_reachable_only_through_a_relative_element_is_never_started(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            self.stub(root / "relbin")
+            self.stub(root)
+            run = unittest.mock.Mock()
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                with (
+                    unittest.mock.patch.dict(
+                        os.environ, {"PATH": os.pathsep.join(["relbin", ".", ""])}
+                    ),
+                    unittest.mock.patch.object(subprocess, "run", run),
+                ):
+                    with self.assertRaises(FileNotFoundError):
+                        focus.run_rooted(("tmux", "-L", "default", "list-clients"), check=False)
+                    # What the reader sees: the raise declines, it does not crash.
+                    self.assertFalse(focus.raise_terminal(TARGET, timeout_sec=2.0))
+            finally:
+                os.chdir(previous)
+        run.assert_not_called()
+
+    def test_a_rooted_tmux_is_started_by_its_full_path_with_the_current_directory_off(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            program = self.stub(root / "bin")
+            run = unittest.mock.Mock(return_value=subprocess.CompletedProcess([], 0, b"", b""))
+            with (
+                unittest.mock.patch.dict(
+                    os.environ, {"PATH": os.pathsep.join([".", str(root / "bin")])}
+                ),
+                unittest.mock.patch.object(subprocess, "run", run),
+            ):
+                focus.run_rooted(("tmux", "-L", "default", "list-clients"), check=False)
+        argv = run.call_args.args[0]
+        self.assertEqual([str(program), "-L", "default", "list-clients"], argv)
+        env = run.call_args.kwargs["env"]
+        self.assertEqual(str(root / "bin"), env["PATH"])
+        self.assertEqual("1", env["NoDefaultCurrentDirectoryInExePath"])
+
+    def test_the_raise_defaults_to_the_rooted_runner(self) -> None:
+        default = inspect.signature(focus.raise_terminal).parameters["runner"].default
+        self.assertIs(focus.run_rooted, default)
 
 
 class DeclineTest(unittest.TestCase):
@@ -794,6 +859,11 @@ def _tree(root: Path) -> dict[str, str]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+class CoordinatorDefaultRunnerTest(CoordinatorTargetTest):
+    def test_the_coordinator_raises_through_the_rooted_runner(self) -> None:
+        self.assertIs(focus.run_rooted, self.build()._focus_runner)
 
 
 class RouteTest(unittest.TestCase):
