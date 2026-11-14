@@ -124,11 +124,15 @@ describe('the annotation reader agrees with the legacy page over generated rows'
 
   it('collapses the same characters the legacy box does and uses the published cap with the new 800-character fallback', () => {
     const rnd = mulberry32(7);
+    // The store's class has since grown by the C1 controls, the Arabic letter mark and the two Unicode
+    // line separators (see the design record's held-to-recorded-answers entry for 2026-11-14); every
+    // character the retired box collapsed is still collapsed.
     expect(HELD_UNSAFE.source).toBe(
       legacy
         .run<RegExp>('NEXT_COCKPIT_HELD_UNSAFE')
         .source.replace(/\\x00-\\x1f/, '\\u0000-\\u001f')
-        .replace(/\\x7f/, '\\u007f'),
+        .replace(/\\x7f/, '\\u007f-\\u009f\\u061c')
+        .replace('\\u200f', '\\u200f\\u2028\\u2029'),
     );
     for (let seed = 0; seed < 50; seed += 1) {
       legacy.setData({ annotate_cap: pick(rnd, [undefined, 0, -3, 12.4, 'x', 240, 500]) });

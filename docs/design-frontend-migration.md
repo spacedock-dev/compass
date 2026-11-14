@@ -16,6 +16,13 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-14, the Intent boxes collapse the store's wider set of invisible characters. `records.safe_text`
+now also turns the C1 controls (U+0080 to U+009F), the Arabic letter mark (U+061C) and the Unicode line and
+paragraph separators (U+2028, U+2029) into one space, so `HELD_UNSAFE` in `intent/annotation.ts` collapses
+them too and the box keeps showing what will be stored. The retired page's box collapsed fewer.
+`annotation.differential.test.ts` now asks for the recorded class plus exactly those characters, and
+`vocabulary.test.ts` still holds the class equal to the store's. No golden file is changed.
+
 2026-11-12, a long held question is clamped where it is shown compactly. A session's question may now run to
 2,000 characters, so the Sessions row's blocked note, the project's waiting rail, the Activity row and the
 recovery strip show its first three lines, and the session page's answer block shows all of it. The whole text

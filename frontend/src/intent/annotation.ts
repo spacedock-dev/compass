@@ -157,10 +157,13 @@ export function revisionLine(
    the lint rule that forbids a control character in a pattern reads literals, and this one is the point. */
 const UNSAFE_CLASS = [
   '\\u0000-\\u001f',
-  '\\u007f',
+  '\\u007f-\\u009f',
+  '\\u061c',
   '\\u200b',
   '\\u200e',
   '\\u200f',
+  '\\u2028',
+  '\\u2029',
   '\\u202a-\\u202e',
   '\\u2066-\\u2069',
 ].join('');
