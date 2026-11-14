@@ -106,6 +106,18 @@ class GrammarTest(unittest.TestCase):
             with self.subTest(value=refused):
                 self.assertIsNone(focus.TMUX_PANE_RE.match(refused))
 
+    def test_a_trailing_newline_does_not_pass_a_grammar(self) -> None:
+        # `$` with `.match` also matches before a final newline, so `%3\n` used to pass.
+        for socket, pane, server in (
+            ("default", "%3\n", SERVER),
+            ("default\n", "%3", SERVER),
+            ("default", "%3", SERVER + "\n"),
+        ):
+            with self.subTest(socket=socket, pane=pane, server=server):
+                self.assertIsNone(focus.target_from(socket, pane, server))
+                self.assertFalse(focus.valid(focus.Target(socket, pane, server)))
+        self.assertIsNotNone(focus.target_from("default", "%3", SERVER))
+
     def test_a_socket_name_is_a_name_and_never_a_path(self) -> None:
         self.assertIsNotNone(focus.TMUX_SOCKET_RE.match("default"))
         self.assertIsNotNone(focus.TMUX_SOCKET_RE.match("compass-raise"))

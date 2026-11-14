@@ -169,10 +169,11 @@ class Target:
 
 def valid(target: Target) -> bool:
     """Whether all three stored fields still pass their own grammar."""
+    # `fullmatch`: with `.match`, `$` also matches before a trailing newline, so `%3\n` passed.
     return bool(
-        TMUX_SOCKET_RE.match(target.socket) is not None
-        and TMUX_PANE_RE.match(target.pane) is not None
-        and TMUX_SERVER_RE.match(target.server) is not None
+        TMUX_SOCKET_RE.fullmatch(target.socket) is not None
+        and TMUX_PANE_RE.fullmatch(target.pane) is not None
+        and TMUX_SERVER_RE.fullmatch(target.server) is not None
     )
 
 
@@ -303,7 +304,7 @@ def _session_on_the_recorded_server(
     parts = named[0].split(" ", 1)
     if len(parts) != 2 or parts[0] != target.server:
         return None
-    return parts[1] if TMUX_SESSION_RE.match(parts[1]) is not None else None
+    return parts[1] if TMUX_SESSION_RE.fullmatch(parts[1]) is not None else None
 
 
 def _the_one_client_watching(
@@ -335,7 +336,7 @@ def _the_one_client_watching(
     )
     if len(clients) != 1:
         return None
-    return clients[0] if CLIENT_TTY_RE.match(clients[0]) is not None else None
+    return clients[0] if CLIENT_TTY_RE.fullmatch(clients[0]) is not None else None
 
 
 def raise_terminal(
