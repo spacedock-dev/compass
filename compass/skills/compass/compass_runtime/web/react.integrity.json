@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2328175,
+    "bytes": 2328519,
     "file": "react.html",
-    "sha256": "03c95303d4dad9d389de08e2d7105a33aa0119834d75ebd434a4f2c2b535c3c4"
+    "sha256": "39f1109fbdc28ecedab924add83a3d2beacb9d1eda17ff231bebb3cff664831a"
   },
   "format": 1,
   "frontend": "react",
@@ -247,7 +247,7 @@
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/vendor/SOURCES.txt",
-        "sha256": "426b3d3a2288c8f88c9b960b5089294aa35c7e77a84969650633669b884e2e45"
+        "sha256": "28e65f86a534984b5eae76b789ed89dcab944a75a6627ba57b1dab4425e9bdac"
       },
       {
         "file": "compass/skills/compass/compass_runtime/web/vendor/xterm-LICENSE.txt",
@@ -259,11 +259,15 @@
       },
       {
         "file": "frontend/build/package.mjs",
-        "sha256": "960e0b0fc0e6487ab97b8f896bb091855fddb593b8ffbb90eb807607c2db03b6"
+        "sha256": "3cd95f220924931ad300aa52555e1182f6f1582d71607d682ac8e127b58cd7b2"
       },
       {
         "file": "frontend/build/shadcn-LICENSE.txt",
         "sha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f"
+      },
+      {
+        "file": "frontend/build/xterm-integrity.mjs",
+        "sha256": "b4b54d771e51983fbe7b2cfb6d120903592199639c8b623bada5a55d0b301f09"
       },
       {
         "file": "frontend/index.html",
@@ -1599,7 +1603,7 @@
       },
       {
         "file": "frontend/src/terminal/xterm.ts",
-        "sha256": "7036b1f0bcee083d6c6f6b26ca8ae042d1997ce6e549ccadca9c5a198a6ee421"
+        "sha256": "4993c38a54f2ea0f043386fee736a0725366c338062125ed61530a5ae7ca7a90"
       },
       {
         "file": "frontend/src/timeline/ActivityFilter.tsx",
@@ -1799,7 +1803,7 @@
       },
       {
         "file": "frontend/vite.config.mts",
-        "sha256": "8f66bb2b4a655e9a09c5cb2e5ae519909f73815c25249929f0394fa06636380b"
+        "sha256": "1cfb9758c067e077c25d9666836c6acb8822a2ea5a15e8ded9b7f6101f2cd6b4"
       },
       {
         "file": "package.json",
