@@ -1,4 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
+import { locationNote, locationWarnings } from './location';
 import {
   observeCapacity,
   type BoardRisk,
@@ -150,13 +151,14 @@ export function observe(input: unknown): Observed {
     else asks.set(key, [ask]);
   }
   const generated = nextNumber(payload['generated']);
+  const locationNotes = new Map([...groups].map(([label, rows]) => [label, locationNote(rows)]));
   const sessions = sources.map((source) =>
     observeSession(
       source,
       asks.get(sessionKey(source)) ?? [],
       byHarness.get(identityPart(source['harness'])),
       generated,
-      groups.get(labelOf(source))?.length ?? 0,
+      locationNotes.get(labelOf(source)) ?? '',
     ),
   );
   const risks: BoardRisk[] = [];
@@ -217,19 +219,20 @@ export function observe(input: unknown): Observed {
   const capacity = observeCapacity(payload);
   const boardRisks: BoardRisk[] = [...capacity.risks];
   for (const project of projects) {
-    if (!project.key.trim() || project.sessions.length < 2) continue;
-    boardRisks.push({
-      scope: 'board',
-      kind: 'collision',
-      title: 'Identity collision',
-      identity: `${project.key} display label`,
-      src: 'Published project labels',
-      nowText: project.sharedLabelText,
-      nowKnown: true,
-      nextText: 'Shared location is not established',
-      nextKnown: false,
-      tone: 'unknown',
-    });
+    if (!project.key.trim()) continue;
+    for (const warning of locationWarnings(groups.get(project.key) ?? []))
+      boardRisks.push({
+        scope: 'board',
+        kind: warning.kind,
+        title: warning.title,
+        identity: `${project.key} ${warning.kind === 'checkout' ? 'checkout' : 'display label'}`,
+        src: 'Published project location evidence',
+        nowText: warning.text,
+        nowKnown: true,
+        nextText: 'Compare title, worktree, id and start time below',
+        nextKnown: true,
+        tone: 'unknown',
+      });
   }
   for (const ask of unowned) {
     boardRisks.push({

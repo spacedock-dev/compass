@@ -20,12 +20,13 @@ export function riskSubject(risk: BoardRisk, model: AttentionModel): Subject | u
       (row) => row.key === key,
     );
   }
-  if (risk.kind === 'collision') {
+  if (risk.kind === 'collision' || risk.kind === 'checkout') {
     return model.risk.find(
       (row) =>
         row.kind === 'collision' &&
+        row.primaryKind === risk.kind &&
         risk.identity ===
-          `${String((row.identity as unknown as Row | undefined)?.['project'])} display label`,
+          `${String((row.identity as unknown as Row | undefined)?.['project'])} ${risk.kind === 'checkout' ? 'checkout' : 'display label'}`,
     );
   }
   if (risk.kind === 'ask') {
@@ -72,7 +73,12 @@ export function riskRow(
   const detailsSubject: Subject | undefined = retained
     ? { ...retained, signals: retained.signals.slice(1) }
     : subject && board
-      ? { ...subject, signals: subject.signals.filter((signal) => signal.kind !== 'collision') }
+      ? {
+          ...subject,
+          signals: subject.signals.filter(
+            (signal) => !['collision', 'checkout'].includes(signal.kind),
+          ),
+        }
       : subject;
   return {
     key,

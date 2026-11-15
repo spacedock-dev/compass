@@ -109,6 +109,10 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
         `${JSON.stringify(board, null, 2)}\n`,
       );
     }
-    expect(board).toEqual(read(name));
+    // The recorded rows publish label fallbacks, so none establishes a measured location.
+    expect(board).toEqual({
+      ...read(name),
+      warning: 'Location not measured for 4 sessions with this display label',
+    });
   });
 }

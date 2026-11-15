@@ -75,6 +75,36 @@ def working(row: Row) -> bool:
     return row.get("state") == "working" and ended_at(row) is None
 
 
+def location_note(rows: list[Row]) -> str:
+    # observed/location.ts: only measured keys establish a location; a label fallback cannot.
+    if len(rows) < 2:
+        return ""
+    keys = {
+        row["project_key"].strip()
+        for row in rows
+        if row.get("project_identity_source") in ("git common directory", "working directory path")
+        and isinstance(row.get("project_key"), str)
+        and row["project_key"].strip()
+    }
+    unknown = sum(
+        row.get("project_identity_source") not in ("git common directory", "working directory path")
+        or not isinstance(row.get("project_key"), str)
+        or not row["project_key"].strip()
+        for row in rows
+    )
+    notes = []
+    if len(keys) > 1:
+        notes.append(
+            f"{len(rows)} sessions share this display label across {len(keys)} measured locations"
+        )
+    if unknown:
+        notes.append(
+            f"Location not measured for {unknown} "
+            f"{'session' if unknown == 1 else 'sessions'} with this display label"
+        )
+    return ". ".join(notes)
+
+
 def children_of(rows: list[Row], context: Row, generated: float | None) -> list[dict[str, Any]]:
     # project/lanes.ts: delegationLanes; project/recovery.ts: recoveryChildren
     active: list[dict[str, Any]] = []
@@ -529,11 +559,7 @@ def derive(payload: Row, context: Row | None, *, label: str) -> dict[str, Any]:
         "label": label,
         "key": project_key(payload, label),
         "counts": " · ".join(counts),
-        "warning": (
-            f"{len(rows)} sessions share this display label; shared location is not established"
-        )
-        if len(rows) > 1
-        else "",
+        "warning": location_note(rows),
         "members": [
             {
                 "key": key(row),

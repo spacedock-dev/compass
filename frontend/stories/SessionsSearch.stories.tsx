@@ -367,9 +367,7 @@ export const ProjectAndHarness: Story = {
     ]);
     await expect(listed[0]?.note).toBe('Label shared by more than one location');
     await expect(listed[3]?.note).toBe('');
-    await expect(
-      rowOf(canvasElement, 'B')?.querySelector('.next-operation-collision'),
-    ).toHaveTextContent('6 sessions share this display label; shared location is not established');
+    await expect(rowOf(canvasElement, 'B')?.querySelector('.next-operation-collision')).toBeNull();
     await pick(popup, 'compass');
     await pick(popup, 'recce/compass');
     await waitFor(() => expect(shownRows(canvasElement)).toHaveLength(8));

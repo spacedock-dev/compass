@@ -16,6 +16,23 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
+2026-11-15, shared display labels use measured location evidence. One measured directory or repository
+raises no label warning. Two measured keys name the location count, while label fallbacks remain
+unknown and say their location was not measured. Attention links every member by title, worktree,
+id and start time, and the warning heading opens the project. Concurrent working or waiting
+sessions in one measured checkout keep a separate warning. Stops, ends and tasks stay in their
+session subjects instead of being folded into a label card, so the summary and queues agree.
+The terminal project brief uses the same location disclosure. No golden file is changed.
+The recorded generated boards have no measured sources; the asking tests restate only their
+UI-owned location notes. Attention comparisons retain unaffected subjects and signals, while the
+restored members and location cards are held by the mounted `attention/location.test.tsx` cases
+and the `Attention/Project locations` Storybook play assertions. Queue announcements are checked
+against their current queue counts because the recorded counts include the retired folding.
+The on-demand project and Sessions browser proofs restate their recorded location notes without
+changing published words. Attention's browser comparison excludes the replaced location cards;
+its unchanged queues still compare, and the new cards' exact routes are asserted in Storybook.
+
+
 2026-11-14, the Intent boxes collapse the store's wider set of invisible characters. `records.safe_text`
 now also turns the C1 controls (U+0080 to U+009F), the Arabic letter mark (U+061C) and the Unicode line and
 paragraph separators (U+2028, U+2029) into one space, so `HELD_UNSAFE` in `intent/annotation.ts` collapses

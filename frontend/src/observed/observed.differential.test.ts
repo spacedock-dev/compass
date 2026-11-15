@@ -1,3 +1,4 @@
+import { recordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { instructionSourceDeviation } from '../../test/projectWordDeviation';
 import { withoutCodexRecordedStop, withoutCodexRecordedStops } from '../../test/codexRecordedStop';
@@ -24,7 +25,8 @@ const IDLE_ENTRY =
 const CASES = 80;
 const SEEDS = CASES;
 
-function withoutHistory(model: Record<string, unknown>): Record<string, unknown> {
+function withoutHistory(input: Record<string, unknown>): Record<string, unknown> {
+  const model = recordedLocationNotes(input);
   const projects = (model['projects'] as Record<string, unknown>[]).map((project) => {
     return Object.fromEntries(
       Object.entries(project).filter(

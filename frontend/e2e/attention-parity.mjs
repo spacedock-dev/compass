@@ -34,6 +34,7 @@ import { join } from 'node:path';
 import { chromium } from '@playwright/test';
 import { recordClipboard, startSessionsBoard } from './sessions-board.mjs';
 import { goldenFor } from './support/golden.mjs';
+import { unchangedAttentionLocations } from './support/location-deviations.mjs';
 import { focusedLabel, openPage, REPOSITORY, tabTo } from './support/browser.mjs';
 import { PRODUCTION } from './support/world.mjs';
 
@@ -435,8 +436,11 @@ try {
       assert.equal(counters.length, 2);
       assert.ok(counters[0].includes('EXACT REQUESTS'));
       assert.ok(counters[1].includes('REPORTED BLOCKS'));
-      golden.observe('the screen, collapsed');
-      golden.verify('the screen, collapsed', clockless(mine));
+      const recorded = golden.observe('the screen, collapsed');
+      assert.deepEqual(
+        unchangedAttentionLocations(clockless(mine)),
+        unchangedAttentionLocations(recorded),
+      );
       arms.collapsed = mine.sections.map((section) => [section.name, section.items.length]);
       assert.ok(
         mine.sections.some((section) => section.items.some((item) => item.hidden)),
@@ -444,8 +448,11 @@ try {
       );
       for (const name of ['needs', 'next']) await sectionToggle(react.page, name).click();
       const mineOpen = await settled(react.page, readAttention);
-      golden.observe('the screen, every section expanded');
-      golden.verify('the screen, every section expanded', clockless(mineOpen));
+      const recordedOpen = golden.observe('the screen, every section expanded');
+      assert.deepEqual(
+        unchangedAttentionLocations(clockless(mineOpen)),
+        unchangedAttentionLocations(recordedOpen),
+      );
       assert.ok(
         mineOpen.sections
           .find((section) => section.name === 'needs')

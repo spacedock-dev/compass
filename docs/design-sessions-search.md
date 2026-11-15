@@ -173,9 +173,11 @@ nothing publishes no revision. The fix belongs to `departures.checked`, which al
 sentence the session page shows when nothing departed, so it is left to a change of its own.
 
 The Project option carries "Label shared by more than one location" only when that label's rows carry
-two or more distinct non-empty `project_key` values, which is when the board falls back to grouping by
-label. The row's own note, "N sessions share this display label; shared location is not established",
-counts sessions and never establishes a location, so no copy here states a number of locations.
+two or more distinct non-empty `project_key` values whose `project_identity_source` is
+"git common directory" or "working directory path". A collector label fallback is unknown, not a
+second location. Options and rows disclose unmeasured members explicitly. Rows and project headers
+state the measured location count when it exceeds one; they omit the note when every member has
+one measured location.
 
 ## Absent values
 

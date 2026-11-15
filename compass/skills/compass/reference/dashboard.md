@@ -185,8 +185,8 @@ MCP tools appear under the service being called rather than their wire name, for
 Attention is a triage view. **At risk** names session evidence alongside **Needs you now**,
 **Close the loop**, and **Coming next**. The opening brief counts the sessions these categories
 claim and describes the remainder as moving, quiet, ended, or without a counted state.
-**Also at risk, off the session count** holds quota pressure, shared display labels and requests
-whose session ownership is not established. Those subjects never inflate the session denominator.
+**Also at risk, off the session count** holds quota pressure, measured location warnings, concurrent
+checkout warnings and requests whose session ownership is not established. Those subjects never inflate the session denominator.
 **Not on this board yet** names the capabilities no source supports. Coverage details explain
 missing observations instead of treating an unmeasured harness as an all-clear.
 
@@ -210,8 +210,12 @@ accepted, unanswered questions expire, and `--no-ask` disables this lane.
 
 **At risk** names detected failed-tool loops, long-running turns, uncommitted work and conflicting
 completion evidence. Waiting on the reader takes precedence over those categories; the session
-still carries its observed details. Quota pressure and shared labels appear in the separate board
-group. A quiet row is never promoted into proof that nothing is waiting. Claude, Codex, Copilot, Cursor, OpenCode and Pi have wait-reporting paths; the coverage detail names
+still carries its observed details. The separate board group warns when a label covers multiple
+measured locations, or when some members' locations were not measured. Sessions in one measured
+directory or repository need no label warning; worktree names still distinguish checkouts.
+Two sessions working or waiting in the same measured checkout get a concurrent-session warning.
+Each warning links its members by title, worktree, id and start time, without publishing directories.
+It never absorbs their stops, ends or tasks. A quiet row is never promoted into proof that nothing is waiting. Claude, Codex, Copilot, Cursor, OpenCode and Pi have wait-reporting paths; the coverage detail names
 conditions. OpenCode covers parent permissions with its project adapter; Pi covers persisted-session
 extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wait after restart.
 

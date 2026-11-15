@@ -32,9 +32,43 @@ def recorded(name: str) -> dict[str, Any]:
 
 
 class ProjectTest(unittest.TestCase):
+    def test_a_person_reads_location_evidence_instead_of_a_label_collision(self) -> None:
+        for source in ("working directory path", "git common directory"):
+            with self.subTest(source=source):
+                rows = [
+                    {
+                        "harness": "claude",
+                        "sid": f"audit-{i}",
+                        "project": "audits",
+                        "project_key": "measured-key",
+                        "project_identity_source": source,
+                        "worktree": str(i) if source == "git common directory" else None,
+                        "state": "idle",
+                    }
+                    for i in range(9)
+                ]
+                payload = {"sessions": rows}
+                brief = terminal_project.derive(payload, {}, label="audits")
+                self.assertEqual("", brief["warning"])
+                self.assertNotIn(
+                    "shared location is not established",
+                    "\n".join(terminal_project.render(brief, caller=("claude", "audit-0"))),
+                )
+                rows[-1]["project_key"] = "audits"
+                rows[-1]["project_identity_source"] = "collector project label"
+                brief = terminal_project.derive(payload, {}, label="audits")
+                self.assertIn("Location not measured for 1 session", brief["warning"])
+                self.assertNotIn("2 measured locations", brief["warning"])
+                rows[-1]["project_key"] = "different-key"
+                rows[-1]["project_identity_source"] = source
+                brief = terminal_project.derive(payload, {}, label="audits")
+                self.assertIn("2 measured locations", brief["warning"])
+                self.assertEqual(9, len(brief["members"]))
+
     def test_a_person_reads_the_board_members_counts_order_and_brief(self) -> None:
         for fixture in ("terminal-project", "terminal-project-fo"):
             expected = json.loads((FIXTURES / (fixture + ".json")).read_text())
+            expected["warning"] = "Location not measured for 4 sessions with this display label"
             for name in ("data-" + fixture, "sessions-" + fixture):
                 with self.subTest(fixture=fixture, name=name):
                     self.assertEqual(
@@ -196,7 +230,7 @@ class ProjectTest(unittest.TestCase):
             "terminal-project", terminal_project.project_key(payload, "terminal-project")
         )
         self.assertEqual(4, len(brief["members"]))
-        self.assertIn("shared location is not established", brief["warning"])
+        self.assertIn("Location not measured for 4 sessions", brief["warning"])
 
     def test_a_person_is_not_told_attention_is_clear_without_complete_evidence(self) -> None:
         for context in (
