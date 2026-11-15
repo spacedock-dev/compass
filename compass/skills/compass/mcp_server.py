@@ -387,7 +387,7 @@ def _open(url: str, data: bytes | None, timeout: float) -> tuple[int, bytes] | N
         path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
         status, body, retry = loopback_transport._exchange(  # noqa: SLF001 — needs Retry-After
             "POST" if data is not None else "GET",
-            parsed.port or 80,
+            80 if parsed.port is None else parsed.port,
             path,
             data,
             headers={"Content-Type": "application/json"} if data is not None else {},

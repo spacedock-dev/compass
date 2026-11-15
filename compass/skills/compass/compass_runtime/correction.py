@@ -157,16 +157,26 @@ def _strip_openers(text: str) -> str:
 
 
 def _redact_joined(text: str) -> str:
-    """`records.redact_secrets`, also tried behind each hyphen or underscore of a token."""
+    """Redact prefixed credentials behind a token's hyphens and underscores too."""
 
     def one(match: re.Match[str]) -> str:
         token = match.group(0)
+        out: list[str] = []
+        cursor = 0
         for k, char in enumerate(token):
-            if char in "-_":
-                tail = token[k + 1 :]
-                if tail and (marked := records.redact_secrets(tail)) != tail:
-                    return token[: k + 1] + marked
-        return token
+            start = k + 1
+            if char not in "-_" or start < cursor:
+                continue
+            # Reuse the formatting-free view's bounded, anchored matching. A full
+            # redaction of every suffix rescanned separator-heavy innocent text.
+            if token.startswith(records._SECRET_OPENERS, start):  # noqa: SLF001
+                window = token[start : start + records._CUT_MATCH_LONGEST]  # noqa: SLF001
+                secret = records._SECRET_RE.match(window)  # noqa: SLF001
+                if secret is not None and (marked := records._mark_secret(secret)) is not None:  # noqa: SLF001
+                    out.extend((token[cursor:start], marked))
+                    cursor = start + secret.end()
+        out.append(token[cursor:])
+        return "".join(out)
 
     return _JOINED.sub(one, records.redact_secrets(text))
 

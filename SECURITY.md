@@ -24,7 +24,8 @@ a Claude `Notification` payload to the dashboard, `event_hook.py` posts command-
 events for Claude and Codex, `agy_hook.py` posts Antigravity's hook events, and
 `statusline_hook.py` posts Antigravity's status-line state. All four share one transport, so the
 loopback check, the proxy suppression and the redirect refusal have a single implementation.
-They accept only literal IPv4 `127.0.0.1`. One monotonic two-second budget covers connect,
+They accept only literal IPv4 `127.0.0.1` with a port from 1 through 65535. An omitted
+port defaults to 80; an explicit port zero is refused. One monotonic two-second budget covers connect,
 send, response headers and bounded body reads, so a peer making slow progress cannot extend a
 hook's wait. Transport failures still produce no hook output and exit zero.
 The terminal client (`terminal_client.py`, what a short command such as `--version` and the later

@@ -17,7 +17,7 @@ from unittest import mock
 
 import mcp_server
 import notify_hook
-from compass_runtime import correction, records
+from compass_runtime import correction, loopback_transport, records
 
 from .test_mcp_server import _call, _Harness, _Stdout
 
@@ -26,6 +26,84 @@ REAL_TIME_TESTS = True
 
 
 class EdgeDeadlineTest(unittest.TestCase):
+    def test_sendall_uses_remaining_exchange_budget(self) -> None:
+        for edge in ("hook", "mcp"):
+            with self.subTest(edge=edge):
+                self.stalled_write(edge)
+
+    def stalled_write(self, edge: str) -> None:
+        budget = 1.0
+        socket_type = notify_hook._Socket if edge == "hook" else loopback_transport._Socket
+        connect = socket_type.connect
+        accepted = threading.Event()
+        stopped = threading.Event()
+
+        def slow_connect(sock: socket.socket, address: tuple[str, int]) -> None:
+            # Spend most of the exchange before the real write. Buffer limits alone
+            # still accept a 64 KiB body on macOS, so the body must exceed that reserve.
+            time.sleep(0.65)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024)
+            connect(sock, address)
+
+        with socket.socket() as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            listener.settimeout(3)
+
+            def serve() -> None:
+                with contextlib.suppress(OSError), listener.accept()[0]:
+                    accepted.set()
+                    stopped.wait(3)
+
+            worker = threading.Thread(target=serve)
+            worker.start()
+            url = f"http://127.0.0.1:{listener.getsockname()[1]}/api/notify"
+            payload = b"x" * (2 * 1024 * 1024)
+            try:
+                with (
+                    mock.patch.object(socket_type, "connect", slow_connect),
+                    mock.patch.object(notify_hook, "TIMEOUT_SEC", budget),
+                ):
+                    started = time.monotonic()
+                    if edge == "hook":
+                        self.assertFalse(notify_hook.forward(url, payload))
+                    else:
+                        self.assertIsNone(mcp_server._request(url, data=payload, timeout=budget))
+                    elapsed = time.monotonic() - started
+                self.assertTrue(accepted.is_set())
+                self.assertLess(elapsed, budget + 0.4)
+            finally:
+                stopped.set()
+                worker.join(4)
+                self.assertFalse(worker.is_alive())
+
+    def test_explicit_zero_port_never_connects(self) -> None:
+        for port in ("0", "-1", "65536", "invalid"):
+            url = f"http://127.0.0.1:{port}/api/notify"
+            with (
+                self.subTest(port=port),
+                mock.patch.object(socket.socket, "connect", side_effect=OSError) as connect,
+            ):
+                self.assertFalse(notify_hook.forward(url, b"{}"))
+                self.assertIsNone(mcp_server._request(url, data=None, timeout=0.1))
+                connect.assert_not_called()
+                self.assertFalse(notify_hook.is_loopback_url(url))
+        for authority, expected in (
+            ("127.0.0.1", 80),
+            ("127.0.0.1:1", 1),
+            ("127.0.0.1:65535", 65535),
+        ):
+            url = f"http://{authority}/api/notify"
+            with self.subTest(authority=authority):
+                self.assertTrue(notify_hook.is_loopback_url(url))
+                with mock.patch.object(socket.socket, "connect", side_effect=OSError) as connect:
+                    self.assertFalse(notify_hook.forward(url, b"{}"))
+                    connect.assert_called_once_with(("127.0.0.1", expected))
+                    connect.reset_mock()
+                    self.assertIsNone(mcp_server._request(url, data=None, timeout=0.1))
+                    connect.assert_called_once_with(("127.0.0.1", expected))
+
     def test_dripping_headers_and_bodies_end_at_the_exchange_deadline(self) -> None:
         for edge in ("hook", "mcp"):
             for phase in ("headers", "body", "chunks"):
@@ -263,6 +341,15 @@ class McpAdmissionTest(unittest.TestCase):
 
 
 class CorrectionBoundTest(unittest.TestCase):
+    def test_separator_heavy_under_limit_input_is_fast(self) -> None:
+        for tail in ("key", "sk-ant-" + "1" * 3):
+            with self.subTest(tail=tail):
+                started = time.monotonic()
+                text = correction.neutralised("a-" * 2040 + tail, 240)
+                self.assertLess(time.monotonic() - started, 0.5)
+                self.assertTrue(text)
+                self.assertLessEqual(len(text), 241)
+
     def test_a_megabyte_of_separators_is_processed_within_a_small_budget(self) -> None:
         script = (
             "from compass_runtime.correction import neutralised; neutralised('a-_' * 349526, 240)"

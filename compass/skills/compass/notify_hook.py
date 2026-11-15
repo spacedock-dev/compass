@@ -427,9 +427,11 @@ def is_loopback_url(url: str) -> bool:
     """
     try:
         parsed = urllib.parse.urlsplit(url)
+        port = 80 if parsed.port is None else parsed.port
+        host = parsed.hostname or ""
     except ValueError:
         return False
-    return parsed.scheme == "http" and (parsed.hostname or "") in LOOPBACK_HOSTS
+    return parsed.scheme == "http" and host in LOOPBACK_HOSTS and 1 <= port <= 65535
 
 
 class _Socket(socket.socket):
@@ -475,7 +477,7 @@ def forward(url: str, payload: bytes, headers: dict[str, str] | None = None) -> 
     conn = None
     try:
         parsed = urllib.parse.urlsplit(url)
-        port = parsed.port or 80
+        port = 80 if parsed.port is None else parsed.port
         deadline = time.monotonic() + TIMEOUT_SEC
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=TIMEOUT_SEC)
         with _Socket(deadline) as sock:
