@@ -767,6 +767,27 @@ def _codex_non_turn_record(record_type: object, payload: dict[str, Any], closed:
     return kind == "item_completed" and isinstance(turn, str) and turn in closed
 
 
+def _valid_codex_shell_body(p: dict[str, Any]) -> bool:
+    if p.get("type") == "custom_tool_call":
+        # exec input is JavaScript; accepting it never evaluates or infers its commands.
+        body = p.get("input")
+        return isinstance(body, str) and bool(body.strip())
+    body = p.get("arguments")
+    if not isinstance(body, str):
+        return False
+    try:
+        arguments = json.loads(body)
+    except (ValueError, RecursionError):
+        return False
+    if not isinstance(arguments, dict):
+        return False
+    if p.get("name") == "write_stdin":
+        session_id = arguments.get("session_id")
+        return isinstance(session_id, int) and not isinstance(session_id, bool)
+    command = arguments.get("command" if p.get("name") == "shell_command" else "cmd")
+    return isinstance(command, str) and bool(command.strip())
+
+
 def _update_codex_shell_calls(
     pending: dict[tuple[str, str], tuple[float, str]],
     t: object,
@@ -787,11 +808,15 @@ def _update_codex_shell_calls(
             # measured shapes live in docs/captures/codex/shell-in-flight-macos.jsonl.
             if pt in ("function_call_output", "custom_tool_call_output"):
                 pending.pop((pt.removesuffix("_output"), call_id), None)
-            elif ep and (
-                (pt == "custom_tool_call" and p.get("name") == "exec")
-                or (
-                    pt == "function_call"
-                    and p.get("name") in ("exec_command", "shell_command", "write_stdin")
+            elif (
+                ep
+                and _valid_codex_shell_body(p)
+                and (
+                    (pt == "custom_tool_call" and p.get("name") == "exec")
+                    or (
+                        pt == "function_call"
+                        and p.get("name") in ("exec_command", "shell_command", "write_stdin")
+                    )
                 )
             ):
                 pending[(pt, call_id)] = (ep, p["name"])

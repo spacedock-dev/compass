@@ -43,7 +43,11 @@ class CodexInFlightTest(RuntimeTestCase):
                 "name": name,
                 "input" if custom else "arguments": "await tools.exec_command(...)"
                 if custom
-                else json.dumps({"cmd": "sleep 300"}),
+                else json.dumps(
+                    {"session_id": 123}
+                    if name == "write_stdin"
+                    else {"command" if name == "shell_command" else "cmd": "sleep 300"}
+                ),
             },
         )
 
@@ -87,6 +91,38 @@ class CodexInFlightTest(RuntimeTestCase):
                 row = self._collect([self._call(name=name)])
                 self.assertEqual("working", row["state"])
                 self.assertEqual(f"running {name}", row["state_detail"])
+
+    def test_missing_or_invalid_bodies_cannot_extend_work(self) -> None:
+        for name in ("exec", "exec_command", "shell_command", "write_stdin"):
+            invalid: list[Any] = [None, {}, "", "  "]
+            if name != "exec":
+                invalid += ["{oops", "[]", "null", "{}"]
+                field = {
+                    "exec_command": "cmd",
+                    "shell_command": "command",
+                    "write_stdin": "session_id",
+                }[name]
+                values = [None, "", " ", 42] if name != "write_stdin" else [None, True, "123", 1.5]
+                invalid += [json.dumps({field: value}) for value in values]
+            for body in invalid:
+                with self.subTest(name=name, body=body):
+                    call = self._call(name=name)
+                    key = "input" if name == "exec" else "arguments"
+                    if body is None:
+                        call["payload"].pop(key)
+                    else:
+                        call["payload"][key] = body
+                    self.assertEqual("idle", self._collect([call])["state"])
+
+    def test_custom_exec_is_javascript_and_stdin_chars_are_optional(self) -> None:
+        for body in ("doSomething()", "{}", "[]"):
+            call = self._call()
+            call["payload"]["input"] = body
+            self.assertEqual("working", self._collect([call])["state"])
+        for arguments in ({"session_id": 123}, {"session_id": 123, "chars": ""}):
+            call = self._call(name="write_stdin")
+            call["payload"]["arguments"] = json.dumps(arguments)
+            self.assertEqual("working", self._collect([call])["state"])
 
     def test_only_the_matching_output_retires_the_call(self) -> None:
         for name in ("exec", "exec_command"):
