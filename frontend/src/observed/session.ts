@@ -103,15 +103,15 @@ export function pageTitleOf(source: Row): string {
 }
 
 /* One row of the model, from one payload row. `asks` are the exact requests that belong to it,
-   `harness` the payload's own row about the harness that published it, and `shared` how many rows carry
-   its label. Nothing here reads the DOM, the clock or a store: a figure is derived from the payload it
+   `harness` the payload's own row about the harness that published it, and `shared` the label's
+   location disclosure. Nothing here reads the DOM, the clock or a store: a figure is derived from the payload it
    arrived in, so the same payload always draws the same page. */
 export function observeSession(
   source: Row,
   asks: readonly Row[],
   harness: Row | undefined,
   generated: number | null,
-  shared: number,
+  shared: string,
 ): ObservedSession {
   const ended = endedAt(source) !== null;
   const state = source['state'];
@@ -197,10 +197,7 @@ export function observeSession(
     if (source['dirty'] && Number.isInteger(changed) && (changed as number) >= 0)
       git = `${String(changed)} changed entries`;
   }
-  const sharedText =
-    shared > 1
-      ? `${String(shared)} sessions share this display label; shared location is not established`
-      : '';
+  const sharedText = shared;
   const turn: Row = isRecord(source['turn']) ? source['turn'] : {};
   const turnElapsed = trimmed(turn['elapsed_h']);
   const turnEta = trimmed(turn['eta_h']);

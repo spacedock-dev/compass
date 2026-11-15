@@ -1,3 +1,4 @@
+import { restateRecordedLocationNotes } from '../../test/location_departure';
 import { disclosureReadings, normalizeDisclosures } from '../../test/disclosures';
 import { withoutCodexRecordedStops } from '../../test/codexRecordedStop';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +94,7 @@ function legacySummary(payload: unknown, raw?: (html: string) => void): Summary 
   const template = document.createElement('template');
   template.innerHTML = legacy.sessionsHtml(payload);
   projectRecordedRowOpener(template.content, payload);
+  restateRecordedLocationNotes(template.content);
   raw?.(template.innerHTML);
   retractSessionCopies(template.content);
   const header = template.content.querySelector('.next-operations-header');
@@ -246,7 +248,7 @@ describe('the Sessions screen reads as the legacy screen does, over generated pa
       seen.ended += (html.match(/NOW · ENDED/g) ?? []).length;
       seen.asked += (text.match(/BLOCKED · /g) ?? []).length;
       seen.drift += (text.match(/Drift · /g) ?? []).length;
-      seen.shared += (text.match(/share this display label/g) ?? []).length;
+      seen.shared += (text.match(/Location not measured for/g) ?? []).length;
       seen.goalTyped += (text.match(/GOAL · YOUR WORDS|GOAL · FROM YOUR PROMPT/g) ?? []).length;
       seen.annotationsOff += (text.match(/Annotations off/g) ?? []).length;
     }

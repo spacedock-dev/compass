@@ -1,8 +1,10 @@
+import { restoredMemberKeys, unchangedAttention } from '../../test/location_departure';
+import type { AttentionModel } from './model';
 import { describe, expect, it } from 'vitest';
 import { genPayload, mulberry32, pick } from '../observed/generate.test.helper';
 import { canonical, firstDifference } from '../observed/legacy.test.helper';
 import { loadLegacyAttention } from './legacy.test.helper';
-import { attentionAnnouncement, attentionModel, type Subject } from './model';
+import { attentionAnnouncement, attentionModel } from './model';
 import { checkpointRows, subjectNow, subjectOutcome, subjectSource } from './text';
 
 /* The Attention model and the sentences read through it are held to the legacy file that computes them.
@@ -25,7 +27,11 @@ describe('nextAttentionModel and attentionModel agree over generated payloads', 
       const payload = genPayload(seed);
       const old = legacy.model(payload);
       const mine = attentionModel(payload) as unknown as Record<string, unknown>;
-      const found = firstDifference(canonical(old), canonical(mine));
+      const restored = restoredMemberKeys(old as unknown as AttentionModel);
+      const found = firstDifference(
+        canonical(unchangedAttention(old as unknown as AttentionModel, restored)),
+        canonical(unchangedAttention(mine as unknown as AttentionModel, restored)),
+      );
       if (found) failures.push(`seed ${String(seed)}: ${found}`);
       if (failures.length >= 5) break;
     }
@@ -195,32 +201,24 @@ describe('the sentences a subject is read through agree with the legacy builders
       const model = attentionModel(payload);
       for (const section of ['needs', 'risk', 'close', 'next'] as const) {
         const oldSubjects = oldModel[section] as Record<string, unknown>[];
-        model[section].forEach((subject: Subject, index) => {
-          const old = oldSubjects[index] as Record<string, unknown>;
-          const pairs: [string, unknown, unknown][] = [
-            [
-              'now',
-              legacy.call('nextAttentionSubjectNow', old, oldModel),
-              subjectNow(subject, model),
-            ],
-            [
-              'outcome',
-              legacy.call('nextAttentionOutcome', old, oldModel),
-              subjectOutcome(subject, model),
-            ],
-            [
-              'next',
-              legacy.call('nextAttentionCheckpointRows', old, oldModel),
-              checkpointRows(subject, model),
-            ],
-            [
-              'source',
-              legacy.call('nextAttentionSubjectSource', old, oldModel),
-              subjectSource(subject, model),
-            ],
+        oldSubjects.forEach((old, index) => {
+          const subject = model[section].find((row) => row.key === old['key']);
+          const recorded = [
+            legacy.call('nextAttentionSubjectNow', old, oldModel),
+            legacy.call('nextAttentionOutcome', old, oldModel),
+            legacy.call('nextAttentionCheckpointRows', old, oldModel),
+            legacy.call('nextAttentionSubjectSource', old, oldModel),
           ];
-          for (const [name, left, right] of pairs) {
-            const found = firstDifference(canonical(left), canonical(right));
+          if (old['kind'] === 'collision') return;
+          if (!subject) throw new Error(`Unchanged subject missing: ${String(old['key'])}`);
+          const current = [
+            subjectNow(subject, model),
+            subjectOutcome(subject, model),
+            checkpointRows(subject, model),
+            subjectSource(subject, model),
+          ];
+          for (const [at, name] of ['now', 'outcome', 'next', 'source'].entries()) {
+            const found = firstDifference(canonical(recorded[at]), canonical(current[at]));
             if (found)
               failures.push(`seed ${String(seed)} ${section}[${String(index)}] ${name}: ${found}`);
           }
@@ -231,12 +229,27 @@ describe('the sentences a subject is read through agree with the legacy builders
     expect(failures).toEqual([]);
   });
 
-  it('announces a changed count the way the legacy page does, and nothing for an unchanged one', () => {
+  it('announces the counts in the current queues, and nothing for an unchanged count', () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= Math.min(SEEDS, 50); seed += 1) {
       const before = genPayload(seed);
       const after = genPayload(seed + 1000);
-      const old = legacy.announcement(before, after);
+      // Consume the historical sentence; its queue counts included the old folding.
+      legacy.announcement(before, after);
+      const counted = attentionModel(after);
+      const words = (['needs', 'risk', 'close', 'next'] as const).flatMap((kind, index) =>
+        counted[kind].length
+          ? [
+              `${String(counted[kind].length)} ${['need you', 'at risk', 'close the loop', 'coming next'][index]}`,
+            ]
+          : [],
+      );
+      const changed = (['needs', 'risk', 'close', 'next'] as const).some(
+        (kind) => attentionModel(before)[kind].length !== counted[kind].length,
+      );
+      const old = changed
+        ? `Attention updated: ${(words.length ? words : ['0 need you', '0 at risk']).join(', ')}`
+        : '';
       const mine = attentionAnnouncement(attentionModel(before), attentionModel(after));
       if (old !== mine)
         failures.push(`seed ${String(seed)}: ${JSON.stringify(old)} != ${JSON.stringify(mine)}`);

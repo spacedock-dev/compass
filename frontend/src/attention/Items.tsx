@@ -1,6 +1,7 @@
 import { Card } from '../ui/card';
 import { CopyControl, RaiseControl, resumeCommand } from '../controls';
 import type { BoardRisk, Row } from '../observed';
+import { nextNumber } from '../api/bootstrap';
 import { AttentionLink } from './AttentionLink';
 import type { AttentionModel, Subject } from './model';
 import { riskRow } from './subjects';
@@ -172,6 +173,36 @@ export function RiskItem({
         </div>
         <div className="next-attention-risk-observation">
           <p>{risk.nowText}</p>
+          {row.subject?.kind === 'collision' ? (
+            <ul>
+              {row.subject.sessions.map((session) => {
+                const harness = String(session['harness'] || '');
+                const sid = String(session['sid'] || '');
+                const started = nextNumber(session['started_at']);
+                const date = new Date((started ?? Number.NaN) * 1000);
+                const stamp =
+                  started !== null && started > 0 && Number.isFinite(date.getTime())
+                    ? date.toISOString()
+                    : 'not published';
+                return (
+                  <li key={JSON.stringify([harness, sid])}>
+                    <AttentionLink
+                      route={{
+                        view: 'session',
+                        project: String(session['project'] || ''),
+                        harness,
+                        session: sid,
+                      }}
+                      focusKey={`attention:subject:${row.key}:member:${harness}:${sid}`}
+                      fallback="attention:section:risk"
+                    >
+                      {`${String(session['title'] || '').trim() || 'Title not published'} · ${String(session['worktree'] || 'No worktree published')} · ${harness}:${sid} · Start time ${stamp}`}
+                    </AttentionLink>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
           <div className="next-attention-risk-detail">
             {row.signals.map((signal, position) => (
               <span key={position}>

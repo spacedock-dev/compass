@@ -267,7 +267,7 @@ describe('the counts are read from the rows the page renders', () => {
     expect(lanes.history.map((row) => row.sid)).toEqual(['new', 'old']);
   });
 
-  it('ranks projects needs-first and states a shared label as a collision, but not for a blank label', () => {
+  it('ranks projects needs-first and states an unmeasured shared label, but not for a blank label', () => {
     const grouped = observe(
       board([
         { harness: 'h', sid: '1', project: 'same', state: 'idle' },
@@ -282,7 +282,7 @@ describe('the counts are read from the rows the page renders', () => {
       grouped.boardRisks.filter((risk) => risk.kind === 'collision').map((risk) => risk.identity),
     ).toEqual(['same display label']);
     expect(grouped.sessions[0]?.sharedLabelText).toBe(
-      '2 sessions share this display label; shared location is not established',
+      'Location not measured for 2 sessions with this display label',
     );
   });
 });

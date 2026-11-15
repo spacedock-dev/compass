@@ -2,7 +2,7 @@
    wording, because the same fact worded two ways is two promises. */
 
 export const DUPLICATE_LABEL_LIMIT =
-  "Same label is not proof of the same directory: the label is the last two segments of each session's path, so sibling worktrees read alike.";
+  'A label can cover several locations. Only measured location keys establish a shared directory or repository; worktree names distinguish checkouts within a repository.';
 
 export const UNREAD_SOURCE_NOTE =
   "Compass opened this session's store and could not read every part of it. What it names is missing here rather than empty; the rest of the row was read normally.";

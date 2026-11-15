@@ -1,3 +1,4 @@
+import { restateRecordedLocationNotes } from '../../test/location_departure';
 import { describe, expect, it } from 'vitest';
 import { genPayload } from '../observed/generate.test.helper';
 import { restateLiveOpener } from '../../test/recordedCommandOpener';
@@ -84,7 +85,9 @@ async function mine(payload: unknown): Promise<Summary> {
 function legacy(payload: unknown): Summary {
   const app = loadLegacyApp();
   app.setData(payload);
-  return summarize(parseHtml(app.call<string>('nextProjectsView', {})));
+  const root = parseHtml(app.call<string>('nextProjectsView', {}));
+  restateRecordedLocationNotes(root);
+  return summarize(root);
 }
 
 describe('the Projects list reads as the legacy list does, over generated boards', () => {
@@ -105,7 +108,7 @@ describe('the Projects list reads as the legacy list does, over generated boards
       reach.active += (text.match(/"kind":"active"/g) ?? []).length;
       reach.history += (text.match(/"history":true/g) ?? []).length;
       reach.more += (text.match(/other sessions?"/g) ?? []).length;
-      reach.shared += (text.match(/share this display label/g) ?? []).length;
+      reach.shared += (text.match(/Location not measured for/g) ?? []).length;
       reach.ended += (text.match(/ended/g) ?? []).length;
       if (JSON.stringify(old) !== JSON.stringify(now)) {
         const left = JSON.stringify(old);

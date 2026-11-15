@@ -161,6 +161,25 @@ function firstDifference(left: string, right: string): string {
   return `near ${JSON.stringify(left.slice(Math.max(0, at - 90), at + 160))} vs ${JSON.stringify(right.slice(Math.max(0, at - 90), at + 160))}`;
 }
 
+function unchangedView(summary: Summary, restored: Set<string>): Summary {
+  const sections = summary.sections
+    .map((section) => {
+      const items = section.items.filter(
+        (item) =>
+          item.kind !== 'collision' && item.kind !== 'checkout' && !restored.has(item.subjectKey),
+      );
+      if (!['close', 'next'].includes(section.name)) return { ...section, items };
+      return {
+        ...section,
+        items: items.map((item) => ({ ...item, hidden: false })),
+        heading: section.heading.replace(/ \(\d+\)$/, ''),
+        toggle: null,
+      };
+    })
+    .filter((section) => section.items.length || section.name === 'risk');
+  return { ...summary, sections };
+}
+
 const CASES = 40;
 const SEEDS = CASES;
 
@@ -179,8 +198,30 @@ describe('the Attention screen reads as the legacy screen does, over generated p
       for (const [expanded, capability] of arms) {
         const old = legacySummary(payload, expanded, capability);
         const mine = await reactSummary(withoutCodexRecordedStops(payload), expanded, capability);
-        const left = JSON.stringify(old);
-        const right = JSON.stringify(mine);
+        const existing = new Set(
+          old.sections
+            .flatMap((section) => section.items)
+            .filter((item) => item.kind !== 'collision')
+            .map((item) => item.subjectKey),
+        );
+        const labels = new Map<string, Record<string, unknown>[]>();
+        for (const row of payload['sessions'] as Record<string, unknown>[]) {
+          const label = String(row['project'] ?? '');
+          if (label.trim()) labels.set(label, [...(labels.get(label) ?? []), row]);
+        }
+        const restored = new Set(
+          [...labels.values()]
+            .filter((rows) => rows.length > 1)
+            .flatMap((rows) =>
+              rows.map(
+                (row) =>
+                  `session:${JSON.stringify([String(row['harness'] || ''), String(row['sid'] || '')])}`,
+              ),
+            )
+            .filter((key) => !existing.has(key)),
+        );
+        const left = JSON.stringify(unchangedView(old, restored));
+        const right = JSON.stringify(unchangedView(mine, restored));
         if (left !== right && !DEVIATIONS.some((d) => d.seed === seed)) {
           failures.push(
             `seed ${String(seed)} (${expanded.length ? 'expanded' : 'collapsed'}, capability ${capability || 'none'}): ${firstDifference(left, right)}`,

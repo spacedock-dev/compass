@@ -41,6 +41,7 @@ import { chromium } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { openPage } from './support/browser.mjs';
 import { goldenFor, jsonSafe, normalise } from './support/golden.mjs';
+import { recordedLocationNotes } from './support/location-deviations.mjs';
 import { recordedName } from '../test/recorded-name.ts';
 import {
   instrumentResources,
@@ -310,7 +311,7 @@ try {
     return {
       mine,
       old: projectWordDeviation(
-        golden.observe(key),
+        recordedLocationNotes(golden.observe(key), holder.body, project),
         projectGlossEnabled(holder.body, project),
         [holder.body, holder.contexts],
         projectInstructionHeading(

@@ -23,7 +23,8 @@ export const KIND_LABELS = new Map<string, string>([
   ['loop', 'Repeated tool failures'],
   ['quota', 'Quota pressure'],
   ['long-turn', 'Long-running turn'],
-  ['collision', 'Identity collision'],
+  ['collision', 'Label shared across locations'],
+  ['checkout', 'Concurrent sessions in one checkout'],
   ['quiet-launch', 'Quiet delegated launch'],
   ['stop-dirty', 'Stop observed with uncommitted work'],
   ['stop-clean', 'Stop observed; git state clean'],
@@ -211,10 +212,10 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
   if (signal.kind === 'quiet-launch') {
     return { text: text(detail.text), note: 'Recorded activity only; not a process check.' };
   }
-  if (signal.kind === 'collision') {
+  if (signal.kind === 'collision' || signal.kind === 'checkout') {
     return {
-      text: `${String(detail.memberCount)} exact sessions share ${String(detail.label || '')} display label`,
-      note: 'Identity scope only; shared location is not established',
+      text: text(detail.text),
+      note: 'Compare title, worktree, id and start time',
     };
   }
   if (signal.kind.startsWith('stop-')) return { text: closeText(signal.kind, detail), note: '' };
@@ -237,8 +238,7 @@ function signalNow(signal: Signal, subject: Subject, model: AttentionModel): Now
   return { text: 'Source signal observed', note: '' };
 }
 
-/* Which session a signal speaks about, when a subject carries more than one (a collision, whose members
-   each contribute a stop or a task). */
+/* A task may stay attached to a stronger signal on its own session. Location warnings never own it. */
 function signalAttribution(signal: Signal, model: AttentionModel): string {
   const session = signal.detail.session;
   return session ? identityText({ session }, model) : '';
@@ -301,6 +301,8 @@ export function subjectSource(subject: Subject, model: AttentionModel): string {
 /* The session a subject opens, or the Sessions list when the subject names none exactly. A display id is
    never a route: it needs a project and a sid. */
 export function subjectRoute(subject: Subject): RouteInput {
+  if (subject.kind === 'collision')
+    return { view: 'project', project: subject.identity?.project ?? '' };
   const identity = subjectIdentity(subject);
   const project = text(identity && identity['project']);
   const harness = text(identity && identity['harness']);

@@ -39,7 +39,7 @@ at the Intent heading for an untouched draft, otherwise at its goal box, in one 
 The project page uses the cockpit's information architecture: a left Scope rail, a persistent
 Where this project stands briefing with Current task, Running now, Needs you and Latest result, and Now / Course /
 Decisions / Console tabs beneath it. This preserves the recovery briefing while retaining v2's
-rule that every claim needs published evidence. The shared-label caveat stays with project identity.
+rule that every claim needs published evidence. The location disclosure stays with project identity.
 
 | Retained v2 surface | Cockpit home |
 |---|---|
@@ -615,8 +615,8 @@ distinct workflow name, in the order the names first appear in the payload. Fold
 one sequence would invent an order neither workflow declared. Keeping only the first strip would
 silently hide work.
 
-The detail header repeats the shared-label caveat from the overview. Navigation does not turn a
-display label into proof that its sessions came from the same directory.
+The detail header repeats the overview's measured-location disclosure. A label alone does not
+establish a directory; a measured location key can establish one directory or repository.
 
 Repeated strips with the same workflow name do merge. The first strip establishes stage order, and
 stages found only on later strips append in their first-seen order. An entity slug appears once. A
@@ -1037,8 +1037,17 @@ cannot invent a question or authority.
 These rules operate on exact identity. Ask ownership resolves by full session ID and, when the ask
 publishes it, harness. An ask without a harness resolves only when its session ID has one payload
 match. Display label never owns the ask. A project display label is useful for grouping but is not
-a repository, directory, branch, worktree, or authority boundary. A same-label collision keeps its
-warning and exact member routes rather than choosing one session as the owner.
+a repository, directory, branch, worktree, or authority boundary. A shared label raises no warning
+when every member has one measured location key. Multiple measured locations raise a warning that
+counts only measured sessions. Unknown locations are disclosed separately, without counting their
+label fallbacks as locations. Location warnings link every member by title, worktree, id and start
+time; their heading opens the project.
+Two or more non-ended sessions working or waiting with measured provenance and the same opaque
+checkout key raise a concurrent-checkout warning. Worktree names are display text, not identity;
+a missing key cannot establish a shared checkout. The identity and inference rules are owned by
+[session identity](design-session-identity.md#checkout-evidence-is-distinct-from-repository-grouping).
+These board warnings never own a member's stop, end or task: those stay in the session's Close
+the loop or Coming next subject, unless its own stronger waiting or risk signal takes precedence.
 
 Absent optional facts leave no primary placeholder. A project with no Spacedock record omits the
 workflow wrapper instead of saying that a workflow source is unavailable. Session detail omits an

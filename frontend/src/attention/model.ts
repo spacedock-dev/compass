@@ -1,3 +1,4 @@
+import { locationWarnings } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
 import {
   delegatedWork,
@@ -167,6 +168,7 @@ const RISK_ORDER = new Map<string, number>([
   ['quota', 2],
   ['long-turn', 3],
   ['collision', 4],
+  ['checkout', 4],
   ['quiet-launch', 5],
 ]);
 
@@ -743,56 +745,37 @@ export function attentionModel(input: unknown): AttentionModel {
     if (!members.has(key)) members.set(key, { session, sourceIndex });
   }
   const harnessOrder = harnessOrderOf(payload);
-  const harnessRank = (harness: unknown): number => {
-    const index = harnessOrder.indexOf(String(harness || ''));
-    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
-  };
   for (const [label, members] of labels) {
     const memberRows = [...members.values()];
-    if (memberRows.length < 2) continue;
-    const memberSessions = memberRows.map((row) => row.session);
-    const memberKeys = memberSessions.map(sessionKey);
-    const identity = [...memberSessions].sort((left, right) => {
-      const byHarness = harnessRank(left['harness']) - harnessRank(right['harness']);
-      if (byHarness) return byHarness;
-      const sid = text(left['sid'] || '').localeCompare(text(right['sid'] || ''), 'en');
-      return sid || text(left['harness'] || '').localeCompare(text(right['harness'] || ''), 'en');
-    })[0] as Row;
-    const key = `collision:${label}`;
-    const lowest = Math.min(...memberRows.map((row) => row.sourceIndex));
-    riskSubjects.set(key, {
-      key,
-      stableId: key,
-      kind: 'collision',
-      section: 'risk',
-      primaryKind: 'collision',
-      signals: [
-        {
-          kind: 'collision',
-          section: 'risk',
-          sourceIndex: lowest,
-          detail: { label, memberCount: memberSessions.length },
-        },
-      ],
-      session: null,
-      sessions: memberSessions,
-      asks: [],
-      memberKeys,
-      sourceIndex: lowest,
-      identity: identity as unknown as Identity,
-    });
-  }
-
-  const collisionByMemberKey = new Map<string, Subject>();
-  for (const subject of riskSubjects.values()) {
-    if (subject.kind !== 'collision') continue;
-    for (const memberKey of subject.memberKeys ?? []) {
-      if (!collisionByMemberKey.has(memberKey)) collisionByMemberKey.set(memberKey, subject);
+    for (const warning of locationWarnings(memberRows.map((row) => row.session))) {
+      const key = `${warning.kind}:${label}`;
+      const lowest = Math.min(...memberRows.map((row) => row.sourceIndex));
+      riskSubjects.set(key, {
+        key,
+        stableId: key,
+        kind: 'collision',
+        section: 'risk',
+        primaryKind: warning.kind,
+        signals: [
+          {
+            kind: warning.kind,
+            section: 'risk',
+            sourceIndex: lowest,
+            detail: { label, memberCount: warning.members.length, text: warning.text },
+          },
+        ],
+        session: null,
+        sessions: [...warning.members],
+        asks: [],
+        sourceIndex: lowest,
+        identity: { harness: '', project: label, sid: '' },
+      });
     }
   }
 
   const riskRepresented = new Set<string>();
   for (const subject of riskSubjects.values()) {
+    if (subject.kind === 'collision') continue;
     for (const memberKey of subject.memberKeys ?? subject.sessions.map(sessionKey)) {
       riskRepresented.add(memberKey);
     }
@@ -803,13 +786,9 @@ export function attentionModel(input: unknown): AttentionModel {
     const key = sessionKey(session);
     const signal = stopSignal(session, sourceIndex);
     if (!signal || attachedStopKeys.has(key)) continue;
-    const winning = subjects.get(key) ?? riskSubjects.get(key) ?? collisionByMemberKey.get(key);
+    const winning = subjects.get(key) ?? riskSubjects.get(key);
     if (winning) {
-      winning.signals.push(
-        winning.kind === 'collision'
-          ? { ...signal, detail: { ...signal.detail, session } }
-          : signal,
-      );
+      winning.signals.push(signal);
       attachedStopKeys.add(key);
       continue;
     }
@@ -837,6 +816,7 @@ export function attentionModel(input: unknown): AttentionModel {
   const close = sorted(closeSubjects);
   const represented = new Set(needs.flatMap((subject) => subject.sessions.map(sessionKey)));
   for (const subject of risk) {
+    if (subject.kind === 'collision') continue;
     for (const memberKey of subject.memberKeys ?? subject.sessions.map(sessionKey)) {
       represented.add(memberKey);
     }
@@ -850,11 +830,7 @@ export function attentionModel(input: unknown): AttentionModel {
     const key = sessionKey(session);
     const checkpoint = publishedTask(session);
     if (!checkpoint || attachedTaskKeys.has(key)) continue;
-    const winning =
-      subjects.get(key) ??
-      riskSubjects.get(key) ??
-      closeSubjects.get(key) ??
-      collisionByMemberKey.get(key);
+    const winning = subjects.get(key) ?? riskSubjects.get(key) ?? closeSubjects.get(key);
     if (winning) {
       winning.signals.push({
         kind: 'task',

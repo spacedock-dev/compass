@@ -297,9 +297,9 @@ def _identity_from_root(config: RuntimeConfig, cwd: str, repo_root: str | None) 
 
 
 def _removed_worktree(cwd: str) -> tuple[str, str] | None:
-    """``(repository root, worktree name)`` for a path under a deleted linked worktree.
+    """Infer ``(repository root, worktree name)`` from a missing Claude layout.
 
-    The ``.git`` pointers are gone with the directory, so the only evidence is the
+    The directory may never have existed, so the only evidence is the
     ``<root>/.claude/worktrees/<name>`` layout Claude Code creates, and it counts
     only when ``<root>`` still holds a ``.git`` directory. Other harnesses' layouts
     are not guessed at, per
@@ -332,9 +332,10 @@ def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) ->
                 session["project"] = label
                 session["project_key"] = _project_identity_key("git:", root)
                 session["project_name"] = os.path.basename(root) or label
-                session["project_identity_source"] = "git common directory"
+                session["project_identity_source"] = "inferred Claude worktree layout"
                 session["worktree"] = name
         return
+    session["checkout_key"] = _project_identity_key("checkout:", checkout or cwd)
     session["project_key"] = identity["key"]
     session["project_name"] = identity["name"]
     session["project_identity_source"] = identity["source"]
@@ -593,6 +594,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "harness": harness,
         "project": project,
         "project_key": project,
+        "checkout_key": None,
         "project_name": project.rsplit("/", 1)[-1] or project,
         "project_identity_source": "collector project label",
         # The linked worktree's directory name; None for a main checkout, so a

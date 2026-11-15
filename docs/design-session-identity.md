@@ -573,13 +573,13 @@ The worktree name sits beside the project on the Sessions row and in the session
 the label no longer separates two sessions on one repository. It goes through the same
 credential sweep as `project_name`, because a directory name is operator text.
 
-A session whose worktree was removed afterwards has no `.git` pointer left to follow, so the
-pointers cannot place it. A working directory of the form `<root>/.claude/worktrees/<name>` whose
-`<root>` still holds a `.git` directory is filed under `<root>`'s repository with `<name>` as its
-worktree; that layout is Claude Code's own, and no other harness's layout is guessed at. A removed
-worktree elsewhere, or one whose repository is gone too, keeps the label of its own working
-directory. `apply_project_identity` reads the checkout once and the same result serves the key,
-the label and the worktree name.
+A missing working directory of the form `<root>/.claude/worktrees/<name>` can still
+file under `<root>` when that root holds a `.git` directory. This preserves its display
+label and worktree name, with provenance `inferred Claude worktree layout`. The layout
+proves neither a current checkout nor that the directory ever was a worktree. Its inferred
+repository grouping key does not establish a measured location or checkout identity.
+Other missing paths keep the label of their working directory. `apply_project_identity`
+reads the checkout once and reuses that result for the key, label and worktree name.
 
 Sessions rows draw the name as `worktree <name>` under the project, so the line is not an
 unexplained second one. Bookmarks keyed by the earlier `worktrees/<name>` label do not follow a
@@ -588,3 +588,19 @@ label finds nothing under it and is not migrated.
 
 Not changed: a session in a subdirectory of a main checkout keeps the label of its own working
 directory, as before. How writes inside an isolation worktree count is a separate ruling.
+
+
+### Checkout evidence is distinct from repository grouping
+
+`checkout_key` is a `checkout:` digest of the canonical checkout root, using the same
+normalization and hash helper as `project_key` in a separate namespace. Collection reuses
+the checkout it already resolved. Main and linked checkouts share a repository key but
+have different checkout keys, including two worktrees with the same directory name.
+A checkout and its subdirectories share a checkout key. A measured non-Git directory
+uses its canonical working directory; a missing or unusable directory has no checkout key.
+
+The board requires measured provenance and a checkout key before claiming concurrent
+work in one checkout. A missing key never falls back to a worktree name. Names remain
+display text; paths and keys never render. Grouping across different display labels
+remains outside this rule. Checkout evidence is collected locally, cannot be patched
+by lifecycle events, and does not enter observation history.

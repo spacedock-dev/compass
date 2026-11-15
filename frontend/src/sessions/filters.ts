@@ -1,3 +1,4 @@
+import { unmeasuredLocationNote, measuredLocation } from '../observed/location';
 import { nextNumber } from '../api/bootstrap';
 import { isRecord, promptCopied, trimmed, type Row } from '../observed';
 import { assignmentOf, sessionInstruction } from './intent';
@@ -509,12 +510,11 @@ export function projectLabel(value: string): string {
   return `Blank project label (${plural(value.length, 'character', 'characters')})`;
 }
 
-/* A label the rows of two or more locations carry. The row's own "N sessions share this display label"
-   counts sessions and never establishes a location; two distinct published `project_key` values do. */
+/* Only measured keys establish locations; a collector label fallback remains unknown. */
 export function sharedLocationLabels(indexed: readonly IndexedRow[]): Set<string> {
   const keys = new Map<string, Set<string>>();
   for (const one of indexed) {
-    const key = trimmed(one.row.source?.['project_key']);
+    const key = measuredLocation(one.row.source ?? {});
     if (!key) continue;
     const label = one.row.session.project;
     const found = keys.get(label) ?? new Set<string>();
@@ -529,6 +529,10 @@ export function sharedLocationLabels(indexed: readonly IndexedRow[]): Set<string
 export function projectOptions(indexed: readonly IndexedRow[], prepared: Prepared): Option[] {
   const counts = facetCounts(indexed, prepared, 'project');
   const shared = sharedLocationLabels(indexed);
+  const unmeasured = (label: string) =>
+    unmeasuredLocationNote(
+      indexed.filter((one) => one.row.session.project === label).map((one) => one.row.source ?? {}),
+    );
   const labels = [...new Set(indexed.map((one) => one.row.session.project))];
   const rank = (label: string) => (label === '' ? 2 : label.trim() ? 0 : 1);
   labels.sort((a, b) => rank(a) - rank(b) || collator.compare(a, b));
@@ -536,7 +540,9 @@ export function projectOptions(indexed: readonly IndexedRow[], prepared: Prepare
     value,
     label: projectLabel(value),
     count: counts.get(value) ?? 0,
-    note: shared.has(value) ? 'Label shared by more than one location' : '',
+    note: [shared.has(value) ? 'Label shared by more than one location' : '', unmeasured(value)]
+      .filter(Boolean)
+      .join('. '),
     disabled: false,
   }));
   for (const value of prepared.filters.project)

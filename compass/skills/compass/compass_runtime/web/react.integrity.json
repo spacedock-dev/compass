@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2328967,
+    "bytes": 2331807,
     "file": "react.html",
-    "sha256": "5d9394e5289070c10bd6bbbde7ba62a574d122127acda1418c1131a16ce71237"
+    "sha256": "b705b8130a031230d2f99a25814306e87cfa0e6f989e2a43c48f16c7cc42600c"
   },
   "format": 1,
   "frontend": "react",
@@ -355,7 +355,7 @@
       },
       {
         "file": "frontend/src/attention/Items.tsx",
-        "sha256": "17cb2eb898ac8a2019aa13b92bff34fdb0081cfc171490d9704fe4ad6674d436"
+        "sha256": "f3f7b681046f20309819f4bb33013b70c043b2709781d6f25ab3730830ef20c4"
       },
       {
         "file": "frontend/src/attention/attention.css",
@@ -371,7 +371,7 @@
       },
       {
         "file": "frontend/src/attention/model.ts",
-        "sha256": "1b49d075fc81060b789d3459a98435f3f77b4131d0cdd9731b30d5532313f8ed"
+        "sha256": "cdef2b390a61ec092df944567acc721e44b66efcbcd96dacaedc25b39123ea01"
       },
       {
         "file": "frontend/src/attention/reports.ts",
@@ -383,11 +383,11 @@
       },
       {
         "file": "frontend/src/attention/subjects.ts",
-        "sha256": "85c4f5725e0549769b5781b6096a4bc7b40533a7fb5ab4e81295e755a755f422"
+        "sha256": "d3b23ee53efadb92c80157fb15592dd297ae4918237e3ce050fdd74bc05c9392"
       },
       {
         "file": "frontend/src/attention/text.ts",
-        "sha256": "11a93af1bc4402f78d7e6b250d9849c68d1260279aa17bb9b6406654348c4f3b"
+        "sha256": "aa7aa1798dbfa7762576cd54c862831a56df00d46e71efc0c739e6325f920c07"
       },
       {
         "file": "frontend/src/capacity/CapacityStrip.tsx",
@@ -1018,12 +1018,16 @@
         "sha256": "339428dd45cf45603b8f01c926098a9035a3a49348ac0c43c48f9cc5301a171a"
       },
       {
+        "file": "frontend/src/observed/location.ts",
+        "sha256": "2dc2b953fabc89f2c22d788792ec8362469cd194b9facea9aa10b9d698451b40"
+      },
+      {
         "file": "frontend/src/observed/model.ts",
-        "sha256": "0425c0c6c30f81f86575b6285e4462cf3f9a68a734e505e42e6c45346c695969"
+        "sha256": "0a4a4a1b8d69c31e546bc5ea9d2ff02b4ccdfc2e06cf74151f1ec3bc2dbf7f10"
       },
       {
         "file": "frontend/src/observed/project.ts",
-        "sha256": "8cb63448ddced6fdaa50a4352f406b97c08edafe2f44b3a4b6b51dc2b2ad455e"
+        "sha256": "96df7251bca5eb9b2698c246116416a02bcb608d5fb3b84c2f8e9e69fc2a3f69"
       },
       {
         "file": "frontend/src/observed/select.ts",
@@ -1031,7 +1035,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "a7d59c1aff2644682b191f3160de98e5ba4099f90c2abc42e818e299813b9304"
+        "sha256": "90158158096ccfa2ba807f72c3cd4ef9d34c1330fa2d6cc3dc347d3fce01e6e3"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1271,7 +1275,7 @@
       },
       {
         "file": "frontend/src/sessions/filters.ts",
-        "sha256": "5b65bf96c90b132e894e21a85a8d23b2417e02ee8c42354315542c08fad51784"
+        "sha256": "dc933e141d1ee56e8fd28ceef7ccda49011027d586a75fb6d9c327608ff7cdd2"
       },
       {
         "file": "frontend/src/sessions/fullActivityKey.ts",
@@ -1291,7 +1295,7 @@
       },
       {
         "file": "frontend/src/sessions/notes.ts",
-        "sha256": "8bcdaf55aaa33a2339c8075f3de5e315e856b00a9ed189824c870ac861de73a7"
+        "sha256": "046d973e1137a488c97e23558f015e5c3ddfa62fdce1a0390e4a95151cee38a2"
       },
       {
         "file": "frontend/src/sessions/outline.ts",

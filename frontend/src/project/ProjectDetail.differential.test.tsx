@@ -1,3 +1,4 @@
+import { restateRecordedLocationNotes } from '../../test/location_departure';
 import {
   projectWordDeviation,
   projectGlossEnabled,
@@ -46,6 +47,7 @@ interface Summary {
 }
 
 function summarize(source: Element | DocumentFragment, tab: string): Summary {
+  restateRecordedLocationNotes(source);
   const article = normalizeDisclosures(source);
   const header = article.querySelector('.next-project-detail-header');
   const tree = article.querySelector('nav.next-cockpit-scope-tree');

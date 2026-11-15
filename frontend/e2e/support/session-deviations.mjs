@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { goldenFor, jsonSafe, normalise } from './golden.mjs';
+import { recordedLocationNotes } from './location-deviations.mjs';
 
 /* DEC-27's retracted controls and relocated explanation change only the recorded
    side. React observations retain every control and word, so regressions fail. */
@@ -22,6 +23,7 @@ export function sessionDeviations(proof, payload = () => ({})) {
 }
 
 export function normaliseSessionRecord(record, evidence = {}) {
+  record = recordedLocationNotes(record, evidence);
   const words = new Set();
   const collect = (value) => {
     if (
