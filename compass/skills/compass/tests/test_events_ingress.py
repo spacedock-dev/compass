@@ -1453,11 +1453,31 @@ class StatuslinePushTest(unittest.TestCase):
 
     def test_a_state_home_that_cannot_be_written_costs_a_duplicate_not_a_crash(self) -> None:
         self.write_capability()
-        with unittest.mock.patch.object(os, "makedirs", side_effect=OSError("read only")):
+        helper = "_windows_directory" if os.name == "nt" else "_owner_directory_fd"
+        real_directory = getattr(notify_hook, helper)
+        denied: list[str] = []
+
+        def read_only_directory(path: str, **kwargs: Any) -> Any:
+            if kwargs.get("create", True):
+                denied.append(path)
+                raise OSError("read only")
+            return real_directory(path, **kwargs)
+
+        with unittest.mock.patch.object(notify_hook, helper, side_effect=read_only_directory):
             self.push(self.payload())
+            first = self.posts.copy()
             self.posts.clear()
             self.push(self.payload())
-        self.assertTrue(self.posts, "a failed memo write must not stop the next push")
+        self.assertEqual([self.home, self.home], denied)
+        self.assertEqual(
+            [
+                "http://127.0.0.1:4553/api/usage",
+                "http://127.0.0.1:4553/api/events/antigravity",
+            ],
+            [url for url, _body, _headers in first],
+        )
+        self.assertEqual(first, self.posts, "a failed memo write must not stop the next push")
+        self.assertEqual({}, statusline_hook.read_memo(AGY_SESSION))
 
 
 class AntigravityHookTest(unittest.TestCase):

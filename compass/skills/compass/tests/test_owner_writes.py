@@ -65,14 +65,15 @@ class OwnerWritesTest(unittest.TestCase):
             with mock.patch.object(os, "open", spy_open):
                 runtime_io.atomic_write_owner_only(target, "payload")
 
-            self.assertEqual(1, len(opened_records))
-            tmp_path, flags, mode = opened_records[0]
+            temp_records = [record for record in opened_records if record[0].endswith(".tmp")]
+            self.assertEqual(1, len(temp_records))
+            tmp_path, flags, mode = temp_records[0]
             self.assertTrue(tmp_path.endswith(".tmp"))
             self.assertNotEqual(target, tmp_path)
             self.assertEqual(0o600, mode)
             # Verify randomized pattern: <target>.<pid>.<rand>.tmp
-            pattern = re.escape(target) + r"\.\d+\.[0-9a-f]+\.tmp$"
-            self.assertRegex(tmp_path, pattern)
+            pattern = re.escape(os.path.basename(target)) + r"\.\d+\.[0-9a-f]+\.tmp$"
+            self.assertRegex(os.path.basename(tmp_path), pattern)
 
             # Check expected flags
             self.assertTrue(flags & os.O_CREAT)
