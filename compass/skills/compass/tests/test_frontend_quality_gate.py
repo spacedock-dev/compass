@@ -424,13 +424,17 @@ class FrontendWiringControlsTest(unittest.TestCase):
         scripts = by_name["Run script unit tests on the floor"]
         self.assertEqual("matrix.suite == 'dashboard'", dashboard["if"])
         self.assertEqual("matrix.suite == 'scripts'", scripts["if"])
-        self.assertIn("--shard ${{ matrix.shard }}/3", scripts["run"])
+        # The shard reaches the shell through env, never interpolated into `run`.
+        self.assertEqual("${{ matrix.shard }}", scripts["env"]["SCRIPT_SHARD"])
+        self.assertIn('--shard "$SCRIPT_SHARD/3"', scripts["run"])
         self.assertNotIn("--shard", dashboard["run"])
         # Together the legs run the same two suites the single job ran, with nothing left out.
         self.assertIn("-s compass/skills/compass/tests -t .", dashboard["run"])
         self.assertIn("-s scripts/tests -t scripts/tests", scripts["run"])
         # The shard count in the command is the count in the matrix, or a shard would never run.
-        self.assertEqual(len(matrix["shard"]), int(scripts["run"].split("}}/")[1].split()[0]))
+        self.assertEqual(
+            len(matrix["shard"]), int(scripts["run"].split("$SCRIPT_SHARD/")[1].split('"')[0])
+        )
         # One job id, so the aggregator reads one result for every leg and a failed leg fails it.
         self.assertIn("runtime-floor", jobs()["quality-gate"]["needs"])
 

@@ -5857,6 +5857,30 @@ keeps the exception type plus at most 1,024 Unicode characters of its message, i
 `... [truncated]` when clipped; clipping does not redact sensitive content. Nothing is transmitted,
 but redact it before pasting it into a public issue.
 
+## Dependency checks
+
+The repository's `sast.yml` runs non-mutating dependency audits weekly and on pull requests that
+change lockfiles or requirements, as well as changes to the checks themselves. npm advisories at
+high severity or above fail the check for the project and bootstrap lockfiles. The Python check
+queries OSV for every exact version in `requirements-*.txt`, including conditional dependencies
+for other platforms, and fails on any returned advisory. It installs no audit tool or dependency.
+Only public package names and versions are sent to OSV. npm audit uses the configured public npm
+registry. An unavailable or incomplete advisory response fails the check instead of reporting a
+clean scan. Neither check rewrites pins or resolves a fix. These jobs hold read-only repository
+tokens, no secrets and no persisted checkout credentials. They run in CI, not in an installed
+Compass dashboard.
+
+Dependabot proposes npm updates for the root and pnpm bootstrap, pip updates and GitHub Actions
+updates weekly. Its fourteen-day cooldown matches the hashed requirements generator's two-week
+`--exclude-newer` cutoff for version updates. [Dependabot does not apply cooldown to security
+updates](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#cooldown). A separate step checks newly proposed bot pins, including security updates, against public
+registry dates and action commit dates, and fails on a pin younger than fourteen days or an
+unreadable date. For PyPI it checks every file's upload time, so a new wheel on an old version
+cannot inherit that version's age. It does not establish when an action tag was published or
+validate the contents of a dependency. Hash generation and review remain necessary. The audit
+workflow reports separate check results; this repository's required `quality-gate` does not
+aggregate them.
+
 ## Release workflow (the deploy key)
 
 A release is pushed by a deploy key that bypasses the branch and tag rulesets, so the workflow

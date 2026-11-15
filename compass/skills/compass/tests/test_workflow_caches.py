@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -151,7 +152,9 @@ def assert_locked_pnpm(test: unittest.TestCase, job: dict[str, Any]) -> None:
         )
         command = item.get("run", "")
         test.assertNotRegex(command.lower(), r"\b(?:corepack|npx)\b", "alternate pnpm installer")
-        if re.search(r"\bnpm\s", command):
+        if command == "npm audit --audit-level=high":
+            test.assertEqual("tools/pnpm-bootstrap", item.get("working-directory"))
+        elif re.search(r"\bnpm\s", command):
             test.assertEqual(BOOTSTRAP_RUN, command, "npm must use the committed bootstrap lock")
         if re.search(r"(?:^|[\s;&|])pnpm\s", command):
             test.assertLess(bootstrap, index, "pnpm must run after the locked binary reaches PATH")
@@ -729,6 +732,193 @@ class SemgrepPinTest(unittest.TestCase):
         # `auto` and `p/...`/`r/...` names are fetched from the registry at run time, unpinned.
         self.assertNotRegex(scan, r"--config[ =](?:auto|[pr]/|https?:)")
         self.assertIn(f"--exclude {rules['with']['path']}", scan)
+
+
+def workflow_documents() -> dict[str, dict[str, Any]]:
+    documents = workflows()
+    documents.update(
+        {
+            path.relative_to(ROOT).as_posix(): yaml.safe_load(path.read_text(encoding="utf-8"))
+            for path in (ROOT / ".github/actions").rglob("*.y*ml")
+        }
+    )
+    return documents
+
+
+def workflow_nodes(value: Any) -> Any:
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from workflow_nodes(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from workflow_nodes(child)
+
+
+def _install_script_errors(run: str) -> list[str]:
+    errors = []
+    for line in run.replace("\\\n", " ").splitlines():
+        for command in re.split(r"&&|\|\||[;|]", line.split("#", 1)[0]):
+            if not re.search(r"\b(?:npm|pnpm)\s+(?:install|i|ci|add)\b", command):
+                continue
+            if not _scripts_denied(command):
+                errors.append(f"dependency scripts enabled: {command.strip()}")
+    return errors
+
+
+def _scripts_denied(command: str) -> bool:
+    # Token boundaries matter: --userconfig='--ignore-scripts' sets a different option.
+    words = shlex.split(command)
+    denied = False
+    for index, word in enumerate(words):
+        if word == "--":
+            break
+        if word.startswith("--ignore-scripts="):
+            denied = word == "--ignore-scripts=true"
+        elif word == "--no-ignore-scripts":
+            denied = False
+        elif word == "--ignore-scripts":
+            following = words[index + 1] if index + 1 < len(words) else ""
+            denied = following != "false"
+    return denied
+
+
+def workflow_security_errors(document: dict[str, Any]) -> list[str]:
+    errors = []
+    for node in workflow_nodes(document):
+        uses = node.get("uses")
+        if isinstance(uses, str) and not uses.startswith("./"):
+            pattern = (
+                r".+@sha256:[0-9a-f]{64}" if uses.startswith("docker://") else r".+@[0-9a-f]{40}"
+            )
+            if not re.fullmatch(pattern, uses):
+                errors.append(f"mutable uses: {uses}")
+        for key in ("image", "container"):
+            image = node.get(key)
+            if isinstance(image, str) and not re.fullmatch(r".+@sha256:[0-9a-f]{64}", image):
+                errors.append(f"mutable image: {image}")
+        run = node.get("run")
+        if not isinstance(run, str):
+            continue
+        if "${{" in run:
+            errors.append("expression interpolated into shell source")
+        errors.extend(_install_script_errors(run))
+    return errors
+
+
+class WorkflowPrimitivePinsTest(unittest.TestCase):
+    def test_install_requires_effective_ignore_scripts(self) -> None:
+        for run in (
+            'npm ci --userconfig="--ignore-scripts"',
+            "pnpm install --filter=--ignore-scripts",
+            "npm ci --ignore-scripts=false",
+            "pnpm add x --ignore-scripts false",
+            "npm ci --ignore-scripts --ignore-scripts=false",
+            "npm ci --ignore-scripts --no-ignore-scripts",
+            "npm ci -- --ignore-scripts",
+        ):
+            with self.subTest(run=run):
+                self.assertTrue(_install_script_errors(run))
+        for run in (
+            "npm ci --ignore-scripts",
+            "pnpm install --ignore-scripts=true --frozen-lockfile",
+            "npm install --ignore-scripts true",
+            "pnpm add x --ignore-scripts",
+            "npm ci --ignore-scripts=false --ignore-scripts",
+            "npm ci --ignore-scripts && pnpm install --ignore-scripts",
+        ):
+            with self.subTest(run=run):
+                self.assertEqual([], _install_script_errors(run))
+
+    def test_every_workflow_and_local_action_uses_immutable_primitives(self) -> None:
+        for name, document in workflow_documents().items():
+            with self.subTest(document=name):
+                self.assertEqual([], workflow_security_errors(document))
+
+    def test_a_new_unsafe_action_image_or_shell_expression_is_rejected(self) -> None:
+        for document in (
+            {"jobs": {"reusable": {"uses": "owner/repo/.github/workflows/x.yml@v1"}}},
+            {"runs": {"steps": [{"uses": "owner/action@v1"}]}},
+            {"jobs": {"test": {"container": "python:3.12"}}},
+            {"jobs": {"test": {"container": {"image": "python:3.12"}}}},
+            {"jobs": {"test": {"services": {"db": {"image": "postgres:17"}}}}},
+            {"runs": {"steps": [{"uses": "docker://alpine:3"}]}},
+            {"runs": {"steps": [{"run": "echo ${{ github.event.pull_request.title }}"}]}},
+            {"runs": {"steps": [{"run": "npm ci"}]}},
+            {"runs": {"steps": [{"run": "npm install x"}]}},
+            {"runs": {"steps": [{"run": "npm ci --ignore-scripts && npm install x"}]}},
+            {"runs": {"steps": [{"run": "pnpm install --frozen-lockfile"}]}},
+        ):
+            with self.subTest(document=document):
+                self.assertTrue(workflow_security_errors(document))
+
+    def test_local_actions_and_shell_environment_are_allowed(self) -> None:
+        self.assertEqual(
+            [],
+            workflow_security_errors(
+                {
+                    "steps": [
+                        {"uses": "./.github/actions/local"},
+                        {"uses": "owner/action@" + "a" * 40},
+                        {"uses": "docker://alpine@sha256:" + "a" * 64},
+                        {
+                            "env": {"TITLE": "${{ github.event.pull_request.title }}"},
+                            "run": 'echo "$TITLE"',
+                        },
+                        {"run": "npm ci --ignore-scripts"},
+                    ]
+                }
+            ),
+        )
+
+
+class DependencyAuditsTest(unittest.TestCase):
+    def test_dependabot_covers_each_ecosystem_with_two_week_cooldown(self) -> None:
+        config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+        self.assertEqual(2, config["version"])
+        entries = config["updates"]
+        self.assertEqual(
+            {("npm", "/"), ("npm", "/tools/pnpm-bootstrap"), ("pip", "/"), ("github-actions", "/")},
+            {(entry["package-ecosystem"], entry["directory"]) for entry in entries},
+        )
+        for entry in entries:
+            self.assertEqual({"default-days": 14}, entry["cooldown"])
+            self.assertEqual("weekly", entry["schedule"]["interval"])
+
+    def test_audits_run_weekly_and_on_dependency_pull_requests_without_write_credentials(
+        self,
+    ) -> None:
+        workflow = workflows()["sast.yml"]
+        keyed = cast("dict[Any, Any]", workflow)
+        triggers = keyed["on"] if "on" in keyed else keyed[True]
+        self.assertTrue(triggers["schedule"])
+        paths = triggers["pull_request"]["paths"]
+        for name in (
+            "pnpm-lock.yaml",
+            "tools/pnpm-bootstrap/package-lock.json",
+            "requirements-*.txt",
+            "requirements-*.in",
+        ):
+            self.assertIn(name, paths)
+        jobs = workflow["jobs"]
+        for name in ("npm-audit", "python-audit"):
+            self.assertFalse(holds_write_credential(workflow, jobs[name]))
+            for step in jobs[name]["steps"]:
+                if step.get("uses", "").startswith("actions/checkout@"):
+                    self.assertIs(False, step["with"]["persist-credentials"])
+        npm = "\n".join(step.get("run", "") for step in jobs["npm-audit"]["steps"])
+        self.assertIn("pnpm audit --audit-level=high", npm)
+        self.assertNotIn("--fix", npm)
+        python = "\n".join(step.get("run", "") for step in jobs["python-audit"]["steps"])
+        self.assertIn("python3 scripts/audit_python_dependencies.py", python)
+        (age,) = [
+            step
+            for step in jobs["python-audit"]["steps"]
+            if step.get("run") == "python3 scripts/check_dependency_age.py"
+        ]
+        self.assertIn("github.event.pull_request.user.login == 'dependabot[bot]'", age["if"])
+        self.assertEqual("${{ github.event.pull_request.base.sha }}", age["env"]["BASE_SHA"])
+        self.assertNotIn("continue-on-error", age)
 
 
 if __name__ == "__main__":

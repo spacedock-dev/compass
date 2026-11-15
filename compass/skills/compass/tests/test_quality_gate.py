@@ -296,10 +296,11 @@ class CoverageShardsTest(unittest.TestCase):
         self.assertIn("-s compass/skills/compass/tests -t .", dashboard["run"])
         self.assertNotIn("--shard", dashboard["run"])
         self.assertIn("-s scripts/tests -t scripts/tests", scripts["run"])
-        self.assertIn("--shard ${{ matrix.shard }}/3", scripts["run"])
+        self.assertIn('--shard "$SCRIPT_SHARD/3"', scripts["run"])
+        self.assertEqual("${{ matrix.shard }}", scripts["env"]["SCRIPT_SHARD"])
         # The shard count in the command is the count in the matrix, or a shard would never run.
         shards = len(legs["strategy"]["matrix"]["shard"])
-        self.assertEqual(shards, int(scripts["run"].split("}}/")[1].split()[0]))
+        self.assertEqual(shards, int(scripts["run"].split("$SCRIPT_SHARD/")[1].split('"')[0]))
         python = next(s for s in legs["steps"] if "setup-python" in s.get("uses", ""))
         self.assertEqual("3.14", python["with"]["python-version"], "sysmon needs 3.14")
         self.assertNotIn("permissions", legs, "the legs run tests with the read-only token")

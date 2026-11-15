@@ -1,0 +1,28 @@
+version: 2
+# Version updates wait the same fourteen days as requirements --exclude-newer.
+# Security updates do not honor cooldown; sast's bot pin-age check covers them too.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+  - package-ecosystem: npm
+    directory: /tools/pnpm-bootstrap
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14

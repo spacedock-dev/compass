@@ -572,6 +572,42 @@ Every PR must pass the `quality-gate` required check (`.github/workflows/quality
 `scripts/ci_scope.py`, which decides which lanes the diff can affect, and each measurable job is
 gated on its lane:
 
+The dashboard suite includes three security review tripwires. `test_security_primitives.py`
+walks production Python ASTs and refuses new HTTP openers, subprocess sites or raw runtime file
+operations outside its reviewed inventory. A process entry pins its module, function and argv
+shape; file entries pin the module, function and call count. Prefer the transport, `rooted_path`
+and `io` primitives. An exception needs a one-line reason and review of its executable or path,
+not just an added tuple to quiet a failure. Entries marked `KNOWN GAP` preserve pre-existing raw
+state-reader debt; they do not certify those readers as safe. Synthetic rejection tests exercise
+all three checkers. Non-gap file entries name the function enforcing the stated checks or owning
+the exemption. The lexical checker follows static aliases, constant `getattr` and runner defaults,
+and refuses unresolved attributes on primitive modules. It is not interprocedural dataflow or
+dynamic-import analysis.
+
+`test_http_admission_matrix.py` derives routes from the HTTP dispatch dictionaries and prefix
+handlers, including terminal operations and the WebSocket, and holds every route to navigation,
+same-site cross-port, duplicate-Host and allowed-name LAN requests. Cross-port GETs exercise both
+no-cors subresources without Origin and CORS requests with Origin. Discard requests pass body
+validation before testing admission; every loopback-only POST also gets a forwarding-header row.
+Keep its explicit board-read
+allowlists and expected statuses in sync with SECURITY.md. A new route needs a matrix row. A
+duplicate admission header is refused with 403 by the admission gate; only a defective header block
+is a 400.
+`test_workflow_caches.py` and `test_release_workflow.py` scan all workflows and local action YAML:
+remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run` blocks take
+expressions through `env`, npm installs carry an effective `--ignore-scripts` argument, and pip
+installs use generated hashed files.
+
+The separate `sast.yml` workflow runs dependency audits weekly and on dependency-file pull
+requests: npm at high severity and Python exact pins against OSV, without mutating a lockfile or
+installing a Python audit tool. Its jobs have read-only tokens and no secrets. Dependabot covers
+root npm, the pnpm bootstrap, pip and Actions with a fourteen-day version-update cooldown.
+Security updates bypass that cooldown upstream, so the Python audit job also checks newly proposed
+bot pins against publication dates (action commit dates) and fails if a pin is younger than fourteen
+days or its age cannot be read. This is a separate workflow check, not a new required-check ruleset.
+Keep the hashed requirements generation cutoff at two weeks even on bot proposals. Dependabot's
+configuration is an unknown path to `ci_scope.py`, so changing it conservatively enables every lane.
+
 | Lane | Jobs | Turned on by |
 |---|---|---|
 | `python` | lint, typecheck, `test` (coverage legs), `coverage` (combines them, enforces the threshold), `platform-tests-current` (3.15: macOS with `platform`, Linux otherwise); with `platform`, `platform-tests` (macOS, 3.12) | any `.py` file, other code in the plugin roots and `scripts/`, `pyproject.toml`, the requirements files |
