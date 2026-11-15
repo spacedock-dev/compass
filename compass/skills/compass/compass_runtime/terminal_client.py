@@ -976,10 +976,15 @@ def start_daemon(
 
 
 def unreachable_dashboard(
-    home: str, ports: tuple[int, ...], *, state_file: str | None = None
+    home: str,
+    ports: tuple[int, ...],
+    *,
+    state_file: str | None = None,
+    read_discovery: bool = False,
 ) -> str:
-    """One reusable refusal for recorded dashboards that did not answer from here."""
+    """Explain unreachable records, distinguishing discovery from a refused lifecycle action."""
     checked = ", ".join(str(port) for port in ports)
+    port_label = "port" if len(ports) == 1 else "ports"
     folder = terminal_sessions.printable(home)
     files = (
         (state_file,)
@@ -993,13 +998,20 @@ def unreachable_dashboard(
         if files
         else "State files were left alone. "
     )
+    # Reads have not attempted startup and cannot inspect token-bearing state to
+    # decide ownership. A requested start makes that decision under its own lock.
+    recovery = (
+        f"If Compass is no longer running, start it with `{launch_command('--daemon')}`."
+        if read_discovery
+        else "Verify the recorded dashboard is gone from the machine and terminal "
+        "where it ran before removing only its state file and matching .origin file, then retry."
+    )
     return (
-        f"Compass: no dashboard answered at 127.0.0.1 on ports {checked}; "
+        f"Compass: no dashboard answered at 127.0.0.1 on {port_label} {checked}; "
         f"state folder: {folder}. A dashboard open in a browser may be running where this "
         "command cannot reach it: another port or state folder, another machine, a VM, "
         "or a container or sandbox. "
-        f"{preserved}Verify the recorded dashboard is gone from the machine and terminal "
-        "where it ran before removing only its state file and matching .origin file, then retry."
+        f"{preserved}{recovery}"
     )
 
 
@@ -1025,7 +1037,7 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     if found is None:
         if not spend:
             return Refusal(
-                unreachable_dashboard(home, candidate_ports(home, port))
+                unreachable_dashboard(home, candidate_ports(home, port), read_discovery=True)
                 if published_ports(home)
                 else sentence("not_running")
             )

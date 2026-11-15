@@ -4356,8 +4356,9 @@ lock can let two processes lock different files at the same name. Terminal disco
 state filenames and health, never the tokens. After discovery fails, a spending action delegates
 startup to lifecycle for the default port or explicit target port. Only that target's unknown
 record vetoes startup, with its exact filename in the refusal; an unrelated unreachable record
-does not veto it. Dead target records are recovered under the same lifecycle rules. A refusal
-asks the operator to verify the dashboard is gone in its original environment before removing
+does not veto it. Dead target records are recovered under the same lifecycle rules. A read
+offers a conditional start command without inspecting state or deciding ownership. A refused
+startup asks the operator to verify the dashboard is gone in its original environment before removing
 only its state file and matching origin file. It does not recommend repeating the refused start.
 
 Configured state roots, including `COMPASS_HOME` and the default `~/.compass`, may be links to

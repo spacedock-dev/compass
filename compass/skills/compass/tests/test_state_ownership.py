@@ -635,6 +635,39 @@ class WindowsDeathProofTest(unittest.TestCase):
 
 
 class UnreachableClientTest(unittest.TestCase):
+    def test_read_commands_keep_conditional_start_guidance_for_crashed_state(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            port = closed_port()
+            config = dataclasses.replace(cfg(), state_home=home, state_dir=Path(home))
+            lifecycle.write_state(config, port, started=1.0)
+            state = Path(lifecycle.state_path(config, port))
+            origin = Path(lifecycle.origin_path(config, port))
+            for path in (state, origin):
+                record = json.loads(path.read_text())
+                record["pid"] = 99999999
+                path.write_text(json.dumps(record))
+            before = (state.read_bytes(), origin.read_bytes())
+            env = {"COMPASS_HOME": home, "CLAUDE_CODE_SESSION_ID": "caller"}
+            actions: dict[str, Callable[[], int]] = {
+                "sessions": lambda: terminal_client.run_sessions(port=port, environ=env),
+                "project": lambda: terminal_client.run_project(port=port, environ=env),
+                "goal": lambda: terminal_client.run_goal(
+                    terminal_client.GoalRequest(), port=port, environ=env
+                ),
+            }
+            for name, action in actions.items():
+                with (
+                    self.subTest(action=name),
+                    contextlib.redirect_stderr(io.StringIO()) as error,
+                    mock.patch.object(
+                        runtime_io, "open_regular", side_effect=AssertionError("read opened state")
+                    ),
+                ):
+                    self.assertEqual(1, action())
+                    self.assertIn(terminal_client.launch_command("--daemon"), error.getvalue())
+                    self.assertNotIn("remov", error.getvalue())
+            self.assertEqual(before, (state.read_bytes(), origin.read_bytes()))
+
     def test_read_commands_name_checked_ports_and_home(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             port = closed_port()
@@ -659,8 +692,9 @@ class UnreachableClientTest(unittest.TestCase):
                 self.assertIn("cannot reach", message)
                 self.assertIn("container or sandbox", message)
                 self.assertIn(str(Path(home, f"compass-{port}.json")), message)
-                self.assertNotIn("--daemon", message)
-                self.assertIn("verify", message.lower())
+                self.assertIn(f"on port {port};", message)
+                self.assertIn(terminal_client.launch_command("--daemon"), message)
+                self.assertNotIn("remov", message)
 
     def test_unrelated_record_does_not_veto_default_or_explicit_target(self) -> None:
         with tempfile.TemporaryDirectory() as home:
