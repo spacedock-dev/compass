@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fixture from '../../test/fixtures/no-draft-why.json';
 import { noDraftWhy } from './derive';
 
 const PAYLOAD = { annotate: true, intent_revision: 'r1' };
@@ -33,5 +34,13 @@ describe('why the goal box arrives empty over a /goal session', () => {
   it('ignores a clear with no moment', () => {
     const session = { ...OPENED, session_goal_cleared: { at: 'x' } };
     expect(noDraftWhy(session, null, PAYLOAD)).not.toContain('cleared');
+  });
+});
+
+// The terminal suite asserts these same sentences in its refusal. Calling the page function here
+// keeps a changed return path from passing just because the old template remains in its source.
+describe('command-opening reasons shared with terminal drift', () => {
+  it.each(fixture.cases)('returns the reason for $session.first_prompt', ({ session, reason }) => {
+    expect(noDraftWhy(session, null, fixture.payload)).toBe(reason);
   });
 });

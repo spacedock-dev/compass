@@ -722,7 +722,7 @@ def press_refusal(  # noqa: C901, PLR0911, PLR0912 - the page's rank order, one 
     states = ""
     if discarded:
         said = payload.get("annotate_discard")
-        why = _text(said.get("unreadable")).strip() if _rec(said) else ""
+        why = printable(said.get("unreadable")) if _rec(said) else ""
         states = f"{why} {SAVE_STEP}" if why else SAVE_STEP
     elif _text(payload.get("annotate_unreadable")):
         states = _text(payload.get("annotate_unreadable"))
@@ -1274,11 +1274,35 @@ class _Run:
             )
         return unavailable_sentence(view_of(context, self.harness, self.sid))
 
+    def goal_refusal(self, sentence: str, row: Mapping[str, Any]) -> str:
+        """Identify the goal's session without offering words from any other session."""
+        sentence = printable(sentence)
+        if sentence != PROMPT_TIME_UNPUBLISHED and not sentence.endswith(SAVE_STEP):
+            return sentence
+        if sentence == NO_WORDS and _opened_with_control(row):
+            command = printable(row.get("first_prompt")).split()
+            if command:
+                # Match the goal box's noDraftWhy lead, including only the command name:
+                # local-command arguments are not the person's goal.
+                sentence = (
+                    f"This session opened with {command[0]}, so there is no first prompt "
+                    f"to draft a goal from. {SAVE_STEP}"
+                )
+        # Clean each value before joining: an unterminated string escape in an identity or
+        # prompt must not consume the URL, reason or next step when the report is emitted.
+        sentence = f"{printable(self.key)} · {self.url(row)} · {sentence}"
+        if self.in_session:
+            sentence += (
+                " Drift reads only the session it was typed in. "
+                "Another session's reading is on that session's page."
+            )
+        return sentence
+
     def press(self, payload: Mapping[str, Any], row: Mapping[str, Any]) -> int:
         now = self.clock()
         refusal = press_refusal(payload, row, now)
         if refusal:
-            return self.refuse(refusal)
+            return self.refuse(self.goal_refusal(refusal, row))
         left = self.left()
         if left is not None and left < PRESS_RESERVE_SEC:
             return self.refuse(NO_TIME)

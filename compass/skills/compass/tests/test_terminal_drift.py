@@ -1414,8 +1414,164 @@ class ACodexReadingTest(unittest.TestCase):
         self.assertEqual(0, refused.model_calls)
 
 
+class GoalRefusalIdentityTest(unittest.TestCase):
+    def refused(self, row: dict[str, Any], *, in_session: bool = True) -> str:
+        payload = a_payload(row)
+        payload["sessions"].append(
+            a_row(
+                sid="private-other-id",
+                title="private other title",
+                annotation_goal="private other goal",
+                first_prompt="private other prompt",
+            )
+        )
+        board = FakeBoard(payload)
+        code, out, err = drift(board, in_session=in_session, at_shell=not in_session)
+        self.assertEqual(1, code)
+        self.assertEqual("", out)
+        self.assertEqual([], board.posts)
+        self.assertEqual(0, board.model_calls)
+        self.assertEqual(1, len(err.splitlines()))
+        self.assertTrue(err.startswith(f"{KEY} · {PAGE} · "), err)
+        self.assertNotIn("private other", err)
+        self.assertNotIn("private-other-id", err)
+        if in_session:
+            self.assertIn("Drift reads only the session it was typed in.", err)
+            self.assertIn("Another session's reading is on that session's page.", err)
+        return err
+
+    def test_local_command_with_later_work_uses_the_pages_reason(self) -> None:
+        fixture = json.loads(
+            (ROOT / "frontend" / "test" / "fixtures" / "no-draft-why.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for case in fixture["cases"]:
+            with self.subTest(prompt=case["session"]["first_prompt"]):
+                err = self.refused(a_row(annotation_line_1="", **case["session"]))
+                self.assertIn(case["reason"], err)
+                self.assertNotIn("Nothing has been typed", err)
+                self.assertNotIn("secret command argument", err)
+                self.assertIn(terminal_drift.SAVE_STEP, err)
+
+    def test_compass_only_session_names_the_checked_session(self) -> None:
+        # The collector excludes the skill command from prompt candidates.
+        err = self.refused(a_row(annotation_goal="", annotation_line_1=""))
+        self.assertIn(terminal_drift.NO_WORDS, err)
+
+    def test_discarded_goal_without_prompt_names_the_checked_session(self) -> None:
+        err = self.refused(
+            a_row(annotation_goal="", annotation_line_1="", annotation_discarded_at=NOW - 10)
+        )
+        self.assertIn(terminal_drift.SAVE_STEP, err)
+
+    def test_shell_refusal_links_to_the_selected_session(self) -> None:
+        err = self.refused(a_row(annotation_goal="", annotation_line_1=""), in_session=False)
+        self.assertIn(terminal_drift.NO_WORDS, err)
+        self.assertNotIn("typed in", err)
+
+    def test_unpublished_prompt_time_also_explains_in_session_scope(self) -> None:
+        err = self.refused(
+            a_row(
+                annotation_goal="",
+                annotation_line_1="",
+                instruction={"label": "asked", "text": "Do the thing", "at": None},
+            )
+        )
+        self.assertIn(terminal_drift.PROMPT_TIME_UNPUBLISHED, err)
+
+    def test_control_values_cannot_hide_the_refusal_or_add_stderr_lines(self) -> None:
+        string_starters = (
+            "\x1b]",
+            "\x1bP",
+            "\x1bX",
+            "\x1b^",
+            "\x1b_",
+            "\x9d",
+            "\x90",
+            "\x98",
+            "\x9e",
+            "\x9f",
+        )
+        cases = (
+            [("abc", "/clear" + starter + "window title") for starter in string_starters]
+            + [("abc" + starter + "evil", "/clear") for starter in string_starters]
+            + [
+                ("abc", "/clear\x1b]0;window title\x07"),
+                ("abc", "\x1b]52;c;hello world\x07 /clear"),
+                ("abc", "\x1b[31m /clear"),
+                ("abc\nInjected line", "/clear"),
+                ("abc\r\nInjected line", "/clear"),
+                ("abc\tdef", "/clear"),
+            ]
+        )
+        for sid, prompt in cases:
+            with self.subTest(sid=sid, prompt=prompt):
+                row = a_row(
+                    sid=sid,
+                    annotation_goal="",
+                    annotation_line_1="",
+                    first_prompt=prompt,
+                    first_prompt_control=True,
+                )
+                board = FakeBoard(a_payload(row))
+                out, err = io.StringIO(), io.StringIO()
+                code = terminal_drift.run(
+                    "claude",
+                    sid,
+                    again=False,
+                    at_shell=False,
+                    in_session=True,
+                    board=board,
+                    port=PORT,
+                    out=out,
+                    err=err,
+                )
+                message = err.getvalue()
+                self.assertEqual((1, ""), (code, out.getvalue()))
+                self.assertEqual(1, len(message.splitlines()))
+                self.assertIn(terminal_drift.SAVE_STEP, message)
+                self.assertIn(terminal_drift.session_url(PORT, "compass", "claude", sid), message)
+                self.assertIn("opened with /clear,", message)
+                self.assertNotIn("\x1b", message)
+                self.assertEqual([], board.posts)
+                self.assertEqual(0, board.model_calls)
+
+    def test_discard_reason_is_cleaned_before_adding_the_save_instruction(self) -> None:
+        for reason in ("Store unreadable\x1b]window title", "Store\nunreadable"):
+            with self.subTest(reason=reason):
+                payload = a_payload(
+                    a_row(
+                        annotation_goal="",
+                        annotation_line_1="",
+                        annotation_discarded_at=NOW - 10,
+                    )
+                )
+                payload["annotate_discard"] = {"unreadable": reason}
+                board = FakeBoard(payload)
+                code, out, err = drift(board, in_session=True, at_shell=False)
+                self.assertEqual((1, ""), (code, out))
+                self.assertEqual(1, len(err.splitlines()))
+                self.assertIn(f"{KEY} · {PAGE} · Store", err)
+                self.assertIn(terminal_drift.SAVE_STEP, err)
+                self.assertNotIn("\x1b", err)
+                self.assertEqual([], board.posts)
+
+    def test_local_command_reason_still_strips_terminal_escapes(self) -> None:
+        err = self.refused(
+            a_row(
+                annotation_goal="",
+                annotation_line_1="",
+                first_prompt="/clear\x1b[31m",
+                first_prompt_control=True,
+            )
+        )
+        self.assertIn("opened with /clear,", err)
+        self.assertNotIn("\x1b", err)
+
+
 class RefusalTest(unittest.TestCase):
-    """Every refusal the page can show is one sentence on stderr, and nothing is spent."""
+    """Every refusal the page can show is one line on stderr, and nothing is spent."""
 
     def refuse(self, board: FakeBoard, sentence: str, *, again: bool = False) -> None:
         code, out, err = drift(board, again=again)
@@ -1470,15 +1626,17 @@ class RefusalTest(unittest.TestCase):
             annotation_line_1="",
             instruction={"label": "asked", "text": "Do the thing", "at": None},
         )
-        self.refuse(FakeBoard(a_payload(row)), terminal_drift.PROMPT_TIME_UNPUBLISHED)
+        self.refuse(
+            FakeBoard(a_payload(row)), f"{KEY} · {PAGE} · {terminal_drift.PROMPT_TIME_UNPUBLISHED}"
+        )
 
     def test_nothing_typed_and_no_prompt_to_draft(self) -> None:
         row = a_row(annotation_goal="", annotation_line_1="")
-        self.refuse(FakeBoard(a_payload(row)), terminal_drift.NO_WORDS)
+        self.refuse(FakeBoard(a_payload(row)), f"{KEY} · {PAGE} · {terminal_drift.NO_WORDS}")
 
     def test_words_the_reader_discarded(self) -> None:
         row = a_row(annotation_goal="", annotation_line_1="", annotation_discarded_at=NOW - 10)
-        self.refuse(FakeBoard(a_payload(row)), terminal_drift.SAVE_STEP)
+        self.refuse(FakeBoard(a_payload(row)), f"{KEY} · {PAGE} · {terminal_drift.SAVE_STEP}")
 
     def test_a_store_that_cannot_be_read(self) -> None:
         payload = a_payload(annotate_unreadable="The intent store could not be read.")

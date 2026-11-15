@@ -111,6 +111,8 @@ with the local-process limits stated there. Nothing about later messages is sett
 session page. With no dashboard running, `drift` starts one and its answer says so. Typed inside
 another tool's session, such as Codex started from Claude Code, where both tools' session ids are set, it refuses and reads nothing. On Claude Code 2.1.318 on macOS, headless (`claude -p`) with `--setting-sources local` and the plugin loaded by `--plugin-dir`, both `drift` and `drift again` ran with no permission prompt (`permission_denials` empty); both runs refused before any press, because the fresh session was not yet on the board.
 
+A goal stays with the session it was saved on, including across `/clear`: the conversation after it has a new session id. To read another session's drift, open that session's page and press Analyze drift, or run `--drift --session claude:ID` in your own terminal using [that session's id](HOW_TO_USE_TERMINAL.md#find-a-sessions-id).
+
 `summary` spends only when no summary is stored. `summary update` and `summary again` authorize
 only their own operation; each in-session spend needs the matching typed command once. Closed action
 names accept any letter case, not paraphrases. Known harness machinery leaves the command pending;
