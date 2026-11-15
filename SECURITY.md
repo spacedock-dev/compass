@@ -5400,14 +5400,29 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
-Prefix shapes do not need a separator in front: `cfg_ghp_` or `abcsk-ant-` followed
-by a qualifying body is masked too. Each shape keeps its body length and alphabet
-requirements. The generic `sk-` shape leaves bodies made entirely of lowercase
-words separated by hyphens alone, so `dask-scheduler-configuration-defaults-file-name`
-survives. The recognised `sk-proj-` prefix, an unseparated lowercase body and
-OpenRouter's `sk-or-v1-` form still qualify. An identifier whose body has the same shape as a credential is
-masked; a generic `sk-` credential made only of lowercase hyphenated words can be
-missed. The character before the prefix does not decide either case.
+Each prefix shape keeps its body length, alphabet and trailing-character requirements.
+Existing matches stay masked, including lowercase generic `sk-` bodies after whitespace,
+assignment, quotes or brackets. AWS, fine-grained GitHub, `lin_api_`, `ya29.` and Anthropic
+matches at least 90 characters long keep their existing acceptance regardless of the lead.
+
+Additional matches glued after a letter, digit or underscore use evidence specific to the
+family. Langfuse, legacy GitHub, GitLab, npm, PostHog, Google and JWT shapes qualify on
+their complete prefix and body shape without a case requirement. Newly admitted Anthropic,
+Stripe, Slack and generic `sk-` matches require an ASCII uppercase letter or digit after
+the prefix the marker retains. Anthropic's `api03-`, `oat01-` and `ort01-` count toward
+that evidence. A complete OpenRouter `sk-or-v1-` plus 64 lowercase hexadecimal characters
+qualifies too. A preceding hyphen keeps its existing boundary behavior rather than gaining
+this additional admission.
+
+Only newly admitted glued generic `sk-` matches have an identifier safeguard: lowercase
+segments separated by hyphens or underscores stay readable even with version digits or a
+trailing delimiter at the match's length cap. This preserves identifiers such as
+`dask-v2-scheduler-configuration-defaults-file`. It does not exempt separated bodies or
+the complete OpenRouter form. Glued lowercase-only generic `sk-` and `sk-proj-` bodies,
+and ambiguous lowercase bodies in the other collision-prone families, can therefore be
+missed even when they are issued credentials. An identifier indistinguishable from an
+admitted credential shape is masked. These rules classify text; they cannot establish
+whether a matching value was issued by a provider.
 
 Langfuse secret and public keys (`sk-lf-` and `pk-lf-` followed by a 36-character UUID body
 of hexadecimal digits in either case and hyphens) are masked too, including in environment
@@ -5569,7 +5584,7 @@ In the other direction a genuine instruction line can be altered: 20 of 22,120 r
 local corpus, 18 on Claude and 2 on Codex. That rate was re-measured when the filter was widened to
 cover a key with a character in front of it, a URL credential clipped short of its `@`, capped
 bodies, `lin_api_` API keys and the cued AWS secret, and it did not move on any of them.
-That measurement predates removing the leading-separator requirement for every prefix shape;
+That measurement predates contextual admission of glued prefix shapes;
 the rate after that change has not been measured against the corpus. Nothing here
 changes the rule outside the software, which is not to paste a credential into a prompt, and to rotate one
 that was.
