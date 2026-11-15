@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { delegatedWork, observe, pageTitleOf, readHint, sessionStop } from './index';
+import { delegatedWork, finishedRunAt, observe, pageTitleOf, readHint, sessionStop } from './index';
 
 /* What the model says, written out, so the differential test against the legacy file is not the only
    oracle: the rules a reader depends on, each with the payload that proves it. */
@@ -490,5 +490,23 @@ describe('a quiet Codex exec run with a standing stop', () => {
   });
   it('states the finish without manufacturing an age if there is no board clock', () => {
     expect(observe({ sessions: [session] }).sessions[0]?.nowText).toBe('run finished');
+  });
+  it('keeps an owned exact request ahead of the finished-run activity reading', () => {
+    const model = observe(
+      board([{ ...session, state_detail: 'Approve release?' }], {
+        ask: true,
+        asks: [{ id: 'a', harness: 'codex', session_id: 'exec', question: 'Approve release?' }],
+      }),
+    );
+    expect(model.sessions[0]?.nowText).toBe('Approve release?');
+    expect(model.sessions[0]?.askText).toBe('Approve release?');
+  });
+  it('does not supply a finished-run stop for a session that reported its own end', () => {
+    expect(finishedRunAt({ ...session, ended_at: NOW - 30 })).toBeNull();
+  });
+  it('does not treat a zero rollout timestamp as a finished-run stop', () => {
+    const source = { ...session, turn_end_at: 0 };
+    expect(finishedRunAt(source)).toBeNull();
+    expect(observe(board([source])).sessions[0]?.nowText).toBe('last active 1m ago');
   });
 });

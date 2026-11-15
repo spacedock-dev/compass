@@ -100,6 +100,20 @@ class CodexHeadlessTest(RuntimeTestCase):
         self.assertAlmostEqual(self.stop, row["turn_end_at"], delta=1)
         self.assertIsNone(row["ended_at"])
 
+    def test_a_working_row_keeps_its_detail_even_when_a_rollout_stop_still_stands(self) -> None:
+        fields = codex.turn_stop_fields(
+            self.config,
+            self.now,
+            {"last_turn_ts": self.stop, "turn_stop_ts": self.stop},
+            (self.stop,),
+            blocked=False,
+            headless=True,
+            session_state="working",
+            state_detail="generating…",
+        )
+        self.assertEqual(self.stop, fields["turn_end_at"])
+        self.assertEqual("generating…", fields["state_detail"])
+
     def test_interactive_and_unknown_origins_keep_their_waiting_detail(self) -> None:
         sources: tuple[Any, ...] = ("cli", None, {"subagent": {}})
         for source in sources:
