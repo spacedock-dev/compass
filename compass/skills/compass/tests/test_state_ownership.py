@@ -15,7 +15,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -96,6 +95,9 @@ class StateOwnershipTest(unittest.TestCase):
             code = cli.main(["--daemon", "--port", str(self.port), "--no-update-check"])
         self.assertEqual(1, code)
         self.assertIn("cannot reach", output.getvalue())
+        self.assertIn(str(self.state), output.getvalue())
+        self.assertNotIn("--daemon", output.getvalue())
+        self.assertIn("verify", output.getvalue().lower())
         fork.assert_not_called()
         self.assertEqual(before, self.state.read_bytes())
 
@@ -523,7 +525,7 @@ class BootTimeTest(unittest.TestCase):
     def test_platform_boot_measurements_and_unavailable_evidence(self) -> None:
         libc = mock.Mock()
 
-        def sysctl(_name: bytes, value: object, *_args: object) -> int:
+        def sysctl(_name: bytes, value: ctypes.Array[ctypes.c_long], *_args: object) -> int:
             value[0], value[1] = 1000, 500000
             return 0
 
@@ -599,7 +601,9 @@ class WindowsDeathProofTest(unittest.TestCase):
         ntdll = mock.Mock()
         guid = bytes(range(16))
 
-        def query(_kind: int, value: object, _size: int, _length: object) -> int:
+        def query(
+            _kind: int, value: ctypes.Array[ctypes.c_char], _size: int, _length: object
+        ) -> int:
             ctypes.memmove(value, guid, len(guid))
             return 0
 
@@ -654,7 +658,9 @@ class UnreachableClientTest(unittest.TestCase):
                 self.assertIn(home, message)
                 self.assertIn("cannot reach", message)
                 self.assertIn("container or sandbox", message)
-                self.assertIn(terminal_client.launch_command("--daemon"), message)
+                self.assertIn(str(Path(home, f"compass-{port}.json")), message)
+                self.assertNotIn("--daemon", message)
+                self.assertIn("verify", message.lower())
 
     def test_unrelated_record_does_not_veto_default_or_explicit_target(self) -> None:
         with tempfile.TemporaryDirectory() as home:
@@ -676,6 +682,8 @@ class UnreachableClientTest(unittest.TestCase):
             port = closed_port()
             path = Path(home, f"compass-{port}.json")
             path.write_text("tokens")
+            origin = Path(str(path) + ".origin")
+            origin.write_bytes(b"unknown provenance")
             with mock.patch.dict(os.environ, {"COMPASS_HOME": home}):
                 result = terminal_client.ensure_dashboard(
                     home, port=port, spend=True, own_version="x", no_update_check=True
@@ -683,7 +691,10 @@ class UnreachableClientTest(unittest.TestCase):
             self.assertIsInstance(result, terminal_client.Refusal)
             assert isinstance(result, terminal_client.Refusal)
             self.assertIn(str(path), result.message)
+            self.assertNotIn("--daemon", result.message)
+            self.assertIn("verify", result.message.lower())
             self.assertEqual("tokens", path.read_text())
+            self.assertEqual(b"unknown provenance", origin.read_bytes())
 
     def test_drift_summary_and_monitor_delegate_dead_target_recovery(self) -> None:
         for legacy in (False, True):
@@ -705,7 +716,11 @@ class UnreachableClientTest(unittest.TestCase):
                     started: list[int] = []
 
                     def delegated(
-                        argv: list[str], **_kwargs: object
+                        argv: list[str],
+                        *,
+                        target: int = port,
+                        launches: list[int] = started,
+                        **_kwargs: object,
                     ) -> subprocess.CompletedProcess[bytes]:
                         # Exercise the real CLI ownership/sweep boundary without detaching a daemon.
                         with (
@@ -718,7 +733,7 @@ class UnreachableClientTest(unittest.TestCase):
                                 code = cli.main(argv[3:])
                             except RuntimeError as exc:
                                 self.assertEqual("fork boundary", str(exc))
-                                started.append(port)
+                                launches.append(target)
                                 code = 0
                         return subprocess.CompletedProcess(argv, code, b"", b"")
 

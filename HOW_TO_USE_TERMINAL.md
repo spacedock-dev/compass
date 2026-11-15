@@ -61,10 +61,12 @@ dashboard listens on IPv4 only. For another port, pass the same `--port PORT` to
 such as `--no-usage` are fixed when the dashboard starts, so stop and start it to change them
 ([off switches](HOW_TO_USE.md#turn-a-feature-off)).
 
-If no dashboard is running, a command that spends or saves (`--drift`, `--summary`, `--monitor`, a
-goal save) starts one for you only when no dashboard answers and no state file is recorded. That dashboard gets your `--port` but none of your other options. To
-keep an off switch on, start the dashboard yourself first. Off switches saved on the board, such as
-Pause model calls, still apply.
+A command that spends or saves (`--drift`, `--summary`, `--monitor`, a goal save) starts a
+dashboard when none answers and the selected port can be safely reused. A dead target record can
+be recovered; an unknown target record refuses with its filename. An unrelated record does not
+block startup. That dashboard gets your `--port` but none of your other options. To keep an off
+switch on, start the dashboard yourself first. Off switches saved on the board, such as Pause
+model calls, still apply.
 
 ## See what your sessions are doing
 
@@ -359,7 +361,7 @@ board to do these things:
 | You see | Do this |
 |---|---|
 | ``Compass is not running; start it with `...`.`` | No dashboard answered and no state file was found in this command's state folder. Run the printed command if none is running. |
-| `Compass: no dashboard answered at 127.0.0.1 on ports ...; state folder: ...` | A recorded dashboard may run outside this command's network, in a container or sandbox, on another machine, or with another port or state folder. If the page works, run the command from that dashboard's terminal. State files are preserved; automatic starts are refused. Use the printed start command only if none is running. |
+| `Compass: no dashboard answered at 127.0.0.1 on ports ...; state folder: ...` | A recorded dashboard may run outside this command's network, in a container or sandbox, on another machine, or with another port or state folder. If the page works, run the command from that dashboard's terminal. The named state files are preserved. Verify the dashboard is gone in its original environment before removing only its state and origin files. Automatic startup checks only its target port; legacy cleanup and reboot recovery have the [documented limits](SECURITY.md#process-lifecycle-written-paths-and-apishutdown). |
 | `Compass: port 4553 is already in use.` after `--daemon` | A dashboard is probably running already, often one a command started for you. Run `--status` to check, or run `--stop` and then `--daemon` to restart it with your options. |
 | `No exact session has active evidence right now.` | Nothing was active in the last 24 hours, or Compass is not finding your harness's sessions. Run `spacedock-compass --diagnose`. |
 | `Compass answered, but its session list could not be read.` | The list is not empty. Run the command again. |

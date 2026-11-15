@@ -981,9 +981,16 @@ def unreachable_dashboard(
     """One reusable refusal for recorded dashboards that did not answer from here."""
     checked = ", ".join(str(port) for port in ports)
     folder = terminal_sessions.printable(home)
-    preserved = (
-        f"State file {terminal_sessions.printable(state_file)} was left alone. "
+    files = (
+        (state_file,)
         if state_file is not None
+        else tuple(os.path.join(home, f"compass-{port}.json") for port in published_ports(home))
+    )
+    preserved = (
+        ("State file " if len(files) == 1 else "State files ")
+        + ", ".join(terminal_sessions.printable(path) for path in files)
+        + (" was left alone. " if len(files) == 1 else " were left alone. ")
+        if files
         else "State files were left alone. "
     )
     return (
@@ -991,7 +998,8 @@ def unreachable_dashboard(
         f"state folder: {folder}. A dashboard open in a browser may be running where this "
         "command cannot reach it: another port or state folder, another machine, a VM, "
         "or a container or sandbox. "
-        f"{preserved}If none is running, start it with `{launch_command('--daemon')}`."
+        f"{preserved}Verify the recorded dashboard is gone from the machine and terminal "
+        "where it ran before removing only its state file and matching .origin file, then retry."
     )
 
 
@@ -1016,10 +1024,11 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     found = find_dashboard(home, port=port)
     if found is None:
         if not spend:
-            if published_ports(home):
-                return Refusal(unreachable_dashboard(home, candidate_ports(home, port)))
-            return Refusal(sentence("not_running"))
-        (say or _say)(sentence("starting"))
+            return Refusal(
+                unreachable_dashboard(home, candidate_ports(home, port))
+                if published_ports(home)
+                else sentence("not_running")
+            )
         launch: Callable[[int], Refusal | None] = start or (
             lambda chosen: start_daemon(
                 chosen, **server_start_kwargs(server_options, no_update_check=no_update_check)
@@ -1031,6 +1040,8 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))
+        if isinstance(found, Dashboard):
+            (say or _say)(sentence("starting"))
     if isinstance(found, Refusal):
         return found
     if spend and (message := version_guard(found, own_version, in_session=in_session)) is not None:

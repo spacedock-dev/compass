@@ -152,9 +152,13 @@ under `--daemon` too. Check whether a dashboard is already there before killing 
 python3 "<skill-dir>/launch.py" "<skill-dir>/server.py" --port 4553 --status
 ```
 
-`--status` reports running (with pid and start time), absent, proven stale, unreachable from here,
+`--status` reports running (with pid and start time), absent, stale, unreachable from here,
 or that the port belongs to some other process. An unreachable record is left alone. A start
-on a port that already runs a dashboard is refused and points at it.
+on a port that already runs a dashboard is refused and points at it. Automatic starts recover dead
+target records; an unknown target record refuses with its exact filename. Other ports do not veto
+the start. Verify a refused record's dashboard is gone where it ran before removing only its state
+and origin files. Legacy records retain older cleanup rules, and shared cloned machine IDs limit
+reboot recovery; see the [lifecycle options](reference/options.md#options).
 If permissions block `--status` or `--stop`, it prints "Compass's connection to the dashboard was
 blocked by a sandbox or permissions." and exits non-zero without changing anything or claiming
 whether a dashboard runs.

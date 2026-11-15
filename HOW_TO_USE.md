@@ -1068,13 +1068,14 @@ COMPASS_HOME="$HOME/.compass" python3 "$SKILL/launch.py" "$SKILL/server.py" --po
 port that stays held.
 
 A dashboard removes its own state and origin record on a clean exit. On the next start, Compass
-sweeps records only when it can prove their writer is gone and the port is free. An unreachable
-port alone proves neither: a container or sandbox can share the state folder while seeing a
-different network and different pids. Unknown or different environment evidence preserves the
-record, as do older records without an origin file. If the browser works but a command cannot
-reach the dashboard, run it from the terminal where that dashboard runs. Each state file holds
-capability tokens; do not share its contents. The small `.json.lock` files remain to keep state
-publication and removal serialized.
+recovers a dead target record when its provenance and the free local port allow it. Unknown
+provenance preserves an origin-aware record; its exact filename appears in the refusal. A record
+on another port does not block starting the selected port. If the browser works but a command
+cannot reach the dashboard, run it from the terminal where that dashboard runs. Verify a dashboard
+is gone in the environment where it ran before removing only its named state and origin files.
+Each state file holds capability tokens; do not share its contents. The small `.json.lock` files
+remain to keep state publication and removal serialized. The [security contract](SECURITY.md#process-lifecycle-written-paths-and-apishutdown)
+explains the legacy cleanup exception and the shared-machine-ID limit on reboot recovery.
 
 ## Troubleshooting
 

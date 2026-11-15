@@ -4293,7 +4293,7 @@ how hard, to anyone who can read the notification stream. That is stated here ra
 
 The server writes fourteen files, all under `~/.compass` (relocatable with `COMPASS_HOME`,
 authoritative when nonblank): `compass-<port>.json`, recording the running instance (`pid`, `port`,
-`started`, `log`, `python`); `compass-<port>.json.origin`, a nonsecret record tied to that
+`started`, `log`, `python`, `state_format`); `compass-<port>.json.origin`, a nonsecret record tied to that
 instance's pid, port and start time; `compass-<port>.json.lock`, the persistent OS lock used to
 serialize state publication and removal; `compass-<port>.log`, where a detached (`--daemon`) instance's
 output goes; `compass-dismissals.json`, the sessions the reader marked handled, described in
@@ -4327,16 +4327,38 @@ contains a hashed machine identity, boot identity and, on Linux, network and pid
 identities. It contains no capability or session content. Linux reads the machine id and boot id
 from local system files; macOS uses native sysctl identifiers; Windows uses MachineGuid and the
 native boot GUID. Missing system identity makes provenance unknown. The state and origin are
-written atomically as individual owner-only files, under the same per-port lock; an incomplete
-or mismatched pair authorizes no cleanup. Status calls a record stale only after a proven reboot
-on that machine, or when the recorded boot and namespaces match and a read-only process probe
-proves the writer absent. Stop, startup sweeping and replacement require that proof too.
-Unknown or different provenance, including records from older versions without an origin file,
-is preserved. The serving process removes only its own pid and start-time record on exit.
+written atomically as individual owner-only files, under the same per-port lock. New state
+payloads carry a `state_format` discriminator: a missing, unreadable, malformed or mismatched
+origin for one of these payloads never turns it into a legacy record and authorizes no cleanup.
+For origin-aware records in the same boot, machine, boot and every measured network and PID
+namespace must match, and a read-only process probe must positively establish that the writer
+is absent. A different boot of the same machine is reclaimable only when the recorded start
+predates this boot's measured start. The local port must be closed and released before removal.
+Unknown or different provenance is preserved. Publication and removal recheck ownership under
+the per-port lock. The serving process can remove its own exact PID/start record on exit,
+including after an incomplete origin publication.
+
+Reboot recovery assumes unique machine IDs. Two machines sharing one machine ID and one state
+folder, such as a cloned VM or image whose machine ID was not regenerated, are treated as one
+machine. A reboot of one can therefore sweep the other's older record even while that dashboard
+still runs elsewhere. Timestamps cannot distinguish these clones. Regenerate machine IDs or use
+separate state folders for those machines.
+
+Legacy records, with neither a format discriminator nor an origin sidecar, keep the older
+per-operation behavior as a compatibility exception: an unanswered parsed record is reported
+stale; stop removes it once the local port is released, even if its PID is locally alive; startup
+sweeping requires the local PID to be absent and the port closed and released. Explicit startup
+can replace a legacy record. These rules cannot protect a legacy dashboard in another network
+or PID namespace sharing this folder. A successful new publication adds provenance protection.
+
 Removal failures are reported by `--stop` with exit `1`. Lock files remain because unlinking a
-lock can let two processes lock different files at the same name. Terminal discovery continues
-to use only state filenames and health, never the tokens; a recorded but unreachable dashboard
-refuses automatic startup and names the checked ports and state folder.
+lock can let two processes lock different files at the same name. Terminal discovery uses only
+state filenames and health, never the tokens. After discovery fails, a spending action delegates
+startup to lifecycle for the default port or explicit target port. Only that target's unknown
+record vetoes startup, with its exact filename in the refusal; an unrelated unreachable record
+does not veto it. Dead target records are recovered under the same lifecycle rules. A refusal
+asks the operator to verify the dashboard is gone in its original environment before removing
+only its state file and matching origin file. It does not recommend repeating the refused start.
 
 Configured state roots, including `COMPASS_HOME` and the default `~/.compass`, may be links to
 user-owned directories. On POSIX, Compass resolves the root through opened directory descriptors,
