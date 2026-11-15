@@ -198,6 +198,23 @@ class OwnerIoTest(unittest.TestCase):
         return results[0]
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs unavailable")
+    def test_directory_fallback_refuses_fifo_without_writer(self) -> None:
+        path = self.root / "not-a-directory"
+        os.mkfifo(path)
+        for directory_flag in (None, 0):
+            for opener in (
+                lambda: runtime_io._directory_fd(str(path)),
+                lambda: runtime_io._owner_directory_fd(
+                    str(path), root=str(self.root), create=False
+                ),
+            ):
+                with (
+                    self.subTest(flag=directory_flag, opener=opener),
+                    mock.patch.object(os, "O_DIRECTORY", directory_flag, create=True),
+                ):
+                    self.assertIsNone(self._quick(opener, path))
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs unavailable")
     def test_all_harness_readers_refuse_fifo_without_writer(self) -> None:
         path = self.root / "session.meta.json"
         os.mkfifo(path)

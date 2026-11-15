@@ -2511,18 +2511,24 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
             calls.append("fsync")
             real_fsync(fd)
 
-        said: list[str] = []
-        with (
-            mock.patch("compass_runtime.annotations.os.O_DIRECTORY", None, create=True),
-            mock.patch("compass_runtime.annotations.os.fsync", side_effect=fsync),
-        ):
-            ok = annotation_store.save(self.config, (), diagnostic_sink=said.append)
+        for absent in (False, True):
+            with (
+                self.subTest(absent=absent),
+                mock.patch("compass_runtime.annotations.os.O_DIRECTORY", None, create=True),
+                mock.patch("compass_runtime.annotations.os.fsync", side_effect=fsync),
+            ):
+                if absent:
+                    del os.O_DIRECTORY
+                calls.clear()
+                said: list[str] = []
+                ok = annotation_store.save(self.config, (), diagnostic_sink=said.append)
 
-        self.assertTrue(ok)
-        # The file's own bytes, and nothing else: there is no directory to open.
-        self.assertEqual(["fsync"], calls)
-        self.assertEqual([], said)
-        self.assertTrue(os.path.exists(annotation_store.store_path(self.config)))
+                self.assertTrue(ok)
+                # The bytes still sync when directory syncing is unavailable.
+                self.assertEqual(["fsync"], calls)
+                self.assertEqual([], said)
+                saved = Path(annotation_store.store_path(self.config))
+                self.assertEqual([], json.loads(saved.read_bytes())["entries"])
 
     def test_an_unchanged_save_says_it_minted_nothing(self) -> None:
         # Re-saving the same words mints no revision, and the store said `True`

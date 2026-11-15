@@ -119,7 +119,9 @@ class TheIncrementalReadKeepsOnlyMeasuredEntrypointsTest(unittest.TestCase):
                     _jsonl(replacement, [prompt("cli")], 1_700_000_001.0)
                     replacement.replace(path)
                 target = (
-                    "compass_runtime.claude_data.os.stat" if failure == "stat" else "builtins.open"
+                    "compass_runtime.claude_data.os.stat"
+                    if failure == "stat"
+                    else "compass_runtime.claude_data.runtime_io.open_harness"
                 )
                 with mock.patch(target, side_effect=PermissionError("cannot read transcript")):
                     self.assertIsNone(claude_data.session_goal(config, state, str(path)))
@@ -165,7 +167,10 @@ class TheIncrementalReadKeepsOnlyMeasuredEntrypointsTest(unittest.TestCase):
             with path.open("a") as source:
                 source.write("\n")
             self.assertIs(read(), True)
-            with mock.patch("builtins.open", side_effect=AssertionError("unchanged file reread")):
+            with mock.patch(
+                "compass_runtime.claude_data.runtime_io.open_harness",
+                side_effect=AssertionError("unchanged file reread"),
+            ):
                 self.assertIs(read(), True)
             with path.open("a") as source:
                 source.write(json.dumps(prompt("cli")) + "\n")

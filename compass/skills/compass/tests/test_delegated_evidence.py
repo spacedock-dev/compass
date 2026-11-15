@@ -291,26 +291,82 @@ class BinaryAccounting(SubagentChecksTestCase):
         original = b'{"timestamp":"2026-09-24T03:00:00Z"}'
         path.write_bytes(original)
         actual_stat = os.fstat
+        actual_open = runtime_io._open_scan_binary
+        held_fd: int | None = None
         appended = False
+
+        def hold_source(path_str: str, *, follow_links: bool) -> BinaryIO:
+            nonlocal held_fd
+            source = actual_open(path_str, follow_links=follow_links)
+            held_fd = source.fileno()
+            return source
 
         def grow_after_stat(fd: int) -> Any:
             nonlocal appended
             found = actual_stat(fd)
-            if not appended:
+            # Directory and file-admission stats precede the scan's held extent.
+            if fd == held_fd and not appended:
                 appended = True
                 with path.open("ab") as handle:
                     handle.write(b'\n{"timestamp":"2026-09-24T04:00:00Z"}\n')
             return found
 
         budget = runtime_io.ReadBudget(len(original) * 4)
-        with mock.patch.object(os, "fstat", side_effect=grow_after_stat):
+        with (
+            mock.patch.object(runtime_io, "_open_scan_binary", side_effect=hold_source),
+            mock.patch.object(os, "fstat", side_effect=grow_after_stat),
+        ):
             read = runtime_io.scan_stood_lines(str(path), budget, lambda _raw: False)
+        self.assertTrue(appended)
         self.assertEqual(len(original), read.consumed)
         self.assertEqual(len(original), budget.spent)
         self.assertEqual((original,), read.lines)
 
 
 class SeparateFrozenReadClasses(SubagentChecksTestCase):
+    def _measure_transcript_reads(self, call: Any) -> int:
+        actual_open = builtins.open
+        actual_fdopen = os.fdopen
+        counted = [0]
+
+        class CountedRaw(io.FileIO):
+            def read(self, size: int | None = -1) -> bytes:
+                raw = super().read(size)
+                counted[0] += len(raw)
+                return raw
+
+            def readinto(self, buffer: Any) -> int:
+                count = super().readinto(buffer)
+                counted[0] += count
+                return count
+
+        def counted_stream(file: Any, mode: str, kwargs: dict[str, Any]) -> Any:
+            binary = io.BufferedReader(CountedRaw(file, "rb"))
+            if "b" in mode:
+                return binary
+            return io.TextIOWrapper(
+                binary,
+                encoding=kwargs.get("encoding") or "utf-8",
+                errors=kwargs.get("errors") or "strict",
+            )
+
+        def counted_open(path: Any, mode: str = "r", **kwargs: Any) -> Any:
+            if str(path) != str(self.path):
+                return actual_open(path, mode, **kwargs)
+            return counted_stream(path, mode, kwargs)
+
+        def counted_fdopen(fd: int, mode: str = "r", **kwargs: Any) -> Any:
+            if os.fstat(fd).st_ino != self.path.stat().st_ino:
+                return actual_fdopen(fd, mode, **kwargs)
+            return counted_stream(fd, mode, kwargs)
+
+        with (
+            mock.patch("builtins.open", side_effect=counted_open),
+            mock.patch.object(os, "fdopen", side_effect=counted_fdopen),
+        ):
+            call()
+        return counted[0]
+
     def test_a_check_cap_is_not_a_whole_freeze_read_cap(self) -> None:
         self.session.bash("pytest", "5 passed", is_error=False)
         sub = self.delegate()
@@ -330,46 +386,15 @@ class SeparateFrozenReadClasses(SubagentChecksTestCase):
             sys.path.insert(0, scripts)
         import mark_abstention  # noqa: PLC0415 - the qualifier is only measured here
 
-        actual_open = builtins.open
-        counted = [0]
-
-        class CountedRaw(io.FileIO):
-            def read(self, size: int | None = -1) -> bytes:
-                raw = super().read(size)
-                counted[0] += len(raw)
-                return raw
-
-            def readinto(self, buffer: Any) -> int:
-                count = super().readinto(buffer)
-                counted[0] += count
-                return count
-
-        def counted_open(path: Any, mode: str = "r", **kwargs: Any) -> Any:
-            if str(path) != str(self.path):
-                return actual_open(path, mode, **kwargs)
-            raw = CountedRaw(path, "rb")
-            binary = io.BufferedReader(raw)
-            if "b" in mode:
-                return binary
-            return io.TextIOWrapper(
-                binary,
-                encoding=kwargs.get("encoding") or "utf-8",
-                errors=kwargs.get("errors") or "strict",
-            )
-
-        def measure(call: Any) -> int:
-            counted[0] = 0
-            with mock.patch("builtins.open", side_effect=counted_open):
-                call()
-            return counted[0]
-
-        identity = measure(lambda: mark_abstention._transcript_is_the_session(str(self.path), SID))
-        activity = measure(
+        identity = self._measure_transcript_reads(
+            lambda: mark_abstention._transcript_is_the_session(str(self.path), SID)
+        )
+        activity = self._measure_transcript_reads(
             lambda: project_context.claude_activity_between(
                 str(self.path), START.timestamp() + 7200, START.timestamp() + 7300
             )
         )
-        messages = measure(
+        messages = self._measure_transcript_reads(
             lambda: project_context.frozen_claude_user_messages(
                 self.config,
                 str(self.path),

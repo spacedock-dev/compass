@@ -11146,19 +11146,22 @@ def instruction_events(
     """Timestamped non-meta user-role messages from the bounded transcript tail."""
     events: list[dict[str, Any]] = []
     seen: set[tuple[float, str]] = set()
+    # Antigravity admits a native brain layout before this read. A later leaf
+    # substitution must not redirect it, while generic parent links remain usable.
+    follow = harness != "antigravity"
     source = (
         [
             line.decode("utf-8", "replace")
             for line in reversed(
                 list(
                     runtime_io.reverse_lines(
-                        config, transcript_path, max_bytes=max_bytes, follow_links=True
+                        config, transcript_path, max_bytes=max_bytes, follow_links=follow
                     )
                 )
             )
         ]
         if max_bytes is not None
-        else runtime_io.read_tail(config, transcript_path, follow_links=True)
+        else runtime_io.read_tail(config, transcript_path, follow_links=follow)
     )
     for raw in source:
         if not raw or not raw.lstrip().startswith("{"):

@@ -634,7 +634,13 @@ def _directory_child(
     follow_links: bool,
 ) -> int:
     child = os.path.join(walked, part)
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    # Without O_DIRECTORY, nonblocking open plus fstat still refuses a planted FIFO.
+    flags = (
+        os.O_RDONLY
+        | (getattr(os, "O_DIRECTORY", 0) or 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         return os.open(part, flags, dir_fd=fd)
     except FileNotFoundError:
@@ -695,7 +701,7 @@ def _directory_fd(
     fd = (
         os.dup(parent_fd)
         if relative and parent_fd is not None
-        else os.open("/", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        else os.open("/", os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0))
     )
     walked = "" if relative else "/"
     private = relative and require_owner
@@ -737,7 +743,10 @@ def _owner_directory_fd(
             try:
                 child = os.open(
                     part,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    os.O_RDONLY
+                    | (getattr(os, "O_DIRECTORY", 0) or 0)
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
                     dir_fd=fd,
                 )
             except FileNotFoundError:
@@ -747,7 +756,10 @@ def _owner_directory_fd(
                     os.mkdir(part, mode, dir_fd=fd)
                 child = os.open(
                     part,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    os.O_RDONLY
+                    | (getattr(os, "O_DIRECTORY", 0) or 0)
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
                     dir_fd=fd,
                 )
             os.close(fd)

@@ -4184,6 +4184,8 @@ could climb out of `brain/`. The reads then open the file without following a li
 platform has `O_NOFOLLOW`, so a file swapped for a link after the check is not followed. Windows has
 no `O_NOFOLLOW`, and a parent directory swapped between the check and the open is not caught on any
 platform; both need write access to the owner's `~/.gemini` already.
+Once opened, the direction readers retain that descriptor: replacing its pathname does not redirect
+the read or discard the original file's records.
 
 What is read is the words the person typed, the class every other harness's user messages are
 already in. They become steer facts in the observed record, under the same line bound and
@@ -4325,7 +4327,9 @@ semantic history, delivery, departure and session-end saves and status-line memo
 exclusively created `0o600` temporary files, then replace the target atomically. POSIX creation and
 replacement stay relative to the validated directory descriptor. Annotation saves retain their
 file sync before replacement, directory sync afterward, and bounded retry for Windows sharing
-violations. Shared state locks check the opened descriptor's regular-file type and current-user
+violations. Without `O_DIRECTORY`, POSIX directory admission uses nonblocking opens and descriptor
+type checks; annotation bytes still sync even where directory syncing is unavailable.
+Shared state locks check the opened descriptor's regular-file type and current-user
 ownership before tightening it to `0o600` and locking. Antigravity hook and status-line conversation
 ids, including memo reads, must match UUID syntax.
 
