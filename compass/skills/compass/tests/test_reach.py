@@ -117,6 +117,55 @@ class ReachNudgeTest(unittest.TestCase):
         self.wait_worker(state)
         self.assertEqual(2, len(self.server.received_requests))
 
+    def test_zero_during_delivery_rearms_matching_episode(self) -> None:
+        resolving = threading.Event()
+        resolution_release = threading.Event()
+        resolve_url = reach.resolve_reach_url
+
+        def resolve(config: Any) -> str | None:
+            resolving.set()
+            resolution_release.wait(5)
+            return resolve_url(config)
+
+        for blocked_phase in ("delivery", "url_resolution"):
+            with self.subTest(blocked_phase=blocked_phase), tempfile.TemporaryDirectory() as td:
+                cfg = make_config(state_dir=td, reach_url=self.url, reach_cooldown_sec=0)
+                state = build_runtime_state(cfg, started=100.0)
+                sessions = [{"active": True, "state": "needs_input"}]
+                initial_requests = len(self.server.received_requests)
+                resolving.clear()
+                resolution_release.clear()
+                if blocked_phase == "delivery":
+                    resolution_release.set()
+
+                self.server.started.clear()
+                self.server.release.clear()
+                with mock.patch.object(reach, "resolve_reach_url", side_effect=resolve):
+                    try:
+                        self.assertTrue(reach.maybe_reach_nudge(cfg, state, sessions, now=100.0))
+                        if blocked_phase == "delivery":
+                            self.assertTrue(
+                                self.server.started.wait(5), "no webhook request arrived"
+                            )
+                        else:
+                            self.assertTrue(resolving.wait(5), "URL resolution never started")
+                        self.assertFalse(reach.maybe_reach_nudge(cfg, state, [], now=101.0))
+                    finally:
+                        resolution_release.set()
+                        self.server.release.set()
+                        self.wait_worker(state)
+
+                    self.assertEqual(initial_requests + 1, len(self.server.received_requests))
+                    try:
+                        self.assertTrue(reach.maybe_reach_nudge(cfg, state, sessions, now=102.0))
+                    finally:
+                        self.wait_worker(state)
+                    self.assertEqual(initial_requests + 2, len(self.server.received_requests))
+                    self.assertEqual(
+                        {"needs_input": 1, "finished_unread": 0},
+                        self.server.received_requests[-1]["json"],
+                    )
+
     def test_payload_contains_strictly_counts_and_no_other_fields(self) -> None:
         payload_bytes = reach.format_reach_payload(needs_input=3, finished_unread=2)
         parsed = json.loads(payload_bytes.decode("utf-8"))

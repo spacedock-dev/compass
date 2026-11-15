@@ -172,16 +172,18 @@ def maybe_reach_nudge(
     needs_input, finished_unread = count_reach_sessions(sessions)
     counts = (needs_input, finished_unread)
     with state.reach_lock:
-        if state.reach_worker is not None and state.reach_worker.is_alive():
-            return False
         if needs_input == 0 and finished_unread == 0:
             state.last_reach_counts = (0, 0)
+            state.reach_zero_generation += 1
+            return False
+        if state.reach_worker is not None and state.reach_worker.is_alive():
             return False
         if (
             counts == state.last_reach_counts
             or now - state.last_reach_time < config.reach_cooldown_sec
         ):
             return False
+        zero_generation = state.reach_zero_generation
 
         def deliver() -> None:
             # Collection calls this while holding its memo lock. Cross that boundary
@@ -194,7 +196,10 @@ def maybe_reach_nudge(
                 return
             with state.reach_lock:
                 state.last_reach_time = now
-                state.last_reach_counts = counts
+                # URL resolution may outlive a zero observation. Preserve that
+                # reset so the next matching attention episode can be delivered.
+                if state.reach_zero_generation == zero_generation:
+                    state.last_reach_counts = counts
             send_reach_nudge(
                 config,
                 url,

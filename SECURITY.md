@@ -4261,7 +4261,9 @@ The bounds, all of which hold together:
   change in the counts as the trigger rather than a timer, so a board that is not changing sends
   nothing and a flapping one cannot turn into a stream. At most one background delivery runs at a
   time, with no queue. A slow webhook does not hold the collection lock or delay board refreshes;
-  a later collection can admit changed counts after the in-flight delivery finishes.
+  a later collection can admit changed counts after the in-flight delivery finishes. Observing
+  zero attention resets the count trigger even during delivery or URL resolution. After delivery
+  and the cooldown, a new attention episode with the same counts can send another nudge.
 - The stored URL is read as bounded UTF-8 from a regular file. Symlinks and reparse points are
   refused. Where the operating system provides them, no-follow and nonblocking open flags also
   refuse a link or FIFO substituted after the file check. The environment URL comes from the
