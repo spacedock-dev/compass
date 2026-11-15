@@ -138,6 +138,38 @@ class ProjectTest(unittest.TestCase):
                             self.assertNotIn("Location not measured", output)
                         self.assertNotIn("measured locations", output)
 
+    def test_mixed_location_count_only_counts_measured_members(self) -> None:
+        rows = [
+            {
+                "harness": "claude",
+                "sid": str(i),
+                "project": "audits",
+                "project_key": f"key-{i}",
+                "project_identity_source": source,
+            }
+            for i, source in enumerate(
+                (
+                    "working directory path",
+                    "git common directory",
+                    "inferred Claude worktree layout",
+                )
+            )
+        ]
+        expected = (
+            "2 sessions share this display label across 2 measured locations. "
+            "Location not measured for 1 session with this display label"
+        )
+        brief = terminal_project.derive(
+            terminal_sessions.list_payload({"sessions": rows}), {}, label="audits"
+        )
+        self.assertEqual(expected, brief["warning"])
+        output = "\n".join(terminal_project.render(brief, caller=("claude", "0")))
+        self.assertIn(expected, output.splitlines())
+        self.assertEqual(
+            1, output.count("Location not measured for 1 session with this display label")
+        )
+        self.assertEqual(3, len(brief["members"]))
+
     def test_a_person_reads_the_board_members_counts_order_and_brief(self) -> None:
         for fixture in ("terminal-project", "terminal-project-fo"):
             expected = json.loads((FIXTURES / (fixture + ".json")).read_text())

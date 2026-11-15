@@ -79,6 +79,29 @@ describe('a label is interpreted by measured locations', () => {
     },
   );
 
+  it('a person reads only measured members in the location count on every surface', async () => {
+    const data = locationBoard(3);
+    locationRow(data, 1)['project_key'] = 'path:other';
+    locationRow(data, 2)['project_identity_source'] = 'inferred Claude worktree layout';
+    const expected =
+      '2 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label';
+    const attention = mountShell({ hash: '#n=attention', data });
+    await attention.settle();
+    const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+    expect(card.querySelector('.next-attention-risk-observation > p')?.textContent).toBe(expected);
+    expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(3);
+    attention.unmount();
+    const sessions = mountShell({ hash: '#n=sessions', data });
+    await sessions.settle();
+    for (const note of document.querySelectorAll('.next-operation-collision'))
+      expect(note.textContent).toBe(expected);
+    expect(document.querySelectorAll('.next-operation-collision')).toHaveLength(3);
+    sessions.unmount();
+    const project = mountProject({ hash: '#n=project:audits', data });
+    await project.settle();
+    expect(document.querySelector('.next-project-detail-collision')?.textContent).toBe(expected);
+  });
+
   it('a person sees unknown locations even when fallback keys differ', async () => {
     const data = locationBoard(2);
     for (const [i, row] of locationRows(data).entries())

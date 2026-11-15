@@ -14,6 +14,7 @@ import {
 } from './recovery';
 import { goalScope, instructionHeading } from './goal';
 import { mountProject } from './testing';
+import { locationBoard, locationRow } from '../../test/location_boards';
 
 const read = (name: string) =>
   JSON.parse(readFileSync(resolve('frontend/test/fixtures', `${name}.json`), 'utf8'));
@@ -116,3 +117,13 @@ for (const name of ['terminal-project', 'terminal-project-fo']) {
     });
   });
 }
+
+it('a mixed project counts two measured sessions and discloses its one unknown', async () => {
+  const payload = locationBoard(3);
+  locationRow(payload, 1)['project_key'] = 'path:other';
+  locationRow(payload, 2)['project_identity_source'] = 'inferred Claude worktree layout';
+  const group = groupFor(payload, observe(payload), 'audits');
+  expect(group?.observed.sharedLabelText).toBe(
+    '2 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
+  );
+});

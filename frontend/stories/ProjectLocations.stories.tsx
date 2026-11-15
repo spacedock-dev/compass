@@ -12,8 +12,10 @@ import { locationBoard, locationRow, locationRows } from '../test/location_board
 function Board({
   locations = 1,
   checkout = 'idle',
+  unknown = false,
 }: {
   readonly locations?: number;
+  readonly unknown?: boolean;
   readonly checkout?: 'idle' | 'shared' | 'distinct' | 'missing';
 }) {
   const [shell] = useState(() => {
@@ -33,6 +35,8 @@ function Board({
                 : 'checkout:shared-evidence',
         });
     if (locations > 1) locationRow(data, 8)['project_key'] = 'path:other';
+    if (unknown)
+      locationRow(data, 7)['project_identity_source'] = 'inferred Claude worktree layout';
     const clock = createFakeClock();
     return createShell({
       env: createFakeEnvironment({ clock }),
@@ -114,4 +118,17 @@ export const SameNameDistinctCheckouts: Story = {
 export const MissingCheckoutEvidence: Story = {
   args: { checkout: 'missing' },
   play: SameNameDistinctCheckouts.play,
+};
+
+export const MixedMeasuredAndInferred: Story = {
+  args: { locations: 2, unknown: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('link', { name: 'Label shared across locations' });
+    const card = canvasElement.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+    await expect(card.querySelector('.next-attention-risk-observation > p')).toHaveTextContent(
+      '8 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
+    );
+    await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(9);
+  },
 };

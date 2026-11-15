@@ -16,7 +16,7 @@ export function locationNote(rows: readonly Row[]): string {
   const notes: string[] = [];
   if (keys.size > 1)
     notes.push(
-      `${String(rows.length)} sessions share this display label across ${String(keys.size)} measured locations`,
+      `${String(rows.filter((row) => measuredLocation(row)).length)} sessions share this display label across ${String(keys.size)} measured locations`,
     );
   const unknown = unmeasuredLocationNote(rows);
   if (unknown) notes.push(unknown);
