@@ -285,6 +285,23 @@ class SourceScan:
     start: int = 0
 
 
+def _path_stamp(path: str) -> tuple[int, ...]:
+    info = os.lstat(path)
+    # Reading the file (or resolving its link) may update atime. That is not a
+    # source change; retain the identity, content and admission metadata instead.
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_uid,
+        info.st_gid,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
 def scan_source(
     config: RuntimeConfig,
     path: str,
@@ -306,7 +323,7 @@ def scan_source(
     """
     scan: _Scan | None = None
     try:
-        name_before = os.lstat(path)
+        name_before = _path_stamp(path)
         with os.fdopen(runtime_io.open_harness(path), "rb") as source:
             info = os.fstat(source.fileno())
             device, inode, size, mtime, _, _ = _cursor_position(info, None, "")
@@ -323,7 +340,7 @@ def scan_source(
             scan = _Scan(position, position, discard, scanned=boundary_bytes, stop=stop)
             bounded = replace(config, record_page_max_bytes=max_bytes)
             _scan(bounded, source, scan, "", "", 0, visit, deadline)
-            if os.lstat(path) != name_before:
+            if _path_stamp(path) != name_before:
                 raise OSError("record source path changed")  # noqa: TRY301 - stale paths must use the existing refusal handler
             after = os.fstat(source.fileno())
             if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != stamp:
@@ -380,14 +397,14 @@ def read(
         return {**result, "state": "stale"}
     scan: _Scan | None = None
     try:
-        name_before = os.lstat(path)
+        name_before = _path_stamp(path)
         with os.fdopen(runtime_io.open_harness(path), "rb") as source:
             device, inode, size, mtime, end, discard = _cursor_position(
                 os.fstat(source.fileno()), cursor, identity
             )
             scan = _Scan(end, end, discard)
             _scan(config, source, scan, harness, sid, max(1, min(limit, 50)))
-            if os.lstat(path) != name_before:
+            if _path_stamp(path) != name_before:
                 raise OSError("record source path changed")  # noqa: TRY301 - stale paths must use the existing refusal handler
             after = os.fstat(source.fileno())
             if not _same_file(after, device, inode, size, mtime):
