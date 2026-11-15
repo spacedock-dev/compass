@@ -173,17 +173,36 @@ class StateOwnershipTest(unittest.TestCase):
                 lifecycle.write_state(self.config, self.port, started=2.0)
         self.assertEqual(before, self.state.read_bytes())
 
-    def test_unknown_and_legacy_records_are_not_death_proof(self) -> None:
+    def test_legacy_status_and_stop_keep_the_upgrade_behavior_even_with_a_live_pid(self) -> None:
+        for pid in (99999999, os.getpid()):
+            with self.subTest(pid=pid):
+                self.state.write_text(json.dumps({"pid": pid, "port": self.port, "started": 1}))
+                self.assertEqual(
+                    "stale", lifecycle.instance_status(self.config, self.port)["state"]
+                )
+                message, code = lifecycle.stop_instance(self.config, self.port)
+                self.assertEqual(0, code, message)
+                self.assertFalse(self.state.exists())
+
+    def test_legacy_sweep_preserves_a_live_pid_but_removes_a_crashed_writer(self) -> None:
+        for pid, removed in ((os.getpid(), []), (99999999, [self.port])):
+            with self.subTest(pid=pid):
+                self.state.write_text(json.dumps({"pid": pid, "port": self.port, "started": 1}))
+                self.assertEqual(removed, lifecycle.sweep_stale_states(self.config))
+                self.assertEqual(not bool(removed), self.state.exists())
+
+    def test_explicit_start_recovers_a_crashed_legacy_record_without_manual_deletion(self) -> None:
         self.state.write_text(json.dumps({"pid": 99999999, "port": self.port, "started": 1}))
         with (
-            mock.patch.object(lifecycle, "environment_identity", create=True, return_value=LOCAL),
-            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+            mock.patch.dict(os.environ, {"COMPASS_HOME": self.home}),
+            mock.patch.object(cli, "build_server"),
+            mock.patch.object(lifecycle, "fork_daemon", side_effect=RuntimeError("fork boundary")),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaisesRegex(RuntimeError, "fork boundary"),
         ):
-            self.assertEqual(
-                "unreachable", lifecycle.instance_status(self.config, self.port)["state"]
-            )
-            self.assertEqual([], lifecycle.sweep_stale_states(self.config))
-        self.assertTrue(self.state.exists())
+            cli.main(["--daemon", "--port", str(self.port), "--no-update-check"])
+        self.assertFalse(self.state.exists())
 
     def test_live_or_unknown_process_in_same_environment_is_not_stale(self) -> None:
         self.record()

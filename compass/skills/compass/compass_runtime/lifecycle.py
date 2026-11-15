@@ -278,9 +278,21 @@ def state_gone(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -
     return here == there and _state_process_exists(pid) is False
 
 
+def legacy_state(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -> bool:
+    """Only pre-origin payloads retain the old per-operation cleanup rules."""
+    return (
+        state is not None
+        and "state_format" not in state
+        and not os.path.lexists(origin_path(config, port))
+    )
+
+
 def start_refusal(config: RuntimeConfig, port: int) -> str | None:
-    if os.path.lexists(state_path(config, port)) and not state_gone(
-        config, port, read_state(config, port)
+    state = read_state(config, port)
+    if (
+        os.path.lexists(state_path(config, port))
+        and not legacy_state(config, port, state)
+        and not state_gone(config, port, state)
     ):
         kind, _ = probe_port(port)
         if kind == "compass":
@@ -374,7 +386,13 @@ def read_state(config: RuntimeConfig, port: int) -> dict[str, Any] | None:
     return _read_record(config, state_path(config, port))
 
 
-def remove_state(config: RuntimeConfig, port: int, *, owner_started: float | None = None) -> bool:
+def remove_state(
+    config: RuntimeConfig,
+    port: int,
+    *,
+    owner_started: float | None = None,
+    legacy_stop: bool = False,
+) -> bool:
     """Remove a proven dead writer's record or this process's exact record; report success."""
     target = state_path(config, port)
     with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
@@ -387,7 +405,12 @@ def remove_state(config: RuntimeConfig, port: int, *, owner_started: float | Non
             and state.get("pid") == os.getpid()
             and state.get("started") == owner_started
         )
-        if not own and not state_gone(config, port, state):
+        legacy = legacy_state(config, port, state)
+        pid = (state or {}).get("pid")
+        legacy_dead = legacy and (
+            legacy_stop or not (isinstance(pid, int) and pid > 0 and pid_exists(pid))
+        )
+        if not own and not legacy_dead and not state_gone(config, port, state):
             return False
         if not runtime_config.remove_state_file(target):
             return False
@@ -678,7 +701,7 @@ def instance_status(config: RuntimeConfig, port: int) -> dict[str, Any]:
     return {
         "state": (
             "stale"
-            if state_gone(config, port, state)
+            if legacy_state(config, port, state) or state_gone(config, port, state)
             else "unreachable"
             if os.path.lexists(state_path(config, port))
             else "absent"
@@ -796,7 +819,7 @@ def stop_instance(config: RuntimeConfig, port: int) -> tuple[str, int]:
             1,
         )
     if state == "stale":
-        if not remove_state(config, port):
+        if not remove_state(config, port, legacy_stop=True):
             return (f"Compass: could not remove {state_path(config, port)}; state left alone.", 1)
         return (f"Compass: nothing running on port {port}; removed the stale state file.", 0)
     # Nothing there and nothing recorded. Stopping is idempotent on purpose:
