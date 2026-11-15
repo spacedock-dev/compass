@@ -4301,7 +4301,9 @@ user-owned directories. On POSIX, Compass resolves the root through opened direc
 checks its type and ownership, and tightens excess permissions on an owned root to `0o700`. Every missing parent it
 creates is private from creation, regardless of umask. It neither chmods unrelated existing
 ancestors nor creates beneath a foreign-owned directory. On POSIX, state descendants are traversed from the
-validated root without following directory links. The platform's own ancestor aliases, such as
+validated root without following directory links. Relative links at an admitted root or in a harness
+store resolve against the held parent directory, including when an earlier link changes the path's
+depth. The platform's own ancestor aliases, such as
 macOS `/tmp` pointing to `/private/tmp`, remain usable.
 
 Harness discovery validates existing configured store roots, tightening owned roots to `0o700`
@@ -4327,8 +4329,12 @@ violations. Shared state locks check the opened descriptor's regular-file type a
 ownership before tightening it to `0o600` and locking. Antigravity hook and status-line conversation
 ids, including memo reads, must match UUID syntax.
 
-Permission modes are advisory on Windows. Windows lacks the POSIX directory-descriptor traversal,
-`O_NOFOLLOW` and `O_NONBLOCK` guards; pathname checks cannot close a racing reparse-point swap.
+Permission modes are advisory on Windows. The shared strict-read, atomic-write and log-append
+helpers resolve configured roots, then refuse descendant symlinks and other reparse points.
+They hold native directory handles without write or delete sharing during access. Strict reads and log
+appends open the leaf reparse point itself and refuse it before reading or writing. These checks
+do not extend to every state reader or lock: remaining pathname-only checks cannot close a racing
+reparse-point swap.
 
 `POST /api/shutdown` stops the server and is gated by the same `_local_ok()` checks (`Host`,
 `Origin`, `Sec-Fetch-Site`) that already protect `/api/notify`. It adds no new exposure of

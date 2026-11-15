@@ -21,6 +21,7 @@ on, and "the dashboard is not running" is an ordinary state, not an error.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import errno
 import http.client
 import json
@@ -31,7 +32,11 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, BinaryIO
+from ctypes import wintypes
+from typing import TYPE_CHECKING, Any, BinaryIO
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 DEFAULT_URL = "http://127.0.0.1:4553/api/notify"
 MAX_PAYLOAD_BYTES = 65536  # matches the server's own cap
@@ -43,6 +48,16 @@ def _open_state(path: str, *, root: str | None = None) -> int:
     """Strict state read: an owned regular leaf, with no untrusted descendant links."""
     path = os.path.abspath(path)
     parent = None
+    guard = contextlib.ExitStack()
+    if os.name == "nt":
+        directory = guard.enter_context(
+            _windows_directory(
+                os.path.dirname(path),
+                root=root if root is not None else os.path.splitdrive(path)[0] + os.sep,
+                create=False,
+            )
+        )
+        path = os.path.join(directory, os.path.basename(path))
     if os.name != "nt":
         parent = (
             _owner_directory_fd(os.path.dirname(path), root=root, create=False)
@@ -58,10 +73,14 @@ def _open_state(path: str, *, root: str | None = None) -> int:
             | getattr(os, "O_NONBLOCK", 0)
             | getattr(os, "O_NOFOLLOW", 0)
         )
-        fd = os.open(
-            path if parent is None else os.path.basename(path),
-            flags,
-            **({} if parent is None else {"dir_fd": parent}),
+        fd = (
+            _windows_file_fd(path)
+            if sys.platform == "win32"
+            else os.open(
+                path if parent is None else os.path.basename(path),
+                flags,
+                **({} if parent is None else {"dir_fd": parent}),
+            )
         )
         try:
             info = os.fstat(fd)
@@ -71,6 +90,7 @@ def _open_state(path: str, *, root: str | None = None) -> int:
             raise
         return fd
     finally:
+        guard.close()
         if parent is not None:
             os.close(parent)
 
@@ -88,6 +108,100 @@ def open_regular_binary(path: str) -> BinaryIO:
     return os.fdopen(_open_state(path, root=_state_root(path)), "rb")
 
 
+def _is_reparse(info: os.stat_result) -> bool:
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
+
+def _windows_handle(path: str, *, directory: bool = False, append: bool = False) -> tuple[Any, Any]:
+    """Open the reparse point itself; deny deletion while a directory is held."""
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    kernel.GetFileInformationByHandleEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
+    kernel.GetFileInformationByHandleEx.restype = wintypes.BOOL
+    # The CRT seeks before appending, which requires GENERIC_WRITE rather than
+    # FILE_APPEND_DATA alone. Deny directory write sharing too: an open directory
+    # must not become a junction between admission and the child operation.
+    access = 0x80 if directory else (0x40000080 if append else 0x80000000)
+    share = 0x1 if directory else 0x3
+    handle = kernel.CreateFileW(path, access, share, None, 4 if append else 3, 0x02200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())  # type: ignore[attr-defined]
+    try:
+        attributes = (wintypes.DWORD * 2)()
+        if not kernel.GetFileInformationByHandleEx(
+            handle, 9, attributes, ctypes.sizeof(attributes)
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())  # type: ignore[attr-defined]  # noqa: TRY301 - close the opened handle on refusal
+        if attributes[0] & 0x400:
+            raise OSError(errno.ELOOP, "Refusing a state reparse point", path)  # noqa: TRY301 - close the opened handle on refusal
+        if directory and not attributes[0] & 0x10:
+            raise OSError(errno.ENOTDIR, "State parent is not a directory", path)  # noqa: TRY301 - close the opened handle on refusal
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
+    return kernel, handle
+
+
+def _windows_file_fd(path: str, *, append: bool = False) -> int:
+    import msvcrt  # noqa: PLC0415 - the CRT handle transfer exists only on Windows
+
+    kernel, handle = _windows_handle(path, append=append)
+    try:
+        flags = os.O_APPEND if append else os.O_RDONLY
+        return int(msvcrt.open_osfhandle(handle, flags | getattr(os, "O_BINARY", 0)))  # type: ignore[attr-defined]
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
+
+
+@contextlib.contextmanager
+def _windows_directory(path: str, *, root: str | None, create: bool) -> Iterator[str]:
+    """Admit the root's target, then hold each non-reparse descendant until I/O ends."""
+    absolute = os.path.abspath(path)
+    anchor = os.path.abspath(path if root is None else root)
+    if os.path.commonpath((absolute, anchor)) != anchor:
+        raise OSError(errno.EPERM, "State directory is outside its configured root", path)
+    relative = os.path.relpath(absolute, anchor)
+    resolved = os.path.realpath(anchor)
+    with contextlib.ExitStack() as held:
+        if create:
+            os.makedirs(resolved, mode=0o700, exist_ok=True)
+        parts = () if relative == "." else relative.split(os.sep)
+        for part in (None, *parts):
+            if part is not None:
+                resolved = os.path.join(resolved, part)
+                if create:
+                    with contextlib.suppress(FileExistsError):
+                        os.mkdir(resolved, 0o700)
+            info = os.lstat(resolved)
+            if _is_reparse(info):
+                raise OSError(errno.ELOOP, "Refusing a state directory reparse point", resolved)
+            _check_directory(info, resolved)
+            if sys.platform == "win32":
+                kernel, handle = _windows_handle(resolved, directory=True)
+                held.callback(kernel.CloseHandle, handle)
+        yield resolved
+
+
 def _owned(info: os.stat_result) -> bool:
     return os.name == "nt" or info.st_uid == os.getuid()
 
@@ -98,7 +212,7 @@ def _check_directory(info: os.stat_result, path: str, *, require_owner: bool = T
 
 
 def _check_regular(info: os.stat_result, path: str) -> None:
-    if not stat.S_ISREG(info.st_mode) or not _owned(info):
+    if not stat.S_ISREG(info.st_mode) or _is_reparse(info) or not _owned(info):
         raise OSError(errno.EINVAL, "Not an owned regular file", path)
 
 
@@ -121,7 +235,7 @@ def _directory_child(
     follow_links: bool,
 ) -> int:
     child = os.path.join(walked, part)
-    flags = os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         return os.open(part, flags, dir_fd=fd)
     except FileNotFoundError:
@@ -138,8 +252,11 @@ def _directory_child(
             os.close(new_fd)
             raise
         return new_fd
-    except OSError:
-        target = os.readlink(part, dir_fd=fd)
+    except OSError as open_error:
+        try:
+            target = os.readlink(part, dir_fd=fd)
+        except OSError:
+            raise open_error from None
         trusted = (
             _platform_alias(child, target)
             and os.stat(part, dir_fd=fd, follow_symlinks=False).st_uid == 0
@@ -150,7 +267,8 @@ def _directory_child(
         if links[0] > 40:
             raise OSError(errno.ELOOP, "Too many directory links", child) from None
         return _directory_fd(
-            os.path.join(walked, target),
+            target,
+            parent_fd=fd,
             create=False,
             mode=mode,
             links=links,
@@ -167,13 +285,21 @@ def _directory_fd(
     links: list[int] | None = None,
     require_owner: bool = True,
     follow_links: bool = True,
+    parent_fd: int | None = None,
 ) -> int:
     """Walk held directories and bound link traversal, preserving platform ancestor aliases."""
     links = [0] if links is None else links
-    absolute = os.path.abspath(path)
-    fd = os.open("/", os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0))
-    walked = "/"
-    private = False
+    # Relative link targets, including "..", belong to the held parent, not its
+    # lexical name: an earlier directory link may have changed the physical depth.
+    relative = parent_fd is not None and not os.path.isabs(path)
+    absolute = path if relative else os.path.join(os.getcwd(), path)
+    fd = (
+        os.dup(parent_fd)
+        if relative and parent_fd is not None
+        else os.open("/", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    )
+    walked = "" if relative else "/"
+    private = relative and require_owner
     try:
         for part in absolute.split("/"):
             if not part:
@@ -212,7 +338,7 @@ def _owner_directory_fd(
             try:
                 child = os.open(
                     part,
-                    os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
                     dir_fd=fd,
                 )
             except FileNotFoundError:
@@ -222,7 +348,7 @@ def _owner_directory_fd(
                     os.mkdir(part, mode, dir_fd=fd)
                 child = os.open(
                     part,
-                    os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
                     dir_fd=fd,
                 )
             os.close(fd)
@@ -239,10 +365,8 @@ def _owner_directory_fd(
 def ensure_owner_dir(path: str, mode: int = 0o700, *, root: str | None = None) -> None:
     """Resolve an owned configured root and privately create every missing parent."""
     if os.name == "nt":
-        # Windows ignores POSIX modes and does not expose openat directory handles.
-        os.makedirs(path, mode=mode, exist_ok=True)
-        if not os.path.isdir(path):
-            raise OSError(errno.ENOTDIR, "State root is not a directory", path)
+        with _windows_directory(path, root=root, create=True):
+            pass
         return
     fd = _owner_directory_fd(path, root=root, mode=mode)
     os.close(fd)
@@ -252,8 +376,10 @@ def write_owner_json(path: str, value: dict[str, Any]) -> None:
     """Publish a memo relative to its owned configured root, without runtime imports."""
     home = os.path.dirname(path)
     parent = None
+    guard = contextlib.ExitStack()
     if os.name == "nt":
-        ensure_owner_dir(home, root=_state_root(path))
+        home = guard.enter_context(_windows_directory(home, root=_state_root(path), create=True))
+        path = os.path.join(home, os.path.basename(path))
     else:
         parent = _owner_directory_fd(home, root=_state_root(path))
     tmp = path + "." + secrets.token_hex(16) + ".tmp"
@@ -283,6 +409,7 @@ def write_owner_json(path: str, value: dict[str, Any]) -> None:
         if created:
             with contextlib.suppress(OSError):
                 os.unlink(temp_name, **options)
+        guard.close()
         if parent is not None:
             os.close(parent)
 

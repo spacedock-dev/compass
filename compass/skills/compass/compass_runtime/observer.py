@@ -1750,7 +1750,9 @@ def _window_lines(config: RuntimeConfig, path: str) -> list[str]:
         # what is already here.
         return tail_lines
     try:
-        head = runtime_io.read_prefix_bytes(path, max_bytes=config.observer_head_bytes)
+        head = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.observer_head_bytes, harness=True
+        )
     except OSError:
         return tail_lines
     # The first byte the tail read covers. A head line starting at or after it is

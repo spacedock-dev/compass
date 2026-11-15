@@ -726,7 +726,7 @@ def _glab_config_text(environ: Mapping[str, str]) -> str:
         return ""
     try:
         raw = runtime_io.read_prefix_bytes(
-            os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES
+            os.path.join(base, "glab-cli", "config.yml"), max_bytes=_HOSTS_FILE_BYTES, harness=True
         )
     except OSError:
         return ""
@@ -856,14 +856,18 @@ def _run(
                     check=False,
                     **options,
                 )
+            stdout = runtime_io.read_prefix_bytes(
+                out_path, max_bytes=OUTPUT_LIMIT_BYTES + 1, root=out_dir
+            )
+            stderr = runtime_io.read_prefix_bytes(
+                err_path, max_bytes=STDERR_LIMIT_BYTES, root=out_dir
+            )
         except subprocess.TimeoutExpired:
             raise _FailureError(ERROR_TIMEOUT) from None
         except supervise.OversizedError:
             raise _FailureError(ERROR_OUTPUT) from None
         except (OSError, subprocess.SubprocessError):
             raise _FailureError(failed) from None
-        stdout = runtime_io.read_prefix_bytes(out_path, max_bytes=OUTPUT_LIMIT_BYTES + 1)
-        stderr = runtime_io.read_prefix_bytes(err_path, max_bytes=STDERR_LIMIT_BYTES)
     if len(stdout) > OUTPUT_LIMIT_BYTES:
         raise _FailureError(ERROR_OUTPUT)
     text = stderr.decode("utf-8", "replace")

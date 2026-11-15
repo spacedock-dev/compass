@@ -205,6 +205,7 @@ def _read_token(
             raw = runtime_io.read_prefix_bytes(
                 credentials_path(config),
                 max_bytes=config.usage_credentials_cap_bytes,
+                harness=True,
             ).decode("utf-8", "replace")
         except OSError:
             return None, None, "no credential file"
