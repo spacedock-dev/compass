@@ -595,6 +595,7 @@ GET_ROUTES = {
     "/api/annotations": "/api/annotations",
     "/api/health": "/api/health",
     "/api/settings": "/api/settings",
+    "/api/live-monitor": f"/api/live-monitor?harness=claude&sid={SHORT}",
 }
 # Server-sent events, held open; it carries `/api/data`'s payload, which the sweep reads.
 UNSWEPT_GET = {"/api/stream"}
