@@ -65,9 +65,7 @@ class MonitorCommandTest(unittest.TestCase):
                             },
                         ),
                     ),
-                    mock.patch.object(
-                        monitor.uuid, "uuid4", return_value=types.SimpleNamespace(hex="a" * 32)
-                    ),
+                    mock.patch("uuid.uuid4", return_value=types.SimpleNamespace(hex="a" * 32)),
                     mock.patch.object(monitor, "ancestor", return_value={}),
                     mock.patch.object(monitor, "spawn"),
                     mock.patch("sys.stdout", io.StringIO()) as out,
@@ -1271,18 +1269,22 @@ class MonitorRecoveryTest(unittest.TestCase):
                 self.assertTrue(start.call_args.kwargs["in_session"])
 
     def test_an_unknown_lease_never_stops_the_working_helper(self) -> None:
-        malformed = [
-            {"on": on, "terminal": True, "disclosure": "notice"}
-            for on in (None, 0, 1, "false", [], {})
-        ] + [
-            {"on": False, "disclosure": None},
-            {"on": True, "disclosure": "notice"},
-            *[
-                {"on": True, "terminal": value, "disclosure": "notice"}
-                for value in (None, 0, 1, "false", [], {})
-            ],
-            *[{"on": True, "terminal": True, "disclosure": value} for value in (None, 42)],
+        invalid: tuple[Any, ...] = (None, 0, 1, "false", [], {})
+        malformed: list[dict[str, Any]] = [
+            {"on": on, "terminal": True, "disclosure": "notice"} for on in invalid
         ]
+        malformed.extend(
+            [
+                {"on": False, "disclosure": None},
+                {"on": True, "disclosure": "notice"},
+            ]
+        )
+        malformed.extend(
+            {"on": True, "terminal": value, "disclosure": "notice"} for value in invalid
+        )
+        malformed.extend(
+            {"on": True, "terminal": True, "disclosure": value} for value in (None, 42)
+        )
         for answer in (
             *(client.Reply(200, {"state": state}) for state in malformed),
             client.Reply(200, {}),
@@ -1340,8 +1342,8 @@ class MonitorRecoveryTest(unittest.TestCase):
                         },
                     ),
                 ),
-                mock.patch.object(monitor.time, "monotonic", side_effect=[0, 0, 100]),
-                mock.patch.object(monitor.time, "sleep"),
+                mock.patch("time.monotonic", side_effect=[0, 0, 100]),
+                mock.patch("time.sleep"),
                 mock.patch.object(monitor, "_start") as start,
                 mock.patch("sys.stderr", io.StringIO()),
             ):
