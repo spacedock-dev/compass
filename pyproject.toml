@@ -62,7 +62,8 @@ max-args = 8
 "compass/skills/compass/compass_runtime/cli.py" = ["C901", "PLR0911"]
 "compass/skills/compass/compass_runtime/config.py" = ["C901", "PLR0913"]
 # `_turn_signal` retains the server's reviewed branch shape after extraction.
-"compass/skills/compass/compass_runtime/records.py" = ["C901", "PLR0911", "PLR0912"]
+# masked_values compares redacted strings character by character, not filesystem paths.
+"compass/skills/compass/compass_runtime/records.py" = ["C901", "PLR0911", "PLR0912", "RUF071"]
 # The Gemini, Copilot and Droid analyzers keep the server's reviewed branch
 # shape: each arm is one defensively-read field of an untyped harness record.
 "compass/skills/compass/compass_runtime/transcripts.py" = ["C901", "PLR0912"]

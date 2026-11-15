@@ -33,7 +33,7 @@ with the retired study; the React page carries the same rules under `frontend/sr
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import functools
 import re
 import time
@@ -257,7 +257,7 @@ def time_zone(value: object) -> zoneinfo.ZoneInfo | None:
 
 
 def zone_clock(
-    zone: int | datetime.tzinfo, *, now: Callable[[], float] = time.time
+    zone: int | dt.tzinfo, *, now: Callable[[], float] = time.time
 ) -> Callable[[float], str]:
     """`clock_text` on the reader's clock: a named zone, or minutes east of UTC.
 
@@ -267,11 +267,11 @@ def zone_clock(
     server never guesses a zone; it draws the one the page sent.
     """
     if isinstance(zone, int):
-        zone = datetime.timezone(datetime.timedelta(minutes=zone))
+        zone = dt.timezone(dt.timedelta(minutes=zone))
 
     def clock(at: float) -> str:
-        then = datetime.datetime.fromtimestamp(at, zone)
-        today = datetime.datetime.fromtimestamp(now(), zone)
+        then = dt.datetime.fromtimestamp(at, zone)
+        today = dt.datetime.fromtimestamp(now(), zone)
         return then.strftime("%H:%M" if then.date() == today.date() else "%Y-%m-%d %H:%M")
 
     return clock

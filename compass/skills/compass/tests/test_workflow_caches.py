@@ -321,7 +321,16 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
 
     def version(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(self.bootstrap / "node_modules/.bin/pnpm"), "--version"],
+            # pnpm's script-denied wrapper has no shebang; use the workflow's shell fallback.
+            [
+                shutil.which("bash") or "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                'exec "$1" --version',
+                "pnpm-version",
+                str(self.bootstrap / "node_modules/.bin/pnpm"),
+            ],
             cwd=self.home,
             env=self.env,
             check=False,
@@ -336,7 +345,7 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
         self.assertEqual(0, installed.returncode, installed.stderr)
         version = self.version()
         self.assertEqual(0, version.returncode, version.stderr)
-        self.assertEqual("12.9.1", version.stdout.strip())
+        self.assertEqual("12.17.0", version.stdout.strip())
         self.assertEqual(before, (self.bootstrap / "package-lock.json").read_bytes())
         self.assertFalse(
             (self.bootstrap / "node_modules/pnpm/pnpm-native").exists(),
@@ -380,7 +389,13 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
         self.assertEqual(str(self.bootstrap / "node_modules/.bin/pnpm"), executable)
         assert executable is not None
         version = subprocess.run(
-            [executable, "--version"],
+            [
+                shutil.which("bash") or "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                "exec pnpm --version",
+            ],
             cwd=self.workspace,
             env=env,
             capture_output=True,
@@ -389,7 +404,7 @@ class PnpmOfflineBootstrapTest(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, version.returncode, version.stderr)
-        self.assertEqual("12.9.1", version.stdout.strip())
+        self.assertEqual("12.17.0", version.stdout.strip())
 
     def test_a_builder_rejects_a_changed_pnpm_integrity_before_running_it(self) -> None:
         baseline = self.install()

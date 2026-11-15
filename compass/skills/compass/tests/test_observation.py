@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import datetime
+import datetime as dt
 import json
 import os
 import tempfile
@@ -325,7 +325,7 @@ class LedgerTest(ObservationTestCase):
         # Stamped a minute before the end and delivered after it. Written through
         # the envelope rather than poked into the map, so the parse's own
         # plausibility filter is on the path a real reordered hook would take.
-        older = datetime.datetime.fromtimestamp(NOW, tz=datetime.UTC).isoformat()
+        older = dt.datetime.fromtimestamp(NOW, tz=dt.UTC).isoformat()
         coordinator.submit("claude", self.envelope(event="turn_started", timestamp=older))
         self.assertEqual(self.now, coordinator.ended_at("claude", PREFIX))
 
@@ -2059,7 +2059,7 @@ class ApplicationOverlayTest(support.RuntimeTestCase):
 
 
 def _iso(at: float) -> str:
-    return datetime.datetime.fromtimestamp(at, tz=datetime.UTC).isoformat()
+    return dt.datetime.fromtimestamp(at, tz=dt.UTC).isoformat()
 
 
 class _StopSource(_NoCommandReports):

@@ -2,10 +2,10 @@
   "name": "compass-frontend",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@12.9.1",
+  "packageManager": "pnpm@12.17.0",
   "engines": {
     "node": ">=26.10.0 <27",
-    "pnpm": "12.9.1"
+    "pnpm": "12.17.0"
   },
   "scripts": {
     "dev": "node frontend/dev/supervisor.mjs",
