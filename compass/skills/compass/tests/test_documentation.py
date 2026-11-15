@@ -1490,10 +1490,14 @@ class EndStoreContractDocumentationTest(unittest.TestCase):
         )
         self.assertIn("`~/.compass/compass-ends.json`", self.FLAT)
 
-    def test_the_documented_mode_is_the_one_in_the_open_call(self) -> None:
+    @unittest.skipIf(os.name == "nt", "POSIX file permissions")
+    def test_the_documented_mode_is_the_mode_of_the_saved_store(self) -> None:
         section = self.FLAT.split("## Session ends", 1)[1].split("## ", 1)[0]
         self.assertIn("opened `0600` with the mode in the `open` call", section)
-        self.assertIn("os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)", self.SOURCE)
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_home=home)
+            self.assertTrue(ends.save(config, []))
+            self.assertEqual(0o600, Path(ends.store_path(config)).stat().st_mode & 0o777)
 
     def test_the_documented_off_switch_and_deletion_command_are_flags_the_parser_accepts(
         self,
@@ -1750,14 +1754,19 @@ class SemanticHistoryContractDocumentationTest(unittest.TestCase):
             forget = forget.split("\ndef ", 1)[0]
             self.assertNotIn("semantic", forget.lower(), module)
 
+    @unittest.skipIf(os.name == "nt", "POSIX permissions and open-file replacement")
     def test_the_store_is_written_owner_only_through_a_rename(self) -> None:
         section = _flat_section(self.SECURITY, "## Published text (credential redaction)")
         self.assertIn("written owner-only through a temp file and a rename", section)
-        source = (SERVER_PATH.parent / "compass_runtime" / "semantic_history.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("0o600", source)
-        self.assertIn("os.replace", source)
+        with tempfile.TemporaryDirectory() as home:
+            config = make_config(state_home=home)
+            target = Path(semantic_history.store_path(config))
+            target.write_text("old bytes", encoding="utf-8")
+            with target.open("rb") as old_file:
+                self.assertTrue(semantic_history._write(config, {"projects": {}}))
+                self.assertEqual(b"old bytes", old_file.read())
+            self.assertEqual({"projects": {}}, json.loads(target.read_text(encoding="utf-8")))
+            self.assertEqual(0o600, target.stat().st_mode & 0o777)
 
 
 class LightHarnessUsageContractDocumentationTest(unittest.TestCase):

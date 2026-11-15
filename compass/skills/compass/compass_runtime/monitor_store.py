@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import io as runtime_io
+
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
@@ -19,7 +21,8 @@ if TYPE_CHECKING:
 class Store:
     def __init__(self, home: str, sid: str) -> None:
         self.root = Path(home) / "monitor"
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        runtime_io.ensure_owner_dir(str(home))
+        runtime_io.ensure_owner_dir(str(self.root))
         info = self.root.lstat()
         if not stat.S_ISDIR(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
             raise OSError("monitor directory is not privately owned")

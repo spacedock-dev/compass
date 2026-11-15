@@ -33,8 +33,8 @@ all consult it.
 `deliveries` shipped this shape without one and lost records: an unlocked
 read-modify-write with three threads reaching it, plus a temp name shared by
 every thread in the process. Measured there, two barrier-synchronised writers
-lost a record in 60 of 60 trials. This module has the lock and the per-thread
-temp name from its first commit rather than after the same measurement.
+lost a record in 60 of 60 trials. This module has the lock from its first commit
+rather than after the same measurement. Private atomic publication now uses the shared I/O helper.
 
 ## What may be said, and what may not
 
@@ -56,7 +56,6 @@ from the rows those words were read against and keeps the row for its spend.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import threading
@@ -276,24 +275,14 @@ def _save_at(
         "v": SCHEMA_VERSION,
         "entries": [dict(entry) for entry in _bounded(entries, config.departure_max_entries)],
     }
-    # Per thread as well as per process, for `deliveries.save`'s measured
-    # reason: a shared name means two writers open it `O_TRUNC` on independent
-    # descriptors and `os.replace` renames the interleaving over the store.
-    tmp = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-        os.replace(tmp, target)
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
             f"Compass: could not write the departure record {target}; "
             "what was raised while you were away will not be readable later",
             diagnostic_sink,
         )
-        with contextlib.suppress(OSError, ValueError):
-            os.unlink(tmp)
         return False
     return True
 

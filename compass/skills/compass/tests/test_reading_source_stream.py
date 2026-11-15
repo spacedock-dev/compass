@@ -193,16 +193,12 @@ class FrozenParentSourceTest(unittest.TestCase):
                 self.assertEqual((), page.records)
                 self.assertIsNone(page.next)
 
-    def test_claude_parent_keeps_existing_follow_link_policy(self) -> None:
-        target = self.root / "target.jsonl"
-        target.write_bytes(b'{"id":"parent"}\n')
+    def test_claude_parent_refuses_a_leaf_symlink(self) -> None:
+        target = self.root / "elsewhere.jsonl"
+        target.write_bytes(b'{"type":"user"}\n')
         self.path.symlink_to(target)
-        cursor = self.module().freeze(str(self.path), "claude", "parent")
-        pages = self.drain(cursor, max_bytes=7)
-        self.assertTrue(pages[-1].source_complete)
-        self.assertEqual(
-            ["parent"], [record.value["id"] for page in pages for record in page.records]
-        )
+        with self.assertRaises(OSError):
+            self.module().freeze(str(self.path), "claude", "parent")
 
     def test_edit_after_a_verification_slice_refuses_even_an_already_hashed_byte(self) -> None:
         raw = b'{"id":"first"}\n{"id":"second"}\n'

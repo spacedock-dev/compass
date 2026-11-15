@@ -293,7 +293,7 @@ def _locked_update(config: RuntimeConfig, change: Any, diagnostic_sink: Any) -> 
         return OUTCOME_UNWRITABLE
     try:
         try:
-            os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(config.state_home))
         except OSError:
             return OUTCOME_UNWRITABLE
         with runtime_io.held_file_lock(_lock_path(config), wait=_LOCK_WAIT_SECONDS) as held:

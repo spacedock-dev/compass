@@ -4296,6 +4296,27 @@ tracebacks land there, not just Python-level prints. Nothing ever removes or rot
 `--stop` (or a killed process) deletes the state file but leaves the log behind, since it is the
 record of a detached run, so `~/.compass` accumulates one log file per port indefinitely.
 
+State directory creation tightens an existing directory owned by the current user to `0o700`
+on POSIX. A final directory symlink or a directory owned by another user refuses, without
+changing that user's permissions. Daemon logs open at `0o600` and tighten an existing owned log
+to that mode. They refuse final symlinks and nonregular files. Annotation, observer sidecar,
+semantic history, delivery, departure and session-end saves use a unique, exclusively created
+`0o600` temporary file beside the target, then replace the target atomically. An existing target
+symlink or nonregular file refuses. Annotation saves retain their file sync before replacement,
+directory sync afterward, and bounded retry for Windows sharing violations.
+
+Bounded transcript readers, session pages, reading projections, Python hook capability reads and
+MCP instance discovery open regular files without following a final symlink. On POSIX their
+nonblocking opens also refuse planted FIFOs without waiting for a writer. A symlinked harness
+store directory still works when its session files are regular files. SQLite readers check the
+same leaf policy before connecting, but SQLite reopens by pathname, so that check does not close
+a racing path replacement. Windows lacks `O_NOFOLLOW` and `O_NONBLOCK`; its pre-open link check
+cannot close a racing reparse-point swap. Locks taken through the shared state helper check the opened descriptor's
+regular-file type and, on POSIX, current-user ownership before tightening it to `0o600` and
+locking. Antigravity hook and status-line conversation ids must match UUID syntax. Status-line
+memos use the same private, exclusive temporary-file and atomic replacement policy, and refuse
+an existing target symlink. Permission modes are advisory on Windows.
+
 `POST /api/shutdown` stops the server and is gated by the same `_local_ok()` checks (`Host`,
 `Origin`, `Sec-Fetch-Site`) that already protect `/api/notify`. It adds no new exposure of
 consequence: any local process that can reach the port could already read every session on the

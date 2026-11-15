@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import logging
@@ -10,6 +9,7 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
+from . import io as runtime_io
 from . import records
 
 if TYPE_CHECKING:
@@ -147,16 +147,9 @@ def reconcile_project(
 
 def _write(config: RuntimeConfig, payload: dict[str, Any]) -> bool:
     target = store_path(config)
-    tmp = f"{target}.{os.getpid()}.tmp"
     try:
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, separators=(",", ":"))
-        os.replace(tmp, target)
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload, separators=(",", ":")))
     except (OSError, ValueError):
-        with contextlib.suppress(OSError, ValueError):
-            os.unlink(tmp)
         return False
     return True
 

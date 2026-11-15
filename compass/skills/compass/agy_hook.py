@@ -69,6 +69,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -115,10 +116,12 @@ def capability(port: int) -> str | None:
     """This run's Antigravity token, or None if there is nothing to read."""
     home = state_home()
     try:
+        from notify_hook import open_regular_binary  # noqa: PLC0415 - standalone hook dependency
+
         path = os.path.join(home, f"compass-{port}.json")
-        with open(path, "rb") as handle:
+        with open_regular_binary(path) as handle:
             data = json.loads(handle.read(65_536) or b"null")
-    except (OSError, ValueError, RecursionError):
+    except (OSError, ValueError, RecursionError, ImportError):
         return None
     if not isinstance(data, dict):
         return None
@@ -137,12 +140,12 @@ def conversation_id(payload: dict[str, Any]) -> str | None:
     `ANTIGRAVITY_CONVERSATION_ID` for hook processes and a payload that changed
     shape would otherwise take the adapter out entirely.
 
-    The length check is the same one `statusline_hook.py` applies, and for the
-    same measured reason: the id is the 36-character stem of a real
-    `conversations/<id>.db`, and it is blank before a conversation exists.
+    UUID syntax keeps this identity consistent with the status-line memo name.
     """
     for value in (payload.get("conversationId"), os.environ.get("ANTIGRAVITY_CONVERSATION_ID")):
-        if isinstance(value, str) and len(value.strip()) == 36:
+        if isinstance(value, str) and re.fullmatch(
+            r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", value.strip()
+        ):
             return value.strip()
     return None
 

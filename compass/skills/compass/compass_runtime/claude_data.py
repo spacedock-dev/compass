@@ -515,6 +515,7 @@ def _read_codex_goals(path: str) -> list[Any]:
     )
 
     def read(uri: str) -> list[Any]:
+        runtime_io.check_sqlite_file(path)
         con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         try:
             return list(con.execute(query, (GOAL_CAP_CHARS, CODEX_GOALS_ROW_CAP)).fetchall())

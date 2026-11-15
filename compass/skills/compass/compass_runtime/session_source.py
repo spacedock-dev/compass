@@ -486,7 +486,7 @@ def _outline_pending(
     if sum(line.end - line.start for line in lines) > budget.available or budget.reason:
         return None
     rows = _outline_rows(
-        path, harness, checkpoint.stamp, tuple(lines), budget, stream=checkpoint.stream
+        path, harness, checkpoint.stamp, tuple(lines), budget, _stream=checkpoint.stream
     )
     if rows is None:
         return None
@@ -511,17 +511,16 @@ def _outline_pending(
 
 def _outline_rows(
     path: str,
-    harness: str,
+    _harness: str,
     stamp: Stamp,
     lines: tuple[_OutlineLine, ...],
     budget: _Budget,
     *,
-    stream: str = "parent",
+    _stream: str = "parent",
 ) -> dict[_OutlineLine, dict[str, Any]] | None:
     """Read and verify selected input lines using the caller's remaining allowance."""
     rows: dict[_OutlineLine, dict[str, Any]] = {}
-    follow = stream == "parent" and harness not in observer.DIRECTION_HARNESSES
-    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or _stamp(info) != stamp:
             raise _SourceChangedError
@@ -666,8 +665,7 @@ def _outline_parent_page(
             skipping=frontier.discarding,
         )
     )
-    follow = checkpoint.stream == "parent" and harness not in observer.DIRECTION_HARNESSES
-    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
         verified: str | None
@@ -1205,7 +1203,7 @@ def _outline_replay(
         raise ValueError("outline_dependency_limit")
     if required > budget.available or budget.reason:
         return SourcePage("ok", harness, sid), checkpoint
-    source = _outline_rows(owner_path, harness, owner.stamp, lines, budget, stream=stream)
+    source = _outline_rows(owner_path, harness, owner.stamp, lines, budget, _stream=stream)
     if source is None or time.monotonic() >= budget.deadline:
         return SourcePage("ok", harness, sid), checkpoint
     rows = [source[line] for line in sorted(lines, key=lambda line: line.start)]
@@ -1842,10 +1840,7 @@ def _read_stream(  # noqa: PLR0913 - stream identity, budget and read modes
     newest: bool,
     track_prefix: bool = False,
 ) -> _StreamRead:
-    # Children were admitted link-free, so a link swapped in since is refused, as the tool report's
-    # child reads do; the parent follows exactly where `project_context`'s transcript read does.
-    follow = stream == "parent" and harness not in observer.DIRECTION_HARNESSES
-    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise OSError("source is not a regular file")
@@ -2295,7 +2290,7 @@ def _summary_head(
     No source record escapes this scan; the caller retains only directory, time and version.
     """
     cwd, start = "", None
-    with runtime_io._open_binary(path, follow_links=True) as handle:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=False) as handle:  # noqa: SLF001
         stamp = _stamp(os.fstat(handle.fileno()))
         for _ in range(config.claude_cwd_scan_lines):
             if budget.reason is not None:
@@ -2325,10 +2320,9 @@ def _summary_head(
 
 
 def _validate_prefix_stream(
-    path: str, harness: str, old: StreamCursor, budget: _Budget, *, replaying: bool = False
+    path: str, _harness: str, old: StreamCursor, budget: _Budget, *, replaying: bool = False
 ) -> StreamCursor:
-    follow = old.stream == "parent" and harness not in observer.DIRECTION_HARNESSES
-    with runtime_io._open_binary(path, follow_links=follow) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
         stamp = _stamp(os.fstat(source.fileno()))
         if replaying and stamp != old.stamp:
             raise _SourceChangedError

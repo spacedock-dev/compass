@@ -744,7 +744,7 @@ def _store_locks(
         if make_home:
             # The lock file sits in the state home, which the first save creates.
             with contextlib.suppress(OSError):
-                os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+                runtime_io.ensure_owner_dir(str(config.state_home))
         if not create_lock and not os.path.lexists(lock_path(config)):
             with state.annotation_lock if state is not None else contextlib.nullcontext():
                 yield _UNLOCKED
@@ -1798,43 +1798,21 @@ def _write(
     which `SECURITY.md` treats as the same class as the observer sidecar's goal.
     The mode is advisory and Windows ignores it, which SECURITY.md records.
     """
-    kept = _kept(config, entries, raw=raw) or ()
-    payload = {
-        "v": SCHEMA_VERSION,
-        "entries": [*(_on_disk(entry) for entry in kept), *raw],
-    }
     target = store_path(config)
-    tmp = f"{target}.{os.getpid()}.tmp"
     try:
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-            # A rename is atomic against a concurrent reader and says nothing
-            # about power loss. Synced here, and the directory synced again
-            # after the rename, because this store holds prose a person
-            # composed and cannot retype from anywhere else; every other store
-            # is reconstructible from what the harnesses already wrote.
-            handle.flush()
-            os.fsync(handle.fileno())
-        _replace_over(tmp, target)
-        # The directory sync may fail where the file sync did not (Windows
-        # cannot open a directory; some filesystems refuse to fsync one), and
-        # by then the bytes are durable and the rename has happened -- only the
-        # rename's durability is in doubt. Suppressed rather than reported,
-        # because the failure cue below says the words will be gone, and here
-        # they are on disk (decisions.md, DRC-4544 directory-fsync half).
+        kept = _kept(config, entries, raw=raw) or ()
+        payload = {
+            "v": SCHEMA_VERSION,
+            "entries": [*(_on_disk(entry) for entry in kept), *raw],
+        }
+        runtime_io.atomic_write_owner_only(
+            target, json.dumps(payload), sync=True, replace=_replace_over
+        )
+        # A failed directory sync cannot undo the already published words.
         with contextlib.suppress(OSError):
             _fsync_directory(config.state_home)
-    # `TypeError` and `RecursionError` are here for the reason `load` already
-    # catches `RecursionError`: an encoder that refuses a payload must reach the
-    # reader as the failure cue this arm exists to send, not as a dropped
-    # socket. Latent while every field is a str, int or float, which is exactly
-    # when a guard is cheap.
     except (OSError, ValueError, TypeError, RecursionError):
         _say_unwritten(config, diagnostic_sink)
-        with contextlib.suppress(OSError, ValueError):
-            os.unlink(tmp)
         return False
     return True
 

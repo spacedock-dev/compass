@@ -2357,7 +2357,7 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         # whole point of the failure arm is that a write failure never reaches
         # the reader as a dropped socket.
         said: list[str] = []
-        with mock.patch("compass_runtime.annotations.json.dump", side_effect=TypeError("nope")):
+        with mock.patch("compass_runtime.annotations.json.dumps", side_effect=TypeError("nope")):
             ok = annotation_store.save(self.config, (), diagnostic_sink=said.append)
 
         self.assertFalse(ok)
@@ -2365,16 +2365,16 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
 
     def test_a_recursion_error_out_of_the_dump_is_caught_too(self) -> None:
         said: list[str] = []
-        with mock.patch("compass_runtime.annotations.json.dump", side_effect=RecursionError):
+        with mock.patch("compass_runtime.annotations.json.dumps", side_effect=RecursionError):
             ok = annotation_store.save(self.config, (), diagnostic_sink=said.append)
 
         self.assertFalse(ok)
 
     def test_a_write_that_fails_leaves_no_temporary_file_behind(self) -> None:
-        with mock.patch("compass_runtime.annotations.json.dump", side_effect=TypeError("nope")):
+        with mock.patch("compass_runtime.annotations.json.dumps", side_effect=TypeError("nope")):
             annotation_store.save(self.config, (), diagnostic_sink=lambda _line: None)
 
-        leftovers = [name for name in os.listdir(self.config.state_home) if name.endswith(".tmp")]
+        leftovers = list(Path(self.config.state_home).glob("*.tmp"))
         self.assertEqual([], leftovers)
 
     def test_the_bytes_and_then_the_rename_reach_the_disk_in_that_order(self) -> None:
@@ -2436,7 +2436,7 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         self.assertEqual(["replace"] * 3, calls)
         self.assertEqual(2, sleep.call_count)
         self.assertEqual([], said)
-        leftovers = [name for name in os.listdir(self.config.state_home) if name.endswith(".tmp")]
+        leftovers = list(Path(self.config.state_home).glob("*.tmp"))
         self.assertEqual([], leftovers)
 
     def test_a_rename_that_stays_refused_is_a_failed_save_after_a_bounded_wait(self) -> None:
@@ -2457,7 +2457,7 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         self.assertEqual(annotation_store._REPLACE_ATTEMPTS, len(calls))
         self.assertLessEqual(sum(call.args[0] for call in sleep.call_args_list), 1.0)
         self.assertTrue(any("could not write the annotation store" in line for line in said))
-        leftovers = [name for name in os.listdir(self.config.state_home) if name.endswith(".tmp")]
+        leftovers = list(Path(self.config.state_home).glob("*.tmp"))
         self.assertEqual([], leftovers)
 
     def test_a_refusal_that_is_not_a_permission_error_is_not_tried_again(self) -> None:

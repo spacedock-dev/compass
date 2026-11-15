@@ -1237,7 +1237,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # reader and imports nothing from the runtime either. `--drift` runs through
         # `terminal_drift`, a leaf over `terminal_sessions` for its one `printable`.
         "compass_runtime.loopback_transport": set(),
-        "compass_runtime.monitor_store": set(),
+        "compass_runtime.monitor_store": {"compass_runtime.io"},
         "compass_runtime.terminal_monitor": {
             "compass_runtime.monitor_store",
             "compass_runtime.terminal_client",
@@ -1933,6 +1933,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # this is not a layering break.
         "compass_runtime.tripwires": {
             "compass_runtime.config",
+            "compass_runtime.io",
             "compass_runtime.state",
             "compass_runtime.deliveries",
         },
@@ -1945,6 +1946,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         },
         "compass_runtime.spacedock": {
             "compass_runtime.config",
+            "compass_runtime.io",
             "compass_runtime.records",
             "compass_runtime.sessions",
             "compass_runtime.state",
@@ -2254,6 +2256,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # state. Project composition owns the higher-level joins.
         "compass_runtime.semantic_history": {
             "compass_runtime.config",
+            "compass_runtime.io",
             "compass_runtime.records",
             "compass_runtime.state",
         },

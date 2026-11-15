@@ -361,9 +361,11 @@ def capability(port: int, harness: str, *, irreversible: bool = False) -> str | 
     this adapter simply does not post, which costs the agent one file read.
     """
     try:
-        with open(state_file(port), "rb") as handle:
+        from notify_hook import open_regular_binary  # noqa: PLC0415 - standalone hook dependency
+
+        with open_regular_binary(state_file(port)) as handle:
             data = json.loads(handle.read(65_536) or b"null")
-    except (OSError, ValueError, RecursionError):
+    except (OSError, ValueError, RecursionError, ImportError):
         return None
     if not isinstance(data, dict):
         return None

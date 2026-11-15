@@ -498,15 +498,27 @@ def _connect(config: RuntimeConfig, wait: float, *, create: bool = True) -> Any:
         raise RuntimeError("SQLite is unavailable")
     path = store_path(config)
     if create:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_io.ensure_owner_dir(str(path.parent))
     if path.is_symlink():
         raise RuntimeError("Permission store is a symlink")
     if create:
         # SQLite inherits this owner-only mode for its rollback journal too.
-        fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
-        os.close(fd)
+        fd = os.open(
+            path,
+            os.O_CREAT | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+            0o600,
+        )
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
+                raise OSError("Permission store is not a privately owned regular file")
+            if os.name != "nt":
+                os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
     elif not path.is_file():
         raise OSError("Permission store is missing")
+    runtime_io.check_sqlite_file(str(path))
     return runtime_io.sqlite_module.connect(
         path if create else path.absolute().as_uri() + "?mode=rw",
         uri=not create,

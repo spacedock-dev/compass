@@ -322,7 +322,7 @@ def _published_ports() -> list[int]:
     paths = glob.glob(os.path.join(state_home(), "compass-*.json"))
     for path in paths:
         try:
-            with open(path, "rb") as handle:
+            with notify_hook.open_regular_binary(path) as handle:
                 raw = handle.read(STATE_READ_CAP_BYTES + 1)
             if len(raw) > STATE_READ_CAP_BYTES:
                 continue

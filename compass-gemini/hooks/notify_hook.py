@@ -23,16 +23,61 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
+import secrets
+import stat
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, BinaryIO
 
 DEFAULT_URL = "http://127.0.0.1:4553/api/notify"
 MAX_PAYLOAD_BYTES = 65536  # matches the server's own cap
 TIMEOUT_SEC = 2
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def open_regular_binary(path: str) -> BinaryIO:
+    """Standalone hook boundary: never wait on or follow an unsafe state leaf."""
+    if os.path.islink(path):
+        raise OSError("Refusing a state symlink")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("State is not a regular file")  # noqa: TRY301 - close the descriptor below
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "rb")
+
+
+def write_owner_json(path: str, value: dict[str, Any]) -> None:
+    """Publish a private memo without depending on the dashboard runtime package."""
+    home = os.path.dirname(path)
+    os.makedirs(home, mode=0o700, exist_ok=True)
+    info = os.lstat(home)
+    if not stat.S_ISDIR(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
+        raise OSError("Memo directory is not privately owned")
+    if os.name != "nt":
+        os.chmod(home, 0o700)
+    if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+        raise OSError("Memo target is not a regular file")
+    tmp = path + "." + secrets.token_hex(16) + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle)
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
 
 
 def is_loopback_url(url: str) -> bool:

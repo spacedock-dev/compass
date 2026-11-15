@@ -13,6 +13,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from . import deliveries
+from . import io as runtime_io
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -134,7 +135,7 @@ def save(config: RuntimeConfig, rules: dict[str, dict[str, Any]]) -> bool:
             or not all(_rule(row) for row in rules.values())
         ):
             return False
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+        runtime_io.ensure_owner_dir(str(config.state_home))
         fd, temporary = tempfile.mkstemp(prefix=".tripwires-", dir=config.state_home)
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw)

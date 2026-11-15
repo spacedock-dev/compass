@@ -293,7 +293,7 @@ def codex_exec(
     refusal, root = _codex_preflight(binary)
     if refusal or not binary:
         return "", refusal
-    os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
+    runtime_io.ensure_owner_dir(str(config.state_dir))
     output_path = ""
     workdir = ""
     try:
@@ -1010,7 +1010,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             root = reading_workdir_root()
             if root is None:
                 raise ClaudePreparationError("failed")
-            os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(config.state_dir))
             workdir = tempfile.mkdtemp(prefix=CLAUDE_WORKDIR_PREFIX, dir=root)
             descriptor, output_path = tempfile.mkstemp(
                 prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
@@ -2138,16 +2138,10 @@ def write_sidecar(
     path = sidecar_path(config, harness, sid)
     if path is None:
         return None
-    tmp = f"{path}.{os.getpid()}.tmp"
     try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(result))
-        os.replace(tmp, path)
+        runtime_io.ensure_owner_dir(str(config.state_dir))
+        runtime_io.atomic_write_owner_only(path, json.dumps(result))
     except OSError:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
         return None
     return path
 

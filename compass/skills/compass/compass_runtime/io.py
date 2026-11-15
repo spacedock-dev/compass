@@ -41,15 +41,25 @@ else:
     sqlite_module = _sqlite_module
 
 
-def _open_binary(path: str, *, follow_links: bool) -> BinaryIO:
-    """``open(path, "rb")``, or with ``O_NOFOLLOW`` where the platform has it,
-    so a final component swapped for a link after a caller's check raises
-    rather than being followed. Windows has no ``O_NOFOLLOW``, and there the
-    caller's own link check is the whole refusal."""
-    if follow_links:
-        return open(path, "rb")
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    return os.fdopen(os.open(path, flags), "rb")
+def open_regular(path: str | os.PathLike[str], *, follow_links: bool = False) -> int:
+    """Open a regular file without waiting on a FIFO or following a leaf link."""
+    if not follow_links and os.path.islink(path):
+        raise OSError(errno.ELOOP, "Refusing a symlink", path)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    if not follow_links:
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "Not a regular file", path)  # noqa: TRY301
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _open_binary(path: str, *, follow_links: bool = False) -> BinaryIO:
+    return os.fdopen(open_regular(path, follow_links=follow_links), "rb")
 
 
 @dataclass
@@ -82,10 +92,7 @@ class TranscriptRead:
 
 def _open_scan_binary(path: str, *, follow_links: bool) -> BinaryIO:
     """No BufferedReader prefetch may escape a check scan's byte allowance."""
-    if follow_links:
-        return open(path, "rb", buffering=0)
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    return os.fdopen(os.open(path, flags), "rb", buffering=0)
+    return os.fdopen(open_regular(path, follow_links=follow_links), "rb", buffering=0)
 
 
 def scan_reverse_lines(
@@ -93,7 +100,7 @@ def scan_reverse_lines(
     path: str,
     budget: ReadBudget,
     *,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> TranscriptRead:
     """Read the newest complete lines, charging each returned binary byte."""
     before = budget.spent
@@ -140,7 +147,7 @@ def scan_stood_lines(
     budget: ReadBudget,
     is_future: Callable[[bytes], bool],
     *,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> TranscriptRead:
     """Find the first future record or held EOF within the same byte budget."""
     before = budget.spent
@@ -180,7 +187,7 @@ def scan_stood_lines(
 
 
 def read_tail(
-    config: RuntimeConfig, path: str, *, end: int | None = None, follow_links: bool = True
+    config: RuntimeConfig, path: str, *, end: int | None = None, follow_links: bool = False
 ) -> list[str]:
     """The last `tail_bytes` of a file as lines, or of its first `end` bytes when given."""
     try:
@@ -202,7 +209,7 @@ def read_tail(
 
 def read_first_json(config: RuntimeConfig, path: str) -> dict[str, Any]:
     try:
-        with open(path, "rb") as source:
+        with os.fdopen(open_regular(path), "rb") as source:
             size = os.fstat(source.fileno()).st_size
             raw = source.readline(config.first_line_json_cap_bytes)
     except OSError:
@@ -217,7 +224,7 @@ def read_first_json(config: RuntimeConfig, path: str) -> dict[str, Any]:
 
 
 def read_prefix_bytes(path: str, *, max_bytes: int) -> bytes:
-    with open(path, "rb") as source:
+    with os.fdopen(open_regular(path), "rb") as source:
         return source.read(max_bytes)
 
 
@@ -228,7 +235,7 @@ def iter_bounded_text_lines(
     per_line_bytes: int,
 ) -> Iterator[str]:
     try:
-        with open(path, "rb") as source:
+        with os.fdopen(open_regular(path), "rb") as source:
             for _ in range(max_lines):
                 raw = source.readline(per_line_bytes)
                 if not raw:
@@ -245,7 +252,7 @@ def reverse_lines(
     *,
     max_bytes: int | None = None,
     contains: bytes | None = None,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> Iterator[bytes]:
     """Yield complete lines from ``path`` newest-first, reading fixed chunks."""
     try:
@@ -355,8 +362,23 @@ def record_store_error(state: RuntimeState, path: str, exc: BaseException) -> No
         )
 
 
+def check_sqlite_file(path: str) -> None:
+    """SQLite reopens by pathname; reject unsafe leaves before handing it one."""
+    try:
+        fd = open_regular(path)
+        os.close(fd)
+    except OSError as exc:
+        message = (
+            "Database is not a regular non-symlink file"
+            if exc.errno in {errno.ELOOP, errno.EINVAL}
+            else "unable to open database file"
+        )
+        raise sqlite_module.OperationalError(message) from exc
+
+
 def open_sqlite_read_only(path: str, state: RuntimeState) -> sqlite3_types.Connection:
     try:
+        check_sqlite_file(path)
         connection: sqlite3_types.Connection = sqlite_module.connect(
             sqlite_ro_uri(path),
             uri=True,
@@ -380,16 +402,45 @@ def diag(message: str, sink: Callable[[str], object]) -> None:
 def ensure_owner_dir(path: str, mode: int = 0o700) -> None:
     """Create directory with `mode`, or tighten if it exists with looser permissions.
 
-    On POSIX, if the directory already exists with permissions looser than `mode`
-    (e.g., group or other permissions), tightens it to `mode`.
+    Refuse a final symlink or foreign-owned directory rather than chmod its target.
+    On POSIX, tighten excess permission bits; leave stricter modes alone.
     The mode is advisory and Windows ignores it.
     """
     os.makedirs(path, mode=mode, exist_ok=True)
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise OSError(errno.ENOTDIR, "State directory is not a directory", path)
     if os.name != "nt":
-        with contextlib.suppress(OSError):
-            current = stat.S_IMODE(os.stat(path).st_mode)
-            if (current & ~mode) != 0:
-                os.chmod(path, mode)
+        if info.st_uid != os.getuid():
+            raise OSError(errno.EPERM, "State directory is not owned by this user", path)
+        if stat.S_IMODE(info.st_mode) & ~mode:
+            os.chmod(path, mode)
+
+
+def open_owner_append(path: str) -> BinaryIO:
+    """Open a private daemon log, refusing links and nonregular leaves."""
+    ensure_owner_dir(os.path.dirname(path) or ".")
+    if os.path.islink(path):
+        raise OSError(errno.ELOOP, "Refusing a log symlink", path)
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_APPEND
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
+    fd = os.open(path, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
+            raise OSError(errno.EPERM, "Log is not a privately owned regular file", path)  # noqa: TRY301
+        if os.name != "nt":
+            os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "ab", buffering=0)
 
 
 def atomic_write_owner_only(
@@ -397,18 +448,27 @@ def atomic_write_owner_only(
     content: bytes | str,
     *,
     encoding: str = "utf-8",
+    sync: bool = False,
+    replace: Callable[[str, str], None] | None = None,
 ) -> None:
     """Atomically write `content` to `target` owner-only (0o600).
 
     Ensures the parent directory exists and is tightened to 0o700.
     The temporary file is opened with O_WRONLY | O_CREAT | O_EXCL and
     O_NOFOLLOW (where supported) with mode 0o600 and a randomized name
-    beside `target`. Cleans up the temporary file on error.
+    beside `target`. Cleans up the temporary file on error. Existing symlinks,
+    nonregular targets and foreign-owned files refuse. `sync` flushes the file
+    before publication; `replace` preserves a caller's bounded sharing-violation
+    retry. Directory durability remains the caller's policy.
     """
     directory = os.path.dirname(target)
     if directory:
         ensure_owner_dir(directory)
-    rand = secrets.token_hex(4)
+    if os.path.lexists(target):
+        info = os.lstat(target)
+        if not stat.S_ISREG(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
+            raise OSError(errno.EPERM, "State target is not a privately owned regular file", target)
+    rand = secrets.token_hex(16)
     tmp = f"{target}.{os.getpid()}.{rand}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(tmp, flags, 0o600)
@@ -416,10 +476,16 @@ def atomic_write_owner_only(
         if isinstance(content, str):
             with os.fdopen(fd, "w", encoding=encoding) as handle:
                 handle.write(content)
+                if sync:
+                    handle.flush()
+                    os.fsync(handle.fileno())
         else:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(content)
-        os.replace(tmp, target)
+                if sync:
+                    handle.flush()
+                    os.fsync(handle.fileno())
+        (replace or os.replace)(tmp, target)
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -473,7 +539,19 @@ def held_file_lock(path: str | os.PathLike[str], *, wait: float) -> Iterator[str
     threads must let only one of them hold this at a time.
     """
     try:
-        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        if os.path.islink(path):
+            raise OSError(errno.ELOOP, "Refusing a symlink", path)  # noqa: TRY301
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
+                raise OSError(errno.EPERM, "Lock is not a privately owned regular file", path)  # noqa: TRY301
+            if os.name != "nt":
+                os.fchmod(fd, 0o600)
+        except BaseException:
+            os.close(fd)
+            raise
     except OSError as exc:
         if exc.errno in _LOCKS_UNSUPPORTED:
             yield LOCK_UNSUPPORTED

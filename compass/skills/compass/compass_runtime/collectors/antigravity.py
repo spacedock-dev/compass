@@ -353,6 +353,7 @@ def _step_activity(
         runtime_io.sqlite_ro_uri(path, immutable=True),
     ):
         try:
+            runtime_io.check_sqlite_file(path)
             con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         except runtime_io.sqlite_module.Error as exc:
             read_error = exc
@@ -518,6 +519,7 @@ def _session_info(
 
     def read_store(uri: str) -> tuple[bool, Any, Any, BaseException | None]:
         try:
+            runtime_io.check_sqlite_file(path)
             con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         except runtime_io.sqlite_module.Error as exc:
             return False, None, None, exc

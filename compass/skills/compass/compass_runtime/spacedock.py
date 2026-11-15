@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 from compass_runtime import records, sessions
 from compass_runtime import state as runtime_state
 
+from . import io as runtime_io
+
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -671,7 +673,7 @@ def transcript_boot(config: RuntimeConfig, state: RuntimeState, path: str) -> li
     if scanned >= size or len(records) >= config.spacedock_max_boot_records:
         return records
     try:
-        with open(path, "rb") as handle:
+        with runtime_io._open_binary(path) as handle:  # noqa: SLF001
             handle.seek(scanned)
             blob = handle.read(config.spacedock_boot_scan_bytes)
     except OSError:
@@ -709,21 +711,10 @@ def open_regular(path: str) -> int | None:
     be followed — the same unclosable class as the FILE_SHARE_DELETE window
     documented in SKILL.md.
     """
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        if stat_module.S_ISLNK(os.lstat(path).st_mode):
-            return None
-        descriptor = os.open(path, flags)
+        return runtime_io.open_regular(path)
     except OSError:
         return None
-    try:
-        if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
-            os.close(descriptor)
-            return None
-    except OSError:
-        os.close(descriptor)
-        return None
-    return descriptor
 
 
 class SdMismatchError(Exception):

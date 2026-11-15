@@ -153,7 +153,7 @@ def read_state(config: RuntimeConfig, port: int) -> dict[str, Any] | None:
     """
     cap = config.state_read_cap_bytes
     try:
-        with open(state_path(config, port), "rb") as handle:
+        with runtime_io._open_binary(state_path(config, port)) as handle:  # noqa: SLF001
             raw = handle.read(cap + 1)
         if len(raw) > cap:
             return None
@@ -629,7 +629,7 @@ def daemon_redirect_stdio(log_file: str) -> None:
     sys.stderr.flush()
     with open(os.devnull, "rb") as devnull:
         os.dup2(devnull.fileno(), 0)
-    with open(log_file, "ab", buffering=0) as handle:
+    with runtime_io.open_owner_append(log_file) as handle:
         os.dup2(handle.fileno(), 1)
         os.dup2(handle.fileno(), 2)
     for stream in (sys.stdout, sys.stderr):
@@ -815,7 +815,7 @@ def spawn_detached(
     creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
-    with open(log_file, "ab", buffering=0) as handle:
+    with runtime_io.open_owner_append(log_file) as handle:
         return subprocess.Popen(  # noqa: S603 — fixed argv from parsed flags, no shell
             spawn_argv(config, args),
             stdin=subprocess.DEVNULL,
@@ -831,7 +831,7 @@ def log_tail(log_file: str, limit: int = 2000) -> str:
     """The end of the daemon log — the only account of a failure the parent
     could not watch happen."""
     try:
-        with open(log_file, "rb") as handle:
+        with runtime_io._open_binary(log_file) as handle:  # noqa: SLF001
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - limit))
@@ -921,7 +921,7 @@ def prepare_daemon_home(
     """
     try:
         ensure_compass_home(config)
-        with open(log_file, "ab"):
+        with runtime_io.open_owner_append(log_file):
             pass
     except OSError as exc:
         runtime_io.diag(

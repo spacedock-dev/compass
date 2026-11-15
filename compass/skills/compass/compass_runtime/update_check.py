@@ -177,7 +177,7 @@ class UpdateChecker:
                 self.config
             ):
                 return
-            os.makedirs(self.config.state_home, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(self.config.state_home))
             with runtime_io.held_file_lock(self.path + ".lock", wait=0) as held:
                 # No unsupported-lock fallback: failing closed preserves the one-home daily cap.
                 if held != runtime_io.LOCK_HELD:

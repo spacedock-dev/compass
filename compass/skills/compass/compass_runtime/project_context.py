@@ -1326,7 +1326,7 @@ def _work_records(
     transcript_path: str,
     *,
     max_bytes: int | None = None,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> list[dict[str, Any]]:
     transcript: list[dict[str, Any]] = []
     bounded = list(
@@ -8873,7 +8873,7 @@ def _codex_scan(
     rollout_path: str,
     budget: runtime_io.ReadBudget,
     *,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> _CodexScan:
     """The rollout's newest records under the check scan's byte budget, and its own head."""
     read = runtime_io.scan_reverse_lines(config, rollout_path, budget, follow_links=follow_links)
@@ -11146,22 +11146,19 @@ def instruction_events(
     """Timestamped non-meta user-role messages from the bounded transcript tail."""
     events: list[dict[str, Any]] = []
     seen: set[tuple[float, str]] = set()
-    # A directions file was checked link-free by its resolver; do not follow
-    # one swapped in since.
-    follow = harness not in observer.DIRECTION_HARNESSES
     source = (
         [
             line.decode("utf-8", "replace")
             for line in reversed(
                 list(
                     runtime_io.reverse_lines(
-                        config, transcript_path, max_bytes=max_bytes, follow_links=follow
+                        config, transcript_path, max_bytes=max_bytes, follow_links=False
                     )
                 )
             )
         ]
         if max_bytes is not None
-        else runtime_io.read_tail(config, transcript_path, follow_links=follow)
+        else runtime_io.read_tail(config, transcript_path, follow_links=False)
     )
     for raw in source:
         if not raw or not raw.lstrip().startswith("{"):
@@ -11286,9 +11283,7 @@ def _direction_scan_once(
             scan.state == "stale",
         )
     try:
-        for line in runtime_io.read_tail(
-            config, path, follow_links=harness not in observer.DIRECTION_HARNESSES
-        ):
+        for line in runtime_io.read_tail(config, path, follow_links=False):
             visit(line.encode())
     except OSError:
         return None
