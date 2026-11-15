@@ -232,6 +232,29 @@ class CodexInFlightTest(RuntimeTestCase):
         )
         self.assertEqual("idle", self._collect([self._call(), prompt])["state"])
 
+    def test_injected_user_records_preserve_pending(self) -> None:
+        for body in (
+            '<codex_internal_context source="user_goal">context</codex_internal_context>',
+            "<subagent_notification>done</subagent_notification>",
+        ):
+            with self.subTest(body=body):
+                message = self._message(body)
+                self.assertEqual("working", self._collect([self._call(), message])["state"])
+
+    def _message(self, body: str, role: str = "user") -> dict[str, Any]:
+        return _record(
+            self.call_at + 1,
+            "response_item",
+            {"type": "message", "role": role, "content": [{"type": "input_text", "text": body}]},
+        )
+
+    def test_genuine_prompts_and_explicit_interruptions_retire_pending(self) -> None:
+        for body in ("Please do this next", "<turn_aborted>", "[Request interrupted by user]"):
+            with self.subTest(body=body):
+                self.assertEqual(
+                    "idle", self._collect([self._call(), self._message(body)])["state"]
+                )
+
     def test_a_command_item_finish_does_not_finish_the_outer_exec_call(self) -> None:
         row = self._collect([self._call(), _command_done(self.call_at + 1, "t1")])
         self.assertEqual("working", row["state"])

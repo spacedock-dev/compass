@@ -796,10 +796,14 @@ def _update_codex_shell_calls(
 ) -> None:
     """Join measured shell-capable calls and outputs inside one bounded rollout tail."""
     pt = p.get("type")
-    if (t == "event_msg" and pt in ("task_started", "task_complete", "turn_aborted")) or (
-        t == "response_item" and pt == "message" and p.get("role") == "user"
-    ):
+    if t == "event_msg" and pt in ("task_started", "task_complete", "turn_aborted"):
         pending.clear()
+    if t == "response_item" and pt == "message" and p.get("role") == "user":
+        body = records.extract_text(p.get("content")).strip()
+        # Interruptions also classify as injected intent, but they end a foreground wait.
+        interrupted = body.startswith(("<turn_aborted>", "[Request interrupted by user"))
+        if interrupted or not body or not records.injected_prompt(body, "codex"):
+            pending.clear()
     if t == "response_item":
         call_id = p.get("call_id")
         if isinstance(call_id, str) and call_id:
