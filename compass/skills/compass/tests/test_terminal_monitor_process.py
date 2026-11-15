@@ -33,7 +33,7 @@ SID = NATIVE[:8]
 
 
 class ProcessTest(unittest.TestCase):
-    def setUp(self) -> None:
+    def setUp(self) -> None:  # noqa: C901 - the synthetic board and its process cleanup share one fixture
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.home = temp.name
@@ -48,11 +48,17 @@ class ProcessTest(unittest.TestCase):
         }
         self.rows = [self.row]
         self.actions: list[dict[str, Any]] = []
+        self.accepted_beats: list[str] = []
+        self.clock_offset = 0.0
         self.delays: dict[str, float] = {}
         self.started = time.time() + 100
         config = dataclasses.replace(make_config(), state_dir=Path(self.home))
         self.leases = live_lease.Leases(
-            config, row_for=lambda *_a: self.row, inputs_for=lambda *_a: None, start_thread=False
+            config,
+            row_for=lambda *_a: self.row,
+            inputs_for=lambda *_a: None,
+            clock=lambda: time.time() + self.clock_offset,
+            start_thread=False,
         )
         self.addCleanup(self.leases.close)
         outer = self
@@ -98,6 +104,8 @@ class ProcessTest(unittest.TestCase):
                 parsed = http_api._lease_request(payload, 200)
                 assert parsed is not None
                 answer = http_api._lease_answer(outer.leases, *parsed)
+                if payload["action"] == "beat" and answer["ok"]:
+                    outer.accepted_beats.append(payload["tab_id"])
                 if payload["action"] == "start" and answer["ok"]:
                     where = answer["state"]["destination"]
                     notice = reading_policy.note(
@@ -352,6 +360,26 @@ class ProcessTest(unittest.TestCase):
                     self.assertNotEqual(generation, self.store.read("run")["generation"])
                     self.cleanup_holder()
                 self.assertNotIn("could not read", out + err)
+
+    def test_browser_only_lease_replaces_lapsed_terminal_holder(self) -> None:
+        self.assertTrue(self.leases.start("claude", SID, "browser", visible=False)["ok"])
+        start = self.launch()
+        out, err = start.communicate(timeout=20)
+        self.assertEqual(0, start.returncode, (out, err))
+        old = self.store.read("run")["generation"]
+        self.until(lambda: old in self.accepted_beats)
+        self.clock_offset += 51
+        state = self.leases.terminal_state("claude", SID)
+        self.assertEqual((True, False), (state["on"], state["terminal"]))
+        repeat = self.launch()
+        out, err = repeat.communicate(timeout=20)
+        self.assertEqual(0, repeat.returncode, (out, err))
+        generation = self.store.read("run")["generation"]
+        self.assertNotEqual(old, generation)
+        self.until(lambda: generation in self.accepted_beats)
+        self.assertTrue(self.store.running())
+        self.assertTrue(self.leases.beat("claude", SID, "browser", visible=False)["ok"])
+        self.assertFalse(self.leases.beat("claude", SID, old)["ok"])
 
     def test_an_in_session_start_prints_only_the_separate_terminal_stop_command(self) -> None:
         env = {**self.env, "CLAUDE_CODE_SESSION_ID": NATIVE}

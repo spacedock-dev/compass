@@ -206,7 +206,7 @@ def command(
 
 
 def _repeat(store: monitor_store.Store, record: Mapping[str, Any]) -> int | None:
-    """None permits replacement only after a valid, explicit off state."""
+    """None permits replacement only after a valid off or browser-only state."""
     try:
         query = urlencode({"harness": "claude", "sid": record["sid"]})
         reply = client.request(
@@ -222,11 +222,12 @@ def _repeat(store: monitor_store.Store, record: Mapping[str, Any]) -> int | None
             reply.status != 200
             or not isinstance(board, dict)
             or not isinstance(board.get("on"), bool)
+            or not isinstance(board.get("terminal"), bool)
         ):
             return _say("unreadable", failed=True)
-        if board["on"]:
-            if not isinstance(board.get("disclosure"), str):
-                return _say("unreadable", failed=True)
+        if board["on"] and not isinstance(board.get("disclosure"), str):
+            return _say("unreadable", failed=True)
+        if board["on"] and board["terminal"]:
             receipt = {
                 "notice_due": board.get("notice_due", False),
                 "disclosure": board["disclosure"],
@@ -268,7 +269,7 @@ def _command(
         result = _stopped_report(store, generation) if off or store.running() else 0
         if off or result:
             return result
-        # Only an explicit off state permits replacement; an unanswered read preserves the holder.
+        # An explicit off or browser-only state permits replacement; uncertainty keeps the holder.
         return _start(
             store,
             named,

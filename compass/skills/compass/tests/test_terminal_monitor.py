@@ -352,6 +352,7 @@ class ReadinessTest(unittest.TestCase):
                 board = {
                     "state": {
                         "on": True,
+                        "terminal": True,
                         "notice_due": due,
                         "disclosure": "Sends to the changed destination.",
                     }
@@ -978,7 +979,10 @@ class MonitorAtTheConnectionCapTest(unittest.TestCase):
 
 class MonitorRecoveryTest(unittest.TestCase):
     def test_only_an_explicit_off_reply_replaces_a_stale_helper(self) -> None:
-        for state in ({"on": False}, {"on": False, "last_end": {"reason": "ended"}}):
+        for state in (
+            {"on": False, "terminal": False, "disclosure": None},
+            {"on": False, "terminal": False, "disclosure": None, "last_end": {"reason": "ended"}},
+        ):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as home:
                 store = monitor_store.Store(home, "one")
                 store.write(
@@ -1005,7 +1009,20 @@ class MonitorRecoveryTest(unittest.TestCase):
                 self.assertTrue(start.call_args.kwargs["in_session"])
 
     def test_an_unknown_lease_never_stops_the_working_helper(self) -> None:
+        malformed = [
+            {"on": on, "terminal": True, "disclosure": "notice"}
+            for on in (None, 0, 1, "false", [], {})
+        ] + [
+            {"on": False, "disclosure": None},
+            {"on": True, "disclosure": "notice"},
+            *[
+                {"on": True, "terminal": value, "disclosure": "notice"}
+                for value in (None, 0, 1, "false", [], {})
+            ],
+            *[{"on": True, "terminal": True, "disclosure": value} for value in (None, 42)],
+        ]
         for answer in (
+            *(client.Reply(200, {"state": state}) for state in malformed),
             client.Reply(200, {}),
             client.Reply(200, {"state": {}}),
             client.Reply(500, {"state": {"on": False}}),
@@ -1020,6 +1037,8 @@ class MonitorRecoveryTest(unittest.TestCase):
                 )
                 with (
                     mock.patch.object(store, "running", return_value=True),
+                    mock.patch.object(monitor, "READY_SEC", 0.01),
+                    mock.patch("sys.stdout", io.StringIO()),
                     mock.patch.object(
                         client,
                         "request",
@@ -1040,6 +1059,40 @@ class MonitorRecoveryTest(unittest.TestCase):
                     )
                 self.assertEqual({}, store.read("stop"))
                 start.assert_not_called()
+
+    def test_a_helper_that_keeps_its_life_lock_is_not_replaced(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            store.write(
+                "run", {"sid": "one", "generation": "old", "dashboard": [4553, 42, 100.0, "1.0.0"]}
+            )
+            with (
+                store.lock("life") as held,
+                mock.patch.object(
+                    client,
+                    "request",
+                    return_value=client.Reply(
+                        200,
+                        {
+                            "state": {"on": False, "terminal": False, "disclosure": None},
+                        },
+                    ),
+                ),
+                mock.patch.object(monitor.time, "monotonic", side_effect=[0, 0, 100]),
+                mock.patch.object(monitor.time, "sleep"),
+                mock.patch.object(monitor, "_start") as start,
+                mock.patch("sys.stderr", io.StringIO()),
+            ):
+                self.assertTrue(held)
+                self.assertEqual(
+                    1,
+                    monitor._command(
+                        store, client.Session("claude", "one", "flag"), off=False, in_session=False
+                    ),
+                )
+                self.assertTrue(store.running())
+            self.assertEqual({"generation": "old"}, store.read("stop"))
+            start.assert_not_called()
 
     def test_a_never_answering_repeat_names_timeout_and_keeps_the_helper(self) -> None:
         path = "/api/live-monitor?harness=claude&sid=one"
@@ -1088,7 +1141,9 @@ class MonitorRecoveryTest(unittest.TestCase):
         for repeat in (False, True):
             path = ("/api/live-monitor" if repeat else "/api/session") + "?harness=claude&sid=one"
             data: dict[str, Any] = (
-                {"state": {"on": True, "disclosure": "notice"}} if repeat else {"session": row}
+                {"state": {"on": True, "terminal": True, "disclosure": "notice"}}
+                if repeat
+                else {"session": row}
             )
             data["padding"] = "x" * (client.REPLY_CAP_BYTES + 100)
             answers = {path: (200, {"Content-Type": "application/json"}, json.dumps(data).encode())}
