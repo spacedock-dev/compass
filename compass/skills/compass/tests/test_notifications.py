@@ -29,6 +29,7 @@ from compass_runtime import (
 from compass_runtime import events as runtime_events
 from compass_runtime import sessions as runtime_sessions
 
+from . import support
 from .support import (
     HOOK_PATH,
     REFUSED_NOTIFICATIONS,
@@ -1324,10 +1325,17 @@ class NativeNotifierTest(unittest.TestCase):
     def test_api_data_reports_who_owns_popups(self) -> None:
         # The page reads this to decide whether to notify; if it went missing,
         # macOS would double-notify and Linux would notify not at all.
-        with mock.patch.object(sys, "platform", "darwin"):
-            self.assertEqual("osascript", collect(24, False)["native_notify"])
-        with mock.patch.object(sys, "platform", "win32"):
-            self.assertEqual("", collect(24, False)["native_notify"])
+        # The platform reaches the payload through config.platform_name, so the
+        # test sets that rather than the global sys.platform: patching the
+        # global sent every file lock the collection took down the Windows
+        # branch on macOS, and the test failed whenever an earlier module left
+        # a lock for collect() to take.
+        for platform_name, expected in (("darwin", "osascript"), ("win32", "")):
+            with (
+                self.subTest(platform=platform_name),
+                mock.patch.dict(support.CONFIG_OVERRIDES, {"platform_name": platform_name}),
+            ):
+                self.assertEqual(expected, collect(24, False)["native_notify"])
 
 
 class NoNativeNotificationTest(RuntimeTestCase):

@@ -19,10 +19,36 @@ from urllib.parse import quote
 
 from . import state as runtime_state
 
+# The lock primitives are chosen here, once, with the module they call, rather
+# than by re-reading sys.platform per call: a test that patched sys.platform
+# around a collection sent its locks down the branch whose module was never
+# imported (NameError on msvcrt). Held elsewhere, `msvcrt.locking` raises
+# PermissionError (EACCES) and `flock` BlockingIOError, each for this and
+# nothing else.
 if sys.platform == "win32":
     import msvcrt
+
+    _LOCK_BUSY: type[OSError] = PermissionError
+
+    def _try_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _release_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
 else:
     import fcntl
+
+    _LOCK_BUSY = BlockingIOError
+
+    def _try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _release_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
 
 if TYPE_CHECKING:
     import sqlite3 as sqlite3_types
@@ -972,18 +998,11 @@ def held_file_lock(path: str | os.PathLike[str], *, wait: float) -> Iterator[str
 
 def _lock_fd(fd: int, wait: float) -> str:
     """Lock `fd`, waiting a bounded time. One of `held_file_lock`'s answers."""
-    # Held elsewhere: `flock` raises BlockingIOError and `msvcrt.locking`
-    # PermissionError (EACCES), each for this and nothing else.
-    busy: type[OSError] = PermissionError if sys.platform == "win32" else BlockingIOError
     deadline = time.monotonic() + wait
     while True:
         try:
-            if sys.platform == "win32":
-                os.lseek(fd, 0, os.SEEK_SET)
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            else:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except busy:
+            _try_lock(fd)
+        except _LOCK_BUSY:
             if time.monotonic() >= deadline:
                 return LOCK_BUSY
             time.sleep(0.05)
@@ -995,8 +1014,4 @@ def _lock_fd(fd: int, wait: float) -> str:
 
 def _unlock_fd(fd: int) -> None:
     with contextlib.suppress(OSError):
-        if sys.platform == "win32":
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        _release_lock(fd)
