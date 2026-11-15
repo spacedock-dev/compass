@@ -12,6 +12,8 @@ import dataclasses
 import http.client
 import io
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
@@ -235,6 +237,25 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
 
     def saved(self) -> Any:
         return annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+
+    def test_no_annotations_start_reports_an_explicit_refusal(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=False)
+        with (
+            self.serving(self.app(resume_id=SID)) as port,
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+            mock.patch.object(
+                terminal_client, "ensure_dashboard", return_value=terminal_client.probe(port)
+            ),
+            mock.patch("sys.stdout", io.StringIO()) as out,
+            mock.patch("sys.stderr", io.StringIO()) as err,
+        ):
+            code = terminal_client.run_monitor(
+                session="claude:" + SID, environ={"COMPASS_HOME": home}
+            )
+        self.assertEqual((1, ""), (code, out.getvalue()))
+        self.assertIn("Compass refused this Live monitor start.", err.getvalue())
+        self.assertNotIn("could not read", err.getvalue())
 
     def test_a_person_s_stated_goal_takes_priority_over_their_opening_prompt(self) -> None:
         goal = {"text": "Ship the parser", "at": START.timestamp() + 10}

@@ -549,9 +549,9 @@ def sidecar(sid: str, generation: str) -> int:  # noqa: C901 - one generation ow
                 cap=client.DATA_CAP_BYTES,
                 wait_when_busy=True,
             )
-            receipt = _start_receipt(answer)
+            receipt = _start_receipt(answer) if answer.status == 200 else {}
             if not _accepted(answer):
-                if not receipt:
+                if answer.status == 200 and not receipt:
                     reason = "unreadable"
                 return 1
             started = True

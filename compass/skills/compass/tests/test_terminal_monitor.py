@@ -335,6 +335,51 @@ class SpawnTest(unittest.TestCase):
 
 
 class ReadinessTest(unittest.TestCase):
+    def test_http_refusals_stay_distinct_from_unreadable_success(self) -> None:
+        for status, body in (
+            *(
+                (status, body)
+                for status in (400, 403, 503)
+                for body in (b"", b"<html>refused</html>")
+            ),
+            (200, b"not-json"),
+        ):
+            with (
+                self.subTest(status=status, body=body),
+                FakeDashboard(answers={"/api/live-monitor": (status, {}, body)}) as board,
+                tempfile.TemporaryDirectory() as home,
+            ):
+                store = monitor_store.Store(home, "one")
+                generation = "a" * 32
+                store.write(
+                    "run",
+                    {
+                        "sid": "one",
+                        "generation": generation,
+                        "dashboard": [board.port, 4242, 100.0, "1.0.0"],
+                    },
+                )
+                with (
+                    mock.patch.object(client, "state_home", return_value=home),
+                    mock.patch("signal.signal"),
+                    mock.patch.object(monitor, "_stop_holder", return_value=False),
+                ):
+                    self.assertEqual(1, monitor.sidecar("one", generation))
+                with (
+                    mock.patch.object(monitor, "spawn"),
+                    mock.patch("sys.stderr", io.StringIO()) as err,
+                ):
+                    self.assertEqual(1, monitor._await_start(store, "one", generation))
+                self.assertEqual(
+                    "unreadable" if status == 200 else "refused", store.read("status")["reason"]
+                )
+                self.assertIn(
+                    "could not read"
+                    if status == 200
+                    else "Compass refused this Live monitor start.",
+                    err.getvalue(),
+                )
+
     def test_a_person_whose_dashboard_cannot_be_reached_gets_the_transport_failure(self) -> None:
         store = mock.Mock()
         store.read.return_value = {"generation": "a" * 32, "reason": "unreachable", "answer": {}}
