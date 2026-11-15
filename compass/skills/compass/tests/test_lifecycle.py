@@ -388,7 +388,9 @@ print(json.dumps({{
                     assert stop is not None
                     self.assertEqual(0, stop.returncode, stop.stderr.decode("utf-8", "replace"))
                     self.assertTrue(lifecycle.await_release(cfg(), port, timeout=5))
-                    self.assertEqual([], list(compass_home.iterdir()))
+                    self.assertEqual(
+                        [compass_home / f"compass-{port}.json.lock"], list(compass_home.iterdir())
+                    )
 
     def test_windows_detached_argv_preserves_an_absolute_launcher_path(self) -> None:
         # The respawn target is config.launcher_path, so a Windows path survives
@@ -515,7 +517,7 @@ class CompassServerTest(support.RuntimeTestCase):
             other = lifecycle.read_state(cfg(), 9999)
             assert other is not None
             self.assertEqual(9999, other["port"])
-            lifecycle.remove_state(cfg(), 4553)
+            lifecycle.remove_state(cfg(), 4553, owner_started=SERVER_STARTED)
             self.assertIsNone(lifecycle.read_state(cfg(), 4553))
             lifecycle.remove_state(cfg(), 4553)  # removing twice is not an error
 
@@ -637,7 +639,8 @@ class CompassServerTest(support.RuntimeTestCase):
             with mock.patch.object(lifecycle, "probe_port", return_value=("closed", None)):
                 self.assertEqual("absent", lifecycle.instance_status(cfg(), 4553)["state"])
                 lifecycle.write_state(cfg(), 4553, started=SERVER_STARTED)
-                stale = lifecycle.instance_status(cfg(), 4553)
+                with mock.patch.object(lifecycle, "_state_process_exists", return_value=False):
+                    stale = lifecycle.instance_status(cfg(), 4553)
             self.assertEqual("stale", stale["state"])
             self.assertEqual(os.getpid(), stale["pid"])
 
@@ -895,6 +898,7 @@ class CompassServerTest(support.RuntimeTestCase):
             with (
                 mock.patch.object(lifecycle, "probe_port", return_value=("closed", None)),
                 mock.patch.object(lifecycle, "port_released", return_value=True),
+                mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
             ):
                 message, code = lifecycle.stop_instance(cfg(), 4553)
             self.assertEqual(0, code)
@@ -917,6 +921,7 @@ class CompassServerTest(support.RuntimeTestCase):
                 with (
                     mock.patch.object(lifecycle, "probe_port", return_value=("closed", None)),
                     mock.patch.object(lifecycle, "port_released", return_value=False),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
                     config_patch(stop_release_timeout_sec=0.1),
                 ):
                     message, code = lifecycle.stop_instance(cfg(), 4553)
@@ -1041,7 +1046,7 @@ class CompassServerTest(support.RuntimeTestCase):
                     # And the commands built on it still explain themselves.
                     with mock.patch.object(lifecycle, "probe_port", return_value=("closed", None)):
                         self.assertIn(
-                            "not running",
+                            "cannot reach",
                             lifecycle.render_status(lifecycle.instance_status(cfg(), 4553)),
                         )
 
@@ -1723,6 +1728,17 @@ raise SystemExit(main(sys.argv[2:]))
             dead_file = Path(tmp, f"compass-{dead_port}.json")
             dead_file.write_text(
                 json.dumps({"pid": 99999999, "port": dead_port, "started": 1.0}),
+                encoding="utf-8",
+            )
+            Path(lifecycle.origin_path(config, dead_port)).write_text(
+                json.dumps(
+                    {
+                        "pid": 99999999,
+                        "port": dead_port,
+                        "started": 1.0,
+                        "environment": lifecycle.environment_identity(),
+                    }
+                ),
                 encoding="utf-8",
             )
             live_port = self._free_port()

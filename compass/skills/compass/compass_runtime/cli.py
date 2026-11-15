@@ -1139,6 +1139,9 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     state.config = config
     if page_bytes is None:
         return 1
+    if refusal := lifecycle.start_refusal(config, args.port):
+        runtime_io.diag(refusal, print)
+        return 1
     lifecycle.sweep_stale_states(config)
     observer.sweep_claude_scratch(config)
     observer.sweep_reading_workdirs(config)
@@ -1213,5 +1216,9 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         # Its waiting launcher owns the hint after readiness, as on POSIX.
         update_check.print_startup_hint(config)
 
-    lifecycle.serve(config, server, args.port, started=started, announce_fd=announce_fd)
+    try:
+        lifecycle.serve(config, server, args.port, started=started, announce_fd=announce_fd)
+    except lifecycle.StateOwnershipError as exc:
+        runtime_io.diag(str(exc), print)
+        return 1
     return 0

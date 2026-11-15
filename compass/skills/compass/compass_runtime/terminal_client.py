@@ -46,7 +46,7 @@ DEFAULT_PORT = 4553
 # file left by a crash costs one refused connection each. Eight is more dashboards than one
 # person runs.
 MAX_CANDIDATES: Final = 8
-HEALTH_TIMEOUT_SEC: Final = 0.3
+HEALTH_TIMEOUT_SEC: Final = 1.0
 REQUEST_TIMEOUT_SEC: Final = 5.0
 # On 2026-11-07, a cold list of 3,700+ sessions took 4.8 s and the first client read
 # hit the five-second limit. Allow collection time while keeping a whole-exchange bound.
@@ -970,6 +970,26 @@ def start_daemon(
         return
 
 
+def unreachable_dashboard(
+    home: str, ports: tuple[int, ...], *, state_file: str | None = None
+) -> str:
+    """One reusable refusal for recorded dashboards that did not answer from here."""
+    checked = ", ".join(str(port) for port in ports)
+    folder = terminal_sessions.printable(home)
+    preserved = (
+        f"State file {terminal_sessions.printable(state_file)} was left alone. "
+        if state_file is not None
+        else "State files were left alone. "
+    )
+    return (
+        f"Compass: no dashboard answered at 127.0.0.1 on ports {checked}; "
+        f"state folder: {folder}. A dashboard open in a browser may be running where this "
+        "command cannot reach it: another port or state folder, another machine, a VM, "
+        "or a container or sandbox. "
+        f"{preserved}If none is running, start it with `{launch_command('--daemon')}`."
+    )
+
+
 def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambient process state
     home: str,
     *,
@@ -990,6 +1010,8 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     """
     found = find_dashboard(home, port=port)
     if found is None:
+        if published_ports(home):
+            return Refusal(unreachable_dashboard(home, candidate_ports(home, port)))
         if not spend:
             return Refusal(sentence("not_running"))
         (say or _say)(sentence("starting"))
