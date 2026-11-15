@@ -269,8 +269,12 @@ spacedock-compass --monitor --off --session claude:ID
 
 A start from another terminal needs no typed command and adds no turn to the watched session.
 The start prints the exact stop command, including the full id. If it starts a dashboard, it says so.
-A repeat reads only this session's lease. If the board explicitly says it is off, the command stops
-the stale helper and attempts a new start. A timeout or unreadable reply leaves the helper running.
+Successful starts inside a session put this announcement on stdout so the skill shows it; failed
+starts report it on stderr. A repeat reads only this session's
+[lease metadata](SECURITY.md#the-live-monitor). If a valid reply says it is off, or only browser
+holders remain, the command stops the stale helper and attempts a new start. Browser holders stay
+running. A missing or malformed terminal-holder flag, a timeout, a busy dashboard or an unreadable
+reply leaves the helper running. A helper that cannot finish stopping is never replaced.
 
 - A monitor started from a terminal keeps running after you close that terminal. It stops when any
   of these happens, and it does not restart by itself:
@@ -378,7 +382,7 @@ board to do these things:
 | `Your intent was saved after this session ended.` | Run `--goal --clear` and then `--goal --adopt`, each with `--session`, to read the session against your prompt. |
 | `Compass could not confirm that you typed the command, ...` or `Summary request refused (typed-command-required)` | From a shell, run it in your own terminal with `--session` and no pipe. Inside a session, type the action yourself, as your whole message. |
 | `Compass refused this Live monitor start.` inside a session | Type `/compass:compass monitor on` yourself, as your whole message, inside that session. |
-| `Compass refused this Live monitor start.` from your own terminal with `--session` | Run `--sessions` and check that this session is live and on the board. Check that the dashboard allows annotations (`--no-annotations` refuses a start), and that any drafted goal could be saved. Then retry from that terminal with the full id. |
+| `Compass refused this Live monitor start.` from your own terminal with `--session` | Run `--sessions` and check that this session is live and on the board. Check that the dashboard allows annotations (`--no-annotations` refuses a start), and that any drafted goal could be saved. Then retry from that terminal with the full id. Empty or HTML refusal bodies still mean refused; a malformed successful reply means unreadable. |
 | `Compass could not read the board to find this live Claude Code session.` | The dashboard replied, but its reply could not be read as the requested session or lease. A repeat leaves the running helper alone. Check that your command uses the same Compass copy as the dashboard, then retry. This is different from a missing session or a timeout. |
 | `Compass could not start or stop this terminal's Live monitor.` | The helper could not finish starting or stopping. A start waits up to 35 seconds for readiness, then allows up to 18 seconds to reap its own worker. Check the dashboard and retry. `--monitor --off --session claude:ID` stops a leftover helper without a board read. |
 | `Compass: the dashboard did not answer in time ...` during a monitor command | Each lookup, lease read, start request or check-in has a 30-second whole-exchange bound, including retries while busy. Wait for the dashboard to finish collecting and retry. A timed-out repeat keeps its helper running. |
