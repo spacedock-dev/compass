@@ -1616,6 +1616,18 @@ class AskEndpointTest(RuntimeTestCase):
             card = self._published_ask(port, ask_id)
         self.assertEqual("x" * 225 + " AKIA\u2026REDACTED\u2026", card["options"][0])
 
+    def test_a_glued_credential_crossing_the_question_cut_publishes_no_body(self) -> None:
+        config, state = self._runtime()
+        key = "ghp_" + "D" * 36
+        question = "q" * 1_987 + "cfg_" + key + " tail" * 20
+        option = "q" * 227 + "cfg_" + key + " tail" * 20
+        with self._serving(cli.build_application(config, state, clock=time.time)) as port:
+            ask_id = self._register(port, question=question, options=[option, "hold"])
+            card = self._published_ask(port, ask_id)
+        self.assertEqual("q" * 1_984 + "\u2026", card["question"])
+        self.assertEqual("q" * 224 + "\u2026", card["options"][0])
+        self.assertEqual(len(question), card["question_sent_chars"])
+
     def test_the_stdio_servers_own_copy_is_the_card_the_route_registers(self) -> None:
         # End to end through the real route: what `mcp_server` will answer with
         # is what the reply says the card shows, for the inputs that differed

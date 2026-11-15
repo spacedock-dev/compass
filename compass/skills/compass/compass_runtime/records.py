@@ -82,7 +82,7 @@ _UNSAFE_BREAKS = re.compile("[\\t\\n\\x0b\\x0c\\r\\u2028\\u2029]+")
 _SECRET_MARKER: Final = "…REDACTED"  # noqa: S105 - the marker replaces a secret, it is not one
 SECRET_MARKER: Final = _SECRET_MARKER
 
-# `(name, characters of the match kept in front of the marker, anchored, pattern)`.
+# `(name, characters of the match kept in front of the marker, pattern)`.
 #
 # Every body is bounded above as well as below, and the upper bound is the
 # vendor's own longest issued key with headroom rather than a round number. An
@@ -91,19 +91,11 @@ SECRET_MARKER: Final = _SECRET_MARKER
 # instruction, on a probe. A run longer than any key that format issues is not
 # that format, so the cap ends the match there and the rest of the line survives.
 #
-# `anchored` shapes must start a token: without it `dask-<40 chars>` reads as an
-# OpenAI key and `mask-ant-…` as an Anthropic one. A hyphen counts as inside a
-# token, and that one decision rejects 78 of the 177 `sk-` candidates in the
-# local store.
+# Prefixes need no leading separator: `cfg_ghp_` and `abcsk-ant-` can carry a
+# credential too. Body length and alphabet decide; the generic `sk-` shape also
+# rejects lowercase hyphenated words in `_mark_secret` to preserve identifiers
+# such as `dask-scheduler-configuration-defaults-file-name`.
 #
-# It is checked in the replacer rather than written as a lookbehind on each
-# alternative, and that is a measured choice, not a style one: a leading
-# lookbehind leaves no literal for `re` to build its first-character skip from,
-# and the substitution cost on a 140-character line goes from 21.5 us to 36.5 us.
-#
-# `pem` and `urlcred` are unanchored because their own first character is the
-# separator: a URL credential is always preceded by a scheme, and a PEM header by
-# whatever line came before it.
 # Authorization parameters can contain quoted spaces and commas (Digest), or a
 # semicolon-delimited SignedHeaders value (AWS). A comma introduces another
 # parameter only when a name and `=` follow it. Plain prose after a token stays.
@@ -122,23 +114,22 @@ _SECRET_SHAPES: Final = (
     # `sk-ant-api03-`, `sk-ant-oat01-`, `sk-ant-ort01-` are the three variants in
     # the store; the shared prefix is matched rather than the three, so the
     # fourth is covered before anyone notices it exists.
-    ("anthropic", 7, True, r"sk-ant-[A-Za-z0-9_-]{16,110}"),  # 89 in 35 files
+    ("anthropic", 7, r"sk-ant-[A-Za-z0-9_-]{16,110}"),  # 89 in 35 files
     # Both Langfuse key kinds carry a UUID-shaped body. Keep the kind visible,
     # before the generic `sk-` shape can consume a secret key's more specific prefix.
-    ("langfuse", 6, True, r"(?:sk|pk)-lf-[0-9a-fA-F-]{36}"),
+    ("langfuse", 6, r"(?:sk|pk)-lf-[0-9a-fA-F-]{36}"),
     # 32, not the 20 an OpenAI key's body needs. 20 was measured and rejected:
     # it alters 25 further genuine prompts, and every one is a hyphenated
     # identifier that merely opens a token with `sk-`.
     #
-    # 32 does not clear that entirely. One 42-character all-lowercase identifier
-    # still matches, in two prompts. Requiring an uppercase character in the body
-    # would clear it, and was rejected too: OpenRouter spells its key `sk-or-v1-`
-    # plus 64 lowercase hex, so the rule that fixes two prompts loses a vendor.
-    ("openai", 3, True, r"sk-[A-Za-z0-9_-]{32,180}"),  # 99 in 14 files
+    # Requiring uppercase would reject OpenRouter's `sk-or-v1-` plus lowercase
+    # hex. The separate word-body check rejects hyphenated lowercase identifiers
+    # without excluding that format or unseparated lowercase bodies.
+    ("openai", 3, r"sk-[A-Za-z0-9_-]{32,180}"),  # 99 in 14 files
     # Stripe's secret and restricted keys. `pk_live_` is deliberately absent: a
     # publishable key is published on purpose.
-    ("stripe", 8, True, r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,120}"),  # 74 in 19 files
-    ("aws", 4, True, r"(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_-])"),  # 246 in 50 files
+    ("stripe", 8, r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,120}"),  # 74 in 19 files
+    ("aws", 4, r"(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_-])"),  # 246 in 50 files
     # The other half of the AWS pair, which the marker beside `AKIA…REDACTED`
     # used to imply was covered and was not. A bare 40-character base64 run is
     # not distinguishable from a hash, a diff or a path segment, so this one is
@@ -148,36 +139,35 @@ _SECRET_SHAPES: Final = (
     (
         "aws_secret",  # 0 values; 431 cue mentions in 202 files (2026-08-27)
         0,
-        False,
         (
             r"(?:aws_secret_access_key|AWS_SECRET_ACCESS_KEY|secretAccessKey)"
             r"[\"']?\s{0,4}[:=]\s{0,4}[\"']?"
             r"[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])"
         ),
     ),
-    ("github", 4, True, r"gh[pousr]_[A-Za-z0-9]{36,255}"),  # 57 in 17 files
+    ("github", 4, r"gh[pousr]_[A-Za-z0-9]{36,255}"),  # 57 in 17 files
     # Zero in the store, and on the list anyway: `github_pat_` is the format
     # GitHub issues today and `ghp_` above is the one it replaced. A filter that
     # covers only the legacy spelling of a token still in circulation is the
     # false confidence this whole change exists to avoid.
-    ("github_fine", 11, True, r"github_pat_[A-Za-z0-9_]{40,96}"),  # 0
-    ("gitlab", 6, True, r"glpat-[A-Za-z0-9_-]{20,64}"),  # 16 in 3 files
-    ("npm", 4, True, r"npm_[A-Za-z0-9]{36}"),  # 12 in 4 files
+    ("github_fine", 11, r"github_pat_[A-Za-z0-9_]{40,96}"),  # 0
+    ("gitlab", 6, r"glpat-[A-Za-z0-9_-]{20,64}"),  # 16 in 3 files
+    ("npm", 4, r"npm_[A-Za-z0-9]{36}"),  # 12 in 4 files
     # Linear's personal API key. Found by the same sweep that found `xapp-`:
     # 25 full-length occurrences across 16 files already inside the collector's
     # own glob, none of which reached a published head, which is the state
     # `github_pat_` was in the day before one did. 67 further lines carry the
     # bare prefix with nothing of the right length behind it.
-    ("linear", 8, True, r"lin_api_[A-Za-z0-9]{40,64}"),  # 25 in 16 files (2026-08-27)
+    ("linear", 8, r"lin_api_[A-Za-z0-9]{40,64}"),  # 25 in 16 files (2026-08-27)
     # `xapp-` is the app-level token beside the four `xox` bot and user ones. It
     # was found by sweeping past the candidate list, which is the only reason it
     # is here: nothing about `xox` would have suggested it.
-    ("slack", 5, True, r"(?:xox[baprs]|xapp)-[A-Za-z0-9-]{15,96}"),  # 22 in 3 files
-    ("posthog", 4, True, r"phc_[A-Za-z0-9]{32,64}"),  # 507 in 343 files
+    ("slack", 5, r"(?:xox[baprs]|xapp)-[A-Za-z0-9-]{15,96}"),  # 22 in 3 files
+    ("posthog", 4, r"phc_[A-Za-z0-9]{32,64}"),  # 507 in 343 files
     # Zero values, and 45 mentions of the bare prefix across 22 files — a
     # guidance list naming the shape, never a key of the right length behind it.
     # Kept for the reason `github_fine` is: absence today is not a contract.
-    ("google", 4, True, r"AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),  # 0
+    ("google", 4, r"AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),  # 0
     # Three base64url segments, not one. A lone `eyJ…` run is base64 for `{"` and
     # turns up in any pasted payload; the two dots are what make it a token.
     # 1,024 and 4,096 are a JOSE header and a claim set with room to spare; the
@@ -185,7 +175,6 @@ _SECRET_SHAPES: Final = (
     (
         "jwt",  # 852 in 126 files
         3,
-        True,
         r"eyJ[A-Za-z0-9_-]{8,1024}\.[A-Za-z0-9_-]{8,4096}\.[A-Za-z0-9_-]{8,1024}",
     ),
     # The body is swallowed with the header, because redacting the header alone
@@ -214,7 +203,6 @@ _SECRET_SHAPES: Final = (
     (
         "pem",  # 1,058 in 46 files, every one header-only
         11,
-        False,
         (
             r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
             r"(?:[ \t\r\n]{0,40}[A-Za-z0-9+/=]{16,76}){0,200}"
@@ -239,14 +227,13 @@ _SECRET_SHAPES: Final = (
     (
         "urlcred",  # 1,572 in 251 files
         3,
-        False,
         r"://[^\s/:@]*:(?:[^\s/@]+(?=@)|(?![0-9]+$)[^\s/@]+$)",
     ),
     # gcloud's OAuth access token, which `gcloud auth print-access-token` writes
     # alone on a line. The `c.` second segment of the newer format carries dots,
     # so the body admits them. The vendor documents no maximum: 1,024 is a bound
     # chosen to be wider than any token seen, not a measured length.
-    ("gcloud", 5, True, r"ya29\.[A-Za-z0-9_.-]{20,1024}"),
+    ("gcloud", 5, r"ya29\.[A-Za-z0-9_.-]{20,1024}"),
     # Secrets Manager's `get-secret-value` prints the secret as one JSON string,
     # which is itself JSON, so its quotes arrive escaped: the body is a run of
     # plain characters or backslash pairs, and a cued shape stopping at the first
@@ -259,7 +246,6 @@ _SECRET_SHAPES: Final = (
     (
         "secretstring",
         0,
-        False,
         (
             r"(?i:\bsecretstring)[\"']?\s*:\s*(?P<ssq>[\"'])"
             r"(?P<ssval>(?:(?!(?P=ssq))[^\\\n]|\\.)+)(?:(?P=ssq)|(?=\n)|$)"
@@ -274,7 +260,6 @@ _SECRET_SHAPES: Final = (
     (
         "netrc",
         0,
-        False,
         (
             r"(?<![\w-])(?:machine\s+\S+|default)\s+"
             r"(?:login\s+\S+\s+password\s+|password\s+(?=[\"']?\S*[0-9A-Z]))"
@@ -290,7 +275,6 @@ _SECRET_SHAPES: Final = (
     (
         "querysig",
         0,
-        False,
         (
             r"(?:(?<=[?&])|(?<=&amp;)|(?<=\\u0026))"
             r"(?i:x-amz-signature|x-amz-security-token|x-goog-signature|signature|sig)"
@@ -310,7 +294,6 @@ _SECRET_SHAPES: Final = (
     (
         "authorization",
         0,
-        False,
         (
             r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*(?:[:=]|,)[ \t]*"
             r"(?P<authquote>[\"'])?(?P<authkind>(?:(?P<authparams>(?i:digest|aws4-hmac-sha256))"
@@ -328,7 +311,6 @@ _SECRET_SHAPES: Final = (
     (
         "authbare",
         0,
-        False,
         (
             r"(?<![\w-])(?i:(?:proxy-)?authorization)[\"']?[ \t]*[:=][ \t]*[\"']?"
             r"(?P<authbareval>[^\s\"'`,;&)]+)"
@@ -337,7 +319,6 @@ _SECRET_SHAPES: Final = (
     (
         "authencoded",
         0,
-        False,
         (
             r"(?<![\w-])(?i:(?:proxy-)?authorization%3a)(?i:%20|\+)*"
             r"(?P<encodedkind>[A-Za-z][A-Za-z0-9-]*)(?i:%20|\+)+"
@@ -350,7 +331,6 @@ _SECRET_SHAPES: Final = (
     (
         "authscheme",
         0,
-        False,
         (
             r"(?<![\w-])(?i:basic|token|negotiate|ntlm)\s+"
             r"(?P<schemeval>[A-Za-z0-9._~+/=-]{8,})"
@@ -369,7 +349,6 @@ _SECRET_SHAPES: Final = (
     (
         "cued",
         0,
-        False,
         (
             r"(?:(?P<cueauth>(?i:\bauthorization)[\"']?\s*[:=]\s*[\"']?(?i:bearer)\s+)"
             r"|(?P<cuebearer>(?i:\bbearer)\s+)"
@@ -384,10 +363,9 @@ _SECRET_SHAPES: Final = (
 )
 
 _SECRET_RE: Final = re.compile(
-    "|".join(f"(?P<{name}>{pattern})" for name, _, _, pattern in _SECRET_SHAPES)
+    "|".join(f"(?P<{name}>{pattern})" for name, _, pattern in _SECRET_SHAPES)
 )
-_SECRET_KEEP: Final = {name: keep for name, keep, _, _ in _SECRET_SHAPES}
-_SECRET_ANCHORED: Final = frozenset(name for name, _, anchored, _ in _SECRET_SHAPES if anchored)
+_SECRET_KEEP: Final = {name: keep for name, keep, _ in _SECRET_SHAPES}
 _TOKEN_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_-")
 
 # A cued shape keeps everything but the last N characters of its match, because
@@ -413,31 +391,12 @@ _SECRET_VALUE_GROUP: Final = {
 # bound in `redact_clip` has to be able to step over.
 _SECRET_MAX_KEEP: Final = max(_SECRET_KEEP.values())
 
-# The match length at or above which a shape needs no anchor: `name -> length`.
-#
-# The anchor above fails OPEN, and that is a bypass rather than a rough edge. One
-# character in front of a key — `x`, a digit, `_`, `-` — and `sk-ant-api03-` plus
-# a hundred characters publishes verbatim, with the length unchanged and no
-# marker. Anyone who has ever pasted a key at the end of a word has published it.
-#
-# Dropping the anchor outright is the wrong repair: it is what rejects 78 of the
-# 177 `sk-` candidates in the local store, and those are hyphenated identifiers,
-# not keys. So the anchor is kept and made conditional on the one thing that
-# separates the two — length. A `sk-ant-` run of 90 characters, `AKIA`/`ASIA`
-# plus exactly its 16 and nothing token-shaped behind, or `github_pat_` plus its
-# 40 has no plausible innocent reading whatever sits in front of it. Below the
-# threshold the anchor still applies and the measured rejection is unchanged.
-#
-# `openai` is deliberately absent. Its 32-character body is exactly the length
-# class the false positives live in, so a threshold there would trade the
-# rejection this list exists to keep.
-_SECRET_UNAMBIGUOUS: Final = {
-    "anthropic": 90,
-    "aws": 20,  # `AKIA` plus 16 is the whole shape; it has no longer form.
-    "github_fine": 51,  # `github_pat_` plus its 40.
-    "linear": 48,  # `lin_api_` plus its 40, which is the only length it has.
-    "gcloud": 25,  # `ya29.` plus 20; no innocent text opens a token with it.
-}
+# The generic prefix can occur inside an ordinary hyphenated identifier. Its
+# body, rather than the character before `sk-`, distinguishes that case.
+# Project keys keep their recognised `proj-` prefix. OpenRouter's `or-v1-`
+# carries a digit, so its lowercase hex still qualifies, as does an unseparated
+# lowercase body.
+_OPENAI_WORD_BODY: Final = re.compile(r"[a-z]+(?:-[a-z]+)+")
 
 # The literal every shape opens with, scanned with `in` before the alternation
 # runs. `str.__contains__` is a C substring search and the alternation is not,
@@ -676,7 +635,7 @@ def _cued_value_is_secret(match: re.Match[str]) -> bool:
 
 
 def _mark_secret(match: re.Match[str]) -> str | None:
-    """The marked replacement for a match, or None if the anchor rejects it.
+    """The marked replacement for a match, or None if its body is not a credential.
 
     None rather than the match text, because the caller has to tell the two
     apart: a rejected span must be re-entered one character in (see
@@ -684,9 +643,11 @@ def _mark_secret(match: re.Match[str]) -> str | None:
     """
     name = match.lastgroup or ""
     body = match.group()
-    unambiguous = _SECRET_UNAMBIGUOUS.get(name)
-    anchored = name in _SECRET_ANCHORED and (unambiguous is None or len(body) < unambiguous)
-    if anchored and match.start() and match.string[match.start() - 1] in _TOKEN_CHARS:
+    if (
+        name == "openai"
+        and not body.startswith("sk-proj-")
+        and _OPENAI_WORD_BODY.fullmatch(body[3:])
+    ):
         return None
     if name == "cued":
         if not _cued_value_is_secret(match):
@@ -758,11 +719,9 @@ def _redact_scan(text: str) -> str:
     """Every shape on the list marked, scanning left to right.
 
     Hand-rolled instead of `re.sub` for one reason: `sub` resumes at
-    `match.end()`, so a span the anchor rejects is both left unmarked and
-    skipped over, and a valid key that starts inside it is never looked at. That
-    is not theoretical — `x` plus a near-miss `sk-ant-` run plus a correctly
-    anchored key published all 142 characters, where the same key one space
-    later redacted to 45. This resumes at `match.start() + 1`.
+    `match.end()`, so a rejected candidate can shield a credential inside it.
+    A lowercase hyphenated `sk-` identifier can contain a shorter prefixed shape
+    with a qualifying body. Resume at `match.start() + 1` so it is still read.
     """
     out: list[str] = []
     pos = 0
@@ -912,8 +871,8 @@ def _redact_inline_markup(text: str) -> str:
 
     found = [original(*match) for match in _secret_matches(plain)]
     # Also from just after each removed span. There the view joins a key to the word or key in
-    # front of it: the anchor rejected `x` + ZWSP + `npm_…`, and a key's capped body ran on into
-    # the next key's prefix. Matched on a slice, because the lookbehinds read the characters in
+    # front of it, and a key's capped body can run on into the next key's prefix.
+    # Matched on a slice, because the lookbehinds read the characters in
     # front of `pos`, and the span is a boundary. Only where a prefixed shape opens: tried at
     # every alphanumeric cut, the cued name's run scanned to the slice's end each time, and
     # `"a" + ZWSP` repeated over a megabyte ran past three minutes. A cue word after a span is
@@ -929,7 +888,7 @@ def _redact_inline_markup(text: str) -> str:
         return text
     # The raw text's own matches, beside the view's. Written back alone, a view match that ran
     # from one key into the next took the second key's prefix with it, and the raw scan after
-    # this had nothing left to anchor on, so the second body published.
+    # this had no second prefix left to recognise, so the second body published.
     found.extend(_secret_matches(text))
     return _write_marked(text, found)
 

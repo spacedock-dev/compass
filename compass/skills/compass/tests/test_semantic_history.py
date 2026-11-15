@@ -51,7 +51,7 @@ class SemanticHistoryTest(unittest.TestCase):
         }
 
     def test_nested_gate_credentials_are_redacted_on_write_and_legacy_reload(self) -> None:
-        secret = "sk-ant-api03-" + "a" * 93
+        secret = "cfg_ghp_" + "D" * 36
         fact = self._fact("gate", 100, "gate_decision", "gate", "Approval", "workflow:gate")
         fact.update(stage=secret, decision=secret, target_stage=secret, by="person:captain")
         model = {"facts": [fact], "work_items": []}

@@ -2424,7 +2424,7 @@ class ObserverModelSecurityTest(unittest.TestCase):
                 self.assertIn("REDACTED", prompt)
 
     def test_entire_prompt_is_redacted_before_utf8_byte_cap(self) -> None:
-        secret = "sk-ant-api03-" + "a" * 93
+        secret = "cfg_ghp_" + "D" * 36
         recorded: dict[str, Any] = {}
 
         def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -2445,8 +2445,7 @@ class ObserverModelSecurityTest(unittest.TestCase):
             caller(secret + "界" * 20000 + secret, secret)
         prompt = recorded["input"]
         self.assertNotIn(secret, prompt)
-        self.assertNotIn("sk-ant-api03-", prompt)
-        self.assertIn("sk-ant-…REDACTED", prompt)
+        self.assertIn("cfg_ghp_…REDACTED", prompt)
         self.assertLessEqual(len(prompt.encode("utf-8")), observer.OBSERVER_MODEL_MAX_PROMPT_BYTES)
         self.assertEqual(60, recorded["timeout"])
 

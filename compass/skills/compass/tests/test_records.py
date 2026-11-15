@@ -753,17 +753,12 @@ class RedactSecretsTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(text, records.redact_secrets(text))
 
-    def test_a_shape_inside_a_longer_token_is_left_alone(self) -> None:
-        # The anchor. Without it an ordinary hyphenated identifier that happens
-        # to contain `sk-` reads as a key and the line is blanked.
+    def test_a_credential_shaped_body_inside_a_longer_token_is_redacted(self) -> None:
         inside = "not-a-sk-" + "R" * 40
-        self.assertEqual(inside, records.redact_secrets(inside))
+        self.assertEqual("not-a-sk-…REDACTED", records.redact_secrets(inside))
 
     def test_an_unambiguous_key_is_redacted_whatever_precedes_it(self) -> None:
-        # The anchor used to fail OPEN: one character in front of a key and the
-        # whole thing published verbatim, same length, no marker. Anyone who has
-        # pasted a key onto the end of a word had published it. Above the length
-        # where a shape has no innocent reading the anchor no longer applies.
+        # Each body qualifies on its own, including the shortest Anthropic body.
         for lead in ("x", "1", "_", "-"):
             for name, fake in (
                 ("anthropic", "sk-ant-api03-" + "A" * 100),
@@ -774,20 +769,16 @@ class RedactSecretsTest(unittest.TestCase):
                     redacted = records.redact_secrets(lead + fake)
                     self.assertIn("REDACTED", redacted)
                     self.assertLess(len(redacted), len(lead + fake))
-        # And below it the anchor still holds, which is what rejects 78 of the
-        # 177 `sk-` candidates in the local store.
         short = "x" + "sk-ant-" + "B" * 20
-        self.assertEqual(short, records.redact_secrets(short))
+        self.assertEqual("xsk-ant-…REDACTED", records.redact_secrets(short))
 
     def test_a_rejected_span_does_not_shield_a_later_credential(self) -> None:
-        # `re.sub` resumes at the end of the span it just declined, so a
-        # near-miss swallowed the correctly anchored key behind it and both
-        # published. Scanning resumes one character in instead.
-        line = "x" + "sk-" + "R" * 40 + " then AKIAIOSFODNN7EXAMPLE"
+        # A rejected identifier must not stop the scan before a later credential.
+        line = "dask-scheduler-configuration-defaults-file-name then AKIAIOSFODNN7EXAMPLE"
         redacted = records.redact_secrets(line)
         self.assertIn("AKIA…REDACTED", redacted)
         self.assertNotIn("EXAMPLE", redacted)
-        self.assertIn("R" * 40, redacted, "the near-miss itself is not a credential")
+        self.assertIn("dask-scheduler-configuration-defaults-file-name", redacted)
 
     def test_a_url_credential_with_no_username_is_redacted(self) -> None:
         # `redis://:password@host` is the form Redis documents, and the username
@@ -974,7 +965,7 @@ class RedactSecretsTest(unittest.TestCase):
         # The literal gate is an optimization, and an optimization in front of a
         # security filter is a way to ship a measured shape switched off. Each
         # alternative gets a fake here, so a shape added without a hint fails.
-        listed = {name for name, _, _, _ in records._SECRET_SHAPES}
+        listed = {name for name, _, _ in records._SECRET_SHAPES}
         covered = set()
         for _name, fake, expected in self.FAKES:
             match = records._SECRET_RE.search(fake)

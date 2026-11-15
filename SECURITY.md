@@ -5400,6 +5400,15 @@ survive, because those are the instruction and the reason the line is on the car
 visible deliberately. Someone who sees it learns their prompt history holds a live key, which is the
 only route by which it gets rotated.
 
+Prefix shapes do not need a separator in front: `cfg_ghp_` or `abcsk-ant-` followed
+by a qualifying body is masked too. Each shape keeps its body length and alphabet
+requirements. The generic `sk-` shape leaves bodies made entirely of lowercase
+words separated by hyphens alone, so `dask-scheduler-configuration-defaults-file-name`
+survives. The recognised `sk-proj-` prefix, an unseparated lowercase body and
+OpenRouter's `sk-or-v1-` form still qualify. An identifier whose body has the same shape as a credential is
+masked; a generic `sk-` credential made only of lowercase hyphenated words can be
+missed. The character before the prefix does not decide either case.
+
 Langfuse secret and public keys (`sk-lf-` and `pk-lf-` followed by a 36-character UUID body
 of hexadecimal digits in either case and hyphens) are masked too, including in environment
 assignments. Their kind stays visible as `sk-lf-…REDACTED` or
@@ -5559,7 +5568,9 @@ matched only when one of three spellings of its key name sits in front of the va
 In the other direction a genuine instruction line can be altered: 20 of 22,120 real prompts in the
 local corpus, 18 on Claude and 2 on Codex. That rate was re-measured when the filter was widened to
 cover a key with a character in front of it, a URL credential clipped short of its `@`, capped
-bodies, `lin_api_` API keys and the cued AWS secret, and it did not move on any of them. Nothing here
+bodies, `lin_api_` API keys and the cued AWS secret, and it did not move on any of them.
+That measurement predates removing the leading-separator requirement for every prefix shape;
+the rate after that change has not been measured against the corpus. Nothing here
 changes the rule outside the software, which is not to paste a credential into a prompt, and to rotate one
 that was.
 
