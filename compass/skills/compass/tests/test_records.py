@@ -782,6 +782,28 @@ class RedactSecretsTest(unittest.TestCase):
         self.assertNotIn("EXAMPLE", redacted)
         self.assertIn("dask-scheduler-configuration-defaults-file-name", redacted)
 
+    def test_rejected_outer_identifier_is_rescanned_for_a_nested_credential(self) -> None:
+        lead = "dask-" + "word-" * 35 + "ab-"
+        fake_body = "A" * 95
+        raw = lead + "sk-ant-api03-" + fake_body
+        outer = records._SECRET_RE.search(raw)
+        self.assertIsNotNone(outer)
+        assert outer is not None
+        nested = raw.index("sk-ant-")
+        self.assertLess(outer.start(), nested)
+        self.assertLess(nested, outer.end())
+        self.assertIsNone(records._mark_secret(outer))
+        for clean in (
+            records.redact_secrets,
+            lambda text: records.safe_text(text, 10_000),
+            lambda text: records.redact_clip(text, 10_000),
+            records.mask_prose,
+        ):
+            with self.subTest(clean=clean):
+                result = clean(raw)
+                self.assertNotIn(fake_body, result)
+                self.assertEqual(lead + "sk-ant-…REDACTED", result)
+
     def test_a_url_credential_with_no_username_is_redacted(self) -> None:
         # `redis://:password@host` is the form Redis documents, and the username
         # half required a character, so every one of these published the whole
