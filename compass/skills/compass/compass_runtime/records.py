@@ -391,8 +391,9 @@ _SECRET_VALUE_GROUP: Final = {
 # bound in `redact_clip` has to be able to step over.
 _SECRET_MAX_KEEP: Final = max(_SECRET_KEEP.values())
 
-# The generic prefix can occur inside an ordinary hyphenated identifier. Its
-# body, rather than the character before `sk-`, distinguishes that case.
+# The generic prefix can occur inside an ordinary hyphenated identifier.
+# Apply this exemption only to glued candidates: separated lowercase bodies
+# were already masked before glued-prefix admission was added.
 # Project keys keep their recognised `proj-` prefix. OpenRouter's `or-v1-`
 # carries a digit, so its lowercase hex still qualifies, as does an unseparated
 # lowercase body.
@@ -645,6 +646,8 @@ def _mark_secret(match: re.Match[str]) -> str | None:
     body = match.group()
     if (
         name == "openai"
+        and match.start()
+        and match.string[match.start() - 1] in _TOKEN_CHARS
         and not body.startswith("sk-proj-")
         and _OPENAI_WORD_BODY.fullmatch(body[3:])
     ):

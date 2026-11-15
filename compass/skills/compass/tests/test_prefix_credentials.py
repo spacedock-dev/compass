@@ -8,6 +8,49 @@ from compass_runtime import records
 
 
 class GluedCredentialTest(unittest.TestCase):
+    def test_separated_lowercase_hyphenated_generic_keeps_baseline_protection(self) -> None:
+        fake = "sk-alpha-bravo-charlie-delta-echo-foxtrot"
+        for lead, tail in (
+            ("", ""),
+            ("use ", ""),
+            ("use\t", ""),
+            ("use=", ""),
+            ("use:", ""),
+            ('"', '"'),
+            ("'", "'"),
+            ("[", "]"),
+            ("(", ")"),
+            (".", ""),
+            ("/", ""),
+            (";", ""),
+            ("!", ""),
+        ):
+            with self.subTest(lead=lead, tail=tail):
+                self.assertEqual(
+                    lead + "sk-…REDACTED" + tail, records.redact_secrets(lead + fake + tail)
+                )
+
+    def test_unconditional_lowercase_families_keep_baseline_protection(self) -> None:
+        for prefix, length in (
+            ("github_pat_", 40),
+            ("lin_api_", 40),
+            ("ya29.", 20),
+            ("sk-ant-", 83),
+        ):
+            for lead in ("use ", "use=", "cfg_", "abc", "-"):
+                with self.subTest(prefix=prefix, lead=lead):
+                    self.assertEqual(
+                        lead + prefix + "…REDACTED",
+                        records.redact_secrets(lead + prefix + "a" * length),
+                    )
+
+    def test_separated_invalid_langfuse_body_still_matches_generic_shape(self) -> None:
+        for lead in ("use ", "use=", "界"):
+            with self.subTest(lead=lead):
+                self.assertEqual(
+                    lead + "sk-…REDACTED", records.redact_secrets(lead + "sk-lf-" + "g" * 36)
+                )
+
     # Minimum accepted bodies catch a length-dependent leading-boundary bypass.
     PREFIXED = (
         ("sk-ant-", "A" * 16, "sk-ant-"),
@@ -74,7 +117,7 @@ class GluedCredentialTest(unittest.TestCase):
         for prefix, body in (
             ("sk-ant-", "hill"),
             ("sk-", "top"),
-            ("sk-lf-", "g" * 36),
+            ("sk-lf-", "g" * 28),
             ("pk-lf-", "g" * 36),
             ("sk_live_", "a" * 19),
             ("rk_test_", "_" * 24),
@@ -104,7 +147,6 @@ class GluedCredentialTest(unittest.TestCase):
             "task-ant-hill",
             "desk-top",
             "dask-scheduler-configuration-defaults-file-name",
-            "sk-scheduler-configuration-defaults-file-name",
         ):
             with self.subTest(raw=raw):
                 self.assertEqual(raw, records.redact_secrets(raw))
