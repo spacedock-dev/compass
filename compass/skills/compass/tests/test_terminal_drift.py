@@ -1488,6 +1488,83 @@ class GoalRefusalIdentityTest(unittest.TestCase):
         )
         self.assertIn(terminal_drift.PROMPT_TIME_UNPUBLISHED, err)
 
+    def test_control_values_cannot_hide_the_refusal_or_add_stderr_lines(self) -> None:
+        string_starters = (
+            "\x1b]",
+            "\x1bP",
+            "\x1bX",
+            "\x1b^",
+            "\x1b_",
+            "\x9d",
+            "\x90",
+            "\x98",
+            "\x9e",
+            "\x9f",
+        )
+        cases = (
+            [("abc", "/clear" + starter + "window title") for starter in string_starters]
+            + [("abc" + starter + "evil", "/clear") for starter in string_starters]
+            + [
+                ("abc", "/clear\x1b]0;window title\x07"),
+                ("abc", "\x1b]52;c;hello world\x07 /clear"),
+                ("abc", "\x1b[31m /clear"),
+                ("abc\nInjected line", "/clear"),
+                ("abc\r\nInjected line", "/clear"),
+                ("abc\tdef", "/clear"),
+            ]
+        )
+        for sid, prompt in cases:
+            with self.subTest(sid=sid, prompt=prompt):
+                row = a_row(
+                    sid=sid,
+                    annotation_goal="",
+                    annotation_line_1="",
+                    first_prompt=prompt,
+                    first_prompt_control=True,
+                )
+                board = FakeBoard(a_payload(row))
+                out, err = io.StringIO(), io.StringIO()
+                code = terminal_drift.run(
+                    "claude",
+                    sid,
+                    again=False,
+                    at_shell=False,
+                    in_session=True,
+                    board=board,
+                    port=PORT,
+                    out=out,
+                    err=err,
+                )
+                message = err.getvalue()
+                self.assertEqual((1, ""), (code, out.getvalue()))
+                self.assertEqual(1, len(message.splitlines()))
+                self.assertIn(terminal_drift.SAVE_STEP, message)
+                self.assertIn(terminal_drift.session_url(PORT, "compass", "claude", sid), message)
+                self.assertIn("opened with /clear,", message)
+                self.assertNotIn("\x1b", message)
+                self.assertEqual([], board.posts)
+                self.assertEqual(0, board.model_calls)
+
+    def test_discard_reason_is_cleaned_before_adding_the_save_instruction(self) -> None:
+        for reason in ("Store unreadable\x1b]window title", "Store\nunreadable"):
+            with self.subTest(reason=reason):
+                payload = a_payload(
+                    a_row(
+                        annotation_goal="",
+                        annotation_line_1="",
+                        annotation_discarded_at=NOW - 10,
+                    )
+                )
+                payload["annotate_discard"] = {"unreadable": reason}
+                board = FakeBoard(payload)
+                code, out, err = drift(board, in_session=True, at_shell=False)
+                self.assertEqual((1, ""), (code, out))
+                self.assertEqual(1, len(err.splitlines()))
+                self.assertIn(f"{KEY} · {PAGE} · Store", err)
+                self.assertIn(terminal_drift.SAVE_STEP, err)
+                self.assertNotIn("\x1b", err)
+                self.assertEqual([], board.posts)
+
     def test_local_command_reason_still_strips_terminal_escapes(self) -> None:
         err = self.refused(
             a_row(
