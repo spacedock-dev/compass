@@ -9,7 +9,9 @@ import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
+from compass_runtime import aggregate, ends
 from compass_runtime.collectors import codex
 
 from .support import RuntimeTestCase, runtime, store_patch
@@ -254,6 +256,66 @@ class CodexInFlightTest(RuntimeTestCase):
                 self.assertEqual(
                     "idle", self._collect([self._call(), self._message(body)])["state"]
                 )
+
+    def _aggregate(
+        self, *, stop: float = 0, end: float = 0, restored: bool = False
+    ) -> dict[str, Any]:
+        config, state = runtime()
+        source = mock.Mock()
+        source.overlays_for.return_value = []
+        source.finished_at.return_value = stop
+        source.ended_at.return_value = 0 if restored else end
+        source.git_for.return_value = None
+        source.focusable.return_value = False
+        source.command_reports.return_value = []
+        if restored:
+            self.assertTrue(
+                ends.record(
+                    config, harness="codex", sid=SID, at=end, diagnostic_sink=lambda _: None
+                )
+            )
+        app = aggregate.Application(
+            config,
+            state,
+            (aggregate.HarnessSpec("codex", "Codex", codex.discover, codex.collect),),
+            overlays=source,
+            clock=lambda: self.now,
+            native_notifier=lambda _: "",
+            popup_notifier=lambda _title, _body: None,
+            diagnostic_sink=lambda _: None,
+        )
+        return app.collect(show_all=False)
+
+    def test_observed_end_and_remembered_stop_settle_pending(self) -> None:
+        for kind in ("stop", "end", "restored"):
+            for age in (30, 300):
+                with self.subTest(kind=kind, age=age):
+                    self.call_at = self.now - age
+                    self.assertEqual("working", self._collect([self._call()])["state"])
+                    at = self.call_at + 10
+                    with store_patch(CODEX_SESSIONS_DIR=self.tmp.name):
+                        payload = self._aggregate(
+                            stop=at if kind == "stop" else 0,
+                            end=at if kind != "stop" else 0,
+                            restored=kind == "restored",
+                        )
+                    (row,) = payload["sessions"]
+                    self.assertEqual("idle", row["state"])
+                    self.assertIs(row["active"], False)
+                    self.assertEqual(0, payload["summary"]["working"])
+
+    def test_settlement_keeps_an_already_idle_run_finished_detail(self) -> None:
+        self._collect([self._call(), _complete(self.call_at + 1)])
+        for kind in ("stop", "end"):
+            with self.subTest(kind=kind), store_patch(CODEX_SESSIONS_DIR=self.tmp.name):
+                payload = self._aggregate(
+                    stop=self.call_at + 10 if kind == "stop" else 0,
+                    end=self.call_at + 10 if kind == "end" else 0,
+                )
+                (row,) = payload["sessions"]
+                self.assertEqual(("idle", "run finished"), (row["state"], row["state_detail"]))
+                self.assertIs(row["active"], False)
+                self.assertEqual(0, payload["summary"]["working"])
 
     def test_a_command_item_finish_does_not_finish_the_outer_exec_call(self) -> None:
         row = self._collect([self._call(), _command_done(self.call_at + 1, "t1")])
