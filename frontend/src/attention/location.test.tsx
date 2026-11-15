@@ -58,23 +58,26 @@ describe('a label is interpreted by measured locations', () => {
     ).toHaveAttribute('href', '#n=project:audits');
   });
 
-  it('a person sees an unmeasured member without inventing a second location', async () => {
-    const data = locationBoard();
-    Object.assign(locationRow(data, 8), {
-      project_key: 'audits',
-      project_identity_source: 'collector project label',
-    });
-    const page = mountShell({ hash: '#n=attention', data });
-    await page.settle();
-    expect(document.body).toHaveTextContent('Location not measured for 1 session');
-    expect(document.body).not.toHaveTextContent('2 measured locations');
-    const options = projectOptions(
-      indexScreen(buildSessionsScreen(data, observe(data))),
-      prepare(EMPTY_FILTERS, 1900000000, true),
-    );
-    expect(options[0]?.note).not.toContain('more than one location');
-    expect(options[0]?.note).toContain('Location not measured for 1 session');
-  });
+  it.each(['collector project label', 'inferred Claude worktree layout'])(
+    'a person sees an unmeasured member from %s without inventing a second location',
+    async (source) => {
+      const data = locationBoard();
+      Object.assign(locationRow(data, 8), {
+        project_key: 'audits',
+        project_identity_source: source,
+      });
+      const page = mountShell({ hash: '#n=attention', data });
+      await page.settle();
+      expect(document.body).toHaveTextContent('Location not measured for 1 session');
+      expect(document.body).not.toHaveTextContent('2 measured locations');
+      const options = projectOptions(
+        indexScreen(buildSessionsScreen(data, observe(data))),
+        prepare(EMPTY_FILTERS, 1900000000, true),
+      );
+      expect(options[0]?.note).not.toContain('more than one location');
+      expect(options[0]?.note).toContain('Location not measured for 1 session');
+    },
+  );
 
   it('a person sees unknown locations even when fallback keys differ', async () => {
     const data = locationBoard(2);

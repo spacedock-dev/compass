@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
 import unittest
@@ -186,6 +187,41 @@ DECLARED_SESSION_FIELDS = frozenset(
 
 
 class CompassServerTest(RuntimeTestCase):
+    def test_missing_claude_worktree_layout_is_inferred_not_measured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / "one" / "compass"
+            main.mkdir(parents=True)
+
+            def git(*args: str) -> None:
+                subprocess.run(["git", "-C", str(main), *args], check=True, capture_output=True)
+
+            git("init", "-q")
+            git(
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "initial",
+            )
+            removed = main / ".claude" / "worktrees" / "removed"
+            git("worktree", "add", "--detach", str(removed))
+            git("worktree", "remove", str(removed))
+            config = make_config()
+            for name in ("removed", "never-created"):
+                with self.subTest(name=name):
+                    cwd = main / ".claude" / "worktrees" / name / "src"
+                    row = runtime_sessions.base_session("claude", name, "old-label")
+                    runtime_sessions.apply_project_identity(config, row, str(cwd))
+                    self.assertEqual("one/compass", row["project"])
+                    self.assertEqual(name, row["worktree"])
+                    self.assertEqual(
+                        "inferred Claude worktree layout", row["project_identity_source"]
+                    )
+                    self.assertIsNone(row.get("checkout_key"))
+
     def test_two_worktrees_of_one_repository_file_under_one_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

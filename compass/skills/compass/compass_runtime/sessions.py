@@ -332,7 +332,7 @@ def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) ->
                 session["project"] = label
                 session["project_key"] = _project_identity_key("git:", root)
                 session["project_name"] = os.path.basename(root) or label
-                session["project_identity_source"] = "git common directory"
+                session["project_identity_source"] = "inferred Claude worktree layout"
                 session["worktree"] = name
         return
     session["project_key"] = identity["key"]

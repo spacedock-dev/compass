@@ -32,6 +32,34 @@ def recorded(name: str) -> dict[str, Any]:
 
 
 class ProjectTest(unittest.TestCase):
+    def test_inferred_layout_discloses_one_unknown_without_another_measured_location(self) -> None:
+        for key in ("main-key", "other-key"):
+            rows = [
+                {
+                    "harness": "claude",
+                    "sid": "main",
+                    "project": "audits",
+                    "project_key": "main-key",
+                    "project_identity_source": "git common directory",
+                },
+                {
+                    "harness": "claude",
+                    "sid": "gone",
+                    "project": "audits",
+                    "project_key": key,
+                    "project_identity_source": "inferred Claude worktree layout",
+                    "worktree": "gone",
+                },
+            ]
+            output = "\n".join(
+                terminal_project.render(
+                    terminal_project.derive({"sessions": rows}, {}, label="audits"),
+                    caller=("claude", "main"),
+                )
+            )
+            self.assertIn("Location not measured for 1 session with this display label", output)
+            self.assertNotIn("2 measured locations", output)
+
     def test_a_person_reads_location_evidence_instead_of_a_label_collision(self) -> None:
         for source in ("working directory path", "git common directory"):
             with self.subTest(source=source):
