@@ -237,4 +237,4 @@ agy plugin validate ./compass
      found no cross-PR drift in SECURITY.md, HOW_TO_USE.md or the design records, and changed
      nothing but this stamp. -->
 
-<!-- docs-synced-through: fefedcc4 (2026-11-15) -->
+<!-- docs-synced-through: e64c30b2 (2026-11-16) -->
