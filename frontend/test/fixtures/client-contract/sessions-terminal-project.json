@@ -48,6 +48,7 @@
           "first_prompt_at": 1899999370.0,
           "first_prompt_control": false,
           "harness": "claude",
+          "headless": null,
           "instruction": {
             "at": 1899999980.0,
             "label": "asked",
@@ -95,6 +96,7 @@
           "first_prompt_at": 1899999370.0,
           "first_prompt_control": false,
           "harness": "claude",
+          "headless": null,
           "instruction": {
             "at": 1899999940.0,
             "label": "asked",
@@ -148,6 +150,7 @@
           "first_prompt_at": 1899999370.0,
           "first_prompt_control": false,
           "harness": "claude",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999970.0,
           "loop": null,
@@ -200,6 +203,7 @@
           "first_prompt_at": 1899999310.0,
           "first_prompt_control": false,
           "harness": "codex",
+          "headless": null,
           "instruction": null,
           "last_activity": 1899999910.0,
           "loop": null,
@@ -232,7 +236,7 @@
     },
     "headers": {
       "Cache-Control": "no-store",
-      "Content-Length": "4644",
+      "Content-Length": "4708",
       "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },
