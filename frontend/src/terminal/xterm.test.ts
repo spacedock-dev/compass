@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createXtermLoader, XTERM_CSS, XTERM_JS, type XtermConstructor } from './xterm';
 
@@ -47,6 +49,20 @@ describe('loading the local terminal renderer', () => {
     t.loader.load();
     expect(t.scripts()).toHaveLength(1);
     expect(t.doc.head.querySelectorAll('link')).toHaveLength(1);
+  });
+
+  it('pins both requests to the vendored bytes when loading them', () => {
+    const t = setup();
+    const check = (element: Element | null, file: string) => {
+      const bytes = readFileSync(`compass/skills/compass/compass_runtime/web/vendor/${file}`);
+      expect(element?.getAttribute('integrity')).toBe(
+        `sha384-${createHash('sha384').update(bytes).digest('base64')}`,
+      );
+      expect(element?.getAttribute('crossorigin')).toBe('anonymous');
+    };
+    t.loader.load().catch(() => undefined);
+    check(t.link(), 'xterm.css');
+    check(t.scripts()[0] ?? null, 'xterm.js');
   });
 
   it('does not fetch the script again when the renderer is already on the page', async () => {

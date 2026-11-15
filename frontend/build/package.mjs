@@ -148,6 +148,7 @@ async function authoredSources(root) {
     'frontend/index.html',
     'frontend/vite.config.mts',
     'frontend/build/package.mjs',
+    'frontend/build/xterm-integrity.mjs',
     'frontend/build/shadcn-LICENSE.txt',
     `${WEB}/styles.css`,
     `${WEB}/page.py`,

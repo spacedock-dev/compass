@@ -2540,6 +2540,13 @@ class EveryOptOutReachesTheWindowsChildTest(unittest.TestCase):
             self.assertFalse(self._config(args).observer_model_enabled)
             self.assertTrue(self._config(self._child(args)).model_calls_disabled)
 
+    def test_selected_monitor_model_survives_windows_daemon_respawn(self) -> None:
+        parser = cli.build_parser()
+        for model in ("claude-haiku-5-5", "claude-haiku-5-5-20261001"):
+            with self.subTest(model=model):
+                parent = parser.parse_args(["--daemon", "--claude-monitor-model", model])
+                self.assertEqual(model, self._config(self._child(parent)).claude_monitor_model)
+
     def test_an_opt_in_never_travels_without_the_model_refusal_beside_it(self) -> None:
         parser = cli.build_parser()
         opt_ins = [["--observer-model"], ["--unasked-readings"], []]

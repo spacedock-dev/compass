@@ -17,6 +17,8 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import stat
+import threading
 import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any, Final
@@ -68,20 +70,50 @@ def resolve_reach_url(config: RuntimeConfig) -> str | None:
         return None
     candidate = config.reach_url
     if not candidate:
-        candidate = os.environ.get(REACH_URL_ENV)
+        candidate = config.environ.get(REACH_URL_ENV)
     if not candidate:
-        reach_file = os.path.join(config.state_home, REACH_URL_FILENAME)
-        if os.path.isfile(reach_file):
-            try:
-                with open(reach_file, encoding="utf-8") as f:
-                    candidate = f.read(REACH_URL_MAX_BYTES)
-            except OSError:
-                candidate = None
+        candidate = _stored_reach_url(config)
     if candidate:
         url = candidate.strip()
         if url.startswith(("http://", "https://")):
             return url
     return None
+
+
+def _stored_reach_url(config: RuntimeConfig) -> str | None:
+    path = os.path.join(config.state_home, REACH_URL_FILENAME)
+    try:
+        before = os.lstat(path)
+        if not stat.S_ISREG(before.st_mode) or (
+            getattr(before, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        ):
+            return None
+        fd = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+        )
+        try:
+            opened = os.fstat(fd)
+            # Windows has no O_NOFOLLOW. Refuse links before opening and an
+            # identity change before reading; POSIX also refuses a raced FIFO.
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_size > REACH_URL_MAX_BYTES
+                or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+            ):
+                return None
+            content = os.read(fd, REACH_URL_MAX_BYTES + 1)
+        finally:
+            os.close(fd)
+        if len(content) > REACH_URL_MAX_BYTES:
+            return None
+        return content.decode("utf-8")
+    except (OSError, UnicodeError):
+        return None
 
 
 def count_reach_sessions(sessions: Iterable[Session]) -> tuple[int, int]:
@@ -134,30 +166,54 @@ def maybe_reach_nudge(
     opener: urllib.request.OpenerDirector | None = None,
     diagnostic_sink: Callable[[str], None] = print,
 ) -> bool:
-    """Conditionally dispatch an off-machine nudge if counts changed and interval elapsed."""
+    """Admit one background delivery; True means scheduled, not delivered."""
     if not config.reach_enabled:
-        return False
-    url = resolve_reach_url(config)
-    if not url:
         return False
     needs_input, finished_unread = count_reach_sessions(sessions)
     counts = (needs_input, finished_unread)
     with state.reach_lock:
         if needs_input == 0 and finished_unread == 0:
             state.last_reach_counts = (0, 0)
+            state.reach_zero_generation += 1
             return False
-        if counts == state.last_reach_counts:
+        if state.reach_worker is not None and state.reach_worker.is_alive():
             return False
-        if now - state.last_reach_time < config.reach_cooldown_sec:
+        if (
+            counts == state.last_reach_counts
+            or now - state.last_reach_time < config.reach_cooldown_sec
+        ):
             return False
-        state.last_reach_time = now
-        state.last_reach_counts = counts
+        zero_generation = state.reach_zero_generation
 
-    return send_reach_nudge(
-        config,
-        url,
-        needs_input,
-        finished_unread,
-        opener=opener,
-        diagnostic_sink=diagnostic_sink,
-    )
+        def deliver() -> None:
+            # Collection calls this while holding its memo lock. Cross that boundary
+            # before resolving the stored URL or opening a socket, then hold no lock
+            # during I/O. A slow destination consumes just this one worker.
+            with state.collect_memo_lock:
+                pass
+            url = resolve_reach_url(config)
+            if not url:
+                return
+            with state.reach_lock:
+                state.last_reach_time = now
+                # URL resolution may outlive a zero observation. Preserve that
+                # reset so the next matching attention episode can be delivered.
+                if state.reach_zero_generation == zero_generation:
+                    state.last_reach_counts = counts
+            send_reach_nudge(
+                config,
+                url,
+                needs_input,
+                finished_unread,
+                opener=opener,
+                diagnostic_sink=diagnostic_sink,
+            )
+
+        worker = threading.Thread(target=deliver, name="compass-reach", daemon=True)
+        state.reach_worker = worker
+        try:
+            worker.start()
+        except RuntimeError:
+            state.reach_worker = None
+            return False
+        return True

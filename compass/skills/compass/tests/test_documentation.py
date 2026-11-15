@@ -2707,7 +2707,8 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
         # which is a far smaller promise passing for the one made here.
         self.assertIn(
             "Every response the server composes carries "
-            "`Content-Security-Policy: frame-ancestors 'none'`, with the three "
+            "`Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; "
+            "base-uri 'none'`, with the three "
             "exceptions named below",
             self.FLAT,
         )
@@ -2715,11 +2716,9 @@ class FocusCommandContractDocumentationTest(unittest.TestCase):
             encoding="utf-8"
         )
         methods = handler_methods(source)
-        csp = 'self.send_header("Content-Security-Policy", "frame-ancestors \'none\'")'
-        # The whole value, not a substring. `frame-ancestors` has no fallback to
-        # `default-src`, so it is the only directive that can ride here without
-        # restricting the page; a second one in this policy blanks a board built
-        # from one inline script, one inline style and nine `data:` font URIs.
+        # Header values are exercised over HTTP in test_http_api. This inventory
+        # keeps the documented exceptions tied to every independent header writer.
+        csp = '"Content-Security-Policy"'
         self.assertIn(csp, methods["_send"])
         # The count, not just the names. The prose shipped claiming two carve-outs
         # while the code had three, because `_ask_poll` composes its own 204 and

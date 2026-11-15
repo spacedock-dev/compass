@@ -5,6 +5,9 @@
    the first time a reader opens a terminal, and never from anywhere else. The vendored files and their
    licence are not touched here. */
 
+declare const __COMPASS_XTERM_JS_INTEGRITY__: string;
+declare const __COMPASS_XTERM_CSS_INTEGRITY__: string;
+
 export const XTERM_JS = '/assets/xterm.js';
 export const XTERM_CSS = '/assets/xterm.css';
 
@@ -58,6 +61,8 @@ export function createXtermLoader(deps: XtermLoaderDeps) {
     link.dataset.projectXterm = 'true';
     link.rel = 'stylesheet';
     link.href = XTERM_CSS;
+    link.setAttribute('integrity', __COMPASS_XTERM_CSS_INTEGRITY__);
+    link.crossOrigin = 'anonymous';
     const pending = new Promise<void>((resolve, reject) => {
       link.onload = () => resolve();
       link.onerror = () => {
@@ -78,6 +83,8 @@ export function createXtermLoader(deps: XtermLoaderDeps) {
     if (deps.terminal()) return Promise.resolve();
     const element = doc.createElement('script');
     element.src = XTERM_JS;
+    element.setAttribute('integrity', __COMPASS_XTERM_JS_INTEGRITY__);
+    element.crossOrigin = 'anonymous';
     const pending = new Promise<void>((resolve, reject) => {
       const failed = () => {
         element.remove();

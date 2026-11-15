@@ -7,7 +7,7 @@ import ntpath
 import os
 import posixpath
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -177,6 +177,9 @@ UPDATE_CHECK_DEFAULT_ENABLED: Final = True
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    # Retain explicit startup inputs without exposing credentials in repr or making
+    # irrelevant environment changes alter the resolved configuration's equality.
+    environ: Mapping[str, str] = field(repr=False, compare=False)
     home: str
     data_home: str
     store_roots: Mapping[str, tuple[str, ...]]
@@ -937,6 +940,7 @@ def build_runtime_config(
     )
     state_dir = _PATH_TYPE(state_home)
     return RuntimeConfig(
+        environ=MappingProxyType(dict(environ)),
         home=home,
         data_home=data_home,
         store_roots=MappingProxyType(resolved),

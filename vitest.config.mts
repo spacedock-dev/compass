@@ -1,3 +1,4 @@
+import { xtermIntegrity } from './frontend/build/xterm-integrity.mjs';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
@@ -19,6 +20,7 @@ process.env['LANGUAGE'] = 'en_US';
 const WORKERS = Math.max(2, availableParallelism() - 1);
 
 export default defineConfig({
+  define: xtermIntegrity(),
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./frontend/src', import.meta.url)) } },
   test: {
