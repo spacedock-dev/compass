@@ -167,6 +167,32 @@ def environment_identity() -> dict[str, str] | None:
         return None
 
 
+def boot_started() -> float | None:
+    """Measured wall-clock boot start; unavailable timing cannot authorize reboot cleanup."""
+    try:
+        if sys.platform.startswith("linux"):
+            started = time.time() - time.clock_gettime(time.CLOCK_BOOTTIME)
+        elif sys.platform == "darwin":
+            # kern.boottime is a timeval, not the textual UUID sysctl returns.
+            value = (ctypes.c_long * 2)()
+            size = ctypes.c_size_t(ctypes.sizeof(value))
+            if (
+                ctypes.CDLL(None).sysctlbyname(b"kern.boottime", value, ctypes.byref(size), None, 0)
+                != 0
+            ):
+                return None
+            started = value[0] + value[1] / 1_000_000
+        elif sys.platform == "win32":
+            kernel = ctypes.WinDLL("kernel32")  # type: ignore[attr-defined]
+            kernel.GetTickCount64.restype = ctypes.c_uint64
+            started = time.time() - kernel.GetTickCount64() / 1000
+        else:
+            return None
+    except (OSError, AttributeError, ValueError, OverflowError):
+        return None
+    return started if math.isfinite(started) and started > 0 else None
+
+
 def _read_record(config: RuntimeConfig, path: str) -> dict[str, Any] | None:
     try:
         with os.fdopen(runtime_io.open_regular(path, root=config.state_home), "rb") as handle:
@@ -245,7 +271,10 @@ def state_gone(config: RuntimeConfig, port: int, state: dict[str, Any] | None) -
     ):
         return False
     if here["boot"] != there["boot"]:
-        return True
+        # Machine IDs are assumed unique. Clones sharing one ID and state folder
+        # are treated as one machine, the stated limit of automatic reboot recovery.
+        boot_start = boot_started()
+        return boot_start is not None and started < boot_start
     return here == there and _state_process_exists(pid) is False
 
 
@@ -292,6 +321,7 @@ def write_state(
     what that does and does not buy rather than implying isolation.
     """
     payload: dict[str, Any] = {
+        "state_format": 1,
         "pid": os.getpid(),
         "port": port,
         "started": started,

@@ -119,6 +119,60 @@ class StateOwnershipTest(unittest.TestCase):
         ):
             self.assertEqual([self.port], lifecycle.sweep_stale_states(self.config))
 
+    def test_different_boot_requires_a_start_before_this_boot(self) -> None:
+        self.record()
+        before = self.state.read_bytes()
+        for boot_start in (None, 0.5, 1.0):
+            with (
+                self.subTest(boot_start=boot_start),
+                mock.patch.object(
+                    lifecycle, "environment_identity", return_value={**LOCAL, "boot": "new"}
+                ),
+                mock.patch.object(lifecycle, "boot_started", create=True, return_value=boot_start),
+                mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+            ):
+                self.assertEqual(
+                    "unreachable", lifecycle.instance_status(self.config, self.port)["state"]
+                )
+                self.assertEqual(1, lifecycle.stop_instance(self.config, self.port)[1])
+                self.assertEqual([], lifecycle.sweep_stale_states(self.config))
+                with self.assertRaises(lifecycle.StateOwnershipError):
+                    lifecycle.write_state(self.config, self.port, started=3.0)
+        self.assertEqual(before, self.state.read_bytes())
+
+    def test_shared_machine_id_clone_before_local_boot_is_reclaimable(self) -> None:
+        # Reboot recovery deliberately treats unregenerated cloned machine IDs as one host.
+        self.record({**REMOTE, "boot": "clone-boot"})
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "boot_started", create=True, return_value=2000.0),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=True),
+        ):
+            self.assertEqual([self.port], lifecycle.sweep_stale_states(self.config))
+
+    def test_incomplete_new_publication_never_uses_legacy_cleanup(self) -> None:
+        publish = runtime_io.atomic_write_owner_only
+
+        def fail_origin(target: str, content: bytes | str, **_kwargs: object) -> None:
+            if target.endswith(".origin"):
+                raise PermissionError("origin refused")
+            publish(target, content, root=self.home)
+
+        with mock.patch.object(runtime_io, "atomic_write_owner_only", side_effect=fail_origin):
+            lifecycle.write_state(
+                self.config, self.port, started=1.0, diagnostic_sink=lambda _m: None
+            )
+        before = self.state.read_bytes()
+        with mock.patch.object(lifecycle, "_state_process_exists", return_value=False):
+            self.assertEqual(
+                "unreachable", lifecycle.instance_status(self.config, self.port)["state"]
+            )
+            self.assertEqual(1, lifecycle.stop_instance(self.config, self.port)[1])
+            self.assertEqual([], lifecycle.sweep_stale_states(self.config))
+            with self.assertRaises(lifecycle.StateOwnershipError):
+                lifecycle.write_state(self.config, self.port, started=2.0)
+        self.assertEqual(before, self.state.read_bytes())
+
     def test_unknown_and_legacy_records_are_not_death_proof(self) -> None:
         self.state.write_text(json.dumps({"pid": 99999999, "port": self.port, "started": 1}))
         with (
