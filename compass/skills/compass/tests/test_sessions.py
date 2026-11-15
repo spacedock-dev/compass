@@ -49,6 +49,7 @@ DECLARED_SESSION_FIELDS = frozenset(
         "harness",
         "project",
         "project_key",
+        "checkout_key",
         "project_name",
         "project_identity_source",
         "worktree",
@@ -187,6 +188,57 @@ DECLARED_SESSION_FIELDS = frozenset(
 
 
 class CompassServerTest(RuntimeTestCase):
+    def test_real_same_basename_checkouts_have_distinct_opaque_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "main"
+            main.mkdir()
+
+            def git(*args: str) -> None:
+                subprocess.run(["git", "-C", str(main), *args], check=True, capture_output=True)
+
+            git("init", "-q")
+            git(
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "initial",
+            )
+            config = make_config()
+
+            def filed(cwd: Path) -> dict[str, Any]:
+                row = runtime_sessions.base_session("claude", "s", "audits")
+                runtime_sessions.apply_project_identity(config, row, str(cwd))
+                return dict(row)
+
+            checkouts = [root / parent / "audit" for parent in ("first", "second")]
+            for checkout in checkouts:
+                git("worktree", "add", "--detach", str(checkout))
+                (checkout / "src").mkdir()
+            a, b = (filed(checkout) for checkout in checkouts)
+            child = filed(checkouts[0] / "src")
+            top = filed(main)
+            plain = root / "plain"
+            plain.mkdir()
+            non_git = filed(plain)
+            self.assertEqual(a["project_key"], b["project_key"])
+            self.assertEqual("audit", a["worktree"])
+            self.assertEqual(a["worktree"], b["worktree"])
+            self.assertNotEqual(a.get("checkout_key"), b.get("checkout_key"))
+            self.assertEqual(a["checkout_key"], child["checkout_key"])
+            self.assertNotEqual(a["checkout_key"], top["checkout_key"])
+            for row in (a, b, child, top, non_git):
+                self.assertRegex(row["checkout_key"], r"^checkout:[0-9a-f]{24}$")
+                self.assertNotEqual(row["project_key"], row["checkout_key"])
+                self.assertNotIn(str(root), json.dumps(row))
+            absent = runtime_sessions.base_session("claude", "s", "audits")
+            self.assertIsNone(absent["checkout_key"])
+            self.assertNotIn("checkout_key", runtime_events.PATCHABLE)
+
     def test_missing_claude_worktree_layout_is_inferred_not_measured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             main = Path(tmp) / "one" / "compass"

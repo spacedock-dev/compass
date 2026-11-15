@@ -8,6 +8,7 @@ export function locationBoard(count = 9): Row {
       sid: `audit-${String(i)}`,
       project: 'audits',
       project_key: 'path:audits',
+      checkout_key: 'checkout:a7b8c9',
       project_identity_source: 'working directory path',
       title: `Audit ${String(i)}`,
       state: 'idle',

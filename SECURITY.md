@@ -1,5 +1,12 @@
 # Security policy
 
+Each published session may carry a `checkout_key`: a digest of its canonical checkout
+root, in a namespace separate from its repository grouping key. For measured non-Git
+directories it digests the canonical working directory. It reveals equality of measured
+checkout locations to a loopback API reader, without publishing a path. The page renders
+neither paths nor keys. Missing Claude worktree layouts publish inferred provenance and
+no measured checkout key.
+
 ## Scope
 
 Compass ships three kinds of component that touch the network. The dashboard server

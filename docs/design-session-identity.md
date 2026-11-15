@@ -588,3 +588,19 @@ label finds nothing under it and is not migrated.
 
 Not changed: a session in a subdirectory of a main checkout keeps the label of its own working
 directory, as before. How writes inside an isolation worktree count is a separate ruling.
+
+
+### Checkout evidence is distinct from repository grouping
+
+`checkout_key` is a `checkout:` digest of the canonical checkout root, using the same
+normalization and hash helper as `project_key` in a separate namespace. Collection reuses
+the checkout it already resolved. Main and linked checkouts share a repository key but
+have different checkout keys, including two worktrees with the same directory name.
+A checkout and its subdirectories share a checkout key. A measured non-Git directory
+uses its canonical working directory; a missing or unusable directory has no checkout key.
+
+The board requires measured provenance and a checkout key before claiming concurrent
+work in one checkout. A missing key never falls back to a worktree name. Names remain
+display text; paths and keys never render. Grouping across different display labels
+remains outside this rule. Checkout evidence is collected locally, cannot be patched
+by lifecycle events, and does not enter observation history.

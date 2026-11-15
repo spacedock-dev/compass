@@ -335,6 +335,7 @@ def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) ->
                 session["project_identity_source"] = "inferred Claude worktree layout"
                 session["worktree"] = name
         return
+    session["checkout_key"] = _project_identity_key("checkout:", checkout or cwd)
     session["project_key"] = identity["key"]
     session["project_name"] = identity["name"]
     session["project_identity_source"] = identity["source"]
@@ -593,6 +594,7 @@ def base_session(harness: str, sid: Any, project: str) -> Session:
         "harness": harness,
         "project": project,
         "project_key": project,
+        "checkout_key": None,
         "project_name": project.rsplit("/", 1)[-1] or project,
         "project_identity_source": "collector project label",
         # The linked worktree's directory name; None for a main checkout, so a

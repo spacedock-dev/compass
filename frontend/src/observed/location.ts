@@ -53,13 +53,15 @@ export function locationWarnings(rows: readonly Row[]): LocationWarning[] {
     });
   const checkouts = new Map<string, Map<string, Row>>();
   for (const row of rows) {
+    const checkout = trimmed(row['checkout_key']);
     const key = measuredLocation(row);
-    if (!key || endedAt(row) !== null || !['working', 'needs_input'].includes(String(row['state'])))
+    if (
+      !key ||
+      !checkout ||
+      endedAt(row) !== null ||
+      !['working', 'needs_input'].includes(String(row['state']))
+    )
       continue;
-    const checkout = JSON.stringify([
-      key,
-      typeof row['worktree'] === 'string' ? row['worktree'] : '',
-    ]);
     const members = checkouts.get(checkout) ?? new Map<string, Row>();
     members.set(sessionKey(row), row);
     checkouts.set(checkout, members);

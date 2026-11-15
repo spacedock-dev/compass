@@ -7,11 +7,31 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import { fakeBackend } from '../test/storage_backends';
-import { locationBoard, locationRow } from '../test/location_boards';
+import { locationBoard, locationRow, locationRows } from '../test/location_boards';
 
-function Board({ locations = 1 }: { readonly locations?: number }) {
+function Board({
+  locations = 1,
+  checkout = 'idle',
+}: {
+  readonly locations?: number;
+  readonly checkout?: 'idle' | 'shared' | 'distinct' | 'missing';
+}) {
   const [shell] = useState(() => {
-    const data = locationBoard();
+    const data = locationBoard(checkout === 'idle' ? 9 : 2);
+    if (checkout !== 'idle')
+      for (const [i, row] of locationRows(data).entries())
+        Object.assign(row, {
+          state: 'working',
+          project_key: 'git:audits',
+          project_identity_source: 'git common directory',
+          worktree: 'audit',
+          checkout_key:
+            checkout === 'missing'
+              ? null
+              : checkout === 'distinct'
+                ? `checkout:${String(i)}`
+                : 'checkout:shared-evidence',
+        });
     if (locations > 1) locationRow(data, 8)['project_key'] = 'path:other';
     const clock = createFakeClock();
     return createShell({
@@ -67,4 +87,31 @@ export const TwoMeasuredLocations: Story = {
         within(card).getByRole('link', { name: new RegExp(`Audit ${String(i)} `) }),
       ).toHaveAttribute('href', `#n=session:audits:claude:audit-${String(i)}`);
   },
+};
+
+export const SharedCheckout: Story = {
+  args: { checkout: 'shared' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('link', { name: 'Concurrent sessions in one checkout' }),
+    ).toHaveAttribute('href', '#n=project:audits');
+    const card = canvasElement.querySelector('[data-next-board-risk="checkout"]') as HTMLElement;
+    await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(2);
+    await expect(card).toHaveTextContent('2 sessions working or waiting in the same checkout');
+    await expect(card.textContent).not.toContain('checkout:shared-evidence');
+  },
+};
+
+export const SameNameDistinctCheckouts: Story = {
+  args: { checkout: 'distinct' },
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
+  },
+};
+
+export const MissingCheckoutEvidence: Story = {
+  args: { checkout: 'missing' },
+  play: SameNameDistinctCheckouts.play,
 };

@@ -94,13 +94,14 @@ describe('a label is interpreted by measured locations', () => {
     expect(document.body).not.toHaveTextContent('Concurrent sessions');
   });
 
-  it('a person sees concurrent work in the same named worktree', async () => {
+  it('a person sees concurrent work from checkout identity despite different display names', async () => {
     const data = locationBoard(2);
     for (const row of locationRows(data))
       Object.assign(row, {
         project_key: 'git:audits',
         project_identity_source: 'git common directory',
-        worktree: 'target',
+        worktree: row['sid'] === 'audit-0' ? 'target' : 'display-alias',
+        checkout_key: 'checkout:shared',
         state: 'working',
       });
     const page = mountShell({ hash: '#n=attention', data });
@@ -110,19 +111,31 @@ describe('a label is interpreted by measured locations', () => {
     ).toBeInTheDocument();
   });
 
-  it('a person keeps distinct worktree names distinct even when they differ only by spaces', async () => {
-    const data = locationBoard(2);
-    for (const [i, row] of locationRows(data).entries())
-      Object.assign(row, {
-        project_key: 'git:audits',
-        project_identity_source: 'git common directory',
-        worktree: i ? 'target' : ' target ',
-        state: 'working',
-      });
-    const page = mountShell({ hash: '#n=attention', data });
-    await page.settle();
-    expect(document.body).not.toHaveTextContent('Concurrent sessions');
-  });
+  it.each(['different', 'missing', 'empty', 'inferred', 'idle', 'ended'])(
+    'a person sees no concurrent claim for %s checkout evidence',
+    async (evidence) => {
+      const data = locationBoard(2);
+      for (const row of locationRows(data))
+        Object.assign(row, {
+          project_key: 'git:audits',
+          project_identity_source: 'git common directory',
+          checkout_key: 'checkout:first',
+          worktree: 'audit',
+          state: 'working',
+        });
+      const peer = locationRow(data, 1);
+      if (evidence === 'different') peer['checkout_key'] = 'checkout:second';
+      if (evidence === 'missing') delete peer['checkout_key'];
+      if (evidence === 'empty') peer['checkout_key'] = '  ';
+      if (evidence === 'inferred')
+        peer['project_identity_source'] = 'inferred Claude worktree layout';
+      if (evidence === 'idle') peer['state'] = 'idle';
+      if (evidence === 'ended') peer['ended_at'] = 1899999999;
+      const page = mountShell({ hash: '#n=attention', data });
+      await page.settle();
+      expect(document.body).not.toHaveTextContent('Concurrent sessions');
+    },
+  );
 
   it('a person is warned about simultaneous work in one measured checkout', async () => {
     const data = locationBoard(2);
@@ -134,6 +147,9 @@ describe('a label is interpreted by measured locations', () => {
       screen.getByRole('link', { name: 'Concurrent sessions in one checkout' }),
     ).toBeInTheDocument();
     expect(document.body).toHaveTextContent('2 sessions working or waiting in the same checkout');
+    expect(document.body.innerHTML).not.toContain('checkout:a7b8c9');
+    expect(document.body.innerHTML).not.toContain('path:audits');
+    expect(document.body.innerHTML).not.toContain('/private/checkouts/audits');
   });
 
   it('a person sees concurrent worktrees separately and never treats an ended row as working', async () => {
@@ -144,6 +160,7 @@ describe('a label is interpreted by measured locations', () => {
         project_key: 'git:audits',
         project_identity_source: 'git common directory',
         worktree: i === 1 ? 'second' : 'first',
+        checkout_key: i === 1 ? 'checkout:second' : 'checkout:first',
       });
     locationRow(data, 2)['ended_at'] = 1899999999;
     const page = mountShell({ hash: '#n=attention', data });
