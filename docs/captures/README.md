@@ -28,6 +28,23 @@ An error-flagged shell result sets `is_error` and stores `toolUseResult` as a ba
 separate stdout, stderr or exit code. A file write's result carries no `is_error` field at all, so an
 absent flag there means nothing about success.
 
+[Claude background Bash completions](claude/background-bash-completion-macos.jsonl) records selected
+parser field shapes and aggregate join verdicts from a read-only sample of 40 recent top-level local
+transcripts on 2026-11-15. It found 54 notifications paired to explicit background Bash calls, all
+after launch, in the parent's session and outside sidechains. Both user-message and queued-attachment
+forms carry `task-id` and `tool-use-id`; every task id matched the launch result's `backgroundTaskId`.
+The observed terminal statuses are `completed` and `failed`. The sample has no headless entrypoint
+on those notifications, so it measures completion pairing independently of the headless wait policy.
+No commands, prompts, output, identifiers or paths are retained.
+
+[Claude task-notification batches](claude/task-notification-batches-macos.jsonl) records aggregate
+shapes from the arbiter's read-only transcript scan on 2026-11-15. Seven distinct user records in six
+native parent transcripts contain batches of 2, 2, 2, 4, 8, 9 and 10 notifications. All are string
+content outside sidechains with session identity matching the filename. Their 37 blocks carry
+`task-id`, `output-file`, `status` and `summary`, without `tool-use-id`: 21 are `completed` and 16
+are `failed`. These historical records establish batching, not headless Bash ownership. Synthetic
+replay proves the headless activity consequence and also covers lists of text blocks.
+
 [Claude subagent transcript shapes](claude/subagent-transcript-shapes-2.1.281-macos.jsonl) is taken
 the same way, by field name and type name only, from a Claude Code 2.1.281 session on this machine
 that delegated work to a subagent. A subagent writes its own transcript at

@@ -5963,6 +5963,7 @@ class _ToolReportTally:
         self.launches: dict[str, dict[str, Any]] = {}
         self.last_turn_floor = 0.0
         self.completed_launch_calls: dict[str, float] = {}
+        self.explicit_background_calls: set[str] = set()
         self._hash_identities = False
         self._last_added_runs: list[tuple[str, dict[str, Any]]] = []
         # Replay asks for entries after every call of its window. A write or changing command can
@@ -6144,9 +6145,19 @@ class _ToolReportTally:
         )
 
     def _add_launch(
-        self, at: float, call_id: str, tool: str, count: int, worker: str, stream: str
+        self,
+        at: float,
+        call_id: str,
+        tool: str,
+        count: int,
+        worker: str,
+        stream: str,
+        *,
+        explicit_background: bool = False,
     ) -> None:
         call_id = _launch_record_id(call_id, stream)
+        if explicit_background:
+            self.explicit_background_calls.add(call_id)
         completed = self.completed_launch_calls.get(call_id)
         if count != 1 or (completed is not None and completed < at):
             completed = None
@@ -6251,7 +6262,15 @@ class _ToolReportTally:
             if self.edges.launches:
                 # Paired with its completion from Claude Code's own notifications, which no other
                 # harness writes: elsewhere a launch is counted and never listed as unpaired work.
-                self._add_launch(at, call_id, "Bash", count, worker, stream)
+                self._add_launch(
+                    at,
+                    call_id,
+                    "Bash",
+                    count,
+                    worker,
+                    stream,
+                    explicit_background=tool_input.get("run_in_background") is True,
+                )
         if result is not None and result.get("is_error") is True and not self._exited(found, text):
             # V3: the call never ran, so it is no run and supersedes nothing.
             self.scan["not_run"] += 1
@@ -9383,6 +9402,7 @@ def _notification_completions(
     sidechain: bool = False,
 ) -> dict[str, float]:
     found: dict[str, float] = {}
+    call_tasks = {call_id: task_id for task_id, call_id in task_calls.items()}
     for record in parent:
         if (record.get("isSidechain") is True) is not sidechain:
             continue
@@ -9404,16 +9424,20 @@ def _notification_completions(
             or not text.lstrip().startswith("<task-notification>")
         ):
             continue
-        call_id = _notification_field(text, "tool-use-id") or task_calls.get(
-            _notification_field(text, "task-id"),
-            "",
-        )
-        status = _notification_field(text, "status")
-        terminal = status in {"completed", "failed", "killed"} or (
-            not status and "<result>" in text and "</result>" in text
-        )
-        if call_id and terminal:
-            found[call_id] = at
+        for match in re.finditer(r"<task-notification>(.*?)</task-notification>", text, re.DOTALL):
+            block = match.group(1)
+            tool_id = _notification_field(block, "tool-use-id")
+            task_id = _notification_field(block, "task-id")
+            expected_task = call_tasks.get(tool_id)
+            if task_id and expected_task is not None and task_id != expected_task:
+                continue
+            call_id = tool_id or task_calls.get(task_id, "")
+            status = _notification_field(block, "status")
+            terminal = status in {"completed", "failed", "killed"} or (
+                not status and "<result>" in block and "</result>" in block
+            )
+            if call_id and terminal:
+                found[call_id] = at
     return found
 
 
@@ -9500,7 +9524,7 @@ def delegated_work_status(
     state: RuntimeState | None = None,
     child_paths: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], float | None, int]:
-    """Published counts and times, plus current-turn background subagent evidence.
+    """Published counts and times, plus current-turn background task evidence.
 
     The collector's activity cap must start at that launch, not at a newer
     completed launch or a child's most recent write. Reuse this cached pairing
@@ -9535,6 +9559,7 @@ def delegated_work_status(
                 launches.append(
                     {
                         **launch,
+                        "explicit_background": call_id in tally.explicit_background_calls,
                         "acknowledged": result is not None
                         and result.block.get("is_error") is not True,
                     }
@@ -9579,14 +9604,17 @@ def delegated_work_status(
         ),
     }
 
-    # The activity exception was measured only for Agent/Task launches. Shell
-    # servers and `&` jobs have no completion this pairing can observe.
+    # Explicit Bash background tasks share the measured notification completion join.
+    # Shell `&` lists and auto-backgrounded calls do not earn the parent Stop exception.
     waiting = [
         row
         for row in unpaired
         if row["at"] >= last_turn_floor
         and row["acknowledged"]
-        and row["source"] in {"Claude Agent call", "Claude Task call"}
+        and (
+            row["source"] in {"Claude Agent call", "Claude Task call"}
+            or (row["source"] == "Claude Bash call" and row.get("explicit_background") is True)
+        )
         and runtime_sessions.is_fresh(config, now, row["at"], config.claude_tool_in_flight_max_sec)
     ]
     return (

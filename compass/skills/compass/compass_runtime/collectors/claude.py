@@ -855,7 +855,7 @@ def collect(
             now,
             info,
             waiting_count,
-            # Only headless parents were measured staying alive after Stop for a subagent.
+            # Only headless parents may wait past Stop for their background tasks.
             newest_unpaired if entrypoint.get("headless") is True else None,
         )
 

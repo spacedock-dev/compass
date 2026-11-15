@@ -4283,17 +4283,292 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                 del (call[container] if container else call)[key]
                 self.assertEqual("idle", self.row([call])["state"])
 
-    def test_background_shell_work_does_not_hold_a_completed_turn_open(self) -> None:
-        for inputs in (
-            {"command": "python3 -m http.server", "run_in_background": True},
-            {"command": "sleep 1 & wait"},
-        ):
-            with self.subTest(inputs=inputs):
-                rows = [self.call(**inputs), self.result(), *_turn_records(self.START + 3)[1:]]
+    def test_implicit_background_shell_work_does_not_hold_a_completed_turn_open(self) -> None:
+        for command in ("python3 -m http.server", "sleep 1 & wait"):
+            with self.subTest(command=command):
+                rows = [
+                    self.call(command=command),
+                    self.result(),
+                    *_turn_records(self.START + 3)[1:],
+                ]
                 row = self.row(rows, age=4)
                 self.assertEqual("idle", row["state"])
                 self.assertIsNone(row["work_in_flight_until"])
                 self.assertEqual("idle", self.overlay_row(row, age=4)["state"])
+
+    def test_automatically_backgrounded_bash_does_not_hold_a_completed_turn_open(self) -> None:
+        result = self.result(backgroundTaskId="task-call")
+        result["message"]["content"][0]["content"] = (
+            "Command running in background with ID: task-call"
+        )
+        row = self.row([self.call(command="sleep 120"), result, *_turn_records(self.START + 3)[1:]])
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertIsNone(row["work_in_flight_until"])
+        self.assertEqual("idle", self.overlay_row(row)["state"])
+
+    def background_bash(self, at: float = 0, call_id: str = "call") -> list[dict[str, Any]]:
+        # Selected shapes measured in background-bash-completion-macos.jsonl.
+        return [
+            self.call(
+                at, call_id=call_id, command="codex exec task < /dev/null", run_in_background=True
+            ),
+            self.result(at + 1, call_id=call_id, backgroundTaskId=f"task-{call_id}"),
+            *_turn_records(self.START + at + 3)[1:],
+        ]
+
+    def bash_completion(
+        self, *, form: str = "user", join: str = "tool-use-id", status: str = "completed"
+    ) -> dict[str, Any]:
+        text = (
+            "<task-notification><task-id>task-call</task-id>"
+            + ("<tool-use-id>call</tool-use-id>" if join == "tool-use-id" else "")
+            + f"<output-file>synthetic.output</output-file><status>{status}</status>"
+            "<summary>Background command ended</summary></task-notification>"
+        )
+        return {
+            "type": form,
+            "sessionId": TURN_SID,
+            "timestamp": self.START + 5,
+            **(
+                {"message": {"role": "user", "content": text}}
+                if form == "user"
+                else {
+                    "attachment": {
+                        "type": "queued_command",
+                        "commandMode": "task-notification",
+                        "prompt": text,
+                    }
+                }
+            ),
+        }
+
+    def test_batched_task_id_only_completions_settle_all(self) -> None:
+        for text_blocks in (False, True):
+            with self.subTest(text_blocks=text_blocks):
+                notification = self.bash_completion(join="task-id")
+                first = notification["message"]["content"]
+                second = first.replace("task-call", "task-second")
+                notification["message"]["content"] = (
+                    [{"type": "text", "text": first}, {"type": "text", "text": second}]
+                    if text_blocks
+                    else first + "\n" + second
+                )
+                rows = [
+                    *self.background_bash()[:2],
+                    *self.background_bash(0, "second")[:2],
+                    *_turn_records(self.START + 3)[1:],
+                    notification,
+                ]
+                row = self.row(rows)
+                self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                self.assertIsNone(row["work_in_flight_until"])
+
+    def test_batched_status_and_result_fields_cannot_cross_blocks(self) -> None:
+        for text_blocks in (False, True):
+            for completed_first in (False, True):
+                for legacy_result in (False, True):
+                    with self.subTest(
+                        text_blocks=text_blocks,
+                        completed_first=completed_first,
+                        legacy_result=legacy_result,
+                    ):
+                        notification = self.bash_completion(join="task-id", status="running")
+                        running = notification["message"]["content"]
+                        completed = running.replace("task-call", "task-second").replace(
+                            "<status>running</status>",
+                            "<result>ended</result>"
+                            if legacy_result
+                            else "<status>completed</status>",
+                        )
+                        # A status-less block must not borrow the next block's result.
+                        if legacy_result:
+                            running = running.replace("<status>running</status>", "")
+                        blocks = [completed, running] if completed_first else [running, completed]
+                        notification["message"]["content"] = (
+                            [{"type": "text", "text": block} for block in blocks]
+                            if text_blocks
+                            else "\n".join(blocks)
+                        )
+                        rows = [
+                            *self.background_bash()[:2],
+                            *self.background_bash(100, "second")[:2],
+                            notification,
+                        ]
+                        notification["timestamp"] = self.START + 105
+                        row = self.row(rows)
+                        self.assertEqual((1, "working"), (row["delegated_unpaired"], row["state"]))
+                        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+
+    def test_conflicting_ids_do_not_settle(self) -> None:
+        for form in ("user", "attachment"):
+            for known_other_task in (False, True):
+                with self.subTest(form=form, known_other_task=known_other_task):
+                    rows = [
+                        *self.background_bash()[:2],
+                        *(self.background_bash(0, "second")[:2] if known_other_task else []),
+                        *_turn_records(self.START + 3)[1:],
+                    ]
+                    notification = self.bash_completion(form=form)
+                    target = (
+                        notification["message"] if form == "user" else notification["attachment"]
+                    )
+                    key = "content" if form == "user" else "prompt"
+                    target[key] = target[key].replace(
+                        "task-call", "task-second" if known_other_task else "unknown-task"
+                    )
+                    row = self.row([*rows, notification])
+                    count = 2 if known_other_task else 1
+                    self.assertEqual((count, "working"), (row["delegated_unpaired"], row["state"]))
+                    self.assertEqual(self.START + 900, row["work_in_flight_until"])
+                    rows.extend([notification, self.bash_completion(form=form)])
+                    self.assertEqual(count - 1, self.row(rows)["delegated_unpaired"])
+                    if known_other_task:
+                        second = self.bash_completion(form=form, join="task-id")
+                        target = second["message"] if form == "user" else second["attachment"]
+                        target[key] = target[key].replace("task-call", "task-second")
+                        rows.append(second)
+                    row = self.row(rows)
+                    self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                    self.assertIsNone(row["work_in_flight_until"])
+
+    def test_single_id_notifications_still_settle(self) -> None:
+        for form in ("user", "attachment"):
+            for join in ("tool-use-id", "task-id"):
+                with self.subTest(form=form, join=join):
+                    notification = self.bash_completion(form=form, join=join)
+                    if join == "tool-use-id":
+                        target = (
+                            notification["message"]
+                            if form == "user"
+                            else notification["attachment"]
+                        )
+                        key = "content" if form == "user" else "prompt"
+                        target[key] = target[key].replace("<task-id>task-call</task-id>", "")
+                    row = self.row([*self.background_bash(), notification])
+                    self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                    self.assertIsNone(row["work_in_flight_until"])
+
+    def test_sidechain_user_cannot_mask_parent_stop(self) -> None:
+        sidechain_user = {
+            "type": "user",
+            "isSidechain": True,
+            "sessionId": TURN_SID,
+            "timestamp": self.START + 5,
+            "message": {"role": "user", "content": "Synthetic child prompt"},
+        }
+        row = self.row([*self.background_bash(), sidechain_user, _turn_records(self.START + 6)[-1]])
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertIsNone(row["work_in_flight_until"])
+        self.assertEqual("idle", row["state"])
+
+    def test_nonnotification_attachment_cannot_settle(self) -> None:
+        notification = self.bash_completion(form="attachment")
+        notification["attachment"]["commandMode"] = "other"
+        row = self.row([*self.background_bash(), notification])
+        self.assertEqual((1, "working"), (row["delegated_unpaired"], row["state"]))
+        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+
+    def test_explicit_background_bash_holds_only_headless_rows(self) -> None:
+        for entrypoint in ("sdk-cli", "cli", None):
+            with self.subTest(entrypoint=entrypoint):
+                rows = self.background_bash()
+                row = self.row(rows, entrypoint=entrypoint)
+                expected = "working" if entrypoint == "sdk-cli" else "idle"
+                self.assertEqual(expected, row["state"])
+                self.assertEqual(1, row["delegated_launches"])
+                self.assertEqual(1, row["delegated_unpaired"])
+                self.assertEqual("unattributed", row["delegated_visibility"])
+                self.assertEqual(expected, self.overlay_row(row)["state"])
+
+    def test_background_bash_launches_have_independent_caps(self) -> None:
+        rows = self.background_bash()[:2]
+        row = self.row(rows, age=900)
+        self.assertEqual("waiting on 1 background task", row["state_detail"])
+        self.assertEqual(self.START + 900, row["work_in_flight_until"])
+        self.assertEqual("idle", self.row(rows, age=900.01)["state"])
+        row = self.row([*rows, *self.background_bash(850, "new")], age=900)
+        self.assertEqual("waiting on 2 background tasks", row["state_detail"])
+        row = self.row([*rows, *self.background_bash(850, "new")], age=900.01)
+        self.assertEqual("waiting on 1 background task", row["state_detail"])
+        self.assertEqual(self.START + 1750, row["work_in_flight_until"])
+
+    def test_completed_newer_bash_does_not_renew_older_wait(self) -> None:
+        completion = self.bash_completion()
+        completion["timestamp"] = self.START + 952
+        completion["message"]["content"] = completion["message"]["content"].replace("call", "new")
+        rows = [*self.background_bash()[:2], *self.background_bash(950, "new"), completion]
+        row = self.row(rows, age=1000)
+        self.assertEqual(1, row["delegated_unpaired"])
+        self.assertEqual("idle", row["state"])
+        self.assertIsNone(row["work_in_flight_until"])
+
+    def test_background_bash_terminal_notifications_settle_both_completion_joins(self) -> None:
+        for form in ("user", "attachment"):
+            for join in ("tool-use-id", "task-id"):
+                for status in ("completed", "failed", "killed"):
+                    with self.subTest(form=form, join=join, status=status):
+                        rows = [
+                            *self.background_bash(),
+                            self.bash_completion(form=form, join=join, status=status),
+                        ]
+                        row = self.row(rows)
+                        self.assertEqual(0, row["delegated_unpaired"])
+                        self.assertEqual("recorded", row["delegated_visibility"])
+                        self.assertIsNone(row["work_in_flight_until"])
+                        self.assertEqual("idle", row["state"])
+                        self.assertEqual("idle", self.overlay_row(row)["state"])
+
+    def test_background_bash_ignores_nonterminal_unmatched_and_foreign_completions(self) -> None:
+        for form in ("user", "attachment"):
+            for change in ({"isSidechain": True}, {"sessionId": "other"}, {"sessionId": None}, {}):
+                with self.subTest(form=form, change=change):
+                    completion = {**self.bash_completion(form=form), **change}
+                    if not change:
+                        completion = self.bash_completion(form=form, status="running")
+                    row = self.row([*self.background_bash(), completion])
+                    self.assertEqual(1, row["delegated_unpaired"])
+                    self.assertEqual("working", self.overlay_row(row)["state"])
+            notification = self.bash_completion(form=form, join="task-id")
+            target = notification["message"] if form == "user" else notification["attachment"]
+            key = "content" if form == "user" else "prompt"
+            target[key] = target[key].replace("task-call", "unknown-task")
+            self.assertEqual("working", self.row([*self.background_bash(), notification])["state"])
+
+    def test_background_bash_wait_retires_on_new_prompt_interruption_and_session_end(self) -> None:
+        for text in ("do something else", "[Request interrupted by user]"):
+            with self.subTest(boundary=text):
+                rows = [
+                    *self.background_bash(),
+                    {
+                        "type": "user",
+                        "sessionId": TURN_SID,
+                        "timestamp": self.START + 6,
+                        "message": {"role": "user", "content": text},
+                    },
+                    *_turn_records(self.START + 8)[1:],
+                ]
+                row = self.row(rows)
+                self.assertEqual(1, row["delegated_unpaired"])
+                self.assertIsNone(row["work_in_flight_until"])
+                self.assertEqual("idle", self.overlay_row(row, stop_at=8)["state"])
+        self.assertEqual(
+            "idle", self.overlay_row(self.row(self.background_bash()), end=True)["state"]
+        )
+
+    def test_background_bash_requires_parent_owned_successful_acknowledgement(self) -> None:
+        for other in ({"isSidechain": True}, {"sessionId": "other"}, {"sessionId": None}):
+            for foreign_call in (False, True):
+                with self.subTest(other=other, foreign_call=foreign_call):
+                    call, result, *stop = self.background_bash()
+                    row = self.row(
+                        [{**call, **(other if foreign_call else {})}, {**result, **other}, *stop]
+                    )
+                    self.assertIsNone(row["work_in_flight_until"])
+                    self.assertEqual("idle", self.overlay_row(row)["state"])
+        call, result, *stop = self.background_bash()
+        result["message"]["content"][0]["is_error"] = True
+        self.assertEqual("idle", self.row([call, result, *stop])["state"])
+        self.assertEqual("idle", self.row([call, *stop])["state"])
 
     def test_previous_turn_background_agent_does_not_hold_later_completed_turn_open(self) -> None:
         rows = [*self.background(), *_turn_records(self.START + 60)]
@@ -4472,7 +4747,9 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                     self.assertEqual("working", self.overlay_row(row)["state"])
                     self.assertEqual(self.START + 900, row["work_in_flight_until"])
 
-    def test_waiting_detail_counts_only_current_turn_agent_and_task_launches(self) -> None:
+    def test_waiting_detail_counts_only_current_turn_agent_task_and_explicit_bash_launches(
+        self,
+    ) -> None:
         rows = [
             *self.background(),
             _turn_records(self.START + 60)[0],
@@ -4487,8 +4764,8 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         rows.extend(_turn_records(self.START + 60)[1:])
         row = self.row(rows)
         self.assertEqual(5, row["delegated_unpaired"])
-        self.assertEqual("waiting on 2 background tasks", row["state_detail"])
-        self.assertEqual(self.START + 932, row["work_in_flight_until"])
+        self.assertEqual("waiting on 3 background tasks", row["state_detail"])
+        self.assertEqual(self.START + 934, row["work_in_flight_until"])
 
     def test_waiting_detail_excludes_current_turn_launches_past_their_cap(self) -> None:
         rows = [
@@ -4602,6 +4879,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
         for rows in (
             [self.call(), self.call(10, name="AskUserQuestion", call_id="ask")],
             self.background(),
+            self.background_bash(),
         ):
             with self.subTest(background=len(rows) > 2):
                 state_of().hook_notifications[TURN_SID[:8]] = {
@@ -4615,7 +4893,7 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                 self.assertIsNone(row["turn_end_at"])
 
     def test_permission_overlay_outranks_tools_and_background_work(self) -> None:
-        for rows in ([self.call()], self.background()):
+        for rows in ([self.call()], self.background(), self.background_bash()):
             with self.subTest(background=len(rows) > 1):
                 row = self.overlay_row(self.row(rows), prompt=True)
                 self.assertEqual("needs_input", row["state"])

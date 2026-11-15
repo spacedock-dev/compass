@@ -1519,23 +1519,34 @@ so a summary following Stop-continuation feedback cannot retire a running call.
 Sidechain records and records whose session id differs from the transcript filename never enter or
 answer that set. Missing message or session identity earns no extension. The Claude collector keeps
 the newest remaining call Working as `running <tool>` until its own tool timestamp plus
-`claude_tool_in_flight_max_sec` (900 seconds). A validated Stop or interruption ends this foreground wait.
+`claude_tool_in_flight_max_sec` (900 seconds). A foreground builder running longer than 15 minutes
+can therefore read Idle while its process is still alive. A validated Stop or interruption ends
+this foreground wait.
 
 For a measured headless session (`headless is True`) only, the collector also reuses
 `project_context.delegated_work_status`'s cached completion pairing. It reads the entrypoint from
 `claude_data.session_entrypoint` after the existing `session_goal` read populates the shared cache,
 before deriving the lease, without another file read. Interactive (`False`) and unknown (`None`)
 entrypoints retain the usual background activity and Stop rules. Only outstanding parent
-Agent/Task launches with `run_in_background`, a successful launch tool result, and a launch at or
-after the current turn's floor qualify. A later interruption or new user
+Agent/Task launches and explicit Bash launches with `run_in_background: true`, a successful launch
+tool result, and a launch at or after the current turn's floor qualify. A later interruption or new user
 prompt retires a launch even if it was acknowledged. Calls, acknowledgements, completion pairing
 and turn boundaries use only records with the parent's native session id (the transcript filename
-stem), excluding sidechain records. Missing identity earns no exception. Background Bash launches,
-shell `&` jobs, Monitor calls and earlier-turn launches do not qualify. The row reads
+stem), excluding sidechain records. Missing identity earns no exception. Shell `&` jobs,
+automatically backgrounded Bash calls, Monitor calls and earlier-turn launches do not qualify. The row reads
 `waiting on 1 background task` or `waiting on N background tasks`, counting only qualifying launches,
 even after the parent's Stop and with an old child file. TaskOutput and task-notification completion
 pairing includes the queued attachment's `attachment.prompt`, measured in
 [the mid-turn shape capture](captures/claude/mid-turn-and-answer-shapes-2.1.305-macos.jsonl).
+The owner extended the headless wait to explicit background Bash calls on 2026-11-15.
+[The Bash completion capture](captures/claude/background-bash-completion-macos.jsonl) records
+both user-message and queued-attachment notifications in local Claude Code transcripts. Their
+`tool-use-id` identifies the launch; `task-id` also matches the result's `backgroundTaskId`.
+The existing completion join handles both, so a recorded terminal notification removes the wait.
+The sample observed `completed` and `failed`; the existing join also accepts `killed`.
+No headless entrypoint was observed on those notifications. The completion shape is measured
+separately from the owner-authorized headless activity rule. An outstanding shell can still publish
+`delegated_visibility: "unattributed"`: waiting does not establish linked child-transcript activity.
 This background lease expires at the newest qualifying unpaired launch plus the same cap,
 independently of any foreground call. Neither child
 activity nor a newer completed launch renews it. The ceiling matches Pi because neither transcript
@@ -1547,7 +1558,7 @@ sent it. After either expiry the existing freshness and stop rules apply. No pro
 is added.
 
 The collector publishes nullable `work_in_flight_until` solely as headless current-turn
-background-subagent evidence; `state_detail` carries the wording. It does not advance `own_activity`,
+background-task evidence; `state_detail` carries the wording. It does not advance `own_activity`,
 `work_activity` or `last_activity`. `reduce_overlays` lets an Idle overlay and a remembered turn stop yield within
 that background cap only; foreground evidence never suppresses either stop. It does not weaken an
 explicit input overlay or change its activity guard. Transcript
