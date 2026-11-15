@@ -21,7 +21,6 @@ on, and "the dashboard is not running" is an ordinary state, not an error.
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import errno
 import http.client
 import json
@@ -32,7 +31,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from ctypes import wintypes
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
@@ -117,6 +115,11 @@ def _is_reparse(info: os.stat_result) -> bool:
 
 def _windows_handle(path: str, *, directory: bool = False, append: bool = False) -> tuple[Any, Any]:
     """Open the reparse point itself; deny deletion while a directory is held."""
+    # Imported here: on Python 3.14 `import ctypes` loads sysconfig, which reads the
+    # user's home at import time, and only Windows needs it.
+    import ctypes  # noqa: PLC0415
+    from ctypes import wintypes  # noqa: PLC0415
+
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel.CreateFileW.argtypes = [
         wintypes.LPCWSTR,

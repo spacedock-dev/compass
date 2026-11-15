@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import errno
 import glob
 import json
@@ -14,7 +13,6 @@ import secrets
 import stat
 import sys
 import time
-from ctypes import wintypes
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
@@ -516,6 +514,11 @@ def _is_reparse(info: os.stat_result) -> bool:
 
 def _windows_handle(path: str, *, directory: bool = False, append: bool = False) -> tuple[Any, Any]:
     """Open the reparse point itself; deny deletion while a directory is held."""
+    # Imported here: on Python 3.14 `import ctypes` loads sysconfig, which reads the
+    # user's home at import time, and only Windows needs it.
+    import ctypes  # noqa: PLC0415
+    from ctypes import wintypes  # noqa: PLC0415
+
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel.CreateFileW.argtypes = [
         wintypes.LPCWSTR,
