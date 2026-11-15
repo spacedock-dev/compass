@@ -356,6 +356,9 @@ class RuntimeConfig:
     # past 90 s (headless-wait-2.1.322-macos.jsonl). Match Pi's ceiling because
     # neither transcript can establish that a process killed mid-call survived.
     claude_tool_in_flight_max_sec: float
+    # Codex shell-capable calls can wait without writing rollout activity. As with Claude
+    # and Pi, an unanswered call proves a launch, never that a killed process survived.
+    codex_tool_in_flight_max_sec: float
     loop_error_run_threshold: int
     loop_error_total_threshold: int
     loop_barren_failure_threshold: int
@@ -1040,6 +1043,7 @@ def build_runtime_config(
         long_turn_warn_sec=900,
         pi_tool_in_flight_max_sec=900,
         claude_tool_in_flight_max_sec=900,
+        codex_tool_in_flight_max_sec=900,
         # Consecutive failed tool calls before a turn is called a loop.
         # Measured, twice, over the 25 most recent local Claude transcripts:
         # run lengths came out {1: 56, 2: 4, 4: 1}, so 3 and 4 both fire in

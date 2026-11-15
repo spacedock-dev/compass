@@ -181,6 +181,15 @@ at the top always cover the whole board. If a filter hides a session that is wai
 links to it, or to Attention when there are several. Filters reset when you reload the tab.
 [The Find sessions design record](design-sessions-search.md) says exactly how they count.
 
+A quiet Codex rollout can still be working while a shell-capable call has no matching output.
+Within an open turn, an unanswered `exec`, `exec_command`, `shell_command` or `write_stdin` reads
+`running <tool>` for up to 15 minutes from that call. Each parallel call retires on its own output.
+A new turn, a user message, a recorded finish or an interruption clears the pending evidence.
+The detail names the tool, not a shell command inferred from the JavaScript an `exec` call runs.
+The bounded rollout tail must still contain the call. A process killed mid-call without a recorded
+end can read Working until the cap; a process still running after the cap falls back to the usual
+activity rules. This is a reading of recorded calls, not a process-liveness check.
+
 A quiet transcript can still be working. For Claude Code, an unanswered tool call in the current
 step reads `running <tool>` for up to 15 minutes from that call. Only calls in the newest assistant
 message qualify; a later assistant message, a human prompt, compaction, a validated Stop or an

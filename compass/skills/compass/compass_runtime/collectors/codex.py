@@ -377,9 +377,21 @@ def _session_state(
     tasks: list[dict[str, Any]],
     subagents: list[dict[str, Any]],
     *,
+    config: RuntimeConfig,
+    now: float,
     working: bool,
 ) -> tuple[str, str]:
     """Current state and detail from the root event stream and its plan."""
+    if scan and scan.get("turn_start") is not None and config.codex_tool_in_flight_max_sec > 0:
+        pending = [
+            (at, tool)
+            for at, tool in (info or {}).get("pending_shell_calls", [])
+            if sessions.is_fresh(config, now, at, config.codex_tool_in_flight_max_sec)
+        ]
+        if pending:
+            # The tool name is measured. An exec input is arbitrary JavaScript, so deriving a
+            # shell command from it would invent precision and expose unneeded arguments.
+            return "working", f"running {max(pending)[1]}"
     if not working or not ((scan and scan.get("turn_start") is not None) or subagents):
         return "idle", "awaiting your message"
     in_progress = next((task for task in tasks if task["status"] == "in_progress"), None)
@@ -665,6 +677,8 @@ def collect(
             scan,
             tasks,
             subagents,
+            config=config,
+            now=now,
             working=sessions.is_fresh(
                 config,
                 now,
