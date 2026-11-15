@@ -13,9 +13,11 @@ function Board({
   locations = 1,
   checkout = 'idle',
   unknown = false,
+  fallbacks = false,
 }: {
   readonly locations?: number;
   readonly unknown?: boolean;
+  readonly fallbacks?: boolean;
   readonly checkout?: 'idle' | 'shared' | 'distinct' | 'missing';
 }) {
   const [shell] = useState(() => {
@@ -37,6 +39,7 @@ function Board({
     if (locations > 1) locationRow(data, 8)['project_key'] = 'path:other';
     if (unknown)
       locationRow(data, 7)['project_identity_source'] = 'inferred Claude worktree layout';
+    if (fallbacks) Object.assign(locationRow(data, 8), { title: '   ', started_at: 0 });
     const clock = createFakeClock();
     return createShell({
       env: createFakeEnvironment({ clock }),
@@ -130,5 +133,19 @@ export const MixedMeasuredAndInferred: Story = {
       '8 sessions share this display label across 2 measured locations. Location not measured for 1 session with this display label',
     );
     await expect(within(card).getAllByRole('link', { name: /Audit \d/ })).toHaveLength(9);
+  },
+};
+
+export const UnpublishedMemberDetails: Story = {
+  args: { locations: 2, fallbacks: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole('link', { name: 'Label shared across locations' });
+    await expect(
+      canvas.getByRole('link', {
+        name: 'Title not published · No worktree published · claude:audit-8 · Start time not published',
+      }),
+    ).toHaveAttribute('href', '#n=session:audits:claude:audit-8');
+    await expect(canvasElement.textContent).not.toContain('1970-01-01');
   },
 };

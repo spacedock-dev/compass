@@ -180,9 +180,10 @@ export function RiskItem({
                 const sid = String(session['sid'] || '');
                 const started = nextNumber(session['started_at']);
                 const date = new Date((started ?? Number.NaN) * 1000);
-                const stamp = Number.isFinite(date.getTime())
-                  ? date.toISOString()
-                  : 'not published';
+                const stamp =
+                  started !== null && started > 0 && Number.isFinite(date.getTime())
+                    ? date.toISOString()
+                    : 'not published';
                 return (
                   <li key={JSON.stringify([harness, sid])}>
                     <AttentionLink
@@ -195,7 +196,7 @@ export function RiskItem({
                       focusKey={`attention:subject:${row.key}:member:${harness}:${sid}`}
                       fallback="attention:section:risk"
                     >
-                      {`${String(session['title'] || 'Title not published')} · ${String(session['worktree'] || 'No worktree published')} · ${harness}:${sid} · Start time ${stamp}`}
+                      {`${String(session['title'] || '').trim() || 'Title not published'} · ${String(session['worktree'] || 'No worktree published')} · ${harness}:${sid} · Start time ${stamp}`}
                     </AttentionLink>
                   </li>
                 );

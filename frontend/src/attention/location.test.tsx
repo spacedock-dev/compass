@@ -191,6 +191,30 @@ describe('a label is interpreted by measured locations', () => {
     expect(document.body).not.toHaveTextContent('Concurrent sessions');
   });
 
+  it.each([0, -1, 1899999000])(
+    'a person reads honest member-link fallbacks with start time %s',
+    async (started) => {
+      const data = locationBoard(2);
+      Object.assign(locationRow(data, 1), {
+        project_key: 'path:other',
+        title: ' \t ',
+        started_at: started,
+      });
+      const page = mountShell({ hash: '#n=attention', data });
+      await page.settle();
+      const card = document.querySelector('[data-next-board-risk="collision"]') as HTMLElement;
+      const stamp = started > 0 ? new Date(started * 1000).toISOString() : 'not published';
+      const link = within(card).getByRole('link', {
+        name: `Title not published · No worktree published · claude:audit-1 · Start time ${stamp}`,
+      });
+      expect(link).toHaveAttribute('href', '#n=session:audits:claude:audit-1');
+      expect(within(card).getByRole('link', { name: /Audit 0/ })).toHaveTextContent(
+        'Start time 2030-03-17T17:30:00.000Z',
+      );
+      expect(link).not.toHaveTextContent('1970-01-01');
+    },
+  );
+
   it('a person sees shared-label stops and tasks in the queues counted by the summary', async () => {
     const data = locationBoard();
     for (const row of locationRows(data).slice(0, 3)) row['finished_at'] = 1899999999;
