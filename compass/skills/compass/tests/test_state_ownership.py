@@ -49,19 +49,38 @@ class StateOwnershipTest(unittest.TestCase):
             lifecycle.write_state(self.config, self.port, started=1.0)
 
     def test_foreign_namespace_is_preserved_by_status_stop_sweep_and_publication(self) -> None:
-        self.record(REMOTE)
+        for dimension in ("network", "process"):
+            with self.subTest(dimension=dimension):
+                self.state.unlink(missing_ok=True)
+                origin = Path(lifecycle.origin_path(self.config, self.port))
+                origin.unlink(missing_ok=True)
+                self.record({**LOCAL, dimension: "foreign"})
+                before = (self.state.read_bytes(), origin.read_bytes())
+                with (
+                    mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                ):
+                    status = lifecycle.instance_status(self.config, self.port)
+                    self.assertEqual("unreachable", status["state"])
+                    self.assertNotIn("stale", lifecycle.render_status(status))
+                    self.assertNotIn("--stop", lifecycle.render_status(status))
+                    message, code = lifecycle.stop_instance(self.config, self.port)
+                    self.assertEqual(1, code)
+                    self.assertIn("cannot reach", message)
+                    self.assertEqual([], lifecycle.sweep_stale_states(self.config))
+                    with self.assertRaises(lifecycle.StateOwnershipError):
+                        lifecycle.write_state(self.config, self.port, started=2.0)
+                self.assertEqual(before, (self.state.read_bytes(), origin.read_bytes()))
+
+    def test_different_machine_and_boot_are_preserved_even_when_local_pid_is_absent(self) -> None:
+        self.record({**LOCAL, "machine": "other", "boot": "other"})
         before = self.state.read_bytes()
-        with mock.patch.object(lifecycle, "environment_identity", create=True, return_value=LOCAL):
-            status = lifecycle.instance_status(self.config, self.port)
-            self.assertEqual("unreachable", status["state"])
-            self.assertNotIn("stale", lifecycle.render_status(status))
-            self.assertNotIn("--stop", lifecycle.render_status(status))
-            message, code = lifecycle.stop_instance(self.config, self.port)
-            self.assertEqual(1, code)
-            self.assertIn("cannot reach", message)
-            self.assertEqual([], lifecycle.sweep_stale_states(self.config))
-            with self.assertRaises(lifecycle.StateOwnershipError):
-                lifecycle.write_state(self.config, self.port, started=2.0)
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "boot_started", return_value=2000.0),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+        ):
+            self.assertFalse(lifecycle.remove_state(self.config, self.port))
         self.assertEqual(before, self.state.read_bytes())
 
     def test_explicit_daemon_start_preserves_foreign_record(self) -> None:
@@ -247,14 +266,20 @@ class StateOwnershipTest(unittest.TestCase):
     def test_mismatched_origin_does_not_authorize_removal(self) -> None:
         self.record()
         origin = Path(lifecycle.origin_path(self.config, self.port))
-        data = json.loads(origin.read_text())
-        data["started"] = 9.0
-        origin.write_text(json.dumps(data))
-        with (
-            mock.patch.object(lifecycle, "environment_identity", create=True, return_value=LOCAL),
-            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
-        ):
-            self.assertEqual([], lifecycle.sweep_stale_states(self.config))
+        paired = json.loads(origin.read_text())
+        state_bytes = self.state.read_bytes()
+        for field in ("pid", "port", "started"):
+            with self.subTest(field=field):
+                self.state.write_bytes(state_bytes)
+                data = {**paired, field: paired[field] + 1}
+                origin.write_text(json.dumps(data))
+                before = (self.state.read_bytes(), origin.read_bytes())
+                with (
+                    mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+                    mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                ):
+                    self.assertFalse(lifecycle.remove_state(self.config, self.port))
+                self.assertEqual(before, (self.state.read_bytes(), origin.read_bytes()))
 
     @unittest.skipIf(os.name == "nt", "POSIX special files")
     def test_origin_fifo_and_symlink_are_refused_without_blocking(self) -> None:
@@ -342,13 +367,29 @@ class StateOwnershipTest(unittest.TestCase):
         self.record()
         before = self.state.read_bytes()
         with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
             runtime_io.held_file_lock(
                 lifecycle.state_path(self.config, self.port) + ".lock", wait=0
-            ),
+            ) as held,
             self.assertRaises(lifecycle.StateOwnershipError),
         ):
+            self.assertEqual(runtime_io.LOCK_HELD, held)
             lifecycle.write_state(self.config, self.port, started=2.0)
         self.assertEqual(before, self.state.read_bytes())
+
+    def test_busy_state_lock_refuses_dead_record_removal(self) -> None:
+        self.record()
+        origin = Path(lifecycle.origin_path(self.config, self.port))
+        before = (self.state.read_bytes(), origin.read_bytes())
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+            runtime_io.held_file_lock(str(self.state) + ".lock", wait=0) as held,
+        ):
+            self.assertEqual(runtime_io.LOCK_HELD, held)
+            self.assertFalse(lifecycle.remove_state(self.config, self.port))
+        self.assertEqual(before, (self.state.read_bytes(), origin.read_bytes()))
 
     def test_replacement_after_start_preflight_is_preserved_at_publication(self) -> None:
         self.record()
@@ -425,6 +466,25 @@ class SystemIdentityFileTest(unittest.TestCase):
                 mock.patch.object(os, "fstat", side_effect=owned_by_root),
             ):
                 self.assertEqual("machine", lifecycle._identity_text(str(path)))
+
+    @unittest.skipIf(os.name == "nt", "POSIX ownership")
+    def test_system_identity_rejects_a_foreign_uid(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            path = Path(home, "identity")
+            path.write_text("machine")
+            actual = os.fstat
+
+            def foreign(fd: int) -> os.stat_result:
+                values = list(actual(fd))
+                values[4] = 502
+                return os.stat_result(values)
+
+            with (
+                mock.patch.object(os, "getuid", return_value=501),
+                mock.patch.object(os, "fstat", side_effect=foreign),
+                self.assertRaises(OSError),
+            ):
+                lifecycle._identity_text(str(path))
 
     @unittest.skipIf(os.name == "nt", "POSIX special files")
     def test_system_identity_rejects_links_fifos_and_oversized_content(self) -> None:
