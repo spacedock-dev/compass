@@ -185,6 +185,14 @@ def neutralised(value: object, cap: int) -> str:
     finishes past the bound withholds the text rather than let it pass its room.
     """
     raw = value if isinstance(value, str) else ""
+    bound = max(cap * 4, 4096)
+    prefix = raw[:bound]
+    # A partial credential can stop matching, and invisible/space runs can bring
+    # that boundary back inside the displayed cap. Oversized stored values are
+    # therefore withheld, rather than publishing an unprovably safe prefix.
+    if len(raw) > len(prefix):
+        return ""
+    raw = prefix
     # Masked before `_visible` makes a control a space: as a space, it split a key whose tail
     # then passed every later redaction. `records.redact_secrets` reads through the control.
     prepared = _redact_joined(_strip_openers(_visible(records.redact_secrets(raw))))

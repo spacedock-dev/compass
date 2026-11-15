@@ -18,15 +18,13 @@ import sys
 import tempfile
 import threading
 import unittest
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any, Self
 from unittest import mock
 
 import mcp_server
 import notify_hook
-from compass_runtime import http_api
+from compass_runtime import http_api, loopback_transport
 from compass_runtime.config import build_runtime_config
 
 _LOGGED: list[str] = []
@@ -159,10 +157,10 @@ def _call(request_id: Any, question: str, options: list[Any]) -> dict[str, Any]:
     }
 
 
-def _body(request: urllib.request.Request) -> dict[str, Any]:
+def _body(data: bytes | None) -> dict[str, Any]:
     """One posted JSON body, as the dashboard would parse it."""
-    assert isinstance(request.data, bytes)
-    parsed = json.loads(request.data)
+    assert isinstance(data, bytes)
+    parsed = json.loads(data)
     assert isinstance(parsed, dict)
     return parsed
 
@@ -227,22 +225,21 @@ class _FakeDashboard:
         self.polls = threading.Semaphore(0)
         self._lock = threading.Lock()
 
-    def __call__(self, request: urllib.request.Request, timeout: float) -> tuple[int, bytes] | None:
+    def __call__(self, url: str, data: bytes | None, timeout: float) -> tuple[int, bytes] | None:
         del timeout
-        url = request.full_url
         with self._lock:
             self.requests.append(url)
         # Checked before the poll fallthrough: the withdraw path also lives under
         # /api/ask/, so an order swap here would score it as a poll.
         if url.endswith("/api/ask/withdraw"):
             with self._lock:
-                self.withdrawals.append(_body(request))
+                self.withdrawals.append(_body(data))
             if self.withdraw is None:
                 return None
             status, body = self.withdraw
             return status, json.dumps(body).encode()
         if url.endswith("/api/ask"):
-            return self._registered(request)
+            return self._registered(url, data)
         self.polls.release()
         step: tuple[int, dict[str, Any] | None] | None
         with self._lock:
@@ -256,13 +253,13 @@ class _FakeDashboard:
         poll_status, poll_body = step
         return poll_status, b"" if poll_body is None else json.dumps(poll_body).encode()
 
-    def _registered(self, request: urllib.request.Request) -> tuple[int, bytes] | None:
-        sent = _body(request)
+    def _registered(self, url: str, data: bytes | None) -> tuple[int, bytes] | None:
+        sent = _body(data)
         with self._lock:
             self.registrations.append(sent)
         answer = self.register
         if self.register_by_port is not None:
-            answer = self.register_by_port.get(urllib.parse.urlsplit(request.full_url).port or 0)
+            answer = self.register_by_port.get(urllib.parse.urlsplit(url).port or 0)
         if answer is None:
             return None
         if isinstance(answer, _Echo):
@@ -927,76 +924,29 @@ class TransportGuardTest(unittest.TestCase):
             self.assertIsNone(mcp_server._request("http://evil.com/x", data=b"{}", timeout=1.0))
         opened.assert_not_called()
 
-    def test_the_opener_disables_proxies_and_refuses_redirects(self) -> None:
-        built: list[tuple[Any, ...]] = []
-
-        class _Response:
-            status = 200
-
-            def __enter__(self) -> Self:
-                return self
-
-            def __exit__(self, *_exc: object) -> None:
-                return None
-
-            def read(self, _cap: int) -> bytes:
-                return b"{}"
-
-        def build_opener(*handlers: Any) -> Any:
-            built.append(handlers)
-            return mock.Mock(open=mock.Mock(return_value=_Response()))
-
-        with mock.patch.object(urllib.request, "build_opener", build_opener):
-            self.assertEqual(
-                (200, b"{}"),
-                mcp_server._request("http://127.0.0.1:4553/api/ask", data=b"{}", timeout=1.0),
-            )
-        proxies = [h for h in built[0] if isinstance(h, urllib.request.ProxyHandler)]
-        self.assertEqual([{}], [getattr(handler, "proxies", None) for handler in proxies])
-        self.assertIn(notify_hook._NoRedirects, built[0])
-
     def test_an_http_error_status_is_returned_rather_than_raised(self) -> None:
-        def build_opener(*_handlers: Any) -> Any:
-            error = urllib.error.HTTPError(
-                "http://127.0.0.1:4553/x",
-                503,
-                "no",
-                {},  # type: ignore[arg-type]
-                io.BytesIO(b'{"state":"declined"}'),
+        with mock.patch.object(
+            loopback_transport, "_exchange", return_value=(503, b"declined", None)
+        ):
+            self.assertEqual(
+                (503, b"declined"),
+                mcp_server._request("http://127.0.0.1:4553/x", data=None, timeout=1.0),
             )
-            return mock.Mock(open=mock.Mock(side_effect=error))
-
-        with mock.patch.object(urllib.request, "build_opener", build_opener):
-            answer = mcp_server._request("http://127.0.0.1:4553/x", data=None, timeout=1.0)
-        self.assertIsNotNone(answer)
-        assert answer is not None
-        self.assertEqual(503, answer[0])
 
     def test_the_connection_caps_refusal_is_told_apart_from_a_route_503(self) -> None:
-        for headers, body, expected in (
-            ({"Retry-After": "1"}, b"", mcp_server.BUSY),
-            ({}, b"<html>the ask lane is disabled</html>", 503),
+        for retry, body, expected in (
+            ("1", b"", mcp_server.BUSY),
+            (None, b"<html>the ask lane is disabled</html>", 503),
         ):
-
-            def build_opener(*_handlers: Any, headers: Any = headers, body: bytes = body) -> Any:
-                error = urllib.error.HTTPError(
-                    "http://127.0.0.1:4553/x", 503, "no", headers, io.BytesIO(body)
-                )
-                return mock.Mock(open=mock.Mock(side_effect=error))
-
             with (
-                self.subTest(headers=headers),
-                mock.patch.object(urllib.request, "build_opener", build_opener),
+                self.subTest(retry=retry),
+                mock.patch.object(loopback_transport, "_exchange", return_value=(503, body, retry)),
             ):
                 answer = mcp_server._request("http://127.0.0.1:4553/x", data=None, timeout=1.0)
-                assert answer is not None
-                self.assertEqual(expected, answer[0])
+                self.assertEqual((expected, body), answer)
 
     def test_a_transport_failure_is_none_not_an_exception(self) -> None:
-        def build_opener(*_handlers: Any) -> Any:
-            return mock.Mock(open=mock.Mock(side_effect=urllib.error.URLError("refused")))
-
-        with mock.patch.object(urllib.request, "build_opener", build_opener):
+        with mock.patch.object(loopback_transport, "_exchange", side_effect=OSError("refused")):
             self.assertIsNone(
                 mcp_server._request("http://127.0.0.1:4553/x", data=None, timeout=1.0)
             )

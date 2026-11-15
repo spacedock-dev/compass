@@ -26,20 +26,20 @@ import http.client
 import json
 import os
 import secrets
+import socket
 import stat
 import sys
-import urllib.error
+import time
 import urllib.parse
-import urllib.request
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Buffer, Iterator
 
 DEFAULT_URL = "http://127.0.0.1:4553/api/notify"
 MAX_PAYLOAD_BYTES = 65536  # matches the server's own cap
 TIMEOUT_SEC = 2
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+LOOPBACK_HOSTS = frozenset({"127.0.0.1"})
 
 
 def _open_state(path: str, *, root: str | None = None) -> int:
@@ -432,17 +432,30 @@ def is_loopback_url(url: str) -> bool:
     return parsed.scheme == "http" and (parsed.hostname or "") in LOOPBACK_HOSTS
 
 
-class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    """Refuse to follow redirects.
+class _Socket(socket.socket):
+    """Mirror loopback_transport's deadline socket for the hooks-only plugin roots.
 
-    urllib follows them by default, and 307/308 preserve the method and body.
-    A hostile or misconfigured listener on the loopback port could otherwise
-    bounce a hook payload — which carries prompts and session ids — straight
-    off this machine, defeating the loopback check above.
+    Gemini and Droid ship this file without compass_runtime. Keep the same mechanism:
+    every SocketIO receive and send resets its timeout to the remaining exchange budget.
     """
 
-    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
-        return None
+    def __init__(self, deadline: float) -> None:
+        super().__init__(socket.AF_INET, socket.SOCK_STREAM)
+        self.deadline = deadline
+
+    def remaining(self) -> float:
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("loopback exchange deadline")
+        return left
+
+    def recv_into(self, buffer: object, nbytes: int = 0, flags: int = 0) -> int:
+        self.settimeout(self.remaining())
+        return super().recv_into(buffer, nbytes, flags)  # type: ignore[arg-type]
+
+    def sendall(self, data: Buffer, flags: int = 0) -> None:
+        self.settimeout(self.remaining())
+        super().sendall(data, flags)
 
 
 def forward(url: str, payload: bytes, headers: dict[str, str] | None = None) -> bool:
@@ -459,26 +472,34 @@ def forward(url: str, payload: bytes, headers: dict[str, str] | None = None) -> 
         # prompts and session ids. It must not become a way to ship those
         # somewhere else because a settings file was edited.
         return False
-    request = urllib.request.Request(  # noqa: S310 — scheme/host checked above
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json", **(headers or {})},
-        method="POST",
-    )
-    # ProxyHandler({}) disables proxying entirely. Without it the default
-    # opener honours http_proxy/HTTP_PROXY — routine in corporate environments
-    # — and a POST to 127.0.0.1 is handed to the proxy instead, carrying
-    # prompts and session ids off the machine. That defeats the whole point of
-    # the loopback check above.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirects)
+    conn = None
     try:
-        with opener.open(request, timeout=TIMEOUT_SEC):
-            return True
-    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
-        # Dashboard not running, wrong port, mid-restart, or a malformed
-        # response. HTTPException is not an OSError and urllib does not always
-        # wrap it, so it is listed explicitly.
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port or 80
+        deadline = time.monotonic() + TIMEOUT_SEC
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=TIMEOUT_SEC)
+        with _Socket(deadline) as sock:
+            sock.settimeout(sock.remaining())
+            sock.connect(("127.0.0.1", port))
+            conn.sock = sock
+            path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+            conn.request(
+                "POST",
+                path,
+                body=payload,
+                headers={"Content-Type": "application/json", **(headers or {})},
+            )
+            with conn.getresponse() as response:
+                # No response content is used, but reading to a cap proves the whole
+                # exchange finishes within its budget even for a trickling body.
+                response.read(MAX_PAYLOAD_BYTES + 1)
+                sock.remaining()
+                return 200 <= response.status < 300
+    except (OSError, ValueError, http.client.HTTPException):
         return False
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def main(argv: list[str]) -> int:

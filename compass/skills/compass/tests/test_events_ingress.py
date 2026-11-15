@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import http.client
 import io
 import json
 import os
@@ -11,7 +12,6 @@ import stat
 import sys
 import tempfile
 import unittest
-import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -565,33 +565,31 @@ class AdapterTest(unittest.TestCase):
         #
         # Asserting the return value alone proves nothing. With the guard removed
         # the call would attempt evil.example, fail to resolve, and return False
-        # anyway. So this asserts no opener is ever built: the request must not be
+        # anyway. So this asserts no connection is ever built: the request must not be
         # attempted, not merely fail.
-        with unittest.mock.patch.object(urllib.request, "build_opener") as opener:
+        with unittest.mock.patch.object(http.client, "HTTPConnection") as connection:
             self.assertFalse(
                 notify_hook.forward("http://evil.example/api/events/claude", b"{}", {"X-A": "b"})
             )
-        opener.assert_not_called()
+        connection.assert_not_called()
 
     def test_extra_headers_add_to_the_content_type_rather_than_replacing_it(self) -> None:
         # The server parses JSON, so an adapter that supplied a capability header
         # and thereby dropped Content-Type would post an unlabelled body.
-        captured: list[Any] = []
-
-        class Opener:
-            def open(self, request: Any, timeout: float | None = None) -> Any:  # noqa: ARG002
-                captured.append(request)
-                return unittest.mock.MagicMock()
-
-        with unittest.mock.patch.object(urllib.request, "build_opener", lambda *_a: Opener()):
+        connection = unittest.mock.MagicMock()
+        connection.getresponse.return_value.__enter__.return_value.status = 200
+        with (
+            unittest.mock.patch.object(http.client, "HTTPConnection", return_value=connection),
+            unittest.mock.patch.object(notify_hook, "_Socket"),
+        ):
             self.assertTrue(
                 notify_hook.forward(
                     "http://127.0.0.1:4553/api/events/claude", b"{}", {"X-Compass-Capability": "t"}
                 )
             )
-        headers = captured[0].headers
-        self.assertEqual("application/json", headers["Content-type"])
-        self.assertEqual("t", headers["X-compass-capability"])
+        headers = connection.request.call_args.kwargs["headers"]
+        self.assertEqual("application/json", headers["Content-Type"])
+        self.assertEqual("t", headers["X-Compass-Capability"])
 
 
 class CodexAdapterTest(unittest.TestCase):
