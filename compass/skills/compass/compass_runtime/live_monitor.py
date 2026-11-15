@@ -19,6 +19,7 @@ import contextlib
 import dataclasses
 import hashlib
 import json
+import shlex
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -220,7 +221,7 @@ def provenance(config: RuntimeConfig) -> dict[str, Any]:
     }
 
 
-def disclosure(destination: str, *, terminal: bool = False) -> str:
+def disclosure(destination: str, *, terminal: bool = False, sid: str = "ID") -> str:
     """The "What is sent" words for the `monitor` notice: what leaves, to whom, how to stop."""
     sent = (
         "your saved goal, and your recent messages, the agent's replies, the commands of checks "
@@ -237,7 +238,8 @@ def disclosure(destination: str, *, terminal: bool = False) -> str:
         f"and you are viewing this session: {sent}. "
     )
     stop = (
-        "Stop it with spacedock-compass --monitor --off from a shell "
+        f"Stop it with spacedock-compass --monitor --off --session {shlex.quote('claude:' + sid)} "
+        "from a shell "
         "or /compass:compass monitor off in the session."
         if terminal
         else "It turns itself off after a while unless you say you still want it."

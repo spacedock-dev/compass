@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -26,7 +27,8 @@ BEAT_SEC = 20.0
 PROCESS_CHECK_SEC = 5.0
 FAILURE_SEC = 30.0
 IDLE_SEC = 7200.0
-READY_SEC = 12.0
+REQUEST_TIMEOUT_SEC = client.DRIFT_REQUEST_TIMEOUT_SEC
+READY_SEC = REQUEST_TIMEOUT_SEC + 5.0
 SIDECAR_FLAG = "--monitor-sidecar"
 
 
@@ -102,7 +104,7 @@ def _say(reason: str, *, failed: bool = False) -> int:
     return int(failed)
 
 
-def _report_start(answer: Mapping[str, Any], *, repeat: bool = False) -> int:
+def _report_start(answer: Mapping[str, Any], *, repeat: bool = False, sid: str = "") -> int:
     if answer.get("ok") is not True:
         reason = answer.get("reason")
         return _say(
@@ -121,6 +123,11 @@ def _report_start(answer: Mapping[str, Any], *, repeat: bool = False) -> int:
         if repeat
         else "started"
     )
+    if sid:
+        print(
+            "Stop it from another terminal with spacedock-compass --monitor --off --session "
+            + shlex.quote("claude:" + terminal_sessions.printable(sid))
+        )
     goal = receipt.get("goal")
     if receipt.get("goal_status") == "adopted" and isinstance(goal, dict):
         source = {
@@ -198,6 +205,45 @@ def command(
         return _say("failed", failed=True)
 
 
+def _repeat(store: monitor_store.Store, record: Mapping[str, Any]) -> int | None:
+    """None permits replacement only after a valid off or browser-only state."""
+    try:
+        query = urlencode({"harness": "claude", "sid": record["sid"]})
+        reply = client.request(
+            "GET",
+            record["dashboard"][0],
+            "/api/live-monitor?" + query,
+            timeout=REQUEST_TIMEOUT_SEC,
+            cap=client.DATA_CAP_BYTES,
+            wait_when_busy=True,
+        )
+        board = reply.data["state"]
+        if (
+            reply.status != 200
+            or not isinstance(board, dict)
+            or not isinstance(board.get("on"), bool)
+            or not isinstance(board.get("terminal"), bool)
+        ):
+            return _say("unreadable", failed=True)
+        if board["on"] and not isinstance(board.get("disclosure"), str):
+            return _say("unreadable", failed=True)
+        if board["on"] and board["terminal"]:
+            receipt = {
+                "notice_due": board.get("notice_due", False),
+                "disclosure": board["disclosure"],
+            }
+            return _report_start(
+                {"ok": True, "terminal": receipt},
+                repeat=True,
+                sid=record.get("resume_id") or record["sid"],
+            )
+    except client.DashboardUnreachable as error:
+        return _dashboard_failure(error, store, record["dashboard"][0])
+    except (KeyError, TypeError):
+        return _say("unreadable", failed=True)
+    return None
+
+
 def _command(
     store: monitor_store.Store,
     named: client.Session,
@@ -212,22 +258,25 @@ def _command(
         if not terminal_sessions.names(record, named.sid):
             return _say("unavailable", failed=True)
         if not off:
-            try:
-                query = urlencode(
-                    {"project": record.get("project", ""), "session": "claude:" + record["sid"]}
-                )
-                reply = client.get(record["dashboard"][0], "/api/project-context?" + query)
-                board = reply.data["sources"]["work"]["live_monitor"]
-                receipt = {"notice_due": board["notice_due"], "disclosure": board["disclosure"]}
-                return _report_start({"ok": True, "terminal": receipt}, repeat=True)
-            except (client.DashboardUnreachable, KeyError, TypeError):
-                return _say("unreadable", failed=True)
+            result = _repeat(store, record)
+            if result is not None:
+                return result
         generation = record.get("generation")
         store.write("stop", {"generation": generation})
         until = time.monotonic() + READY_SEC
         while store.running() and time.monotonic() < until:
             time.sleep(0.05)
-        return _stopped_report(store, generation)
+        result = _stopped_report(store, generation) if off or store.running() else 0
+        if off or result:
+            return result
+        # An explicit off or browser-only state permits replacement; uncertainty keeps the holder.
+        return _start(
+            store,
+            named,
+            in_session=in_session,
+            no_update_check=no_update_check,
+            server_options=server_options,
+        )
     if off:
         record = store.read("run")
         if terminal_sessions.names(record, named.sid):
@@ -259,24 +308,47 @@ def _start(
     no_update_check: bool = False,
     server_options: client.ServerOptions | None = None,
 ) -> int:
+    announcements: list[str] = []
     found = client.ensure_dashboard(
         str(store.root.parent),
         port=None,
         spend=True,
         own_version=client.release_version(),
         in_session=in_session,
-        say=lambda _message: None,
+        say=announcements.append,
         no_update_check=no_update_check,
         **client.server_start_kwargs(server_options),
     )
     if isinstance(found, client.Refusal):
         print(found.message, file=sys.stderr)
-        return found.code
+        result = found.code
+    else:
+        result = _start_on_dashboard(store, named, found, in_session=in_session)
+    # The skill consumes stdout on success; readiness decides which stream owns this notice.
+    for message in announcements:
+        print(message, file=sys.stdout if in_session and result == 0 else sys.stderr)
+    return result
+
+
+def _start_on_dashboard(
+    store: monitor_store.Store,
+    named: client.Session,
+    found: client.Dashboard,
+    *,
+    in_session: bool,
+) -> int:
     try:
         query = urlencode({"harness": named.harness, "sid": named.sid})
-        reply = client.get(found.port, "/api/session?" + query)
-    except client.DashboardUnreachable:
-        return _say("unreadable", failed=True)
+        reply = client.request(
+            "GET",
+            found.port,
+            "/api/session?" + query,
+            timeout=REQUEST_TIMEOUT_SEC,
+            cap=client.DATA_CAP_BYTES,
+            wait_when_busy=True,
+        )
+    except client.DashboardUnreachable as error:
+        return _dashboard_failure(error, store, found.port)
     payload = reply.data
     if (reply.status, payload) in (
         (404, {"reason": "not-found"}),
@@ -328,7 +400,9 @@ def _await_start(  # noqa: C901, PLR0912 — readiness and cleanup share ownersh
                     ready = status["answer"].get("ok") is True
                     if ready:
                         threading.Thread(target=worker.wait, daemon=True).start()
-                    return _report_start(status["answer"])
+                    return _report_start(
+                        status["answer"], sid=store.read("run").get("resume_id") or sid
+                    )
                 if status.get("reason") == "started":
                     ready = True
                     # Keep Popen owned until exit so it is reaped without a ResourceWarning.
@@ -339,8 +413,18 @@ def _await_start(  # noqa: C901, PLR0912 — readiness and cleanup share ownersh
                 if status.get("reason") == "busy":
                     print(client.sentence("dashboard_busy"), file=sys.stderr)
                     return 1
+                if status.get("reason") in {"timeout", "unreachable"}:
+                    record = store.read("run")
+                    port = record.get("dashboard", [client.DEFAULT_PORT])[0]
+                    return _dashboard_failure(
+                        TimeoutError()
+                        if status["reason"] == "timeout"
+                        else client.DashboardUnreachable(),
+                        store,
+                        port,
+                    )
                 if status.get("reason"):
-                    reason = "failed" if status["reason"] == "unreachable" else "refused"
+                    reason = "unreadable" if status["reason"] == "unreadable" else "refused"
                     return _say(reason, failed=True)
             if worker.poll() is not None:
                 break
@@ -409,7 +493,10 @@ def hold(  # noqa: C901, PLR0911, PLR0912, PLR0913 — one bounded holder state 
                             "tab_id": generation,
                             "visible": True,
                         },
-                        timeout=min(5.0, max(0.001, FAILURE_SEC - (clock() - failed_at))),
+                        timeout=min(
+                            REQUEST_TIMEOUT_SEC, max(0.001, FAILURE_SEC - (clock() - failed_at))
+                        ),
+                        cap=client.DATA_CAP_BYTES,
                         # The cap's refusal is not an answer: a busy dashboard counts against
                         # this failure budget, as one that does not answer does.
                         wait_when_busy=True,
@@ -441,7 +528,7 @@ def _accepted(reply: client.Reply) -> bool:
     return reply.status == 200 and isinstance(reply.data, dict) and reply.data.get("ok") is True
 
 
-def sidecar(sid: str, generation: str) -> int:
+def sidecar(sid: str, generation: str) -> int:  # noqa: C901 - one generation owns admission and cleanup
     if re.fullmatch(r"[0-9a-f]{32}", generation) is None:
         return 2
     store = monitor_store.Store(client.state_home(os.environ), sid)
@@ -471,9 +558,18 @@ def sidecar(sid: str, generation: str) -> int:
         try:
             if stopping.is_set() or store.read("stop").get("generation") == generation:
                 return 0
-            answer = client.post(dashboard.port, "/api/live-monitor", payload, wait_when_busy=True)
-            receipt = _start_receipt(answer)
+            answer = client.post(
+                dashboard.port,
+                "/api/live-monitor",
+                payload,
+                timeout=REQUEST_TIMEOUT_SEC,
+                cap=client.DATA_CAP_BYTES,
+                wait_when_busy=True,
+            )
+            receipt = _start_receipt(answer) if answer.status == 200 else {}
             if not _accepted(answer):
+                if answer.status == 200 and not receipt:
+                    reason = "unreadable"
                 return 1
             started = True
             store.write(
@@ -512,7 +608,26 @@ def sidecar(sid: str, generation: str) -> int:
 def _failure_reason(error: Exception) -> str:
     if isinstance(error, client.LoopbackBlockedError):
         return "loopback_blocked"
-    return "busy" if isinstance(error, client.DashboardBusy) else "unreachable"
+    if isinstance(error, client.DashboardBusy):
+        return "busy"
+    return (
+        "timeout"
+        if isinstance(error, TimeoutError) or isinstance(error.__cause__, TimeoutError)
+        else "unreachable"
+    )
+
+
+def _dashboard_failure(error: Exception, store: monitor_store.Store, port: int) -> int:
+    if isinstance(error, client.DashboardBusy):
+        print(client.sentence("dashboard_busy"), file=sys.stderr)
+    else:
+        print(
+            client.unreachable_dashboard(
+                str(store.root.parent), (port,), timed_out=_failure_reason(error) == "timeout"
+            ),
+            file=sys.stderr,
+        )
+    return 1
 
 
 def _stop_holder(dashboard: client.Dashboard, sid: str, generation: str) -> bool:

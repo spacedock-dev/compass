@@ -12,6 +12,8 @@ import dataclasses
 import http.client
 import io
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
@@ -21,6 +23,7 @@ from compass_runtime import annotations as annotation_store
 from compass_runtime import (
     http_api,
     live_lease,
+    live_monitor,
     reading,
     reading_jobs,
     reading_policy,
@@ -30,7 +33,7 @@ from compass_runtime import (
 )
 
 from .support import make_server, serve_until_closed
-from .test_claude_checks import SHORT, START
+from .test_claude_checks import SHORT, SID, START
 from .test_compass_skill_action import CompassSession
 from .test_copied_corrections import STORED
 from .test_live_estimate import GOAL, LINE, _Replay
@@ -148,6 +151,66 @@ class LeaseRoute(_Replay):
 
 
 class TheRoundTrip(LeaseRoute):
+    def test_lease_read_projects_only_lease_metadata(self) -> None:
+        path = "/api/live-monitor?harness=claude&sid=" + SHORT
+        empty = {
+            "on": False,
+            "terminal": False,
+            "notice_due": False,
+            "disclosure": None,
+            "last_end": None,
+        }
+        with self.serving(self.app(resume_id=SID)) as port:
+            self.assertEqual((200, {"state": empty}), self.call(port, "GET", path))
+            self.lease(port, "start", visible=False)
+            leases = self.application.live_leases
+            key = (str(self.config.state_dir), "claude:" + SHORT)
+            with live_monitor._LOCK:
+                live_monitor._SESSIONS[key].published = {
+                    "reason": "private-model-reason",
+                    "cites": ["private-citation"],
+                }
+            for terminal in (False, True):
+                if terminal:
+                    self.lease(port, "start", holder_kind="terminal", tab_id="terminal")
+                before = reading_policy.status(self.config, now=self.now)
+                with mock.patch.object(
+                    self.application,
+                    "collect_json",
+                    side_effect=AssertionError("collected history"),
+                ):
+                    status, answer = self.call(port, "GET", path)
+                self.assertEqual(200, status)
+                self.assertEqual(set(empty), set(answer["state"]))
+                self.assertEqual(
+                    (True, terminal), (answer["state"]["on"], answer["state"]["terminal"])
+                )
+                if not terminal:
+                    self.assertIs(False, answer["state"]["notice_due"])
+                else:
+                    self.assertIn("--off --session claude:" + SID, answer["state"]["disclosure"])
+                self.assertNotIn("private-model-reason", json.dumps(answer))
+                self.assertNotIn("private-citation", json.dumps(answer))
+                self.assertEqual(before, reading_policy.status(self.config, now=self.now))
+            leases.stop_all("paused")
+            _, answer = self.call(port, "GET", path)
+            self.assertEqual(
+                {**empty, "last_end": {"reason": "paused", "at": self.now}}, answer["state"]
+            )
+
+    def test_lease_read_rejects_other_harnesses_and_overlong_keys(self) -> None:
+        with self.serving() as port:
+            for harness, sid, expected in (
+                ("codex", SHORT, 400),
+                ("claude", "x" * 505, 200),
+                ("claude", "x" * 506, 400),
+            ):
+                with self.subTest(harness=harness, length=len(sid)):
+                    status, _ = self.call(
+                        port, "GET", f"/api/live-monitor?harness={harness}&sid={sid}"
+                    )
+                    self.assertEqual(expected, status)
+
     def test_start_beat_confirm_and_stop(self) -> None:
         with self.serving() as port:
             status, started = self.lease(port, "start")
@@ -174,6 +237,25 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
 
     def saved(self) -> Any:
         return annotation_store.find(annotation_store.load(self.config), "claude", SHORT)
+
+    def test_no_annotations_start_reports_an_explicit_refusal(self) -> None:
+        self.config = dataclasses.replace(self.config, annotations_enabled=False)
+        with (
+            self.serving(self.app(resume_id=SID)) as port,
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"COMPASS_HOME": home}),
+            mock.patch.object(
+                terminal_client, "ensure_dashboard", return_value=terminal_client.probe(port)
+            ),
+            mock.patch("sys.stdout", io.StringIO()) as out,
+            mock.patch("sys.stderr", io.StringIO()) as err,
+        ):
+            code = terminal_client.run_monitor(
+                session="claude:" + SID, environ={"COMPASS_HOME": home}
+            )
+        self.assertEqual((1, ""), (code, out.getvalue()))
+        self.assertIn("Compass refused this Live monitor start.", err.getvalue())
+        self.assertNotIn("could not read", err.getvalue())
 
     def test_a_person_s_stated_goal_takes_priority_over_their_opening_prompt(self) -> None:
         goal = {"text": "Ship the parser", "at": START.timestamp() + 10}
@@ -312,7 +394,7 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
     ) -> None:
         with self.serving() as port:
             with mock.patch.object(
-                live_lease.Leases, "_start_refusal", side_effect=["", "unavailable"]
+                live_lease.Leases, "_start_refusal", side_effect=[("", SID), ("unavailable", "")]
             ):
                 _, refused = self.lease(port, "start", holder_kind="terminal")
             self.assertFalse(refused["ok"])
@@ -344,11 +426,11 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
         self.assertEqual({}, reading_policy.status(self.config, now=NOW)["notices"])
 
     def test_a_person_reads_when_terminal_checks_run_and_how_to_stop_them(self) -> None:
-        with self.serving() as port:
+        with self.serving(self.app(resume_id=SID)) as port:
             _, answer = self.lease(port, "start", holder_kind="terminal")
         text = answer["terminal"]["disclosure"]
         self.assertIn("checks after new work in this session, at most about once a minute", text)
-        self.assertIn("spacedock-compass --monitor --off from a shell", text)
+        self.assertIn("spacedock-compass --monitor --off --session claude:" + SID, text)
         self.assertIn("/compass:compass monitor off in the session", text)
         self.assertIn("Pause model calls stops it.", text)
         self.assertNotIn("terminal holder", text)
@@ -488,6 +570,27 @@ class ATerminalReaderStartsWithTheirIntent(LeaseRoute):
             )
         )
 
+    def test_the_lease_read_does_not_collect_or_renew_the_session(self) -> None:
+        with self.serving(self.app(resume_id=SID)) as port:
+            _, answer = self.lease(port, "start", holder_kind="terminal")
+            self.now += self.config.live_monitor_lapse_sec - 1
+            with mock.patch.object(
+                self.application,
+                "collect_json",
+                side_effect=AssertionError("lease read collected the board"),
+            ):
+                status, published = self.call(
+                    port, "GET", "/api/live-monitor?harness=claude&sid=" + SHORT
+                )
+            self.assertEqual(200, status)
+            self.assertTrue(published["state"]["on"])
+            self.assertTrue(published["state"]["terminal"])
+            self.assertEqual(answer["state"]["disclosure"], published["state"]["disclosure"])
+            self.assertIn("--off --session claude:" + SID, published["state"]["disclosure"])
+            self.now += 2
+            _, expired = self.call(port, "GET", "/api/live-monitor?harness=claude&sid=" + SHORT)
+            self.assertFalse(expired["state"]["on"])
+
 
 class AReaderChoosesTheHolderKind(LeaseRoute):
     def test_a_browser_reader_is_not_given_terminal_notice_metadata(self) -> None:
@@ -594,10 +697,10 @@ class TheRouteIsGuardedLikeAPress(LeaseRoute):
             status, _ = self.call(port, "POST", "/api/live-monitor", b"{" + b" " * 70_000 + b"}")
             self.assertEqual(413, status)
 
-    def test_a_get_is_not_a_route(self) -> None:
+    def test_a_lease_read_needs_a_session_identity(self) -> None:
         with self.serving() as port:
             status, _ = self.call(port, "GET", "/api/live-monitor")
-            self.assertEqual(404, status)
+            self.assertEqual(400, status)
 
 
 class StartIsRefused(LeaseRoute):

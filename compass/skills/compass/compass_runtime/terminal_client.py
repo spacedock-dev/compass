@@ -910,6 +910,7 @@ def post(
     headers: Mapping[str, str] | None = None,
     timeout: float = REQUEST_TIMEOUT_SEC,
     wait_when_busy: bool = False,
+    cap: int | None = None,
 ) -> Reply:
     """One JSON POST. `http.client` sends no `Origin` or `Sec-Fetch-*` header, so the dashboard
     sees a local process, which SECURITY.md says its Host, Origin and fetch-metadata checks do not
@@ -922,6 +923,7 @@ def post(
         json.dumps(payload).encode(),
         headers=sent,
         timeout=timeout,
+        cap=cap,
         wait_when_busy=wait_when_busy,
     )
 
@@ -981,6 +983,7 @@ def unreachable_dashboard(
     *,
     state_file: str | None = None,
     read_discovery: bool = False,
+    timed_out: bool = False,
 ) -> str:
     """Explain unreachable records, distinguishing discovery from a refused lifecycle action."""
     checked = ", ".join(str(port) for port in ports)
@@ -1006,8 +1009,9 @@ def unreachable_dashboard(
         else "Verify the recorded dashboard is gone from the machine and terminal "
         "where it ran before removing only its state file and matching .origin file, then retry."
     )
+    outcome = "the dashboard did not answer in time" if timed_out else "no dashboard answered"
     return (
-        f"Compass: no dashboard answered at 127.0.0.1 on {port_label} {checked}; "
+        f"Compass: {outcome} at 127.0.0.1 on {port_label} {checked}; "
         f"state folder: {folder}. A dashboard open in a browser may be running where this "
         "command cannot reach it: another port or state folder, another machine, a VM, "
         "or a container or sandbox. "

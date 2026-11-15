@@ -2171,6 +2171,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         with_url = {
             "/api/data": self._data,
             "/api/session": self._session,
+            "/api/live-monitor": self._live_monitor_state,
             "/api/summary": self._summary_get,
             "/api/sessions": self._sessions,
             "/api/observe": self._observe,
@@ -2460,6 +2461,34 @@ class _RequestHandler(BaseHTTPRequestHandler):
             ).encode(),
             "application/json",
         )
+
+    def _live_monitor_state(self, url: ParseResult) -> None:
+        """Read one lease without collecting history or renewing any holder."""
+        if not self._loopback_resource_ok() or self._is_document_navigation():
+            self.send_error(403)
+            return
+        query = parse_qs(url.query)
+        harness, sid = query.get("harness", [""])[0], query.get("sid", [""])[0]
+        if (
+            harness != "claude"
+            or not sid
+            or len(f"{harness}:{sid}") > self.server.application.config.ask_project_cap_chars
+        ):
+            self.send_error(400)
+            return
+        leases = self.server.application.live_leases
+        state = (
+            leases.terminal_state(harness, sid)
+            if leases is not None
+            else {
+                "on": False,
+                "terminal": False,
+                "notice_due": False,
+                "disclosure": None,
+                "last_end": None,
+            }
+        )
+        self._send(json.dumps({"state": state}, separators=(",", ":")).encode(), "application/json")
 
     def _session(self, url: ParseResult) -> None:
         if not self._loopback_resource_ok() or self._is_document_navigation():
@@ -4159,7 +4188,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         board = live_monitor.board(config, now=now)
         receipt.update(
             notice_due=board["notice_due"],
-            disclosure=live_monitor.disclosure(board["destination"], terminal=True),
+            disclosure=live_monitor.disclosure(
+                board["destination"], terminal=True, sid=str(row.get("resume_id") or sid)
+            ),
         )
         return ""
 

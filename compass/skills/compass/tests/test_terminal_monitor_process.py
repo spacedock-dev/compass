@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import json
 import os
 import shlex
@@ -17,6 +18,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, override
+from unittest import mock
 from urllib.parse import urlparse
 
 from compass_runtime import http_api, live_lease, live_monitor, monitor_store, reading_policy
@@ -31,7 +33,7 @@ SID = NATIVE[:8]
 
 
 class ProcessTest(unittest.TestCase):
-    def setUp(self) -> None:
+    def setUp(self) -> None:  # noqa: C901 - the synthetic board and its process cleanup share one fixture
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.home = temp.name
@@ -46,10 +48,17 @@ class ProcessTest(unittest.TestCase):
         }
         self.rows = [self.row]
         self.actions: list[dict[str, Any]] = []
+        self.accepted_beats: list[str] = []
+        self.clock_offset = 0.0
+        self.delays: dict[str, float] = {}
         self.started = time.time() + 100
         config = dataclasses.replace(make_config(), state_dir=Path(self.home))
         self.leases = live_lease.Leases(
-            config, row_for=lambda *_a: self.row, inputs_for=lambda *_a: None, start_thread=False
+            config,
+            row_for=lambda *_a: self.row,
+            inputs_for=lambda *_a: None,
+            clock=lambda: time.time() + self.clock_offset,
+            start_thread=False,
         )
         self.addCleanup(self.leases.close)
         outer = self
@@ -67,6 +76,7 @@ class ProcessTest(unittest.TestCase):
 
             @override
             def do_GET(self) -> None:
+                time.sleep(outer.delays.get(urlparse(self.path).path, 0))
                 if self.path == "/api/health":
                     self.answer(
                         {
@@ -79,12 +89,10 @@ class ProcessTest(unittest.TestCase):
                     )
                 elif urlparse(self.path).path == "/api/session":
                     self._session(urlparse(self.path))
+                elif urlparse(self.path).path == "/api/live-monitor":
+                    self._live_monitor_state(urlparse(self.path))
                 elif self.path == "/api/data":
                     self.answer({"sessions": outer.rows})
-                elif urlparse(self.path).path == "/api/project-context":
-                    self.answer(
-                        {"sources": {"work": {"live_monitor": outer.leases.state("claude", SID)}}}
-                    )
                 else:
                     self.send_error(404)
 
@@ -92,9 +100,12 @@ class ProcessTest(unittest.TestCase):
             def do_POST(self) -> None:
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 outer.actions.append(payload)
+                time.sleep(outer.delays.get(payload["action"], 0))
                 parsed = http_api._lease_request(payload, 200)
                 assert parsed is not None
                 answer = http_api._lease_answer(outer.leases, *parsed)
+                if payload["action"] == "beat" and answer["ok"]:
+                    outer.accepted_beats.append(payload["tab_id"])
                 if payload["action"] == "start" and answer["ok"]:
                     where = answer["state"]["destination"]
                     notice = reading_policy.note(
@@ -115,7 +126,9 @@ class ProcessTest(unittest.TestCase):
 
         class Board(ThreadingHTTPServer):
             application = types.SimpleNamespace(
-                collect_json=lambda **_kwargs: ("revision", json.dumps({"sessions": outer.rows}))
+                config=config,
+                live_leases=outer.leases,
+                collect_json=lambda **_kwargs: ("revision", json.dumps({"sessions": outer.rows})),
             )
 
         self.server = Board(("127.0.0.1", 0), Handler)
@@ -309,3 +322,93 @@ class ProcessTest(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("{}", result.stdout.strip())
+
+    def test_slow_lookup_start_and_repeat_keep_the_real_holder_running(self) -> None:
+        self.delays = {"/api/session": 6, "start": 6, "beat": 6, "/api/live-monitor": 6}
+        start = self.launch()
+        out, err = start.communicate(timeout=40)
+        self.assertEqual(0, start.returncode, err)
+        self.assertIn("Live monitor started for this session.", out)
+        self.assertIn("spacedock-compass --monitor --off --session claude:" + NATIVE, out)
+        self.assertNotIn("spacedock-compass --monitor --session", out)
+        self.assertNotIn("typed_action", next(a for a in self.actions if a["action"] == "start"))
+        generation = self.store.read("run")["generation"]
+        repeat = self.launch()
+        out, err = repeat.communicate(timeout=20)
+        self.assertEqual(0, repeat.returncode, err)
+        self.assertIn("already running", out)
+        self.assertEqual(generation, self.store.read("run")["generation"])
+        self.assertTrue(self.store.running())
+
+    def test_a_stale_real_holder_is_replaced_or_reports_the_ended_session(self) -> None:
+        for ended in (False, True):
+            with self.subTest(ended=ended):
+                start = self.launch()
+                out, err = start.communicate(timeout=20)
+                self.assertEqual(0, start.returncode, (out, err))
+                generation = self.store.read("run")["generation"]
+                self.leases.stop_all("paused")
+                self.row["ended_at"] = time.time() if ended else None
+                repeat = self.launch()
+                out, err = repeat.communicate(timeout=20)
+                if ended:
+                    self.assertEqual(1, repeat.returncode)
+                    self.assertIn("this session has ended", err)
+                else:
+                    self.assertEqual(0, repeat.returncode, err)
+                    self.assertIn("Live monitor started", out)
+                    self.assertNotEqual(generation, self.store.read("run")["generation"])
+                    self.cleanup_holder()
+                self.assertNotIn("could not read", out + err)
+
+    def test_browser_only_lease_replaces_lapsed_terminal_holder(self) -> None:
+        self.assertTrue(self.leases.start("claude", SID, "browser", visible=False)["ok"])
+        start = self.launch()
+        out, err = start.communicate(timeout=20)
+        self.assertEqual(0, start.returncode, (out, err))
+        old = self.store.read("run")["generation"]
+        self.until(lambda: old in self.accepted_beats)
+        self.clock_offset += 51
+        state = self.leases.terminal_state("claude", SID)
+        self.assertEqual((True, False), (state["on"], state["terminal"]))
+        repeat = self.launch()
+        out, err = repeat.communicate(timeout=20)
+        self.assertEqual(0, repeat.returncode, (out, err))
+        generation = self.store.read("run")["generation"]
+        self.assertNotEqual(old, generation)
+        self.until(lambda: generation in self.accepted_beats)
+        self.assertTrue(self.store.running())
+        self.assertTrue(self.leases.beat("claude", SID, "browser", visible=False)["ok"])
+        self.assertFalse(self.leases.beat("claude", SID, old)["ok"])
+
+    def test_an_in_session_start_prints_only_the_separate_terminal_stop_command(self) -> None:
+        env = {**self.env, "CLAUDE_CODE_SESSION_ID": NATIVE}
+        env.pop("CODEX_THREAD_ID", None)
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("sys.stdout", io.StringIO()) as out,
+            mock.patch("sys.stderr", io.StringIO()) as err,
+        ):
+            self.assertEqual(0, client.run_monitor(environ=env), err.getvalue())
+        self.assertIn(
+            "spacedock-compass --monitor --off --session claude:" + NATIVE, out.getvalue()
+        )
+        self.assertNotIn("spacedock-compass --monitor --session", out.getvalue())
+        self.assertEqual(
+            "monitor on", next(a for a in self.actions if a["action"] == "start")["typed_action"]
+        )
+        command = next(
+            line.removeprefix("Stop it from another terminal with ")
+            for line in out.getvalue().splitlines()
+            if line.startswith("Stop it from another terminal with ")
+        )
+        stopped = subprocess.run(
+            [sys.executable, str(SERVER_PATH), *shlex.split(command)[1:]],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        self.assertEqual(0, stopped.returncode, stopped.stderr)
+        self.assertFalse(self.store.running())
