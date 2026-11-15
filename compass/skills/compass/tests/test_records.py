@@ -754,8 +754,10 @@ class RedactSecretsTest(unittest.TestCase):
                 self.assertEqual(text, records.redact_secrets(text))
 
     def test_a_credential_shaped_body_inside_a_longer_token_is_redacted(self) -> None:
-        inside = "not-a-sk-" + "R" * 40
-        self.assertEqual("not-a-sk-…REDACTED", records.redact_secrets(inside))
+        inside = "not_a_sk-" + "R" * 40
+        self.assertEqual("not_a_sk-…REDACTED", records.redact_secrets(inside))
+        hyphenated = "not-a-sk-" + "R" * 40
+        self.assertEqual(hyphenated, records.redact_secrets(hyphenated))
 
     def test_an_unambiguous_key_is_redacted_whatever_precedes_it(self) -> None:
         # Each body qualifies on its own, including the shortest Anthropic body.
@@ -965,7 +967,7 @@ class RedactSecretsTest(unittest.TestCase):
         # The literal gate is an optimization, and an optimization in front of a
         # security filter is a way to ship a measured shape switched off. Each
         # alternative gets a fake here, so a shape added without a hint fails.
-        listed = {name for name, _, _ in records._SECRET_SHAPES}
+        listed = {name for name, _, _, _ in records._SECRET_SHAPES}
         covered = set()
         for _name, fake, expected in self.FAKES:
             match = records._SECRET_RE.search(fake)

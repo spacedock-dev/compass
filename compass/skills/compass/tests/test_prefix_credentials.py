@@ -92,17 +92,99 @@ class GluedCredentialTest(unittest.TestCase):
     )
     LEADS = ("use ", "use=", "cfg_", "abc", "1", "_", "-", "界")
 
-    def test_every_prefix_redacts_regardless_of_the_preceding_character(self) -> None:
+    def test_prefix_admission_preserves_baseline_and_checks_glued_evidence(self) -> None:
         for prefix, body, kept in self.PREFIXED:
             for lead in self.LEADS:
                 with self.subTest(prefix=prefix, body=body, lead=lead):
                     raw = lead + prefix + body + " then retry"
                     expected = lead + kept + "…REDACTED then retry"
+                    if (prefix, body) in (("sk-", "c" * 32), ("sk-proj-", "c" * 156)) and lead in (
+                        "cfg_",
+                        "abc",
+                        "1",
+                        "_",
+                        "-",
+                    ):
+                        expected = raw
+                    if lead == "-" and prefix not in (
+                        "sk-ant-api03-",
+                        "sk-ant-oat01-",
+                        "sk-ant-ort01-",
+                        "AKIA",
+                        "ASIA",
+                        "github_pat_",
+                        "lin_api_",
+                        "ya29.",
+                    ):
+                        expected = raw
                     self.assertEqual(expected, records.redact_secrets(raw))
                     self.assertEqual(expected, records.redact_secrets(expected))
 
+    def test_long_glued_identifiers_remain_readable(self) -> None:
+        for raw in (
+            "task-ant-colony-optimization",
+            "linuxapp-configuration-defaults",
+            "task_test_configurationhandler",
+            "dask-" + "word-" * 36 + "end",
+            "dask-" + "word-" * 40 + "end",
+            "dask-v2-scheduler-configuration-defaults-file",
+            "flask-oauth2-client-configuration-defaults",
+            "dask-v2-" + "word-" * 40 + "end",
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(raw, records.redact_secrets(raw))
+
+    def test_distinctive_glued_shapes_need_no_character_mixture(self) -> None:
+        for prefix, body, kept in (
+            ("sk-lf-", "abcdefab-cdef-abcd-efab-cdefabcdefab", "sk-lf-"),
+            ("pk-lf-", "abcdefab-cdef-abcd-efab-cdefabcdefab", "pk-lf-"),
+            ("ghp_", "a" * 36, "ghp_"),
+            ("gho_", "a" * 36, "gho_"),
+            ("ghu_", "a" * 36, "ghu_"),
+            ("ghs_", "a" * 36, "ghs_"),
+            ("ghr_", "a" * 36, "ghr_"),
+            ("glpat-", "a" * 20, "glpat-"),
+            ("npm_", "a" * 36, "npm_"),
+            ("phc_", "a" * 32, "phc_"),
+            ("AIza", "a" * 35, "AIza"),
+            ("eyJ", "a" * 8 + "." + "b" * 8 + "." + "c" * 8, "eyJ"),
+        ):
+            for lead in ("use ", "use=", "cfg_", "abc"):
+                with self.subTest(prefix=prefix, lead=lead):
+                    self.assertEqual(
+                        lead + kept + "…REDACTED", records.redact_secrets(lead + prefix + body)
+                    )
+
+    def test_collision_prone_glued_shapes_need_ascii_character_evidence(self) -> None:
+        for prefix, kept, length in (
+            ("sk-ant-", "sk-ant-", 16),
+            ("sk_live_", "sk_live_", 20),
+            ("xoxb-", "xoxb-", 15),
+            ("sk-", "sk-", 32),
+        ):
+            for lead in ("use ", "use=", "cfg_", "abc"):
+                for last in ("a", "A", "0"):
+                    body = "a" * (length - 1) + last
+                    raw = lead + prefix + body
+                    expected = (
+                        raw
+                        if lead in ("cfg_", "abc") and last == "a"
+                        else lead + kept + "…REDACTED"
+                    )
+                    with self.subTest(prefix=prefix, lead=lead, last=last):
+                        self.assertEqual(expected, records.redact_secrets(raw))
+
+    def test_anthropic_variant_digits_are_evidence_after_the_retained_prefix(self) -> None:
+        for variant in ("api03-", "oat01-", "ort01-"):
+            with self.subTest(variant=variant):
+                self.assertEqual(
+                    "abcsk-ant-…REDACTED", records.redact_secrets("abcsk-ant-" + variant + "a" * 16)
+                )
+
     def test_published_and_model_bound_prose_redacts_before_a_cut(self) -> None:
         for prefix, body, kept in self.PREFIXED:
+            if (prefix, body) in (("sk-", "c" * 32), ("sk-proj-", "c" * 156)):
+                continue
             for lead in ("cfg_", "abc"):
                 with self.subTest(prefix=prefix, lead=lead):
                     raw = "Fix " + lead + prefix + body + " then retry"
