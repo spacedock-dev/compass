@@ -422,8 +422,11 @@ def turn_stop_fields(
     activity_sources: tuple[float, ...],
     *,
     blocked: bool,
-) -> dict[str, float | None]:
-    """`work_activity` and `turn_end_at` for one Codex row.
+    headless: bool | None,
+    session_state: str,
+    state_detail: str,
+) -> dict[str, Any]:
+    """The standing stop and reversible idle reading for one Codex row.
 
     What retires an observed stop is the rollout's newest turn record in place of its mtime
     (`activity_sources[0]`), which a settings change or a late command finish moves minutes after a
@@ -436,10 +439,17 @@ def turn_stop_fields(
         now,
         ((info or {}).get("last_turn_ts") or activity_sources[0], *activity_sources[1:]),
     )
+    turn_end = transcript_turn_end(config, info, work_activity=work_activity, blocked=blocked)
+    # Exec may resume, so a standing stop changes the idle reading without declaring a session
+    # end. mtime alone cannot distinguish a finished run from a run that merely stopped writing.
     return {
         "work_activity": work_activity,
-        "turn_end_at": transcript_turn_end(
-            config, info, work_activity=work_activity, blocked=blocked
+        "turn_end_at": turn_end,
+        "headless": headless,
+        "state_detail": (
+            "run finished"
+            if session_state == "idle" and headless is True and turn_end is not None
+            else state_detail
         ),
     }
 
@@ -704,15 +714,17 @@ def collect(
                 "instruction": asked["instruction"],
                 "last_output": (info or {}).get("last_output"),
                 "state": session_state,
-                "state_detail": state_detail,
                 "active": active,
                 "last_activity": last_activity,
                 **turn_stop_fields(
                     config,
                     now,
                     info,
-                    (mtime, *data["activity"]),
+                    activity_sources,
                     blocked=bool(subagents),
+                    headless=transcripts.codex_meta(config, state, fp).get("headless"),
+                    session_state=session_state,
+                    state_detail=state_detail,
                 ),
                 # What retires a gate this session already answered. Codex reports
                 # a gate through the event overlay, and the reducer only lets a

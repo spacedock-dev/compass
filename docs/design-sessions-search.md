@@ -127,8 +127,15 @@ line read "Showing 12 of 12" for a filter that hides nothing; the prototype revi
 
 Headless starts with neither value selected, so all sessions show. Interactive or unknown includes
 measured interactive runs and sessions whose entrypoint is unknown. The popover says
-the value is read from Claude Code transcripts. The choice shares the other facets' counts, chips and
-[tab-lifetime persistence](#persistence).
+the value is read from Claude Code transcripts and Codex rollout metadata. The choice shares the
+other facets' counts, chips and [tab-lifetime persistence](#persistence).
+
+The Codex collector reads first-line `session_meta.payload.source`: `exec` publishes true, `cli`
+false, and missing, malformed, object and other source values publish null. The immutable metadata
+cache keeps this classification for stale rows too, without reading their turn history. Originator
+is corroborating evidence only. The [entrypoint capture](captures/codex/entrypoint-0.169.0-0.167.0-macos.jsonl)
+records current exec and older interactive observations separately. A source object used for subagent
+lineage is not classified as interactive.
 
 The Claude collector publishes `headless` only from non-sidechain records whose `sessionId`
 matches the transcript's filename stem. Copied records from a resumed session cannot set it.
@@ -143,10 +150,10 @@ A changed inode, a smaller file, or a changed modification time without file gro
 bounded read for both entrypoint and goal state. The cache stores the observed size separately from
 the complete-line cursor so a rewrite beside a partial last record also restarts it. A failed stat
 or open discards that shared cache entry: headless and goal endings become unknown, goal history is
-unproven, and the next successful read is cold. A cold read that finds no native declaration, an
-unmeasured entrypoint, an unread row and other harnesses publish null. No parent-child relationship
-is inferred. This is a current board field; no lifecycle envelope writes it and no session-history
-field is added.
+unproven, and the next successful read is cold. A cold read with no measured native entrypoint,
+or an unread Claude row, publishes null. Harnesses other than Claude Code and Codex also publish null.
+No parent-child relationship is inferred. This is a current board field; no lifecycle envelope writes
+it and no session-history field is added.
 
 Started is the Date default because it is what readers asked for, and because it is the only choice
 that discriminates on a 24-hour board, where every session was active inside the window by

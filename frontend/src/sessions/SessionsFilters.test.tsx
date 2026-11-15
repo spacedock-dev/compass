@@ -60,7 +60,7 @@ describe('the presets and chips', () => {
     const popup = await openFilter(page, 'headless', 'Headless');
     expect(
       within(popup).getByText(
-        'Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints and other harnesses.',
+        'Read from Claude Code transcripts and Codex rollout metadata. Interactive or unknown includes unknown entrypoints and other harnesses.',
       ),
     ).toBeVisible();
     await pick(page, popup, 'Interactive or unknown');

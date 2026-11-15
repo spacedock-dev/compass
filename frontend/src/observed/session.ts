@@ -1,6 +1,6 @@
 import { nextNumber } from '../api/bootstrap';
 import { formatDuration } from '../shell/format';
-import { goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
+import { finishedRunAt, goalOf, landingOf, sessionStop, stopRecord, type Landing } from './landing';
 import {
   ageSeconds,
   endedAt,
@@ -221,23 +221,27 @@ export function observeSession(
     : 'Harness does not report turn bounds';
   const goal = goalOf(source);
   const stateDetail = trimmed(source['state_detail']);
+  const runFinish = finishedRunAt(source);
+  const runAge = formatDuration(ageSeconds(generated, runFinish));
   /* A quiet row states how long ago it was last active in place of the collector's "awaiting your
      message": a recent observation cannot prove the harness is still open, so a day-old idle row cannot
      claim to be waiting. A session holding an exact request is not quiet, and with no timestamp the old
      reading stands, minus the waiting claim. */
   const nowValue = ended
     ? 'Session reported its own end'
-    : stateKnown
-      ? doing
-        ? doing['subject']
-        : quiet && !question
-          ? quietSeconds
-            ? `last active ${quietSeconds} ago`
-            : stateDetail
-              ? 'quiet'
-              : ''
-          : source['state_detail']
-      : '';
+    : runFinish !== null && !question
+      ? `run finished${runAge ? ` ${runAge} ago` : ''}`
+      : stateKnown
+        ? doing
+          ? doing['subject']
+          : quiet && !question
+            ? quietSeconds
+              ? `last active ${quietSeconds} ago`
+              : stateDetail
+                ? 'quiet'
+                : ''
+            : source['state_detail']
+        : '';
   const row = {
     sid: textOf(source['sid']),
     harness: textOf(source['harness']),

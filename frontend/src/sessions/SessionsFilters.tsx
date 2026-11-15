@@ -824,8 +824,8 @@ export function SessionsFilters({
             />
             <Separator />
             <p className={NOTE}>
-              Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints
-              and other harnesses.
+              Read from Claude Code transcripts and Codex rollout metadata. Interactive or unknown
+              includes unknown entrypoints and other harnesses.
             </p>
           </FilterButton>
           <FilterButton facet="state" name="State" selected={filters.state.length}>

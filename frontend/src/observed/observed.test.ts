@@ -449,3 +449,46 @@ describe('the session heading stands in for an identifier-only title', () => {
     expect(long.endsWith('…')).toBe(true);
   });
 });
+
+describe('a quiet Codex exec run with a standing stop', () => {
+  const session = {
+    harness: 'codex',
+    sid: 'exec',
+    project: 'p',
+    state: 'idle',
+    headless: true,
+    turn_end_at: NOW - 600,
+    last_activity: NOW - 60,
+    state_detail: 'run finished',
+  };
+  it('names the finished run and ages its validated stop instead of its last activity', () => {
+    expect(observe(board([session])).sessions[0]?.nowText).toBe('run finished 10m ago');
+  });
+  it('does not let an unfinished plan step obscure the finished run', () => {
+    expect(
+      observe(board([{ ...session, tasks: [{ status: 'in_progress', subject: 'Old plan step' }] }]))
+        .sessions[0]?.nowText,
+    ).toBe('run finished 10m ago');
+  });
+  it('keeps interactive, unknown and other harness quiet readings', () => {
+    for (const row of [
+      { ...session, headless: false },
+      { ...session, headless: null },
+      { ...session, harness: 'claude' },
+    ]) {
+      expect(observe(board([row])).sessions[0]?.nowText).toBe('last active 1m ago');
+    }
+  });
+  it('does not call an unread or resumed run finished', () => {
+    expect(observe(board([{ ...session, turn_end_at: null }])).sessions[0]?.nowText).toBe(
+      'last active 1m ago',
+    );
+    expect(
+      observe(board([{ ...session, state: 'working', state_detail: 'generating' }])).sessions[0]
+        ?.nowText,
+    ).toBe('generating');
+  });
+  it('states the finish without manufacturing an age if there is no board clock', () => {
+    expect(observe({ sessions: [session] }).sessions[0]?.nowText).toBe('run finished');
+  });
+});
