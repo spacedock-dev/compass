@@ -1038,13 +1038,16 @@ These rules operate on exact identity. Ask ownership resolves by full session ID
 publishes it, harness. An ask without a harness resolves only when its session ID has one payload
 match. Display label never owns the ask. A project display label is useful for grouping but is not
 a repository, directory, branch, worktree, or authority boundary. A shared label raises no warning
-when every member has one measured location key. Two measured keys raise a location warning;
-unknown locations are disclosed without counting their label fallbacks as locations. Location
-warnings link every member by title, worktree, id and start time; their heading opens the project.
-Two or more non-ended sessions working or waiting under one measured key and the same worktree
-name (or no worktree) raise a concurrent-checkout warning. These board warnings never own a
-member's stop, end or task: those stay in the session's Close the loop or Coming next subject,
-unless its own stronger waiting or risk signal takes precedence.
+when every member has one measured location key. Multiple measured locations raise a warning that
+counts only measured sessions. Unknown locations are disclosed separately, without counting their
+label fallbacks as locations. Location warnings link every member by title, worktree, id and start
+time; their heading opens the project.
+Two or more non-ended sessions working or waiting with measured provenance and the same opaque
+checkout key raise a concurrent-checkout warning. Worktree names are display text, not identity;
+a missing key cannot establish a shared checkout. The identity and inference rules are owned by
+[session identity](design-session-identity.md#checkout-evidence-is-distinct-from-repository-grouping).
+These board warnings never own a member's stop, end or task: those stay in the session's Close
+the loop or Coming next subject, unless its own stronger waiting or risk signal takes precedence.
 
 Absent optional facts leave no primary placeholder. A project with no Spacedock record omits the
 workflow wrapper instead of saying that a workflow source is unavailable. Session detail omits an

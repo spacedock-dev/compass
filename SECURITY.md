@@ -1,12 +1,5 @@
 # Security policy
 
-Each published session may carry a `checkout_key`: a digest of its canonical checkout
-root, in a namespace separate from its repository grouping key. For measured non-Git
-directories it digests the canonical working directory. It reveals equality of measured
-checkout locations to a loopback API reader, without publishing a path. The page renders
-neither paths nor keys. Missing Claude worktree layouts publish inferred provenance and
-no measured checkout key.
-
 ## Scope
 
 Compass ships three kinds of component that touch the network. The dashboard server
@@ -295,6 +288,12 @@ The posture rests on two invariants:
    ambiguous matches answer 409 and absent ones answer 404. It removes server-only message words,
    refuses document navigation and requires a loopback peer and same-origin request. It exposes
    the same row fields as `/api/data`, with no model call.
+   Each published session may carry a `checkout_key`: a digest of its canonical checkout
+   root, in a namespace separate from its repository grouping key. For measured non-Git
+   directories it digests the canonical working directory. It reveals equality of measured
+   checkout locations to a loopback API reader, without publishing a path. The page renders
+   neither raw checkout paths nor identity keys. Missing Claude worktree layouts publish
+   inferred provenance and no measured checkout key.
    `GET /api/sessions` serves the default board window through an explicit list-field
    projection, with no observation history or unused row fields. It removes server-only message
    words and has the same loopback, same-origin and document-navigation guards as `/api/session`.

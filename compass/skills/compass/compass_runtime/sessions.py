@@ -297,9 +297,9 @@ def _identity_from_root(config: RuntimeConfig, cwd: str, repo_root: str | None) 
 
 
 def _removed_worktree(cwd: str) -> tuple[str, str] | None:
-    """``(repository root, worktree name)`` for a path under a deleted linked worktree.
+    """Infer ``(repository root, worktree name)`` from a missing Claude layout.
 
-    The ``.git`` pointers are gone with the directory, so the only evidence is the
+    The directory may never have existed, so the only evidence is the
     ``<root>/.claude/worktrees/<name>`` layout Claude Code creates, and it counts
     only when ``<root>`` still holds a ``.git`` directory. Other harnesses' layouts
     are not guessed at, per

@@ -95,7 +95,8 @@ def location_note(rows: list[Row]) -> str:
     notes = []
     if len(keys) > 1:
         notes.append(
-            f"{len(rows) - unknown} sessions share this display label across {len(keys)} measured locations"
+            f"{len(rows) - unknown} sessions share this display label "
+            f"across {len(keys)} measured locations"
         )
     if unknown:
         notes.append(

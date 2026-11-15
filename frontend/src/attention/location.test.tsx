@@ -58,12 +58,16 @@ describe('a label is interpreted by measured locations', () => {
     ).toHaveAttribute('href', '#n=project:audits');
   });
 
-  it.each(['collector project label', 'inferred Claude worktree layout'])(
-    'a person sees an unmeasured member from %s without inventing a second location',
-    async (source) => {
+  it.each(
+    ['collector project label', 'inferred Claude worktree layout'].flatMap((source) =>
+      ['path:audits', 'path:other'].map((key) => ({ source, key })),
+    ),
+  )(
+    'a person sees an unmeasured member from $source with key $key without inventing a second location',
+    async ({ source, key }) => {
       const data = locationBoard();
       Object.assign(locationRow(data, 8), {
-        project_key: 'audits',
+        project_key: key,
         project_identity_source: source,
       });
       const page = mountShell({ hash: '#n=attention', data });

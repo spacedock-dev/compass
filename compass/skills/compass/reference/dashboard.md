@@ -212,9 +212,13 @@ accepted, unanswered questions expire, and `--no-ask` disables this lane.
 completion evidence. Waiting on the reader takes precedence over those categories; the session
 still carries its observed details. The separate board group warns when a label covers multiple
 measured locations, or when some members' locations were not measured. Sessions in one measured
-directory or repository need no label warning; worktree names still distinguish checkouts.
-Two sessions working or waiting in the same measured checkout get a concurrent-session warning.
-Each warning links its members by title, worktree, id and start time, without publishing directories.
+directory or repository need no label warning. A multi-location sentence counts only measured
+sessions, followed by a separate count of unknown locations. A missing Claude worktree layout
+keeps its label and worktree name but counts as unknown. Worktree names are display text.
+Two non-ended sessions working or waiting with measured evidence of the same checkout get a
+concurrent-session warning; a matching name alone cannot establish that evidence.
+Each warning links its members by title, worktree, id and start time, without rendering raw checkout
+paths or identity keys. Missing titles and start times are stated as not published.
 It never absorbs their stops, ends or tasks. A quiet row is never promoted into proof that nothing is waiting. Claude, Codex, Copilot, Cursor, OpenCode and Pi have wait-reporting paths; the coverage detail names
 conditions. OpenCode covers parent permissions with its project adapter; Pi covers persisted-session
 extension UI prompts on 0.85.1. Neither proves installation or reconstructs a wait after restart.

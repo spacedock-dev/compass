@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -194,8 +195,14 @@ class CompassServerTest(RuntimeTestCase):
             main = root / "main"
             main.mkdir()
 
+            git_executable = shutil.which("git")
+            if git_executable is None:
+                self.skipTest("Git is not installed")
+
             def git(*args: str) -> None:
-                subprocess.run(["git", "-C", str(main), *args], check=True, capture_output=True)
+                subprocess.run(
+                    [git_executable, "-C", str(main), *args], check=True, capture_output=True
+                )
 
             git("init", "-q")
             git(
@@ -244,8 +251,14 @@ class CompassServerTest(RuntimeTestCase):
             main = Path(tmp) / "one" / "compass"
             main.mkdir(parents=True)
 
+            git_executable = shutil.which("git")
+            if git_executable is None:
+                self.skipTest("Git is not installed")
+
             def git(*args: str) -> None:
-                subprocess.run(["git", "-C", str(main), *args], check=True, capture_output=True)
+                subprocess.run(
+                    [git_executable, "-C", str(main), *args], check=True, capture_output=True
+                )
 
             git("init", "-q")
             git(

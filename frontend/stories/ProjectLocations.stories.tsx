@@ -120,7 +120,10 @@ export const SameNameDistinctCheckouts: Story = {
 
 export const MissingCheckoutEvidence: Story = {
   args: { checkout: 'missing' },
-  play: SameNameDistinctCheckouts.play,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByText(/of 2 sessions carry a subject/);
+    await expect(canvasElement.querySelector('[data-next-board-risk="checkout"]')).toBeNull();
+  },
 };
 
 export const MixedMeasuredAndInferred: Story = {

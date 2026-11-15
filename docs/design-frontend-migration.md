@@ -16,13 +16,18 @@ keeps all twenty names out of `web/`. The recorded answers the React page is hel
 
 ## Held to recorded answers
 
-2026-11-15, shared display labels use measured location evidence. One measured directory or repository
-raises no label warning. Two measured keys name the location count, while label fallbacks remain
-unknown and say their location was not measured. Attention links every member by title, worktree,
-id and start time, and the warning heading opens the project. Concurrent working or waiting
-sessions in one measured checkout keep a separate warning. Stops, ends and tasks stay in their
-session subjects instead of being folded into a label card, so the summary and queues agree.
-The terminal project brief uses the same location disclosure. No golden file is changed.
+2026-11-15, shared display labels use measured location evidence. One measured directory or
+repository raises no label warning. Multiple measured locations count only measured members;
+label fallbacks and inferred Claude worktree layouts remain unknown and say their location was
+not measured. Attention links every member by title, worktree, id and start time, and the warning
+heading opens the project. Concurrent working or waiting sessions with measured provenance and
+the same opaque checkout key keep a separate warning. Matching worktree names alone cannot
+establish checkout identity. Whitespace-only member titles and nonpositive start times disclose
+missing values; positive timestamps still render. Stops, ends and tasks stay in their session
+subjects instead of being folded into a label card, so the summary and queues agree.
+The terminal project brief preserves location provenance through the session-list projection
+and uses the same location disclosure. The [identity record](design-session-identity.md#checkout-evidence-is-distinct-from-repository-grouping)
+owns checkout keys and inferred layouts. No golden file is changed.
 The recorded generated boards have no measured sources; the asking tests restate only their
 UI-owned location notes. Attention comparisons retain unaffected subjects and signals, while the
 restored members and location cards are held by the mounted `attention/location.test.tsx` cases
