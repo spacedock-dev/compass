@@ -22,11 +22,7 @@ class Store:
     def __init__(self, home: str, sid: str) -> None:
         self.root = Path(home) / "monitor"
         runtime_io.ensure_owner_dir(str(home))
-        runtime_io.ensure_owner_dir(str(self.root))
-        info = self.root.lstat()
-        if not stat.S_ISDIR(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
-            raise OSError("monitor directory is not privately owned")
-        self.root.chmod(0o700)
+        runtime_io.ensure_owner_dir(str(self.root), root=str(home))
         # Claude's published identity has eight characters. The record also keeps resume_id,
         # which must match before an off request may touch a same-prefix run.
         self.key = hashlib.sha256(("claude:" + sid[:8]).encode()).hexdigest()

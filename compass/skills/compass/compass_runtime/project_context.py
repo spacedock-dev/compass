@@ -9782,11 +9782,11 @@ def codex_source_prefix(config: RuntimeConfig, path: str, until: float) -> bytes
     fabricated timestamp; the lifecycle parser decides whether they retire a stop.
     """
     before = transcript_stamp(path)
-    if before is None or os.path.islink(path):
+    if before is None:
         raise FrozenCheckCutoffUnreachableError("codex source unavailable")
     chunks: list[bytes] = []
     used = 0
-    with open(path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         while raw := handle.readline(config.turn_scan_max_bytes - used + 1):
             used += len(raw)
             if used > config.turn_scan_max_bytes:
@@ -9992,7 +9992,7 @@ def codex_activity_between(transcript_path: str, after: float, until: float) -> 
     same-turn late results do not. Unknown shapes are work, never evidence of rest.
     """
     closed: set[str] = set()
-    with open(transcript_path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(transcript_path), "rb") as handle:
         for raw in handle:
             record = _json_dict(raw)
             if record is None:
@@ -10554,7 +10554,7 @@ def codex_newest_final_words(  # noqa: C901 - native identity and finality guard
     conflicted: set[str] = set()
     if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
         return {"outcome": "scan-limit"}
-    with open(path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         for raw in handle:
             record = _json_dict(raw)
             if record is None:
@@ -10997,7 +10997,7 @@ def frozen_claude_user_messages(
     at least as far back; ending at today's length instead lets a session that
     ran on past `tail_bytes` leave that tail holding no message (review N3).
     """
-    with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+    with runtime_io.open_harness_text(transcript_path, errors="replace") as handle:
         whole = _user_message_facts(config, handle, sid, until)
     lines = runtime_io.read_tail(config, transcript_path, end=size)
     tail = _user_message_facts(config, lines, sid, until)
@@ -11021,7 +11021,7 @@ def frozen_claude_agent_messages(
             if float(event["at"]) <= until
         ]
 
-    with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+    with runtime_io.open_harness_text(transcript_path, errors="replace") as handle:
         whole = facts(handle)
     return whole, facts(runtime_io.read_tail(config, transcript_path, end=size))
 
@@ -11032,7 +11032,7 @@ def claude_activity_between(transcript_path: str, after: float, until: float) ->
     Administrative records such as trailing turn_duration do not resume work.
     Tool results remain messages (Claude serializes them in user records).
     """
-    with open(transcript_path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(transcript_path), "rb") as handle:
         for raw in handle:
             try:
                 record = json.loads(raw)
@@ -11152,13 +11152,13 @@ def instruction_events(
             for line in reversed(
                 list(
                     runtime_io.reverse_lines(
-                        config, transcript_path, max_bytes=max_bytes, follow_links=False
+                        config, transcript_path, max_bytes=max_bytes, follow_links=True
                     )
                 )
             )
         ]
         if max_bytes is not None
-        else runtime_io.read_tail(config, transcript_path, follow_links=False)
+        else runtime_io.read_tail(config, transcript_path, follow_links=True)
     )
     for raw in source:
         if not raw or not raw.lstrip().startswith("{"):
@@ -11283,7 +11283,7 @@ def _direction_scan_once(
             scan.state == "stale",
         )
     try:
-        for line in runtime_io.read_tail(config, path, follow_links=False):
+        for line in runtime_io.read_tail(config, path, follow_links=True):
             visit(line.encode())
     except OSError:
         return None

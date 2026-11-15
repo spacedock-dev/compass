@@ -135,7 +135,7 @@ def save(config: RuntimeConfig, rules: dict[str, dict[str, Any]]) -> bool:
             or not all(_rule(row) for row in rules.values())
         ):
             return False
-        runtime_io.ensure_owner_dir(str(config.state_home))
+        runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
         fd, temporary = tempfile.mkstemp(prefix=".tripwires-", dir=config.state_home)
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw)

@@ -623,7 +623,7 @@ def set_setting(config: RuntimeConfig, *, on: bool) -> bool:
         if on:
             path.unlink(missing_ok=True)
         else:
-            runtime_io.atomic_write_owner_only(str(path), "off\n")
+            runtime_io.atomic_write_owner_only(str(path), "off\n", root=str(config.state_dir))
     except OSError:
         return False
     return True

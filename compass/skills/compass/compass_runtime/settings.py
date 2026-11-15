@@ -167,7 +167,7 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
         if limit is None or (value is not None and not _valid(limit, value)):
             raise InvalidSettingError(str(key))
     path = store_path(config)
-    runtime_io.ensure_owner_dir(str(config.state_home))
+    runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
     with runtime_io.held_file_lock(f"{path}.lock", wait=_LOCK_WAIT_SEC) as held:
         # A filesystem that cannot lock still takes the write, as the annotation store does; one
         # whose lock another writer holds or that refuses it does not, so two saves never
@@ -184,7 +184,9 @@ def save(config: RuntimeConfig, changes: Mapping[str, Any]) -> Settings:
             for key, value in current.items()
             if value != (False if key == "no_update_check" else known[key].default)
         }
-        runtime_io.atomic_write_owner_only(path, json.dumps(kept, sort_keys=True) + "\n")
+        runtime_io.atomic_write_owner_only(
+            path, json.dumps(kept, sort_keys=True) + "\n", root=str(config.state_home)
+        )
     return load(config)
 
 

@@ -21,6 +21,7 @@ on, and "the dashboard is not running" is an ordinary state, not an error.
 from __future__ import annotations
 
 import contextlib
+import errno
 import http.client
 import json
 import os
@@ -38,46 +39,252 @@ TIMEOUT_SEC = 2
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def open_regular_binary(path: str) -> BinaryIO:
-    """Standalone hook boundary: never wait on or follow an unsafe state leaf."""
-    if os.path.islink(path):
-        raise OSError("Refusing a state symlink")
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_BINARY", 0)
-    )
-    fd = os.open(path, flags)
+def _open_state(path: str, *, root: str | None = None) -> int:
+    """Strict state read: an owned regular leaf, with no untrusted descendant links."""
+    path = os.path.abspath(path)
+    parent = None
+    if os.name != "nt":
+        parent = (
+            _owner_directory_fd(os.path.dirname(path), root=root, create=False)
+            if root is not None
+            else _directory_fd(os.path.dirname(path), follow_links=False)
+        )
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise OSError("State is not a regular file")  # noqa: TRY301 - close the descriptor below
+        if os.path.islink(path):
+            raise OSError(errno.ELOOP, "Refusing a state symlink", path)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        fd = os.open(
+            path if parent is None else os.path.basename(path),
+            flags,
+            **({} if parent is None else {"dir_fd": parent}),
+        )
+        try:
+            info = os.fstat(fd)
+            _check_regular(info, path)
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
+    finally:
+        if parent is not None:
+            os.close(parent)
+
+
+def _state_root(path: str) -> str:
+    configured = os.path.abspath(os.path.expanduser(os.environ.get("COMPASS_HOME", "~/.compass")))
+    return (
+        configured
+        if os.path.commonpath((configured, os.path.abspath(path))) == configured
+        else os.path.dirname(path)
+    )
+
+
+def open_regular_binary(path: str) -> BinaryIO:
+    return os.fdopen(_open_state(path, root=_state_root(path)), "rb")
+
+
+def _owned(info: os.stat_result) -> bool:
+    return os.name == "nt" or info.st_uid == os.getuid()
+
+
+def _check_directory(info: os.stat_result, path: str, *, require_owner: bool = True) -> None:
+    if not stat.S_ISDIR(info.st_mode) or (require_owner and not _owned(info)):
+        raise OSError(errno.EPERM, "Directory is not owned by this user", path)
+
+
+def _check_regular(info: os.stat_result, path: str) -> None:
+    if not stat.S_ISREG(info.st_mode) or not _owned(info):
+        raise OSError(errno.EINVAL, "Not an owned regular file", path)
+
+
+def _platform_alias(path: str, target: str) -> bool:
+    # Only the OS's known ancestor aliases bypass the user-ownership requirement.
+    aliases = {"/tmp": "/private/tmp", "/var": "/private/var", "/etc": "/private/etc"}  # noqa: S108 - platform aliases, not temporary storage
+    return sys.platform == "darwin" and aliases.get(path) == os.path.normpath(
+        os.path.join("/", target)
+    )
+
+
+def _directory_child(
+    fd: int,
+    part: str,
+    walked: str,
+    *,
+    create: bool,
+    mode: int,
+    links: list[int],
+    follow_links: bool,
+) -> int:
+    child = os.path.join(walked, part)
+    flags = os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW
+    try:
+        return os.open(part, flags, dir_fd=fd)
+    except FileNotFoundError:
+        if not create:
+            raise
+        _check_directory(os.fstat(fd), walked)
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(part, mode, dir_fd=fd)
+        new_fd = os.open(part, flags, dir_fd=fd)
+        try:
+            _check_directory(os.fstat(new_fd), child)
+            os.fchmod(new_fd, mode)
+        except BaseException:
+            os.close(new_fd)
+            raise
+        return new_fd
+    except OSError:
+        target = os.readlink(part, dir_fd=fd)
+        trusted = (
+            _platform_alias(child, target)
+            and os.stat(part, dir_fd=fd, follow_symlinks=False).st_uid == 0
+        )
+        if not follow_links and not trusted:
+            raise
+        links[0] += 1
+        if links[0] > 40:
+            raise OSError(errno.ELOOP, "Too many directory links", child) from None
+        return _directory_fd(
+            os.path.join(walked, target),
+            create=False,
+            mode=mode,
+            links=links,
+            require_owner=not trusted,
+            follow_links=follow_links,
+        )
+
+
+def _directory_fd(
+    path: str,
+    *,
+    create: bool = False,
+    mode: int = 0o700,
+    links: list[int] | None = None,
+    require_owner: bool = True,
+    follow_links: bool = True,
+) -> int:
+    """Walk held directories and bound link traversal, preserving platform ancestor aliases."""
+    links = [0] if links is None else links
+    absolute = os.path.abspath(path)
+    fd = os.open("/", os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0))
+    walked = "/"
+    private = False
+    try:
+        for part in absolute.split("/"):
+            if not part:
+                continue
+            child = _directory_child(
+                fd, part, walked, create=create, mode=mode, links=links, follow_links=follow_links
+            )
+            os.close(fd)
+            fd = child
+            walked = os.path.join(walked, part)
+            info = os.fstat(fd)
+            if private:
+                _check_directory(info, walked)
+            private = private or _owned(info)
+        _check_directory(os.fstat(fd), path, require_owner=require_owner)
     except BaseException:
         os.close(fd)
         raise
-    return os.fdopen(fd, "rb")
+    return fd
+
+
+def _owner_directory_fd(
+    path: str, *, root: str | None = None, mode: int = 0o700, create: bool = True
+) -> int:
+    """Anchor a configured root, then refuse every descendant directory link."""
+    root = path if root is None else root
+    absolute, anchor = os.path.abspath(path), os.path.abspath(root)
+    if os.path.commonpath((absolute, anchor)) != anchor:
+        raise OSError(errno.EPERM, "State directory is outside its configured root", path)
+    fd = _directory_fd(anchor, create=create, mode=mode)
+    try:
+        if create and stat.S_IMODE(os.fstat(fd).st_mode) & ~mode:
+            os.fchmod(fd, mode)
+        relative = os.path.relpath(absolute, anchor)
+        for part in () if relative == "." else relative.split(os.sep):
+            try:
+                child = os.open(
+                    part,
+                    os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW,
+                    dir_fd=fd,
+                )
+            except FileNotFoundError:
+                if not create:
+                    raise
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(part, mode, dir_fd=fd)
+                child = os.open(
+                    part,
+                    os.O_RDONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW,
+                    dir_fd=fd,
+                )
+            os.close(fd)
+            fd = child
+            _check_directory(os.fstat(fd), path)
+            if create and stat.S_IMODE(os.fstat(fd).st_mode) & ~mode:
+                os.fchmod(fd, mode)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def ensure_owner_dir(path: str, mode: int = 0o700, *, root: str | None = None) -> None:
+    """Resolve an owned configured root and privately create every missing parent."""
+    if os.name == "nt":
+        # Windows ignores POSIX modes and does not expose openat directory handles.
+        os.makedirs(path, mode=mode, exist_ok=True)
+        if not os.path.isdir(path):
+            raise OSError(errno.ENOTDIR, "State root is not a directory", path)
+        return
+    fd = _owner_directory_fd(path, root=root, mode=mode)
+    os.close(fd)
 
 
 def write_owner_json(path: str, value: dict[str, Any]) -> None:
-    """Publish a private memo without depending on the dashboard runtime package."""
+    """Publish a memo relative to its owned configured root, without runtime imports."""
     home = os.path.dirname(path)
-    os.makedirs(home, mode=0o700, exist_ok=True)
-    info = os.lstat(home)
-    if not stat.S_ISDIR(info.st_mode) or (os.name != "nt" and info.st_uid != os.getuid()):
-        raise OSError("Memo directory is not privately owned")
-    if os.name != "nt":
-        os.chmod(home, 0o700)
-    if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
-        raise OSError("Memo target is not a regular file")
+    parent = None
+    if os.name == "nt":
+        ensure_owner_dir(home, root=_state_root(path))
+    else:
+        parent = _owner_directory_fd(home, root=_state_root(path))
     tmp = path + "." + secrets.token_hex(16) + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    name = path if parent is None else os.path.basename(path)
+    temp_name = tmp if parent is None else os.path.basename(tmp)
+    options = {} if parent is None else {"dir_fd": parent}
+    created = False
     try:
+        with contextlib.suppress(FileNotFoundError):
+            info = os.stat(name, follow_symlinks=False, **options)
+            _check_regular(info, path)
+        fd = os.open(
+            temp_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            **options,
+        )
+        created = True
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(value, handle)
-        os.replace(tmp, path)
+        os.replace(
+            temp_name,
+            name,
+            **({} if parent is None else {"src_dir_fd": parent, "dst_dir_fd": parent}),
+        )
     finally:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
+        if created:
+            with contextlib.suppress(OSError):
+                os.unlink(temp_name, **options)
+        if parent is not None:
+            os.close(parent)
 
 
 def is_loopback_url(url: str) -> bool:

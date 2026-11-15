@@ -608,7 +608,7 @@ def save(
     target = store_path(config)
     held = tuple(entries)
     try:
-        runtime_io.atomic_write_owner_only(target, _payload(held))
+        runtime_io.atomic_write_owner_only(target, _payload(held), root=str(config.state_home))
     except (OSError, ValueError):
         _report(
             f"Compass: could not write the history store {target}; "

@@ -744,7 +744,7 @@ def _store_locks(
         if make_home:
             # The lock file sits in the state home, which the first save creates.
             with contextlib.suppress(OSError):
-                runtime_io.ensure_owner_dir(str(config.state_home))
+                runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
         if not create_lock and not os.path.lexists(lock_path(config)):
             with state.annotation_lock if state is not None else contextlib.nullcontext():
                 yield _UNLOCKED
@@ -1806,7 +1806,11 @@ def _write(
             "entries": [*(_on_disk(entry) for entry in kept), *raw],
         }
         runtime_io.atomic_write_owner_only(
-            target, json.dumps(payload), sync=True, replace=_replace_over
+            target,
+            json.dumps(payload),
+            sync=True,
+            replace=_replace_over,
+            root=str(config.state_home),
         )
         # A failed directory sync cannot undo the already published words.
         with contextlib.suppress(OSError):
@@ -1827,10 +1831,10 @@ _REPLACE_ATTEMPTS = 6
 _REPLACE_PAUSE_SECONDS = 0.02
 
 
-def _replace_over(tmp: str, target: str) -> None:
+def _replace_over(tmp: str, target: str, **options: Any) -> None:
     for attempt in range(1, _REPLACE_ATTEMPTS + 1):
         try:
-            os.replace(tmp, target)
+            os.replace(tmp, target, **options)
         except PermissionError:
             if attempt == _REPLACE_ATTEMPTS:
                 raise

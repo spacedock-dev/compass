@@ -114,7 +114,7 @@ def _complete_end(config: RuntimeConfig, path: str, size: int) -> int:
     if not size:
         return 0
     try:
-        with open(path, "rb") as source:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as source:
             pos = size
             while pos:
                 read_size = min(config.reverse_chunk_bytes, pos)
@@ -394,7 +394,7 @@ def scan_pi_session(
         if size == scan["pos"]:
             return _info(config, scan)
         try:
-            with open(path, "rb") as source:
+            with os.fdopen(runtime_io.open_harness(path), "rb") as source:
                 source.seek(scan["pos"])
                 data = source.read()
         except OSError:

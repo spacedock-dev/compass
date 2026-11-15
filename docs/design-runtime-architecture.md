@@ -310,6 +310,13 @@ not evidence of owner death. Windows probes use synchronization-only handles and
 the POSIX signal-zero check is not used there. Startup recovery runs once in the serving process,
 never on a board poll or Resume model calls.
 
+Harness reads share `io.open_harness`, including Pi settings read during configuration. That import
+is local so importing configuration does not eagerly load runtime state. Record pages, message
+indexes and Compass turn scans use the same owner-checked descriptor boundary. Strict state I/O
+remains separate; [SECURITY](../SECURITY.md#process-lifecycle-written-paths-and-apishutdown) owns
+the root, link and ownership rules. Standalone hook distributions carry the same directory policy
+in their byte-identical `notify_hook.py` copies because they ship without the runtime package.
+
 ## R-2: Dependencies run inward, and the test enforces it
 
 Lower layers never import higher ones. `config` imports no runtime module at all; `cli` may import

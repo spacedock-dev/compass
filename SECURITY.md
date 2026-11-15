@@ -4296,26 +4296,39 @@ tracebacks land there, not just Python-level prints. Nothing ever removes or rot
 `--stop` (or a killed process) deletes the state file but leaves the log behind, since it is the
 record of a detached run, so `~/.compass` accumulates one log file per port indefinitely.
 
-State directory creation tightens an existing directory owned by the current user to `0o700`
-on POSIX. A final directory symlink or a directory owned by another user refuses, without
-changing that user's permissions. Daemon logs open at `0o600` and tighten an existing owned log
-to that mode. They refuse final symlinks and nonregular files. Annotation, observer sidecar,
-semantic history, delivery, departure and session-end saves use a unique, exclusively created
-`0o600` temporary file beside the target, then replace the target atomically. An existing target
-symlink or nonregular file refuses. Annotation saves retain their file sync before replacement,
-directory sync afterward, and bounded retry for Windows sharing violations.
+Configured state roots, including `COMPASS_HOME` and the default `~/.compass`, may be links to
+user-owned directories. On POSIX, Compass resolves the root through opened directory descriptors,
+checks its type and ownership, and tightens excess permissions on an owned root to `0o700`. Every missing parent it
+creates is private from creation, regardless of umask. It neither chmods unrelated existing
+ancestors nor creates beneath a foreign-owned directory. On POSIX, state descendants are traversed from the
+validated root without following directory links. The platform's own ancestor aliases, such as
+macOS `/tmp` pointing to `/private/tmp`, remain usable.
 
-Bounded transcript readers, session pages, reading projections, Python hook capability reads and
-MCP instance discovery open regular files without following a final symlink. On POSIX their
-nonblocking opens also refuse planted FIFOs without waiting for a writer. A symlinked harness
-store directory still works when its session files are regular files. SQLite readers check the
-same leaf policy before connecting, but SQLite reopens by pathname, so that check does not close
-a racing path replacement. Windows lacks `O_NOFOLLOW` and `O_NONBLOCK`; its pre-open link check
-cannot close a racing reparse-point swap. Locks taken through the shared state helper check the opened descriptor's
-regular-file type and, on POSIX, current-user ownership before tightening it to `0o600` and
-locking. Antigravity hook and status-line conversation ids must match UUID syntax. Status-line
-memos use the same private, exclusive temporary-file and atomic replacement policy, and refuse
-an existing target symlink. Permission modes are advisory on Windows.
+Harness discovery validates existing configured store roots, tightening owned roots to `0o700`
+on POSIX without creating absent stores. Harness-store reads use a separate shared opener. Owned
+store directory and transcript links work,
+including a parent transcript on another disk. On POSIX, link traversal is bounded to 40 links;
+linked directory targets and the opened regular file must belong to the current user. Reads use
+that same descriptor, opened read-only and nonblocking, so a planted FIFO refuses without waiting
+for a writer. Native-child admission retains its stricter layout checks. Ownership permits a
+relocated store; it does not authenticate its content or establish containment within the store.
+SQLite harness readers apply the same admission before connecting, but SQLite reopens by pathname,
+so admission cannot close a racing path replacement.
+
+Converted state writers and readers use the strict policy: final symlinks, nonregular files and,
+on POSIX, foreign-owned files refuse. This applies to the shared state I/O helpers, daemon logs,
+Python hook capability and memo reads, and MCP instance discovery; it is not a claim about every
+state reader. Daemon logs tighten existing owned files to `0o600`. Annotation, observer sidecar,
+semantic history, delivery, departure and session-end saves and status-line memos use unique,
+exclusively created `0o600` temporary files, then replace the target atomically. POSIX creation and
+replacement stay relative to the validated directory descriptor. Annotation saves retain their
+file sync before replacement, directory sync afterward, and bounded retry for Windows sharing
+violations. Shared state locks check the opened descriptor's regular-file type and current-user
+ownership before tightening it to `0o600` and locking. Antigravity hook and status-line conversation
+ids, including memo reads, must match UUID syntax.
+
+Permission modes are advisory on Windows. Windows lacks the POSIX directory-descriptor traversal,
+`O_NOFOLLOW` and `O_NONBLOCK` guards; pathname checks cannot close a racing reparse-point swap.
 
 `POST /api/shutdown` stops the server and is gated by the same `_local_ok()` checks (`Host`,
 `Origin`, `Sec-Fetch-Site`) that already protect `/api/notify`. It adds no new exposure of

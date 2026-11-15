@@ -293,7 +293,7 @@ def codex_exec(
     refusal, root = _codex_preflight(binary)
     if refusal or not binary:
         return "", refusal
-    runtime_io.ensure_owner_dir(str(config.state_dir))
+    runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
     output_path = ""
     workdir = ""
     try:
@@ -358,7 +358,9 @@ def codex_exec(
         if result.returncode != 0:
             return "", "failed"
         return (
-            runtime_io.read_prefix_bytes(output_path, max_bytes=output_cap_bytes)
+            runtime_io.read_prefix_bytes(
+                output_path, max_bytes=output_cap_bytes, root=str(config.state_dir)
+            )
             .decode("utf-8", "replace")
             .strip()
         ), "ok"
@@ -834,7 +836,11 @@ class PreparedClaude:
                 return "", "failed"
             status = "ok"
             return (
-                runtime_io.read_prefix_bytes(self.output_path, max_bytes=output_cap_bytes)
+                runtime_io.read_prefix_bytes(
+                    self.output_path,
+                    max_bytes=output_cap_bytes,
+                    root=os.path.dirname(self.output_path),
+                )
                 .decode("utf-8", "replace")
                 .strip()
             ), "ok"
@@ -892,7 +898,9 @@ def _claude_failure_reason(path: str, *, analyze: bool = False) -> str:
     session content and must never turn into a supposed authentication error.
     """
     try:
-        prefix = runtime_io.read_prefix_bytes(path, max_bytes=_CLAUDE_DIAGNOSTIC_PREFIX_BYTES)
+        prefix = runtime_io.read_prefix_bytes(
+            path, max_bytes=_CLAUDE_DIAGNOSTIC_PREFIX_BYTES, root=os.path.dirname(path)
+        )
     except OSError:
         return "unknown"
     lowered = prefix.decode("utf-8", "replace").casefold()
@@ -1010,7 +1018,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             root = reading_workdir_root()
             if root is None:
                 raise ClaudePreparationError("failed")
-            runtime_io.ensure_owner_dir(str(config.state_dir))
+            runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
             workdir = tempfile.mkdtemp(prefix=CLAUDE_WORKDIR_PREFIX, dir=root)
             descriptor, output_path = tempfile.mkstemp(
                 prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
@@ -2139,8 +2147,8 @@ def write_sidecar(
     if path is None:
         return None
     try:
-        runtime_io.ensure_owner_dir(str(config.state_dir))
-        runtime_io.atomic_write_owner_only(path, json.dumps(result))
+        runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
+        runtime_io.atomic_write_owner_only(path, json.dumps(result), root=str(config.state_dir))
     except OSError:
         return None
     return path

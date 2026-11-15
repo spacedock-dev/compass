@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+from . import io as runtime_io
 from . import state as runtime_state
 
 if TYPE_CHECKING:
@@ -79,7 +80,7 @@ class MessageIndex:
         """Read what the transcript gained since the last call, or stop at the deadline."""
         self.complete = False
         try:
-            with open(path, "rb") as source:
+            with os.fdopen(runtime_io.open_harness(path), "rb") as source:
                 info = os.fstat(source.fileno())
                 identity = (info.st_dev, info.st_ino)
                 # Replaced or shortened: what was indexed is no longer this file's start.

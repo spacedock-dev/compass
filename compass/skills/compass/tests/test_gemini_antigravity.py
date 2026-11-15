@@ -1370,6 +1370,10 @@ class GeminiAntigravityCollectorTest(RuntimeTestCase):
         plain.execute.side_effect = sqlite3.OperationalError("unable to open database file")
         immutable = mock.MagicMock(spec=sqlite3.Connection)
         immutable.execute.return_value.fetchone.return_value = (blob,)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        database = Path(temporary.name) / "session.db"
+        database.touch()
         with mock.patch.object(
             runtime_io.sqlite_module,
             "connect",
@@ -1378,13 +1382,13 @@ class GeminiAntigravityCollectorTest(RuntimeTestCase):
             with state_of().cache_lock:
                 state_of().store_errors.clear()
             config, state = runtime()
-            info = agy_collector._session_info(config, state, "/tmp/session.db", sub_sid)
+            info = agy_collector._session_info(config, state, str(database), sub_sid)
 
         self.assertEqual(parent_sid, info["parent_id"])
         self.assertEqual("Research Auditor", info["subagent_label"])
         self.assertEqual(2, connect.call_count)
         self.assertIn("immutable=1", connect.call_args_list[1].args[0])
-        self.assertNotIn("/tmp/session.db", state_of().store_errors)
+        self.assertNotIn(str(database), state_of().store_errors)
         plain.close.assert_called_once_with()
         immutable.close.assert_called_once_with()
 
@@ -1398,6 +1402,7 @@ class GeminiAntigravityCollectorTest(RuntimeTestCase):
             ) as connect,
         ):
             database = Path(tmp) / "session.db"
+            database.touch()
             Path(f"{database}-wal").write_bytes(b"\0" * 33)
             config, state = runtime()
             info = agy_collector._session_info(config, state, str(database), "session")
@@ -1442,13 +1447,17 @@ class GeminiAntigravityCollectorTest(RuntimeTestCase):
         plain.execute.side_effect = sqlite3.OperationalError("database is locked")
         immutable = mock.MagicMock(spec=sqlite3.Connection)
         immutable.execute.side_effect = sqlite3.OperationalError("database is malformed")
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        database = Path(temporary.name) / "session.db"
+        database.touch()
         with mock.patch.object(
             runtime_io.sqlite_module,
             "connect",
             side_effect=(plain, immutable),
         ) as connect:
             config, state = runtime()
-            info = agy_collector._session_info(config, state, "/tmp/session.db", "session")
+            info = agy_collector._session_info(config, state, str(database), "session")
 
         self.assertEqual(
             {"parent_id": None, "subagent_label": None, "model": None, "model_unread": True}, info
@@ -1514,15 +1523,19 @@ class GeminiAntigravityCollectorTest(RuntimeTestCase):
 
         with state_of().cache_lock:
             state_of().store_errors.clear()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        database = Path(temporary.name) / "session.db"
+        database.touch()
         with mock.patch.object(
             runtime_io.sqlite_module,
             "connect",
             side_effect=(plain, immutable),
         ):
             config, state = runtime()
-            activity = agy_collector._step_activity(config, state, "/tmp/clean-wal.db", now)
+            activity = agy_collector._step_activity(config, state, str(database), now)
 
         self.assertEqual(50, activity["rate_per_min"])
-        self.assertNotIn("/tmp/clean-wal.db", state_of().store_errors)
+        self.assertNotIn(str(database), state_of().store_errors)
         plain.close.assert_called_once_with()
         immutable.close.assert_called_once_with()

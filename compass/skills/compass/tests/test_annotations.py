@@ -2392,9 +2392,9 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
             calls.append("file fsync")
             real_fsync(fd)
 
-        def replace(src: str, dst: str) -> None:
+        def replace(src: str, dst: str, **options: Any) -> None:
             calls.append("replace")
-            real_replace(src, dst)
+            real_replace(src, dst, **options)
 
         with (
             mock.patch("compass_runtime.annotations.os.fsync", side_effect=fsync),
@@ -2420,11 +2420,11 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         calls: list[str] = []
         said: list[str] = []
 
-        def replace(src: str, dst: str) -> None:
+        def replace(src: str, dst: str, **options: Any) -> None:
             calls.append("replace")
             if refused:
                 raise refused.pop()
-            real_replace(src, dst)
+            real_replace(src, dst, **options)
 
         with (
             mock.patch("compass_runtime.annotations.os.replace", side_effect=replace),
@@ -2443,7 +2443,7 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         calls: list[str] = []
         said: list[str] = []
 
-        def replace(_src: str, _dst: str) -> None:
+        def replace(_src: str, _dst: str, **_options: Any) -> None:
             calls.append("replace")
             raise PermissionError(13, "Access is denied")
 
@@ -2464,7 +2464,7 @@ class TheSavePathReportsTruthfullyTest(unittest.TestCase):
         calls: list[str] = []
         said: list[str] = []
 
-        def replace(_src: str, _dst: str) -> None:
+        def replace(_src: str, _dst: str, **_options: Any) -> None:
             calls.append("replace")
             raise OSError(28, "No space left on device")
 

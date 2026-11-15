@@ -72,7 +72,7 @@ def tail_lines(path: str, limit: int = TAIL_BYTES) -> list[bytes] | None:
     A first line cut by the `limit` byte window is left out.
     """
     try:
-        with open(path, "rb") as source:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as source:
             size = os.fstat(source.fileno()).st_size
             start = max(0, size - limit)
             source.seek(start)
@@ -320,7 +320,7 @@ def consume(config: RuntimeConfig, uuid: str) -> str:
     """
     path = store_path(config)
     try:
-        runtime_io.ensure_owner_dir(str(path.parent))
+        runtime_io.ensure_owner_dir(str(path.parent), root=str(config.state_dir))
     except OSError:
         return UNCONFIRMED
     with runtime_io.held_file_lock(f"{path}.lock", wait=LOCK_WAIT_SEC) as held:

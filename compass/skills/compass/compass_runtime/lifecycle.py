@@ -91,7 +91,7 @@ def ensure_compass_home(config: RuntimeConfig) -> str:
     mode is advisory, and Windows ignores it.
     """
     home = compass_home(config)
-    runtime_io.ensure_owner_dir(home, mode=0o700)
+    runtime_io.ensure_owner_dir(home, mode=0o700, root=str(config.state_home))
     return home
 
 
@@ -133,7 +133,7 @@ def write_state(
     target = state_path(config, port)
     try:
         ensure_compass_home(config)
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload))
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except OSError as exc:
         runtime_io.diag(
             f"Compass: could not write {target} ({exc}); --status will not see this instance",

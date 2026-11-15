@@ -84,7 +84,9 @@ def transcript_started_at(
 
     try:
         size = os.path.getsize(path)
-        data = runtime_io.read_prefix_bytes(path, max_bytes=config.claude_agent_scan_bytes)
+        data = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.claude_agent_scan_bytes, harness=True
+        )
     except OSError:
         return None
     lines = data.split(b"\n")
@@ -228,7 +230,7 @@ def session_title(config: RuntimeConfig, state: RuntimeState, path: str) -> str 
             title = transcripts.prompt_title(config, goal["text"])
     if title is None:
         try:
-            with open(path, encoding="utf-8", errors="replace") as source:
+            with runtime_io.open_harness_text(path, errors="replace") as source:
                 for line in source:
                     if not line.startswith("{"):
                         continue
@@ -515,7 +517,7 @@ def _read_codex_goals(path: str) -> list[Any]:
     )
 
     def read(uri: str) -> list[Any]:
-        runtime_io.check_sqlite_file(path)
+        runtime_io.check_sqlite_file(path, harness=True)
         con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         try:
             return list(con.execute(query, (GOAL_CAP_CHARS, CODEX_GOALS_ROW_CAP)).fetchall())
@@ -807,7 +809,7 @@ def session_goal(
     headless = cached.get("headless") if not cold and cached is not None else None
     if pos < stat.st_size:
         try:
-            with open(path, "rb") as source:
+            with os.fdopen(runtime_io.open_harness(path), "rb") as source:
                 source.seek(pos)
                 data = source.read(stat.st_size - pos)
         except OSError:
@@ -1237,7 +1239,7 @@ _PROMPT_CACHE_FILES: Final = 256
 def _advance_prompts(path: str, held: _PromptRead) -> _PromptRead:
     """Read on from `held`: each complete line once, parsing typed prompts and `last-prompt`."""
     governing, judged, words, offset = held.governing, held.judged, held.words, held.offset
-    with open(path, "rb") as source:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as source:
         source.seek(offset)
         for raw in source:
             if not raw.endswith(b"\n"):
@@ -1450,16 +1452,18 @@ def has_conversation(config: RuntimeConfig, state: RuntimeState, path: str) -> b
     try:
         stat = os.stat(path)
     except OSError:
-        return True
+        return False
     key = (stat.st_mtime_ns, stat.st_size)
     with state.cache_lock:
         cached = state.conversation_cache.get(path)
     if cached is not None and (cached[1] or cached[0] == key):
         return cached[1]
     try:
-        data = runtime_io.read_prefix_bytes(path, max_bytes=config.claude_agent_scan_bytes)
+        data = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.claude_agent_scan_bytes, harness=True
+        )
     except OSError:
-        return True
+        return False
     if stat.st_size > len(data):
         result, settled = True, True
     else:
@@ -1508,7 +1512,9 @@ def agent_identity(
     lines_seen = 0
     try:
         size = os.path.getsize(path)
-        data = runtime_io.read_prefix_bytes(path, max_bytes=config.claude_agent_scan_bytes)
+        data = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.claude_agent_scan_bytes, harness=True
+        )
         lines = data.split(b"\n")
         if size > len(data) and data and not data.endswith(b"\n"):
             lines.pop()  # the byte prefix ended inside a JSON record
@@ -1562,7 +1568,9 @@ def agent_setting(config: RuntimeConfig, state: RuntimeState, path: str) -> str:
     size = 0
     try:
         size = os.path.getsize(path)
-        data = runtime_io.read_prefix_bytes(path, max_bytes=config.claude_agent_scan_bytes)
+        data = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.claude_agent_scan_bytes, harness=True
+        )
         lines = data.split(b"\n")
         if size > len(data) and data and not data.endswith(b"\n"):
             lines.pop()

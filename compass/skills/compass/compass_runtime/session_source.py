@@ -520,7 +520,7 @@ def _outline_rows(
 ) -> dict[_OutlineLine, dict[str, Any]] | None:
     """Read and verify selected input lines using the caller's remaining allowance."""
     rows: dict[_OutlineLine, dict[str, Any]] = {}
-    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=_stream == "parent") as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or _stamp(info) != stamp:
             raise _SourceChangedError
@@ -665,7 +665,7 @@ def _outline_parent_page(
             skipping=frontier.discarding,
         )
     )
-    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=checkpoint.stream == "parent") as source:  # noqa: SLF001
         if _stamp(os.fstat(source.fileno())) != checkpoint.stamp:
             raise _SourceChangedError
         verified: str | None
@@ -1840,7 +1840,7 @@ def _read_stream(  # noqa: PLR0913 - stream identity, budget and read modes
     newest: bool,
     track_prefix: bool = False,
 ) -> _StreamRead:
-    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=stream == "parent") as source:  # noqa: SLF001
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise OSError("source is not a regular file")
@@ -2290,7 +2290,7 @@ def _summary_head(
     No source record escapes this scan; the caller retains only directory, time and version.
     """
     cwd, start = "", None
-    with runtime_io._open_binary(path, follow_links=False) as handle:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=True) as handle:  # noqa: SLF001
         stamp = _stamp(os.fstat(handle.fileno()))
         for _ in range(config.claude_cwd_scan_lines):
             if budget.reason is not None:
@@ -2322,7 +2322,7 @@ def _summary_head(
 def _validate_prefix_stream(
     path: str, _harness: str, old: StreamCursor, budget: _Budget, *, replaying: bool = False
 ) -> StreamCursor:
-    with runtime_io._open_binary(path, follow_links=False) as source:  # noqa: SLF001
+    with runtime_io._open_binary(path, follow_links=old.stream == "parent") as source:  # noqa: SLF001
         stamp = _stamp(os.fstat(source.fileno()))
         if replaying and stamp != old.stamp:
             raise _SourceChangedError

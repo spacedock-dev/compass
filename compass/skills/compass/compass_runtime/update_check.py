@@ -102,7 +102,9 @@ def internal(config: RuntimeConfig) -> bool:
 
 def save_internal(config: RuntimeConfig, enabled: bool) -> None:
     runtime_io.atomic_write_owner_only(
-        os.path.join(config.state_home, INTERNAL_FILENAME), json.dumps({"internal": enabled}) + "\n"
+        os.path.join(config.state_home, INTERNAL_FILENAME),
+        json.dumps({"internal": enabled}) + "\n",
+        root=str(config.state_home),
     )
 
 
@@ -177,7 +179,9 @@ class UpdateChecker:
                 self.config
             ):
                 return
-            runtime_io.ensure_owner_dir(str(self.config.state_home))
+            runtime_io.ensure_owner_dir(
+                str(self.config.state_home), root=str(self.config.state_home)
+            )
             with runtime_io.held_file_lock(self.path + ".lock", wait=0) as held:
                 # No unsupported-lock fallback: failing closed preserves the one-home daily cap.
                 if held != runtime_io.LOCK_HELD:
@@ -190,7 +194,9 @@ class UpdateChecker:
                     self.last_day = attempted
                     return
                 stored["attempt_day"] = day
-                runtime_io.atomic_write_owner_only(self.path, json.dumps(stored) + "\n")
+                runtime_io.atomic_write_owner_only(
+                    self.path, json.dumps(stored) + "\n", root=str(self.config.state_home)
+                )
                 self.last_day = day
             # A setting changed since the tick began can still stop the reserved attempt.
             if settings.no_update_check(self.config):
@@ -203,7 +209,9 @@ class UpdateChecker:
                     previous = stored.get("checked_at", 0)
                     if isinstance(previous, (int, float)) and previous <= at:
                         stored.update(version=version, checked_at=at)
-                        runtime_io.atomic_write_owner_only(self.path, json.dumps(stored) + "\n")
+                        runtime_io.atomic_write_owner_only(
+                            self.path, json.dumps(stored) + "\n", root=str(self.config.state_home)
+                        )
         except (OSError, ValueError, OverflowError, RecursionError, http.client.HTTPException):
             # Offline is ordinary: no retry, diagnostic, or error state on the board.
             return

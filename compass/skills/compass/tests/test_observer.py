@@ -2949,10 +2949,10 @@ class ClaudeDiagnosticTest(unittest.TestCase):
     ) -> None:
         read = runtime_io.read_prefix_bytes
 
-        def fail_answer_read(path: str, *, max_bytes: int) -> bytes:
+        def fail_answer_read(path: str, *, max_bytes: int, root: str | None = None) -> bytes:
             if max_bytes == 32:
                 raise OSError("PRIVATE")
-            return read(path, max_bytes=max_bytes)
+            return read(path, max_bytes=max_bytes, root=root)
 
         with mock.patch.object(runtime_io, "read_prefix_bytes", side_effect=fail_answer_read):
             _, status, event = self._run(stdout=b"Please run /login PRIVATE", code=0)

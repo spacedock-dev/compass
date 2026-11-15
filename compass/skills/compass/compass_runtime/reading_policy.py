@@ -498,7 +498,7 @@ def _connect(config: RuntimeConfig, wait: float, *, create: bool = True) -> Any:
         raise RuntimeError("SQLite is unavailable")
     path = store_path(config)
     if create:
-        runtime_io.ensure_owner_dir(str(path.parent))
+        runtime_io.ensure_owner_dir(str(path.parent), root=str(config.state_dir))
     if path.is_symlink():
         raise RuntimeError("Permission store is a symlink")
     if create:
@@ -518,7 +518,7 @@ def _connect(config: RuntimeConfig, wait: float, *, create: bool = True) -> Any:
             os.close(fd)
     elif not path.is_file():
         raise OSError("Permission store is missing")
-    runtime_io.check_sqlite_file(str(path))
+    runtime_io.check_sqlite_file(str(path), root=str(config.state_dir))
     return runtime_io.sqlite_module.connect(
         path if create else path.absolute().as_uri() + "?mode=rw",
         uri=not create,

@@ -276,7 +276,7 @@ def _save_at(
         "entries": [dict(entry) for entry in _bounded(entries, config.departure_max_entries)],
     }
     try:
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload))
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
             f"Compass: could not write the departure record {target}; "

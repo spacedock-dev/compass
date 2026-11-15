@@ -188,7 +188,7 @@ def publication_lock(config: RuntimeConfig) -> Iterator[Path]:
     if not _LOCK.acquire(timeout=LOCK_WAIT_SEC):
         raise OSError("Marker writer busy")
     try:
-        runtime_io.ensure_owner_dir(str(config.state_dir))
+        runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
         with runtime_io.held_file_lock(
             config.state_dir / "reading-long-jobs.lock", wait=max(0.0, deadline - time.monotonic())
         ) as held:
@@ -197,7 +197,7 @@ def publication_lock(config: RuntimeConfig) -> Iterator[Path]:
             root = config.state_dir / MARKER_DIR
             if root.is_symlink():
                 raise OSError("Marker directory is a symlink")
-            runtime_io.ensure_owner_dir(str(root))
+            runtime_io.ensure_owner_dir(str(root), root=str(config.state_dir))
             sync_directory(config.state_dir)
             yield root
     finally:

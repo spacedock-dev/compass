@@ -411,24 +411,20 @@ class ClaudeCollectorTest(RuntimeTestCase):
 
     def test_claude_agent_identity_reads_only_a_bounded_prefix(self) -> None:
         record = json.dumps(
-            {
-                "type": "user",
-                "agentName": "reviewer",
-                "teamName": "session-12345678",
-            }
+            {"type": "user", "agentName": "reviewer", "teamName": "session-12345678"}
         )
-        source = mock.mock_open(read_data=(record + "\n" + ("x" * 100_000)).encode())
-        runtime_pair = runtime()
-        with (
-            mock.patch("builtins.open", source),
-            mock.patch.object(os.path, "getsize", return_value=1_000_000),
-            mock.patch.object(support, "runtime", return_value=runtime_pair),
-        ):
-            config, state = runtime_pair
-            identity = claude_data.agent_identity(config, state, "/fake/transcript.jsonl")
-
+        config, state = runtime()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "transcript.jsonl"
+            path.write_bytes((record + "\n" + ("x" * 100_000)).encode())
+            with mock.patch.object(
+                runtime_io, "read_prefix_bytes", wraps=runtime_io.read_prefix_bytes
+            ) as prefix:
+                identity = claude_data.agent_identity(config, state, str(path))
         self.assertEqual((True, "reviewer", "12345678"), identity)
-        source().read.assert_called_once_with(runtime_pair[0].claude_agent_scan_bytes)
+        prefix.assert_called_once_with(
+            str(path), max_bytes=config.claude_agent_scan_bytes, harness=True
+        )
 
     def test_claude_agent_identity_drops_a_partial_final_prefix_record(self) -> None:
         apparent_record = b'{"agentName":"reviewer","teamName":"session-badbad00"}'
@@ -452,13 +448,13 @@ class ClaudeCollectorTest(RuntimeTestCase):
                 "teamName": "session-12345678",
             }
         )
-        source = mock.mock_open(read_data=(record + "\n").encode())
+        source_bytes = (record + "\n").encode()
         runtime_pair = runtime()
         path = "/fake/transient-agent.jsonl"
         with (
             mock.patch(
-                "builtins.open",
-                side_effect=[PermissionError("temporarily locked"), source.return_value],
+                "compass_runtime.io.read_prefix_bytes",
+                side_effect=[PermissionError("temporarily locked"), source_bytes],
             ),
             mock.patch.object(
                 os.path,
@@ -477,13 +473,13 @@ class ClaudeCollectorTest(RuntimeTestCase):
 
     def test_transient_agent_setting_read_failure_is_not_negative_cached(self) -> None:
         record = json.dumps({"agentSetting": spacedock.SPACEDOCK_ENSIGN})
-        source = mock.mock_open(read_data=(record + "\n").encode())
+        source_bytes = (record + "\n").encode()
         runtime_pair = runtime()
         path = "/fake/transient-setting.jsonl"
         with (
             mock.patch(
-                "builtins.open",
-                side_effect=[PermissionError("temporarily locked"), source.return_value],
+                "compass_runtime.io.read_prefix_bytes",
+                side_effect=[PermissionError("temporarily locked"), source_bytes],
             ),
             mock.patch.object(
                 os.path,
@@ -1322,9 +1318,9 @@ class StartStampCacheTest(RuntimeTestCase):
             heads, firsts = {"n": 0}, {"n": 0}
             real_head, real_first = runtime_io.read_prefix_bytes, runtime_io.read_first_json
 
-            def head(target: str, *, max_bytes: int) -> bytes:
+            def head(target: str, *, max_bytes: int, harness: bool = False) -> bytes:
                 heads["n"] += 1
-                return real_head(target, max_bytes=max_bytes)
+                return real_head(target, max_bytes=max_bytes, harness=harness)
 
             def first(conf: Any, target: str) -> dict[str, Any]:
                 firsts["n"] += 1
@@ -3490,9 +3486,9 @@ class DispatchedTeammateTest(RuntimeTestCase):
         counted = {"reads": 0}
         real = runtime_io.read_prefix_bytes
 
-        def counting(path: str, *, max_bytes: int) -> bytes:
+        def counting(path: str, *, max_bytes: int, harness: bool = False) -> bytes:
             counted["reads"] += 1
-            return real(path, max_bytes=max_bytes)
+            return real(path, max_bytes=max_bytes, harness=harness)
 
         with (
             store_patch(PROJECTS_DIR=str(Path(tmp) / "projects")),

@@ -148,7 +148,9 @@ def reconcile_project(
 def _write(config: RuntimeConfig, payload: dict[str, Any]) -> bool:
     target = store_path(config)
     try:
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload, separators=(",", ":")))
+        runtime_io.atomic_write_owner_only(
+            target, json.dumps(payload, separators=(",", ":")), root=str(config.state_home)
+        )
     except (OSError, ValueError):
         return False
     return True

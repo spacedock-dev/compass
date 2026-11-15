@@ -1126,6 +1126,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The turn detector also identifies launcher calls for check accounting; its source is
         # included in the qualification parser stamp.
         "compass_runtime.compass_turns": {
+            "compass_runtime.io",
             "compass_runtime.claude_data",
             "compass_runtime.config",
             "compass_runtime.observer",
@@ -1976,7 +1977,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.turns",
         },
         # Immutable development identity is typed by the stdlib-only leaf.
-        "compass_runtime.config": {"compass_runtime.frontend_dev"},
+        "compass_runtime.config": {"compass_runtime.io", "compass_runtime.frontend_dev"},
         "compass_runtime.frontend_dev": set(),
         # `observation` is here for typing only: the server carries the
         # coordinator so `serve` can start it, and the ingress route reaches it
@@ -2138,6 +2139,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # The message index, a small cache keyed by transcript. It reads messages through the record pages'
         # own reader, imported locally because that module imports project context, which imports this one.
         "compass_runtime.entry_numbers": {
+            "compass_runtime.io",
             "compass_runtime.config",
             "compass_runtime.record_pages",
             "compass_runtime.state",
@@ -2174,6 +2176,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Project context shares the stateless chunk walker through a local import;
         # pages still reach its fact builders, without an import-time cycle.
         "compass_runtime.record_pages": {
+            "compass_runtime.io",
             "compass_runtime.config",
             "compass_runtime.project_context",
         },

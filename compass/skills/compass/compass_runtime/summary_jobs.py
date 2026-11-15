@@ -120,7 +120,9 @@ def _write(application: reading_jobs.Application, job: Job) -> None:
         "generation": job.generation,
     }
     runtime_io.atomic_write_owner_only(
-        str(_marker(application.config, job.harness, job.sid)), json.dumps(marker)
+        str(_marker(application.config, job.harness, job.sid)),
+        json.dumps(marker),
+        root=str(application.config.state_dir),
     )
 
 
@@ -737,7 +739,9 @@ def _stop(application: reading_jobs.Application, harness: str, sid: str, reason:
             job.group.cancel()
     marker["reason"] = reason
     marker["state"] = "stopping"
-    runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+    runtime_io.atomic_write_owner_only(
+        str(path), json.dumps(marker), root=str(application.config.state_dir)
+    )
     return True
 
 
