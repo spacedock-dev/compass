@@ -2085,11 +2085,11 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
                 "reading_long_diagnostics.py": 3,
                 "reading_long_reconcile.py": 4,
                 "reading_long_worker.py": 3,
-                "transcripts.py": 2,
+                "transcripts.py": 4,
             },
             self.counted(self.INPUT_READS),
         )
-        self.assertIn("thirteen expressions in `compass_runtime` reach an input payload", self.FLAT)
+        self.assertIn("fifteen expressions in `compass_runtime` reach an input payload", self.FLAT)
         self.assertIn(
             "Long coordinator, worker, reconciliation and diagnostic `input` fields are closed "
             "call measurements, not tool payloads.",
@@ -2100,6 +2100,7 @@ class IrreversibleActionsContractDocumentationTest(unittest.TestCase):
             "`compass_turns._launcher_ids`",
             "`compass_turns.launcher_calls`",
             "`transcripts.codex_plan`",
+            "`transcripts._valid_codex_shell_body`",
             "`collectors.codex._child_assignment`",
             "`project_context._tool_call_events`",
             "`project_context._tool_support`",

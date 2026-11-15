@@ -4988,6 +4988,10 @@ tool Compass owns rather than one it observed, and The ask lane states its bound
   `records.safe_text` and are bounded at `config.input_summary_cap_chars`, 160 characters. The pair
   of tool names is `claude_data.INPUT_TOOLS`, and a tool absent from it has its input read by
   nothing.
+- `transcripts._valid_codex_shell_body` reads Codex call `input` and `arguments` to validate
+  pending shell work. Custom `exec` needs nonblank string JavaScript; direct function calls need
+  JSON-object arguments with a nonblank string `cmd` or `command`, or an integer `session_id`
+  excluding Boolean for `write_stdin`. It never executes input or infers commands from JavaScript.
 - `transcripts.codex_plan` reads Codex's `update_plan` payload, in both shapes Codex writes: the
   `arguments` of a `function_call` and the `input` of a `custom_tool_call`. What is kept is the plan
   steps and their statuses, bounded at `transcripts.CODEX_PLAN_MAX_STEPS` steps, 64, with each
@@ -5041,7 +5045,7 @@ The operator-cockpit prototype also reads dispatch evidence:
   output is kept. [Tool output in a Codex reading](#tool-output-in-a-codex-reading) states the
   bounds of the rest.
 
-These are evidence reads, not command execution. In total, thirteen expressions in `compass_runtime`
+These are evidence reads, not command execution. In total, fifteen expressions in `compass_runtime`
 reach an input payload. The counts and module names are checked by `test_documentation`.
 DEC-23's named read for the checks a Claude Code session ran is the eighth, and
 [its entry](#tool-output-in-a-claude-code-reading) states its bounds. The ninth is the same

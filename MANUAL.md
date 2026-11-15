@@ -48,6 +48,13 @@ The default bind is IPv4 loopback. Harness stores are read-only; Compass keeps i
 annotations and settings separately. Optional vendor quota requests, model analyses and webhook
 nudges have different controls. See [Security](SECURITY.md#scope) for their disclosures and limits.
 
+Quiet unanswered tool calls can keep a session Working past the usual 90-second activity window.
+Claude Code, Codex and Pi each have a 900-second ceiling, held in the internal
+`claude_tool_in_flight_max_sec`, `codex_tool_in_flight_max_sec` and `pi_tool_in_flight_max_sec`
+settings. These are runtime defaults, not command-line options or environment variables.
+The [session state reference](compass/skills/compass/reference/dashboard.md#session-states)
+owns which records qualify and which boundaries retire them.
+
 This file is the command reference. [How to use Compass](HOW_TO_USE.md) owns harness configuration
 and setup procedures. The [installed skill](compass/skills/compass/SKILL.md) remains self-contained
 for agents that do not have the repository.

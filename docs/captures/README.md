@@ -75,6 +75,25 @@ so only their order ties them to it. The `attributionSkill` field the harness st
 records cannot mark the command's turn: when the model starts the skill itself, it stays on the agent's
 later work in that turn.
 
+[Codex shell call shapes](codex/shell-in-flight-macos.jsonl) were read from local rollouts on macOS.
+Codex CLI 0.169.0 records the shell-capable `exec` as `response_item` / `custom_tool_call`, with
+`input` as a string and a string `call_id`; `custom_tool_call_output` carries the same `call_id`.
+Older measured versions write `function_call` / `function_call_output` for `exec_command`,
+`shell_command` and `write_stdin`. The capture keeps field/type names, tool names and aggregate
+matched-call timings, with no input, output or id values. No matched 0.169.0 call in this snapshot
+lasted over 90 seconds, so it establishes the join shapes, not a reproduced long shell wait.
+No `exec_command_begin` or `exec_command_end` record was seen in the 0.169.0 snapshot; completed
+shell commands arrive as `event_msg` / `item_completed` with `CommandExecution` items instead.
+Those inner command completions do not retire the outer `exec` call.
+
+An expanded shapes-only scan of 1,461 rollouts found string JavaScript input for `exec` and
+JSON-object arguments for the direct function tools: string `cmd` for `exec_command`, string
+`command` for `shell_command`, and integer `session_id` for `write_stdin`. Seven `write_stdin`
+calls omitted `chars`. Two user-role `codex_internal_context` records appeared between an `exec`
+call and its matching output in the same turn, about 15 to 17 seconds into calls completing
+around 31 seconds. Placement is measured; a prolonged wait across that injection is synthetic.
+No mid-call `subagent_notification` was found; its preservation is covered synthetically.
+
 ## What is in a record, and what is deliberately not
 
 Each line is one hook invocation, written by `scripts/capture_hook.py`. It records the **names** of

@@ -767,6 +767,65 @@ def _codex_non_turn_record(record_type: object, payload: dict[str, Any], closed:
     return kind == "item_completed" and isinstance(turn, str) and turn in closed
 
 
+def _valid_codex_shell_body(p: dict[str, Any]) -> bool:
+    if p.get("type") == "custom_tool_call":
+        # exec input is JavaScript; accepting it never evaluates or infers its commands.
+        body = p.get("input")
+        return isinstance(body, str) and bool(body.strip())
+    body = p.get("arguments")
+    if not isinstance(body, str):
+        return False
+    try:
+        arguments = json.loads(body)
+    except (ValueError, RecursionError):
+        return False
+    if not isinstance(arguments, dict):
+        return False
+    if p.get("name") == "write_stdin":
+        session_id = arguments.get("session_id")
+        return isinstance(session_id, int) and not isinstance(session_id, bool)
+    command = arguments.get("command" if p.get("name") == "shell_command" else "cmd")
+    return isinstance(command, str) and bool(command.strip())
+
+
+def _update_codex_shell_calls(
+    pending: dict[tuple[str, str], tuple[float, str]],
+    t: object,
+    p: dict[str, Any],
+    ep: float | None,
+) -> None:
+    """Join measured shell-capable calls and outputs inside one bounded rollout tail."""
+    pt = p.get("type")
+    if t == "event_msg" and pt in ("task_started", "task_complete", "turn_aborted"):
+        pending.clear()
+    if t == "response_item" and pt == "message" and p.get("role") == "user":
+        body = records.extract_text(p.get("content")).strip()
+        # Interruptions also classify as injected intent, but they end a foreground wait.
+        interrupted = body.startswith(("<turn_aborted>", "[Request interrupted by user"))
+        if interrupted or not body or not records.injected_prompt(body, "codex"):
+            pending.clear()
+    if t == "response_item":
+        call_id = p.get("call_id")
+        if isinstance(call_id, str) and call_id:
+            # Current Codex wraps shell calls in custom `exec`; older CLI writes direct
+            # function calls. Match both protocol and id, never the last tool name. The
+            # measured shapes live in docs/captures/codex/shell-in-flight-macos.jsonl.
+            if pt in ("function_call_output", "custom_tool_call_output"):
+                pending.pop((pt.removesuffix("_output"), call_id), None)
+            elif (
+                ep
+                and _valid_codex_shell_body(p)
+                and (
+                    (pt == "custom_tool_call" and p.get("name") == "exec")
+                    or (
+                        pt == "function_call"
+                        and p.get("name") in ("exec_command", "shell_command", "write_stdin")
+                    )
+                )
+            ):
+                pending[(pt, call_id)] = (ep, p["name"])
+
+
 def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]:
     """Codex rollout tail: token_count (usage), tool calls, rate limits.
 
@@ -791,6 +850,7 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
         "last_turn_ts": 0,
     }
     closed_turns: set[str] = set()
+    pending_shell_calls: dict[tuple[str, str], tuple[float, str]] = {}
     for line in runtime_io.read_tail(config, path):
         if not line or line[0] != "{":
             continue
@@ -803,6 +863,7 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
             info["last_event_ts"] = max(info["last_event_ts"], ep)
         t = d.get("type")
         p = records.as_dict(d.get("payload"))
+        _update_codex_shell_calls(pending_shell_calls, t, p, ep)
         if ep and not _codex_non_turn_record(t, p, closed_turns):
             info["last_turn_ts"] = max(info["last_turn_ts"], ep)
         elif not ep and not _codex_non_turn_record(t, p, closed_turns):
@@ -849,6 +910,7 @@ def analyze_codex_transcript(config: RuntimeConfig, path: str) -> dict[str, Any]
                     for line in raw.split("\n")
                 )[: sessions.LAST_OUTPUT_CAP_CHARS]
                 info["last_output"] = bounded or None
+    info["pending_shell_calls"] = list(pending_shell_calls.values())
     return info
 
 
