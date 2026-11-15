@@ -48,8 +48,7 @@ def first_line_meta(
 
 
 def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[str, Any]:
-    """Codex rollout line 1 (session_meta): identity, cwd, and whether the
-    file is a subagent thread (thread_source == "subagent")."""
+    """Codex session_meta: identity, cwd, entrypoint and subagent thread lineage."""
 
     def parse(d: dict[str, Any]) -> dict[str, Any]:
         # Every field is untyped JSON from disk — one malformed rollout must
@@ -82,6 +81,11 @@ def codex_meta(config: RuntimeConfig, state: RuntimeState, path: str) -> dict[st
                 spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
             ),
             "cwd": p.get("cwd"),
+            # Only the measured source literals classify an entrypoint. IDE and child-source
+            # objects say nothing about an interactive terminal; originator is not a fallback.
+            "headless": (
+                True if p.get("source") == "exec" else False if p.get("source") == "cli" else None
+            ),
             "subagent": p.get("thread_source") == "subagent",
             "agent_label": label or None,
             "agent_path": agent_path if isinstance(agent_path, str) and agent_path else None,

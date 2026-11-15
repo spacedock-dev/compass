@@ -102,6 +102,20 @@ export function sessionStop(source: Row | null | undefined): SessionStop | null 
   return null;
 }
 
+/* Exec can resume. Only its standing rollout stop supports a finished-run reading; a hook alone
+   does not establish it, and this never supplies the session end that final readings require. */
+export function finishedRunAt(source: Row): number | null {
+  if (
+    source['harness'] !== 'codex' ||
+    source['headless'] !== true ||
+    source['state'] !== 'idle' ||
+    endedAt(source) !== null
+  )
+    return null;
+  const at = nextNumber(source['turn_end_at']);
+  return at !== null && at > 0 ? at : null;
+}
+
 /* How it landed, as two axes that never merge. Axis one is what ended: four kinds and a running row,
    because the three ways a session can be silent are not one fact (a turn stopped, a session ended, and
    idle-with-nothing-observed all read as "quiet", and only the first two authorise anything). The fourth

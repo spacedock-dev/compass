@@ -175,6 +175,15 @@ test in the gate does. The proof restates that one label on the recorded side
 (`frontend/e2e/support/session-deviations.mjs`) so the rest of the recorded card stays held to the recording;
 the golden file is unchanged, and the proof was edited but not run for this change.
 
+2026-11-15, a quiet headless Codex row with a standing rollout turn stop says "run finished" with
+its age on Sessions and the session page. Interactive Codex keeps the quiet list reading and the
+"waiting for you" turn sentence. This departs from the retired page's unconditional quiet and waiting
+composition for headless Codex only. `finishedRunAt` shares the gate between the two composers;
+`CodexFinishedRun.stories.tsx` proves both cases on the full App. The composing unit tests cover
+missing stops and resumed work. No golden answer contains this new metadata combination, and all
+recorded answers remain unchanged. This names a stopped run, never a session end; see
+[the stop contract](design-reading-a-session.md#amended-2026-11-02-owner-codexs-recorded-turn-finish-is-a-turn-stop).
+
 2026-10-21, the session header reads as one line, as the redesign draws it: the state, the identity, the measured words and the controls share one
 row under the title, and the measured line no longer opens with the harness's label, which the identity beside it
 already names. A session between turns shows no token rate, and a finished turn says "Turn ended 11:00 · waiting

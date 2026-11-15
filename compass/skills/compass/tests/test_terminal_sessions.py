@@ -57,6 +57,15 @@ def with_rows(**changes: Any) -> dict[str, Any]:
 
 
 class ListProjectionTest(unittest.TestCase):
+    def test_finished_run_origin_survives_the_list_projection(self) -> None:
+        for headless in (True, False, None):
+            with self.subTest(headless=headless):
+                payload = {"sessions": [{"headless": headless}]}
+                self.assertIs(
+                    terminal_sessions.list_payload(payload)["sessions"][0].get("headless"),
+                    headless,
+                )
+
     def assert_same_lists(self, payload: dict[str, Any]) -> None:
         projected = terminal_sessions.list_payload(payload)
         self.assertEqual(
@@ -182,6 +191,7 @@ class ListProjectionTest(unittest.TestCase):
             "ended_at",
             "finished_at",
             "turn_end_at",
+            "headless",
             "dirty",
             "changed",
             "source_gaps",
@@ -227,6 +237,22 @@ class ListProjectionTest(unittest.TestCase):
 
 
 class BoardParityTest(unittest.TestCase):
+    def test_now_matches_the_page_for_finished_runs_and_precedence_through_projection(self) -> None:
+        cases = json.loads((FIXTURES / "finished-run-terminal.json").read_text(encoding="utf-8"))
+        for case in cases:
+            for projected in (False, True):
+                with self.subTest(case=case["name"], projected=projected):
+                    payload = case["payload"]
+                    if projected:
+                        payload = terminal_sessions.list_payload(payload)
+                    got = terminal_sessions.board(payload)
+                    (entry,) = [*got.active, *got.history]
+                    self.assertEqual(case["now"], entry.now)
+                    self.assertIn(
+                        f"  Now: {case['now']}",
+                        "\n".join(terminal_sessions.render_sessions(payload)),
+                    )
+
     def test_the_groups_hold_the_sessions_the_board_holds_in_the_board_order(self) -> None:
         got = board()
 

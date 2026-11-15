@@ -9,6 +9,7 @@ export {
 } from './capacity';
 export {
   delegatedWork,
+  finishedRunAt,
   goalOf,
   landingOf,
   readHint,

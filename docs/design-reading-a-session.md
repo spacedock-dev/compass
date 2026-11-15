@@ -5034,6 +5034,12 @@ such a session: it is read up to its last recorded entry, the way a running sess
 
 #### Amended 2026-11-02 (owner): Codex's recorded turn finish is a turn stop
 
+A headless Codex run whose validated rollout stop stands reads "run finished" on Sessions and the
+session page. The owner ruled on 2026-11-15 that this must not set `ended_at`: `codex exec resume`
+can continue the same session. The reading reuses `turn_end_at`, so later turn work, an abort or a
+running child withdraws it. It changes no eligibility or final-reading rule below. Entrypoint
+classification and its measurement live with [the Headless facet](design-sessions-search.md#how-filters-combine-and-count).
+
 An idle or stopped Codex session could not be read for drift: Analyze drift was refused with "Codex
 sessions can be analyzed only while a turn is running." The issue asked first whether Codex appends to
 its rollout after its stop hook, as Claude Code's `away_summary` did (the 2026-10-02 amendment and

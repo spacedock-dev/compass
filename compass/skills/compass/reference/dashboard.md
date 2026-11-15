@@ -54,7 +54,10 @@ count beside each choice, and three presets: Waiting on you, Started today and D
 session that publishes no start time, project or state gets a choice of its own instead of being
 counted as zero or older, and Drift never offers a "no drift" choice, because an unchecked session
 looks the same as a clean one. Headless offers Headless and Interactive or unknown. The latter includes
-interactive Claude Code runs, unknown entrypoints and other harnesses. Neither
+interactive Claude Code and Codex runs, unknown entrypoints and other harnesses. Codex classifies
+only rollout source `exec` as headless and `cli` as interactive. A quiet headless Codex row with a
+standing recorded turn stop says "run finished" with its age on the list and session page. New work
+withdraws that reading; it does not declare a session end. Neither
 option is selected by default, so all sessions show. The counters keep counting the whole board.
 When the filters hide a
 session that is waiting on you, a warning under the bar says so and offers to open it (or, for several,

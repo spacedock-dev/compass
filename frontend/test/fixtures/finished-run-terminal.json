@@ -1,0 +1,229 @@
+[
+  {
+    "name": "rollout stop ages independently of last activity",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished"
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "run finished 10m ago"
+  },
+  {
+    "name": "finished run precedes an old plan step",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished",
+          "tasks": [
+            {
+              "status": "in_progress",
+              "subject": "Old plan step"
+            }
+          ]
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "run finished 10m ago"
+  },
+  {
+    "name": "missing board clock publishes no age",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished"
+        }
+      ]
+    },
+    "now": "run finished"
+  },
+  {
+    "name": "hook-shaped row still ages its validated rollout stop",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999970,
+          "last_activity": 1899999970,
+          "state_detail": "run finished",
+          "finished_at": 1899999970
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "run finished 30s ago"
+  },
+  {
+    "name": "ended session takes precedence",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished",
+          "ended_at": 1899999980
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "Session reported its own end"
+  },
+  {
+    "name": "exact request suppresses finished wording",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "Approve release?"
+        }
+      ],
+      "generated": 1900000000,
+      "ask": true,
+      "asks": [
+        {
+          "id": "ask",
+          "harness": "codex",
+          "session_id": "exec",
+          "project": "p",
+          "question": "Approve release?"
+        }
+      ]
+    },
+    "now": "Approve release?"
+  },
+  {
+    "name": "interactive origin stays quiet",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": false,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished"
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "last active 1m ago"
+  },
+  {
+    "name": "unknown origin stays quiet",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": null,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "run finished"
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "last active 1m ago"
+  },
+  {
+    "name": "hook alone does not establish a finished run",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": null,
+          "last_activity": 1899999940,
+          "state_detail": "run finished",
+          "finished_at": 1899999970
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "last active 1m ago"
+  },
+  {
+    "name": "zero rollout stop does not establish a finished run",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "idle",
+          "headless": true,
+          "turn_end_at": 0,
+          "last_activity": 1899999940,
+          "state_detail": "run finished"
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "last active 1m ago"
+  },
+  {
+    "name": "resumed work takes precedence",
+    "payload": {
+      "sessions": [
+        {
+          "harness": "codex",
+          "sid": "exec",
+          "project": "p",
+          "state": "working",
+          "headless": true,
+          "turn_end_at": 1899999400,
+          "last_activity": 1899999940,
+          "state_detail": "generating"
+        }
+      ],
+      "generated": 1900000000
+    },
+    "now": "generating"
+  }
+]

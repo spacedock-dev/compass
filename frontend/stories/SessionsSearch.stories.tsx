@@ -190,7 +190,7 @@ export const HeadlessSubsets: Story = {
     await waitFor(() =>
       expect(
         within(popup).getByText(
-          'Read from Claude Code transcripts. Interactive or unknown includes unknown entrypoints and other harnesses.',
+          'Read from Claude Code transcripts and Codex rollout metadata. Interactive or unknown includes unknown entrypoints and other harnesses.',
         ),
       ).toBeVisible(),
     );

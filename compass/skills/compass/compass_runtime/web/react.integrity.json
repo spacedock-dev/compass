@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2328519,
+    "bytes": 2328967,
     "file": "react.html",
-    "sha256": "39f1109fbdc28ecedab924add83a3d2beacb9d1eda17ff231bebb3cff664831a"
+    "sha256": "5d9394e5289070c10bd6bbbde7ba62a574d122127acda1418c1131a16ce71237"
   },
   "format": 1,
   "frontend": "react",
@@ -1011,11 +1011,11 @@
       },
       {
         "file": "frontend/src/observed/index.ts",
-        "sha256": "3f6de77d4180ffe9cd0e7a3aa2fd9e9627802de74dc86a5aac335d903daffabf"
+        "sha256": "84f3d026c29ce76200c25e36f3caef32c5e4d5905098cbbf3ff3d8b39eee7c0b"
       },
       {
         "file": "frontend/src/observed/landing.ts",
-        "sha256": "f9cae563dbf829c16c6e288d65eb1f1235134797f4f02354bdca2b1ee1733d46"
+        "sha256": "339428dd45cf45603b8f01c926098a9035a3a49348ac0c43c48f9cc5301a171a"
       },
       {
         "file": "frontend/src/observed/model.ts",
@@ -1031,7 +1031,7 @@
       },
       {
         "file": "frontend/src/observed/session.ts",
-        "sha256": "9b54ddf2f016317c98c46e1620aa315263cbf6cfaec39ff411a1ec301f776108"
+        "sha256": "a7d59c1aff2644682b191f3160de98e5ba4099f90c2abc42e818e299813b9304"
       },
       {
         "file": "frontend/src/observed/values.ts",
@@ -1239,11 +1239,11 @@
       },
       {
         "file": "frontend/src/sessions/SessionDetail.tsx",
-        "sha256": "812a05b0ae0d6203b8ceeff69642f89a74268bb7a1ae7171a1b8e1ec4da38ff4"
+        "sha256": "1afd5d9e27a972287eccfe5af48eeab3d55154b4e616928d5a75f7266a2c5dcd"
       },
       {
         "file": "frontend/src/sessions/SessionsFilters.tsx",
-        "sha256": "b40b16acc475be7cc38134c28d9de40b65055ab44af678a9e708a8fe457454ee"
+        "sha256": "8f5018d774c6381970a59ab1ff3b5f08cfb6a96f9e5ac406470240c0e6260d49"
       },
       {
         "file": "frontend/src/sessions/SessionsView.tsx",
@@ -1263,7 +1263,7 @@
       },
       {
         "file": "frontend/src/sessions/detail.ts",
-        "sha256": "0d61423bfdfaa23af60ab0e6611eb0bbd62d4234f90ccfef7f169612d39a793f"
+        "sha256": "bcf4f6d8aa68cbf3929fdcf76412c6f7895a2d436efb80e5911e102f7b86449b"
       },
       {
         "file": "frontend/src/sessions/filterStore.ts",

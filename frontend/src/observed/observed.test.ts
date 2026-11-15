@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { delegatedWork, observe, pageTitleOf, readHint, sessionStop } from './index';
+import { delegatedWork, finishedRunAt, observe, pageTitleOf, readHint, sessionStop } from './index';
 
 /* What the model says, written out, so the differential test against the legacy file is not the only
    oracle: the rules a reader depends on, each with the payload that proves it. */
@@ -447,5 +447,66 @@ describe('the session heading stands in for an identifier-only title', () => {
     const long = pageTitleOf(row({ first_prompt: 'a'.repeat(200) }));
     expect(long).toHaveLength(120);
     expect(long.endsWith('…')).toBe(true);
+  });
+});
+
+describe('a quiet Codex exec run with a standing stop', () => {
+  const session = {
+    harness: 'codex',
+    sid: 'exec',
+    project: 'p',
+    state: 'idle',
+    headless: true,
+    turn_end_at: NOW - 600,
+    last_activity: NOW - 60,
+    state_detail: 'run finished',
+  };
+  it('names the finished run and ages its validated stop instead of its last activity', () => {
+    expect(observe(board([session])).sessions[0]?.nowText).toBe('run finished 10m ago');
+  });
+  it('does not let an unfinished plan step obscure the finished run', () => {
+    expect(
+      observe(board([{ ...session, tasks: [{ status: 'in_progress', subject: 'Old plan step' }] }]))
+        .sessions[0]?.nowText,
+    ).toBe('run finished 10m ago');
+  });
+  it('keeps interactive, unknown and other harness quiet readings', () => {
+    for (const row of [
+      { ...session, headless: false },
+      { ...session, headless: null },
+      { ...session, harness: 'claude' },
+    ]) {
+      expect(observe(board([row])).sessions[0]?.nowText).toBe('last active 1m ago');
+    }
+  });
+  it('does not call an unread or resumed run finished', () => {
+    expect(observe(board([{ ...session, turn_end_at: null }])).sessions[0]?.nowText).toBe(
+      'last active 1m ago',
+    );
+    expect(
+      observe(board([{ ...session, state: 'working', state_detail: 'generating' }])).sessions[0]
+        ?.nowText,
+    ).toBe('generating');
+  });
+  it('states the finish without manufacturing an age if there is no board clock', () => {
+    expect(observe({ sessions: [session] }).sessions[0]?.nowText).toBe('run finished');
+  });
+  it('keeps an owned exact request ahead of the finished-run activity reading', () => {
+    const model = observe(
+      board([{ ...session, state_detail: 'Approve release?' }], {
+        ask: true,
+        asks: [{ id: 'a', harness: 'codex', session_id: 'exec', question: 'Approve release?' }],
+      }),
+    );
+    expect(model.sessions[0]?.nowText).toBe('Approve release?');
+    expect(model.sessions[0]?.askText).toBe('Approve release?');
+  });
+  it('does not supply a finished-run stop for a session that reported its own end', () => {
+    expect(finishedRunAt({ ...session, ended_at: NOW - 30 })).toBeNull();
+  });
+  it('does not treat a zero rollout timestamp as a finished-run stop', () => {
+    const source = { ...session, turn_end_at: 0 };
+    expect(finishedRunAt(source)).toBeNull();
+    expect(observe(board([source])).sessions[0]?.nowText).toBe('last active 1m ago');
   });
 });

@@ -21,6 +21,11 @@ const fixture = read('../../test/fixtures/client-contract/data-session-states.js
   response: { body: Row };
 };
 const expected = read('../../test/fixtures/session-groups.json') as Record<string, unknown>;
+const finishedRuns = read('../../test/fixtures/finished-run-terminal.json') as {
+  name: string;
+  payload: Row;
+  now: string;
+}[];
 
 const keyOf = (row: Row): [string, string] => [String(row['harness']), String(row['sid'])];
 
@@ -71,6 +76,11 @@ describe('the board against the terminal listing', () => {
 
   it('holds the sessions the terminal lists, in its groups, and in the same words', () => {
     expect(boardView(payload)).toEqual(expected['board']);
+  });
+
+  it.each(finishedRuns)('holds the terminal Now reading: $name', ({ payload, now }) => {
+    const screen = buildSessionsScreen(payload, observe(payload));
+    expect([...screen.active, ...screen.history].map((row) => row.session.nowText)).toEqual([now]);
   });
 
   it('keys every row by the identity the file names', () => {

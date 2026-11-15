@@ -4,6 +4,7 @@ import {
   durationSince,
   endedAt,
   exactAskOwner,
+  finishedRunAt,
   gapNames,
   isRecord,
   isScanOnly,
@@ -57,11 +58,15 @@ export function detailState(
     : null;
 }
 
-/* What a finished turn says in place of the collector's "awaiting your message": when it ended and that the
-   session now waits on the reader. Only an idle, unended session with a published stop time says it; any other
-   session keeps its own words, and a missing stamp claims nothing. */
-export function turnEndedSentence(session: Row): string | null {
+/* A standing exec stop names a finished run; an interactive hook stop keeps the waiting sentence.
+   Neither supplies a session end. Only idle, unended rows qualify, so resumed work retires the reading. */
+export function turnEndedSentence(session: Row, generated: number | null = null): string | null {
   if (session['state'] !== 'idle' || endedAt(session) !== null) return null;
+  const runFinish = finishedRunAt(session);
+  if (runFinish !== null) {
+    const age = durationSince(generated, runFinish);
+    return `Run finished${age ? ` ${age} ago` : ''}`;
+  }
   const at = nextNumber(session['finished_at']);
   return at !== null && at > 0 ? `Turn ended ${clock(at)} · waiting for you` : null;
 }
@@ -85,7 +90,7 @@ export function sessionMeta(
   if (ended !== null) {
     parts.push(`ended ${ended} ago`);
   } else {
-    const turnEnd = turnEndedSentence(session);
+    const turnEnd = turnEndedSentence(session, generated);
     if (turnEnd) parts.push(turnEnd);
     else if (session['state_detail']) parts.push(String(session['state_detail']));
     const state = session['state'];

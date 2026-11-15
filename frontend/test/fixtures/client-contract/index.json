@@ -841,14 +841,14 @@
       "method": "GET",
       "name": "sessions-terminal-project",
       "route": "/api/sessions",
-      "sha256": "1650cfe90ca5141fbaf3b80ac4c1c3c113321c982b1392027eda4afb1b6fbf69",
+      "sha256": "c9635323b2a14f6ebe569cc2ebf91fb5d9140803c2caef030391d617cf73de66",
       "status": 200
     },
     {
       "method": "GET",
       "name": "sessions-terminal-project-fo",
       "route": "/api/sessions",
-      "sha256": "2c7809369ba3a09a2d8336afb2d7d241a009cac31ddaa3f492c05bffa2b6d531",
+      "sha256": "a6144def1aa3781b5b858cdd98d6e8453e555b9ad1573458e6f491d6dda90bef",
       "status": 200
     },
     {

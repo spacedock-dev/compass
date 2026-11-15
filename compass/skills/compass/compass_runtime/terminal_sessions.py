@@ -62,6 +62,7 @@ _SESSION_FIELDS: Final = (
     "ended_at",
     "finished_at",
     "turn_end_at",
+    "headless",
     "dirty",
     "changed",
     "source_gaps",
@@ -465,6 +466,17 @@ def _now_text(
     state = source.get("state")
     if ended:
         return "Session reported its own end"
+    if (
+        source.get("harness") == "codex"
+        and source.get("headless") is True
+        and state == "idle"
+        and _positive(source.get("turn_end_at"))
+        and not question
+    ):
+        # Exec can resume: only its standing rollout stop supports this reading, before an old
+        # plan step, and its age comes from that stop rather than the row's latest activity.
+        age = _since(generated, source.get("turn_end_at"))
+        return "run finished" + (f" {age} ago" if age else "")
     if state not in {"working", "needs_input", "idle"}:
         return ""
     doing = next(
@@ -479,9 +491,13 @@ def _now_text(
         return _trimmed(doing.get("subject"))
     if quiet and not question:
         quiet_for = _since(generated, _num(source.get("last_activity")))
-        if quiet_for:
-            return f"last active {quiet_for} ago"
-        return "quiet" if _trimmed(source.get("state_detail")) else ""
+        return (
+            f"last active {quiet_for} ago"
+            if quiet_for
+            else "quiet"
+            if _trimmed(source.get("state_detail"))
+            else ""
+        )
     return _trimmed(source.get("state_detail"))
 
 
