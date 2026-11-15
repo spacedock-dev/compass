@@ -83,6 +83,19 @@ describe('a label is interpreted by measured locations', () => {
     },
   );
 
+  it('a person reads the unmeasured note only on the row whose location was not measured', async () => {
+    const data = locationBoard();
+    locationRow(data, 8)['project_identity_source'] = 'inferred Claude worktree layout';
+    const sessions = mountShell({ hash: '#n=sessions', data });
+    await sessions.settle();
+    const notes = [...document.querySelectorAll('.next-operation-collision')].map(
+      (note) => note.textContent,
+    );
+    expect(notes).toEqual(['Location not measured for 1 session with this display label']);
+    expect(document.querySelectorAll('.next-operation-route')).toHaveLength(9);
+    sessions.unmount();
+  });
+
   it('a person reads only measured members in the location count on every surface', async () => {
     const data = locationBoard(3);
     locationRow(data, 1)['project_key'] = 'path:other';
@@ -97,9 +110,17 @@ describe('a label is interpreted by measured locations', () => {
     attention.unmount();
     const sessions = mountShell({ hash: '#n=sessions', data });
     await sessions.settle();
-    for (const note of document.querySelectorAll('.next-operation-collision'))
-      expect(note.textContent).toBe(expected);
-    expect(document.querySelectorAll('.next-operation-collision')).toHaveLength(3);
+    // A row says the unmeasured count only when it is one of the unmeasured members.
+    const notes = [...document.querySelectorAll('.next-operation-collision')].map(
+      (note) => note.textContent,
+    );
+    expect(notes.sort()).toEqual(
+      [
+        '2 sessions share this display label across 2 measured locations',
+        '2 sessions share this display label across 2 measured locations',
+        expected,
+      ].sort(),
+    );
     sessions.unmount();
     const project = mountProject({ hash: '#n=project:audits', data });
     await project.settle();

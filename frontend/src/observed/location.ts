@@ -23,6 +23,17 @@ export function locationNote(rows: readonly Row[]): string {
   return notes.join('. ');
 }
 
+/* What one Sessions row says about its label. A row whose own location was measured does not carry
+   the unmeasured count: on a board where 25 old worktrees were deleted, every measured row read
+   "Location not measured for 25 sessions", as if it were about that row. */
+export function rowLocationNote(rows: readonly Row[], row: Row): string {
+  if (!measuredLocation(row)) return locationNote(rows);
+  const keys = new Set(rows.map(measuredLocation).filter(Boolean));
+  return keys.size > 1
+    ? `${String(rows.filter((member) => measuredLocation(member)).length)} sessions share this display label across ${String(keys.size)} measured locations`
+    : '';
+}
+
 export function unmeasuredLocationNote(rows: readonly Row[]): string {
   if (rows.length < 2) return '';
   const unknown = rows.filter((row) => !measuredLocation(row)).length;

@@ -2,6 +2,7 @@ import { nextNumber } from '../api/bootstrap';
 import type { BoardRisk } from './capacity';
 import type { ObservedSession } from './session';
 import { goalOf } from './landing';
+import { locationNote } from './location';
 import { compare, pair, sessionKey, type Pair, type Row } from './values';
 
 /* A project here is a group of sessions that publish one label, exactly as published. The legacy model
@@ -59,13 +60,12 @@ export function observeProject(
       compare(sessionKey(a.source), sessionKey(b.source)),
   );
   const goal = goals[0]?.goal ?? false;
-  const first = sessions[0];
   return {
     key,
     ...pair('scope', '', 'Exact location not published'),
     countLine: counts.join(' · '),
-    sharedLabelText: first?.sharedLabelText ?? '',
-    sharedLabelKnown: first?.sharedLabelKnown ?? false,
+    // The project speaks for the whole label, so it takes the label's note, not one row's.
+    ...pair('sharedLabel', locationNote(sources), 'No shared display label observed'),
     ...pair('goal', goal && goal.text, 'No assignment or workflow goal published'),
     goalSrcText: goal ? goal.src : 'Goal source not published',
     goalSrcKnown: Boolean(goal),

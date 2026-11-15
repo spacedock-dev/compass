@@ -1,5 +1,5 @@
 import { nextNumber } from '../api/bootstrap';
-import { locationNote, locationWarnings } from './location';
+import { locationWarnings, rowLocationNote } from './location';
 import {
   observeCapacity,
   type BoardRisk,
@@ -151,14 +151,13 @@ export function observe(input: unknown): Observed {
     else asks.set(key, [ask]);
   }
   const generated = nextNumber(payload['generated']);
-  const locationNotes = new Map([...groups].map(([label, rows]) => [label, locationNote(rows)]));
   const sessions = sources.map((source) =>
     observeSession(
       source,
       asks.get(sessionKey(source)) ?? [],
       byHarness.get(identityPart(source['harness'])),
       generated,
-      locationNotes.get(labelOf(source)) ?? '',
+      rowLocationNote(groups.get(labelOf(source)) ?? [], source),
     ),
   );
   const risks: BoardRisk[] = [];
