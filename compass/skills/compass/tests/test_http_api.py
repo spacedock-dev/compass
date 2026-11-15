@@ -331,13 +331,8 @@ class CompassServerTest(RuntimeTestCase):
                     conn.request(method, path, body=body, headers={"Sec-Fetch-Site": "same-origin"})
                     response = conn.getresponse()
                     self.assertEqual(200, response.status)
-                    # Equality, not a substring: `frame-ancestors` has no
-                    # fallback to `default-src`, so it is the one directive that
-                    # can ride here without restricting anything else. A second
-                    # one added to this policy blanks the page, and this is what
-                    # says so before it ships.
                     self.assertEqual(
-                        "frame-ancestors 'none'",
+                        "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
                         response.getheader("Content-Security-Policy"),
                     )
                     response.read()
@@ -2588,6 +2583,7 @@ class AllowedHostTest(RuntimeTestCase):
         with config_patch(allowed_hosts=("vm.exe.xyz", "other.exe.xyz")):
             handler.server.application = build_app()
         handler.server.page_bytes = PAGE_BYTES
+        handler.server.injected_page_bytes = PAGE_BYTES
         handler.server.observation = observation
         handler.rfile = io.BytesIO(request)
         handler.wfile = io.BytesIO()
@@ -2595,6 +2591,36 @@ class AllowedHostTest(RuntimeTestCase):
         handler.handle_one_request()
         response = handler.wfile.getvalue()
         return int(response.split(b" ", 2)[1]), response.partition(b"\r\n\r\n")[2]
+
+    def test_page_capability_is_only_delivered_to_a_direct_loopback_reader(self) -> None:
+        raw = b"<!doctype html><html><head></head><body>board</body></html>"
+        injected = cli.inject_focus_capability(raw, "a" * 64)
+        for peer, host, extra, expected in (
+            ("127.0.0.1", "127.0.0.1:8000", "", injected),
+            (
+                "127.0.0.1",
+                "127.0.0.1:8000",
+                "Sec-Fetch-Site: cross-site\r\nSec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\n",
+                injected,
+            ),
+            ("192.0.2.1", "vm.exe.xyz:8000", "", raw),
+            ("127.0.0.1", "vm.exe.xyz:8000", "", raw),
+            ("127.0.0.1", "127.0.0.1:8000", "Forwarded: for=192.0.2.1\r\n", raw),
+        ):
+            with self.subTest(peer=peer, host=host, extra=extra):
+                handler = self._handler(host, path="/")
+                handler.client_address = (peer, 12345)
+                handler.server.page_bytes = raw
+                handler.server.injected_page_bytes = injected
+                handler.rfile = io.BytesIO(
+                    f"GET / HTTP/1.1\r\nHost: {host}\r\n{extra}\r\n".encode()
+                )
+                handler.wfile = io.BytesIO()
+                handler.connection = SimpleNamespace()
+                handler.handle_one_request()
+                response = handler.wfile.getvalue()
+                self.assertIn(b" 200 ", response.split(b"\r\n", 1)[0])
+                self.assertEqual(expected, response.partition(b"\r\n\r\n")[2])
 
     def test_allowed_host_and_origin(self) -> None:
         for host, origin in (
@@ -4254,6 +4280,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
     def test_host_origin_dns_rebinding_and_request_limits_are_preserved(self) -> None:
         captured_addresses: list[tuple[str, int]] = []
         captured_pages: list[bytes] = []
+        captured_raw_pages: list[bytes] = []
 
         class StopServingError(Exception):
             pass
@@ -4267,6 +4294,7 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 _observation: Any = None,
                 *,
                 interaction_prototype: Any = None,
+                injected_page_bytes: bytes | None = None,
             ) -> None:
                 # The coordinator and optional page ride along with the address
                 # and required page. Accepted and ignored here: this test
@@ -4275,7 +4303,8 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
                 # reason.
                 del interaction_prototype
                 captured_addresses.append(address)
-                captured_pages.append(page_bytes)
+                captured_raw_pages.append(page_bytes)
+                captured_pages.append(injected_page_bytes or page_bytes)
 
             def serve_forever(self) -> None:
                 raise StopServingError
@@ -4301,13 +4330,14 @@ class InstalledContractCharacterizationTest(unittest.TestCase):
         # regression to 0.0.0.0 cannot pass merely because this test chose 127.
         serve("--port", "4553")
         self.assertEqual([("127.0.0.1", 4553)], captured_addresses)
-        # The verified page plus this run's focus capability, which `cli.main`
+        # The verified page plus this run's focus capability, which `cli.build_server`
         # injects between `load_frontend_page()` and this constructor. Compared
         # against the loaded page rather than against a pinned byte count, so the
         # subject stays the bind address and the page identity: `react.integrity.json`
         # owns the digest, and a second pin here would red this module on any
         # frontend edit.
         default_page = frontend_page.load_frontend_page()
+        self.assertEqual([default_page], captured_raw_pages)
         self.assertEqual(1, len(captured_pages))
         served = captured_pages[0]
         self.assertEqual(default_page, without_focus_meta(served))

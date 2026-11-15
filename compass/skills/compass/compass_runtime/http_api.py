@@ -11,6 +11,7 @@ import io
 import ipaddress
 import json
 import os
+import re
 import select
 import socket
 import socketserver
@@ -359,11 +360,15 @@ class CompassHTTPServer(ThreadingHTTPServer):
         observation: Observation | None = None,
         *,
         interaction_prototype: InteractionPrototype | None = None,
+        injected_page_bytes: bytes | None = None,
     ) -> None:
         self.application = application
         # Authentication material only; pages and transcript bytes are never cached.
         self.record_cursor_key = os.urandom(32)
         self.page_bytes = page_bytes
+        self.injected_page_bytes = (
+            injected_page_bytes if injected_page_bytes is not None else page_bytes
+        )
         # None under --no-events, and None for the many test doubles that only
         # need a page and an application. `serve` reads it to decide whether to
         # run the coordinator or the older periodic producer.
@@ -1976,19 +1981,13 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        # `frame-ancestors` and nothing else, and the single directive is the
-        # decision rather than an unfinished policy. It is not a fetch directive
-        # and has no fallback to `default-src`, so alone it restricts framing and
-        # nothing on the page. A second directive is not free: this document is
-        # one `data:` module script and one `data:` stylesheet that carries its fonts
-        # as `data:` URIs, so a `default-src 'self'` added beside it serves a blank board.
-        # A header rather than a `<meta http-equiv>` because CSP ignores
-        # `frame-ancestors` delivered that way, which also leaves the page's
-        # verified bytes untouched. No `X-Frame-Options: DENY` beside it:
-        # `frame-ancestors` wins wherever both are present, and a browser old
-        # enough to read only XFO cannot run this page. What the header does and
-        # does not buy is in SECURITY.md's Known and accepted section.
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        # No default-src: the core script, stylesheet and fonts use data: URLs.
+        # These directives close framing, plugins and base-URL rewriting without
+        # restricting those resources. frame-ancestors requires a response header.
+        self.send_header(
+            "Content-Security-Policy",
+            "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+        )
         for name, value in (headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
@@ -2072,20 +2071,28 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         url = urlparse(self.path)
         if url.path == "/" and "next" not in parse_qs(url.query, keep_blank_values=True):
-            self._send(self.server.page_bytes, "text/html; charset=utf-8")
+            page = (
+                self.server.injected_page_bytes
+                if self._direct_loopback()
+                else self.server.page_bytes
+            )
+            self._send(page, "text/html; charset=utf-8")
         elif url.path.startswith("/assets/"):
             self._interaction_asset(url.path)
         elif not self._get_api(url):
             self.send_error(404)
 
-    def _loopback_resource_ok(self) -> bool:
-        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+    def _direct_loopback(self) -> bool:
         return (
             ipaddress.ip_address(self.client_address[0]).is_loopback
             and not self._proxied()
             and self._loopback_host(self.headers.get("Host") or "")
-            and site not in {"same-site", "cross-site"}
-            and self._local_ok()
+        )
+
+    def _loopback_resource_ok(self) -> bool:
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        return (
+            self._direct_loopback() and site not in {"same-site", "cross-site"} and self._local_ok()
         )
 
     def _proxied(self) -> bool:
@@ -2120,9 +2127,23 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         name, content_type = asset
         try:
-            body = (Path(__file__).parent / "web" / "vendor" / name).read_bytes()
+            vendor = Path(__file__).parent / "web" / "vendor"
+            body = (vendor / name).read_bytes()
+            sources = (vendor / "SOURCES.txt").read_text(encoding="utf-8")
+            digests = re.findall(
+                rf"^  (?:lib|css)/{re.escape(name)}\s+\d+ bytes\s+"
+                r"sha384-\S+\s+sha256-([0-9a-f]{64})$",
+                sources,
+                re.MULTILINE,
+            )
         except OSError:
             self.send_error(404)
+            return
+        except UnicodeError:
+            self.send_error(503)
+            return
+        if len(digests) != 1 or hashlib.sha256(body).hexdigest() != digests[0]:
+            self.send_error(503)
             return
         self._send(body, content_type)
 
@@ -2248,7 +2269,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._reject(400)
             return
         self.send_response(101)
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header(
+            "Content-Security-Policy",
+            "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+        )
         self.send_header("Upgrade", "websocket")
         self.send_header("Connection", "Upgrade")
         self.send_header("Sec-WebSocket-Accept", accept)

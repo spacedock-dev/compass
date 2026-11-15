@@ -322,6 +322,27 @@ class InteractionPrototypeHTTPTest(unittest.TestCase):
         finally:
             self.httpd.interaction_prototype = prototype
 
+    def test_asset_bytes_are_refused_when_the_vendor_digest_does_not_match(self) -> None:
+        original = Path.read_bytes
+        for name in ("xterm.js", "xterm.css"):
+            with self.subTest(name=name):
+
+                def read(path: Path, name: str = name) -> bytes:
+                    body = original(path)
+                    return body + b"/* changed */" if path.name == name else body
+
+                with mock.patch.object(Path, "read_bytes", read):
+                    connection = http.client.HTTPConnection(
+                        "127.0.0.1", self.httpd.server_port, timeout=30
+                    )
+                    try:
+                        connection.request("GET", "/assets/" + name)
+                        response = connection.getresponse()
+                        self.assertEqual(503, response.status)
+                        self.assertNotIn(b"/* changed */", response.read())
+                    finally:
+                        connection.close()
+
     def test_asset_refuses_a_nonloopback_peer_even_with_local_host_header(self) -> None:
         # Given: a nonloopback peer passes the mocked local-host check.
         handler = object.__new__(http_api._RequestHandler)

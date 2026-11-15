@@ -1,3 +1,4 @@
+import { xtermIntegrity } from '../build/xterm-integrity.mjs';
 import type { StorybookConfig } from '@storybook/react-vite';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ const config: StorybookConfig = {
   async viteFinal(config) {
     const { mergeConfig } = await import('vite');
     return mergeConfig(config, {
+      define: xtermIntegrity(),
       plugins: [tailwindcss()],
       // Late optimizer discovery invalidated first-story requests with a 504. Keep its browser entries explicit.
       optimizeDeps: {

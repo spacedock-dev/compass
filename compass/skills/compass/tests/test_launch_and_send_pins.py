@@ -97,7 +97,7 @@ XTERM_INERT_URLS = {
 class ThePageMakesNoAbsoluteRequestTest(unittest.TestCase):
     """The built page and its stylesheet name no host, so loading them cannot reach one.
 
-    The served CSP is `frame-ancestors 'none'` alone (`http_api`, the document headers), so
+    The served CSP has no fetch restrictions (`http_api`, the document headers), so
     nothing in the browser would stop an absolute URL a dependency bundled. This is the guard.
     """
 

@@ -490,7 +490,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A session summary, on open of a finished session or on a press | Session content, through the Claude Code CLI that Compass starts as a supervised child, under its own grant and rolling cap. [Session summary calls](#session-summary-calls) owns what it sends. | The same refusal, Pause model calls, and Turn off summaries | `test_summary_jobs.SummaryJobTest.test_summary_off_makes_no_call_until_on_and_no_model_switch_always_refuses`; `test_summary_jobs.SummaryJobTest.test_readings_off_refuses_summary_start_and_stops_a_running_job`; `test_summary_jobs.SummaryGrantTest.test_run_disabled_refuses_summary_charge` |
 | The model-free live estimate, the Live monitor's fallback level | Nothing. It is computed from checks and file paths, with no model, and writes nothing. Its processes are the read-only committed-file `git` read of a project's check scripts and, for a recorded CI poll, the two fixed identity `git` commands (`rev-parse HEAD`, `config --get remote.origin.url`). | `--no-git` stops both reads | `test_live_estimate.TheLiveEstimateTest.test_no_model_is_launched_and_nothing_is_written` patches every model class and connection, and refuses any process but the four committed-file `git` reads (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`); its session holds no CI poll, so it does not reach the identity commands. For a session that holds a poll, `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` pins that `--no-git` starts no process, and `test_command_tiers.ACiPollInRealCheckouts` runs the identity reads against real repositories |
 | A Live monitor check, about once a minute while you view a Claude Code session with the switch on or a terminal holder keeps the lease | Session text, through the Claude Code CLI that Compass starts as a supervised child, to Haiku: your saved goal, and your recent messages, the agent's replies, the commands of checks with their result, every other command as its masked line with its exit status, and the paths of files written. [The Live monitor](#the-live-monitor) owns what it sends. | `--no-observer-model`, Pause model calls, the last holder leaving or lapsing, session end and caps; browser holders also stop at their consent deadline or No, and a hidden tab cannot drive checks | `test_live_monitor.RefusalsPrecedeEverything.test_pause_refuses_without_a_call_a_charge_or_a_notice`; `test_live_lease.ALeaseThatIsAbandoned.test_a_killed_tab_ends_the_lease_left_within_the_grace_and_no_check_follows`; `test_live_lease_http.PauseAndShutdown.test_pause_ends_every_lease_paused`; `test_live_monitor.TheMonitorNeverTouchesTheUnaskedLaneOrNotifications.test_the_module_imports_neither_the_lane_nor_notifications` |
-| The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response carries only `frame-ancestors 'none'` as a policy, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
+| The page and its stylesheet | Nothing. The page names no host, and its fonts and the optional terminal are packaged with it. The response forbids framing, objects and base tags; it has no fetch restrictions, so the page's own bytes are what keep it local. | None to switch off | `test_launch_and_send_pins.ThePageMakesNoAbsoluteRequestTest` |
 | `--footer`, the status line segment | Nothing. It launches no program and opens no socket: it reads the JSON a Claude Code status line passes on standard input and one file the dashboard wrote, and prints one line. [The status line files](#the-status-line-files) owns what that file holds. | Not putting it in a status line | `test_footer.RunFooterTest.test_it_opens_no_socket`, `test_footer.FooterLightPathTest.test_footer_through_server_py_imports_neither_the_cli_nor_an_http_client` |
 | The hook forwarders, the MCP server and the terminal client | Loopback only. The Python forwarders and the MCP server accept only literal IPv4 `127.0.0.1`, ignore proxy settings and refuse redirects. Each HTTP exchange has one monotonic deadline across connect, send, headers and bounded body reads. The terminal client reaches only the literal `127.0.0.1` with an integer port, ignores proxy settings and returns a redirect without following it, and discovers a dashboard from state file names and mtimes without opening a state file. The two JavaScript adapters, `opencode_plugin.js` and `pi_extension.js`, hard-code `127.0.0.1` and have no such check to fail. | Remove the hook, adapter or server from the harness | `test_notifications.NotifyHookTest.test_refuses_to_forward_off_loopback`; `test_events_ingress.AdapterTest.test_the_forwarder_refuses_a_non_loopback_target_without_connecting`; `test_mcp_server.TransportGuardTest.test_a_non_loopback_url_is_refused_before_any_request`; `test_terminal_client.RequestPathTest.test_a_port_that_is_not_a_plain_integer_is_refused_before_connecting`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.DiscoveryTest.test_no_state_file_is_ever_opened`; `test_terminal_sessions.SessionsPrintableTest.test_escape_sequences_and_bidi_controls_are_gone_from_every_printed_value`. None for the two JavaScript adapters. |
 | The bounded loopback transport | `loopback_transport`, used by MCP as well as terminal and lifecycle clients, connects only to literal IPv4 `127.0.0.1`, without proxies or redirect handling. The standalone hooks mirror its deadline socket because the hooks-only plugin roots do not ship the runtime package. Connect, send, headers and body share one deadline, and the response has a byte cap. Nothing leaves the machine. | The calling operation's refusal gates and exchange deadline | `test_http_deadline.DeadlineTest.test_a_person_is_not_kept_waiting_by_dripping_headers_or_bodies`; `test_edge_bounds.EdgeDeadlineTest.test_dripping_headers_and_bodies_end_at_the_exchange_deadline`; `test_edge_bounds.EdgeDeadlineTest.test_only_literal_ipv4_targets_are_admitted`; `test_terminal_client.RequestPathTest.test_a_proxy_in_the_environment_is_never_contacted`; `test_terminal_client.RequestPathTest.test_a_redirect_is_returned_and_never_followed`; `test_terminal_client.RequestPathTest.test_a_reply_is_read_to_a_bound` |
@@ -1305,7 +1305,9 @@ So focus gets **its own consumer key**, and it is delivered by injecting it into
 where the page bytes are handed to the server rather than by baking it into an asset. That seam
 matters: the page's bytes are verified against `react.integrity.json` at load, and a token in an
 asset would break that check and make them non-deterministic. Injecting after the load leaves the
-verified bytes untouched.
+verified bytes untouched. Only a direct loopback reader with a loopback Host and no proxy headers
+receives the injected page. Non-loopback readers and readers using `--allow-host` names receive
+the verified page without the focus capability.
 
 Both halves of that matter and neither is decoration. A GET would repeat a gap this repository has
 already been bitten by: an attacker page that gets the browser to open a Compass URL in a tab reads
@@ -4257,7 +4259,13 @@ The bounds, all of which hold together:
   is the work, and it is smaller than it looks.
 - Throttled, and a change is what triggers it. At most one post per configured interval, with a
   change in the counts as the trigger rather than a timer, so a board that is not changing sends
-  nothing and a flapping one cannot turn into a stream.
+  nothing and a flapping one cannot turn into a stream. At most one background delivery runs at a
+  time, with no queue. A slow webhook does not hold the collection lock or delay board refreshes;
+  a later collection can admit changed counts after the in-flight delivery finishes.
+- The stored URL is read as bounded UTF-8 from a regular file. Symlinks and reparse points are
+  refused. Where the operating system provides them, no-follow and nonblocking open flags also
+  refuse a link or FIFO substituted after the file check. The environment URL comes from the
+  runtime's captured environment, not a later read of the process environment.
 - The URL is a credential. A webhook URL is a bearer token wearing a path: whoever holds it can
   post to the operator's own phone. It is never logged, never echoed, never served on the loopback
   port, and never printed by `--diagnose`, which is the handling Usage quota reads gives a vendor
@@ -5690,7 +5698,7 @@ that do exist. The absence of per-user isolation is documented here rather than 
 finding.
 
 A browser will not frame the board, and the header that stops it is narrower than it looks. Every
-response the server composes carries `Content-Security-Policy: frame-ancestors 'none'`, with the
+response the server composes carries `Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'none'`, with the
 three exceptions named below, because the request gate does not close framing on its own: every port
 on this machine is the same site, so a page served from another local port frames the board under a
 `same-site` label that never reaches the cross-site check, and a frame navigation carries no `Origin`
@@ -5707,9 +5715,12 @@ and does not narrow what this section already accepts. The one case it does defe
 whose process the attacker does not control: a stored cross-site scripting flaw, or an
 HTML-rendering endpoint, in some other local development server the operator already runs. It is
 delivered as a header rather than in the document because CSP ignores `frame-ancestors` in a
-`<meta http-equiv>`, and it is the only directive in that policy because `frame-ancestors` has no
-fallback to `default-src`, so it restricts framing and nothing else. Three responses are outside it,
-deliberately, and none of them is a page: `/api/stream` writes its own headers and an event stream
+`<meta http-equiv>`. The other two directives forbid embedded objects and base-URL rewriting.
+The page uses neither. There is no `default-src` or other fetch restriction: the script, stylesheet
+and fonts use `data:` URLs, and the optional terminal loads same-origin assets. Those two terminal
+requests carry SHA-384 subresource integrity derived from the vendored bytes at build time. The
+server also checks each requested asset against the SHA-256 record in `web/vendor/SOURCES.txt`
+and refuses changed bytes. Three responses are outside it, deliberately, and none of them is a page: `/api/stream` writes its own headers and an event stream
 has nothing to click; a `send_error` body is the standard library's error template, which carries no
 control and no capability; and the `204` a poll of `/api/ask/<id>` returns while no answer has
 arrived carries no body at all, so a frame navigated to it renders nothing. The stream and that poll

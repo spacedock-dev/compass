@@ -91,7 +91,7 @@ def build_server(
     interaction_session: str | None,
     interaction_registration_file: Path | None,
 ) -> http_api.CompassHTTPServer:
-    """Attach the opt-in collected-session origin without changing normal serving."""
+    """Keep the verified and focus-capable pages separate; attach the optional terminal."""
     prototype = None
     if interaction_session is not None:
         known_sessions = collected_session_ids(application)
@@ -106,6 +106,11 @@ def build_server(
         page_bytes,
         coordinator,
         interaction_prototype=prototype,
+        injected_page_bytes=(
+            inject_focus_capability(page_bytes, coordinator.focus_capability())
+            if coordinator is not None and application.config.focus_enabled
+            else page_bytes
+        ),
     )
 
 
@@ -1176,12 +1181,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
         if not args.no_events:
             coordinator = observation.Observation(application)
             application.overlays = coordinator
-        if coordinator is not None and config.focus_enabled:
-            # The page is served as fixed bytes with no per-run secret in it, so
-            # the capability has to be put there. `--no-events` leaves no
-            # coordinator to mint one, which is the second off switch the focus
-            # contract names.
-            page_bytes = inject_focus_capability(page_bytes, coordinator.focus_capability())
         server = build_server(
             (args.host, args.port),
             application,
