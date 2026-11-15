@@ -1807,11 +1807,11 @@
       },
       {
         "file": "package.json",
-        "sha256": "97156f4757fe27f460514a85832aac9e989417cf443ad787497146332346685e"
+        "sha256": "77f4ffcf9f450c8a9e7d43bd7d7ba4151151467a7dcaa79eb8ac5050a89b1190"
       },
       {
         "file": "pnpm-lock.yaml",
-        "sha256": "021642670809b4cb75ae336129d569e2b6121c88ccf0536f37ab22400a3d301c"
+        "sha256": "b37e26b44d9ad6e4d8ce5b1cc1f70d8d1d9969f491ab1d415a7d2834fd8394d3"
       }
     ]
   }
