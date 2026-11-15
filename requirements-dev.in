@@ -5,4 +5,4 @@
 # pinned and held to its sha256 hashes; its header says how. Regenerate it after any edit here.
 ruff==0.16.0
 mypy==2.3.0
-coverage==7.15.2
+coverage==7.17.0
