@@ -20,13 +20,13 @@ from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
-from compass_runtime import monitor_store, terminal_sessions
+from compass_runtime import loopback_transport, monitor_store, terminal_sessions
 from compass_runtime import terminal_client as client
 from compass_runtime import terminal_monitor as monitor
 
 from . import support
 from .support import SERVER_PATH, saturated_server
-from .test_terminal_client import FakeDashboard
+from .test_terminal_client import ClockedDashboard, FakeDashboard
 
 
 class MonitorCommandTest(unittest.TestCase):
@@ -1076,6 +1076,167 @@ class MonitorAtTheConnectionCapTest(unittest.TestCase):
             ):
                 self.assertEqual(0, monitor._command(store, named, off=True, in_session=False))
         self.assertIn(client.sentence("monitor_stopped"), out.getvalue())
+
+
+class MonitorBudgetTest(unittest.TestCase):
+    def test_a_beat_reply_after_six_seconds_is_accepted(self) -> None:
+        data = {"ok": True, "state": {"on": True}, "activity": 123}
+        board = ClockedDashboard(
+            answers={"/api/live-monitor": (200, {}, json.dumps(data).encode())},
+            delays={"/api/live-monitor": 6.0},
+        )
+        accepted = []
+
+        def post(*args: Any, **kwargs: Any) -> client.Reply:
+            reply = client.post(*args, **kwargs)
+            if reply.status == 200 and reply.data == data:
+                accepted.append(reply.data)
+            return reply
+
+        dashboard = client.Dashboard(board.port, 4242, 1.0, None)
+        with board:
+            reason = monitor.hold(
+                dashboard,
+                "one",
+                "a" * 32,
+                clock=lambda: board.now,
+                wait=lambda _seconds: True,
+                stopped=lambda: False,
+                alive=lambda: True,
+                post=post,
+                probe=lambda *_a, **_k: dashboard,
+            )
+        self.assertEqual("stopped", reason)
+        self.assertEqual([data], accepted)
+        self.assertGreaterEqual(board.now, 106.0)
+
+    def test_a_start_reply_over_one_mib_is_accepted(self) -> None:
+        answer = {
+            "ok": True,
+            "state": {"on": True},
+            "padding": "x" * 1_100_000,
+            "terminal": {"notice_due": False, "disclosure": "Sends to Haiku."},
+        }
+        with (
+            FakeDashboard(
+                answers={"/api/live-monitor": (200, {}, json.dumps(answer).encode())}
+            ) as board,
+            tempfile.TemporaryDirectory() as home,
+        ):
+            generation = "a" * 32
+            store = monitor_store.Store(home, "one")
+            store.write(
+                "run",
+                {
+                    "sid": "one",
+                    "generation": generation,
+                    "dashboard": [board.port, 4242, 100.0, "1.0.0"],
+                },
+            )
+            with (
+                mock.patch.object(client, "state_home", return_value=home),
+                mock.patch("signal.signal"),
+                mock.patch.object(monitor, "hold", return_value="stopped"),
+                mock.patch.object(monitor, "_stop_holder", return_value=False),
+            ):
+                self.assertEqual(0, monitor.sidecar("one", generation))
+            status = store.read("status")
+            self.assertIs(True, status["started"])
+            self.assertIs(True, status["answer"]["ok"])
+
+    def test_a_beat_reply_over_one_mib_is_accepted(self) -> None:
+        answer = {"ok": True, "state": {"on": True}, "padding": "x" * 1_100_000}
+        with FakeDashboard(
+            answers={"/api/live-monitor": (200, {}, json.dumps(answer).encode())}
+        ) as board:
+            dashboard = client.Dashboard(board.port, 4242, 100.0, "1.0.0")
+            reason = monitor.hold(
+                dashboard,
+                "one",
+                "a" * 32,
+                wait=lambda _seconds: True,
+                stopped=lambda: False,
+                alive=lambda: True,
+                post=client.post,
+                probe=lambda *_a, **_k: dashboard,
+            )
+        self.assertEqual("stopped", reason)
+
+    def test_initial_session_lookup_retries_busy_then_succeeds(self) -> None:
+        path = "/api/session?harness=claude&sid=one"
+        answers: dict[str, tuple[int, dict[str, str], bytes]] = {
+            path: (503, {"Retry-After": "0"}, b"")
+        }
+        row = {"harness": "claude", "sid": "one"}
+        with FakeDashboard(answers=answers) as board, tempfile.TemporaryDirectory() as home:
+            exchange = loopback_transport._exchange
+
+            def free_slot(*args: Any, **kwargs: Any) -> Any:
+                reply = exchange(*args, **kwargs)
+                if reply[0] == 503:
+                    answers[path] = (200, {}, json.dumps({"session": row}).encode())
+                return reply
+
+            with (
+                mock.patch.object(loopback_transport, "_exchange", side_effect=free_slot),
+                mock.patch.object(
+                    client,
+                    "ensure_dashboard",
+                    return_value=client.Dashboard(board.port, 4242, 100.0, "1.0.0"),
+                ),
+                mock.patch.object(monitor, "_await_start", return_value=0),
+                mock.patch("sys.stderr", io.StringIO()),
+            ):
+                self.assertEqual(
+                    0,
+                    monitor.command(
+                        client.Session("claude", "one", "flag"),
+                        off=False,
+                        home=home,
+                        in_session=False,
+                    ),
+                )
+            self.assertEqual(2, board.requests.count(("GET", path)))
+            self.assertEqual("one", monitor_store.Store(home, "one").read("run")["sid"])
+
+    def test_a_start_receipt_after_thirteen_seconds_is_still_reported(self) -> None:
+        now = 0.0
+        with tempfile.TemporaryDirectory() as home:
+            store = monitor_store.Store(home, "one")
+            generation = "a" * 32
+            store.write("run", {"resume_id": "one-full"})
+
+            def sleep(seconds: float) -> None:
+                nonlocal now
+                now += seconds
+                if now >= 13 and not store.read("status"):
+                    store.write(
+                        "status",
+                        {
+                            "generation": generation,
+                            "answer": {
+                                "ok": True,
+                                "terminal": {"notice_due": False, "disclosure": "notice"},
+                            },
+                        },
+                    )
+
+            with (
+                mock.patch.object(
+                    monitor, "time", types.SimpleNamespace(monotonic=lambda: now, sleep=sleep)
+                ),
+                mock.patch.object(
+                    monitor, "spawn", return_value=mock.Mock(poll=mock.Mock(return_value=None))
+                ),
+                mock.patch("sys.stdout", io.StringIO()) as out,
+                mock.patch("sys.stderr", io.StringIO()) as err,
+            ):
+                self.assertEqual(0, monitor._await_start(store, "one", generation))
+            self.assertGreaterEqual(now, 13)
+            self.assertLess(now, 30)
+            self.assertIn("Live monitor started", out.getvalue())
+            self.assertIn("--off --session claude:one-full", out.getvalue())
+            self.assertEqual("", err.getvalue())
 
 
 class MonitorRecoveryTest(unittest.TestCase):
