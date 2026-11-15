@@ -308,18 +308,35 @@ def _start(
     no_update_check: bool = False,
     server_options: client.ServerOptions | None = None,
 ) -> int:
+    announcements: list[str] = []
     found = client.ensure_dashboard(
         str(store.root.parent),
         port=None,
         spend=True,
         own_version=client.release_version(),
         in_session=in_session,
+        say=announcements.append,
         no_update_check=no_update_check,
         **client.server_start_kwargs(server_options),
     )
     if isinstance(found, client.Refusal):
         print(found.message, file=sys.stderr)
-        return found.code
+        result = found.code
+    else:
+        result = _start_on_dashboard(store, named, found, in_session=in_session)
+    # The skill consumes stdout on success; readiness decides which stream owns this notice.
+    for message in announcements:
+        print(message, file=sys.stdout if in_session and result == 0 else sys.stderr)
+    return result
+
+
+def _start_on_dashboard(
+    store: monitor_store.Store,
+    named: client.Session,
+    found: client.Dashboard,
+    *,
+    in_session: bool,
+) -> int:
     try:
         query = urlencode({"harness": named.harness, "sid": named.sid})
         reply = client.request(

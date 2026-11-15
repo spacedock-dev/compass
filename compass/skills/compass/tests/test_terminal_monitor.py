@@ -30,6 +30,62 @@ from .test_terminal_client import FakeDashboard
 
 
 class MonitorCommandTest(unittest.TestCase):
+    def test_successful_in_session_start_announces_dashboard_on_stdout(self) -> None:
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted), tempfile.TemporaryDirectory() as home:
+                store = monitor_store.Store(home, "one")
+                store.write(
+                    "status",
+                    {
+                        "generation": "a" * 32,
+                        "answer": {
+                            "ok": accepted,
+                            "reason": "paused" if not accepted else "",
+                            "terminal": {"notice_due": True, "disclosure": "Sends to Haiku."},
+                        },
+                    },
+                )
+                dashboard = client.Dashboard(4554, 42, 100.0, client.release_version())
+                env = {"COMPASS_HOME": home, "CLAUDE_CODE_SESSION_ID": "one"}
+                with (
+                    mock.patch.dict(os.environ, env, clear=True),
+                    mock.patch.object(client, "find_dashboard", side_effect=[None, dashboard]),
+                    mock.patch.object(client, "start_daemon", return_value=None),
+                    mock.patch.object(
+                        client,
+                        "request",
+                        return_value=client.Reply(
+                            200,
+                            {
+                                "session": {
+                                    "harness": "claude",
+                                    "sid": "one",
+                                    "resume_id": "one-full",
+                                },
+                            },
+                        ),
+                    ),
+                    mock.patch.object(
+                        monitor.uuid, "uuid4", return_value=types.SimpleNamespace(hex="a" * 32)
+                    ),
+                    mock.patch.object(monitor, "ancestor", return_value={}),
+                    mock.patch.object(monitor, "spawn"),
+                    mock.patch("sys.stdout", io.StringIO()) as out,
+                    mock.patch("sys.stderr", io.StringIO()) as err,
+                ):
+                    self.assertEqual(0 if accepted else 1, client.run_monitor(environ=env))
+                if accepted:
+                    self.assertIn(client.sentence("starting"), out.getvalue())
+                    self.assertIn("Sends to Haiku.", out.getvalue())
+                    self.assertIn("--monitor --off --session claude:one-full", out.getvalue())
+                    self.assertEqual("", err.getvalue())
+                else:
+                    self.assertIn(client.sentence("starting"), err.getvalue())
+                    self.assertEqual("", out.getvalue())
+                self.assertNotIn(
+                    "spacedock-compass --monitor --session", out.getvalue() + err.getvalue()
+                )
+
     def test_a_person_without_a_session_starts_nothing_and_sends_nothing(self) -> None:
         with (
             mock.patch.object(client, "ensure_dashboard") as ensure,
