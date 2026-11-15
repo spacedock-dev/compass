@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from compass_runtime import aggregate, ends
+from compass_runtime import aggregate, ends, transcripts
 from compass_runtime.collectors import codex
 
 from .support import RuntimeTestCase, runtime, store_patch
@@ -148,14 +148,71 @@ class CodexInFlightTest(RuntimeTestCase):
         )
         self.assertEqual("idle", row["state"])
 
+    def _plan(self) -> dict[str, Any]:
+        return _record(
+            self.call_at - 1,
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "update_plan",
+                "arguments": json.dumps(
+                    {"plan": [{"step": "Build project", "status": "in_progress"}]}
+                ),
+            },
+        )
+
     def test_call_ceiling_is_900_seconds_and_unrelated_events_do_not_renew_it(self) -> None:
         self.call_at = self.now - 901
-        token = _record(self.now, "event_msg", {"type": "thread_settings_applied"})
-        # The regular freshness path can still work; it must not claim the pending call.
-        row = self._collect([self._call(), token], cap=900)
-        self.assertEqual("working", row["state"])
-        row = self._collect([self._call()], cap=900)
+        call, plan = self._call(), self._plan()
+        tokens = []
+        for delta in (0, 100, 900):
+            self.now += delta
+            tokens.append(_record(self.now, "event_msg", {"type": "thread_settings_applied"}))
+            row = self._collect([plan, call, *tokens], cap=900)
+            self.assertEqual(("working", "Build project…"), (row["state"], row["state_detail"]))
+        self.assertEqual("idle", self._collect([call], cap=900)["state"])
+
+    def test_parallel_distinct_tools_select_newest_and_retire_independently(self) -> None:
+        first = self._call(name="exec_command", at=self.call_at - 10)
+        last = self._call("shell-2", name="write_stdin")
+        row = self._collect([first, last])
+        self.assertEqual("running write_stdin", row["state_detail"])
+        row = self._collect([first, last, self._output("shell-2", custom=False)])
+        self.assertEqual("running exec_command", row["state_detail"])
+        row = self._collect(
+            [first, last, self._output("shell-2", custom=False), self._output(custom=False)]
+        )
         self.assertEqual("idle", row["state"])
+
+    def test_assistant_commentary_preserves_pending(self) -> None:
+        row = self._collect([self._call(), self._message("Still waiting", role="assistant")])
+        self.assertEqual("working", row["state"])
+
+    def test_invalid_protocol_and_envelope_pairings_cannot_extend_work(self) -> None:
+        for kind, name, envelope in (
+            ("function_call", "exec", "response_item"),
+            ("custom_tool_call", "exec_command", "response_item"),
+            ("custom_tool_call", "exec", "event_msg"),
+        ):
+            with self.subTest(kind=kind, name=name, envelope=envelope):
+                call = self._call(name=name)
+                call["type"] = envelope
+                call["payload"].update(
+                    type=kind, input="doSomething()", arguments=json.dumps({"cmd": "sleep 1"})
+                )
+                self.assertEqual("idle", self._collect([call])["state"])
+
+    def test_zero_cap_at_now_uses_plan_fallback(self) -> None:
+        row = self._collect([self._plan(), self._call(at=self.now)], cap=0)
+        self.assertEqual("Build project…", row["state_detail"])
+
+    def test_parser_clears_pending_on_completion_and_abort(self) -> None:
+        for end in (_complete, _aborted):
+            with self.subTest(end=end.__name__):
+                self._collect([self._call(), end(self.call_at + 1)])
+                config, _ = runtime()
+                info = transcripts.analyze_codex_transcript(config, str(self.path))
+                self.assertEqual([], info["pending_shell_calls"])
 
     def test_ceiling_can_be_shortened_or_disabled(self) -> None:
         for cap in (200, 0):

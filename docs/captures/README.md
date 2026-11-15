@@ -86,6 +86,14 @@ No `exec_command_begin` or `exec_command_end` record was seen in the 0.169.0 sna
 shell commands arrive as `event_msg` / `item_completed` with `CommandExecution` items instead.
 Those inner command completions do not retire the outer `exec` call.
 
+An expanded shapes-only scan of 1,461 rollouts found string JavaScript input for `exec` and
+JSON-object arguments for the direct function tools: string `cmd` for `exec_command`, string
+`command` for `shell_command`, and integer `session_id` for `write_stdin`. Seven `write_stdin`
+calls omitted `chars`. Two user-role `codex_internal_context` records appeared between an `exec`
+call and its matching output in the same turn, about 15 to 17 seconds into calls completing
+around 31 seconds. Placement is measured; a prolonged wait across that injection is synthetic.
+No mid-call `subagent_notification` was found; its preservation is covered synthetically.
+
 ## What is in a record, and what is deliberately not
 
 Each line is one hook invocation, written by `scripts/capture_hook.py`. It records the **names** of
