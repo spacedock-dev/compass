@@ -357,10 +357,15 @@ opener, process launch or raw runtime file operation until its module and functi
 entry with a one-line reason. Process entries include argv shapes; file entries include call counts,
 so a twin inside an existing function also needs review. Inspect the actual executable and file
 source before adding an entry. The entries marked `KNOWN GAP` record existing debt, not approved
-patterns to copy. The checker follows imports and simple aliases, not arbitrary dataflow.
+patterns to copy. Other file entries must name the function owning the checks or exemption.
+The checker follows imports, static aliases, constant `getattr` and runner defaults, and refuses
+unresolved attributes on primitive modules. It does not follow arbitrary dataflow.
 
 A new HTTP route also needs a row in `test_http_admission_matrix.py`, which discovers the dispatch
 inventory and checks navigation, cross-port subresources, duplicate Host headers and LAN access.
+Cross-port GETs cover both no-cors requests without Origin and CORS requests with Origin. The
+matrix checks forwarding headers on every loopback-only POST and uses valid discard input so
+body validation cannot mask a missing admission guard.
 Keep its board-read allowlist consistent with [SECURITY.md](SECURITY.md#known-and-accepted).
 Workflow and local action YAML must pin remote actions to full SHAs and container images to digests,
 pass expressions through `env` instead of shell source, deny npm install scripts and install Python

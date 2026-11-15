@@ -126,7 +126,7 @@ RUNNERS = {
 RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ("compass_runtime/annotations.py", "_fsync_directory"): (
         1,
-        "Directory descriptor for durability, no content read.",
+        "_fsync_directory: Directory descriptor for durability, no content read.",
     ),
     ("compass_runtime/annotations.py", "_read_store"): (
         1,
@@ -134,11 +134,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/ci_read.py", "_run"): (
         2,
-        "Private TemporaryDirectory output captures for a bounded subprocess.",
+        "_run: Private TemporaryDirectory output captures for a bounded subprocess.",
     ),
     ("compass_runtime/claude_settings.py", "document"): (
         1,
-        "External settings descriptor checked for regular file and bounded reads.",
+        "document: External settings descriptor checked for regular file and bounded reads.",
     ),
     ("compass_runtime/copied_corrections.py", "_read"): (
         1,
@@ -166,7 +166,7 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/git_status.py", "_read_regular"): (
         1,
-        "Nonblocking descriptor with regular-file and size checks for repository data.",
+        "_read_regular: Nonblocking descriptor with regular-file and size checks for repository data.",
     ),
     ("compass_runtime/history.py", "load"): (
         1,
@@ -174,39 +174,39 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/http_api.py", "_interaction_asset"): (
         2,
-        "Bundled terminal assets verified against shipped SHA-256 digests.",
+        "_interaction_asset: Bundled terminal assets verified against shipped SHA-256 digests.",
     ),
     ("compass_runtime/https_transport.py", "open_bounded"): (
         1,
-        "HTTP opener.open, not a filesystem operation.",
+        "open_bounded: HTTP opener.open, not a filesystem operation.",
     ),
     ("compass_runtime/interaction_prototype.py", "_read_registration_generation"): (
         1,
-        "Registration helper validates descriptor identity and generation.",
+        "_read_registration_generation: Registration helper validates descriptor identity and generation.",
     ),
     ("compass_runtime/interaction_prototype.py", "_read_registration_file"): (
         1,
-        "Registration helper refuses links and nonregular files using descriptor checks.",
+        "_read_registration_file: Registration helper refuses links and nonregular files using descriptor checks.",
     ),
     ("compass_runtime/interaction_prototype.py", "start_client"): (
         1,
-        "Exclusive owner-only temporary file in a private temporary directory.",
+        "start_client: Exclusive owner-only temporary file in a private temporary directory.",
     ),
     ("compass_runtime/interaction_prototype.py", "_write_registration_file"): (
         2,
-        "Registration helper uses exclusive owner-only staging and private directory checks.",
+        "KNOWN GAP: exclusive staging does not validate parent directory ownership or refuse directory links.",
     ),
     ("compass_runtime/lifecycle.py", "daemon_redirect_stdio"): (
         1,
-        "OS null device for detached process stdin.",
+        "daemon_redirect_stdio: OS null device for detached process stdin.",
     ),
     ("compass_runtime/monitor_store.py", "lock"): (
         1,
-        "Private lock helper with NOFOLLOW, NONBLOCK and descriptor identity checks.",
+        "KNOWN GAP: lock open lacks NONBLOCK and owner/identity checks; only regular-file and advisory-lock checks.",
     ),
     ("compass_runtime/monitor_store.py", "read"): (
         1,
-        "Private control-record helper with NOFOLLOW, NONBLOCK and identity checks.",
+        "KNOWN GAP: control read checks regular-file type and size but lacks owner/identity and directory checks.",
     ),
     ("compass_runtime/notifications.py", "resolve_quiet_hours"): (
         1,
@@ -218,39 +218,39 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/project_context.py", "frozen_codex_sources"): (
         2,
-        "Exclusive owner-only copy inside a newly created private temporary directory.",
+        "frozen_codex_sources: Exclusive owner-only copy inside a newly created private temporary directory.",
     ),
     ("compass_runtime/project_context.py", "_frozen_codex_messages"): (
         1,
-        "Reads its private frozen transcript copy.",
+        "_frozen_codex_messages: Reads its private frozen transcript copy.",
     ),
     ("compass_runtime/project_scripts.py", "_read_regular"): (
         1,
-        "Descriptor helper checks regular-file identity and read cap.",
+        "_read_regular: Descriptor helper checks regular-file identity and read cap.",
     ),
     ("compass_runtime/reach.py", "_stored_reach_url"): (
         1,
-        "NOFOLLOW, NONBLOCK and same-descriptor owner/mode/identity checks.",
+        "_stored_reach_url: NOFOLLOW, NONBLOCK and same-descriptor owner/mode/identity checks.",
     ),
     ("compass_runtime/reach.py", "send_reach_nudge"): (
         1,
-        "HTTP opener.open, not a filesystem operation.",
+        "send_reach_nudge: HTTP opener.open, not a filesystem operation.",
     ),
     ("compass_runtime/reader_checks.py", "_read"): (
         1,
-        "Owner-only regular-file descriptor helper.",
+        "KNOWN GAP: reader checks follow links and lack owner/identity checks despite nonblocking regular-file reads.",
     ),
     ("compass_runtime/reading_ci_acquire.py", "ci"): (
         1,
-        "self.open opens an acquisition context, not a file.",
+        "ci: self.open opens an acquisition context, not a file.",
     ),
     ("compass_runtime/reading_ci_acquire.py", "git"): (
         1,
-        "self.open opens an acquisition context, not a file.",
+        "git: self.open opens an acquisition context, not a file.",
     ),
     ("compass_runtime/reading_ci_acquire.py", "read"): (
         1,
-        "self.open opens an acquisition context, not a file.",
+        "read: self.open opens an acquisition context, not a file.",
     ),
     ("compass_runtime/reading_jobs.py", "_mark_unstored"): (
         1,
@@ -270,11 +270,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/reading_long_markers.py", "_write"): (
         1,
-        "Exclusive owner-only temporary staging descriptor.",
+        "_write: Exclusive owner-only temporary staging descriptor.",
     ),
     ("compass_runtime/reading_long_markers.py", "sync_directory"): (
         1,
-        "Directory durability descriptor, no file content.",
+        "sync_directory: Directory durability descriptor, no file content.",
     ),
     ("compass_runtime/reading_long_markers.py", "_read"): (
         1,
@@ -282,11 +282,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/reading_policy.py", "_connect"): (
         1,
-        "Owner-only SQLite placeholder descriptor with NOFOLLOW/NONBLOCK.",
+        "_connect: Owner-only SQLite placeholder descriptor with NOFOLLOW/NONBLOCK.",
     ),
     ("compass_runtime/reading_route.py", "_aws_config"): (
         1,
-        "External AWS settings read through bounded descriptor checks.",
+        "_aws_config: External AWS settings read through bounded descriptor checks.",
     ),
     ("compass_runtime/semantic_history.py", "_read"): (
         1,
@@ -294,11 +294,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/sessions.py", "_git_checkout"): (
         2,
-        "Repository gitdir/commondir marker reads, not Compass state.",
+        "_git_checkout: Repository gitdir/commondir marker reads, not Compass state.",
     ),
     ("compass_runtime/settings.py", "_read_store"): (
         1,
-        "Owner-only settings helper with nonblocking descriptor checks.",
+        "KNOWN GAP: settings read checks regular-file type but lacks owner/identity and directory checks.",
     ),
     ("compass_runtime/summary_jobs.py", "_eligible"): (
         1,
@@ -322,11 +322,11 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/terminal_client.py", "read_line"): (
         1,
-        "Nonblocking regular-file read helper for external harness status.",
+        "read_line: Nonblocking regular-file read helper for external harness status.",
     ),
     ("compass_runtime/terminal_client.py", "release_version"): (
         2,
-        "Installed immutable version/manifest data.",
+        "release_version: Installed immutable version/manifest data.",
     ),
     ("compass_runtime/tripwires.py", "load"): (
         1,
@@ -338,15 +338,15 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("compass_runtime/update_check.py", "_read"): (
         1,
-        "Nonblocking regular-file descriptor checked for cap and metadata.",
+        "_read: Nonblocking regular-file descriptor checked for cap and metadata.",
     ),
     ("compass_runtime/web/page.py", "_verified_file"): (
         1,
-        "Bundled frontend assets with integrity verification.",
+        "_verified_file: Bundled frontend assets with integrity verification.",
     ),
     ("compass_runtime/web/page.py", "_load_react_page"): (
         1,
-        "Bundled integrity metadata, not Compass state.",
+        "_load_react_page: Bundled integrity metadata, not Compass state.",
     ),
 }
 
@@ -356,7 +356,56 @@ def _name(node: ast.expr, imports: dict[str, str]) -> str:
         return imports.get(node.id, node.id)
     if isinstance(node, ast.Attribute):
         return _name(node.value, imports) + "." + node.attr
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+    ):
+        attribute = node.args[1]
+        suffix = (
+            attribute.value
+            if isinstance(attribute, ast.Constant) and isinstance(attribute.value, str)
+            else "<dynamic>"
+        )
+        return _name(node.args[0], imports) + "." + suffix
+    if isinstance(node, ast.BoolOp):
+        # A fallback to a primitive is still a primitive site, even with an injected runner.
+        for value in node.values:
+            name = _name(value, imports)
+            if _sensitive_name(name):
+                return name
     return ast.unparse(node)
+
+
+def _sensitive_name(name: str) -> bool:
+    return name == "open" or name.split(".", maxsplit=1)[0] in {
+        "subprocess",
+        "urllib",
+        "os",
+        "io",
+        "builtins",
+        "pathlib",
+        "asyncio",
+        "pty",
+    }
+
+
+def _process(name: str) -> bool:
+    return name in {
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.check_output",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.getoutput",
+        "subprocess.getstatusoutput",
+        "os.system",
+        "os.popen",
+        "pty.spawn",
+        "asyncio.create_subprocess_exec",
+        "asyncio.create_subprocess_shell",
+    } or name.startswith(("os.exec", "os.spawn", "os.posix_spawn"))
 
 
 def _imports(tree: ast.AST) -> dict[str, str]:
@@ -374,13 +423,18 @@ def _imports(tree: ast.AST) -> dict[str, str]:
 
 
 def _assigned_aliases(tree: ast.AST, found: dict[str, str]) -> dict[str, str]:
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    # Bound the lexical fixed point by the number of assignments; no execution or inference.
+    for _ in assignments:
+        previous = found.copy()
+        for node in assignments:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     resolved = _name(node.value, found)
-                    if resolved.startswith(("subprocess.", "urllib.request.", "os.")):
+                    if _sensitive_name(resolved):
                         found[target.id] = resolved
+        if found == previous:
+            break
     return found
 
 
@@ -391,11 +445,7 @@ def _runner_defaults(tree: ast.AST, imports: dict[str, str], module: str) -> lis
             continue
         defaults = [*node.args.defaults, *node.args.kw_defaults]
         runners = [
-            value
-            for value in defaults
-            if value is not None
-            and _name(value, imports)
-            in {"subprocess.run", "subprocess.Popen", "subprocess.check_output"}
+            value for value in defaults if value is not None and _process(_name(value, imports))
         ]
         if runners and ((module, node.name) not in RUNNERS or len(runners) != 1):
             found.append(f"{module} {node.name}: unreviewed injectable process runner")
@@ -419,18 +469,17 @@ def violations(source: str, module: str) -> list[str]:
         key = module, function
         name = _name(node.func, imports)
         prefix = f"{module}:{node.lineno} {function}: "
+        resolved = _name(node, imports)
+        if any(
+            value.endswith(".<dynamic>") and _sensitive_name(value) for value in (name, resolved)
+        ):
+            found.append(prefix + "unresolved primitive attribute requires review")
         if (
             name in {"urllib.request.urlopen", "urllib.request.build_opener"}
             and module not in OPENERS
         ):
             found.append(prefix + "unreviewed HTTP opener")
-        if name in {
-            "subprocess.run",
-            "subprocess.Popen",
-            "subprocess.check_output",
-            "subprocess.call",
-            "subprocess.check_call",
-        } or name.startswith(("os.exec", "os.spawn", "os.posix_spawn")):
+        if _process(name):
             allowed, _reason = PROCESSES.get(key, ((), ""))
             argv = ast.unparse(node.args[0]) if node.args else ""
             process_counts[key] = process_counts.get(key, 0) + 1
@@ -473,6 +522,57 @@ def _stale_entries(
 
 
 class SecurityPrimitivesTest(unittest.TestCase):
+    def test_static_alias_default_and_launcher_bypasses_rejected(self) -> None:
+        for source in (
+            "import urllib.request; req = urllib.request; req.urlopen('u')",
+            "import subprocess; s = subprocess; s.run(['git'])",
+            "fn = open; fn('/tmp/x')",
+            "import io; fn = io.open; fn('/tmp/x')",
+            "import builtins; fn = builtins.open; fn('/tmp/x')",
+            "from pathlib import Path; fn = Path.open; fn(Path('/tmp/x'))",
+            "import subprocess; getattr(subprocess, 'run')(['git'])",
+            "import urllib.request; getattr(urllib.request, 'urlopen')('u')",
+            "import builtins; getattr(builtins, 'open')('/tmp/x')",
+            "import os; os.popen('id')",
+            "import os; os.system('id')",
+            "import asyncio; asyncio.create_subprocess_exec('git')",
+            "import asyncio; asyncio.create_subprocess_shell('id')",
+            "import subprocess; subprocess.getoutput('id')",
+            "import subprocess\ndef f(runner=subprocess.call):\n runner(['git'])",
+            "import subprocess\ndef f(runner=None):\n fn = runner or subprocess.run\n fn(['git'])",
+            "import os; os.posix_spawn('git', ['git'], {})",
+            "import os; os.execlp('git', 'git')",
+            "import pty; pty.spawn(['git'])",
+            "import subprocess\ndef f(method):\n getattr(subprocess, method)(['git'])",
+            "import subprocess\ndef f(method):\n launch = getattr(subprocess, method)\n launch(['git'])",
+            "import subprocess\ndef f(method):\n return getattr(subprocess, method)",
+            "import subprocess\ndef f(runner=getattr(subprocess, method)):\n runner(['git'])",
+        ):
+            with self.subTest(source=source):
+                self.assertTrue(violations(source, "compass_runtime/new.py"))
+
+    def test_deferred_unsafe_sites_remain_known_gaps(self) -> None:
+        missing = {
+            ("compass_runtime/monitor_store.py", "lock"): ("owner", "nonblock"),
+            ("compass_runtime/monitor_store.py", "read"): ("owner",),
+            ("compass_runtime/interaction_prototype.py", "_write_registration_file"): (
+                "directory",
+            ),
+            ("compass_runtime/reader_checks.py", "_read"): ("owner", "link"),
+            ("compass_runtime/settings.py", "_read_store"): ("owner",),
+        }
+        for key, gaps in missing.items():
+            with self.subTest(key=key):
+                description = RAW_FILES[key][1]
+                self.assertTrue(description.startswith("KNOWN GAP:"))
+                for gap in gaps:
+                    self.assertIn(gap, description.lower())
+        # Naming the reviewed function keeps generic claims of full protection out of entries.
+        for (_module, function), (_count, reason) in RAW_FILES.items():
+            if not reason.startswith("KNOWN GAP:"):
+                with self.subTest(function=function):
+                    self.assertIn(function, reason)
+
     def test_production_tree_uses_reviewed_primitives(self) -> None:
         found = []
         for path in sorted(ROOT.rglob("*.py")):

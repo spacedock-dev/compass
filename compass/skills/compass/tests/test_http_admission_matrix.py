@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import http.client
+import json
 import threading
 import unittest
 from pathlib import Path
@@ -115,11 +116,17 @@ REMOTE_RESULTS = {
     ("POST", "/api/focus"): 403,  # Capability remains required on a remote board.
     ("POST", "/api/lane"): 400,
     ("POST", "/api/notify"): 200,
-    ("POST", "/api/reading-long-discard"): 400,
     ("POST", "/api/shutdown"): 200,
     ("POST", "/api/tripwire"): 400,
     ("POST", "/api/usage"): 200,
     **{("POST", f"/api/events/{harness}"): 403 for harness in events.IDENTITY_NORMALIZERS},
+}
+VALID_DISCARD = {
+    "harness": "claude",
+    "sid": "11111111-2222-3333-4444-555555555555",
+    "job": "a" * 32,
+    "press": True,
+    "observer_model": 1,
 }
 
 
@@ -132,14 +139,10 @@ def interaction_suffixes(operation: ast.FunctionDef) -> set[str]:
                 for key in item.keys
                 if isinstance(key, ast.Constant) and isinstance(key.value, str)
             )
-        if (
-            isinstance(item, ast.Compare)
-            and isinstance(item.left, ast.Name)
-            and item.left.id == "route"
-        ):
+        if isinstance(item, ast.Compare):
             suffixes.update(
                 value.value
-                for value in item.comparators
+                for value in ast.walk(item)
                 if isinstance(value, ast.Constant) and isinstance(value.value, str)
             )
     return suffixes
@@ -162,7 +165,7 @@ def dispatched_routes(source: str) -> set[tuple[str, str]]:
             if isinstance(node, ast.Compare):
                 routes.update(
                     (verb, value.value)
-                    for value in node.comparators
+                    for value in ast.walk(node)
                     if isinstance(value, ast.Constant)
                     and isinstance(value.value, str)
                     and value.value.startswith("/")
@@ -199,6 +202,37 @@ def dispatched_routes(source: str) -> set[tuple[str, str]]:
 
 
 class AdmissionInventoryTest(unittest.TestCase):
+    def test_membership_and_reversed_route_additions_require_matrix_rows(self) -> None:
+        source = Path(http_api.__file__).read_text()
+        for condition in (
+            'url.path in ("/api/new-a", "/api/new-b")',
+            'url.path in {"/api/new-a", "/api/new-b"}',
+            '"/api/new-a" == url.path',
+        ):
+            with self.subTest(condition=condition):
+                mutated = source.replace(
+                    'if url.path.startswith("/api/ask/"):',
+                    f"if {condition}:\n            self._health()\n            return True\n"
+                    '        if url.path.startswith("/api/ask/"):',
+                    1,
+                )
+                additions = dispatched_routes(mutated) - set(ROWS)
+                expected = {("GET", "/api/new-a")}
+                if " in " in condition:
+                    expected.add(("GET", "/api/new-b"))
+                self.assertEqual(expected, additions)
+        for condition in (
+            'route in ("new-a", "new-b")',
+            'route in {"new-a", "new-b"}',
+            '"new-a" == route',
+        ):
+            with self.subTest(condition=condition):
+                mutated = source.replace('route == "origin"', condition, 1)
+                additions = dispatched_routes(mutated) - set(ROWS)
+                self.assertIn(("GET", "/api/interaction/new-a"), additions)
+                if " in " in condition:
+                    self.assertIn(("GET", "/api/interaction/new-b"), additions)
+
     def test_every_dispatch_arm_has_a_matrix_row(self) -> None:
         self.assertEqual(set(ROWS), dispatched_routes(Path(http_api.__file__).read_text()))
 
@@ -251,6 +285,11 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             ],
             "cross-port": [
                 ("Sec-Fetch-Site", "same-site"),
+                ("Sec-Fetch-Mode", "no-cors" if method == "GET" else "cors"),
+                ("Sec-Fetch-Dest", "empty"),
+            ],
+            "cross-port-cors": [
+                ("Sec-Fetch-Site", "same-site"),
                 ("Sec-Fetch-Mode", "cors"),
                 ("Sec-Fetch-Dest", "empty"),
             ],
@@ -269,8 +308,8 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 "Sec-Fetch-Dest": "empty",
             }[name]
             headers += [(name, value), (name, value)]
-        if kind == "cross-port" and method == "POST":
-            # A form/fetch POST carries Origin; script/image subresources need not.
+        if kind == "cross-port-cors" or (kind == "cross-port" and method == "POST"):
+            # CORS requests carry Origin; no-cors script/image GETs need not.
             headers += [("Origin", f"http://127.0.0.1:{1 if port == 65535 else port + 1}")]
         if kind == "lan":
             headers = [("Host", "board.example"), ("Origin", "https://board.example")]
@@ -289,8 +328,9 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 instance, request, ("192.0.2.10", address[1]) if kind == "lan" else address, server
             )
 
+        body = json.dumps(VALID_DISCARD).encode() if path == "/api/reading-long-discard" else b"[]"
         # Peer injection changes only the address the real socket handler sees; binding stays
-        # loopback. Empty payloads and a blocked shutdown prevent authorized board mutations.
+        # loopback. Discard must pass validation before it can exercise its admission guard.
         try:
             with (
                 mock.patch.object(http_api._RequestHandler, "__init__", handler),
@@ -299,8 +339,8 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 conn.putrequest(method, path, skip_host=True)
                 for name, value in headers:
                     conn.putheader(name, value)
-                conn.putheader("Content-Length", "2" if method == "POST" else "0")
-                conn.endheaders(b"[]" if method == "POST" else None)
+                conn.putheader("Content-Length", str(len(body)) if method == "POST" else "0")
+                conn.endheaders(body if method == "POST" else None)
                 response = conn.getresponse()
                 if path != "/api/stream":
                     response.read()
@@ -334,8 +374,27 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
     def test_cross_site_top_level_navigation(self) -> None:
         self.check_class("navigation")
 
-    def test_same_site_cross_port_subresource(self) -> None:
+    def test_same_site_cross_port_no_cors_get_and_cors_post(self) -> None:
         self.check_class("cross-port")
+
+    def test_cross_port_cors_get_rejects_origin(self) -> None:
+        for path in sorted(GET):
+            with self.subTest(path=path):
+                self.assertEqual(403, self.request("GET", path, "cross-port-cors"))
+
+    def test_valid_discard_rejects_lan_and_forwarding(self) -> None:
+        self.assertTrue(http_api._RequestHandler._valid_long_discard(VALID_DISCARD))
+        with mock.patch.object(
+            http_api._RequestHandler, "_discard_long_marker", return_value=(200, True, "")
+        ) as discard:
+            # Positive control proves the same input can reach the eventual mutation.
+            self.assertEqual(200, self.request("POST", "/api/reading-long-discard", "local"))
+            discard.assert_called_once_with(VALID_DISCARD)
+            discard.reset_mock()
+            for kind in ("lan", "proxy"):
+                with self.subTest(kind=kind):
+                    self.assertEqual(403, self.request("POST", "/api/reading-long-discard", kind))
+                    discard.assert_not_called()
 
     # A duplicate admission header is refused by the admission gate (403, as SECURITY.md says),
     # not by the header parser; only a defective header block is a 400.
@@ -358,15 +417,19 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
 
     def test_forwarding_headers_cannot_reach_loopback_only_routes(self) -> None:
         protected = [("GET", path) for path in GET - REMOTE_READS - {"/api/ask/MATRIX"}]
-        protected += [("POST", path) for path in POST if path.startswith("/api/interaction/")]
-        protected += [
-            ("POST", "/api/direction"),
-            ("POST", "/api/correction"),
-            ("POST", "/api/settings"),
-        ]
         for method, path in protected:
             with self.subTest(method=method, path=path):
                 self.assertEqual(403, self.request(method, path, "proxy"))
+
+    def test_every_loopback_post_rejects_forwarding(self) -> None:
+        remote_posts = {
+            path
+            for (method, path), status in REMOTE_RESULTS.items()
+            if method == "POST" and status != 403
+        }
+        for path in sorted(POST - remote_posts):
+            with self.subTest(path=path):
+                self.assertEqual(403, self.request("POST", path, "proxy"))
 
     def test_transfer_encoding_is_refused_before_every_post_route(self) -> None:
         for path in sorted(POST):

@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -755,13 +756,31 @@ def workflow_nodes(value: Any) -> Any:
 
 
 def _install_script_errors(run: str) -> list[str]:
-    return [
-        f"dependency scripts enabled: {command.strip()}"
-        for line in run.replace("\\\n", " ").splitlines()
-        for command in re.split(r"&&|\|\||[;|]", line.split("#", 1)[0])
-        if re.search(r"\b(?:npm|pnpm)\s+(?:install|i|ci|add)\b", command)
-        and "--ignore-scripts" not in command
-    ]
+    errors = []
+    for line in run.replace("\\\n", " ").splitlines():
+        for command in re.split(r"&&|\|\||[;|]", line.split("#", 1)[0]):
+            if not re.search(r"\b(?:npm|pnpm)\s+(?:install|i|ci|add)\b", command):
+                continue
+            if not _scripts_denied(command):
+                errors.append(f"dependency scripts enabled: {command.strip()}")
+    return errors
+
+
+def _scripts_denied(command: str) -> bool:
+    # Token boundaries matter: --userconfig='--ignore-scripts' sets a different option.
+    words = shlex.split(command)
+    denied = False
+    for index, word in enumerate(words):
+        if word == "--":
+            break
+        if word.startswith("--ignore-scripts="):
+            denied = word == "--ignore-scripts=true"
+        elif word == "--no-ignore-scripts":
+            denied = False
+        elif word == "--ignore-scripts":
+            following = words[index + 1] if index + 1 < len(words) else ""
+            denied = following != "false"
+    return denied
 
 
 def workflow_security_errors(document: dict[str, Any]) -> list[str]:
@@ -788,6 +807,29 @@ def workflow_security_errors(document: dict[str, Any]) -> list[str]:
 
 
 class WorkflowPrimitivePinsTest(unittest.TestCase):
+    def test_install_requires_effective_ignore_scripts(self) -> None:
+        for run in (
+            'npm ci --userconfig="--ignore-scripts"',
+            "pnpm install --filter=--ignore-scripts",
+            "npm ci --ignore-scripts=false",
+            "pnpm add x --ignore-scripts false",
+            "npm ci --ignore-scripts --ignore-scripts=false",
+            "npm ci --ignore-scripts --no-ignore-scripts",
+            "npm ci -- --ignore-scripts",
+        ):
+            with self.subTest(run=run):
+                self.assertTrue(_install_script_errors(run))
+        for run in (
+            "npm ci --ignore-scripts",
+            "pnpm install --ignore-scripts=true --frozen-lockfile",
+            "npm install --ignore-scripts true",
+            "pnpm add x --ignore-scripts",
+            "npm ci --ignore-scripts=false --ignore-scripts",
+            "npm ci --ignore-scripts && pnpm install --ignore-scripts",
+        ):
+            with self.subTest(run=run):
+                self.assertEqual([], _install_script_errors(run))
+
     def test_every_workflow_and_local_action_uses_immutable_primitives(self) -> None:
         for name, document in workflow_documents().items():
             with self.subTest(document=name):

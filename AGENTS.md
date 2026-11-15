@@ -579,17 +579,24 @@ shape; file entries pin the module, function and call count. Prefer the transpor
 and `io` primitives. An exception needs a one-line reason and review of its executable or path,
 not just an added tuple to quiet a failure. Entries marked `KNOWN GAP` preserve pre-existing raw
 state-reader debt; they do not certify those readers as safe. Synthetic rejection tests exercise
-all three checkers. These are lexical gates, not interprocedural dataflow or dynamic-import analysis.
+all three checkers. Non-gap file entries name the function enforcing the stated checks or owning
+the exemption. The lexical checker follows static aliases, constant `getattr` and runner defaults,
+and refuses unresolved attributes on primitive modules. It is not interprocedural dataflow or
+dynamic-import analysis.
 
 `test_http_admission_matrix.py` derives routes from the HTTP dispatch dictionaries and prefix
 handlers, including terminal operations and the WebSocket, and holds every route to navigation,
-same-site cross-port, duplicate-Host and allowed-name LAN requests. Keep its explicit board-read
+same-site cross-port, duplicate-Host and allowed-name LAN requests. Cross-port GETs exercise both
+no-cors subresources without Origin and CORS requests with Origin. Discard requests pass body
+validation before testing admission; every loopback-only POST also gets a forwarding-header row.
+Keep its explicit board-read
 allowlists and expected statuses in sync with SECURITY.md. A new route needs a matrix row. A
 duplicate admission header is refused with 403 by the admission gate; only a defective header block
 is a 400.
 `test_workflow_caches.py` and `test_release_workflow.py` scan all workflows and local action YAML:
 remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run` blocks take
-expressions through `env`, npm installs deny scripts, and pip installs use generated hashed files.
+expressions through `env`, npm installs carry an effective `--ignore-scripts` argument, and pip
+installs use generated hashed files.
 
 The separate `sast.yml` workflow runs dependency audits weekly and on dependency-file pull
 requests: npm at high severity and Python exact pins against OSV, without mutating a lockfile or
