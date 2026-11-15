@@ -950,8 +950,8 @@ def start_daemon(
     timeout: float = 30.0,
     no_update_check: bool = False,
     server_options: ServerOptions | None = None,
-) -> None:
-    """Start a dashboard the way `--daemon` does, and wait for the parent to return."""
+) -> Refusal | None:
+    """Start through lifecycle and relay its refusal, bounded to one printable message."""
     import subprocess  # noqa: PLC0415 — a read never starts one, so a read never loads this
 
     argv = [*launch_argv(), "--daemon", "--port", str(port)]
@@ -963,11 +963,16 @@ def start_daemon(
         for name in server_options.allowed_hosts:
             argv.extend(["--allow-host", name])
     try:
-        subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
+        completed = subprocess.run(  # noqa: S603 — our own interpreter and launcher, with an integer port
             argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
         )
     except (OSError, subprocess.SubprocessError):
-        return
+        return None
+    if isinstance(completed.returncode, int) and completed.returncode != 0:
+        raw = (completed.stdout or b"") + (completed.stderr or b"")
+        message = terminal_sessions.printable(raw[-4096:].decode("utf-8", errors="replace"))
+        return Refusal(message or sentence("start_failed"))
+    return None
 
 
 def unreachable_dashboard(
@@ -996,7 +1001,7 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     port: int | None,
     spend: bool,
     own_version: str | None,
-    start: Callable[[int], None] | None = None,
+    start: Callable[[int], Refusal | None] | None = None,
     say: Callable[[str], None] | None = None,
     in_session: bool = False,
     no_update_check: bool = False,
@@ -1010,17 +1015,19 @@ def ensure_dashboard(  # noqa: PLR0913 — explicit startup policy, never ambien
     """
     found = find_dashboard(home, port=port)
     if found is None:
-        if published_ports(home):
-            return Refusal(unreachable_dashboard(home, candidate_ports(home, port)))
         if not spend:
+            if published_ports(home):
+                return Refusal(unreachable_dashboard(home, candidate_ports(home, port)))
             return Refusal(sentence("not_running"))
         (say or _say)(sentence("starting"))
-        launch: Callable[[int], None] = start or (
+        launch: Callable[[int], Refusal | None] = start or (
             lambda chosen: start_daemon(
                 chosen, **server_start_kwargs(server_options, no_update_check=no_update_check)
             )
         )
-        launch(DEFAULT_PORT if port is None else port)
+        refused = launch(DEFAULT_PORT if port is None else port)
+        if isinstance(refused, Refusal):
+            return refused
         found = find_dashboard(home, port=port, timeout=2.0)
         if found is None:
             return Refusal(sentence("start_failed_in_session" if in_session else "start_failed"))

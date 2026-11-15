@@ -288,22 +288,35 @@ def legacy_state(config: RuntimeConfig, port: int, state: dict[str, Any] | None)
 
 
 def start_refusal(config: RuntimeConfig, port: int) -> str | None:
+    target = state_path(config, port)
+    if not os.path.lexists(target):
+        return None
+    with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
+        if held != runtime_io.LOCK_HELD:
+            return f"Compass: could not lock {target}; state left alone."
+        return _start_refusal(config, port)
+
+
+def _start_refusal(config: RuntimeConfig, port: int) -> str | None:
+    """Called only with the publication lock held, including the final serving-process check."""
+    if not os.path.lexists(state_path(config, port)):
+        return None
     state = read_state(config, port)
-    if (
-        os.path.lexists(state_path(config, port))
-        and not legacy_state(config, port, state)
-        and not state_gone(config, port, state)
-    ):
-        kind, _ = probe_port(port)
-        if kind == "compass":
-            return (
-                f"Compass: port {port} is already in use by Compass at "
-                f"http://127.0.0.1:{port}/; state left alone."
-            )
-        if kind == "blocked":
-            return terminal_client.sentence("loopback_blocked")
-        return terminal_client.unreachable_dashboard(config.state_home, (port,))
-    return None
+    kind, _ = probe_port(port)
+    if kind == "compass":
+        return (
+            f"Compass: port {port} is already in use by Compass at "
+            f"http://127.0.0.1:{port}/; state left alone."
+        )
+    if kind == "blocked":
+        return terminal_client.sentence("loopback_blocked")
+    if kind in ("foreign", "busy"):
+        return render_status({"state": kind, "port": port})
+    if legacy_state(config, port, state) or state_gone(config, port, state):
+        return None
+    return terminal_client.unreachable_dashboard(
+        config.state_home, (port,), state_file=state_path(config, port)
+    )
 
 
 def write_state(
@@ -351,7 +364,7 @@ def write_state(
         with runtime_io.held_file_lock(target + ".lock", wait=0) as held:
             if held != runtime_io.LOCK_HELD:
                 raise StateOwnershipError(f"Compass: could not lock {target}; state left alone.")  # noqa: TRY301 - refusal must escape the recoverable write error path
-            if refusal := start_refusal(config, port):
+            if refusal := _start_refusal(config, port):
                 raise StateOwnershipError(refusal)  # noqa: TRY301 - refusal must escape the recoverable write error path
             runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=config.state_home)
             published = True
@@ -412,6 +425,10 @@ def remove_state(
         )
         if not own and not legacy_dead and not state_gone(config, port, state):
             return False
+        if not own:
+            kind, _ = probe_port(port, timeout=0.1)
+            if kind != "closed" or not port_released(config, port):
+                return False
         if not runtime_config.remove_state_file(target):
             return False
         runtime_config.remove_state_file(origin_path(config, port))

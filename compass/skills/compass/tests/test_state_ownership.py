@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest import mock
 
-from compass_runtime import cli, lifecycle, terminal_client
+from compass_runtime import cli, lifecycle, terminal_client, terminal_monitor
 from compass_runtime import io as runtime_io
 
 from .support import SERVER_PATH, cfg, make_server
@@ -348,6 +348,61 @@ class StateOwnershipTest(unittest.TestCase):
             lifecycle.write_state(self.config, self.port, started=2.0)
         self.assertEqual(before, self.state.read_bytes())
 
+    def test_replacement_after_start_preflight_is_preserved_at_publication(self) -> None:
+        self.record()
+        origin = Path(lifecycle.origin_path(self.config, self.port))
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+        ):
+            self.assertIsNone(lifecycle.start_refusal(self.config, self.port))
+            data = json.loads(origin.read_text())
+            data["environment"] = REMOTE
+            origin.write_text(json.dumps(data))
+            before = (self.state.read_bytes(), origin.read_bytes())
+            with self.assertRaises(lifecycle.StateOwnershipError):
+                lifecycle.write_state(self.config, self.port, started=2.0)
+            self.assertEqual(before, (self.state.read_bytes(), origin.read_bytes()))
+
+    def test_start_preflight_accepts_a_home_that_has_not_been_created(self) -> None:
+        config = dataclasses.replace(self.config, state_home=str(Path(self.home, "new")))
+        self.assertIsNone(lifecycle.start_refusal(config, self.port))
+
+    def test_removal_rechecks_a_port_that_became_occupied(self) -> None:
+        original_probe = lifecycle.probe_port
+        with FakeDashboard() as fake:
+            with mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL):
+                lifecycle.write_state(self.config, self.port, started=1.0)
+            target_config = self.config
+            # A peer can bind between the caller's status probe and the lock-held mutation.
+            with (
+                mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+                mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                mock.patch.object(
+                    lifecycle,
+                    "probe_port",
+                    side_effect=lambda _port, **kw: original_probe(fake.port, **kw),
+                ),
+            ):
+                self.assertFalse(lifecycle.remove_state(target_config, self.port))
+        self.assertTrue(self.state.exists())
+
+    def test_stop_rechecks_replacement_after_legacy_status(self) -> None:
+        self.state.write_text(json.dumps({"pid": 99999999, "port": self.port, "started": 1}))
+
+        def replace(_config: object, _port: int) -> bool:
+            self.state.unlink()
+            self.record(REMOTE)
+            return True
+
+        with (
+            mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+            mock.patch.object(lifecycle, "await_release", side_effect=replace),
+        ):
+            message, code = lifecycle.stop_instance(self.config, self.port)
+        self.assertEqual(1, code, message)
+        self.assertTrue(self.state.exists())
+
 
 class SystemIdentityFileTest(unittest.TestCase):
     def test_root_owned_os_identity_is_readable_to_an_ordinary_user(self) -> None:
@@ -436,17 +491,95 @@ class UnreachableClientTest(unittest.TestCase):
                 self.assertIn("container or sandbox", message)
                 self.assertIn(terminal_client.launch_command("--daemon"), message)
 
-    def test_spend_does_not_launch_with_an_unreachable_published_dashboard(self) -> None:
+    def test_unrelated_record_does_not_veto_default_or_explicit_target(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            remote = closed_port()
+            path = Path(home, f"compass-{remote}.json")
+            path.write_text("tokens")
+            target = closed_port()
+            for chosen in (None, target):
+                started: list[int] = []
+                with mock.patch.object(terminal_client, "DEFAULT_PORT", target):
+                    terminal_client.ensure_dashboard(
+                        home, port=chosen, spend=True, own_version="x", start=started.append
+                    )
+                self.assertEqual([target], started)
+                self.assertEqual("tokens", path.read_text())
+
+    def test_delegated_unknown_target_refusal_names_the_exact_file(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             port = closed_port()
-            Path(home, f"compass-{port}.json").write_text("tokens")
-            for chosen in (None, port, closed_port()):
-                started: list[int] = []
+            path = Path(home, f"compass-{port}.json")
+            path.write_text("tokens")
+            with mock.patch.dict(os.environ, {"COMPASS_HOME": home}):
                 result = terminal_client.ensure_dashboard(
-                    home, port=chosen, spend=True, own_version="x", start=started.append
+                    home, port=port, spend=True, own_version="x", no_update_check=True
                 )
-                self.assertIsInstance(result, terminal_client.Refusal)
-                self.assertEqual([], started)
+            self.assertIsInstance(result, terminal_client.Refusal)
+            assert isinstance(result, terminal_client.Refusal)
+            self.assertIn(str(path), result.message)
+            self.assertEqual("tokens", path.read_text())
+
+    def test_drift_summary_and_monitor_delegate_dead_target_recovery(self) -> None:
+        for legacy in (False, True):
+            for action in ("drift", "summary", "monitor"):
+                with (
+                    self.subTest(action=action, legacy=legacy),
+                    tempfile.TemporaryDirectory() as home,
+                ):
+                    port = closed_port()
+                    config = dataclasses.replace(cfg(), state_home=home, state_dir=Path(home))
+                    path = Path(lifecycle.state_path(config, port))
+                    with mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL):
+                        lifecycle.write_state(config, port, started=1.0)
+                    if legacy:
+                        data = json.loads(path.read_text())
+                        data.pop("state_format")
+                        path.write_text(json.dumps(data))
+                        Path(lifecycle.origin_path(config, port)).unlink()
+                    started: list[int] = []
+
+                    def delegated(
+                        argv: list[str], **_kwargs: object
+                    ) -> subprocess.CompletedProcess[bytes]:
+                        # Exercise the real CLI ownership/sweep boundary without detaching a daemon.
+                        with (
+                            mock.patch.object(cli, "build_server"),
+                            mock.patch.object(
+                                lifecycle, "fork_daemon", side_effect=RuntimeError("fork boundary")
+                            ),
+                        ):
+                            try:
+                                code = cli.main(argv[3:])
+                            except RuntimeError as exc:
+                                self.assertEqual("fork boundary", str(exc))
+                                started.append(port)
+                                code = 0
+                        return subprocess.CompletedProcess(argv, code, b"", b"")
+
+                    env = {"COMPASS_HOME": home, "CLAUDE_CODE_SESSION_ID": "caller"}
+                    with (
+                        mock.patch.dict(os.environ, env),
+                        mock.patch.object(terminal_client, "DEFAULT_PORT", port),
+                        mock.patch.object(lifecycle, "environment_identity", return_value=LOCAL),
+                        mock.patch.object(lifecycle, "_state_process_exists", return_value=False),
+                        mock.patch.object(lifecycle, "pid_exists", return_value=False),
+                        mock.patch.object(subprocess, "run", side_effect=delegated),
+                        mock.patch.object(terminal_monitor, "spawn") as spawn,
+                        contextlib.redirect_stdout(io.StringIO()),
+                        contextlib.redirect_stderr(io.StringIO()),
+                    ):
+                        if action == "drift":
+                            terminal_client.run_drift(environ=env)
+                        elif action == "summary":
+                            terminal_client.run_summary(
+                                terminal_client.SummaryRequest(), environ=env
+                            )
+                        else:
+                            terminal_client.run_monitor(environ=env)
+                    self.assertEqual([port], started)
+                    self.assertFalse(path.exists())
+                    spawn.assert_not_called()
 
     def test_a_client_in_another_copy_reads_a_dashboard_of_another_release(self) -> None:
         with (
