@@ -82,7 +82,7 @@ _UNSAFE_BREAKS = re.compile("[\\t\\n\\x0b\\x0c\\r\\u2028\\u2029]+")
 _SECRET_MARKER: Final = "…REDACTED"  # noqa: S105 - the marker replaces a secret, it is not one
 SECRET_MARKER: Final = _SECRET_MARKER
 
-# `(name, characters of the match kept in front of the marker, anchored, pattern)`.
+# `(name, characters kept, baseline leading-anchor requirement, pattern)`.
 #
 # Every body is bounded above as well as below, and the upper bound is the
 # vendor's own longest issued key with headroom rather than a round number. An
@@ -91,19 +91,9 @@ SECRET_MARKER: Final = _SECRET_MARKER
 # instruction, on a probe. A run longer than any key that format issues is not
 # that format, so the cap ends the match there and the rest of the line survives.
 #
-# `anchored` shapes must start a token: without it `dask-<40 chars>` reads as an
-# OpenAI key and `mask-ant-…` as an Anthropic one. A hyphen counts as inside a
-# token, and that one decision rejects 78 of the 177 `sk-` candidates in the
-# local store.
+# Preserve baseline matches before considering glued-prefix evidence. The new
+# admission in `_mark_secret` must not expose a body already masked here.
 #
-# It is checked in the replacer rather than written as a lookbehind on each
-# alternative, and that is a measured choice, not a style one: a leading
-# lookbehind leaves no literal for `re` to build its first-character skip from,
-# and the substitution cost on a 140-character line goes from 21.5 us to 36.5 us.
-#
-# `pem` and `urlcred` are unanchored because their own first character is the
-# separator: a URL credential is always preceded by a scheme, and a PEM header by
-# whatever line came before it.
 # Authorization parameters can contain quoted spaces and commas (Digest), or a
 # semicolon-delimited SignedHeaders value (AWS). A comma introduces another
 # parameter only when a name and `=` follow it. Plain prose after a token stays.
@@ -130,10 +120,8 @@ _SECRET_SHAPES: Final = (
     # it alters 25 further genuine prompts, and every one is a hyphenated
     # identifier that merely opens a token with `sk-`.
     #
-    # 32 does not clear that entirely. One 42-character all-lowercase identifier
-    # still matches, in two prompts. Requiring an uppercase character in the body
-    # would clear it, and was rejected too: OpenRouter spells its key `sk-or-v1-`
-    # plus 64 lowercase hex, so the rule that fixes two prompts loses a vendor.
+    # OpenRouter's explicit `sk-or-v1-` plus lowercase hex qualifies even when
+    # glued; ordinary lowercase identifiers with version digits do not.
     ("openai", 3, True, r"sk-[A-Za-z0-9_-]{32,180}"),  # 99 in 14 files
     # Stripe's secret and restricted keys. `pk_live_` is deliberately absent: a
     # publishable key is published on purpose.
@@ -413,31 +401,25 @@ _SECRET_VALUE_GROUP: Final = {
 # bound in `redact_clip` has to be able to step over.
 _SECRET_MAX_KEEP: Final = max(_SECRET_KEEP.values())
 
-# The match length at or above which a shape needs no anchor: `name -> length`.
-#
-# The anchor above fails OPEN, and that is a bypass rather than a rough edge. One
-# character in front of a key — `x`, a digit, `_`, `-` — and `sk-ant-api03-` plus
-# a hundred characters publishes verbatim, with the length unchanged and no
-# marker. Anyone who has ever pasted a key at the end of a word has published it.
-#
-# Dropping the anchor outright is the wrong repair: it is what rejects 78 of the
-# 177 `sk-` candidates in the local store, and those are hyphenated identifiers,
-# not keys. So the anchor is kept and made conditional on the one thing that
-# separates the two — length. A `sk-ant-` run of 90 characters, `AKIA`/`ASIA`
-# plus exactly its 16 and nothing token-shaped behind, or `github_pat_` plus its
-# 40 has no plausible innocent reading whatever sits in front of it. Below the
-# threshold the anchor still applies and the measured rejection is unchanged.
-#
-# `openai` is deliberately absent. Its 32-character body is exactly the length
-# class the false positives live in, so a threshold there would trade the
-# rejection this list exists to keep.
+# These baseline length exceptions must bypass all new glued-body gates, even
+# for lowercase bodies. Long Anthropic candidates already qualified at 90.
 _SECRET_UNAMBIGUOUS: Final = {
     "anthropic": 90,
-    "aws": 20,  # `AKIA` plus 16 is the whole shape; it has no longer form.
-    "github_fine": 51,  # `github_pat_` plus its 40.
-    "linear": 48,  # `lin_api_` plus its 40, which is the only length it has.
-    "gcloud": 25,  # `ya29.` plus 20; no innocent text opens a token with it.
+    "aws": 20,
+    "github_fine": 51,
+    "linear": 48,
+    "gcloud": 25,
 }
+# A distinctive complete shape is evidence without a case-mixture quota. The
+# other prefix families collide with ordinary words and need character evidence.
+_SECRET_DISTINCTIVE: Final = frozenset(
+    {"langfuse", "github", "gitlab", "npm", "posthog", "google", "jwt"}
+)
+_SECRET_CHARACTER_EVIDENCE: Final = re.compile(r"[A-Z0-9]")
+# Version digits are common in identifiers too. An optional trailing delimiter
+# keeps a capped candidate from evading this safeguard at a segment boundary.
+_OPENAI_GLUED_IDENTIFIER: Final = re.compile(r"[a-z][a-z0-9]*(?:[-_][a-z][a-z0-9]*)+[-_]?")
+_OPENROUTER_BODY: Final = re.compile(r"or-v1-[0-9a-f]{64}")
 
 # The literal every shape opens with, scanned with `in` before the alternation
 # runs. `str.__contains__` is a C substring search and the alternation is not,
@@ -676,7 +658,7 @@ def _cued_value_is_secret(match: re.Match[str]) -> bool:
 
 
 def _mark_secret(match: re.Match[str]) -> str | None:
-    """The marked replacement for a match, or None if the anchor rejects it.
+    """The marked replacement, or None if admission rejects the candidate.
 
     None rather than the match text, because the caller has to tell the two
     apart: a rejected span must be re-entered one character in (see
@@ -686,8 +668,19 @@ def _mark_secret(match: re.Match[str]) -> str | None:
     body = match.group()
     unambiguous = _SECRET_UNAMBIGUOUS.get(name)
     anchored = name in _SECRET_ANCHORED and (unambiguous is None or len(body) < unambiguous)
-    if anchored and match.start() and match.string[match.start() - 1] in _TOKEN_CHARS:
-        return None
+    previous = match.string[match.start() - 1] if match.start() else ""
+    if anchored and previous and previous in _TOKEN_CHARS:
+        # Only relax baseline rejections at letter/digit/underscore leads.
+        # Hyphens retain their baseline meaning, and accepted matches never
+        # encounter the stricter evidence or identifier checks below.
+        payload = body[_SECRET_KEEP[name] :]
+        evidence = bool(_SECRET_CHARACTER_EVIDENCE.search(payload))
+        if name == "openai":
+            evidence = bool(_OPENROUTER_BODY.fullmatch(payload)) or (
+                evidence and not _OPENAI_GLUED_IDENTIFIER.fullmatch(payload)
+            )
+        if previous == "-" or not (name in _SECRET_DISTINCTIVE or evidence):
+            return None
     if name == "cued":
         if not _cued_value_is_secret(match):
             return None
@@ -758,11 +751,9 @@ def _redact_scan(text: str) -> str:
     """Every shape on the list marked, scanning left to right.
 
     Hand-rolled instead of `re.sub` for one reason: `sub` resumes at
-    `match.end()`, so a span the anchor rejects is both left unmarked and
-    skipped over, and a valid key that starts inside it is never looked at. That
-    is not theoretical — `x` plus a near-miss `sk-ant-` run plus a correctly
-    anchored key published all 142 characters, where the same key one space
-    later redacted to 45. This resumes at `match.start() + 1`.
+    `match.end()`, so a rejected candidate can shield a credential inside it.
+    A lowercase hyphenated `sk-` identifier can contain a shorter prefixed shape
+    with a qualifying body. Resume at `match.start() + 1` so it is still read.
     """
     out: list[str] = []
     pos = 0
@@ -912,8 +903,8 @@ def _redact_inline_markup(text: str) -> str:
 
     found = [original(*match) for match in _secret_matches(plain)]
     # Also from just after each removed span. There the view joins a key to the word or key in
-    # front of it: the anchor rejected `x` + ZWSP + `npm_…`, and a key's capped body ran on into
-    # the next key's prefix. Matched on a slice, because the lookbehinds read the characters in
+    # front of it, and a key's capped body can run on into the next key's prefix.
+    # Matched on a slice, because the lookbehinds read the characters in
     # front of `pos`, and the span is a boundary. Only where a prefixed shape opens: tried at
     # every alphanumeric cut, the cued name's run scanned to the slice's end each time, and
     # `"a" + ZWSP` repeated over a megabyte ran past three minutes. A cue word after a span is
@@ -929,7 +920,7 @@ def _redact_inline_markup(text: str) -> str:
         return text
     # The raw text's own matches, beside the view's. Written back alone, a view match that ran
     # from one key into the next took the second key's prefix with it, and the raw scan after
-    # this had nothing left to anchor on, so the second body published.
+    # this had no second prefix left to recognise, so the second body published.
     found.extend(_secret_matches(text))
     return _write_marked(text, found)
 
