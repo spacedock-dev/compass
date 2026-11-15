@@ -116,7 +116,8 @@ def freeze(
 def _freeze(
     path: str, harness: str, sid: str, line_max_bytes: int, parent_path: str | None
 ) -> Cursor:
-    info = os.stat(path, follow_symlinks=parent_path is None)
+    with os.fdopen(runtime_io.open_harness(path, follow_links=parent_path is None), "rb") as source:
+        info = os.fstat(source.fileno())
     if not stat.S_ISREG(info.st_mode):
         raise OSError("source is not a regular file")
     return Cursor(
@@ -276,13 +277,13 @@ def _checked_page(
 ) -> tuple[Cursor, list[RawRecord], list[Gap]]:
     frozen = cursor.frozen
     _check_admission(frozen)
-    follow_links = frozen.parent_path is None
-    info = os.stat(frozen.path, follow_symlinks=follow_links)
+    info = os.stat(frozen.path, follow_symlinks=frozen.parent_path is None)
     if not _owned(info, frozen):
         raise OSError("frozen source replaced or truncated")
-    # The unbuffered scan opener charges actual content reads without hidden
-    # prefetch. Claude's parent follows links, as its existing source reader does.
-    with runtime_io._open_scan_binary(frozen.path, follow_links=follow_links) as source:  # noqa: SLF001
+    # Unbuffered reads charge actual content bytes without hidden prefetch.
+    with runtime_io._open_scan_binary(  # noqa: SLF001 - shared unbuffered admission boundary
+        frozen.path, follow_links=frozen.parent_path is None
+    ) as source:
         before = os.fstat(source.fileno())
         stamp = _stamp(before)
         if not _owned(before, frozen) or stamp != _stamp(info):
@@ -295,7 +296,7 @@ def _checked_page(
         _check_admission(frozen)
         if (
             _stamp(os.fstat(source.fileno())) != stamp
-            or _stamp(os.stat(frozen.path, follow_symlinks=follow_links)) != stamp
+            or _stamp(os.stat(frozen.path, follow_symlinks=frozen.parent_path is None)) != stamp
         ):
             raise OSError("source moved during page read")
     return cursor, rows, gaps

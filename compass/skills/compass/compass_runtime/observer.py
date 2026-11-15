@@ -293,7 +293,7 @@ def codex_exec(
     refusal, root = _codex_preflight(binary)
     if refusal or not binary:
         return "", refusal
-    os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
+    runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
     output_path = ""
     workdir = ""
     try:
@@ -358,7 +358,9 @@ def codex_exec(
         if result.returncode != 0:
             return "", "failed"
         return (
-            runtime_io.read_prefix_bytes(output_path, max_bytes=output_cap_bytes)
+            runtime_io.read_prefix_bytes(
+                output_path, max_bytes=output_cap_bytes, root=str(config.state_dir)
+            )
             .decode("utf-8", "replace")
             .strip()
         ), "ok"
@@ -834,7 +836,11 @@ class PreparedClaude:
                 return "", "failed"
             status = "ok"
             return (
-                runtime_io.read_prefix_bytes(self.output_path, max_bytes=output_cap_bytes)
+                runtime_io.read_prefix_bytes(
+                    self.output_path,
+                    max_bytes=output_cap_bytes,
+                    root=os.path.dirname(self.output_path),
+                )
                 .decode("utf-8", "replace")
                 .strip()
             ), "ok"
@@ -892,7 +898,9 @@ def _claude_failure_reason(path: str, *, analyze: bool = False) -> str:
     session content and must never turn into a supposed authentication error.
     """
     try:
-        prefix = runtime_io.read_prefix_bytes(path, max_bytes=_CLAUDE_DIAGNOSTIC_PREFIX_BYTES)
+        prefix = runtime_io.read_prefix_bytes(
+            path, max_bytes=_CLAUDE_DIAGNOSTIC_PREFIX_BYTES, root=os.path.dirname(path)
+        )
     except OSError:
         return "unknown"
     lowered = prefix.decode("utf-8", "replace").casefold()
@@ -1010,7 +1018,7 @@ def prepare_claude_exec(  # noqa: PLR0913 (each keyword is one thing its caller 
             root = reading_workdir_root()
             if root is None:
                 raise ClaudePreparationError("failed")
-            os.makedirs(config.state_dir, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
             workdir = tempfile.mkdtemp(prefix=CLAUDE_WORKDIR_PREFIX, dir=root)
             descriptor, output_path = tempfile.mkstemp(
                 prefix=CLAUDE_SCRATCH_PREFIX, suffix=".txt", dir=config.state_dir
@@ -1742,7 +1750,9 @@ def _window_lines(config: RuntimeConfig, path: str) -> list[str]:
         # what is already here.
         return tail_lines
     try:
-        head = runtime_io.read_prefix_bytes(path, max_bytes=config.observer_head_bytes)
+        head = runtime_io.read_prefix_bytes(
+            path, max_bytes=config.observer_head_bytes, harness=True
+        )
     except OSError:
         return tail_lines
     # The first byte the tail read covers. A head line starting at or after it is
@@ -2138,16 +2148,10 @@ def write_sidecar(
     path = sidecar_path(config, harness, sid)
     if path is None:
         return None
-    tmp = f"{path}.{os.getpid()}.tmp"
     try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(result))
-        os.replace(tmp, path)
+        runtime_io.ensure_owner_dir(str(config.state_dir), root=str(config.state_dir))
+        runtime_io.atomic_write_owner_only(path, json.dumps(result), root=str(config.state_dir))
     except OSError:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
         return None
     return path
 

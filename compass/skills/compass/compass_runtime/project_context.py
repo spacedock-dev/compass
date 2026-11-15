@@ -1326,7 +1326,7 @@ def _work_records(
     transcript_path: str,
     *,
     max_bytes: int | None = None,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> list[dict[str, Any]]:
     transcript: list[dict[str, Any]] = []
     bounded = list(
@@ -8873,7 +8873,7 @@ def _codex_scan(
     rollout_path: str,
     budget: runtime_io.ReadBudget,
     *,
-    follow_links: bool = True,
+    follow_links: bool = False,
 ) -> _CodexScan:
     """The rollout's newest records under the check scan's byte budget, and its own head."""
     read = runtime_io.scan_reverse_lines(config, rollout_path, budget, follow_links=follow_links)
@@ -9782,11 +9782,11 @@ def codex_source_prefix(config: RuntimeConfig, path: str, until: float) -> bytes
     fabricated timestamp; the lifecycle parser decides whether they retire a stop.
     """
     before = transcript_stamp(path)
-    if before is None or os.path.islink(path):
+    if before is None:
         raise FrozenCheckCutoffUnreachableError("codex source unavailable")
     chunks: list[bytes] = []
     used = 0
-    with open(path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         while raw := handle.readline(config.turn_scan_max_bytes - used + 1):
             used += len(raw)
             if used > config.turn_scan_max_bytes:
@@ -9992,7 +9992,7 @@ def codex_activity_between(transcript_path: str, after: float, until: float) -> 
     same-turn late results do not. Unknown shapes are work, never evidence of rest.
     """
     closed: set[str] = set()
-    with open(transcript_path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(transcript_path), "rb") as handle:
         for raw in handle:
             record = _json_dict(raw)
             if record is None:
@@ -10554,7 +10554,7 @@ def codex_newest_final_words(  # noqa: C901 - native identity and finality guard
     conflicted: set[str] = set()
     if before[2] > FINAL_WORDS_SCAN_MAX_BYTES:
         return {"outcome": "scan-limit"}
-    with open(path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         for raw in handle:
             record = _json_dict(raw)
             if record is None:
@@ -10997,7 +10997,7 @@ def frozen_claude_user_messages(
     at least as far back; ending at today's length instead lets a session that
     ran on past `tail_bytes` leave that tail holding no message (review N3).
     """
-    with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+    with runtime_io.open_harness_text(transcript_path, errors="replace") as handle:
         whole = _user_message_facts(config, handle, sid, until)
     lines = runtime_io.read_tail(config, transcript_path, end=size)
     tail = _user_message_facts(config, lines, sid, until)
@@ -11021,7 +11021,7 @@ def frozen_claude_agent_messages(
             if float(event["at"]) <= until
         ]
 
-    with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+    with runtime_io.open_harness_text(transcript_path, errors="replace") as handle:
         whole = facts(handle)
     return whole, facts(runtime_io.read_tail(config, transcript_path, end=size))
 
@@ -11032,7 +11032,7 @@ def claude_activity_between(transcript_path: str, after: float, until: float) ->
     Administrative records such as trailing turn_duration do not resume work.
     Tool results remain messages (Claude serializes them in user records).
     """
-    with open(transcript_path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(transcript_path), "rb") as handle:
         for raw in handle:
             try:
                 record = json.loads(raw)
@@ -11146,9 +11146,9 @@ def instruction_events(
     """Timestamped non-meta user-role messages from the bounded transcript tail."""
     events: list[dict[str, Any]] = []
     seen: set[tuple[float, str]] = set()
-    # A directions file was checked link-free by its resolver; do not follow
-    # one swapped in since.
-    follow = harness not in observer.DIRECTION_HARNESSES
+    # Antigravity admits a native brain layout before this read. A later leaf
+    # substitution must not redirect it, while generic parent links remain usable.
+    follow = harness != "antigravity"
     source = (
         [
             line.decode("utf-8", "replace")
@@ -11286,9 +11286,7 @@ def _direction_scan_once(
             scan.state == "stale",
         )
     try:
-        for line in runtime_io.read_tail(
-            config, path, follow_links=harness not in observer.DIRECTION_HARNESSES
-        ):
+        for line in runtime_io.read_tail(config, path, follow_links=True):
             visit(line.encode())
     except OSError:
         return None

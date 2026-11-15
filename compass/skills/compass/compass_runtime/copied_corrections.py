@@ -293,7 +293,7 @@ def _locked_update(config: RuntimeConfig, change: Any, diagnostic_sink: Any) -> 
         return OUTCOME_UNWRITABLE
     try:
         try:
-            os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
         except OSError:
             return OUTCOME_UNWRITABLE
         with runtime_io.held_file_lock(_lock_path(config), wait=_LOCK_WAIT_SECONDS) as held:
@@ -395,7 +395,7 @@ def _write(
     }
     try:
         target = store_path(config)
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload))
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError):
         runtime_io.diag(
             f"Compass: could not write the copied-correction store {store_path(config)}",
@@ -425,7 +425,7 @@ def _scan(
     out: list[_Message] = []
     # The collector's own spelling, frozen.
     steer = project_context._SEMANTIC_FACT_TYPES["steer"]  # noqa: SLF001
-    with open(path, "rb") as handle:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as handle:
         position = start
         if start > 0:
             handle.seek(start - 1)

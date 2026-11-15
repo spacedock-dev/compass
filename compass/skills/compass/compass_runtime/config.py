@@ -834,8 +834,14 @@ def resolve_store_roots(
 
 
 def load_pi_settings(config_dir: str) -> dict[str, Any]:
+    from . import io as runtime_io  # noqa: PLC0415 - settings read runs after config imports
+
+    if not runtime_io.admit_harness_root(config_dir):
+        return {}
     try:
-        with open(os.path.join(config_dir, "settings.json"), "rb") as source:
+        with os.fdopen(
+            runtime_io.open_harness(os.path.join(config_dir, "settings.json")), "rb"
+        ) as source:
             value = json.loads(source.read(1_000_001))
     except (OSError, ValueError):
         return {}

@@ -16,11 +16,11 @@ row is read there is no `ended_at` on it to write. Not the whole overlay
 either. An overlay is a live reduction meant to be rebuilt; what has to survive
 is one value per session id, with when.
 
-A leaf shaped on `departures`, lock and per-thread temp name included:
+A leaf shaped on `departures`, with its read-modify-write lock:
 `config` for the path and caps, `records` for the untrusted-input discipline,
-`io` for the diagnostic sink. It reads nothing else in the runtime, which is
-what lets `observation` write it and `aggregate` read it without an edge
-between those two inverting.
+`io` for private atomic publication and the diagnostic sink. It reads nothing
+else in the runtime, which is what lets `observation` write it and `aggregate`
+read it without an edge between those two inverting.
 
 ## What may be said, and what may not
 
@@ -40,7 +40,6 @@ command removes: the machine's memory of what it observed.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import threading
@@ -152,24 +151,14 @@ def save(
         "entries": [dict(entry) for entry in _bounded(entries, config.end_max_entries)],
     }
     target = store_path(config)
-    # Per thread as well as per process, for `deliveries.save`'s measured
-    # reason: a shared name means two writers open it `O_TRUNC` on independent
-    # descriptors and `os.replace` renames the interleaving over the store.
-    tmp = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-        os.replace(tmp, target)
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
             f"Compass: could not write the session-end record {target}; "
             "a session that ended will read as merely quiet after the next restart",
             diagnostic_sink,
         )
-        with contextlib.suppress(OSError, ValueError):
-            os.unlink(tmp)
         return False
     return True
 

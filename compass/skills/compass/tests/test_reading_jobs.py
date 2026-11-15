@@ -1435,11 +1435,11 @@ class CancelAnAnalysisTest(unittest.TestCase):
         real = runtime_io.atomic_write_owner_only
         holder: dict[str, Any] = {}
 
-        def write(path: str, text: str) -> Any:
+        def write(path: str, text: str, **options: Any) -> Any:
             if threading.current_thread() is holder.get("canceller") and "reason" in text:
                 holder["job"].group.cancel()
                 holder["thread"].join(3)
-            return real(path, text)
+            return real(path, text, **options)
 
         with mock.patch.object(runtime_io, "atomic_write_owner_only", write):
             job, thread = self._start()

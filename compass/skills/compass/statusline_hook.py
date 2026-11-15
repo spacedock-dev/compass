@@ -88,6 +88,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sys
 import time
 from typing import Any
@@ -151,10 +152,12 @@ def state_home() -> str:
 def capability(port: int) -> str | None:
     """This run's Antigravity token, or None if there is nothing to read."""
     try:
+        from notify_hook import open_regular_binary  # noqa: PLC0415 - standalone hook dependency
+
         path = os.path.join(state_home(), f"compass-{port}.json")
-        with open(path, "rb") as handle:
+        with open_regular_binary(path) as handle:
             data = json.loads(handle.read(65_536) or b"null")
-    except (OSError, ValueError, RecursionError):
+    except (OSError, ValueError, RecursionError, ImportError):
         return None
     if not isinstance(data, dict):
         return None
@@ -176,7 +179,9 @@ def conversation_id(payload: dict[str, Any]) -> str | None:
     """
     for field in ("conversation_id", "session_id"):
         value = payload.get(field)
-        if isinstance(value, str) and len(value.strip()) == 36:
+        if isinstance(value, str) and re.fullmatch(
+            r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", value.strip()
+        ):
             return value.strip()
     return None
 
@@ -222,8 +227,12 @@ def _memo_path(sid: str) -> str:
 
 
 def read_memo(sid: str) -> dict[str, Any]:
-    with contextlib.suppress(OSError, ValueError, RecursionError):
-        with open(_memo_path(sid), "rb") as handle:
+    if conversation_id({"session_id": sid}) != sid:
+        return {}
+    with contextlib.suppress(OSError, ValueError, RecursionError, ImportError):
+        from notify_hook import open_regular_binary  # noqa: PLC0415 - standalone hook dependency
+
+        with open_regular_binary(_memo_path(sid)) as handle:
             memo = json.loads(handle.read(4096) or b"{}")
         if isinstance(memo, dict):
             return memo
@@ -232,10 +241,12 @@ def read_memo(sid: str) -> dict[str, Any]:
 
 def write_memo(sid: str, memo: dict[str, Any]) -> None:
     """Best effort. A memo that cannot be written costs a duplicate post."""
-    with contextlib.suppress(OSError, TypeError, ValueError):
-        os.makedirs(state_home(), mode=0o700, exist_ok=True)
-        with open(_memo_path(sid), "w", encoding="utf-8") as handle:
-            json.dump(memo, handle)
+    if conversation_id({"session_id": sid}) != sid:
+        return
+    with contextlib.suppress(OSError, TypeError, ValueError, ImportError):
+        from notify_hook import write_owner_json  # noqa: PLC0415 - standalone hook dependency
+
+        write_owner_json(_memo_path(sid), memo)
 
 
 def decide(

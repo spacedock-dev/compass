@@ -216,7 +216,9 @@ class AListedDirectionReachesItsSource(_ClaudeSession):
         for failure in (FileNotFoundError, PermissionError):
             with (
                 self.subTest(failure=failure.__name__),
-                mock.patch("compass_runtime.record_pages.open", side_effect=failure, create=True),
+                mock.patch(
+                    "compass_runtime.record_pages.runtime_io.open_harness", side_effect=failure
+                ),
             ):
                 self.assertEqual(
                     "",
@@ -349,7 +351,7 @@ class AListedDirectionReachesItsSource(_ClaudeSession):
         )
         app = SimpleNamespace(config=self.config, state=self.state)
         with mock.patch(
-            "compass_runtime.record_pages.open", side_effect=PermissionError, create=True
+            "compass_runtime.record_pages.runtime_io.open_harness", side_effect=PermissionError
         ):
             restored = http_api._prompt_facts(app, _row(), [fact])
             self.assertEqual([], annotation_store.prompt_choices(_row(), restored, 240))

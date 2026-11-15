@@ -60,7 +60,6 @@ closes sends none, so absence is stale in one direction only.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import threading
@@ -87,7 +86,7 @@ SCHEMA_VERSION: Final = 1
 # intra-process and this module reaches no state: the three lanes that record
 # are the collection worker, the `/api/notify` handler thread and the
 # `/api/ask` handler thread, all inside one server. Two dashboards are two
-# processes and this lock does not reach across them; the temp name below is
+# processes and this lock does not reach across them; the shared atomic writer is
 # what keeps their writes from interleaving, and the loser of a concurrent
 # read-modify-write loses its record, which is the same bound `dismissals`
 # accepts for the same reason.
@@ -380,28 +379,14 @@ def save(
         "entries": [dict(entry) for entry in _bounded(entries, config.delivery_max_entries)],
     }
     target = store_path(config)
-    # Per THREAD as well as per process. The pid alone is what `lifecycle`
-    # needs, because one process writes its state file from one place; here
-    # three lanes write from three threads, and a shared name means two of them
-    # open the same path `O_TRUNC` on independent descriptors, interleave, and
-    # `os.replace` the result over the store. Measured: the store stopped
-    # parsing, `load` degraded to no records, and the next write rebuilt the
-    # file with one entry in it.
-    tmp = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
-        os.makedirs(config.state_home, mode=0o700, exist_ok=True)
-        handle_fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-        os.replace(tmp, target)
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError, TypeError, RecursionError):
         runtime_io.diag(
             f"Compass: could not write the delivery record {target}; "
             "what became of this raise will not be readable later",
             diagnostic_sink,
         )
-        with contextlib.suppress(OSError, ValueError):
-            os.unlink(tmp)
         return False
     return True
 

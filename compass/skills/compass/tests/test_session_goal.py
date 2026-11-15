@@ -385,7 +385,9 @@ class TheGoalIsReadOnAppendTest(unittest.TestCase):
                 with path.open("a") as source:
                     source.write(json.dumps(prompt(T0 + 20)) + "\n")
                 target = (
-                    "compass_runtime.claude_data.os.stat" if failure == "stat" else "builtins.open"
+                    "compass_runtime.claude_data.os.stat"
+                    if failure == "stat"
+                    else "compass_runtime.claude_data.runtime_io.open_harness"
                 )
                 with mock.patch(target, side_effect=PermissionError("cannot read transcript")):
                     self.assertIsNone(claude_data.session_goal(config, state, str(path)))

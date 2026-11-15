@@ -22,7 +22,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from compass_runtime import (
@@ -34,9 +34,13 @@ from compass_runtime import (
     semantic_history,
     transcripts,
 )
+from compass_runtime import io as runtime_io
 from compass_runtime.collectors import antigravity
 from compass_runtime.config import build_runtime_config
 from compass_runtime.state import build_runtime_state
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 NOW = 1_800_000_000.0
 AT = "2026-08-24T20:00:00Z"
@@ -936,6 +940,37 @@ class AntigravityRefusesALinkAnywhereUnderBrain(AntigravityHome):
             self.config, path, "antigravity", AGY_SID, max_bytes=1 << 20
         )
         self.assertEqual([], backfill)
+
+    @unittest.skipIf(os.name == "nt", "Windows denies deletion of the opened file")
+    def test_a_file_swapped_after_open_still_reads_the_held_records(self) -> None:
+        outside = self._outside() / ".system_generated" / "logs" / "transcript.jsonl"
+        outside.write_text("", encoding="utf-8")
+        readers: tuple[Callable[[], Any], ...] = (
+            lambda: project_context.instruction_events(
+                self.config, str(self.transcript), "antigravity", AGY_SID
+            ),
+            lambda: project_context.instruction_events(
+                self.config, str(self.transcript), "antigravity", AGY_SID, max_bytes=1 << 20
+            ),
+            lambda: transcripts.antigravity_newest_direction(self.config, str(self.transcript)),
+        )
+        real_open = runtime_io.open_harness
+        for index, read in enumerate(readers):
+            with self.subTest(reader=index):
+                self.transcript.unlink(missing_ok=True)
+                self.write(DIRECTION)
+                expected = read()
+                self.assertTrue(expected)
+
+                def swap_after_open(path: str, **options: Any) -> int:
+                    fd = real_open(path, **options)
+                    self.transcript.unlink()
+                    self.transcript.symlink_to(outside)
+                    return fd
+
+                with mock.patch.object(runtime_io, "open_harness", side_effect=swap_after_open):
+                    self.assertEqual(expected, read())
+                self.assertTrue(self.transcript.is_symlink())
 
 
 class AntigravityTitleFallsBackToTheNewestDirection(AntigravityHome):

@@ -70,12 +70,12 @@ class DailyCheckTest(unittest.TestCase):
         )
 
     def test_a_server_paused_across_midnight_cannot_replace_todays_reservation(self) -> None:
-        original = os.makedirs
+        original = runtime_io.ensure_owner_dir
         crossed = False
 
-        def delayed(path: str, *, mode: int, exist_ok: bool) -> None:
+        def delayed(path: str, **options: Any) -> None:
             nonlocal crossed
-            original(path, mode=mode, exist_ok=exist_ok)
+            original(path, **options)
             if not crossed:
                 crossed = True
                 self.now += 2
@@ -83,7 +83,7 @@ class DailyCheckTest(unittest.TestCase):
 
         with (
             mock.patch.object(update_check, "fetch_release", return_value="2.9.0") as fetch,
-            mock.patch.object(os, "makedirs", side_effect=delayed),
+            mock.patch.object(runtime_io, "ensure_owner_dir", side_effect=delayed),
         ):
             self.checker().tick()
             self.checker().tick()

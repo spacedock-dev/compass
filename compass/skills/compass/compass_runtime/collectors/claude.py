@@ -65,7 +65,7 @@ def load_team_members(config: RuntimeConfig) -> dict[str, list[dict[str, Any]]]:
     by_prefix: dict[str, list[dict[str, Any]]] = {}
     for fp in runtime_io.glob_stores(config, "claude.teams", "*", "config.json"):
         try:
-            with open(fp, encoding="utf-8") as f:
+            with runtime_io.open_harness_text(fp) as f:
                 registry = json.load(f)
             registered = os.stat(fp).st_mtime
         except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
@@ -157,7 +157,7 @@ def load_tasks(config: RuntimeConfig) -> dict[str, list[dict[str, Any]]]:
             # the bytes that code page leaves undefined. That is a ValueError but
             # not a JSONDecodeError, so narrowing the handler below lets it escape
             # and error the whole Claude collector for a pass.
-            with open(fp, encoding="utf-8") as f:
+            with runtime_io.open_harness_text(fp) as f:
                 task = json.load(f)
             st = os.stat(fp)
         except (OSError, ValueError):
@@ -298,7 +298,7 @@ def child_model(analysis: dict[str, Any] | None) -> str | None:
 def agent_label(transcript: str) -> str | None:
     """The display name beside a subagent transcript, from its meta sibling."""
     try:
-        with open(transcript[: -len(".jsonl")] + ".meta.json", encoding="utf-8") as f:
+        with runtime_io.open_harness_text(transcript[: -len(".jsonl")] + ".meta.json") as f:
             meta = json.load(f)
     except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
         return None

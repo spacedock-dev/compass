@@ -406,7 +406,7 @@ def _locked(config: RuntimeConfig) -> Iterator[str]:
         return
     try:
         try:
-            os.makedirs(config.state_home, mode=0o700, exist_ok=True)
+            runtime_io.ensure_owner_dir(str(config.state_home), root=str(config.state_home))
         except OSError:
             yield runtime_io.LOCK_UNCREATABLE
             return
@@ -430,7 +430,7 @@ def _write(config: RuntimeConfig, entries: tuple[StoredSummary, ...], keep: tupl
             return "refused"
         ordered.remove(victim)
     try:
-        runtime_io.atomic_write_owner_only(store_path(config), raw)
+        runtime_io.atomic_write_owner_only(store_path(config), raw, root=str(config.state_home))
     except OSError:
         return "unwritable"
     return "stored"

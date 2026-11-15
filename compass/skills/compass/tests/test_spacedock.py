@@ -1174,22 +1174,32 @@ class SpacedockReadContractTest(unittest.TestCase):
         config, state = runtime()
         root = self.workflow(self.README)
         opened: list[int] = []
+        closed: list[int] = []
         real_open = os.open
+        real_close = os.close
 
         def counting_open(*args: object, **kwargs: object) -> int:
             descriptor = real_open(*args, **kwargs)  # type: ignore[arg-type]
             opened.append(descriptor)
             return descriptor
 
+        def counting_close(descriptor: int) -> None:
+            real_close(descriptor)
+            closed.append(descriptor)
+
         with (
             mock.patch.object(os, "open", counting_open),
-            mock.patch.object(os, "fdopen", side_effect=OSError("boom")),
+            mock.patch.object(os, "close", counting_close),
+            mock.patch.object(os, "fdopen", side_effect=OSError("boom")) as wrap,
         ):
             self.assertIsNone(spacedock.read_workflow(config, state, str(root)))
 
-        self.assertEqual(1, len(opened))
-        with self.assertRaises(OSError):
-            os.fstat(opened[0])
+        wrap.assert_called_once()
+        self.assertTrue(opened)
+        self.assertCountEqual(opened, closed)
+        for descriptor in opened:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
 
     def test_no_workflow_no_strip(self) -> None:
         config, state = runtime()

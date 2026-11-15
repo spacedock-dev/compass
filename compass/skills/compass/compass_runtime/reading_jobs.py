@@ -157,7 +157,9 @@ class Hooks:
         # commit rewrites a marker that already exists.
         with _MARKER_LOCK:
             try:
-                runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+                runtime_io.atomic_write_owner_only(
+                    str(path), json.dumps(marker), root=str(config.state_dir)
+                )
             except OSError as exc:
                 raise UnrecordedError(str(exc)) from exc
             if not reading.commit_job(self._job):
@@ -233,7 +235,9 @@ def _mark_unstored(config: RuntimeConfig, job_id: str, why: str) -> None:
             if previous in _KEPT_REASONS
             else reading.WITHHELD_UNSTORED
         )
-        runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+        runtime_io.atomic_write_owner_only(
+            str(path), json.dumps(marker), root=str(config.state_dir)
+        )
 
 
 def _publish(application: Application) -> None:
@@ -310,7 +314,9 @@ def cancel(application: Application, session_key: str, job_id: str) -> bool:
         marker = json.loads(path.read_text(encoding="utf-8"))
         if "reason" not in marker:
             marker["reason"] = reading.WITHHELD_CANCELLED
-            runtime_io.atomic_write_owner_only(str(path), json.dumps(marker))
+            runtime_io.atomic_write_owner_only(
+                str(path), json.dumps(marker), root=str(application.config.state_dir)
+            )
     if group is not None:
         group.cancel()
     _publish(application)

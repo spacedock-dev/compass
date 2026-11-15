@@ -4184,6 +4184,8 @@ could climb out of `brain/`. The reads then open the file without following a li
 platform has `O_NOFOLLOW`, so a file swapped for a link after the check is not followed. Windows has
 no `O_NOFOLLOW`, and a parent directory swapped between the check and the open is not caught on any
 platform; both need write access to the owner's `~/.gemini` already.
+Once opened, the direction readers retain that descriptor: replacing its pathname does not redirect
+the read or discard the original file's records.
 
 What is read is the words the person typed, the class every other harness's user messages are
 already in. They become steer facts in the observed record, under the same line bound and
@@ -4295,6 +4297,48 @@ normalized state name and a timestamp, so a status line that fires many times a 
 tracebacks land there, not just Python-level prints. Nothing ever removes or rotates the log: a
 `--stop` (or a killed process) deletes the state file but leaves the log behind, since it is the
 record of a detached run, so `~/.compass` accumulates one log file per port indefinitely.
+
+Configured state roots, including `COMPASS_HOME` and the default `~/.compass`, may be links to
+user-owned directories. On POSIX, Compass resolves the root through opened directory descriptors,
+checks its type and ownership, and tightens excess permissions on an owned root to `0o700`. Every missing parent it
+creates is private from creation, regardless of umask. It neither chmods unrelated existing
+ancestors nor creates beneath a foreign-owned directory. On POSIX, state descendants are traversed from the
+validated root without following directory links. Relative links at an admitted root or in a harness
+store resolve against the held parent directory, including when an earlier link changes the path's
+depth. The platform's own ancestor aliases, such as
+macOS `/tmp` pointing to `/private/tmp`, remain usable.
+
+Harness discovery validates existing configured store roots, tightening owned roots to `0o700`
+on POSIX without creating absent stores. Harness-store reads use a separate shared opener. Owned
+store directory and transcript links work,
+including a parent transcript on another disk. On POSIX, link traversal is bounded to 40 links;
+linked directory targets and the opened regular file must belong to the current user. Reads use
+that same descriptor, opened read-only and nonblocking, so a planted FIFO refuses without waiting
+for a writer. Native-child admission retains its stricter layout checks. Ownership permits a
+relocated store; it does not authenticate its content or establish containment within the store.
+SQLite harness readers apply the same admission before connecting, but SQLite reopens by pathname,
+so admission cannot close a racing path replacement.
+
+Converted state writers and readers use the strict policy: final symlinks, nonregular files and,
+on POSIX, foreign-owned files refuse. This applies to the shared state I/O helpers, daemon logs,
+Python hook capability and memo reads, and MCP instance discovery; it is not a claim about every
+state reader. Daemon logs tighten existing owned files to `0o600`. Annotation, observer sidecar,
+semantic history, delivery, departure and session-end saves and status-line memos use unique,
+exclusively created `0o600` temporary files, then replace the target atomically. POSIX creation and
+replacement stay relative to the validated directory descriptor. Annotation saves retain their
+file sync before replacement, directory sync afterward, and bounded retry for Windows sharing
+violations. Without `O_DIRECTORY`, POSIX directory admission uses nonblocking opens and descriptor
+type checks; annotation bytes still sync even where directory syncing is unavailable.
+Shared state locks check the opened descriptor's regular-file type and current-user
+ownership before tightening it to `0o600` and locking. Antigravity hook and status-line conversation
+ids, including memo reads, must match UUID syntax.
+
+Permission modes are advisory on Windows. The shared strict-read, atomic-write and log-append
+helpers resolve configured roots, then refuse descendant symlinks and other reparse points.
+They hold native directory handles without write or delete sharing during access. Strict reads and log
+appends open the leaf reparse point itself and refuse it before reading or writing. These checks
+do not extend to every state reader or lock: remaining pathname-only checks cannot close a racing
+reparse-point swap.
 
 `POST /api/shutdown` stops the server and is gated by the same `_local_ok()` checks (`Host`,
 `Origin`, `Sec-Fetch-Site`) that already protect `/api/notify`. It adds no new exposure of

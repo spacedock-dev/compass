@@ -462,7 +462,9 @@ class Lines:
             return False
         try:
             runtime_io.atomic_write_owner_only(
-                os.path.join(self.directory, name), json.dumps(body, separators=(",", ":"))
+                os.path.join(self.directory, name),
+                json.dumps(body, separators=(",", ":")),
+                root=os.path.dirname(self.directory),
             )
         except OSError as exc:
             self._report(exc)

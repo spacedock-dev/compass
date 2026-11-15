@@ -6020,6 +6020,9 @@ person-message parser, copied-correction exclusions, direction floor, redaction,
 `record_pages.scan_source`, the page reader's chunk and line-boundary machinery,
 from the newest end. It compares device, inode, size and modification time before
 and after the read and refuses any change, including an append during the request.
+Both source scans and record pages also check the path's identity and admission metadata
+before and after reading. Access time is excluded because the read itself can update it;
+ownership, mode, link count and nanosecond modification and change times still participate.
 A refused scan starts over, up to three whole scans, each against a file that did not move
 while it ran, so the ruling stands and only the number of tries changed. A working session
 writes to its record every few seconds, and a lookup that fails on the first write is refused

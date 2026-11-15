@@ -1462,7 +1462,9 @@ class OperatingSystemExpectationTest(unittest.TestCase):
 
             with (
                 store_patch(TASKS_DIR=str(tmp)),
-                mock.patch.object(os, "stat", lambda p: NoBirthtime(real_stat(p))),
+                mock.patch.object(
+                    os, "stat", lambda p, **options: NoBirthtime(real_stat(p, **options))
+                ),
             ):
                 tasks = claude_collector.load_tasks(runtime()[0])
 

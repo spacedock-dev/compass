@@ -563,11 +563,17 @@ class OwnerOnlyWriteTest(HistoryStoreTestCase):
             # writes the same temp file to the same target, and only the mode
             # passed to the call tells the two apart while the file is on disk.
             mode = kwargs.get("mode", args[1] if len(args) > 1 else None)
-            opened.append((str(path), mode))
+            if args[0] & os.O_CREAT:
+                opened.append((os.path.join(os.path.dirname(target), str(path)), mode))
             return int(real_open(path, *args, **kwargs))
 
         def spy_replace(src: Any, dst: Any, **kwargs: Any) -> None:
-            renamed.append((str(src), str(dst)))
+            renamed.append(
+                (
+                    os.path.join(os.path.dirname(target), str(src)),
+                    os.path.join(os.path.dirname(target), str(dst)),
+                )
+            )
             real_replace(src, dst, **kwargs)
 
         with (

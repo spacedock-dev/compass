@@ -1207,10 +1207,12 @@ class ARefreshNeverFailsAnotherDashboardsSaveTest(unittest.TestCase):
         marker = f"{target}.reading"
         real_replace = os.replace
 
-        def windows_replace(src: Any, dst: Any) -> None:
-            if os.fspath(dst) == target and os.path.exists(marker):
+        def windows_replace(src: Any, dst: Any, **options: Any) -> None:
+            if os.path.basename(os.fspath(dst)) == os.path.basename(target) and os.path.exists(
+                marker
+            ):
                 raise PermissionError(errno.EACCES, "held open by another process", target)
-            real_replace(src, dst)
+            real_replace(src, dst, **options)
 
         env = {k: v for k, v in os.environ.items() if not k.startswith("COMPASS_")}
         reader = subprocess.Popen(

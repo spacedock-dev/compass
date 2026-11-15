@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from . import claude_data, observer, reading, records
+from . import io as runtime_io
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -113,7 +114,7 @@ def _launcher_ids(record: dict[str, Any], directory: str | None) -> tuple[str, .
 def _advance(path: str, held: _Read) -> _Read:
     closed, open_at, offset, after = list(held.closed), held.open_at, held.offset, held.after
     skill_dir, launchers = held.skill_dir, dict(held.launchers)
-    with open(path, "rb") as source:
+    with os.fdopen(runtime_io.open_harness(path), "rb") as source:
         source.seek(offset)
         for raw in source:
             if not raw.endswith(b"\n"):

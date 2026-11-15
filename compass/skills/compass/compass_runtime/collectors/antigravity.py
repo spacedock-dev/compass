@@ -54,8 +54,7 @@ def _log_head_lines_from(
     try:
         return (
             runtime_io.read_prefix_bytes(
-                path,
-                max_bytes=config.antigravity_log_head_bytes,
+                path, max_bytes=config.antigravity_log_head_bytes, harness=True
             )
             .decode("utf-8", "replace")
             .splitlines()
@@ -96,7 +95,7 @@ def _session_metadata(
     found: dict[str, dict[str, Any]] = {}
     cached_cwds: dict[str, str] = {}
     try:
-        with open(_last_conversations_path(config), encoding="utf-8") as source:
+        with runtime_io.open_harness_text(_last_conversations_path(config)) as source:
             recent = json.load(source)
         if isinstance(recent, dict):
             for workspace, sid in recent.items():
@@ -353,6 +352,7 @@ def _step_activity(
         runtime_io.sqlite_ro_uri(path, immutable=True),
     ):
         try:
+            runtime_io.check_sqlite_file(path, harness=True)
             con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         except runtime_io.sqlite_module.Error as exc:
             read_error = exc
@@ -518,6 +518,7 @@ def _session_info(
 
     def read_store(uri: str) -> tuple[bool, Any, Any, BaseException | None]:
         try:
+            runtime_io.check_sqlite_file(path, harness=True)
             con = runtime_io.sqlite_module.connect(uri, uri=True, timeout=0.2)
         except runtime_io.sqlite_module.Error as exc:
             return False, None, None, exc
@@ -599,6 +600,8 @@ def collect(
     window_hours: float,
     show_all: bool,
 ) -> list[Session]:
+    if not runtime_io.admit_harness_root(_root(config)):
+        return []
     metadata = _session_metadata(config, now, window_hours, show_all)
     dbs = runtime_io.glob_under(_conversations_dir(config), "*.db")
 

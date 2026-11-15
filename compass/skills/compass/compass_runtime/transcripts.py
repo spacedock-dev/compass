@@ -119,7 +119,9 @@ def codex_child_head(path: str) -> dict[str, Any]:
     too long would otherwise be neither found nor counted.
     """
     try:
-        opening = runtime_io.read_prefix_bytes(path, max_bytes=CODEX_HEAD_PREFIX_BYTES)
+        opening = runtime_io.read_prefix_bytes(
+            path, max_bytes=CODEX_HEAD_PREFIX_BYTES, harness=True
+        )
     except OSError:
         return {}
     found = _CODEX_CHILD_HEAD_RE.match(opening)
@@ -1456,7 +1458,7 @@ def first_prompt(
         return dict(cached["result"])
     result = empty
     try:
-        with open(path, "rb") as source:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as source:
             remaining = 2 * 1024 * 1024
             while remaining > 0:
                 raw = source.readline(remaining + 1)
@@ -1538,10 +1540,9 @@ def antigravity_transcript(root: str, sid: str, *, full: bool = False) -> str | 
     Every component from `brain/<sid>` down is checked, not just the file: a
     linked conversation or `logs/` directory would otherwise hand the reader a
     file anywhere on disk. A link above `brain/` is the person's own layout and
-    is followed. Readers open the path with `follow_links=False`, which closes
-    the swap of the file itself after this check; a swap of a parent directory
-    in between is not closable without an `openat` walk, and is the same class
-    `spacedock.read_frontmatter` records.
+    is followed. Readers retain final-link refusal after admission. The shared
+    directory walk checks ownership but cannot preserve brain containment against
+    a later directory rename; ownership alone does not establish containment.
     """
     if not sid or sid.startswith(".") or "/" in sid or os.sep in sid:
         return None

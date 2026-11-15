@@ -171,7 +171,7 @@ def save(
     }
     target = store_path(config)
     try:
-        runtime_io.atomic_write_owner_only(target, json.dumps(payload))
+        runtime_io.atomic_write_owner_only(target, json.dumps(payload), root=str(config.state_home))
     except (OSError, ValueError):
         runtime_io.diag(
             f"Compass: could not write the dismissal store {target}; "

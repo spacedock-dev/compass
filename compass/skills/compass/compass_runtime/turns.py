@@ -325,7 +325,7 @@ def scan_turns(
             tail_start = size - config.turn_scan_max_bytes
             st.update(_latest_turn_context(config, path, tail_start, harness))
             st["pos"] = tail_start
-        with open(path, "rb") as f:
+        with os.fdopen(runtime_io.open_harness(path), "rb") as f:
             f.seek(st["pos"])
             data = f.read()
         end = data.rfind(b"\n")
