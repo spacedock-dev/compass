@@ -1,0 +1,64 @@
+{
+  "payload": {
+    "annotate": true,
+    "intent_revision": "r1"
+  },
+  "cases": [
+    {
+      "session": {
+        "first_prompt": "/clear secret command argument",
+        "first_prompt_control": true,
+        "annotation_goal": "",
+        "instruction": {
+          "label": "asked",
+          "text": "Work typed later",
+          "at": 1800000000
+        },
+        "harness": "claude"
+      },
+      "reason": "This session opened with /clear, so there is no first prompt to draft a goal from."
+    },
+    {
+      "session": {
+        "first_prompt": "/compact secret command argument",
+        "first_prompt_control": true,
+        "annotation_goal": "",
+        "instruction": {
+          "label": "asked",
+          "text": "Work typed later",
+          "at": 1800000000
+        },
+        "harness": "claude"
+      },
+      "reason": "This session opened with /compact, so there is no first prompt to draft a goal from."
+    },
+    {
+      "session": {
+        "first_prompt": "/resume secret command argument",
+        "first_prompt_control": true,
+        "annotation_goal": "",
+        "instruction": {
+          "label": "asked",
+          "text": "Work typed later",
+          "at": 1800000000
+        },
+        "harness": "claude"
+      },
+      "reason": "This session opened with /resume, so there is no first prompt to draft a goal from."
+    },
+    {
+      "session": {
+        "first_prompt": "/login secret command argument",
+        "first_prompt_control": true,
+        "annotation_goal": "",
+        "instruction": {
+          "label": "asked",
+          "text": "Work typed later",
+          "at": 1800000000
+        },
+        "harness": "claude"
+      },
+      "reason": "This session opened with /login, so there is no first prompt to draft a goal from."
+    }
+  ]
+}

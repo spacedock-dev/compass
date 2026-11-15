@@ -1441,23 +1441,15 @@ class GoalRefusalIdentityTest(unittest.TestCase):
         return err
 
     def test_local_command_with_later_work_uses_the_pages_reason(self) -> None:
-        source = (ROOT / "frontend" / "src" / "intent" / "derive.ts").read_text(encoding="utf-8")
-        template = re.search(r"const lead = `(This session opened with .*?from\.)", source)
-        self.assertIsNotNone(template)
-        assert template is not None
-        for command in ("/clear", "/compact", "/resume", "/login"):
-            with self.subTest(command=command):
-                err = self.refused(
-                    a_row(
-                        annotation_goal="",
-                        annotation_line_1="",
-                        title=command,
-                        first_prompt=f"{command} secret command argument",
-                        first_prompt_control=True,
-                        instruction={"label": "asked", "text": "Work typed later", "at": NOW},
-                    )
-                )
-                self.assertIn(template[1].replace("${command}", command), err)
+        fixture = json.loads(
+            (ROOT / "frontend" / "test" / "fixtures" / "no-draft-why.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for case in fixture["cases"]:
+            with self.subTest(prompt=case["session"]["first_prompt"]):
+                err = self.refused(a_row(annotation_line_1="", **case["session"]))
+                self.assertIn(case["reason"], err)
                 self.assertNotIn("Nothing has been typed", err)
                 self.assertNotIn("secret command argument", err)
                 self.assertIn(terminal_drift.SAVE_STEP, err)
