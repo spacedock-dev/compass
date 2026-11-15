@@ -279,7 +279,7 @@ def report_action(action: str, done: Completed, out: IO[str]) -> bool:
     for event in events:
         for line in _tool_lines(event):
             out.write(f"{line}\n")
-    result = next((e for e in reversed(events) if e.get("type") == "result"), {})
+    result: dict[str, Any] = next((e for e in reversed(events) if e.get("type") == "result"), {})
     denials = [d for d in result.get("permission_denials") or [] if isinstance(d, dict)]
     out.write(f"permission_denials: {len(denials) or 'none'}\n")
     for denial in denials:

@@ -34,7 +34,7 @@ import argparse
 import contextlib
 import copy
 import dataclasses
-import datetime
+import datetime as dt
 import hashlib
 import http.client
 import json
@@ -1918,7 +1918,7 @@ LATER_PROMPT = "Keep the diff small and leave the tests alone."
 
 
 def _transcript_entry(kind: str, text: str, at: float, index: int) -> dict[str, Any]:
-    stamp = datetime.datetime.fromtimestamp(at, datetime.UTC).isoformat().replace("+00:00", "Z")
+    stamp = dt.datetime.fromtimestamp(at, dt.UTC).isoformat().replace("+00:00", "Z")
     return {
         "type": kind,
         "uuid": f"u{index}",
