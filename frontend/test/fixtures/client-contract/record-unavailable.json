@@ -29,7 +29,7 @@
     "headers": {
       "Cache-Control": "no-store",
       "Content-Length": "189",
-      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
       "Content-Type": "application/json"
     },
     "status": 200

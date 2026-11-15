@@ -2242,10 +2242,13 @@ class WiringTest(unittest.TestCase):
                 coordinator: Any = None,
                 *,
                 interaction_prototype: Any = None,
+                injected_page_bytes: bytes | None = None,
             ) -> None:
                 del interaction_prototype
                 captured["application"] = application
                 captured["coordinator"] = coordinator
+                captured["page_bytes"] = _page
+                captured["injected_page_bytes"] = injected_page_bytes
 
             def serve_forever(self) -> None:
                 raise KeyboardInterrupt
@@ -2256,6 +2259,8 @@ class WiringTest(unittest.TestCase):
         self._run_main(CapturingServer, [])
         self.assertIsNotNone(captured["coordinator"])
         self.assertIs(captured["coordinator"], captured["application"].overlays)
+        self.assertNotIn(b'<meta name="compass-focus"', captured["page_bytes"])
+        self.assertIn(b'<meta name="compass-focus"', captured["injected_page_bytes"])
 
     def test_no_events_leaves_the_application_without_an_overlay_source(self) -> None:
         captured: dict[str, Any] = {}
@@ -2269,10 +2274,13 @@ class WiringTest(unittest.TestCase):
                 coordinator: Any = None,
                 *,
                 interaction_prototype: Any = None,
+                injected_page_bytes: bytes | None = None,
             ) -> None:
                 del interaction_prototype
                 captured["application"] = application
                 captured["coordinator"] = coordinator
+                captured["page_bytes"] = _page
+                captured["injected_page_bytes"] = injected_page_bytes
 
             def serve_forever(self) -> None:
                 raise KeyboardInterrupt
@@ -2283,6 +2291,7 @@ class WiringTest(unittest.TestCase):
         self._run_main(CapturingServer, ["--no-events"])
         self.assertIsNone(captured["coordinator"])
         self.assertIsNone(captured["application"].overlays)
+        self.assertEqual(captured["page_bytes"], captured["injected_page_bytes"])
 
     def _run_main(self, server_class: Any, extra: list[str]) -> None:
         with (
