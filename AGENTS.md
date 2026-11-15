@@ -584,8 +584,9 @@ all three checkers. These are lexical gates, not interprocedural dataflow or dyn
 `test_http_admission_matrix.py` derives routes from the HTTP dispatch dictionaries and prefix
 handlers, including terminal operations and the WebSocket, and holds every route to navigation,
 same-site cross-port, duplicate-Host and allowed-name LAN requests. Keep its explicit board-read
-allowlists and expected statuses in sync with SECURITY.md. A new route needs a matrix row. A known
-status discrepancy is an expected failure beside a separate test that still requires refusal.
+allowlists and expected statuses in sync with SECURITY.md. A new route needs a matrix row. A
+duplicate admission header is refused with 403 by the admission gate; only a defective header block
+is a 400.
 `test_workflow_caches.py` and `test_release_workflow.py` scan all workflows and local action YAML:
 remote `uses` need full commit SHAs, containers need SHA-256 digests, shell `run` blocks take
 expressions through `env`, npm installs deny scripts, and pip installs use generated hashed files.

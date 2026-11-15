@@ -136,42 +136,9 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         2,
         "Private TemporaryDirectory output captures for a bounded subprocess.",
     ),
-    ("compass_runtime/claude_data.py", "_advance_prompts"): (
-        1,
-        "External harness transcript, not Compass state.",
-    ),
-    ("compass_runtime/claude_data.py", "session_title"): (
-        1,
-        "External harness transcript, not Compass state.",
-    ),
-    ("compass_runtime/claude_data.py", "session_goal"): (
-        1,
-        "External harness transcript, not Compass state.",
-    ),
     ("compass_runtime/claude_settings.py", "document"): (
         1,
         "External settings descriptor checked for regular file and bounded reads.",
-    ),
-    ("compass_runtime/collectors/antigravity.py", "_session_metadata"): (
-        1,
-        "External harness metadata, not Compass state.",
-    ),
-    ("compass_runtime/collectors/claude.py", "agent_label"): (
-        1,
-        "External harness agent metadata.",
-    ),
-    ("compass_runtime/collectors/claude.py", "load_team_members"): (
-        1,
-        "External harness team metadata.",
-    ),
-    ("compass_runtime/collectors/claude.py", "load_tasks"): (1, "External harness task metadata."),
-    ("compass_runtime/collectors/pi.py", "_complete_end"): (1, "External Pi transcript."),
-    ("compass_runtime/collectors/pi.py", "scan_pi_session"): (1, "External Pi transcript."),
-    ("compass_runtime/compass_turns.py", "_advance"): (1, "External transcript cursor scanning."),
-    ("compass_runtime/config.py", "load_pi_settings"): (1, "External Pi settings."),
-    ("compass_runtime/copied_corrections.py", "_scan"): (
-        1,
-        "External transcript evidence scanning.",
     ),
     ("compass_runtime/copied_corrections.py", "_read"): (
         1,
@@ -193,7 +160,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
-    ("compass_runtime/entry_numbers.py", "extend"): (1, "External transcript evidence scanning."),
     ("compass_runtime/frontend_dev.py", "load_manifest"): (
         1,
         "KNOWN GAP: development manifest under temporary directory uses Path.open.",
@@ -249,30 +215,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
     ("compass_runtime/observer.py", "read_sidecar"): (
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
-    ),
-    ("compass_runtime/project_context.py", "codex_source_prefix"): (
-        1,
-        "External harness transcript.",
-    ),
-    ("compass_runtime/project_context.py", "codex_activity_between"): (
-        1,
-        "External harness transcript.",
-    ),
-    ("compass_runtime/project_context.py", "codex_newest_final_words"): (
-        1,
-        "External harness transcript.",
-    ),
-    ("compass_runtime/project_context.py", "frozen_claude_user_messages"): (
-        1,
-        "External harness transcript.",
-    ),
-    ("compass_runtime/project_context.py", "frozen_claude_agent_messages"): (
-        1,
-        "External harness transcript.",
-    ),
-    ("compass_runtime/project_context.py", "claude_activity_between"): (
-        1,
-        "External harness transcript.",
     ),
     ("compass_runtime/project_context.py", "frozen_codex_sources"): (
         2,
@@ -346,8 +288,6 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "External AWS settings read through bounded descriptor checks.",
     ),
-    ("compass_runtime/record_pages.py", "scan_source"): (1, "External harness transcript."),
-    ("compass_runtime/record_pages.py", "read"): (1, "External harness transcript."),
     ("compass_runtime/semantic_history.py", "_read"): (
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
@@ -388,17 +328,14 @@ RAW_FILES: dict[tuple[str, str], tuple[int, str]] = {
         2,
         "Installed immutable version/manifest data.",
     ),
-    ("compass_runtime/transcripts.py", "first_prompt"): (1, "External harness transcript."),
     ("compass_runtime/tripwires.py", "load"): (
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
-    ("compass_runtime/turns.py", "scan_turns"): (1, "External harness transcript."),
     ("compass_runtime/typed_press.py", "_consumed"): (
         1,
         "KNOWN GAP: Compass state/marker raw read can follow links or block on a special file.",
     ),
-    ("compass_runtime/typed_press.py", "tail_lines"): (1, "External harness transcript."),
     ("compass_runtime/update_check.py", "_read"): (
         1,
         "Nonblocking regular-file descriptor checked for cap and metadata.",

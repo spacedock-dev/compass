@@ -311,7 +311,7 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
     def check_class(self, kind: str) -> None:
         differences = []
         for method, path in ROWS:
-            expected = 400 if kind == "duplicate" else 403
+            expected = 403
             if kind == "navigation" and method == "GET" and path in NAVIGATION_READS:
                 expected = 200
             if kind in {"lan", "cross-port"} and method == "GET" and path in REMOTE_READS:
@@ -337,25 +337,19 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
     def test_same_site_cross_port_subresource(self) -> None:
         self.check_class("cross-port")
 
-    # Known contract discrepancy: _single_admission_headers returns False to the 403 gate;
-    # the requested parser-status contract requires 400. No runtime changes in this layer.
-    @unittest.expectedFailure
-    def test_duplicate_host_is_a_bad_request_on_every_route(self) -> None:
+    # A duplicate admission header is refused by the admission gate (403, as SECURITY.md says),
+    # not by the header parser; only a defective header block is a 400.
+    def test_duplicate_host_is_refused_on_every_route(self) -> None:
         self.check_class("duplicate")
 
     def test_lan_peer_under_explicit_host_allowlist(self) -> None:
         self.check_class("lan")
 
-    def test_duplicate_host_still_refuses_every_route_despite_status_discrepancy(self) -> None:
-        for method, path in ROWS:
-            with self.subTest(method=method, path=path):
-                self.assertIn(self.request(method, path, "duplicate"), {400, 403})
-
     def test_other_duplicate_admission_headers_also_refuse_every_route(self) -> None:
         for header in ("Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest"):
             for method, path in ROWS:
                 with self.subTest(header=header, method=method, path=path):
-                    self.assertIn(self.request(method, path, "duplicate-" + header), {400, 403})
+                    self.assertEqual(403, self.request(method, path, "duplicate-" + header))
 
     def test_malformed_header_blocks_are_bad_requests_on_every_route(self) -> None:
         for method, path in ROWS:
