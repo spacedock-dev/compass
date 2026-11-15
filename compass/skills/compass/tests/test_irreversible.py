@@ -519,6 +519,8 @@ raise SystemExit(status)
     def test_no_events_publishes_no_enablement_and_no_reports(self) -> None:
         self.server.observation = None
         self.app.overlays = None
+        # Publish the no-events fixture initially; replacing an answering dashboard is refused.
+        Path(self.tmp.name, f"compass-{self.port}.json").unlink()
         lifecycle.write_state(self.config, self.port, started=NOW, capabilities=None)
         self.assertEqual(0, self.run_hook(native("git push --force")).returncode)
         self.assertEqual([], self.received)
