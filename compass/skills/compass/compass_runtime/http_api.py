@@ -2477,7 +2477,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self.send_error(400)
             return
         leases = self.server.application.live_leases
-        state = leases.state(harness, sid) if leases is not None else {"on": False}
+        state = (
+            leases.terminal_state(harness, sid)
+            if leases is not None
+            else {
+                "on": False,
+                "terminal": False,
+                "notice_due": False,
+                "disclosure": None,
+                "last_end": None,
+            }
+        )
         self._send(json.dumps({"state": state}, separators=(",", ":")).encode(), "application/json")
 
     def _session(self, url: ParseResult) -> None:

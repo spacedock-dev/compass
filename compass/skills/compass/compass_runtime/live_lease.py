@@ -274,6 +274,34 @@ class Leases:
                 self._end_locked(key, "ended", now)
         return self._state(harness, sid, now)
 
+    def terminal_state(self, harness: str, sid: str) -> dict[str, Any]:
+        """Lease identity for helper recovery, without the page's model reading."""
+        now = self._clock()
+        key = f"{harness}:{sid}"
+        with self._lock:
+            self._sweep_locked(now)
+            lease = self._leases.get(key)
+            on = lease is not None and live_monitor.window(self.config, key) is not None
+            terminal = (
+                on
+                and lease is not None
+                and any(holder.kind == "terminal" for holder in lease.holders.values())
+            )
+            where = reading_route.destination(live_monitor.PROVIDER) if on else None
+            return {
+                "on": on,
+                "terminal": terminal,
+                "notice_due": live_monitor.board(self.config, now=now)["notice_due"]
+                if terminal
+                else False,
+                "disclosure": live_monitor.disclosure(
+                    where, terminal=terminal, sid=lease.resume_id if lease is not None else sid
+                )
+                if where is not None
+                else None,
+                "last_end": dict(self._ended[key]) if key in self._ended else None,
+            }
+
     def running(self) -> bool:
         """Whether the ticker thread is alive."""
         return self._thread is not None and self._thread.is_alive()
