@@ -491,9 +491,13 @@ def _now_text(
         return _trimmed(doing.get("subject"))
     if quiet and not question:
         quiet_for = _since(generated, _num(source.get("last_activity")))
-        if quiet_for:
-            return f"last active {quiet_for} ago"
-        return "quiet" if _trimmed(source.get("state_detail")) else ""
+        return (
+            f"last active {quiet_for} ago"
+            if quiet_for
+            else "quiet"
+            if _trimmed(source.get("state_detail"))
+            else ""
+        )
     return _trimmed(source.get("state_detail"))
 
 
