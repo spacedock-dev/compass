@@ -4399,6 +4399,55 @@ class ClaudeHeadlessActivityTest(RuntimeTestCase):
                         self.assertEqual((1, "working"), (row["delegated_unpaired"], row["state"]))
                         self.assertEqual(self.START + 900, row["work_in_flight_until"])
 
+    def test_conflicting_ids_do_not_settle(self) -> None:
+        for form in ("user", "attachment"):
+            for known_other_task in (False, True):
+                with self.subTest(form=form, known_other_task=known_other_task):
+                    rows = [
+                        *self.background_bash()[:2],
+                        *(self.background_bash(0, "second")[:2] if known_other_task else []),
+                        *_turn_records(self.START + 3)[1:],
+                    ]
+                    notification = self.bash_completion(form=form)
+                    target = (
+                        notification["message"] if form == "user" else notification["attachment"]
+                    )
+                    key = "content" if form == "user" else "prompt"
+                    target[key] = target[key].replace(
+                        "task-call", "task-second" if known_other_task else "unknown-task"
+                    )
+                    row = self.row([*rows, notification])
+                    count = 2 if known_other_task else 1
+                    self.assertEqual((count, "working"), (row["delegated_unpaired"], row["state"]))
+                    self.assertEqual(self.START + 900, row["work_in_flight_until"])
+                    rows.extend([notification, self.bash_completion(form=form)])
+                    self.assertEqual(count - 1, self.row(rows)["delegated_unpaired"])
+                    if known_other_task:
+                        second = self.bash_completion(form=form, join="task-id")
+                        target = second["message"] if form == "user" else second["attachment"]
+                        target[key] = target[key].replace("task-call", "task-second")
+                        rows.append(second)
+                    row = self.row(rows)
+                    self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                    self.assertIsNone(row["work_in_flight_until"])
+
+    def test_single_id_notifications_still_settle(self) -> None:
+        for form in ("user", "attachment"):
+            for join in ("tool-use-id", "task-id"):
+                with self.subTest(form=form, join=join):
+                    notification = self.bash_completion(form=form, join=join)
+                    if join == "tool-use-id":
+                        target = (
+                            notification["message"]
+                            if form == "user"
+                            else notification["attachment"]
+                        )
+                        key = "content" if form == "user" else "prompt"
+                        target[key] = target[key].replace("<task-id>task-call</task-id>", "")
+                    row = self.row([*self.background_bash(), notification])
+                    self.assertEqual((0, "idle"), (row["delegated_unpaired"], row["state"]))
+                    self.assertIsNone(row["work_in_flight_until"])
+
     def test_explicit_background_bash_holds_only_headless_rows(self) -> None:
         for entrypoint in ("sdk-cli", "cli", None):
             with self.subTest(entrypoint=entrypoint):

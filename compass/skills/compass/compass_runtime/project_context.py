@@ -9402,6 +9402,7 @@ def _notification_completions(
     sidechain: bool = False,
 ) -> dict[str, float]:
     found: dict[str, float] = {}
+    call_tasks = {call_id: task_id for task_id, call_id in task_calls.items()}
     for record in parent:
         if (record.get("isSidechain") is True) is not sidechain:
             continue
@@ -9425,10 +9426,12 @@ def _notification_completions(
             continue
         for match in re.finditer(r"<task-notification>(.*?)</task-notification>", text, re.DOTALL):
             block = match.group(1)
-            call_id = _notification_field(block, "tool-use-id") or task_calls.get(
-                _notification_field(block, "task-id"),
-                "",
-            )
+            tool_id = _notification_field(block, "tool-use-id")
+            task_id = _notification_field(block, "task-id")
+            expected_task = call_tasks.get(tool_id)
+            if task_id and expected_task is not None and task_id != expected_task:
+                continue
+            call_id = tool_id or task_calls.get(task_id, "")
             status = _notification_field(block, "status")
             terminal = status in {"completed", "failed", "killed"} or (
                 not status and "<result>" in block and "</result>" in block
